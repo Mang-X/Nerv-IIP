@@ -151,4 +151,65 @@ public sealed class MaintenanceAggregateTests
         Assert.IsType<MaintenancePlanCreatedDomainEvent>(plan.GetDomainEvents().Single());
         Assert.IsType<MaintenanceInspectionRecordedDomainEvent>(inspection.GetDomainEvents().Single());
     }
+
+    [Fact]
+    public void Inspection_measurement_lines_evaluate_value_against_acceptable_range()
+    {
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "bearing-temperature", "P1D", new DateOnly(2026, 7, 1), "maintenance");
+
+        var inspection = MaintenanceInspection.RecordForPlan(
+            "org-001",
+            "env-dev",
+            plan.Id,
+            "operator-001",
+            "passed",
+            DateTimeOffset.UtcNow,
+            [
+                new MaintenanceInspectionMeasurementDraft("bearing-temperature", 65m, "C", 0m, 70m),
+                new MaintenanceInspectionMeasurementDraft("noise", 82m, "dB", null, 80m),
+            ]);
+
+        Assert.Collection(
+            inspection.Measurements.OrderBy(x => x.CharacteristicCode),
+            line =>
+            {
+                Assert.Equal("bearing-temperature", line.CharacteristicCode);
+                Assert.True(line.IsWithinSpec);
+            },
+            line =>
+            {
+                Assert.Equal("noise", line.CharacteristicCode);
+                Assert.False(line.IsWithinSpec);
+            });
+    }
+
+    [Fact]
+    public void Work_order_completion_records_technician_labor_and_cost_fields()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "normal",
+            "operator-001",
+            assignedTechnicianUserId: "worker-001",
+            estimatedLaborMinutes: 90);
+
+        workOrder.Complete(
+            "fixed",
+            "minor-stop",
+            5,
+            [],
+            actualLaborMinutes: 75,
+            sparePartCostAmount: 120.50m,
+            externalServiceCostAmount: 35m,
+            costCurrencyCode: "CNY");
+
+        Assert.Equal("worker-001", workOrder.AssignedTechnicianUserId);
+        Assert.Equal(90, workOrder.EstimatedLaborMinutes);
+        Assert.Equal(75, workOrder.ActualLaborMinutes);
+        Assert.Equal(120.50m, workOrder.SparePartCostAmount);
+        Assert.Equal(35m, workOrder.ExternalServiceCostAmount);
+        Assert.Equal("CNY", workOrder.CostCurrencyCode);
+    }
 }

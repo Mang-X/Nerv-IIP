@@ -49,6 +49,9 @@ const {
   disableUser,
   disableUserError,
   disableUserPending,
+  enableUser,
+  enableUserError,
+  enableUserPending,
   filters,
   refreshUsers,
   resetUserPassword,
@@ -65,6 +68,7 @@ const {
 
 type CreateUserData = Parameters<typeof createUser>[0]
 type DisableUserData = Parameters<typeof disableUser>[0]
+type EnableUserData = Parameters<typeof enableUser>[0]
 type ResetUserPasswordData = Parameters<typeof resetUserPassword>[0]
 type UpdateUserData = Parameters<typeof updateUser>[0]
 type UserRow = ConsoleIamUserResponse
@@ -85,6 +89,7 @@ const pageError = computed(
     createUserError.value ??
     updateUserError.value ??
     disableUserError.value ??
+    enableUserError.value ??
     resetUserPasswordError.value,
 )
 
@@ -94,6 +99,7 @@ const tablePending = computed(
     createUserPending.value ||
     updateUserPending.value ||
     disableUserPending.value ||
+    enableUserPending.value ||
     resetUserPasswordPending.value,
 )
 
@@ -129,6 +135,16 @@ const columns: DataTableColumn<UserRow>[] = [
   },
   { key: 'email', header: '邮箱', accessor: (r) => r.email || '—' },
   {
+    key: 'accountExpiresAtUtc',
+    header: '有效期',
+    accessor: (r) => formatDate(r.accountExpiresAtUtc),
+  },
+  {
+    key: 'password',
+    header: '密码策略',
+    width: 'w-32',
+  },
+  {
     key: 'userId',
     header: '用户 ID',
     cellClass: 'font-mono text-xs text-muted-foreground',
@@ -158,6 +174,10 @@ function userLabel(user: ConsoleIamUserResponse) {
   return user.loginName || user.userId || '用户'
 }
 
+function formatDate(value?: string | null) {
+  return value ? value.slice(0, 10) : '—'
+}
+
 function openCreateDialog() {
   createDialogOpen.value = true
 }
@@ -172,14 +192,14 @@ function openResetPasswordDialog(user: ConsoleIamUserResponse) {
   resetPasswordDialogOpen.value = true
 }
 
-async function handleCreate(payload: Required<ConsoleCreateIamUserRequest>) {
+async function handleCreate(payload: ConsoleCreateIamUserRequest) {
   const data: CreateUserData = { body: payload }
   await createUser(data)
   await refreshUsers()
   toast.success('用户已创建')
 }
 
-async function handleUpdate(payload: Required<ConsoleUpdateIamUserRequest>) {
+async function handleUpdate(payload: ConsoleUpdateIamUserRequest) {
   const userId = selectedUser.value?.userId
   if (!userId) return
 
@@ -204,6 +224,16 @@ async function confirmDisable() {
   disableDialogOpen.value = false
   await refreshUsers()
   toast.success('用户已停用')
+}
+
+async function handleEnable(user: ConsoleIamUserResponse) {
+  const userId = user.userId
+  if (!userId) return
+
+  const data: EnableUserData = { path: { userId } }
+  await enableUser(data)
+  await refreshUsers()
+  toast.success('用户已启用')
 }
 
 async function handleResetPassword(payload: Required<ConsoleResetIamUserPasswordRequest>) {
@@ -267,6 +297,16 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
             :tone="row.enabled === false ? 'neutral' : 'success'"
           />
         </template>
+        <template #cell-password="{ row }">
+          <StatusBadge
+            v-if="row.passwordChangeRequired"
+            label="需改密"
+            tone="warning"
+          />
+          <span v-else class="text-sm text-muted-foreground">
+            {{ row.passwordExpiresAtUtc ? `至 ${formatDate(row.passwordExpiresAtUtc)}` : '—' }}
+          </span>
+        </template>
         <template #cell-actions="{ row }">
           <div class="flex items-center justify-end gap-2">
             <Button
@@ -290,14 +330,26 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
               重置密码
             </Button>
             <Button
+              v-if="row.enabled === false"
+              size="sm"
+              type="button"
+              variant="outline"
+              :aria-label="`启用用户 ${userLabel(row)}`"
+              :disabled="!canManageUsers"
+              @click="handleEnable(row)"
+            >
+              启用
+            </Button>
+            <Button
+              v-else
               size="sm"
               type="button"
               variant="destructive"
               :aria-label="`停用用户 ${userLabel(row)}`"
-              :disabled="!canManageUsers || row.enabled === false"
+              :disabled="!canManageUsers"
               @click="openDisableDialog(row)"
             >
-              停用
+              禁用
             </Button>
           </div>
         </template>

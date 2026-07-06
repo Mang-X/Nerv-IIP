@@ -10,7 +10,7 @@
 
 ## 当前实现状态
 
-IAM Persistent Auth Foundation 已覆盖后端持久化登录基线：PostgreSQL iam schema、初始 admin seed、JWT access token、refresh token hash + rotation、session revoke、/me 和 Connector Host credential validation。PostgreSQL profile 下 IAM 管理端点会先执行 bearer + permission 检查：用户读需要 `iam.users.read`，用户写需要 `iam.users.manage`，角色读需要 `iam.roles.read`，角色写需要 `iam.roles.manage`，会话读/撤销分别需要 `iam.sessions.read` 和 `iam.sessions.revoke`。Phase 8 已交付用户创建/编辑/禁用/重置密码、角色创建、角色权限 patch、权限 catalog、会话列表/撤销和 Console admin facade，不再以 501 作为管理写入口占位。
+IAM Persistent Auth Foundation 已覆盖后端持久化登录基线：PostgreSQL iam schema、初始 admin seed、JWT access token、refresh token hash + rotation、session revoke、/me 和 Connector Host credential validation。PostgreSQL profile 下 IAM 管理端点会先执行 bearer + permission 检查：用户读需要 `iam.users.read`，用户写需要 `iam.users.manage`，角色读需要 `iam.roles.read`，角色写需要 `iam.roles.manage`，会话读/撤销分别需要 `iam.sessions.read` 和 `iam.sessions.revoke`。Phase 8 已交付用户创建/编辑/禁用/启用/重置密码、角色创建、角色权限 patch、权限 catalog、会话列表/撤销和 Console admin facade，不再以 501 作为管理写入口占位。用户生命周期已覆盖账号有效期、禁用即时撤销会话、密码复杂度、密码有效期、强制改密和历史密码禁复用。
 
 Gateway-wide permission enforcement 已覆盖现有 Console API：PlatformGateway 通过 ASP.NET Core JWT bearer authentication middleware 验证控制台 access token，不直接读取 IAM persistence；通过标准 authorization policy 进入受保护 endpoint 后，再把认证结果中的 bearer token 和所需 permission/context 转发给 IAM 的 internal authorization check endpoint，由 IAM 基于 session、security stamp、permission version、organization、environment、permission code 和可选 resource type/resource id 判断是否放行。当前已保护实例列表、实例详情、restart 运维任务创建和 operation task detail 查询。P2 已补 Development-only OIDC callback stub、SSO session binding 字段、Development-only MFA challenge hook 和 ExternalClient resource-scope ABAC grant enforcement；完整 OAuth/OIDC 授权码服务器、consent 页面、WebAuthn、生产 MFA 和复杂策略语言仍属于后续阶段。
 
@@ -43,8 +43,13 @@ Ops connector endpoints remain on the existing `X-Connector-*` header credential
 4. 初始超级管理员 seed。
 5. 最近登录时间和登录失败记录。
 6. refresh token 轮换、撤销和强制下线。
+7. 账号有效期、密码有效期、首次登录或管理员重置后的强制改密。
 
 密码哈希优先使用 `Microsoft.AspNetCore.Identity.PasswordHasher<TUser>` 或一个薄封装适配器，不复制模板自带的自定义 PasswordHasher 作为安全基线。
+
+禁用用户必须立即提升 security stamp、撤销该用户所有 active `UserSession` 和 refresh token，并使既有 bearer token 在下一次 Gateway/IAM 校验时失效。启用用户只恢复新登录资格，不恢复已撤销 session。账号过期与禁用等价地禁止新登录、refresh 和 bearer 校验。
+
+密码策略由 `Iam:PasswordPolicy` 配置，默认最小长度 8，要求大小写字母、数字和非字母数字字符，密码 90 天过期，保留最近 5 个历史 password hash 禁止复用。创建用户和管理员重置密码会设置 `PasswordChangeRequired=true`；登录/刷新响应返回该标记，控制台可据此引导用户走 `POST /api/iam/v1/auth/change-password` 完成首次或重置后改密。改密会校验当前密码、复杂度和历史复用，并清除强制改密标记。
 
 ### 会话
 
@@ -165,12 +170,14 @@ IAM 首批公开接口建议包括：
 6. POST /api/iam/v1/users
 7. PATCH /api/iam/v1/users/{userId}
 8. POST /api/iam/v1/users/{userId}/disable
-9. POST /api/iam/v1/users/{userId}/reset-password
-10. GET /api/iam/v1/roles
-11. POST /api/iam/v1/roles
-12. PATCH /api/iam/v1/roles/{roleId}/permissions
-13. GET /api/iam/v1/sessions
-14. POST /api/iam/v1/sessions/{sessionId}/revoke
+9. POST /api/iam/v1/users/{userId}/enable
+10. POST /api/iam/v1/users/{userId}/reset-password
+11. POST /api/iam/v1/auth/change-password
+12. GET /api/iam/v1/roles
+13. POST /api/iam/v1/roles
+14. PATCH /api/iam/v1/roles/{roleId}/permissions
+15. GET /api/iam/v1/sessions
+16. POST /api/iam/v1/sessions/{sessionId}/revoke
 
 ExternalClient、ConnectorHostCredential 和 AuthorizationGrant 可以先建领域骨架与内部命令，不要求第一批完成完整管理 UI。
 P2 已新增 `POST /api/iam/v1/auth/oidc/callback` 和 `POST /api/iam/v1/auth/mfa/challenges/{challengeId}/verify` 作为 Development-only 企业身份联调入口。该 callback stub 在 Development 用配置启用的 provider、callback secret、subject、email、organizationId 和 environmentId 映射既有 IAM 用户和 membership；RequireMfa=true 时先返回一次性 challenge，不直接签发 session。同一 `(provider, subject)` 的新 SSO session 会撤销旧活跃 session。非 Development 环境禁用这两个 stub endpoint：不接受请求体明文 `email/subject`、callback secret 或 `Iam:EnterpriseIdentity:Mfa:DevelopmentCode` 换发会话。生产级企业身份必须后续接入 id_token/JWKS/issuer/audience/nonce 校验的 IdP adapter 或标准授权服务器，并为 MFA 提供 per-user key、限速和一次性验证。

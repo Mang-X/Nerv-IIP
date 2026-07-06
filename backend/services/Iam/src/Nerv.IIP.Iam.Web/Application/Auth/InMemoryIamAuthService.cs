@@ -92,6 +92,12 @@ public sealed class InMemoryIamAuthService(
             externalClient.Scope));
     }
 
+    public Task<string?> GetAuthenticatedUserIdAsync(HttpContext httpContext, CancellationToken cancellationToken)
+    {
+        var user = ValidateBearer(httpContext);
+        return Task.FromResult(user?.UserId);
+    }
+
     public Task<bool> UserHasPermissionAsync(
         string userId,
         string organizationId,
@@ -259,7 +265,7 @@ public sealed class InMemoryIamAuthService(
 
     private AuthResponse ToResponse(AuthResult result)
     {
-        return new AuthResponse(result.AccessToken, result.RefreshToken, result.SessionId, result.ExpiresAtUtc);
+        return new AuthResponse(result.AccessToken, result.RefreshToken, result.SessionId, result.ExpiresAtUtc, result.PasswordChangeRequired);
     }
 
     private OidcProviderOptions GetEnabledProvider(string provider)

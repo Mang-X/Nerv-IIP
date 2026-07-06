@@ -47,7 +47,9 @@ public sealed record CreateMaintenanceWorkOrderRequest(
     string Priority,
     string? SourceAlarmId,
     string OpenedBy,
-    string? AssetUnavailableReason);
+    string? AssetUnavailableReason,
+    string? AssignedTechnicianUserId = null,
+    int? EstimatedLaborMinutes = null);
 
 public sealed record CreateMaintenanceWorkOrderResponse(MaintenanceWorkOrderId WorkOrderId);
 
@@ -56,7 +58,11 @@ public sealed record CompleteMaintenanceWorkOrderRequest(
     string Result,
     string DowntimeReasonCode,
     int DowntimeMinutes,
-    IReadOnlyCollection<MaintenanceSparePartInput> SpareParts);
+    IReadOnlyCollection<MaintenanceSparePartInput> SpareParts,
+    int? ActualLaborMinutes = null,
+    decimal? SparePartCostAmount = null,
+    decimal? ExternalServiceCostAmount = null,
+    string? CostCurrencyCode = null);
 
 public sealed record StartMaintenanceRepairRequest(
     MaintenanceWorkOrderId WorkOrderId,
@@ -94,6 +100,14 @@ public sealed record QueryMaintenanceAssetReliabilityRequest(
     DateTimeOffset WindowStartUtc,
     DateTimeOffset WindowEndUtc);
 
+public sealed record QueryMaintenanceReliabilitySummaryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    string? DeviceAssetId,
+    string? TechnicianUserId);
+
 public sealed record GetMaintenanceAssetAvailabilityWindowsRequest(
     string DeviceAssetId,
     string OrganizationId,
@@ -118,11 +132,20 @@ public sealed record RecordMaintenanceInspectionRequest(
     MaintenanceWorkOrderId? WorkOrderId,
     string Inspector,
     string Result,
-    DateTimeOffset InspectedAtUtc);
+    DateTimeOffset InspectedAtUtc,
+    IReadOnlyCollection<MaintenanceInspectionMeasurementInput>? Measurements = null);
 
 public sealed record RecordMaintenanceInspectionResponse(MaintenanceInspectionId InspectionId);
 
 public sealed record ListMaintenanceInspectionsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100);
+
+public sealed record QueryMaintenanceInspectionMeasurementTrendRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string CharacteristicCode,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc);
 
 public sealed record ListMaintenanceSparePartsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100);
 
@@ -165,7 +188,7 @@ public sealed class CreateMaintenanceWorkOrderEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateMaintenanceWorkOrderRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateMaintenanceWorkOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Priority, req.SourceAlarmId, req.OpenedBy, req.AssetUnavailableReason), ct);
+        var id = await sender.Send(new CreateMaintenanceWorkOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Priority, req.SourceAlarmId, req.OpenedBy, req.AssetUnavailableReason, AssignedTechnicianUserId: req.AssignedTechnicianUserId, EstimatedLaborMinutes: req.EstimatedLaborMinutes), ct);
         await Send.OkAsync(new CreateMaintenanceWorkOrderResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -177,7 +200,7 @@ public sealed class CompleteMaintenanceWorkOrderEndpoint(ISender sender)
 
     public override async Task HandleAsync(CompleteMaintenanceWorkOrderRequest req, CancellationToken ct)
     {
-        await sender.Send(new CompleteMaintenanceWorkOrderCommand(req.WorkOrderId, req.Result, req.DowntimeReasonCode, req.DowntimeMinutes, req.SpareParts), ct);
+        await sender.Send(new CompleteMaintenanceWorkOrderCommand(req.WorkOrderId, req.Result, req.DowntimeReasonCode, req.DowntimeMinutes, req.SpareParts, req.ActualLaborMinutes, req.SparePartCostAmount, req.ExternalServiceCostAmount, req.CostCurrencyCode), ct);
         await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
     }
 }
@@ -254,6 +277,18 @@ public sealed class QueryMaintenanceAssetReliabilityEndpoint(ISender sender)
     }
 }
 
+public sealed class QueryMaintenanceReliabilitySummaryEndpoint(ISender sender)
+    : MaintenanceEndpoint<QueryMaintenanceReliabilitySummaryRequest, ResponseData<MaintenanceReliabilitySummaryResponse>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<QueryMaintenanceReliabilitySummaryEndpoint>());
+
+    public override async Task HandleAsync(QueryMaintenanceReliabilitySummaryRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new QueryMaintenanceReliabilitySummaryQuery(req.OrganizationId, req.EnvironmentId, req.WindowStartUtc, req.WindowEndUtc, req.DeviceAssetId, req.TechnicianUserId), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class GetMaintenanceAssetAvailabilityWindowsEndpoint(ISender sender)
     : MaintenanceEndpoint<GetMaintenanceAssetAvailabilityWindowsRequest, ResponseData<EquipmentRuntimeAvailabilityResponse>>
 {
@@ -300,7 +335,7 @@ public sealed class RecordMaintenanceInspectionEndpoint(ISender sender)
 
     public override async Task HandleAsync(RecordMaintenanceInspectionRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new RecordMaintenanceInspectionCommand(req.OrganizationId, req.EnvironmentId, req.PlanId, req.WorkOrderId, req.Inspector, req.Result, req.InspectedAtUtc), ct);
+        var id = await sender.Send(new RecordMaintenanceInspectionCommand(req.OrganizationId, req.EnvironmentId, req.PlanId, req.WorkOrderId, req.Inspector, req.Result, req.InspectedAtUtc, req.Measurements), ct);
         await Send.OkAsync(new RecordMaintenanceInspectionResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -313,6 +348,18 @@ public sealed class ListMaintenanceInspectionsEndpoint(ISender sender)
     public override async Task HandleAsync(ListMaintenanceInspectionsRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new ListMaintenanceInspectionsQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class QueryMaintenanceInspectionMeasurementTrendEndpoint(ISender sender)
+    : MaintenanceEndpoint<QueryMaintenanceInspectionMeasurementTrendRequest, ResponseData<MaintenanceInspectionMeasurementTrendResponse>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<QueryMaintenanceInspectionMeasurementTrendEndpoint>());
+
+    public override async Task HandleAsync(QueryMaintenanceInspectionMeasurementTrendRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new QueryMaintenanceInspectionMeasurementTrendQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.CharacteristicCode, req.WindowStartUtc, req.WindowEndUtc), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -403,8 +450,10 @@ public static class MaintenanceEndpointContracts
         new(typeof(ListMaintenancePlansEndpoint), "GET", "/api/business/v1/maintenance/plans", MaintenancePermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listMaintenancePlans"),
         new(typeof(GenerateDueMaintenanceWorkOrdersEndpoint), "POST", "/api/business/v1/maintenance/plans/generate-due", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "generateDueMaintenanceWorkOrders"),
         new(typeof(QueryMaintenanceAssetReliabilityEndpoint), "GET", "/api/business/v1/maintenance/assets/{deviceAssetId}/reliability", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "queryMaintenanceAssetReliability"),
+        new(typeof(QueryMaintenanceReliabilitySummaryEndpoint), "GET", "/api/business/v1/maintenance/reliability/summary", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "queryMaintenanceReliabilitySummary"),
         new(typeof(RecordMaintenanceInspectionEndpoint), "POST", "/api/business/v1/maintenance/inspections", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "recordMaintenanceInspection"),
         new(typeof(ListMaintenanceInspectionsEndpoint), "GET", "/api/business/v1/maintenance/inspections", MaintenancePermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceInspections"),
+        new(typeof(QueryMaintenanceInspectionMeasurementTrendEndpoint), "GET", "/api/business/v1/maintenance/inspection-measurements/trends", MaintenancePermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "queryMaintenanceInspectionMeasurementTrend"),
         new(typeof(ListMaintenanceSparePartsEndpoint), "GET", "/api/business/v1/maintenance/spare-parts", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceSpareParts"),
         new(typeof(CreateMaintenanceSparePartEndpoint), "POST", "/api/business/v1/maintenance/spare-parts", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "createMaintenanceSparePart"),
         new(typeof(CreateDowntimeReasonEndpoint), "POST", "/api/business/v1/maintenance/downtime-reasons", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "createMaintenanceDowntimeReason"),

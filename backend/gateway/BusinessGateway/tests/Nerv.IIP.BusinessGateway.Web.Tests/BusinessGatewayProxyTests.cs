@@ -2126,6 +2126,58 @@ public sealed class BusinessGatewayProxyTests
                     mtbfRuntimeHasSamples = true,
                 },
             }),
+            "/api/business/v1/maintenance/inspection-measurements/trends" => JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    deviceAssetId = "DEV-PRESS-01",
+                    characteristicCode = "bearing-temperature",
+                    windowStartUtc = "2026-06-01T08:00:00Z",
+                    windowEndUtc = "2026-06-30T16:00:00Z",
+                    items = new[]
+                    {
+                        new
+                        {
+                            inspectionId = "inspection-001",
+                            planId = "plan-001",
+                            workOrderId = (string?)null,
+                            inspectedAtUtc = "2026-06-01T09:00:00Z",
+                            measuredValue = 65m,
+                            uomCode = "C",
+                            lowerSpecLimit = 0m,
+                            upperSpecLimit = 70m,
+                            isWithinSpec = true,
+                        },
+                    },
+                },
+            }),
+            "/api/business/v1/maintenance/reliability/summary" => JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    windowStartUtc = "2026-06-01T08:00:00Z",
+                    windowEndUtc = "2026-06-30T16:00:00Z",
+                    items = new[]
+                    {
+                        new
+                        {
+                            deviceAssetId = "DEV-PRESS-01",
+                            assignedTechnicianUserId = "worker-001",
+                            costCurrencyCode = "CNY",
+                            workOrderCount = 2,
+                            estimatedLaborMinutes = 120,
+                            actualLaborMinutes = 95,
+                            sparePartCostAmount = 130m,
+                            externalServiceCostAmount = 35m,
+                            totalCostAmount = 165m,
+                        },
+                    },
+                },
+            }),
             "/api/business/v1/maintenance/inspections" => JsonResponse(HttpStatusCode.OK, new { data = new { inspectionId = "inspection-001" } }),
             "/api/business/v1/maintenance/spare-parts" => JsonResponse(HttpStatusCode.OK, new { data = new { sparePartLineId = "spare-line-001" } }),
             _ => JsonResponse(HttpStatusCode.NotFound, new { message = "unexpected path" }),
@@ -2178,6 +2230,26 @@ public sealed class BusinessGatewayProxyTests
                 DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
                 DateTimeOffset.Parse("2026-06-30T16:00:00Z", CultureInfo.InvariantCulture)),
             CancellationToken.None);
+        await client.QueryInspectionMeasurementTrendAsync(
+            "internal-token-001",
+            new BusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest(
+                "org-001",
+                "env-dev",
+                "DEV-PRESS-01",
+                "bearing-temperature",
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+                DateTimeOffset.Parse("2026-06-30T16:00:00Z", CultureInfo.InvariantCulture)),
+            CancellationToken.None);
+        await client.QueryReliabilitySummaryAsync(
+            "internal-token-001",
+            new BusinessConsoleQueryMaintenanceReliabilitySummaryRequest(
+                "org-001",
+                "env-dev",
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+                DateTimeOffset.Parse("2026-06-30T16:00:00Z", CultureInfo.InvariantCulture),
+                "DEV-PRESS-01",
+                "worker-001"),
+            CancellationToken.None);
         await client.RecordInspectionAsync(
             "internal-token-001",
             new BusinessConsoleRecordMaintenanceInspectionRequest(
@@ -2200,8 +2272,10 @@ public sealed class BusinessGatewayProxyTests
         AssertRequest(handler.Requests[2], HttpMethod.Post, "/api/business/v1/maintenance/plans");
         AssertRequest(handler.Requests[3], HttpMethod.Post, "/api/business/v1/maintenance/plans/generate-due");
         AssertRequest(handler.Requests[4], HttpMethod.Get, "/api/business/v1/maintenance/assets/DEV-PRESS-01/reliability?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-30T16%3A00%3A00.0000000%2B00%3A00");
-        AssertRequest(handler.Requests[5], HttpMethod.Post, "/api/business/v1/maintenance/inspections");
-        AssertRequest(handler.Requests[6], HttpMethod.Post, "/api/business/v1/maintenance/spare-parts");
+        AssertRequest(handler.Requests[5], HttpMethod.Get, "/api/business/v1/maintenance/inspection-measurements/trends?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&characteristicCode=bearing-temperature&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-30T16%3A00%3A00.0000000%2B00%3A00");
+        AssertRequest(handler.Requests[6], HttpMethod.Get, "/api/business/v1/maintenance/reliability/summary?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-30T16%3A00%3A00.0000000%2B00%3A00&deviceAssetId=DEV-PRESS-01&technicianUserId=worker-001");
+        AssertRequest(handler.Requests[7], HttpMethod.Post, "/api/business/v1/maintenance/inspections");
+        AssertRequest(handler.Requests[8], HttpMethod.Post, "/api/business/v1/maintenance/spare-parts");
     }
 
     [Fact]
@@ -6867,6 +6941,20 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
             false));
     }
 
+    public Task<BusinessConsoleMaintenanceReliabilitySummaryResponse> QueryReliabilitySummaryAsync(
+        string internalBearerToken,
+        BusinessConsoleQueryMaintenanceReliabilitySummaryRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMaintenanceReliabilitySummaryResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WindowStartUtc,
+            request.WindowEndUtc,
+            []));
+    }
+
     public Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(
         string internalBearerToken,
         BusinessConsoleRecordMaintenanceInspectionRequest request,
@@ -6883,6 +6971,22 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleMaintenanceInspectionListResponse([], request.Skip, request.Take, 0));
+    }
+
+    public Task<BusinessConsoleMaintenanceInspectionMeasurementTrendResponse> QueryInspectionMeasurementTrendAsync(
+        string internalBearerToken,
+        BusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMaintenanceInspectionMeasurementTrendResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            request.CharacteristicCode,
+            request.WindowStartUtc,
+            request.WindowEndUtc,
+            []));
     }
 
     public Task<BusinessConsoleMaintenanceSparePartListResponse> ListSparePartsAsync(

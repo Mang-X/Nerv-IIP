@@ -26,7 +26,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(44, MesEndpointContracts.All.Count);
+        Assert.Equal(45, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -93,6 +93,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/cancel"
             && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
             && x.OperationId == "cancelBusinessMesWorkOrder");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release"
+            && x.PermissionCode == MesPermissionCodes.QualityWrite
+            && x.OperationId == "forceReleaseBusinessMesQualityHold");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness"
@@ -1398,6 +1403,7 @@ public sealed class MesEndpointContractTests
         "/api/business/v1/mes/work-orders/WO-001/close",
         "/api/business/v1/mes/work-orders/WO-001/hold",
         "/api/business/v1/mes/work-orders/WO-001/cancel",
+        "/api/business/v1/mes/quality-holds/WO-001/force-release",
         "/api/business/v1/mes/finished-goods-receipt-requests/FGR-001/inventory-posting/retry",
     ];
 

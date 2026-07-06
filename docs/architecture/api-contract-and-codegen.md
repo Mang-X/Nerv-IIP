@@ -239,6 +239,8 @@ Phase 8 已在 PlatformGateway 暴露 Console IAM Admin facade。控制台仍只
 
 Console auth `/api/console/v1/auth/me` 返回的 principal 包含 `permissionCodes`，用于前端提前禁用无权限的 IAM admin 写操作按钮；后端 Gateway/IAM permission enforcement 仍是最终授权边界。
 
+Console login/refresh 响应透传 IAM 的 `passwordChangeRequired` 标记；Console IAM 用户 DTO 暴露 `accountExpiresAtUtc`、`passwordChangeRequired`、`passwordExpiresAtUtc` 和 `lockoutUntilUtc`，用于 `/iam/users` 页面展示账号生命周期和密码策略状态。
+
 当前 Console IAM operation IDs 固定为：
 
 | operationId | Route | 用途 |
@@ -247,6 +249,7 @@ Console auth `/api/console/v1/auth/me` 返回的 principal 包含 `permissionCod
 | `createConsoleIamUser` | `POST /api/console/v1/iam/users` | 创建用户。 |
 | `updateConsoleIamUser` | `PATCH /api/console/v1/iam/users/{userId}` | 更新用户。 |
 | `disableConsoleIamUser` | `POST /api/console/v1/iam/users/{userId}/disable` | 禁用用户。 |
+| `enableConsoleIamUser` | `POST /api/console/v1/iam/users/{userId}/enable` | 启用用户。 |
 | `resetConsoleIamUserPassword` | `POST /api/console/v1/iam/users/{userId}/reset-password` | 重置用户密码。 |
 | `listConsoleIamRoles` | `GET /api/console/v1/iam/roles` | 角色分页列表。 |
 | `createConsoleIamRole` | `POST /api/console/v1/iam/roles` | 创建角色。 |

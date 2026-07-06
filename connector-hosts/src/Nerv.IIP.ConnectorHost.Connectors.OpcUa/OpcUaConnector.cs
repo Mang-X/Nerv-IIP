@@ -6,7 +6,7 @@ public sealed class OpcUaConnector(
     OpcUaConnectorOptions options,
     IOpcUaClient opcUaClient,
     IIndustrialTelemetrySamplesClient samplesClient,
-    Func<DateTimeOffset>? utcNow = null) : IConnector, IOpcUaCollectionConnector
+    Func<DateTimeOffset>? utcNow = null) : IConnector, IIndustrialTelemetryCollectionConnector
 {
     private readonly Dictionary<(string NodeId, DateTimeOffset BucketStartUtc), TelemetryBucket> _buckets = [];
     private readonly Dictionary<(string NodeId, DateTimeOffset BucketStartUtc), DateTimeOffset> _sealedBucketKeys = [];

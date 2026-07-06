@@ -6,6 +6,15 @@ namespace Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspec
 
 public partial record MaintenanceInspectionId : IGuidStronglyTypedId;
 
+public partial record MaintenanceInspectionMeasurementId : IGuidStronglyTypedId;
+
+public sealed record MaintenanceInspectionMeasurementDraft(
+    string CharacteristicCode,
+    decimal MeasuredValue,
+    string UomCode,
+    decimal? LowerSpecLimit = null,
+    decimal? UpperSpecLimit = null);
+
 public static class MaintenanceInspectionResults
 {
     private static readonly string[] FailedResults = ["failed", "fail", "blocked", "not-ok", "not ok", "nok", "ng", "不合格"];
@@ -23,6 +32,8 @@ public static class MaintenanceInspectionResults
 
 public sealed class MaintenanceInspection : Entity<MaintenanceInspectionId>, IAggregateRoot
 {
+    private readonly List<MaintenanceInspectionMeasurement> measurements = [];
+
     private MaintenanceInspection()
     {
     }
@@ -34,7 +45,8 @@ public sealed class MaintenanceInspection : Entity<MaintenanceInspectionId>, IAg
         string result,
         DateTimeOffset inspectedAtUtc,
         MaintenancePlanId? planId,
-        MaintenanceWorkOrderId? workOrderId)
+        MaintenanceWorkOrderId? workOrderId,
+        IEnumerable<MaintenanceInspectionMeasurementDraft>? measurementDrafts = null)
     {
         if (planId is null && workOrderId is null)
         {
@@ -49,6 +61,11 @@ public sealed class MaintenanceInspection : Entity<MaintenanceInspectionId>, IAg
         InspectedAtUtc = inspectedAtUtc.ToUniversalTime();
         PlanId = planId;
         WorkOrderId = workOrderId;
+        foreach (var draft in measurementDrafts ?? [])
+        {
+            measurements.Add(MaintenanceInspectionMeasurement.Create(draft));
+        }
+
         this.AddDomainEvent(new MaintenanceInspectionRecordedDomainEvent(this));
     }
 
@@ -59,6 +76,7 @@ public sealed class MaintenanceInspection : Entity<MaintenanceInspectionId>, IAg
     public string Inspector { get; private set; } = string.Empty;
     public string Result { get; private set; } = string.Empty;
     public DateTimeOffset InspectedAtUtc { get; private set; }
+    public IReadOnlyCollection<MaintenanceInspectionMeasurement> Measurements => measurements;
 
     public static MaintenanceInspection Record(
         string organizationId,
@@ -67,9 +85,10 @@ public sealed class MaintenanceInspection : Entity<MaintenanceInspectionId>, IAg
         MaintenanceWorkOrderId? workOrderId,
         string inspector,
         string result,
-        DateTimeOffset inspectedAtUtc)
+        DateTimeOffset inspectedAtUtc,
+        IEnumerable<MaintenanceInspectionMeasurementDraft>? measurements = null)
     {
-        return new MaintenanceInspection(organizationId, environmentId, inspector, result, inspectedAtUtc, planId, workOrderId);
+        return new MaintenanceInspection(organizationId, environmentId, inspector, result, inspectedAtUtc, planId, workOrderId, measurements);
     }
 
     public static MaintenanceInspection RecordForPlan(
@@ -78,9 +97,10 @@ public sealed class MaintenanceInspection : Entity<MaintenanceInspectionId>, IAg
         MaintenancePlanId planId,
         string inspector,
         string result,
-        DateTimeOffset inspectedAtUtc)
+        DateTimeOffset inspectedAtUtc,
+        IEnumerable<MaintenanceInspectionMeasurementDraft>? measurements = null)
     {
-        return new MaintenanceInspection(organizationId, environmentId, inspector, result, inspectedAtUtc, planId, null);
+        return new MaintenanceInspection(organizationId, environmentId, inspector, result, inspectedAtUtc, planId, null, measurements);
     }
 
     public static MaintenanceInspection RecordForWorkOrder(
@@ -89,8 +109,45 @@ public sealed class MaintenanceInspection : Entity<MaintenanceInspectionId>, IAg
         MaintenanceWorkOrderId workOrderId,
         string inspector,
         string result,
-        DateTimeOffset inspectedAtUtc)
+        DateTimeOffset inspectedAtUtc,
+        IEnumerable<MaintenanceInspectionMeasurementDraft>? measurements = null)
     {
-        return new MaintenanceInspection(organizationId, environmentId, inspector, result, inspectedAtUtc, null, workOrderId);
+        return new MaintenanceInspection(organizationId, environmentId, inspector, result, inspectedAtUtc, null, workOrderId, measurements);
+    }
+}
+
+public sealed class MaintenanceInspectionMeasurement : Entity<MaintenanceInspectionMeasurementId>
+{
+    private MaintenanceInspectionMeasurement()
+    {
+    }
+
+    private MaintenanceInspectionMeasurement(MaintenanceInspectionMeasurementDraft draft)
+    {
+        if (draft.LowerSpecLimit is not null && draft.UpperSpecLimit is not null && draft.LowerSpecLimit > draft.UpperSpecLimit)
+        {
+            throw new ArgumentException("Lower spec limit cannot be greater than upper spec limit.", nameof(draft));
+        }
+
+        Id = new MaintenanceInspectionMeasurementId(Guid.CreateVersion7());
+        CharacteristicCode = MaintenanceText.Required(draft.CharacteristicCode, nameof(draft.CharacteristicCode));
+        MeasuredValue = draft.MeasuredValue;
+        UomCode = MaintenanceText.Required(draft.UomCode, nameof(draft.UomCode));
+        LowerSpecLimit = draft.LowerSpecLimit;
+        UpperSpecLimit = draft.UpperSpecLimit;
+        IsWithinSpec = (LowerSpecLimit is null || MeasuredValue >= LowerSpecLimit)
+            && (UpperSpecLimit is null || MeasuredValue <= UpperSpecLimit);
+    }
+
+    public string CharacteristicCode { get; private set; } = string.Empty;
+    public decimal MeasuredValue { get; private set; }
+    public string UomCode { get; private set; } = string.Empty;
+    public decimal? LowerSpecLimit { get; private set; }
+    public decimal? UpperSpecLimit { get; private set; }
+    public bool IsWithinSpec { get; private set; }
+
+    public static MaintenanceInspectionMeasurement Create(MaintenanceInspectionMeasurementDraft draft)
+    {
+        return new MaintenanceInspectionMeasurement(draft);
     }
 }

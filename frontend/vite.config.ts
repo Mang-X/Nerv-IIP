@@ -111,7 +111,7 @@ export default defineConfig({
       },
       'workspace:build': {
         command:
-          'pnpm --filter @nerv-iip/console --filter @nerv-iip/business-console --filter @nerv-iip/design-system --filter @nerv-iip/docs build',
+          'pnpm --filter @nerv-iip/console --filter @nerv-iip/business-console --filter @nerv-iip/screen --filter @nerv-iip/design-system --filter @nerv-iip/docs build',
         dependsOn: ['workspace:typecheck'],
         input: [
           'apps/console/index.html',
@@ -124,6 +124,11 @@ export default defineConfig({
           'apps/business-console/tsconfig.json',
           'apps/business-console/vite.config.ts',
           'apps/business-console/typed-router.d.ts',
+          'apps/screen/index.html',
+          'apps/screen/src/**',
+          'apps/screen/tsconfig.json',
+          'apps/screen/vite.config.ts',
+          'apps/screen/typed-router.d.ts',
           // design-system is a production VitePress docs site; build it under the
           // root gate so dead links / SSR / VitePress-Rolldown breakage surface in
           // CI. It consumes docs/** (theme + config + markdown) and both UI pkgs.
@@ -143,6 +148,7 @@ export default defineConfig({
         output: [
           'apps/console/dist/**',
           'apps/business-console/dist/**',
+          'apps/screen/dist/**',
           'apps/design-system/docs/.vitepress/dist/**',
           'apps/docs/docs/.vitepress/dist/**',
         ],

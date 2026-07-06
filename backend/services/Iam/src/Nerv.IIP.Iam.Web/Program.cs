@@ -40,8 +40,16 @@ builder.Services
     .Validate(options => options.FailedLoginLockoutThreshold > 0, "Iam:Authentication:FailedLoginLockoutThreshold must be positive.")
     .Validate(options => options.FailedLoginLockoutMinutes > 0, "Iam:Authentication:FailedLoginLockoutMinutes must be positive.")
     .ValidateOnStart();
+builder.Services
+    .AddOptions<IamPasswordPolicyOptions>()
+    .Bind(builder.Configuration.GetSection("Iam:PasswordPolicy"))
+    .Validate(options => options.MinimumLength > 0, "Iam:PasswordPolicy:MinimumLength must be positive.")
+    .Validate(options => options.PasswordHistoryCount >= 0, "Iam:PasswordPolicy:PasswordHistoryCount cannot be negative.")
+    .Validate(options => options.PasswordExpiresDays >= 0, "Iam:PasswordPolicy:PasswordExpiresDays cannot be negative.")
+    .ValidateOnStart();
 builder.Services.AddSingleton<IMfaChallengeStore, InMemoryMfaChallengeStore>();
 builder.Services.AddScoped<IamPasswordService>();
+builder.Services.AddScoped<IamPasswordPolicy>();
 builder.Services.AddSingleton<IamTokenService>();
 if (usesPostgreSql)
 {

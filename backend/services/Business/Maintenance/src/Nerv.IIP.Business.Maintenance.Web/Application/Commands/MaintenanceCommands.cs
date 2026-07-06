@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
@@ -13,6 +14,33 @@ namespace Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 
 public sealed record MaintenanceSparePartInput(string SkuCode, decimal Quantity, string? UomCode);
 
+public sealed record MaintenanceInspectionMeasurementInput(
+    string CharacteristicCode,
+    decimal MeasuredValue,
+    string UomCode,
+    decimal? LowerSpecLimit,
+    decimal? UpperSpecLimit);
+
+public sealed class MaintenanceCompletionOptions
+{
+    public bool RequireActualLaborMinutes { get; set; }
+}
+
+internal static class MaintenanceNumericValidation
+{
+    private const decimal MaxNumeric18Scale6 = 999_999_999_999.999999m;
+
+    public static bool FitsNumeric18Scale6(decimal value)
+    {
+        return decimal.Abs(value) <= MaxNumeric18Scale6;
+    }
+
+    public static bool FitsNullableNumeric18Scale6(decimal? value)
+    {
+        return value is null || FitsNumeric18Scale6(value.Value);
+    }
+}
+
 public sealed record CreateMaintenanceWorkOrderCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -23,7 +51,9 @@ public sealed record CreateMaintenanceWorkOrderCommand(
     string? AssetUnavailableReason,
     string? DiagnosticDescription = null,
     string? FailureModeCode = null,
-    string? FailureCauseCode = null) : ICommand<MaintenanceWorkOrderId>;
+    string? FailureCauseCode = null,
+    string? AssignedTechnicianUserId = null,
+    int? EstimatedLaborMinutes = null) : ICommand<MaintenanceWorkOrderId>;
 
 public sealed class CreateMaintenanceWorkOrderCommandValidator : AbstractValidator<CreateMaintenanceWorkOrderCommand>
 {
@@ -39,6 +69,8 @@ public sealed class CreateMaintenanceWorkOrderCommandValidator : AbstractValidat
         RuleFor(x => x.DiagnosticDescription).MaximumLength(1000);
         RuleFor(x => x.FailureModeCode).MaximumLength(100);
         RuleFor(x => x.FailureCauseCode).MaximumLength(100);
+        RuleFor(x => x.AssignedTechnicianUserId).MaximumLength(150);
+        RuleFor(x => x.EstimatedLaborMinutes).GreaterThan(0).When(x => x.EstimatedLaborMinutes is not null);
     }
 }
 
@@ -61,7 +93,14 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
         }
 
         var workOrder = string.IsNullOrWhiteSpace(request.SourceAlarmId)
-            ? MaintenanceWorkOrder.OpenManual(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, request.Priority, request.OpenedBy)
+            ? MaintenanceWorkOrder.OpenManual(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.DeviceAssetId,
+                request.Priority,
+                request.OpenedBy,
+                request.AssignedTechnicianUserId,
+                request.EstimatedLaborMinutes)
             : MaintenanceWorkOrder.OpenFromAlarm(
                 request.OrganizationId,
                 request.EnvironmentId,
@@ -71,7 +110,9 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
                 request.OpenedBy,
                 request.DiagnosticDescription,
                 request.FailureModeCode,
-                request.FailureCauseCode);
+                request.FailureCauseCode,
+                request.AssignedTechnicianUserId,
+                request.EstimatedLaborMinutes);
 
         if (!string.IsNullOrWhiteSpace(request.AssetUnavailableReason))
         {
@@ -88,7 +129,11 @@ public sealed record CompleteMaintenanceWorkOrderCommand(
     string Result,
     string DowntimeReasonCode,
     int DowntimeMinutes,
-    IReadOnlyCollection<MaintenanceSparePartInput> SpareParts) : ICommand;
+    IReadOnlyCollection<MaintenanceSparePartInput> SpareParts,
+    int? ActualLaborMinutes = null,
+    decimal? SparePartCostAmount = null,
+    decimal? ExternalServiceCostAmount = null,
+    string? CostCurrencyCode = null) : ICommand;
 
 public sealed class CompleteMaintenanceWorkOrderCommandValidator : AbstractValidator<CompleteMaintenanceWorkOrderCommand>
 {
@@ -98,16 +143,33 @@ public sealed class CompleteMaintenanceWorkOrderCommandValidator : AbstractValid
         RuleFor(x => x.Result).NotEmpty().MaximumLength(1000);
         RuleFor(x => x.DowntimeReasonCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DowntimeMinutes).GreaterThan(0);
+        RuleFor(x => x.ActualLaborMinutes).GreaterThan(0).When(x => x.ActualLaborMinutes is not null);
+        RuleFor(x => x.SparePartCostAmount)
+            .GreaterThanOrEqualTo(0)
+            .Must(MaintenanceNumericValidation.FitsNullableNumeric18Scale6)
+            .WithMessage("Spare part cost amount must fit numeric(18,6).")
+            .When(x => x.SparePartCostAmount is not null);
+        RuleFor(x => x.ExternalServiceCostAmount)
+            .GreaterThanOrEqualTo(0)
+            .Must(MaintenanceNumericValidation.FitsNullableNumeric18Scale6)
+            .WithMessage("External service cost amount must fit numeric(18,6).")
+            .When(x => x.ExternalServiceCostAmount is not null);
+        RuleFor(x => x.CostCurrencyCode).MaximumLength(10);
         RuleForEach(x => x.SpareParts).ChildRules(x =>
         {
             x.RuleFor(p => p.SkuCode).NotEmpty().MaximumLength(100);
-            x.RuleFor(p => p.Quantity).GreaterThan(0);
+            x.RuleFor(p => p.Quantity)
+                .GreaterThan(0)
+                .Must(MaintenanceNumericValidation.FitsNumeric18Scale6)
+                .WithMessage("Spare part quantity must fit numeric(18,6).");
             x.RuleFor(p => p.UomCode).MaximumLength(50);
         });
     }
 }
 
-public sealed class CompleteMaintenanceWorkOrderCommandHandler(ApplicationDbContext dbContext)
+public sealed class CompleteMaintenanceWorkOrderCommandHandler(
+    ApplicationDbContext dbContext,
+    IOptions<MaintenanceCompletionOptions>? completionOptions = null)
     : ICommandHandler<CompleteMaintenanceWorkOrderCommand>
 {
     public async Task Handle(CompleteMaintenanceWorkOrderCommand request, CancellationToken cancellationToken)
@@ -125,11 +187,20 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(ApplicationDbCont
             throw new KnownException($"Downtime reason was not found: {downtimeReasonCode}");
         }
 
+        if (completionOptions?.Value.RequireActualLaborMinutes == true && request.ActualLaborMinutes is null)
+        {
+            throw new KnownException("Actual labor minutes are required to complete this maintenance work order.");
+        }
+
         workOrder.Complete(
             request.Result,
             downtimeReasonCode,
             request.DowntimeMinutes,
-            request.SpareParts.Select(x => new SparePartLineDraft(x.SkuCode, x.Quantity, x.UomCode)));
+            request.SpareParts.Select(x => new SparePartLineDraft(x.SkuCode, x.Quantity, x.UomCode)),
+            request.ActualLaborMinutes,
+            request.SparePartCostAmount,
+            request.ExternalServiceCostAmount,
+            request.CostCurrencyCode);
     }
 }
 
@@ -450,7 +521,8 @@ public sealed record RecordMaintenanceInspectionCommand(
     MaintenanceWorkOrderId? WorkOrderId,
     string Inspector,
     string Result,
-    DateTimeOffset InspectedAtUtc) : ICommand<MaintenanceInspectionId>;
+    DateTimeOffset InspectedAtUtc,
+    IReadOnlyCollection<MaintenanceInspectionMeasurementInput>? Measurements = null) : ICommand<MaintenanceInspectionId>;
 
 public sealed class RecordMaintenanceInspectionCommandValidator : AbstractValidator<RecordMaintenanceInspectionCommand>
 {
@@ -461,6 +533,22 @@ public sealed class RecordMaintenanceInspectionCommandValidator : AbstractValida
         RuleFor(x => x.Inspector).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Result).NotEmpty().MaximumLength(1000);
         RuleFor(x => x).Must(x => x.PlanId is not null || x.WorkOrderId is not null).WithMessage("Inspection must reference a maintenance plan or work order.");
+        RuleForEach(x => x.Measurements).ChildRules(x =>
+        {
+            x.RuleFor(m => m.CharacteristicCode).NotEmpty().MaximumLength(100);
+            x.RuleFor(m => m.MeasuredValue)
+                .Must(MaintenanceNumericValidation.FitsNumeric18Scale6)
+                .WithMessage("Measured value must fit numeric(18,6).");
+            x.RuleFor(m => m.UomCode).NotEmpty().MaximumLength(50);
+            x.RuleFor(m => m.LowerSpecLimit)
+                .Must(MaintenanceNumericValidation.FitsNullableNumeric18Scale6)
+                .WithMessage("Lower spec limit must fit numeric(18,6).");
+            x.RuleFor(m => m.UpperSpecLimit)
+                .Must(MaintenanceNumericValidation.FitsNullableNumeric18Scale6)
+                .WithMessage("Upper spec limit must fit numeric(18,6).");
+            x.RuleFor(m => m).Must(m => m.LowerSpecLimit is null || m.UpperSpecLimit is null || m.LowerSpecLimit <= m.UpperSpecLimit)
+                .WithMessage("Lower spec limit cannot be greater than upper spec limit.");
+        });
     }
 }
 
@@ -471,7 +559,11 @@ public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbConte
     {
         var inspectedAtUtc = request.InspectedAtUtc.ToUniversalTime();
         var normalizedResult = MaintenanceInspectionResults.Normalize(request.Result);
+        var measurementDrafts = (request.Measurements ?? [])
+            .Select(x => new MaintenanceInspectionMeasurementDraft(x.CharacteristicCode, x.MeasuredValue, x.UomCode, x.LowerSpecLimit, x.UpperSpecLimit))
+            .ToArray();
         var matchingInspections = await dbContext.MaintenanceInspections
+            .Include(x => x.Measurements)
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.PlanId == request.PlanId)
@@ -480,10 +572,13 @@ public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbConte
             .Where(x => x.Result == normalizedResult)
             .Where(x => x.InspectedAtUtc == inspectedAtUtc)
             .ToListAsync(cancellationToken);
-        var inspection = await SelectInspectionForReplayAsync(request.OrganizationId, request.EnvironmentId, matchingInspections, cancellationToken);
+        var replayCandidates = matchingInspections
+            .Where(x => MeasurementSetsMatch(x.Measurements, measurementDrafts))
+            .ToArray();
+        var inspection = await SelectInspectionForReplayAsync(request.OrganizationId, request.EnvironmentId, replayCandidates, cancellationToken);
         if (inspection is null)
         {
-            inspection = MaintenanceInspection.Record(request.OrganizationId, request.EnvironmentId, request.PlanId, request.WorkOrderId, request.Inspector, normalizedResult, inspectedAtUtc);
+            inspection = MaintenanceInspection.Record(request.OrganizationId, request.EnvironmentId, request.PlanId, request.WorkOrderId, request.Inspector, normalizedResult, inspectedAtUtc, measurementDrafts);
             dbContext.MaintenanceInspections.Add(inspection);
         }
 
@@ -517,6 +612,72 @@ public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbConte
 
         return inspections.FirstOrDefault(x => x.Id.ToString() == existingSourceReferenceId)
             ?? inspections.First();
+    }
+
+    private static bool MeasurementSetsMatch(
+        IReadOnlyCollection<MaintenanceInspectionMeasurement> persisted,
+        IReadOnlyCollection<MaintenanceInspectionMeasurementDraft> requested)
+    {
+        return persisted.Select(ToKey).Order().SequenceEqual(requested.Select(ToKey).Order());
+    }
+
+    private static InspectionMeasurementKey ToKey(MaintenanceInspectionMeasurement measurement)
+    {
+        return new InspectionMeasurementKey(
+            measurement.CharacteristicCode,
+            measurement.MeasuredValue,
+            measurement.UomCode,
+            measurement.LowerSpecLimit,
+            measurement.UpperSpecLimit);
+    }
+
+    private static InspectionMeasurementKey ToKey(MaintenanceInspectionMeasurementDraft measurement)
+    {
+        return new InspectionMeasurementKey(
+            MaintenanceText.Required(measurement.CharacteristicCode, nameof(measurement.CharacteristicCode)),
+            measurement.MeasuredValue,
+            MaintenanceText.Required(measurement.UomCode, nameof(measurement.UomCode)),
+            measurement.LowerSpecLimit,
+            measurement.UpperSpecLimit);
+    }
+
+    private sealed record InspectionMeasurementKey(
+        string CharacteristicCode,
+        decimal MeasuredValue,
+        string UomCode,
+        decimal? LowerSpecLimit,
+        decimal? UpperSpecLimit) : IComparable<InspectionMeasurementKey>
+    {
+        public int CompareTo(InspectionMeasurementKey? other)
+        {
+            if (other is null)
+            {
+                return 1;
+            }
+
+            var characteristicComparison = string.Compare(CharacteristicCode, other.CharacteristicCode, StringComparison.Ordinal);
+            if (characteristicComparison != 0)
+            {
+                return characteristicComparison;
+            }
+
+            var valueComparison = MeasuredValue.CompareTo(other.MeasuredValue);
+            if (valueComparison != 0)
+            {
+                return valueComparison;
+            }
+
+            var uomComparison = string.Compare(UomCode, other.UomCode, StringComparison.Ordinal);
+            if (uomComparison != 0)
+            {
+                return uomComparison;
+            }
+
+            var lowerComparison = Nullable.Compare(LowerSpecLimit, other.LowerSpecLimit);
+            return lowerComparison != 0
+                ? lowerComparison
+                : Nullable.Compare(UpperSpecLimit, other.UpperSpecLimit);
+        }
     }
 
     private async Task OpenInspectionWorkOrderIfNeededAsync(MaintenanceInspection inspection, CancellationToken cancellationToken)

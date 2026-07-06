@@ -69,6 +69,7 @@ public sealed class GatewayOpenApiTests
         AssertNoResponseStatus(createIamUser, "200");
         Assert.Equal("updateConsoleIamUser", paths.GetProperty("/api/console/v1/iam/users/{userId}").GetProperty("patch").GetProperty("operationId").GetString());
         Assert.Equal("disableConsoleIamUser", paths.GetProperty("/api/console/v1/iam/users/{userId}/disable").GetProperty("post").GetProperty("operationId").GetString());
+        Assert.Equal("enableConsoleIamUser", paths.GetProperty("/api/console/v1/iam/users/{userId}/enable").GetProperty("post").GetProperty("operationId").GetString());
         Assert.Equal("resetConsoleIamUserPassword", paths.GetProperty("/api/console/v1/iam/users/{userId}/reset-password").GetProperty("post").GetProperty("operationId").GetString());
         Assert.Equal("listConsoleIamRoles", paths.GetProperty("/api/console/v1/iam/roles").GetProperty("get").GetProperty("operationId").GetString());
         var createIamRole = paths.GetProperty("/api/console/v1/iam/roles").GetProperty("post");

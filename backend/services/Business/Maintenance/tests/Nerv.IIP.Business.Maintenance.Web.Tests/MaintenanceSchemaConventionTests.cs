@@ -39,6 +39,7 @@ public sealed class MaintenanceSchemaConventionTests
             typeof(SparePartLine),
             typeof(MaintenancePlan),
             typeof(MaintenanceInspection),
+            typeof(MaintenanceInspectionMeasurement),
             typeof(DowntimeReason),
             typeof(ProcessedIntegrationEvent),
         };
@@ -164,6 +165,12 @@ public sealed class MaintenanceSchemaConventionTests
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.SourceType), "source_type", true);
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.SourceReferenceId), "source_reference_id", true);
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.DiagnosticDescription), "diagnostic_description", true);
+        AssertColumn(workOrder, nameof(MaintenanceWorkOrder.AssignedTechnicianUserId), "assigned_technician_user_id", true);
+        AssertColumn(workOrder, nameof(MaintenanceWorkOrder.EstimatedLaborMinutes), "estimated_labor_minutes", true);
+        AssertColumn(workOrder, nameof(MaintenanceWorkOrder.ActualLaborMinutes), "actual_labor_minutes", true);
+        AssertColumn(workOrder, nameof(MaintenanceWorkOrder.SparePartCostAmount), "spare_part_cost_amount", true);
+        AssertColumn(workOrder, nameof(MaintenanceWorkOrder.ExternalServiceCostAmount), "external_service_cost_amount", true);
+        AssertColumn(workOrder, nameof(MaintenanceWorkOrder.CostCurrencyCode), "cost_currency_code", true);
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.AlarmCleared), "alarm_cleared", false);
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.AlarmClearedAtUtc), "alarm_cleared_at_utc", true);
         AssertColumn(plan, nameof(MaintenancePlan.LastGeneratedOn), "last_generated_on", true);
@@ -177,6 +184,24 @@ public sealed class MaintenanceSchemaConventionTests
                 nameof(MaintenanceWorkOrder.SourceType),
                 nameof(MaintenanceWorkOrder.SourceReferenceId),
             ]));
+    }
+
+    [Fact]
+    public void Inspection_measurement_columns_are_mapped_and_documented()
+    {
+        using var fixture = new SchemaFixture(CreateServices().BuildServiceProvider());
+        var entity = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MaintenanceInspectionMeasurement))
+            ?? throw new InvalidOperationException("MaintenanceInspectionMeasurement metadata was not found.");
+
+        Assert.Equal("maintenance_inspection_measurements", entity.GetTableName());
+        Assert.Equal(MaintenanceFacts.Schema, entity.GetSchema());
+        AssertColumn(entity, "MaintenanceInspectionId", "maintenance_inspection_id", false);
+        AssertColumn(entity, nameof(MaintenanceInspectionMeasurement.CharacteristicCode), "characteristic_code", false);
+        AssertColumn(entity, nameof(MaintenanceInspectionMeasurement.MeasuredValue), "measured_value", false);
+        AssertColumn(entity, nameof(MaintenanceInspectionMeasurement.UomCode), "uom_code", false);
+        AssertColumn(entity, nameof(MaintenanceInspectionMeasurement.LowerSpecLimit), "lower_spec_limit", true);
+        AssertColumn(entity, nameof(MaintenanceInspectionMeasurement.UpperSpecLimit), "upper_spec_limit", true);
+        AssertColumn(entity, nameof(MaintenanceInspectionMeasurement.IsWithinSpec), "is_within_spec", false);
     }
 
     private static void AssertColumn(IEntityType entity, string propertyName, string columnName, bool nullable)

@@ -145,6 +145,9 @@ public sealed class IamManagementEndpointAuthorizationTests
             return Task.FromResult(false);
         }
 
+        public Task<string?> GetAuthenticatedUserIdAsync(HttpContext httpContext, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<AuthResponse> LoginAsync(string loginName, string password, string? clientInfo, string? ipAddress, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<AuthResponse> RefreshAsync(string refreshToken, string? clientInfo, string? ipAddress, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RevokeSessionAsync(string sessionId, string reason, SecurityAuditContext? auditContext, CancellationToken cancellationToken) => throw new NotSupportedException();
