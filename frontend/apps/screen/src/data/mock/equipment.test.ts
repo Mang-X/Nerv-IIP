@@ -83,13 +83,16 @@ describe('buildEquipmentOverview', () => {
     expect(alarm!.params.some((p) => p.tone === 'bad')).toBe(true)
   })
 
-  it('参数快刷 tick：键覆盖全部设备', () => {
+  it('参数快刷 tick：缺省全量；传可见集则只含视野内设备（视野外停更）', () => {
     const s = buildEquipmentOverview('F01')
     const tick = buildParamsTick('F01')
     for (const d of s.devices) {
       expect(tick[d.id]).toBeDefined()
       expect(tick[d.id].length).toBeGreaterThanOrEqual(2)
     }
+    const visible = s.devices.slice(0, 6).map((d) => d.id)
+    const partial = buildParamsTick('F01', 'all', visible)
+    expect(Object.keys(partial).sort()).toEqual([...visible].sort())
   })
 })
 

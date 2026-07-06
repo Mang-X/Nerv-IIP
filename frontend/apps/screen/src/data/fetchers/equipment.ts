@@ -12,13 +12,15 @@ export async function fetchEquipmentOverview(
   return buildEquipmentOverview(factoryId, workshopIds)
 }
 
-/** 参数快刷（高频轮询，只刷格上参数）；未来对应批量参数端点。 */
+/** 参数快刷（高频轮询，只刷格上参数）；deviceIds = 当前视野内设备集
+ *  （视野外停更，未来对应按可见集订阅的批量参数端点）。 */
 export async function fetchDeviceParamsTick(
   factoryId = 'F01',
   workshopIds: string[] | 'all' = 'all',
+  deviceIds?: string[],
 ): Promise<DeviceParamsTick> {
   await new Promise((r) => setTimeout(r, 120))
-  return buildParamsTick(factoryId, workshopIds)
+  return buildParamsTick(factoryId, workshopIds, deviceIds)
 }
 
 /** 设备详情按需取（点击设备格触发）；未来对应单设备端点。 */

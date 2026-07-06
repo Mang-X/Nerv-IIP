@@ -9,17 +9,29 @@ import { fetchDeviceParamsTick, fetchEquipmentOverview } from '@/data/fetchers/e
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 import { useScreenData } from '@/screen-kit'
 
-// 刷新频率分层：格上参数 2s 快刷 · 全景/计数/流 5s · 详情弹窗 3s（弹窗内部）
+// 刷新频率分层：格上参数 2s 快刷（仅视野内设备）· 全景/计数/流 5s ·
+// 详情弹窗 3s（弹窗内部）；页面隐藏时 useScreenData 统一暂停轮询。
 const scope = useAccessScope()
 const { data: ov, refresh } = useScreenData<EquipmentOverview>(
   () => fetchEquipmentOverview(scope.currentFactoryId, scope.persona.workshopIds),
   { intervalMs: 5000 },
 )
-const { data: paramsTick } = useScreenData<DeviceParamsTick>(
-  () => fetchDeviceParamsTick(scope.currentFactoryId, scope.persona.workshopIds),
+/** 视野内设备集（墙体虚拟滚动上报）——视野外不请求、不产生数据变化。 */
+const visibleIds = ref<string[]>([])
+const {
+  data: paramsTick,
+  start: tickStart,
+  stop: tickStop,
+} = useScreenData<DeviceParamsTick>(
+  () =>
+    fetchDeviceParamsTick(
+      scope.currentFactoryId,
+      scope.persona.workshopIds,
+      visibleIds.value.length ? visibleIds.value : undefined,
+    ),
   { intervalMs: 2000 },
 )
-/** 全景设备 + 高频参数合流：参数以 2s tick 为准，状态/计数仍 5s。 */
+/** 全景设备 + 高频参数合流：视野内参数以 2s tick 为准，视野外保持上帧（冻结）。 */
 const devicesLive = computed<DeviceCell[]>(() => {
   const list = ov.value?.devices ?? []
   const tick = paramsTick.value
@@ -55,12 +67,15 @@ const VIEW_OPTIONS = [
 ]
 
 // —— 设备详情弹窗（点击设备格打开；弹窗内部 3s 轮询取数）——
+// 弹窗打开期间暂停墙体 2s 快刷（被遮挡的更新无意义），关闭即恢复
 const selectedId = ref<string | null>(null)
 function openDevice(d: DeviceCell) {
   selectedId.value = d.id
+  tickStop()
 }
 function closeDetail() {
   selectedId.value = null
+  tickStart()
 }
 
 // —— 可靠性四格（MTBF/MTTR 无样本 null → 「—」）——
@@ -89,7 +104,15 @@ const relCells = computed(() => {
               <span class="sec-rule" aria-hidden="true" />
               <ScreenSegmented v-model="viewModel" :options="VIEW_OPTIONS" />
             </div>
-            <DeviceStatusWall :devices="devicesLive" :counts="ov.counts" :view="view" @select="openDevice" />
+            <DeviceStatusWall
+              :devices="devicesLive"
+              :counts="ov.counts"
+              :view="view"
+              :factory-id="scope.currentFactoryId"
+              :workshop-ids="scope.persona.workshopIds"
+              @select="openDevice"
+              @visible="(ids) => (visibleIds = ids)"
+            />
           </section>
 
           <AlarmTable title="未恢复报警" :rows="ov.alarms" more="" class="alarms" />

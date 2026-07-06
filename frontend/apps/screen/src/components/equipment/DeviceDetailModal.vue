@@ -13,10 +13,11 @@ import {
   X,
   Zap,
 } from 'lucide-vue-next'
-import { type Component, computed, onBeforeUnmount, onMounted } from 'vue'
-import type { DeviceDetail, ParamKind } from '@/data/contracts/equipment'
+import { type Component, computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import type { DeviceDetail, DeviceParamSeries, ParamKind } from '@/data/contracts/equipment'
 import { fetchDeviceDetail } from '@/data/fetchers/equipment'
 import { useScreenData } from '@/screen-kit'
+import { paramColor } from './paramColors'
 
 /**
  * 设备详情弹窗（点击全景墙设备格触发）：自取数并 3s 轮询（参数/趋势实时跳动）。
@@ -63,19 +64,7 @@ const infoRows = computed(() => {
   ]
 })
 
-// 参数类型 → 颜色 / 图标（图表按类型着色，2026-07 生产走查）
-const KIND_COLOR: Record<ParamKind, string> = {
-  temp: 'var(--sb-amber)',
-  energy: 'var(--sb-amber)',
-  pressure: 'var(--sb-cyan)',
-  flow: 'var(--sb-cyan)',
-  torque: 'var(--sb-cyan)',
-  speed: 'var(--sb-green)',
-  level: 'var(--sb-green)',
-  cycle: 'var(--sb-green)',
-  current: 'var(--sb-indigo)',
-  vibration: 'var(--sb-indigo)',
-}
+// 参数类型 → 图标（配色走共享 paramColors）
 const KIND_ICON: Record<ParamKind, Component> = {
   temp: Thermometer,
   pressure: Gauge,
@@ -88,10 +77,19 @@ const KIND_ICON: Record<ParamKind, Component> = {
   energy: BatteryCharging,
   torque: Wrench,
 }
-function paramColor(kind: ParamKind, toneVal?: 'warn' | 'bad'): string {
-  if (toneVal === 'bad') return 'var(--sb-red)'
-  if (toneVal === 'warn') return 'var(--sb-amber)'
-  return KIND_COLOR[kind]
+
+// —— 参数图 hover 数值提示：竖参考线 + 悬停点数值气泡 ——
+const sparkTip = ref<{ key: string; x: number; v: number; back: number } | null>(null)
+function onSpark(e: MouseEvent, p: DeviceParamSeries) {
+  if (p.spark.length < 2) return
+  const el = e.currentTarget as HTMLElement
+  const r = el.getBoundingClientRect()
+  const n = p.spark.length
+  const i = Math.min(n - 1, Math.max(0, Math.round(((e.clientX - r.left) / r.width) * (n - 1))))
+  sparkTip.value = { key: p.label, x: (i / (n - 1)) * r.width, v: p.spark[i], back: n - 1 - i }
+}
+function leaveSpark() {
+  sparkTip.value = null
 }
 </script>
 
@@ -112,9 +110,8 @@ function paramColor(kind: ParamKind, toneVal?: 'warn' | 'bad'): string {
         <div v-if="!detail" class="ddm-loading">读取设备档案…</div>
 
         <div v-else class="ddm-body">
-          <!-- 基础信息 -->
-          <section class="ddm-col">
-            <h4 class="ddm-st">基础信息</h4>
+          <!-- 上：基础信息横排 -->
+          <section class="ddm-sec">
             <dl class="ddm-info">
               <div v-for="r in infoRows" :key="r.label">
                 <dt>{{ r.label }}</dt>
@@ -123,8 +120,8 @@ function paramColor(kind: ParamKind, toneVal?: 'warn' | 'bad'): string {
             </dl>
           </section>
 
-          <!-- 参数可视化：类型配色 + 图标 + 正常范围 + 趋势 -->
-          <section class="ddm-col ddm-col--params">
+          <!-- 中：参数可视化一行四卡（类型配色 + 图标 + 正常范围 + 趋势 hover 取值） -->
+          <section class="ddm-sec">
             <h4 class="ddm-st">关键参数 · 近 12 点 · 3s 刷新</h4>
             <div class="ddm-params">
               <div v-for="p in detail.params" :key="p.label" class="ddm-param" :class="p.tone">
@@ -136,61 +133,74 @@ function paramColor(kind: ParamKind, toneVal?: 'warn' | 'bad'): string {
                     :style="{ color: paramColor(p.kind, p.tone) }"
                   />
                   <span class="ddm-param-l">{{ p.label }}</span>
-                  <span v-if="p.range !== '—'" class="ddm-param-r">正常 {{ p.range }}</span>
                   <b class="ddm-param-v" :style="{ color: paramColor(p.kind, p.tone) }">
                     {{ p.value === null ? '—' : p.value }}<small v-if="p.value !== null">{{ p.unit }}</small>
                   </b>
                 </div>
-                <div class="ddm-spark">
+                <p v-if="p.range !== '—'" class="ddm-param-r">正常 {{ p.range }}</p>
+                <div class="ddm-spark" @mousemove="onSpark($event, p)" @mouseleave="leaveSpark">
                   <Sparkline :data="p.spark" area :color="paramColor(p.kind, p.tone)" />
+                  <template v-if="sparkTip?.key === p.label">
+                    <i class="ddm-spark-cursor" :style="{ left: `${sparkTip.x}px` }" />
+                    <span
+                      class="ddm-spark-tip"
+                      :style="{ left: `${Math.min(Math.max(sparkTip.x, 42), 200)}px` }"
+                    >
+                      {{ sparkTip.v }}{{ p.unit }} · {{ sparkTip.back === 0 ? '最新' : `T-${sparkTip.back}` }}
+                    </span>
+                  </template>
                 </div>
               </div>
             </div>
             <p class="ddm-note">参数为演示数据流 · historian / 实时采集接入待 #570</p>
           </section>
 
-          <!-- 保养维修 -->
-          <section class="ddm-col">
-            <h4 class="ddm-st">保养维修</h4>
-            <div class="ddm-rel">
-              <div>
-                <dt>单机 MTBF</dt>
-                <dd>{{ detail.mtbfHours === null ? '—' : `${detail.mtbfHours} h` }}</dd>
-              </div>
-              <div>
-                <dt>单机 MTTR</dt>
-                <dd>{{ detail.mttrMinutes === null ? '—' : `${detail.mttrMinutes} min` }}</dd>
-              </div>
-            </div>
-
-            <div v-if="detail.repairs.length" class="ddm-repairs">
-              <div v-for="r in detail.repairs" :key="r.wo" class="ddm-repair">
-                <div class="ddm-repair-top">
-                  <span class="ddm-wo">{{ r.wo }}</span>
-                  <span class="ddm-issue">{{ r.issue }}</span>
-                  <StatusTag v-if="r.overdue" tone="red" label="超时" />
-                  <StatusTag v-else-if="r.awaitingConfirm" tone="cyan" label="待确认" />
-                  <span v-else class="ddm-stage">{{ r.stage }}</span>
+          <!-- 下：维修 | 保养点检 两列 -->
+          <section class="ddm-sec ddm-bottom">
+            <div>
+              <h4 class="ddm-st">维修与可靠性</h4>
+              <div class="ddm-rel">
+                <div>
+                  <dt>单机 MTBF</dt>
+                  <dd>{{ detail.mtbfHours === null ? '—' : `${detail.mtbfHours} h` }}</dd>
                 </div>
-                <div class="ddm-bar">
-                  <i :class="{ overdue: r.overdue, done: r.progress >= 100 }" :style="{ width: `${r.progress}%` }" />
+                <div>
+                  <dt>单机 MTTR</dt>
+                  <dd>{{ detail.mttrMinutes === null ? '—' : `${detail.mttrMinutes} min` }}</dd>
                 </div>
               </div>
+              <div v-if="detail.repairs.length" class="ddm-repairs">
+                <div v-for="r in detail.repairs" :key="r.wo" class="ddm-repair">
+                  <div class="ddm-repair-top">
+                    <span class="ddm-wo">{{ r.wo }}</span>
+                    <span class="ddm-issue">{{ r.issue }}</span>
+                    <StatusTag v-if="r.overdue" tone="red" label="超时" />
+                    <StatusTag v-else-if="r.awaitingConfirm" tone="cyan" label="待确认" />
+                    <span v-else class="ddm-stage">{{ r.stage }}</span>
+                  </div>
+                  <div class="ddm-bar">
+                    <i :class="{ overdue: r.overdue, done: r.progress >= 100 }" :style="{ width: `${r.progress}%` }" />
+                  </div>
+                </div>
+              </div>
+              <p v-else class="ddm-empty">暂无进行中的维修单</p>
             </div>
-            <p v-else class="ddm-empty">暂无进行中的维修单</p>
 
-            <div class="ddm-list">
-              <div v-for="t in detail.pmTasks" :key="t.task" class="ddm-row">
-                <span class="ddm-row-txt">PM · {{ t.task }}</span>
-                <span class="ddm-due" :class="t.state">{{ t.due }}</span>
+            <div>
+              <h4 class="ddm-st">保养与点检</h4>
+              <div class="ddm-list">
+                <div v-for="t in detail.pmTasks" :key="t.task" class="ddm-row">
+                  <span class="ddm-row-txt">PM · {{ t.task }}</span>
+                  <span class="ddm-due" :class="t.state">{{ t.due }}</span>
+                </div>
+                <div v-for="i in detail.inspections" :key="i.time" class="ddm-row">
+                  <span class="ddm-row-txt">点检 · {{ i.item }} · {{ i.by }}</span>
+                  <span class="ddm-res" :class="{ bad: i.result === '异常' }">{{ i.result }}</span>
+                </div>
+                <p v-if="!detail.pmTasks.length && !detail.inspections.length" class="ddm-empty">
+                  今日暂无保养 / 点检记录
+                </p>
               </div>
-              <div v-for="i in detail.inspections" :key="i.time" class="ddm-row">
-                <span class="ddm-row-txt">点检 · {{ i.item }} · {{ i.by }}</span>
-                <span class="ddm-res" :class="{ bad: i.result === '异常' }">{{ i.result }}</span>
-              </div>
-              <p v-if="!detail.pmTasks.length && !detail.inspections.length" class="ddm-empty">
-                今日暂无保养 / 点检记录
-              </p>
             </div>
           </section>
         </div>
@@ -291,33 +301,34 @@ function paramColor(kind: ParamKind, toneVal?: 'warn' | 'bad'): string {
 .ddm-body {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: 250px 1fr 300px;
-  gap: 26px;
-  padding-top: 16px;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 14px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .ddm-st {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.08em;
   color: var(--sb-text-2);
 }
 
-/* 基础信息 */
+/* 上：基础信息横排（流式） */
 .ddm-info {
   margin: 0;
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--sb-divider);
 }
 .ddm-info div {
-  display: flex;
+  display: inline-flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--sb-divider);
+  gap: 8px;
   font-size: 13.5px;
 }
 .ddm-info dt {
@@ -327,16 +338,15 @@ function paramColor(kind: ParamKind, toneVal?: 'warn' | 'bad'): string {
 .ddm-info dd {
   margin: 0;
   color: var(--sb-text);
-  text-align: right;
 }
 .ddm-info dd.bad {
   color: var(--sb-red);
 }
 
-/* 参数可视化 */
+/* 中：参数一行四卡 */
 .ddm-params {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 .ddm-param {
@@ -345,6 +355,7 @@ function paramColor(kind: ParamKind, toneVal?: 'warn' | 'bad'): string {
   border-radius: var(--sb-radius);
   background: rgba(255, 255, 255, 0.02);
   padding: 12px 14px 8px;
+  min-width: 0;
 }
 .ddm-param.bad {
   border-color: rgba(239, 90, 99, 0.35);
@@ -353,7 +364,6 @@ function paramColor(kind: ParamKind, toneVal?: 'warn' | 'bad'): string {
   display: flex;
   align-items: baseline;
   gap: 7px;
-  margin-bottom: 6px;
 }
 .ddm-param-ic {
   align-self: center;
@@ -362,11 +372,6 @@ function paramColor(kind: ParamKind, toneVal?: 'warn' | 'bad'): string {
 .ddm-param-l {
   font-size: 13px;
   color: var(--sb-muted);
-  white-space: nowrap;
-}
-.ddm-param-r {
-  font-size: 11px;
-  color: var(--sb-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -384,13 +389,53 @@ function paramColor(kind: ParamKind, toneVal?: 'warn' | 'bad'): string {
   color: var(--sb-muted);
   margin-left: 3px;
 }
+.ddm-param-r {
+  margin: 3px 0 5px;
+  font-size: 11px;
+  color: var(--sb-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 趋势区：hover 竖参考线 + 数值气泡 */
 .ddm-spark {
-  height: 52px;
+  position: relative;
+  height: 68px;
+}
+.ddm-spark-cursor {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+.ddm-spark-tip {
+  position: absolute;
+  top: -4px;
+  transform: translate(-50%, -100%);
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: rgba(10, 16, 30, 0.97);
+  border: 1px solid rgba(148, 190, 255, 0.25);
+  font-size: 11.5px;
+  color: var(--sb-text);
+  white-space: nowrap;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  z-index: 2;
 }
 .ddm-note {
-  margin: 12px 0 0;
+  margin: 10px 0 0;
   font-size: 12px;
   color: var(--sb-faint);
+}
+
+/* 下：两列 */
+.ddm-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 26px;
 }
 
 /* 保养维修 */

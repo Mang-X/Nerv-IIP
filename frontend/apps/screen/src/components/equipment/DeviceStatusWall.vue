@@ -1,21 +1,30 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import type { DeviceCell, StateCounts } from '@/data/contracts/equipment'
+import { Sparkline } from '@nerv-iip/ui'
+import { useVirtualList } from '@vueuse/core'
+import { computed, ref, watch } from 'vue'
+import type { DeviceCell, DeviceDetail, StateCounts } from '@/data/contracts/equipment'
+import { fetchDeviceDetail } from '@/data/fetchers/equipment'
+import { paramColor } from './paramColors'
 
 /**
- * 设备状态全景墙（spec §三 + 生产走查交互深化）：
- * 三种排列/展现形式 —— 平铺（大格带关键参数，纵向滚动承载大规模）/
- * 按车间（分组紧凑格，滚动）/ 按产线（每线一组 chip 流式换行，产线设备数不定）。
- * 五态视觉：运行绿/待机黄/停机灰/报警红缓闪/断线灰斜纹（IsSourceFresh 防假绿）。
- * 每台可点（emit select）；悬浮显示设备摘要 tooltip（单例浮层，Teleport body）。
+ * 设备状态全景墙（spec §三 + 生产走查性能/交互深化）：
+ * 平铺 = 行虚拟滚动（useVirtualList，规模化就绪）；按车间/按产线 = 分组滚动。
+ * 视野内设备集经 emit('visible') 上报 —— 页面据此只对可见设备做参数快刷。
+ * 悬浮 tooltip = 浓缩详情卡（防抖 250ms 取单设备档案 + 30s 缓存）：全参数
+ * 迷你趋势 + 维修/保养摘要 + 单机 MTBF/MTTR，减少必须点开弹窗的场景。
  */
 const props = defineProps<{
   devices: DeviceCell[]
   counts: StateCounts
   view: 'flat' | 'workshop' | 'line'
+  factoryId: string
+  workshopIds: string[] | 'all'
 }>()
 
-const emit = defineEmits<{ select: [device: DeviceCell] }>()
+const emit = defineEmits<{
+  select: [device: DeviceCell]
+  visible: [ids: string[]]
+}>()
 
 function countItems() {
   return [
@@ -38,20 +47,68 @@ function groupBy(key: (d: DeviceCell) => string): [string, DeviceCell[]][] {
   return [...m.entries()]
 }
 
-// —— 单例 tooltip（Teleport body，滚动/点击即隐）——
+// —— 平铺：行虚拟滚动（每行 6 台，行高 122 + 12 间距）——
+const COLS = 6
+const rowsSrc = computed(() => {
+  const out: DeviceCell[][] = []
+  for (let i = 0; i < props.devices.length; i += COLS) out.push(props.devices.slice(i, i + COLS))
+  return out
+})
+const { list: vRows, containerProps, wrapperProps } = useVirtualList(rowsSrc, {
+  itemHeight: 134,
+  overscan: 1,
+})
+
+// 视野内设备集：平铺 = 虚拟列表渲染行；分组视图格子总量小，视为全可见
+const visibleIds = computed(() =>
+  props.view === 'flat'
+    ? vRows.value.flatMap((r) => r.data.map((d) => d.id))
+    : props.devices.map((d) => d.id),
+)
+watch(visibleIds, (ids) => emit('visible', ids), { immediate: true })
+
+function onFlatScroll(e: Event) {
+  hideTip()
+  ;(containerProps.onScroll as (e: Event) => void)(e)
+}
+
+// —— 浓缩详情 tooltip（单例浮层；防抖取档案 + 30s 缓存）——
 const tip = ref<{ device: DeviceCell; x: number; y: number; below: boolean } | null>(null)
+const tipDetail = ref<DeviceDetail | null>(null)
+const detailCache = new Map<string, { at: number; d: DeviceDetail }>()
+let hoverTimer: ReturnType<typeof setTimeout> | undefined
+let hoverToken = 0
+
 function showTip(d: DeviceCell, e: MouseEvent) {
   const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  const below = r.top < 190
+  const below = r.top < 380
   tip.value = {
     device: d,
-    x: Math.min(Math.max(r.left + r.width / 2, 140), window.innerWidth - 140),
+    x: Math.min(Math.max(r.left + r.width / 2, 200), window.innerWidth - 200),
     y: below ? r.bottom + 10 : r.top - 10,
     below,
   }
+  const cached = detailCache.get(d.id)
+  if (cached && Date.now() - cached.at < 30_000) {
+    tipDetail.value = cached.d
+    return
+  }
+  tipDetail.value = null
+  const token = ++hoverToken
+  clearTimeout(hoverTimer)
+  hoverTimer = setTimeout(async () => {
+    const det = await fetchDeviceDetail(d.id, props.factoryId, props.workshopIds)
+    if (det) {
+      detailCache.set(d.id, { at: Date.now(), d: det })
+      if (token === hoverToken && tip.value?.device.id === d.id) tipDetail.value = det
+    }
+  }, 250)
 }
 function hideTip() {
   tip.value = null
+  tipDetail.value = null
+  clearTimeout(hoverTimer)
+  hoverToken++
 }
 function pick(d: DeviceCell) {
   hideTip()
@@ -69,31 +126,40 @@ function pick(d: DeviceCell) {
       <span class="dsw-total">共 {{ devices.length }} 台</span>
     </div>
 
-    <!-- 平铺：大格带关键参数，纵向滚动 -->
-    <div v-if="view === 'flat'" class="dsw dsw--flat sb-scroll" @scroll="hideTip">
-      <button
-        v-for="d in devices"
-        :key="d.id"
-        type="button"
-        class="dsw-cell"
-        :class="d.state"
-        @click="pick(d)"
-        @mouseenter="showTip(d, $event)"
-        @mouseleave="hideTip"
-      >
-        <header class="dsw-top">
-          <h5 class="dsw-name">{{ d.name }}</h5>
-          <span class="dsw-state" :class="d.state"><i />{{ d.stateLabel }}</span>
-        </header>
-        <p class="dsw-code">{{ d.code }} · {{ d.lineName }}</p>
-        <dl class="dsw-params">
-          <div v-for="p in d.params" :key="p.label">
-            <dt>{{ p.label }}</dt>
-            <dd :class="p.tone">{{ p.value }}</dd>
-          </div>
-        </dl>
-        <p v-if="d.block" class="dsw-block" :class="d.state">{{ d.block }}</p>
-      </button>
+    <!-- 平铺：行虚拟滚动的大格参数墙 -->
+    <div
+      v-if="view === 'flat'"
+      v-bind="containerProps"
+      class="dsw dsw--flat sb-scroll"
+      @scroll="onFlatScroll"
+    >
+      <div v-bind="wrapperProps">
+        <div v-for="row in vRows" :key="row.index" class="dsw-vrow">
+          <button
+            v-for="d in row.data"
+            :key="d.id"
+            type="button"
+            class="dsw-cell"
+            :class="d.state"
+            @click="pick(d)"
+            @mouseenter="showTip(d, $event)"
+            @mouseleave="hideTip"
+          >
+            <header class="dsw-top">
+              <h5 class="dsw-name">{{ d.name }}</h5>
+              <span class="dsw-state" :class="d.state"><i />{{ d.stateLabel }}</span>
+            </header>
+            <p class="dsw-code">{{ d.code }} · {{ d.lineName }}</p>
+            <dl class="dsw-params">
+              <div v-for="p in d.params" :key="p.label">
+                <dt>{{ p.label }}</dt>
+                <dd :class="p.tone">{{ p.value }}</dd>
+              </div>
+            </dl>
+            <p v-if="d.block" class="dsw-block" :class="d.state">{{ d.block }}</p>
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- 按车间：分组紧凑格，滚动 -->
@@ -122,7 +188,7 @@ function pick(d: DeviceCell) {
       </section>
     </div>
 
-    <!-- 按产线：每线一组，chip 流式换行（产线设备数不定） -->
+    <!-- 按产线：每线一组，chip 流式换行 -->
     <div v-else class="dsw dsw--lines sb-scroll" @scroll="hideTip">
       <section v-for="[name, list] in groupBy((d) => d.lineName)" :key="name" class="dsw-linegroup">
         <h6 class="dsw-group-t">
@@ -149,7 +215,7 @@ function pick(d: DeviceCell) {
       </section>
     </div>
 
-    <!-- 悬浮设备摘要 tooltip -->
+    <!-- 浓缩详情 tooltip：全参数迷你趋势 + 维修/保养摘要 -->
     <Teleport to="body">
       <div
         v-if="tip"
@@ -160,15 +226,44 @@ function pick(d: DeviceCell) {
         <div class="dsw-tip-h">
           <i class="dot" :class="tip.device.state" />
           <b>{{ tip.device.name }}</b>
+          <span class="dsw-tip-code">{{ tip.device.code }}</span>
           <span :class="['dsw-tip-state', tip.device.state]">{{ tip.device.stateLabel }}</span>
         </div>
-        <div class="dsw-tip-sub">{{ tip.device.code }} · {{ tip.device.workshopName }} · {{ tip.device.lineName }}</div>
-        <div v-for="p in tip.device.params" :key="p.label" class="dsw-tip-row">
-          <span>{{ p.label }}</span>
-          <b :class="p.tone">{{ p.value }}</b>
+        <div class="dsw-tip-sub">
+          {{ tip.device.workshopName }} · {{ tip.device.lineName
+          }}<template v-if="tipDetail"> · {{ tipDetail.workCenterName }} · 负责人 {{ tipDetail.managerName }}</template>
         </div>
         <div v-if="tip.device.block" class="dsw-tip-block" :class="tip.device.state">{{ tip.device.block }}</div>
-        <div class="dsw-tip-hint">点击查看设备详情</div>
+
+        <!-- 满血：4 参数 + 迷你趋势；档案未到时先显格上 2 参数 -->
+        <template v-if="tipDetail">
+          <div v-for="p in tipDetail.params" :key="p.label" class="dsw-tip-prow">
+            <span class="l">{{ p.label }}</span>
+            <span class="spark"><Sparkline :data="p.spark" :color="paramColor(p.kind, p.tone)" /></span>
+            <b :style="{ color: paramColor(p.kind, p.tone) }">{{ p.value === null ? '—' : `${p.value}${p.unit}` }}</b>
+          </div>
+          <div class="dsw-tip-meta">
+            <span>MTBF {{ tipDetail.mtbfHours === null ? '—' : `${tipDetail.mtbfHours}h` }}</span>
+            <span>MTTR {{ tipDetail.mttrMinutes === null ? '—' : `${tipDetail.mttrMinutes}min` }}</span>
+          </div>
+          <div v-if="tipDetail.repairs[0]" class="dsw-tip-repair">
+            <span class="wo">{{ tipDetail.repairs[0].wo }}</span>
+            <span class="txt">{{ tipDetail.repairs[0].issue }}</span>
+            <b>{{ tipDetail.repairs[0].progress }}%</b>
+          </div>
+          <div v-if="tipDetail.pmTasks[0]" class="dsw-tip-pm">
+            PM · {{ tipDetail.pmTasks[0].task }}
+            <span :class="tipDetail.pmTasks[0].state">{{ tipDetail.pmTasks[0].due }}</span>
+          </div>
+        </template>
+        <template v-else>
+          <div v-for="p in tip.device.params" :key="p.label" class="dsw-tip-row">
+            <span>{{ p.label }}</span>
+            <b :class="p.tone">{{ p.value }}</b>
+          </div>
+        </template>
+
+        <div class="dsw-tip-hint">点击查看完整档案与实时趋势</div>
       </div>
     </Teleport>
   </div>
@@ -244,7 +339,7 @@ function pick(d: DeviceCell) {
   background: var(--sb-faint);
 }
 
-/* —— 通用：可点击格（button 语义，键盘可达） —— */
+/* —— 通用可点击格 —— */
 .dsw-cell,
 .dsw-mini,
 .dsw-chip {
@@ -311,16 +406,19 @@ function pick(d: DeviceCell) {
     linear-gradient(180deg, var(--sb-panel-a), var(--sb-panel-b));
 }
 
-/* —— 平铺大格（滚动墙） —— */
+/* —— 平铺（虚拟滚动） —— */
 .dsw--flat {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding-right: 4px;
+}
+.dsw-vrow {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  grid-auto-rows: 122px;
   gap: 12px;
-  padding-right: 4px;
+  height: 122px;
+  margin-bottom: 12px;
 }
 .dsw-cell {
   display: flex;
@@ -433,7 +531,7 @@ function pick(d: DeviceCell) {
   color: var(--sb-amber);
 }
 
-/* —— 按车间：分组紧凑格（滚动） —— */
+/* —— 按车间 —— */
 .dsw--groups {
   flex: 1;
   min-height: 0;
@@ -495,7 +593,7 @@ function pick(d: DeviceCell) {
   color: var(--sb-amber);
 }
 
-/* —— 按产线：每线一组 chip 流式 —— */
+/* —— 按产线 —— */
 .dsw--lines {
   flex: 1;
   min-height: 0;
@@ -542,15 +640,14 @@ function pick(d: DeviceCell) {
   color: var(--sb-amber);
 }
 
-/* —— tooltip（Teleport body，视口坐标） —— */
+/* —— 浓缩详情 tooltip —— */
 .dsw-tip {
   position: fixed;
   z-index: 70;
   transform: translate(-50%, -100%);
-  min-width: 230px;
-  max-width: 300px;
-  padding: 11px 13px;
-  border-radius: 8px;
+  width: 372px;
+  padding: 13px 15px 11px;
+  border-radius: 9px;
   background: rgba(10, 16, 30, 0.97);
   border: 1px solid rgba(148, 190, 255, 0.2);
   border-top-color: rgba(255, 255, 255, 0.14);
@@ -570,11 +667,16 @@ function pick(d: DeviceCell) {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--sb-text);
 }
 .dsw-tip-h b {
   font-weight: 600;
+}
+.dsw-tip-code {
+  font-size: 11.5px;
+  font-family: ui-monospace, monospace;
+  color: var(--sb-cyan);
 }
 .dsw-tip-state {
   margin-left: auto;
@@ -592,10 +694,43 @@ function pick(d: DeviceCell) {
   color: var(--sb-faint);
 }
 .dsw-tip-sub {
-  margin: 4px 0 7px;
-  font-size: 11.5px;
-  font-family: ui-monospace, monospace;
+  margin: 4px 0 6px;
+  font-size: 12px;
   color: var(--sb-muted);
+}
+.dsw-tip-block {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--sb-amber);
+}
+.dsw-tip-block.alarm {
+  color: var(--sb-red);
+}
+/* 满血参数行：label + 迷你趋势 + 类型色数值 */
+.dsw-tip-prow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+}
+.dsw-tip-prow .l {
+  width: 64px;
+  flex: none;
+  font-size: 12px;
+  color: var(--sb-muted);
+}
+.dsw-tip-prow .spark {
+  flex: 1;
+  height: 20px;
+  min-width: 0;
+}
+.dsw-tip-prow b {
+  flex: none;
+  min-width: 74px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 .dsw-tip-row {
   display: flex;
@@ -617,13 +752,56 @@ function pick(d: DeviceCell) {
 .dsw-tip-row b.bad {
   color: var(--sb-red);
 }
-.dsw-tip-block {
+.dsw-tip-meta {
+  display: flex;
+  gap: 16px;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--sb-divider);
+  font-size: 12px;
+  color: var(--sb-text-2);
+  font-variant-numeric: tabular-nums;
+}
+.dsw-tip-repair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-top: 6px;
   font-size: 12px;
+}
+.dsw-tip-repair .wo {
+  font-family: ui-monospace, monospace;
+  color: var(--sb-cyan);
+  flex: none;
+}
+.dsw-tip-repair .txt {
+  flex: 1;
+  min-width: 0;
+  color: var(--sb-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dsw-tip-repair b {
+  color: var(--sb-text-2);
+  font-variant-numeric: tabular-nums;
+}
+.dsw-tip-pm {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--sb-muted);
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.dsw-tip-pm .due {
   color: var(--sb-amber);
 }
-.dsw-tip-block.alarm {
+.dsw-tip-pm .overdue {
   color: var(--sb-red);
+}
+.dsw-tip-pm .done {
+  color: var(--sb-green);
 }
 .dsw-tip-hint {
   margin-top: 8px;

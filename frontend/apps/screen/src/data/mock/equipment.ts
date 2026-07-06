@@ -375,11 +375,17 @@ export function buildDeviceDetail(
   }
 }
 
-/** 参数快刷 tick（高频轮询专用）：只重算各设备格上参数，不动状态/计数。 */
+/** 参数快刷 tick（高频轮询专用）：只重算格上参数，不动状态/计数。
+ *  deviceIds 传入「当前视野内」的设备集 —— 视野外不产生数据变化（性能约定，
+ *  真实端点即按可见集订阅）；缺省为全量。 */
 export function buildParamsTick(
   factoryId = 'F01',
   workshopIds: string[] | 'all' = 'all',
+  deviceIds?: string[],
 ): DeviceParamsTick {
   const ov = buildEquipmentOverview(factoryId, workshopIds)
-  return Object.fromEntries(ov.devices.map((d) => [d.id, d.params]))
+  const want = deviceIds ? new Set(deviceIds) : null
+  return Object.fromEntries(
+    ov.devices.filter((d) => !want || want.has(d.id)).map((d) => [d.id, d.params]),
+  )
 }
