@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Infrastructure;
@@ -82,6 +83,7 @@ public sealed class ReleaseWorkOrderCommandHandler(
             request.OrganizationId,
             request.EnvironmentId,
             request.WorkOrderId,
+            null,
             cancellationToken);
         if (qualityIssues.Count > 0)
         {
@@ -111,6 +113,50 @@ public sealed class ReleaseWorkOrderCommandHandler(
 
         workOrder.MarkReleased();
         return new MesAcceptedResponse("Accepted", request.WorkOrderId, request.ReleasedAtUtc);
+    }
+}
+
+public sealed record ForceReleaseQualityHoldCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string SourceService,
+    string SourceDocumentId,
+    string Reason,
+    string Actor,
+    DateTimeOffset ReleasedAtUtc) : ICommand<MesAcceptedResponse>;
+
+public sealed class ForceReleaseQualityHoldCommandValidator : AbstractValidator<ForceReleaseQualityHoldCommand>
+{
+    public ForceReleaseQualityHoldCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SourceService).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.Actor).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class ForceReleaseQualityHoldCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<ForceReleaseQualityHoldCommand, MesAcceptedResponse>
+{
+    public async Task<MesAcceptedResponse> Handle(ForceReleaseQualityHoldCommand request, CancellationToken cancellationToken)
+    {
+        var hold = await dbContext.QualityHoldContexts.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.SourceService == request.SourceService &&
+                x.SourceDocumentId == request.SourceDocumentId,
+            cancellationToken);
+
+        if (hold is null)
+        {
+            throw new KnownException($"未找到质量保留上下文，SourceDocumentId = {request.SourceDocumentId}");
+        }
+
+        hold.ForceRelease(request.Reason, request.Actor, request.ReleasedAtUtc);
+        return new MesAcceptedResponse("Accepted", request.SourceDocumentId, request.ReleasedAtUtc);
     }
 }
 
@@ -807,6 +853,18 @@ public sealed class AssignDispatchTaskCommandHandler(ApplicationDbContext dbCont
             throw new KnownException($"未找到工序任务，OperationTaskId = {request.OperationTaskId}");
         }
 
+        var qualityIssues = await ReadinessReasonCodes.GetActiveQualityHoldIssuesAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            task.WorkOrderId,
+            task.OperationTaskIdValue,
+            cancellationToken);
+        if (qualityIssues.Count > 0)
+        {
+            throw new KnownException(string.Join("; ", qualityIssues.Select(x => x.Code)));
+        }
+
         var equipmentIssues = await ReadinessReasonCodes.GetEquipmentBlockingIssuesAsync(
             dbContext,
             request.OrganizationId,
@@ -859,6 +917,7 @@ public sealed class ChangeOperationTaskStateCommandHandler(
                 request.OrganizationId,
                 request.EnvironmentId,
                 task.WorkOrderId,
+                task.OperationTaskIdValue,
                 cancellationToken);
             if (qualityIssues.Count > 0)
             {
@@ -1181,6 +1240,7 @@ internal static class ReadinessReasonCodes
         string organizationId,
         string environmentId,
         string workOrderId,
+        string? operationTaskId,
         CancellationToken cancellationToken)
     {
         var productionVersionId = await dbContext.WorkOrders
@@ -1204,25 +1264,44 @@ internal static class ReadinessReasonCodes
                     "工单缺少已发布生产版本或检验方案。"));
         }
 
+        issues.AddRange(await GetActiveQualityHoldIssuesAsync(
+            dbContext,
+            organizationId,
+            environmentId,
+            workOrderId,
+            operationTaskId,
+            cancellationToken));
+
+        return issues;
+    }
+
+    public static async Task<IReadOnlyCollection<ReadinessBlockingIssue>> GetActiveQualityHoldIssuesAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        string? operationTaskId,
+        CancellationToken cancellationToken)
+    {
         var activeHolds = await dbContext.QualityHoldContexts
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == organizationId &&
                 x.EnvironmentId == environmentId &&
                 x.WorkOrderId == workOrderId &&
+                (operationTaskId == null || x.OperationTaskId == null || x.OperationTaskId == operationTaskId) &&
                 x.Active)
             .OrderByDescending(x => x.RecordedAtUtc)
             .ToArrayAsync(cancellationToken);
-        issues.AddRange(activeHolds.Select(x => new ReadinessBlockingIssue(
+        return activeHolds.Select(x => new ReadinessBlockingIssue(
             MesReadinessReasonCodes.QualityHoldActive,
             "Quality",
             "InspectionRecord",
             x.InspectionRecordId,
             string.IsNullOrWhiteSpace(x.DispositionReason)
                 ? "工单存在有效质量保留，无法放行或开工。"
-                : $"工单存在有效质量保留，无法放行或开工：{x.DispositionReason}")));
-
-        return issues;
+                : $"工单存在有效质量保留，无法放行或开工：{x.DispositionReason}"))
+            .ToArray();
     }
 
     public static async Task<IReadOnlyCollection<ReadinessBlockingIssue>> GetEquipmentBlockingIssuesAsync(

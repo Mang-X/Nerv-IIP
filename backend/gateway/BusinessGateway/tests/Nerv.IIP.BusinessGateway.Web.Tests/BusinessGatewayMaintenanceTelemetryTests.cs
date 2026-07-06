@@ -290,6 +290,50 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public async Task Maintenance_measurement_trend_and_reliability_summary_facades_forward_queries()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var trendResponse = await client.GetAsync("/api/business-console/v1/maintenance/inspection-measurements/trends?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&characteristicCode=bearing-temperature&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-30T16:00:00Z");
+        var summaryResponse = await client.GetAsync("/api/business-console/v1/maintenance/reliability/summary?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&technicianUserId=worker-001&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-30T16:00:00Z");
+
+        Assert.Equal(HttpStatusCode.OK, trendResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, summaryResponse.StatusCode);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenancePlansRead);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
+        Assert.Equal("internal-test-token", maintenance.LastInternalToken);
+        Assert.Equal(new BusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest(
+            "org-001",
+            "env-dev",
+            "DEV-PRESS-01",
+            "bearing-temperature",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-30T16:00:00Z", CultureInfo.InvariantCulture)), maintenance.LastInspectionMeasurementTrendRequest);
+        Assert.Equal(new BusinessConsoleQueryMaintenanceReliabilitySummaryRequest(
+            "org-001",
+            "env-dev",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-30T16:00:00Z", CultureInfo.InvariantCulture),
+            "DEV-PRESS-01",
+            "worker-001"), maintenance.LastReliabilitySummaryRequest);
+
+        using var trendDocument = JsonDocument.Parse(await trendResponse.Content.ReadAsStringAsync());
+        Assert.Equal(65m, trendDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("measuredValue").GetDecimal());
+        using var summaryDocument = JsonDocument.Parse(await summaryResponse.Content.ReadAsStringAsync());
+        Assert.Equal(165m, summaryDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("totalCostAmount").GetDecimal());
+    }
+
+    [Fact]
     public async Task Telemetry_history_uses_iiot_permission_and_forwards_device_time_range()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -429,6 +473,10 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public BusinessConsoleQueryMaintenanceAssetReliabilityRequest? LastReliabilityRequest { get; private set; }
 
+    public BusinessConsoleQueryMaintenanceReliabilitySummaryRequest? LastReliabilitySummaryRequest { get; private set; }
+
+    public BusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest? LastInspectionMeasurementTrendRequest { get; private set; }
+
     public JsonElement LastRecordInspectionRequest { get; private set; }
 
     public JsonElement LastCreateSparePartRequest { get; private set; }
@@ -526,6 +574,34 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
         ], request.Skip, request.Take, 1));
     }
 
+    public Task<BusinessConsoleMaintenanceInspectionMeasurementTrendResponse> QueryInspectionMeasurementTrendAsync(
+        string internalBearerToken,
+        BusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastInspectionMeasurementTrendRequest = request;
+        return Task.FromResult(new BusinessConsoleMaintenanceInspectionMeasurementTrendResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            request.CharacteristicCode,
+            request.WindowStartUtc,
+            request.WindowEndUtc,
+            [
+                new BusinessConsoleMaintenanceInspectionMeasurementTrendItem(
+                    "inspection-001",
+                    "plan-001",
+                    null,
+                    DateTimeOffset.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture),
+                    65m,
+                    "C",
+                    0m,
+                    70m,
+                    true),
+            ]));
+    }
+
     public Task<BusinessConsoleMaintenanceSparePartListResponse> ListSparePartsAsync(
         string internalBearerToken,
         BusinessConsoleMaintenanceListRequest request,
@@ -596,6 +672,32 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
             35m,
             "oee",
             true));
+    }
+
+    public Task<BusinessConsoleMaintenanceReliabilitySummaryResponse> QueryReliabilitySummaryAsync(
+        string internalBearerToken,
+        BusinessConsoleQueryMaintenanceReliabilitySummaryRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastReliabilitySummaryRequest = request;
+        return Task.FromResult(new BusinessConsoleMaintenanceReliabilitySummaryResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WindowStartUtc,
+            request.WindowEndUtc,
+            [
+                new BusinessConsoleMaintenanceReliabilitySummaryItem(
+                    "DEV-PRESS-01",
+                    "worker-001",
+                    "CNY",
+                    2,
+                    120,
+                    95,
+                    130m,
+                    35m,
+                    165m),
+            ]));
     }
 
     public Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(

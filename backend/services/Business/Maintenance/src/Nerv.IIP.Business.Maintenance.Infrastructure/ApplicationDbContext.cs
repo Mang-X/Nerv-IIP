@@ -18,6 +18,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<SparePartLine> SparePartLines => Set<SparePartLine>();
     public DbSet<MaintenancePlan> MaintenancePlans => Set<MaintenancePlan>();
     public DbSet<MaintenanceInspection> MaintenanceInspections => Set<MaintenanceInspection>();
+    public DbSet<MaintenanceInspectionMeasurement> MaintenanceInspectionMeasurements => Set<MaintenanceInspectionMeasurement>();
     public DbSet<DowntimeReason> DowntimeReasons => Set<DowntimeReason>();
     public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
     public DbSet<IntegrationEventDeadLetter> IntegrationEventDeadLetters => Set<IntegrationEventDeadLetter>();

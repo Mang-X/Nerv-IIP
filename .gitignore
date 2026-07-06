@@ -23,3 +23,8 @@ frontend/apps/console/typed-router.d.ts
 frontend/apps/business-console/typed-router.d.ts
 frontend/apps/business-pda/typed-router.d.ts
 frontend/apps/business-pda/android/
+frontend/apps/screen/typed-router.d.ts
+
+# Runtime logs
+*.log
+!pnpm-lock.yaml

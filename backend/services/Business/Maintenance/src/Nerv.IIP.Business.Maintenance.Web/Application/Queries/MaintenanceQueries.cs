@@ -17,7 +17,19 @@ public sealed record PagedMaintenanceListResponse<T>(IReadOnlyCollection<T> Item
 
 public sealed record ListMaintenanceWorkOrdersQuery(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100) : IQuery<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>;
 
-public sealed record MaintenanceWorkOrderListItem(MaintenanceWorkOrderId WorkOrderId, string DeviceAssetId, string Priority, string Status, string? SourceAlarmId, DateTimeOffset OpenedAtUtc);
+public sealed record MaintenanceWorkOrderListItem(
+    MaintenanceWorkOrderId WorkOrderId,
+    string DeviceAssetId,
+    string Priority,
+    string Status,
+    string? SourceAlarmId,
+    DateTimeOffset OpenedAtUtc,
+    string? AssignedTechnicianUserId,
+    int? EstimatedLaborMinutes,
+    int? ActualLaborMinutes,
+    decimal? SparePartCostAmount,
+    decimal? ExternalServiceCostAmount,
+    string? CostCurrencyCode);
 
 public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaintenanceWorkOrdersQuery, PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>
@@ -32,7 +44,19 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.OpenedAtUtc)
-            .Select(x => new MaintenanceWorkOrderListItem(x.Id, x.DeviceAssetId, x.Priority, x.Status.ToString(), x.SourceAlarmId, x.OpenedAtUtc))
+            .Select(x => new MaintenanceWorkOrderListItem(
+                x.Id,
+                x.DeviceAssetId,
+                x.Priority,
+                x.Status.ToString(),
+                x.SourceAlarmId,
+                x.OpenedAtUtc,
+                x.AssignedTechnicianUserId,
+                x.EstimatedLaborMinutes,
+                x.ActualLaborMinutes,
+                x.SparePartCostAmount,
+                x.ExternalServiceCostAmount,
+                x.CostCurrencyCode))
             .Skip(skip)
             .Take(take)
             .ToArrayAsync(cancellationToken);
@@ -77,7 +101,16 @@ public sealed record MaintenanceInspectionListItem(
     MaintenanceWorkOrderId? WorkOrderId,
     string Inspector,
     string Result,
-    DateTimeOffset InspectedAtUtc);
+    DateTimeOffset InspectedAtUtc,
+    IReadOnlyCollection<MaintenanceInspectionMeasurementListItem> Measurements);
+
+public sealed record MaintenanceInspectionMeasurementListItem(
+    string CharacteristicCode,
+    decimal MeasuredValue,
+    string UomCode,
+    decimal? LowerSpecLimit,
+    decimal? UpperSpecLimit,
+    bool IsWithinSpec);
 
 public sealed class ListMaintenanceInspectionsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaintenanceInspectionsQuery, PagedMaintenanceListResponse<MaintenanceInspectionListItem>>
@@ -87,16 +120,137 @@ public sealed class ListMaintenanceInspectionsQueryHandler(ApplicationDbContext 
         var skip = ListMaintenanceWorkOrdersQueryHandler.NormalizeSkip(request.Skip);
         var take = ListMaintenanceWorkOrdersQueryHandler.NormalizeTake(request.Take);
         var query = dbContext.MaintenanceInspections
+            .Include(x => x.Measurements)
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.InspectedAtUtc)
-            .Select(x => new MaintenanceInspectionListItem(x.Id, x.PlanId, x.WorkOrderId, x.Inspector, x.Result, x.InspectedAtUtc))
             .Skip(skip)
             .Take(take)
+            .Select(x => new MaintenanceInspectionListItem(
+                x.Id,
+                x.PlanId,
+                x.WorkOrderId,
+                x.Inspector,
+                x.Result,
+                x.InspectedAtUtc,
+                x.Measurements
+                    .OrderBy(m => m.CharacteristicCode)
+                    .Select(m => new MaintenanceInspectionMeasurementListItem(m.CharacteristicCode, m.MeasuredValue, m.UomCode, m.LowerSpecLimit, m.UpperSpecLimit, m.IsWithinSpec))
+                    .ToArray()))
             .ToArrayAsync(cancellationToken);
         return new PagedMaintenanceListResponse<MaintenanceInspectionListItem>(items, skip, take, total);
+    }
+}
+
+public sealed record QueryMaintenanceInspectionMeasurementTrendQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string CharacteristicCode,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc) : IQuery<MaintenanceInspectionMeasurementTrendResponse>;
+
+public sealed record MaintenanceInspectionMeasurementTrendResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string CharacteristicCode,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    IReadOnlyCollection<MaintenanceInspectionMeasurementTrendItem> Items);
+
+public sealed record MaintenanceInspectionMeasurementTrendItem(
+    MaintenanceInspectionId InspectionId,
+    MaintenancePlanId? PlanId,
+    MaintenanceWorkOrderId? WorkOrderId,
+    DateTimeOffset InspectedAtUtc,
+    decimal MeasuredValue,
+    string UomCode,
+    decimal? LowerSpecLimit,
+    decimal? UpperSpecLimit,
+    bool IsWithinSpec);
+
+public sealed class QueryMaintenanceInspectionMeasurementTrendQueryValidator : AbstractValidator<QueryMaintenanceInspectionMeasurementTrendQuery>
+{
+    public QueryMaintenanceInspectionMeasurementTrendQueryValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.CharacteristicCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
+    }
+}
+
+public sealed class QueryMaintenanceInspectionMeasurementTrendQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<QueryMaintenanceInspectionMeasurementTrendQuery, MaintenanceInspectionMeasurementTrendResponse>
+{
+    public async Task<MaintenanceInspectionMeasurementTrendResponse> Handle(QueryMaintenanceInspectionMeasurementTrendQuery request, CancellationToken cancellationToken)
+    {
+        var windowStartUtc = request.WindowStartUtc.ToUniversalTime();
+        var windowEndUtc = request.WindowEndUtc.ToUniversalTime();
+        var inspections = await dbContext.MaintenanceInspections
+            .Include(x => x.Measurements)
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.InspectedAtUtc >= windowStartUtc && x.InspectedAtUtc < windowEndUtc)
+            .Where(x => x.Measurements.Any(m => m.CharacteristicCode == request.CharacteristicCode))
+            .OrderBy(x => x.InspectedAtUtc)
+            .ToArrayAsync(cancellationToken);
+
+        var planIds = inspections.Where(x => x.PlanId is not null).Select(x => x.PlanId!).Distinct().ToArray();
+        var workOrderIds = inspections.Where(x => x.WorkOrderId is not null).Select(x => x.WorkOrderId!).Distinct().ToArray();
+        var planDevices = await dbContext.MaintenancePlans
+            .Where(x => planIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.DeviceAssetId })
+            .ToDictionaryAsync(x => x.Id, x => x.DeviceAssetId, cancellationToken);
+        var workOrderDevices = await dbContext.MaintenanceWorkOrders
+            .Where(x => workOrderIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.DeviceAssetId })
+            .ToDictionaryAsync(x => x.Id, x => x.DeviceAssetId, cancellationToken);
+
+        var items = inspections
+            .Where(x => InspectionMatchesDevice(x, request.DeviceAssetId, planDevices, workOrderDevices))
+            .SelectMany(x => x.Measurements
+                .Where(m => m.CharacteristicCode == request.CharacteristicCode)
+                .Select(m => new MaintenanceInspectionMeasurementTrendItem(
+                    x.Id,
+                    x.PlanId,
+                    x.WorkOrderId,
+                    x.InspectedAtUtc,
+                    m.MeasuredValue,
+                    m.UomCode,
+                    m.LowerSpecLimit,
+                    m.UpperSpecLimit,
+                    m.IsWithinSpec)))
+            .ToArray();
+
+        return new MaintenanceInspectionMeasurementTrendResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            request.CharacteristicCode,
+            windowStartUtc,
+            windowEndUtc,
+            items);
+    }
+
+    private static bool InspectionMatchesDevice(
+        MaintenanceInspection inspection,
+        string deviceAssetId,
+        IReadOnlyDictionary<MaintenancePlanId, string> planDevices,
+        IReadOnlyDictionary<MaintenanceWorkOrderId, string> workOrderDevices)
+    {
+        var planMatches = inspection.PlanId is not null
+            && planDevices.TryGetValue(inspection.PlanId, out var planDevice)
+            && planDevice == deviceAssetId;
+        var workOrderMatches = inspection.WorkOrderId is not null
+            && workOrderDevices.TryGetValue(inspection.WorkOrderId, out var workOrderDevice)
+            && workOrderDevice == deviceAssetId;
+
+        return planMatches || workOrderMatches;
     }
 }
 
@@ -254,6 +408,97 @@ public sealed class QueryAssetReliabilityQueryHandler : IQueryHandler<QueryAsset
 }
 
 internal sealed record ReliabilityWorkOrderProjection(DateTimeOffset OpenedAtUtc, DateTimeOffset? RepairStartedAtUtc, DateTimeOffset? CompletedAtUtc);
+
+public sealed record QueryMaintenanceReliabilitySummaryQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    string? DeviceAssetId = null,
+    string? TechnicianUserId = null) : IQuery<MaintenanceReliabilitySummaryResponse>;
+
+public sealed record MaintenanceReliabilitySummaryResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    IReadOnlyCollection<MaintenanceReliabilitySummaryItem> Items);
+
+public sealed record MaintenanceReliabilitySummaryItem(
+    string DeviceAssetId,
+    string? AssignedTechnicianUserId,
+    string? CostCurrencyCode,
+    int WorkOrderCount,
+    int EstimatedLaborMinutes,
+    int ActualLaborMinutes,
+    decimal SparePartCostAmount,
+    decimal ExternalServiceCostAmount,
+    decimal TotalCostAmount);
+
+public sealed class QueryMaintenanceReliabilitySummaryQueryValidator : AbstractValidator<QueryMaintenanceReliabilitySummaryQuery>
+{
+    public QueryMaintenanceReliabilitySummaryQueryValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).MaximumLength(150);
+        RuleFor(x => x.TechnicianUserId).MaximumLength(150);
+        RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
+    }
+}
+
+public sealed class QueryMaintenanceReliabilitySummaryQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<QueryMaintenanceReliabilitySummaryQuery, MaintenanceReliabilitySummaryResponse>
+{
+    public async Task<MaintenanceReliabilitySummaryResponse> Handle(QueryMaintenanceReliabilitySummaryQuery request, CancellationToken cancellationToken)
+    {
+        var windowStartUtc = request.WindowStartUtc.ToUniversalTime();
+        var windowEndUtc = request.WindowEndUtc.ToUniversalTime();
+        var workOrders = await dbContext.MaintenanceWorkOrders
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OpenedAtUtc >= windowStartUtc && x.OpenedAtUtc < windowEndUtc)
+            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => request.TechnicianUserId == null || x.AssignedTechnicianUserId == request.TechnicianUserId)
+            .Where(x => x.Status == MaintenanceWorkOrderStatus.Completed)
+            .Select(x => new
+            {
+                x.DeviceAssetId,
+                x.AssignedTechnicianUserId,
+                x.CostCurrencyCode,
+                x.Status,
+                x.EstimatedLaborMinutes,
+                x.ActualLaborMinutes,
+                x.SparePartCostAmount,
+                x.ExternalServiceCostAmount,
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var items = workOrders
+            .GroupBy(x => new { x.DeviceAssetId, x.AssignedTechnicianUserId, x.CostCurrencyCode })
+            .Select(group => new MaintenanceReliabilitySummaryItem(
+                group.Key.DeviceAssetId,
+                group.Key.AssignedTechnicianUserId,
+                group.Key.CostCurrencyCode,
+                group.Count(),
+                group.Sum(x => x.EstimatedLaborMinutes ?? 0),
+                group.Sum(x => x.ActualLaborMinutes ?? 0),
+                group.Sum(x => x.SparePartCostAmount ?? 0m),
+                group.Sum(x => x.ExternalServiceCostAmount ?? 0m),
+                group.Sum(x => (x.SparePartCostAmount ?? 0m) + (x.ExternalServiceCostAmount ?? 0m))))
+            .OrderBy(x => x.DeviceAssetId)
+            .ThenBy(x => x.AssignedTechnicianUserId)
+            .ThenBy(x => x.CostCurrencyCode)
+            .ToArray();
+
+        return new MaintenanceReliabilitySummaryResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            windowStartUtc,
+            windowEndUtc,
+            items);
+    }
+}
 
 public static class AssetRuntimeSources
 {

@@ -5,6 +5,11 @@ public interface IConnector
     Task<IReadOnlyList<ConnectorTarget>> DiscoverAsync(CancellationToken cancellationToken);
 }
 
+public interface IIndustrialTelemetryCollectionConnector
+{
+    Task RunCollectionCycleAsync(CancellationToken cancellationToken);
+}
+
 public sealed record ConnectorTarget(
     string NodeKey,
     string NodeName,
