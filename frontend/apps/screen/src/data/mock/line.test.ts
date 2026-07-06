@@ -32,11 +32,11 @@ describe('shiftNow（真实时钟班次）', () => {
 describe('buildLineCards（选择器 · 与设备屏同源）', () => {
   it('F01：电芯线红（卷绕机报警同源）、涂装黄、焊装二线失联角标、红线置顶', () => {
     const cards = buildLineCards('F01')
-    expect(cards.length).toBe(9)
+    expect(cards.length).toBe(13) // F01：冲压3+焊装3+涂装2+总装3+电池2
     const bat = cards.find((c) => c.name === '电芯线')
     expect(bat?.state).toBe('alarm')
     expect(bat?.alert).toContain('卷绕机 1#')
-    expect(cards.find((c) => c.name === '涂装线')?.state).toBe('attention')
+    expect(cards.find((c) => c.name === '涂装一线')?.state).toBe('attention')
     expect(cards.find((c) => c.name === '总装一线')?.state).toBe('attention')
     const weld2 = cards.find((c) => c.name === '焊装二线')
     expect(weld2?.offlineDevices).toBeGreaterThanOrEqual(1)
@@ -61,6 +61,21 @@ describe('buildLineCards（选择器 · 与设备屏同源）', () => {
       expect(c.hourly).toHaveLength(12)
     }
     expect(cards.find((c) => c.name === '电芯线')?.deviceDots).toHaveLength(6)
+  })
+
+  it('视野内 seam：视野外产线不生成趋势序列（hourly 空），状态/产量/排序仍全量', () => {
+    const all = buildLineCards('F01')
+    const visible = all.slice(0, 3).map((c) => c.id)
+    const narrowed = buildLineCards('F01', 'all', visible)
+    // 数量/顺序不变（排序靠状态，全量计算）
+    expect(narrowed.map((c) => c.id)).toEqual(all.map((c) => c.id))
+    for (const c of narrowed) {
+      // 产量标量始终全量（汇总带需要）
+      expect(c.output.plan).toBeGreaterThan(0)
+      expect(c.deviceDots.length).toBeGreaterThan(0)
+      // 趋势序列仅视野内生成
+      expect(c.hourly).toHaveLength(visible.includes(c.id) ? 12 : 0)
+    }
   })
 })
 

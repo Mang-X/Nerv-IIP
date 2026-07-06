@@ -6,9 +6,10 @@ import { buildLineBoard, buildLineCards } from '@/data/mock/line'
 export async function fetchLineCards(
   factoryId = 'F01',
   workshopIds: string[] | 'all' = 'all',
+  visibleIds?: string[],
 ): Promise<LineSummaryCard[]> {
   await new Promise((r) => setTimeout(r, 240))
-  return buildLineCards(factoryId, workshopIds)
+  return buildLineCards(factoryId, workshopIds, visibleIds)
 }
 
 export async function fetchLineBoard(

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { KpiBar, Sparkline, StatusLight } from '@nerv-iip/ui'
-import { Activity, AlertTriangle, PackageCheck, Workflow } from 'lucide-vue-next'
-import { type Component, computed, watch } from 'vue'
+import { useVirtualList } from '@vueuse/core'
+import { Activity, AlertTriangle, Factory, PackageCheck, Workflow } from 'lucide-vue-next'
+import { type Component, computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
 import type { LineSummaryCard } from '@/data/contracts/line'
@@ -10,16 +11,45 @@ import ScreenLayout from '@/layouts/ScreenLayout.vue'
 import { useScreenData } from '@/screen-kit'
 
 // 产线选择器 = 迷你监控板（spec §四）：红线置顶（数据层排序）、scope 收窄、
-// 点卡进入单线大屏。4s 轮询。
+// 点卡进入单线大屏。行虚拟滚动 + 视野外停止请求趋势序列。4s 轮询。
 const scope = useAccessScope()
+const visibleIds = ref<string[]>([])
 const { data: cards, refresh } = useScreenData<LineSummaryCard[]>(
-  () => fetchLineCards(scope.currentFactoryId, scope.persona.workshopIds),
+  () =>
+    fetchLineCards(
+      scope.currentFactoryId,
+      scope.persona.workshopIds,
+      visibleIds.value.length ? visibleIds.value : undefined,
+    ),
   { intervalMs: 4000 },
 )
 watch(
   () => [scope.currentFactoryId, scope.personaId],
   () => {
     void refresh()
+  },
+)
+
+// —— 行虚拟滚动（每行 3 卡）——
+const COLS = 3
+const rowsSrc = computed(() => {
+  const list = cards.value ?? []
+  const out: LineSummaryCard[][] = []
+  for (let i = 0; i < list.length; i += COLS) out.push(list.slice(i, i + COLS))
+  return out
+})
+const { list: vRows, containerProps, wrapperProps } = useVirtualList(rowsSrc, {
+  itemHeight: 244,
+  overscan: 1,
+})
+// 视野内产线集：滚动改变可见行 → 立即补取（避免滚入卡趋势短暂空白）
+watch(
+  () => vRows.value.map((r) => r.data.map((c) => c.id).join(',')).join('|'),
+  () => {
+    const ids = vRows.value.flatMap((r) => r.data.map((c) => c.id))
+    const changed = ids.some((id) => !visibleIds.value.includes(id))
+    visibleIds.value = ids
+    if (changed) void refresh()
   },
 )
 
@@ -74,15 +104,19 @@ const kpiItems = computed<KpiCell[]>(() => {
         <span class="ls-meta">{{ cards.length }} 条产线 · 点击进入单线大屏</span>
       </div>
 
-      <div class="ls-grid">
-        <RouterLink v-for="c in cards" :key="c.id" :to="`/line/${c.id}`" class="ls-link">
-          <article class="ls-card" :class="c.state">
-            <header class="ls-top">
-              <StatusLight :tone="toneOf(c.state)" :label="c.stateLabel" />
-              <span v-if="c.offlineDevices > 0" class="ls-off">{{ c.offlineDevices }} 台失联</span>
-            </header>
-            <h3 class="ls-name">{{ c.name }}</h3>
-            <p class="ls-ws">{{ c.workshopName }}<template v-if="c.currentWo"> · {{ c.currentWo }}</template></p>
+      <div v-bind="containerProps" class="ls-scroll sb-scroll">
+        <div v-bind="wrapperProps">
+          <div v-for="row in vRows" :key="row.index" class="ls-row">
+            <RouterLink v-for="c in row.data" :key="c.id" :to="`/line/${c.id}`" class="ls-link">
+              <article class="ls-card" :class="c.state">
+                <header class="ls-top">
+                  <StatusLight :tone="toneOf(c.state)" :label="c.stateLabel" />
+                  <span v-if="c.offlineDevices > 0" class="ls-off">{{ c.offlineDevices }} 台失联</span>
+                </header>
+                <h3 class="ls-name">
+                  <span class="ls-ic" :class="c.state"><Factory :size="18" :stroke-width="2" /></span>{{ c.name }}
+                </h3>
+                <p class="ls-ws">{{ c.workshopName }}<template v-if="c.currentWo"> · {{ c.currentWo }}</template></p>
             <div class="ls-nums">
               <div>
                 <dt>当班达成</dt>
@@ -104,13 +138,15 @@ const kpiItems = computed<KpiCell[]>(() => {
             <div class="ls-spark">
               <Sparkline :data="c.hourly" area :color="stateColor(c.state)" />
             </div>
-            <div class="ls-dots" :aria-label="`设备 ${c.deviceDots.length} 台`">
-              <i v-for="(d, i) in c.deviceDots" :key="i" class="ls-dot" :class="d" />
-              <span class="ls-dots-n">{{ c.deviceDots.length }} 台</span>
-            </div>
-            <p class="ls-alert" :class="c.state">{{ c.alert ?? '作业平稳' }}</p>
-          </article>
-        </RouterLink>
+                <div class="ls-dots" :aria-label="`设备 ${c.deviceDots.length} 台`">
+                  <i v-for="(d, i) in c.deviceDots" :key="i" class="ls-dot" :class="d" />
+                  <span class="ls-dots-n">{{ c.deviceDots.length }} 台</span>
+                </div>
+                <p class="ls-alert" :class="c.state">{{ c.alert ?? '作业平稳' }}</p>
+              </article>
+            </RouterLink>
+          </div>
+        </div>
       </div>
     </div>
     <div v-else class="ls-loading">连接数据…</div>
@@ -167,13 +203,19 @@ const kpiItems = computed<KpiCell[]>(() => {
   font-variant-numeric: tabular-nums;
 }
 
-.ls-grid {
+/* 虚拟滚动容器：flex:1 + min-height:0 收进画布，仅此处滚动（修幽灵滚动条） */
+.ls-scroll {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.ls-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-auto-rows: 1fr;
   gap: 14px;
+  height: 230px;
+  margin-bottom: 14px;
 }
 .ls-link {
   display: block;
@@ -192,7 +234,7 @@ const kpiItems = computed<KpiCell[]>(() => {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  padding: 16px 18px 13px;
+  padding: 13px 17px 11px;
   border-radius: var(--sb-radius);
   background: linear-gradient(180deg, var(--sb-panel-a), var(--sb-panel-b));
   border: 1px solid var(--sb-line);
@@ -241,11 +283,35 @@ const kpiItems = computed<KpiCell[]>(() => {
   color: var(--sb-muted);
 }
 .ls-name {
-  margin: 9px 0 0;
-  font-size: 23px;
+  margin: 8px 0 0;
+  font-size: 22px;
   font-weight: 700;
   color: #fff;
   letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.ls-ic {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: var(--sb-cyan);
+  background: rgba(74, 166, 238, 0.1);
+  border: 1px solid rgba(74, 166, 238, 0.24);
+}
+.ls-ic.attention {
+  color: var(--sb-amber);
+  background: rgba(242, 193, 78, 0.1);
+  border-color: rgba(242, 193, 78, 0.26);
+}
+.ls-ic.alarm {
+  color: var(--sb-red);
+  background: rgba(239, 90, 99, 0.12);
+  border-color: rgba(239, 90, 99, 0.3);
 }
 .ls-ws {
   margin: 4px 0 0;
@@ -261,14 +327,14 @@ const kpiItems = computed<KpiCell[]>(() => {
   display: grid;
   grid-template-columns: 1fr 1fr 1.3fr;
   gap: 10px;
-  margin: 12px 0 0;
+  margin: 9px 0 0;
 }
 .ls-out small {
   color: var(--sb-muted);
 }
 .ls-spark {
-  height: 34px;
-  margin: 10px 0 6px;
+  height: 26px;
+  margin: 8px 0 5px;
 }
 .ls-dots {
   display: flex;
@@ -309,7 +375,7 @@ const kpiItems = computed<KpiCell[]>(() => {
 }
 .ls-nums dd {
   margin: 3px 0 0;
-  font-size: 27px;
+  font-size: 23px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--sb-text);
@@ -327,7 +393,7 @@ const kpiItems = computed<KpiCell[]>(() => {
 }
 .ls-alert {
   margin: auto 0 0;
-  padding-top: 9px;
+  padding-top: 6px;
   font-size: 12.5px;
   color: var(--sb-faint);
   white-space: nowrap;

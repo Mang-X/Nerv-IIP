@@ -27,14 +27,19 @@ interface LineProfile {
 const LINE_PROFILES: Record<string, LineProfile> = {
   'LN-STAMP-1': { taktSec: 9, steps: ['上料', '冲压成形', '在线检测', '码垛'], product: 'Model C 左侧围外板', doingIdx: 1 },
   'LN-STAMP-2': { taktSec: 11, steps: ['上料', '冲压成形', '在线检测', '码垛'], product: '发动机舱盖内板', doingIdx: 1 },
+  'LN-STAMP-3': { taktSec: 8, steps: ['落料', '冲压成形', '在线检测', '码垛'], product: '车门内板', doingIdx: 1 },
   'LN-WELD-1': { taktSec: 66, steps: ['装夹定位', '机器人焊接', '涂胶', '下件检测'], product: 'Model C 白车身总成', doingIdx: 1 },
   'LN-WELD-2': { taktSec: 72, steps: ['装夹定位', '激光焊接', '下件检测'], product: '后地板总成', doingIdx: 1 },
+  'LN-WELD-3': { taktSec: 69, steps: ['装夹定位', '螺柱焊', '机器人焊接', '视觉检测'], product: '前纵梁总成', doingIdx: 2 },
   'LN-PAINT-1': { taktSec: 95, steps: ['前处理', '电泳', '中涂', '面漆', '流平烘干'], product: 'Model C 车身涂装', doingIdx: 2 },
+  'LN-PAINT-2': { taktSec: 102, steps: ['遮蔽', '面漆喷涂', '烘干', '抛光'], product: '双色车顶面漆', doingIdx: 1 },
   'LN-ASSY-1': { taktSec: 78, steps: ['内饰装配', '底盘合装', '油液加注', '下线检测'], product: 'Model C 整车装配', doingIdx: 1 },
   'LN-ASSY-2': { taktSec: 84, steps: ['内饰装配', '风挡涂胶', '四轮定位', '下线检测'], product: 'Model C 整车装配', doingIdx: 0 },
+  'LN-ASSY-3': { taktSec: 80, steps: ['内饰装配', '玻璃安装', '注油', '路试'], product: 'Model D 整车装配', doingIdx: 1 },
   'LN-BAT-1': { taktSec: 13, steps: ['极片上料', '卷绕', '注液', '化成', '分容'], product: 'LFP-280Ah 电芯', doingIdx: 1 },
   'LN-BAT-2': { taktSec: 48, steps: ['模组上件', '堆叠', '气密检测', 'EOL 测试'], product: '标准电池包 PACK-96s', doingIdx: 1 },
   'LN-INJ-1': { taktSec: 35, steps: ['原料干燥', '注塑成形', '取件', '去毛边'], product: '前保险杠骨架', doingIdx: 1 },
+  'LN-INJ-2': { taktSec: 40, steps: ['混料', '注塑成形', '取件', '检验'], product: '仪表板本体', doingIdx: 1 },
   'LN-MACH-1': { taktSec: 210, steps: ['粗加工', '精加工', '清洗', '三坐标检测'], product: '电机壳体 EM-3', doingIdx: 1 },
 }
 const DEFAULT_LINE_PROFILE: LineProfile = { taktSec: 60, steps: ['上料', '加工', '检测'], product: '通用件', doingIdx: 1 }
@@ -123,10 +128,14 @@ function lineAlert(devices: DeviceCell[]): string | undefined {
   return undefined
 }
 
-/** /line 选择器：迷你监控卡（红线置顶，其余保持产线原序） */
+/** /line 选择器：迷你监控卡（红线置顶，其余保持产线原序）。
+ *  visibleIds = 视野内产线集：状态/产量等标量对全部产线计算（汇总带需要），
+ *  仅**小时趋势序列**（渲染才用的流式数据）对视野内产线生成 —— 视野外停止
+ *  产生趋势数据，对齐真实端点按可见行订阅时序序列。 */
 export function buildLineCards(
   factoryId = 'F01',
   workshopIds: string[] | 'all' = 'all',
+  visibleIds?: string[],
 ): LineSummaryCard[] {
   const eq = buildEquipmentOverview(factoryId, workshopIds)
   const byLine = new Map<string, DeviceCell[]>()
@@ -135,6 +144,7 @@ export function buildLineCards(
     arr.push(d)
     byLine.set(d.lineId, arr)
   }
+  const want = visibleIds ? new Set(visibleIds) : null
   const { elapsedMin } = shiftNow()
   const cards: LineSummaryCard[] = []
   for (const line of LINES) {
@@ -153,7 +163,8 @@ export function buildLineCards(
       taktDeviationPct: m.deviationPct,
       output: { good: m.good, plan: m.plan },
       deviceDots: devices.map((d) => d.state),
-      hourly: hourlyOf(m.profile.taktSec, state),
+      // 视野外不生成趋势序列（渲染才需要），空数组
+      hourly: want && !want.has(line.id) ? [] : hourlyOf(m.profile.taktSec, state),
       currentWo: seq('WO', 1940 + LINES.indexOf(line)),
       alert: lineAlert(devices),
     })

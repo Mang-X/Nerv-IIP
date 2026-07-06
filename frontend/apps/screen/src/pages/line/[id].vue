@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RingGauge, ScreenPanel, Sparkline, StatusTag, TrendChart } from '@nerv-iip/ui'
-import { ChevronDown } from 'lucide-vue-next'
+import { ChevronDown, CircleCheck, Gauge, OctagonAlert, Timer, UserRound, Users } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
@@ -110,21 +110,21 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
           <!-- 当班四格：一次合格率 / 停机 / 线长 / 在岗 -->
           <dl class="lb-stats">
             <div>
-              <dt>一次合格率</dt>
+              <dt><CircleCheck :size="13" class="lb-stat-ic" />一次合格率</dt>
               <dd :class="{ warn: board.fpy < 98 }">{{ board.fpy }}<small>%</small></dd>
             </div>
             <div>
-              <dt>当班停机</dt>
+              <dt><OctagonAlert :size="13" class="lb-stat-ic" />当班停机</dt>
               <dd :class="{ bad: board.downtime.count > 0 }">
                 {{ board.downtime.count }}<small> 次 · {{ board.downtime.totalMin }} min</small>
               </dd>
             </div>
             <div>
-              <dt>线长</dt>
+              <dt><UserRound :size="13" class="lb-stat-ic" />线长</dt>
               <dd class="lb-stat-txt">{{ board.crew.leader }}</dd>
             </div>
             <div>
-              <dt>在岗</dt>
+              <dt><Users :size="13" class="lb-stat-ic" />在岗</dt>
               <dd>{{ board.crew.operators }}<small> 人</small></dd>
             </div>
           </dl>
@@ -189,14 +189,17 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
             </ScreenPanel>
 
             <ScreenPanel title="节拍达成" class="lb-takt">
-              <div class="lb-takt-v" :class="{ late: board.takt.deviationPct > 0 }">
-                {{ board.takt.deviationPct > 0 ? '+' : '' }}{{ board.takt.deviationPct }}<small>%</small>
+              <div class="lb-takt-in">
+                <div class="lb-takt-v" :class="{ late: board.takt.deviationPct > 0 }">
+                  <Timer :size="26" class="lb-takt-ic" :class="{ late: board.takt.deviationPct > 0 }" />
+                  {{ board.takt.deviationPct > 0 ? '+' : '' }}{{ board.takt.deviationPct }}<small>%</small>
+                </div>
+                <p class="lb-takt-sub">
+                  标准 {{ board.takt.standardSec }}s · 实际
+                  <b :class="{ late: board.takt.deviationPct > 0 }">{{ board.takt.actualSec }}s</b>
+                </p>
+                <p class="lb-takt-hint">{{ board.takt.deviationPct > 0 ? '节拍落后，关注瓶颈工位' : '节拍达标' }}</p>
               </div>
-              <p class="lb-takt-sub">
-                标准 {{ board.takt.standardSec }}s · 实际
-                <b :class="{ late: board.takt.deviationPct > 0 }">{{ board.takt.actualSec }}s</b>
-              </p>
-              <p class="lb-takt-hint">{{ board.takt.deviationPct > 0 ? '节拍落后，关注瓶颈工位' : '节拍达标' }}</p>
             </ScreenPanel>
 
             <ScreenPanel title="产线 OEE" class="lb-oee">
@@ -205,7 +208,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
               </template>
               <div class="lb-oee-in">
                 <div class="lb-oee-big" :class="{ warn: board.oee.overall < 75, bad: board.oee.overall < 55 }">
-                  {{ board.oee.overall }}<small>%</small>
+                  <Gauge :size="22" class="lb-oee-ic" />{{ board.oee.overall }}<small>%</small>
                 </div>
                 <dl class="lb-oee-rates">
                   <div>
@@ -578,12 +581,32 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
   font-variant-numeric: tabular-nums;
 }
 
+.lb-takt {
+  display: flex;
+  flex-direction: column;
+}
+.lb-takt-in {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
 .lb-takt-v {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 42px;
   font-weight: 800;
   line-height: 1;
   color: var(--sb-green);
   font-variant-numeric: tabular-nums;
+}
+.lb-takt-ic {
+  color: var(--sb-green);
+  opacity: 0.85;
+}
+.lb-takt-ic.late {
+  color: var(--sb-red);
 }
 .lb-takt-v small {
   font-size: 20px;
@@ -638,6 +661,13 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
 .lb-stats dt {
   font-size: 12px;
   color: var(--sb-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.lb-stat-ic {
+  color: var(--sb-faint);
+  flex: none;
 }
 .lb-stats dd {
   margin: 4px 0 0;
@@ -662,19 +692,31 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
   letter-spacing: 0.04em;
 }
 
-/* 产线 OEE 卡 */
+/* 产线 OEE 卡（内容垂直居中） */
+.lb-oee {
+  display: flex;
+  flex-direction: column;
+}
 .lb-oee-in {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 18px;
 }
 .lb-oee-big {
-  font-size: 46px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 44px;
   font-weight: 800;
   line-height: 1;
   color: var(--sb-green);
   font-variant-numeric: tabular-nums;
   flex: none;
+}
+.lb-oee-ic {
+  color: currentColor;
+  opacity: 0.85;
 }
 .lb-oee-big small {
   font-size: 19px;
