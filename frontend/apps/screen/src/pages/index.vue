@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import * as icons from 'lucide-vue-next'
-import { ScreenPanel } from '@nerv-iip/ui'
-import { type Component, computed } from 'vue'
+import { GlowDivider, KpiBar, ScreenSegmented, StatusLight, StatusTag } from '@nerv-iip/ui'
+import { useNow } from '@vueuse/core'
+import { Activity, AlertTriangle, Cpu, PackageCheck } from 'lucide-vue-next'
+import { type Component, computed, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
+import LauncherCard from '@/components/launcher/LauncherCard.vue'
+import type { LauncherSummary } from '@/data/contracts/launcher'
+import { fetchLauncherSummary } from '@/data/fetchers/launcher'
 import { SCREENS } from '@/data/screens'
+import { ScreenScaler, useScreenData } from '@/screen-kit'
 
 const scope = useAccessScope()
 const cards = computed(() => SCREENS.filter((s) => scope.canSeeScreen(s.key)))
@@ -13,128 +19,259 @@ const iconMap = icons as unknown as Record<string, Component>
 function iconOf(name: string): Component {
   return iconMap[name] ?? iconMap.SquareDashed
 }
+
+// —— 门厅实时摘要（mock seam，#570 就绪只换 fetcher）——
+const { data: summary, lastUpdated, isStale, refresh } = useScreenData<LauncherSummary>(
+  () => fetchLauncherSummary(scope.currentFactoryId, scope.persona.workshopIds),
+  { intervalMs: 5000 },
+)
+watch(
+  () => [scope.currentFactoryId, scope.personaId],
+  async () => {
+    await refresh()
+    // 撞上在途轮询（inFlight 跳过）时补一拍，避免短暂显示旧工厂数据
+    if (summary.value && summary.value.factoryId !== scope.currentFactoryId) await refresh()
+  },
+)
+
+function glanceOf(key: string) {
+  return summary.value?.glances.find((g) => g.key === key)
+}
+
+// —— 工厂切换（多工厂 persona 才显示）——
+const factoryOptions = computed(() => scope.factories.map((f) => ({ label: f.name, value: f.id })))
+const factoryModel = computed<string | number>({
+  get: () => scope.currentFactoryId,
+  set: (id) => scope.switchFactory(String(id)),
+})
+
+// —— 时钟 / 更新时间 ——
+const now = useNow({ interval: 1000 })
+const pad = (n: number) => String(n).padStart(2, '0')
+const clock = computed(
+  () => `${pad(now.value.getHours())}:${pad(now.value.getMinutes())}:${pad(now.value.getSeconds())}`,
+)
+const WEEKDAYS = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+const dateText = computed(() => {
+  const d = now.value
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${WEEKDAYS[d.getDay()]}`
+})
+const updatedText = computed(() => {
+  const ts = lastUpdated.value
+  if (!ts) return '—'
+  const d = new Date(ts)
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+})
+
+// —— 全厂脉搏 KPI 带 ——
+interface KpiCell {
+  icon?: Component
+  value: string
+  label: string
+  tone?: 'cyan' | 'amber' | 'green'
+  ring?: number
+}
+const kpiItems = computed<KpiCell[]>(() => {
+  const k = summary.value?.kpis
+  if (!k) return []
+  return [
+    { icon: PackageCheck, value: k.output.toLocaleString('en-US'), label: '今日产量（件）' },
+    { value: `${k.achievement}%`, label: '计划达成率', tone: 'cyan', ring: k.achievement },
+    { icon: Cpu, value: `${k.runningDevices}/${k.totalDevices}`, label: '运行设备' },
+    { icon: AlertTriangle, value: String(k.openAlarms), label: '未恢复报警', tone: k.openAlarms > 0 ? 'amber' : undefined },
+    { icon: Activity, value: `${k.health}%`, label: '综合健康度', tone: k.health >= 85 ? 'green' : 'amber' },
+  ]
+})
+
+const scopeCounts = computed(() => {
+  const devices = summary.value?.kpis.totalDevices
+  return `${scope.visibleWorkshops.length} 车间 · ${scope.visibleLines.length} 产线 · ${devices ?? '—'} 设备`
+})
 </script>
 
 <template>
-  <div class="launcher">
-    <header class="launcher__top">
-      <div class="brand">
-        <span class="brand__title">Nerv-IIP 工业数据大屏</span>
-        <span class="brand__sub">生产指挥中心</span>
-      </div>
-      <div v-if="scope.factories.length > 1" class="factory-switch">
-        <button
-          v-for="f in scope.factories"
-          :key="f.id"
-          type="button"
-          :class="['factory-switch__btn', { active: f.id === scope.currentFactoryId }]"
-          @click="scope.switchFactory(f.id)"
-        >
-          {{ f.name }}
-        </button>
-      </div>
-    </header>
+  <ScreenScaler :design-width="1920" :design-height="1080">
+    <div class="hall">
+      <header class="hall-top">
+        <div>
+          <h1 class="hall-title">生产指挥中心</h1>
+          <p class="hall-sub">NERV-IIP 工业数据大屏</p>
+        </div>
+        <div class="hall-clock">
+          <div class="hall-time">{{ clock }}</div>
+          <div class="hall-meta">
+            <span>{{ dateText }}</span>
+            <StatusLight :tone="isStale ? 'idle' : 'run'" :label="isStale ? '数据链路波动' : '数据链路正常'" />
+          </div>
+        </div>
+      </header>
 
-    <main class="launcher__grid">
-      <RouterLink v-for="s in cards" :key="s.key" :to="s.route" class="card-link">
-        <ScreenPanel :accent="s.accent" class="card">
-          <component :is="iconOf(s.icon)" class="card__icon" :size="46" :stroke-width="1.4" />
-          <div class="card__title">{{ s.title }}</div>
-          <div class="card__desc">{{ s.desc }}</div>
-        </ScreenPanel>
-      </RouterLink>
-      <p v-if="cards.length === 0" class="empty">当前账号无可见大屏</p>
-    </main>
-  </div>
+      <GlowDivider />
+
+      <div class="hall-ctx">
+        <div class="hall-ctx-left">
+          <ScreenSegmented
+            v-if="scope.factories.length > 1"
+            v-model="factoryModel"
+            :options="factoryOptions"
+          />
+          <StatusTag tone="cyan" :label="scope.persona.label" />
+        </div>
+        <span class="hall-counts">{{ scopeCounts }}</span>
+      </div>
+
+      <div class="hall-kpi">
+        <KpiBar v-if="kpiItems.length" :items="kpiItems" />
+        <div v-else class="hall-kpi-skl" aria-hidden="true" />
+      </div>
+
+      <main class="hall-cards" :class="{ single: cards.length === 1 }">
+        <RouterLink v-for="s in cards" :key="s.key" :to="s.route" class="hall-card-link">
+          <LauncherCard :title="s.title" :desc="s.desc" :icon="iconOf(s.icon)" :glance="glanceOf(s.key)" />
+        </RouterLink>
+        <p v-if="cards.length === 0" class="hall-empty">当前账号无可见大屏，请联系管理员开通</p>
+      </main>
+
+      <footer class="hall-foot">
+        <span>数据更新 {{ updatedText }}</span>
+        <span>演示数据流 · 后端接入待 #570</span>
+      </footer>
+    </div>
+  </ScreenScaler>
 </template>
 
 <style scoped>
-.launcher {
-  min-height: 100vh;
-  background: var(--sb-bg);
-  color: var(--sb-text);
-  padding: 48px 64px;
+.hall {
+  width: 1920px;
+  height: 1080px;
+  box-sizing: border-box;
+  padding: 40px 64px 26px;
   display: flex;
   flex-direction: column;
-  gap: 40px;
+  gap: 22px;
+  color: var(--sb-text);
+  /* 门厅底：顶部一层极淡的蓝色环境光 + 96px 对齐网格（耳语级），保持近黑 */
+  background:
+    radial-gradient(1100px 460px at 50% -6%, rgba(74, 166, 238, 0.06), transparent 70%),
+    linear-gradient(rgba(255, 255, 255, 0.013) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.013) 1px, transparent 1px),
+    var(--sb-bg);
+  background-size:
+    auto,
+    96px 96px,
+    96px 96px,
+    auto;
 }
-.launcher__top {
+
+.hall-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+.hall-title {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #fff;
+}
+.hall-sub {
+  margin: 7px 0 0;
+  font-size: 15px;
+  letter-spacing: 0.18em;
+  color: var(--sb-muted);
+}
+.hall-clock {
+  text-align: right;
+}
+.hall-time {
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  text-shadow: var(--sb-value-glow);
+}
+.hall-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-top: 9px;
+  font-size: 13px;
+  color: var(--sb-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.hall-ctx {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
-.brand__title {
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-}
-.brand__sub {
-  margin-left: 14px;
-  color: var(--sb-muted);
-}
-.factory-switch {
+.hall-ctx-left {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 14px;
 }
-.factory-switch__btn {
-  padding: 8px 18px;
-  border: 1px solid var(--sb-line-2);
-  border-radius: var(--sb-radius);
-  background: transparent;
-  color: var(--sb-muted);
-  cursor: pointer;
-  transition: color 0.18s var(--sb-ease), border-color 0.18s var(--sb-ease);
+.hall-counts {
+  font-size: 14px;
+  color: var(--sb-faint);
+  font-variant-numeric: tabular-nums;
 }
-.factory-switch__btn.active {
-  color: var(--sb-cyan);
-  border-color: var(--sb-cyan-dim);
+
+.hall-kpi {
+  min-height: 74px;
 }
-.factory-switch__btn:active {
-  transform: scale(0.985);
+.hall-kpi-skl {
+  height: 74px;
+  border: 1px solid var(--sb-line);
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--sb-panel-a), var(--sb-panel-b));
+  opacity: 0.5;
 }
-.launcher__grid {
+
+.hall-cards {
   flex: 1;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 28px;
-  align-content: start;
-}
-.card-link {
-  text-decoration: none;
-}
-.card {
+  min-height: 0;
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 40px 32px;
-  min-height: 220px;
-  cursor: pointer;
-  transition: transform 0.2s var(--sb-ease-emphasized);
+  gap: 26px;
+  align-items: stretch;
 }
-.card-link:hover .card {
-  transform: translateY(-4px);
+.hall-cards.single {
+  justify-content: center;
+  align-items: center;
 }
-.card__icon {
-  color: var(--sb-cyan);
+.hall-cards.single .hall-card-link {
+  flex: 0 1 620px;
+  height: min(600px, 100%);
 }
-.card__title {
-  font-size: 24px;
-  font-weight: 600;
+.hall-card-link {
+  flex: 1 1 0;
+  min-width: 0;
+  display: block;
+  text-decoration: none;
+  border-radius: var(--sb-radius);
 }
-.card__desc {
-  color: var(--sb-muted);
-  font-size: 15px;
+.hall-card-link:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--sb-bg),
+    0 0 0 4px var(--sb-cyan-dim);
 }
-.empty {
+.hall-empty {
+  margin: auto;
+  font-size: 16px;
   color: var(--sb-faint);
 }
-@media (prefers-reduced-motion: reduce) {
-  .card,
-  .factory-switch__btn {
-    transition: none;
-  }
-  .card-link:hover .card {
-    transform: none;
-  }
+
+.hall-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--sb-divider);
+  padding-top: 14px;
+  font-size: 13px;
+  color: var(--sb-faint);
+  font-variant-numeric: tabular-nums;
 }
 </style>
