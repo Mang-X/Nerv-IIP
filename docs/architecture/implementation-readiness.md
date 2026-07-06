@@ -386,6 +386,10 @@
 
 首版 Observability 阈值告警闭环已按 ADR 0018 选择内置轻量扫描器，而不是立即引入 vmalert。Notification 进程承载扫描器宿主，但规则命名与事件类型属于 Observability；扫描器只提交 Notification intent，不直接改写 Notification 领域事实。AppHost 和 Compose baseline 已带 `Observability:Alerts` 规则：AppHub health、Notification CAP/DLQ backlog、Connector Host heartbeat stale、PostgreSQL connection watermark 和 PostgreSQL database-size watermark。告警产生 `observability.AlertFiring` task intent，恢复产生 `observability.AlertResolved` message intent；去重、静默窗口、外部通道投递和站内消息继续复用 Notification 现有能力。完整 VictoriaMetrics metrics backend + vmalert 仍是后续触发条件，不属于本切片。
 
+### 2026-07-06 Ops/AppHub Connector Host 心跳生命周期记录（MAN-418 / #736）
+
+Ops 任务事实当前以 PostgreSQL `operation_tasks`、`operation_attempts`、`operation_templates` 和 `audit_records` 为恢复来源；本切片只补齐通用 operation type registry 的内置类型，新增 `device.control.command` 注册占位用于后续 #687 设备控制命令接入审批/租约骨架，不在 Ops 或 Connector Host 内实现设备控制业务。AppHub `application_instances` 新增 Connector Host 归属列和索引，PostgreSQL profile 可启用 `AppHub:HeartbeatTimeoutScan` 扫描器：Connector Host 心跳超时会发布 `apphub.ConnectorHostUnreachable`，下一次 reachable heartbeat 发布 `apphub.ConnectorHostRestored`。Notification 消费这两个 AppHub 事件，分别生成 critical task 和 info message intent；该链路复用 #735 已落地的站内任务/消息与告警承载能力，但不替代 Observability 进程级阈值告警。
+
 ### 可以并行但不阻塞开工的事项
 
 1. Ops 持久化 outbox、复杂失败重试、审批 Console 管理入口和生产级调度策略。

@@ -127,6 +127,8 @@ builder.Services.AddScoped<SchedulePlanInvalidatedIntegrationEventHandlerForNoti
 builder.Services.AddScoped<AlarmRaisedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<AlarmClearedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<AlarmEscalatedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<ConnectorHostUnreachableIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<ConnectorHostRestoredIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<InspectionTaskOverdueIntegrationEventHandlerForNotification>();
 
 var app = builder.Build();

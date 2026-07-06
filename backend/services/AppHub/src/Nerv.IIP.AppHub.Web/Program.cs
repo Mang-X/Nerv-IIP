@@ -2,6 +2,7 @@ using DotNetCore.CAP;
 using FastEndpoints;
 using Nerv.IIP.AppHub.Infrastructure;
 using Nerv.IIP.AppHub.Web.Application.Connectors;
+using Nerv.IIP.AppHub.Web.Application.Commands;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
 using Nerv.IIP.Caching;
@@ -63,6 +64,8 @@ else
     builder.Services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
 }
 builder.Services.AddAppHubPersistence(builder.Configuration);
+builder.Services.Configure<AppHubHeartbeatTimeoutScanOptions>(
+    builder.Configuration.GetSection(AppHubHeartbeatTimeoutScanOptions.SectionName));
 builder.Services.AddNervIipLocalization();
 builder.Services.AddAppHubIntegrationEventDeadLetterStore(usePostgreSql);
 builder.Services.AddScoped<OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState>();
@@ -71,6 +74,8 @@ builder.Services.AddScoped<AppHubPublishedEventSink>();
 if (usePostgreSql)
 {
     builder.Services.AddScoped<AppHubDatabaseMigrationRunner>();
+    builder.Services.AddScoped<AppHubHeartbeatTimeoutScanner>();
+    builder.Services.AddHostedService<AppHubHeartbeatTimeoutScanWorker>();
 }
 
 var app = builder.Build();
