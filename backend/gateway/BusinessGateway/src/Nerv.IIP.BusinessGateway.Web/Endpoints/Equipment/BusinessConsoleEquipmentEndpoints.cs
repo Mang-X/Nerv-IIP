@@ -240,8 +240,14 @@ public sealed class AcknowledgeBusinessConsoleEquipmentAlarmEndpoint(
     protected override Task<BusinessConsoleAlarmLifecycleResponse> ForwardAsync(
         BusinessConsoleAcknowledgeAlarmRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        industrialTelemetry.AcknowledgeAlarmAsync(tokenProvider.BearerToken, Route<string>("alarmEventId")!, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
+        var downstreamRequest = string.IsNullOrWhiteSpace(request.AcknowledgedBy)
+            ? request with { AcknowledgedBy = actorRef }
+            : request;
+        return industrialTelemetry.AcknowledgeAlarmAsync(tokenProvider.BearerToken, Route<string>("alarmEventId")!, downstreamRequest, cancellationToken);
+    }
 }
 
 [Tags("Business Console Equipment")]
@@ -262,8 +268,14 @@ public sealed class ShelveBusinessConsoleEquipmentAlarmEndpoint(
     protected override Task<BusinessConsoleAlarmLifecycleResponse> ForwardAsync(
         BusinessConsoleShelveAlarmRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        industrialTelemetry.ShelveAlarmAsync(tokenProvider.BearerToken, Route<string>("alarmEventId")!, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
+        var downstreamRequest = string.IsNullOrWhiteSpace(request.ShelvedBy)
+            ? request with { ShelvedBy = actorRef }
+            : request;
+        return industrialTelemetry.ShelveAlarmAsync(tokenProvider.BearerToken, Route<string>("alarmEventId")!, downstreamRequest, cancellationToken);
+    }
 }
 
 [Tags("Business Console Equipment")]
@@ -307,7 +319,7 @@ public sealed class BusinessConsoleAcknowledgeAlarmRequestValidator : Validator<
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.AcknowledgedBy).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.AcknowledgedBy).MaximumLength(150);
     }
 }
 
@@ -317,8 +329,7 @@ public sealed class BusinessConsoleShelveAlarmRequestValidator : Validator<Busin
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.DurationMinutes).InclusiveBetween(1, 24 * 60);
-        RuleFor(x => x.ShelvedBy).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ShelvedBy).MaximumLength(150);
         RuleFor(x => x.Reason).MaximumLength(300);
     }
 }

@@ -36216,8 +36216,7 @@
         "additionalProperties": false,
         "required": [
           "organizationId",
-          "environmentId",
-          "acknowledgedBy"
+          "environmentId"
         ],
         "properties": {
           "organizationId": {
@@ -36239,8 +36238,7 @@
           "acknowledgedBy": {
             "type": "string",
             "maxLength": 150,
-            "minLength": 0,
-            "nullable": false
+            "minLength": 0
           }
         }
       },
@@ -36249,8 +36247,7 @@
         "additionalProperties": false,
         "required": [
           "organizationId",
-          "environmentId",
-          "shelvedBy"
+          "environmentId"
         ],
         "properties": {
           "organizationId": {
@@ -36271,15 +36268,12 @@
           },
           "durationMinutes": {
             "type": "integer",
-            "format": "int32",
-            "maximum": 1440.0,
-            "minimum": 1.0
+            "format": "int32"
           },
           "shelvedBy": {
             "type": "string",
             "maxLength": 150,
-            "minLength": 0,
-            "nullable": false
+            "minLength": 0
           },
           "reason": {
             "type": "string",

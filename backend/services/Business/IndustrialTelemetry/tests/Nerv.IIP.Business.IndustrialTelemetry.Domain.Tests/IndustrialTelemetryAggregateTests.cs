@@ -177,6 +177,21 @@ public sealed class IndustrialTelemetryAggregateTests
     }
 
     [Fact]
+    public void Alarm_cannot_be_directly_escalated_while_shelved()
+    {
+        var raisedAtUtc = new DateTimeOffset(2026, 7, 6, 8, 0, 0, TimeSpan.Zero);
+        var alarm = AlarmEvent.Raise("org-001", "env-dev", "DEV-CNC-01", "OVER_TEMP", "critical", raisedAtUtc, "alarm-ext-001");
+        alarm.Shelve(raisedAtUtc.AddMinutes(3), raisedAtUtc.AddMinutes(33), "operator-001", "maintenance window");
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            alarm.Escalate(raisedAtUtc.AddMinutes(10), "critical-severity", ["role:maintenance-manager"]));
+
+        Assert.Equal("shelved alarms cannot be escalated.", ex.Message);
+        Assert.Null(alarm.EscalatedAtUtc);
+        Assert.Empty(alarm.GetDomainEvents().OfType<AlarmEscalatedDomainEvent>());
+    }
+
+    [Fact]
     public void Telemetry_summary_keeps_coarse_facts_not_raw_time_series()
     {
         var summary = TelemetrySummary.Record("org-001", "env-dev", "DEV-CNC-01", "spindle.speed", new DateTimeOffset(2026, 5, 23, 10, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 5, 23, 10, 5, 0, TimeSpan.Zero), 30, 1200m, 1500m, 1350m);

@@ -945,7 +945,8 @@ public sealed record RunAlarmEscalationsCommand(
     DateTimeOffset AsOfUtc,
     int UnacknowledgedTimeoutMinutes,
     IReadOnlyCollection<string> SeverityLevels,
-    IReadOnlyCollection<string> RecipientRefs) : ICommand<RunAlarmEscalationsResult>;
+    IReadOnlyCollection<string> RecipientRefs,
+    int MaxAlarms = 500) : ICommand<RunAlarmEscalationsResult>;
 
 public sealed record RunAlarmEscalationsResult(int EscalatedCount, IReadOnlyCollection<AlarmEventId> AlarmEventIds);
 
@@ -958,6 +959,7 @@ public sealed class RunAlarmEscalationsCommandValidator : AbstractValidator<RunA
         RuleFor(x => x.UnacknowledgedTimeoutMinutes).GreaterThanOrEqualTo(0);
         RuleFor(x => x.RecipientRefs).NotEmpty();
         RuleForEach(x => x.RecipientRefs).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.MaxAlarms).InclusiveBetween(1, 5000);
     }
 }
 
@@ -971,6 +973,7 @@ public sealed class RunAlarmEscalationsCommandHandler(ApplicationDbContext dbCon
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.Status != "cleared")
             .OrderBy(x => x.RaisedAtUtc)
+            .Take(request.MaxAlarms)
             .ToArrayAsync(cancellationToken);
         var escalated = new List<AlarmEventId>();
         var timeout = TimeSpan.FromMinutes(request.UnacknowledgedTimeoutMinutes);

@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
@@ -16,6 +17,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Auth;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
@@ -800,6 +802,58 @@ public sealed class IndustrialTelemetryEndpointContractTests
             x.DeviceAssetId == "DEV-OIL-09"
             && x.ReasonCode == EquipmentRuntimeReasonCodes.ActiveAlarm
             && x.SourceReferenceId == alarm.Id.ToString());
+    }
+
+    [Fact]
+    public async Task List_alarm_events_active_status_includes_lifecycle_active_states_and_excludes_cleared()
+    {
+        await using var dbContext = CreateDbContext(nameof(List_alarm_events_active_status_includes_lifecycle_active_states_and_excludes_cleared));
+        var raisedAtUtc = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var raised = AlarmEvent.Raise("org-001", "env-dev", "DEV-OIL-01", "OIL_TEMP_HIGH", "warning", raisedAtUtc, "alarm-oil-001");
+        var acknowledged = AlarmEvent.Raise("org-001", "env-dev", "DEV-OIL-02", "OIL_TEMP_HIGH", "warning", raisedAtUtc.AddMinutes(1), "alarm-oil-002");
+        var shelved = AlarmEvent.Raise("org-001", "env-dev", "DEV-OIL-03", "OIL_TEMP_HIGH", "warning", raisedAtUtc.AddMinutes(2), "alarm-oil-003");
+        var cleared = AlarmEvent.Raise("org-001", "env-dev", "DEV-OIL-04", "OIL_TEMP_HIGH", "warning", raisedAtUtc.AddMinutes(3), "alarm-oil-004");
+        acknowledged.Acknowledge(raisedAtUtc.AddMinutes(4), "operator-001");
+        shelved.Shelve(raisedAtUtc.AddMinutes(5), raisedAtUtc.AddMinutes(35), "operator-001", "maintenance window");
+        cleared.Clear(raisedAtUtc.AddMinutes(6), "operator-001", "recovered");
+        dbContext.AlarmEvents.AddRange(raised, acknowledged, shelved, cleared);
+        await dbContext.SaveChangesAsync();
+
+        var response = await new ListAlarmEventsQueryHandler(dbContext).Handle(
+            new ListAlarmEventsQuery("org-001", "env-dev", null, "active"),
+            CancellationToken.None);
+
+        Assert.Equal(3, response.Total);
+        Assert.Contains(response.Items, x => x.AlarmEventId == raised.Id && x.Status == "raised");
+        Assert.Contains(response.Items, x => x.AlarmEventId == acknowledged.Id && x.Status == "acknowledged");
+        Assert.Contains(response.Items, x => x.AlarmEventId == shelved.Id && x.Status == "shelved");
+        Assert.DoesNotContain(response.Items, x => x.AlarmEventId == cleared.Id);
+    }
+
+    [Fact]
+    public void Alarm_escalation_scheduler_reads_configured_scopes()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:OrganizationId"] = " org-001 ",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:EnvironmentId"] = " env-dev ",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:UnacknowledgedTimeoutMinutes"] = "30",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:SeverityLevels:0"] = "critical",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:SeverityLevels:1"] = "high",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:RecipientRefs:0"] = "role:maintenance-manager",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:MaxAlarms"] = "250",
+            })
+            .Build();
+
+        var scope = Assert.Single(AlarmEscalationScheduler.GetConfiguredScopes(configuration));
+
+        Assert.Equal("org-001", scope.OrganizationId);
+        Assert.Equal("env-dev", scope.EnvironmentId);
+        Assert.Equal(30, scope.UnacknowledgedTimeoutMinutes);
+        Assert.Equal(["critical", "high"], scope.SeverityLevels);
+        Assert.Equal(["role:maintenance-manager"], scope.RecipientRefs);
+        Assert.Equal(250, scope.MaxAlarms);
     }
 
     [Fact]

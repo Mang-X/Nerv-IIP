@@ -133,12 +133,18 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
 {
     public async Task<PagedListResponse<AlarmEventListItem>> Handle(ListAlarmEventsQuery request, CancellationToken cancellationToken)
     {
+        var status = NormalizeStatus(request.Status);
         var query = dbContext.AlarmEvents
             .AsNoTracking()
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
-            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
-            .Where(x => request.Status == null || x.Status == request.Status);
+            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId);
+        query = status switch
+        {
+            null => query,
+            "active" => query.Where(x => x.Status != "cleared"),
+            _ => query.Where(x => x.Status == status),
+        };
         var total = await query.CountAsync(cancellationToken);
         var alarmEvents = await query
             .OrderByDescending(x => x.RaisedAtUtc)
@@ -173,6 +179,12 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
                 x.EscalationRecipientRefs))
             .ToArray();
         return new PagedListResponse<AlarmEventListItem>(items, total);
+    }
+
+    private static string? NormalizeStatus(string? status)
+    {
+        var normalized = status?.Trim().ToLowerInvariant();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
 }
 

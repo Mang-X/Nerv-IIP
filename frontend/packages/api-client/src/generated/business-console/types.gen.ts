@@ -4539,7 +4539,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     organizationId: string;
     environmentId: string;
     acknowledgedAtUtc?: string;
-    acknowledgedBy: string;
+    acknowledgedBy?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleShelveAlarmRequest = {
@@ -4547,7 +4547,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     environmentId: string;
     shelvedAtUtc?: string;
     durationMinutes?: number;
-    shelvedBy: string;
+    shelvedBy?: string;
     reason?: string | null;
 };
 

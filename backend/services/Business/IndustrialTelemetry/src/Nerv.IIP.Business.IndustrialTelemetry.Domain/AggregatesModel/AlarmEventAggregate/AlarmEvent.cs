@@ -223,6 +223,12 @@ public sealed class AlarmEvent : Entity<AlarmEventId>, IAggregateRoot
     public void Escalate(DateTimeOffset escalatedAtUtc, string escalationReason, IReadOnlyCollection<string> recipientRefs)
     {
         EnsureActive("cleared alarms cannot be escalated.");
+        if (IsShelvedAt(escalatedAtUtc))
+        {
+            throw new InvalidOperationException("shelved alarms cannot be escalated.");
+        }
+
+        ExpireShelving(escalatedAtUtc);
         if (EscalatedAtUtc is not null)
         {
             return;

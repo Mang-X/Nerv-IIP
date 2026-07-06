@@ -3897,7 +3897,7 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.DeviceAssetId,
-                request.Status ?? "raised",
+                request.Status ?? "active",
                 request.Skip,
                 request.Take),
             cancellationToken);

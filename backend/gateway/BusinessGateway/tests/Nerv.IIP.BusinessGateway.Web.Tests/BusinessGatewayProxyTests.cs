@@ -2125,7 +2125,7 @@ public sealed class BusinessGatewayProxyTests
         await telemetry.GetRuntimeAvailabilityAsync("internal-token-001", request, CancellationToken.None);
         await telemetry.GetDeviceRuntimeAvailabilityAsync("internal-token-001", "DEV-OIL-01", request, CancellationToken.None);
         await telemetry.GetDeviceCurrentStateAsync("internal-token-001", "DEV-OIL-01", new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"), CancellationToken.None);
-        await telemetry.ListActiveAlarmsAsync("internal-token-001", new BusinessConsoleEquipmentAlarmListRequest("org-001", "env-dev", null, "raised"), CancellationToken.None);
+        await telemetry.ListActiveAlarmsAsync("internal-token-001", new BusinessConsoleEquipmentAlarmListRequest("org-001", "env-dev", null, null), CancellationToken.None);
         await telemetry.ListAlarmRulesAsync("internal-token-001", new BusinessConsoleTelemetryAlarmRuleListRequest("org-001", "env-dev", "DEV-OIL-01", true), CancellationToken.None);
         await telemetry.CreateOrUpdateAlarmRuleAsync("internal-token-001", new BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest("org-001", "env-dev", "DEV-OIL-01", "RULE-001", "TEMP_HIGH", "warning", "temperature", ">=", 95m, "celsius", true), CancellationToken.None);
         await telemetry.QueryOeeAsync("internal-token-001", new BusinessConsoleTelemetryOeeRequest("org-001", "env-dev", "DEV-OIL-01", request.WindowStartUtc, request.WindowEndUtc), CancellationToken.None);
@@ -2139,7 +2139,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("/api/business/v1/iiot/devices/DEV-OIL-01/current-state", telemetryHandler.Requests[2].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev", telemetryHandler.Requests[2].RequestUri!.Query.TrimStart('?'));
         Assert.Equal("/api/business/v1/iiot/alarms", telemetryHandler.Requests[3].RequestUri!.AbsolutePath);
-        Assert.Equal("organizationId=org-001&environmentId=env-dev&status=raised&skip=0&take=100", telemetryHandler.Requests[3].RequestUri!.Query.TrimStart('?'));
+        Assert.Equal("organizationId=org-001&environmentId=env-dev&status=active&skip=0&take=100", telemetryHandler.Requests[3].RequestUri!.Query.TrimStart('?'));
         Assert.Equal("/api/business/v1/iiot/alarm-rules", telemetryHandler.Requests[4].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OIL-01&isEnabled=true&skip=0&take=100", telemetryHandler.Requests[4].RequestUri!.Query.TrimStart('?'));
         Assert.Equal(HttpMethod.Post, telemetryHandler.Requests[5].Method);

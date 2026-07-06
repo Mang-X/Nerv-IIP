@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
 using Nerv.IIP.Contracts.EquipmentRuntime;
@@ -52,6 +53,7 @@ try
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
+    builder.Services.AddHostedService<AlarmEscalationScheduler>();
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
     if (isTesting && string.IsNullOrWhiteSpace(connectionString))

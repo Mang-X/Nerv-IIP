@@ -100,7 +100,8 @@ public sealed record RunAlarmEscalationsRequest(
     DateTimeOffset AsOfUtc,
     int UnacknowledgedTimeoutMinutes,
     IReadOnlyCollection<string> SeverityLevels,
-    IReadOnlyCollection<string> RecipientRefs);
+    IReadOnlyCollection<string> RecipientRefs,
+    int MaxAlarms = 500);
 public sealed record AlarmLifecycleResponse(AlarmEventId AlarmEventId);
 public sealed record RunAlarmEscalationsResponse(int EscalatedCount, IReadOnlyCollection<AlarmEventId> AlarmEventIds);
 public sealed record ListAlarmEventsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, string? Status, int Skip = 0, int Take = 100);
@@ -234,7 +235,7 @@ public sealed class RunAlarmEscalationsEndpoint(ISender sender) : IndustrialTele
 
     public override async Task HandleAsync(RunAlarmEscalationsRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new RunAlarmEscalationsCommand(req.OrganizationId, req.EnvironmentId, req.AsOfUtc, req.UnacknowledgedTimeoutMinutes, req.SeverityLevels, req.RecipientRefs), ct);
+        var result = await sender.Send(new RunAlarmEscalationsCommand(req.OrganizationId, req.EnvironmentId, req.AsOfUtc, req.UnacknowledgedTimeoutMinutes, req.SeverityLevels, req.RecipientRefs, req.MaxAlarms), ct);
         await Send.OkAsync(new RunAlarmEscalationsResponse(result.EscalatedCount, result.AlarmEventIds).AsResponseData(), cancellation: ct);
     }
 }
