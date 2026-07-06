@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
@@ -14,76 +15,126 @@ public sealed class WmsQualityInspectionGateConsumerTests
     [Fact]
     public async Task Quality_passed_event_releases_wms_putaway_gate_for_received_stock()
     {
-        await using var dbContext = CreateContext(nameof(Quality_passed_event_releases_wms_putaway_gate_for_received_stock));
-        var inbound = QualityRequiredInboundOrder("IN-QA-PASS-001");
-        dbContext.InboundOrders.Add(inbound);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
-            new CompleteInboundOrderCommand(inbound.Id, "idem-in-pass-001"),
-            CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var databaseName = nameof(Quality_passed_event_releases_wms_putaway_gate_for_received_stock);
+        var databaseRoot = new InMemoryDatabaseRoot();
+        await using (var dbContext = CreateContext(databaseName, databaseRoot))
+        {
+            var createdInbound = QualityRequiredInboundOrder("IN-QA-PASS-001");
+            dbContext.InboundOrders.Add(createdInbound);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+                new CompleteInboundOrderCommand(createdInbound.Id, "idem-in-pass-001"),
+                CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var handler = new QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate(
-            dbContext,
-            new InMemoryIntegrationEventDeadLetterStore());
-        await handler.HandleAsync(CreateInspectionEvent(QualityIntegrationEventTypes.InspectionPassed, "IN-QA-PASS-001"), CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+            var handler = new QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate(
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(CreateInspectionEvent(QualityIntegrationEventTypes.InspectionPassed, "IN-QA-PASS-001"), CancellationToken.None);
+        }
 
-        Assert.Equal(InboundOrderStatus.Completed, inbound.Status);
-        var task = await new CreatePutawayTaskCommandHandler(dbContext).Handle(
-            new CreatePutawayTaskCommand(inbound.Id, "PUT-QA-PASS-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m),
+        await using var assertionContext = CreateContext(databaseName, databaseRoot);
+        var persistedInbound = await assertionContext.InboundOrders.SingleAsync(x => x.InboundOrderNo == "IN-QA-PASS-001");
+        Assert.Equal(InboundOrderStatus.Completed, persistedInbound.Status);
+        var task = await new CreatePutawayTaskCommandHandler(assertionContext).Handle(
+            new CreatePutawayTaskCommand(persistedInbound.Id, "PUT-QA-PASS-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m),
             CancellationToken.None);
-        Assert.Contains(dbContext.WarehouseTasks.Local, x => x.Id == task);
+        await assertionContext.SaveChangesAsync(CancellationToken.None);
+        Assert.True(await assertionContext.WarehouseTasks.AnyAsync(x => x.Id == task));
     }
 
     [Fact]
     public async Task Quality_rejected_event_keeps_putaway_blocked_and_records_supplier_return_fact()
     {
-        await using var dbContext = CreateContext(nameof(Quality_rejected_event_keeps_putaway_blocked_and_records_supplier_return_fact));
-        var inbound = QualityRequiredInboundOrder("IN-QA-REJ-001");
-        dbContext.InboundOrders.Add(inbound);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
-            new CompleteInboundOrderCommand(inbound.Id, "idem-in-rej-001"),
-            CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var databaseName = nameof(Quality_rejected_event_keeps_putaway_blocked_and_records_supplier_return_fact);
+        var databaseRoot = new InMemoryDatabaseRoot();
+        await using (var dbContext = CreateContext(databaseName, databaseRoot))
+        {
+            var createdInbound = QualityRequiredInboundOrder("IN-QA-REJ-001");
+            dbContext.InboundOrders.Add(createdInbound);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+                new CompleteInboundOrderCommand(createdInbound.Id, "idem-in-rej-001"),
+                CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var handler = new QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate(
-            dbContext,
-            new InMemoryIntegrationEventDeadLetterStore());
-        await handler.HandleAsync(CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected, "IN-QA-REJ-001"), CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+            var handler = new QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate(
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected, "IN-QA-REJ-001"), CancellationToken.None);
+        }
 
-        var supplierReturn = Assert.Single(dbContext.Set<SupplierReturnRequest>().Local);
+        await using var assertionContext = CreateContext(databaseName, databaseRoot);
+        var persistedInbound = await assertionContext.InboundOrders.SingleAsync(x => x.InboundOrderNo == "IN-QA-REJ-001");
+        var supplierReturn = await assertionContext.Set<SupplierReturnRequest>().SingleAsync();
         Assert.Equal("IN-QA-REJ-001", supplierReturn.InboundOrderNo);
         Assert.Equal("QI-001", supplierReturn.InspectionRecordId);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => new CreatePutawayTaskCommandHandler(dbContext).Handle(
-            new CreatePutawayTaskCommand(inbound.Id, "PUT-QA-REJ-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m),
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new CreatePutawayTaskCommandHandler(assertionContext).Handle(
+            new CreatePutawayTaskCommand(persistedInbound.Id, "PUT-QA-REJ-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m),
             CancellationToken.None));
     }
 
     [Fact]
     public async Task Quality_conditional_release_event_allows_restricted_putaway_gate()
     {
-        await using var dbContext = CreateContext(nameof(Quality_conditional_release_event_allows_restricted_putaway_gate));
-        var inbound = QualityRequiredInboundOrder("IN-QA-COND-001");
-        dbContext.InboundOrders.Add(inbound);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
-            new CompleteInboundOrderCommand(inbound.Id, "idem-in-cond-001"),
-            CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var databaseName = nameof(Quality_conditional_release_event_allows_restricted_putaway_gate);
+        var databaseRoot = new InMemoryDatabaseRoot();
+        await using (var dbContext = CreateContext(databaseName, databaseRoot))
+        {
+            var createdInbound = QualityRequiredInboundOrder("IN-QA-COND-001");
+            dbContext.InboundOrders.Add(createdInbound);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+                new CompleteInboundOrderCommand(createdInbound.Id, "idem-in-cond-001"),
+                CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var handler = new QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate(
-            dbContext,
-            new InMemoryIntegrationEventDeadLetterStore());
-        await handler.HandleAsync(CreateInspectionEvent(QualityIntegrationEventTypes.InspectionConditionalReleased, "IN-QA-COND-001"), CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+            var handler = new QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate(
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(CreateInspectionEvent(QualityIntegrationEventTypes.InspectionConditionalReleased, "IN-QA-COND-001"), CancellationToken.None);
+        }
 
-        var task = await new CreatePutawayTaskCommandHandler(dbContext).Handle(
-            new CreatePutawayTaskCommand(inbound.Id, "PUT-QA-COND-001", "LINE-001", "LOC-STAGE", "LOC-RESTRICTED-01", 5m),
+        await using var assertionContext = CreateContext(databaseName, databaseRoot);
+        var persistedInbound = await assertionContext.InboundOrders.SingleAsync(x => x.InboundOrderNo == "IN-QA-COND-001");
+        var task = await new CreatePutawayTaskCommandHandler(assertionContext).Handle(
+            new CreatePutawayTaskCommand(persistedInbound.Id, "PUT-QA-COND-001", "LINE-001", "LOC-STAGE", "LOC-RESTRICTED-01", 5m),
             CancellationToken.None);
-        Assert.Contains(dbContext.WarehouseTasks.Local, x => x.Id == task);
+        await assertionContext.SaveChangesAsync(CancellationToken.None);
+        Assert.True(await assertionContext.WarehouseTasks.AnyAsync(x => x.Id == task));
+    }
+
+    [Fact]
+    public async Task Quality_divergence_event_is_dead_lettered_without_retry_exception()
+    {
+        var databaseName = nameof(Quality_divergence_event_is_dead_lettered_without_retry_exception);
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        await using (var dbContext = CreateContext(databaseName, databaseRoot))
+        {
+            var createdInbound = QualityRequiredInboundOrder("IN-QA-DIV-001");
+            dbContext.InboundOrders.Add(createdInbound);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+                new CompleteInboundOrderCommand(createdInbound.Id, "idem-in-div-001"),
+                CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+
+            var handler = new QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate(dbContext, deadLetters);
+            await handler.HandleAsync(
+                CreateInspectionEvent(QualityIntegrationEventTypes.InspectionPassed, "IN-QA-DIV-001", inspectedQuantity: 6m),
+                CancellationToken.None);
+        }
+
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("quality-inspection-result-divergence", deadLetter.FailureCode);
+
+        await using var assertionContext = CreateContext(databaseName, databaseRoot);
+        var persistedInbound = await assertionContext.InboundOrders.SingleAsync(x => x.InboundOrderNo == "IN-QA-DIV-001");
+        Assert.Equal(InboundOrderStatus.PendingQualityCheck, persistedInbound.Status);
     }
 
     private static InboundOrder QualityRequiredInboundOrder(string inboundOrderNo)
@@ -98,7 +149,10 @@ public sealed class WmsQualityInspectionGateConsumerTests
             [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "quality", "company", "owner-001")]);
     }
 
-    private static InspectionResultIntegrationEvent CreateInspectionEvent(string eventType, string inboundOrderNo)
+    private static InspectionResultIntegrationEvent CreateInspectionEvent(
+        string eventType,
+        string inboundOrderNo,
+        decimal inspectedQuantity = 5m)
     {
         var result = eventType == QualityIntegrationEventTypes.InspectionPassed
             ? "passed"
@@ -124,7 +178,7 @@ public sealed class WmsQualityInspectionGateConsumerTests
                 "wms",
                 inboundOrderNo,
                 "SKU-FG-1000",
-                5m,
+                inspectedQuantity,
                 result,
                 eventType == QualityIntegrationEventTypes.InspectionRejected ? "critical-defect" : null,
                 [],
@@ -132,10 +186,10 @@ public sealed class WmsQualityInspectionGateConsumerTests
                 new StockReleaseDimensionPayload("kg", "SITE-01", "LOC-STAGE", "LOT-001", null, "quality", "company", "owner-001")));
     }
 
-    private static ApplicationDbContext CreateContext(string databaseName)
+    private static ApplicationDbContext CreateContext(string databaseName, InMemoryDatabaseRoot databaseRoot)
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(databaseName)
+            .UseInMemoryDatabase(databaseName, databaseRoot)
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
     }

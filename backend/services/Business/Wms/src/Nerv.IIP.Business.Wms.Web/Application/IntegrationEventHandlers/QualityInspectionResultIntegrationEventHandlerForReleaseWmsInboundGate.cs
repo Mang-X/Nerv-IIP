@@ -60,24 +60,51 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
                 cancellationToken);
         if (inbound is null)
         {
+            await DeadLetterAsync(
+                integrationEvent,
+                "missing-inbound-order",
+                $"WMS inbound order '{payload.SourceDocumentId}' was not found for quality inspection result '{payload.InspectionRecordId}'.",
+                cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
-        var lotNo = payload.StockRelease?.LotNo ?? payload.LotNo;
-        var serialNo = payload.StockRelease?.SerialNo ?? payload.SerialNo;
-        var supplierReturn = inbound.ApplyInspectionResult(
-            integrationEvent.EventType,
-            payload.InspectionRecordId,
-            payload.SkuCode,
-            lotNo,
-            serialNo,
-            payload.InspectedQuantity,
-            payload.DispositionReason);
-        if (supplierReturn is not null
-            && !await SupplierReturnExistsAsync(supplierReturn.SupplierReturnNo, integrationEvent, cancellationToken))
+        try
         {
-            dbContext.SupplierReturnRequests.Add(supplierReturn);
+            var lotNo = payload.StockRelease?.LotNo ?? payload.LotNo;
+            var serialNo = payload.StockRelease?.SerialNo ?? payload.SerialNo;
+            var supplierReturn = inbound.ApplyInspectionResult(
+                integrationEvent.EventType,
+                payload.InspectionRecordId,
+                payload.SkuCode,
+                lotNo,
+                serialNo,
+                payload.InspectedQuantity,
+                payload.DispositionReason);
+            if (supplierReturn is not null
+                && !await SupplierReturnExistsAsync(supplierReturn.SupplierReturnNo, integrationEvent, cancellationToken))
+            {
+                dbContext.SupplierReturnRequests.Add(supplierReturn);
+            }
         }
+        catch (ArgumentException exception)
+        {
+            await DeadLetterAsync(
+                integrationEvent,
+                "quality-inspection-result-divergence",
+                exception.Message,
+                cancellationToken);
+        }
+        catch (InvalidOperationException exception)
+        {
+            await DeadLetterAsync(
+                integrationEvent,
+                "quality-inspection-result-divergence",
+                exception.Message,
+                cancellationToken);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private Task<bool> SupplierReturnExistsAsync(
@@ -89,6 +116,21 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
             x => x.OrganizationId == integrationEvent.OrganizationId
                 && x.EnvironmentId == integrationEvent.EnvironmentId
                 && x.SupplierReturnNo == supplierReturnNo,
+            cancellationToken);
+    }
+
+    private Task DeadLetterAsync(
+        InspectionResultIntegrationEvent integrationEvent,
+        string failureCode,
+        string failureMessage,
+        CancellationToken cancellationToken)
+    {
+        return deadLetterStore.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                ConsumerName,
+                integrationEvent,
+                failureCode,
+                failureMessage),
             cancellationToken);
     }
 }

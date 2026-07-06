@@ -241,6 +241,8 @@ internal static class InspectionTaskGeneration
         "skip-inspection",
         "sampling-skip",
         "sampling-skipped",
+        "unrestricted",
+        "qualified",
     };
 
     public static bool ShouldSkipInspection(string? qualityStatus)

@@ -101,6 +101,36 @@ public sealed class WmsExecutionAggregateTests
     }
 
     [Fact]
+    public void Mixed_quality_order_allows_inspection_exempt_line_while_other_line_is_pending_quality()
+    {
+        var inbound = DomainWmsFactory.MixedQualityInboundOrder();
+
+        var requests = inbound.Complete("idem-in-mixed-001");
+        var exemptTask = inbound.CreatePutawayTask("TASK-IN-MIXED-001", "LINE-002", "LOC-STAGE", "LOC-A-01", 2m);
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            inbound.CreatePutawayTask("TASK-IN-MIXED-002", "LINE-001", "LOC-STAGE", "LOC-A-02", 5m));
+
+        Assert.Equal(InboundOrderStatus.PendingQualityCheck, inbound.Status);
+        Assert.Contains(requests, x => x.SourceDocumentLineId == "LINE-001" && x.QualityStatus == "quality");
+        Assert.Contains(requests, x => x.SourceDocumentLineId == "LINE-002" && x.QualityStatus == "unrestricted");
+        Assert.Equal("LINE-002", exemptTask.SourceOrderLineNo);
+        Assert.Contains("quality", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Qualified_quality_status_uses_direct_unrestricted_path_instead_of_pending_gate()
+    {
+        var inbound = DomainWmsFactory.QualifiedInboundOrder();
+
+        var request = Assert.Single(inbound.Complete("idem-in-qualified-001"));
+        inbound.MarkInventoryPostingFailed();
+        var retry = Assert.Single(inbound.RetryInventoryPosting("idem-in-qualified-retry-001"));
+
+        Assert.Equal("unrestricted", request.QualityStatus);
+        Assert.Equal("unrestricted", retry.QualityStatus);
+    }
+
+    [Fact]
     public void Putaway_quantity_cannot_exceed_inbound_line_quantity()
     {
         var inbound = DomainWmsFactory.InspectionExemptInboundOrder();
@@ -317,6 +347,33 @@ internal static class DomainWmsFactory
             "PO-001",
             "SITE-01",
             [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "inspection-exempt", "company", "owner-001")]);
+    }
+
+    public static Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder MixedQualityInboundOrder()
+    {
+        return Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-001",
+            "purchase-receipt",
+            "PO-001",
+            "SITE-01",
+            [
+                new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "quality", "company", "owner-001"),
+                new InboundOrderLineDraft("LINE-002", "SKU-FG-2000", "kg", 2m, "LOC-STAGE", "LOT-002", null, "inspection-exempt", "company", "owner-001")
+            ]);
+    }
+
+    public static Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder QualifiedInboundOrder()
+    {
+        return Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-001",
+            "purchase-receipt",
+            "PO-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "qualified", "company", "owner-001")]);
     }
 
     public static Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder OutboundOrder(decimal requestedQuantity = 4m)

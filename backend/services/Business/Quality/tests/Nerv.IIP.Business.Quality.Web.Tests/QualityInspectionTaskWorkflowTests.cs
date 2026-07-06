@@ -68,6 +68,8 @@ public sealed class QualityInspectionTaskWorkflowTests
 
         await handler.HandleAsync(WmsInboundCompleted("IN-001", "LINE-001", "SKU-RM-1000", "inspection-exempt"), CancellationToken.None);
         await handler.HandleAsync(WmsInboundCompleted("IN-002", "LINE-001", "SKU-RM-1000", "sampling-skip"), CancellationToken.None);
+        await handler.HandleAsync(WmsInboundCompleted("IN-003", "LINE-001", "SKU-RM-1000", "unrestricted"), CancellationToken.None);
+        await handler.HandleAsync(WmsInboundCompleted("IN-004", "LINE-001", "SKU-RM-1000", "qualified"), CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         Assert.Empty(await dbContext.InspectionTasks.ToListAsync());

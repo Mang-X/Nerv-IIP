@@ -236,7 +236,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.StagingLocationCode,
                 line.LotNo,
                 line.SerialNo,
-                line.QualityStatus,
+                line.ReceiptQualityStatus,
                 line.OwnerType,
                 line.OwnerId,
                 line.ReceivedQuantity,
@@ -280,17 +280,29 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             return;
         }
 
-        if (Status == InboundOrderStatus.Completed && line.IsReleasedForPutaway)
-        {
-            return;
-        }
-
         if (line.QualityGateStatus == InboundQualityGateStatuses.Rejected)
         {
             throw new InvalidOperationException("Rejected inbound line cannot be put away.");
         }
 
-        throw new InvalidOperationException("Completed or failed inbound orders are immutable.");
+        if (Status == InboundOrderStatus.PendingQualityCheck)
+        {
+            if (!line.RequiresQualityInspection || line.IsReleasedForPutaway)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException("Inbound line is pending quality inspection and cannot be put away.");
+        }
+
+        if (Status == InboundOrderStatus.Completed && line.IsReleasedForPutaway)
+        {
+            return;
+        }
+
+        throw Status == InboundOrderStatus.InventoryPostingFailed
+            ? new InvalidOperationException("Inbound orders with failed Inventory posting cannot be put away.")
+            : new InvalidOperationException("Completed inbound orders are immutable.");
     }
 
     private void EnsureOpen()
@@ -326,9 +338,9 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
         LotNo = WmsText.Optional(draft.LotNo);
         SerialNo = WmsText.Optional(draft.SerialNo);
         QualityStatus = WmsText.Required(draft.QualityStatus, nameof(draft.QualityStatus)).ToLowerInvariant();
-        QualityGateStatus = InboundQualityGateStatuses.IsInspectionExempt(QualityStatus)
-            ? InboundQualityGateStatuses.NotRequired
-            : InboundQualityGateStatuses.Pending;
+        QualityGateStatus = InboundQualityGateStatuses.RequiresInspection(QualityStatus)
+            ? InboundQualityGateStatuses.Pending
+            : InboundQualityGateStatuses.NotRequired;
         OwnerType = WmsText.Required(draft.OwnerType, nameof(draft.OwnerType)).ToLowerInvariant();
         OwnerId = WmsText.Optional(draft.OwnerId);
         ProductionDate = draft.ProductionDate;
@@ -401,17 +413,15 @@ public static class InboundQualityGateStatuses
     public const string Rejected = "rejected";
     public const string NotRequired = "not-required";
 
-    private static readonly HashSet<string> InspectionExemptStatuses = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> InspectionRequiredStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
-        "exempt",
-        "inspection-exempt",
-        "skip-inspection",
-        "sampling-skip",
-        "sampling-skipped",
-        "unrestricted",
+        "quality",
+        "inspection-required",
+        "quality-inspection-required",
+        "pending-quality-check",
     };
 
-    public static bool IsInspectionExempt(string qualityStatus) => InspectionExemptStatuses.Contains(qualityStatus);
+    public static bool RequiresInspection(string qualityStatus) => InspectionRequiredStatuses.Contains(qualityStatus);
 }
 
 internal readonly record struct InboundQualityInspectionResult(string GateStatus)
