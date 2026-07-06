@@ -1172,6 +1172,44 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Planning_forecast_facade_uses_internal_service_token_for_downstream_business_service()
+    {
+        var planning = new RecordingPlanningClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var list = await client.GetAsync("/api/business-console/v1/planning/forecasts?organizationId=org-001&environmentId=env-dev&skuCode=SKU-FG-1000&siteCode=SITE-01");
+        var create = await client.PostAsJsonAsync("/api/business-console/v1/planning/forecasts", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            forecastReference = "FC-2026-06-SKU-FG-1000",
+            skuCode = "SKU-FG-1000",
+            uomCode = "pcs",
+            siteCode = "SITE-01",
+            periodStartDate = "2026-06-01",
+            periodEndDate = "2026-06-30",
+            quantity = 10m,
+            backwardConsumptionDays = 7,
+            forwardConsumptionDays = 3,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        Assert.Equal("internal-test-token", planning.LastInternalToken);
+        Assert.Equal(new BusinessConsoleForecastInputListRequest("org-001", "env-dev", "SKU-FG-1000", "SITE-01"), planning.LastForecastListRequest);
+        Assert.Equal("FC-2026-06-SKU-FG-1000", planning.LastCreateForecastRequest!.ForecastReference);
+        Assert.Equal(7, planning.LastCreateForecastRequest.BackwardConsumptionDays);
+    }
+
+    [Fact]
     public async Task Planning_mrp_pegging_exposes_source_type_and_gross_demand()
     {
         var planning = new RecordingPlanningClient
@@ -5950,6 +5988,10 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
 
     public BusinessConsolePlanningDemandCancelRequest? LastCancelDemandRequest { get; private set; }
 
+    public BusinessConsoleForecastInputListRequest? LastForecastListRequest { get; private set; }
+
+    public BusinessConsoleCreateOrUpdateForecastInputRequest? LastCreateForecastRequest { get; private set; }
+
     public BusinessConsoleAcceptedResponse AcceptedSuggestionResponse { get; init; } =
         new(true, "BusinessMes", "WorkOrder", "WO-001");
 
@@ -6098,6 +6140,48 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
         LastCancelledDemandSourceId = demandSourceId;
         LastCancelDemandRequest = request;
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public Task<BusinessConsoleForecastInputListResponse> ListForecastInputsAsync(
+        string internalBearerToken,
+        BusinessConsoleForecastInputListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastForecastListRequest = request;
+        return Task.FromResult(new BusinessConsoleForecastInputListResponse([
+            new BusinessConsoleForecastInputItem(
+                "forecast-001",
+                "FC-2026-06-SKU-FG-1000",
+                "SKU-FG-1000",
+                "pcs",
+                "SITE-01",
+                new DateOnly(2026, 6, 1),
+                new DateOnly(2026, 6, 30),
+                10m,
+                7,
+                3),
+        ]));
+    }
+
+    public Task<BusinessConsoleForecastInputItem> CreateOrUpdateForecastInputAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateForecastInputRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateForecastRequest = request;
+        return Task.FromResult(new BusinessConsoleForecastInputItem(
+            "forecast-created",
+            request.ForecastReference,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.PeriodStartDate,
+            request.PeriodEndDate,
+            request.Quantity,
+            request.BackwardConsumptionDays,
+            request.ForwardConsumptionDays));
     }
 
     public Task<BusinessConsoleRunMrpResponse> RunMrpAsync(

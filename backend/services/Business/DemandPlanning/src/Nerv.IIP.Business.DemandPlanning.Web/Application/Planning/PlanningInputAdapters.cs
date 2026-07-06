@@ -181,13 +181,22 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
         DateOnly horizonEnd,
         CancellationToken cancellationToken)
     {
-        var demands = await LoadDemandsAsync(organizationId, environmentId, horizonStart, horizonEnd, cancellationToken);
-        if (demands.Count == 0)
+        // Forecast consumption needs MasterData planning UOM context, but planning UOM
+        // lookup itself needs the SKU/UOM/site seed set. This first pass intentionally
+        // captures only raw source coverage for upstream snapshot requests; final MRP
+        // demands are loaded again after planning parameters and UOM conversions arrive.
+        var initialDemands = await LoadDemandSeedSnapshotsAsync(
+            organizationId,
+            environmentId,
+            horizonStart,
+            horizonEnd,
+            cancellationToken);
+        if (initialDemands.Count == 0)
         {
             return new PlanningInputSnapshotResult(
                 "product-engineering-http:0",
                 "inventory-http:0",
-                demands,
+                initialDemands,
                 [],
                 [],
                 [],
@@ -197,10 +206,10 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
         }
 
         var internalBearerToken = internalTokenProvider?.BearerToken ?? string.Empty;
-        var engineering = await LoadEngineeringClosureAsync(internalBearerToken, organizationId, environmentId, horizonStart, horizonEnd, demands, cancellationToken);
-        var sourceItems = demands
+        var engineering = await LoadEngineeringClosureAsync(internalBearerToken, organizationId, environmentId, horizonStart, horizonEnd, initialDemands, cancellationToken);
+        var initialSourceItems = initialDemands
             .Select(x => new PlanningInventorySnapshotItem(x.SkuCode, x.UomCode, x.SiteCode))
-            .Concat(engineering.BomComponents.SelectMany(component => demands.Select(demand =>
+            .Concat(engineering.BomComponents.SelectMany(component => initialDemands.Select(demand =>
                 new PlanningInventorySnapshotItem(component.ComponentSkuCode, component.ComponentUomCode, demand.SiteCode))))
             .DistinctBy(x => $"{x.SkuCode}\u001f{x.UomCode}\u001f{x.SiteCode}", StringComparer.OrdinalIgnoreCase)
             .OrderBy(x => x.SkuCode, StringComparer.OrdinalIgnoreCase)
@@ -211,8 +220,24 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             organizationId,
             environmentId,
             horizonStart,
-            sourceItems,
+            initialSourceItems,
             cancellationToken);
+        var demands = await LoadDemandsAsync(
+            organizationId,
+            environmentId,
+            horizonStart,
+            horizonEnd,
+            planningParameters.PlanningParameters,
+            planningParameters.UomConversions,
+            cancellationToken);
+        var sourceItems = demands
+            .Select(x => new PlanningInventorySnapshotItem(x.SkuCode, x.UomCode, x.SiteCode))
+            .Concat(engineering.BomComponents.SelectMany(component => demands.Select(demand =>
+                new PlanningInventorySnapshotItem(component.ComponentSkuCode, component.ComponentUomCode, demand.SiteCode))))
+            .DistinctBy(x => $"{x.SkuCode}\u001f{x.UomCode}\u001f{x.SiteCode}", StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x.SkuCode, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.SiteCode, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         var availabilityItems = ExpandWithPlanningUom(sourceItems, planningParameters.PlanningParameters);
         var inventorySnapshot = await inventory.GetAvailabilitySnapshotAsync(
             internalBearerToken,
@@ -397,15 +422,27 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
         string environmentId,
         DateOnly horizonStart,
         DateOnly horizonEnd,
+        IReadOnlyCollection<PlanningParameterSnapshot> planningParameters,
+        IReadOnlyCollection<UomConversionSnapshot> uomConversions,
         CancellationToken cancellationToken)
     {
         var demandSources = await dbContext.DemandSources
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
+                && x.DemandType != "forecast"
                 && x.DueDate >= horizonStart
                 && x.DueDate <= horizonEnd)
             .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
+            .ToListAsync(cancellationToken);
+        var forecastInputs = await dbContext.ForecastInputs
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.PeriodEndDate >= horizonStart
+                && x.PeriodStartDate <= horizonEnd)
+            .OrderBy(x => x.PeriodStartDate)
+            .ThenBy(x => x.ForecastReference)
             .ToListAsync(cancellationToken);
         var mpsBuckets = await dbContext.MasterProductionSchedules
             .AsNoTracking()
@@ -423,13 +460,165 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 x.BucketDate,
                 "mps"))
             .ToListAsync(cancellationToken);
+        var converter = PlanningUomConverter.Create(uomConversions);
+        var forecastDemands = forecastInputs
+            .Select(forecast =>
+            {
+                var consumptionStart = forecast.PeriodStartDate.AddDays(-forecast.BackwardConsumptionDays);
+                var consumptionEnd = forecast.PeriodEndDate.AddDays(forecast.ForwardConsumptionDays);
+                var forecastUomCode = ResolvePlanningUom(forecast.SkuCode, forecast.SiteCode, forecast.UomCode, planningParameters);
+                var hasPlanningUomContext = planningParameters.Count > 0 || uomConversions.Count > 0;
+                var forecastQuantity = ConvertForecastConsumptionQuantity(
+                    converter,
+                    forecast.SkuCode,
+                    forecast.UomCode,
+                    forecastUomCode,
+                    forecast.Quantity,
+                    requireConversion: true);
+                var consumed = demandSources
+                    .Concat(mpsBuckets)
+                    .Where(demand => IsForecastConsumingDemand(demand)
+                        && string.Equals(demand.SkuCode, forecast.SkuCode, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(demand.SiteCode, forecast.SiteCode, StringComparison.OrdinalIgnoreCase)
+                        && demand.DueDate >= consumptionStart
+                        && demand.DueDate <= consumptionEnd)
+                    .Sum(demand => ConvertForecastConsumptionQuantity(
+                        converter,
+                        demand.SkuCode,
+                        demand.UomCode,
+                        forecastUomCode,
+                        demand.Quantity,
+                        hasPlanningUomContext));
+                var remaining = Math.Max(0m, forecastQuantity - consumed);
+                return remaining <= 0m
+                    ? null
+                    : new DemandSnapshot(
+                        forecast.ForecastReference,
+                        forecast.SkuCode,
+                        forecastUomCode,
+                        forecast.SiteCode,
+                        remaining,
+                        ClampForecastDueDate(forecast.PeriodEndDate, horizonStart, horizonEnd),
+                        "forecast");
+            })
+            .Where(x => x is not null)
+            .Select(x => x!)
+            .ToArray();
 
         return demandSources
+            .Concat(forecastDemands)
             .Concat(mpsBuckets)
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SourceType)
             .ThenBy(x => x.DemandSourceReference)
             .ToArray();
+    }
+
+    private async Task<IReadOnlyCollection<DemandSnapshot>> LoadDemandSeedSnapshotsAsync(
+        string organizationId,
+        string environmentId,
+        DateOnly horizonStart,
+        DateOnly horizonEnd,
+        CancellationToken cancellationToken)
+    {
+        var demandSources = await dbContext.DemandSources
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.DemandType != "forecast"
+                && x.DueDate >= horizonStart
+                && x.DueDate <= horizonEnd)
+            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
+            .ToListAsync(cancellationToken);
+        var forecastInputs = await dbContext.ForecastInputs
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.PeriodEndDate >= horizonStart
+                && x.PeriodStartDate <= horizonEnd)
+            .ToListAsync(cancellationToken);
+        var mpsBuckets = await dbContext.MasterProductionSchedules
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.Status == MasterProductionScheduleStatus.Released
+                && x.BucketDate >= horizonStart
+                && x.BucketDate <= horizonEnd)
+            .ToListAsync(cancellationToken);
+
+        return demandSources
+            .Concat(forecastInputs.Select(x => new DemandSnapshot(
+                x.ForecastReference,
+                x.SkuCode,
+                x.UomCode,
+                x.SiteCode,
+                x.Quantity,
+                ClampForecastDueDate(x.PeriodEndDate, horizonStart, horizonEnd),
+                "forecast")))
+            .Concat(mpsBuckets.Select(x => new DemandSnapshot(
+                $"MPS:{x.Id}",
+                x.SkuCode,
+                x.UomCode,
+                x.SiteCode,
+                x.Quantity,
+                x.BucketDate,
+                "mps")))
+            .OrderBy(x => x.DueDate)
+            .ThenBy(x => x.SourceType)
+            .ThenBy(x => x.DemandSourceReference)
+            .ToArray();
+    }
+
+    private static bool IsForecastConsumingDemand(DemandSnapshot demand)
+    {
+        return string.Equals(demand.SourceType, "sales-order", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(demand.SourceType, "sales", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(demand.SourceType, "mps", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static DateOnly ClampForecastDueDate(DateOnly periodEndDate, DateOnly horizonStart, DateOnly horizonEnd)
+    {
+        if (periodEndDate < horizonStart)
+        {
+            return horizonStart;
+        }
+
+        return periodEndDate > horizonEnd
+            ? horizonEnd
+            : periodEndDate;
+    }
+
+    private static string ResolvePlanningUom(
+        string skuCode,
+        string siteCode,
+        string fallbackUomCode,
+        IReadOnlyCollection<PlanningParameterSnapshot> planningParameters)
+    {
+        return planningParameters
+            .FirstOrDefault(x => string.Equals(x.SkuCode, skuCode, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(x.SiteCode, siteCode, StringComparison.OrdinalIgnoreCase))
+            ?.UomCode ?? fallbackUomCode;
+    }
+
+    private static decimal ConvertForecastConsumptionQuantity(
+        PlanningUomConverter converter,
+        string skuCode,
+        string fromUomCode,
+        string toUomCode,
+        decimal quantity,
+        bool requireConversion)
+    {
+        if (converter.TryConvert(skuCode, fromUomCode, toUomCode, quantity, "forecast consumption UOM", out var converted))
+        {
+            return converted;
+        }
+
+        if (requireConversion)
+        {
+            return converter.Convert(skuCode, fromUomCode, toUomCode, quantity, "forecast consumption UOM");
+        }
+
+        return 0m;
     }
 }
 

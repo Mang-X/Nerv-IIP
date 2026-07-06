@@ -131,7 +131,7 @@ public static class MrpCalculator
         var planningParameters = input.PlanningParameters
             .GroupBy(x => SkuSiteKey.Create(x.SkuCode, x.SiteCode))
             .ToDictionary(x => x.Key, x => x.First());
-        var converter = UomConverter.Create(input.UomConversions);
+        var converter = PlanningUomConverter.Create(input.UomConversions);
         var availability = input.Availability
             .Select(x => NormalizeAvailability(x, planningParameters, converter))
             .GroupBy(x => ItemKey.Create(x.SkuCode, x.UomCode, x.SiteCode))
@@ -207,6 +207,14 @@ public static class MrpCalculator
                     Math.Max(0, planningParameter?.SafetyStockQuantity ?? 0m),
                     availability,
                     scheduledReceipts);
+                suggestions.AddRange(supply.ExceptionReceipts.Select(x => BuildScheduledReceiptExceptionSuggestion(
+                    x,
+                    first,
+                    group.Key.RequiredDate,
+                    demandPegging,
+                    peggingVersion: IsMakeItem(planningParameter?.ProcurementType, version) ? version : null,
+                    grossRequirement,
+                    supply)));
                 var netRequirement = supply.Shortage;
                 if (netRequirement <= 0)
                 {
@@ -324,13 +332,129 @@ public static class MrpCalculator
             }
         }
 
+        ProtectSafetyStockWithRemainingReceipts(planningParameters, availability, scheduledReceipts);
+
+        suggestions.AddRange(scheduledReceipts
+            .SelectMany(x => x.Value.Select(y => new { Key = x.Key, Receipt = y }))
+            .Where(x => x.Receipt.RemainingQuantity > 0)
+            .OrderBy(x => x.Receipt.ExpectedReceiptDate)
+            .ThenBy(x => x.Key.SkuCode, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.Receipt.SourceSystem, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.Receipt.SourceDocumentType, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.Receipt.SourceDocumentId, StringComparer.OrdinalIgnoreCase)
+            .Select(x => BuildCancelExceptionSuggestion(x.Key, x.Receipt)));
+
         return suggestions;
+    }
+
+    private static CalculatedPlanningSuggestion BuildScheduledReceiptExceptionSuggestion(
+        ScheduledReceiptException receiptException,
+        Requirement requirement,
+        DateOnly requiredDate,
+        IReadOnlyCollection<DemandPegging> demandPegging,
+        ProductionVersionSnapshot? peggingVersion,
+        decimal grossRequirement,
+        SupplyConsumption supply)
+    {
+        var receiptLink = new CalculatedPeggingLink(
+            "scheduled-receipt",
+            $"{receiptException.SourceSystem}:{receiptException.SourceDocumentType}:{receiptException.SourceDocumentId}",
+            requirement.SkuCode,
+            null,
+            receiptException.Quantity,
+            peggingVersion?.ProductionVersionReference,
+            peggingVersion?.ManufacturingBomReference,
+            peggingVersion?.RoutingReference,
+            "scheduled-receipt",
+            receiptException.Quantity);
+        var peggingLinks = demandPegging
+            .Select(x => new CalculatedPeggingLink(
+                "demand",
+                x.DemandSourceReference,
+                x.ParentSkuCode,
+                x.ComponentSkuCode,
+                x.Quantity,
+                peggingVersion?.ProductionVersionReference,
+                peggingVersion?.ManufacturingBomReference,
+                peggingVersion?.RoutingReference,
+                x.SourceType,
+                x.Quantity))
+            .Append(receiptLink)
+            .ToArray();
+
+        return new CalculatedPlanningSuggestion(
+            receiptException.ExceptionType,
+            requirement.SkuCode,
+            requirement.UomCode,
+            requirement.SiteCode,
+            receiptException.Quantity,
+            requiredDate,
+            receiptException.ExpectedReceiptDate,
+            receiptException.ReasonCode,
+            new CalculatedNetRequirementExplanation(
+                grossRequirement,
+                supply.OnHandQuantity,
+                supply.ReservedQuantity,
+                supply.UsedAvailableQuantity,
+                receiptException.Quantity,
+                supply.SafetyStockQuantity,
+                0m,
+                receiptException.Quantity,
+                requirement.ScrapRate,
+                requirement.YieldRate,
+                "scheduled-receipt",
+                $"{receiptException.Quantity:g29} scheduled receipt should move from {receiptException.ExpectedReceiptDate:O} to {requiredDate:O}",
+                requirement.UomConversions,
+                []),
+            peggingLinks);
+    }
+
+    private static CalculatedPlanningSuggestion BuildCancelExceptionSuggestion(ItemKey key, ScheduledReceiptState receipt)
+    {
+        var quantity = receipt.RemainingQuantity;
+        return new CalculatedPlanningSuggestion(
+            "cancel",
+            key.SkuCode,
+            key.UomCode,
+            key.SiteCode,
+            quantity,
+            receipt.ExpectedReceiptDate,
+            receipt.ExpectedReceiptDate,
+            "scheduled-receipt-unneeded",
+            new CalculatedNetRequirementExplanation(
+                0m,
+                0m,
+                0m,
+                0m,
+                quantity,
+                0m,
+                0m,
+                quantity,
+                0m,
+                1m,
+                "scheduled-receipt",
+                $"{quantity:g29} scheduled receipt has no matching requirement",
+                [],
+                []),
+            [
+                new CalculatedPeggingLink(
+                    "scheduled-receipt",
+                    $"{receipt.SourceSystem}:{receipt.SourceDocumentType}:{receipt.SourceDocumentId}",
+                    key.SkuCode,
+                    null,
+                    quantity,
+                    null,
+                    null,
+                    null,
+                    "scheduled-receipt",
+                    quantity),
+            ]);
     }
 
     private static Requirement NormalizeDemand(
         DemandSnapshot demand,
         IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters,
-        UomConverter converter)
+        PlanningUomConverter converter)
     {
         var planningUom = ResolvePlanningUom(demand.SkuCode, demand.SiteCode, demand.UomCode, planningParameters);
         var conversion = ConvertQuantity(demand.SkuCode, demand.UomCode, planningUom, demand.Quantity, converter);
@@ -351,7 +475,7 @@ public static class MrpCalculator
     private static InventoryAvailabilitySnapshot NormalizeAvailability(
         InventoryAvailabilitySnapshot availability,
         IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters,
-        UomConverter converter)
+        PlanningUomConverter converter)
     {
         var planningUom = ResolvePlanningUom(availability.SkuCode, availability.SiteCode, availability.UomCode, planningParameters);
         var availableConversion = ConvertQuantity(availability.SkuCode, availability.UomCode, planningUom, availability.AvailableQuantity, converter);
@@ -369,7 +493,7 @@ public static class MrpCalculator
     private static ScheduledReceiptSnapshot NormalizeScheduledReceipt(
         ScheduledReceiptSnapshot receipt,
         IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters,
-        UomConverter converter)
+        PlanningUomConverter converter)
     {
         var planningUom = ResolvePlanningUom(receipt.SkuCode, receipt.SiteCode, receipt.UomCode, planningParameters);
         var conversion = ConvertQuantity(receipt.SkuCode, receipt.UomCode, planningUom, receipt.Quantity, converter);
@@ -397,14 +521,14 @@ public static class MrpCalculator
         string fromUomCode,
         string toUomCode,
         decimal quantity,
-        UomConverter converter)
+        PlanningUomConverter converter)
     {
         if (string.Equals(Normalize(fromUomCode), Normalize(toUomCode), StringComparison.Ordinal))
         {
             return new QuantityConversion(quantity, []);
         }
 
-        var converted = converter.Convert(triggerSkuCode, fromUomCode, toUomCode, quantity);
+        var converted = converter.Convert(triggerSkuCode, fromUomCode, toUomCode, quantity, "planning UOM");
         return new QuantityConversion(converted, [$"{quantity} {fromUomCode} -> {converted} {toUomCode}"]);
     }
 
@@ -444,11 +568,43 @@ public static class MrpCalculator
 
                 receipt.RemainingQuantity -= used;
                 remainingRequirement -= used;
-                usedReceipts.Add(new UsedScheduledReceipt(receipt.SourceSystem, receipt.SourceDocumentType, receipt.SourceDocumentId, used));
+                usedReceipts.Add(new UsedScheduledReceipt(
+                    receipt.SourceSystem,
+                    receipt.SourceDocumentType,
+                    receipt.SourceDocumentId,
+                    receipt.ExpectedReceiptDate,
+                    used,
+                    receipt.ExpectedReceiptDate < requiredDate ? "reschedule-out" : null,
+                    receipt.ExpectedReceiptDate < requiredDate ? "scheduled-receipt-early" : null));
                 if (remainingRequirement <= 0)
                 {
                     break;
                 }
+            }
+
+            foreach (var receipt in receipts.Where(x => x.ExpectedReceiptDate > requiredDate && x.RemainingQuantity > 0))
+            {
+                if (remainingRequirement <= 0)
+                {
+                    break;
+                }
+
+                var used = Math.Min(receipt.RemainingQuantity, remainingRequirement);
+                if (used <= 0)
+                {
+                    continue;
+                }
+
+                receipt.RemainingQuantity -= used;
+                remainingRequirement -= used;
+                usedReceipts.Add(new UsedScheduledReceipt(
+                    receipt.SourceSystem,
+                    receipt.SourceDocumentType,
+                    receipt.SourceDocumentId,
+                    receipt.ExpectedReceiptDate,
+                    used,
+                    "reschedule-in",
+                    "scheduled-receipt-late"));
             }
         }
 
@@ -459,7 +615,62 @@ public static class MrpCalculator
             usedAvailable,
             usedReceipts.Sum(x => x.Quantity),
             safetyStockQuantity,
-            usedReceipts);
+            usedReceipts,
+            usedReceipts.Where(x => x.ExceptionType is not null)
+                .Select(x => new ScheduledReceiptException(
+                    x.ExceptionType!,
+                    x.SourceSystem,
+                    x.SourceDocumentType,
+                    x.SourceDocumentId,
+                    x.ExpectedReceiptDate,
+                    x.Quantity,
+                    x.ReasonCode!))
+                .ToArray());
+    }
+
+    private static void ProtectSafetyStockWithRemainingReceipts(
+        IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters,
+        IDictionary<ItemKey, InventoryAvailabilityState> availability,
+        IReadOnlyDictionary<ItemKey, List<ScheduledReceiptState>> scheduledReceipts)
+    {
+        foreach (var (key, receipts) in scheduledReceipts.OrderBy(x => x.Key.SkuCode, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!planningParameters.TryGetValue(SkuSiteKey.Create(key.SkuCode, key.SiteCode), out var parameter)
+                || parameter.SafetyStockQuantity <= 0m)
+            {
+                continue;
+            }
+
+            var availableQuantity = availability.TryGetValue(key, out var state)
+                ? state.AvailableQuantity
+                : 0m;
+            var safetyDeficit = Math.Max(0m, parameter.SafetyStockQuantity - availableQuantity);
+            if (safetyDeficit <= 0m)
+            {
+                continue;
+            }
+
+            foreach (var receipt in receipts
+                .Where(x => x.RemainingQuantity > 0m)
+                .OrderBy(x => x.ExpectedReceiptDate)
+                .ThenBy(x => x.SourceSystem, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.SourceDocumentType, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.SourceDocumentId, StringComparer.OrdinalIgnoreCase))
+            {
+                var protectedQuantity = Math.Min(receipt.RemainingQuantity, safetyDeficit);
+                if (protectedQuantity <= 0m)
+                {
+                    continue;
+                }
+
+                receipt.RemainingQuantity -= protectedQuantity;
+                safetyDeficit -= protectedQuantity;
+                if (safetyDeficit <= 0m)
+                {
+                    break;
+                }
+            }
+        }
     }
 
     private static IReadOnlyCollection<decimal> ApplyLotSizing(
@@ -704,7 +915,23 @@ public static class MrpCalculator
         public decimal RemainingQuantity { get; set; } = snapshot.Quantity;
     }
 
-    private sealed record UsedScheduledReceipt(string SourceSystem, string SourceDocumentType, string SourceDocumentId, decimal Quantity);
+    private sealed record UsedScheduledReceipt(
+        string SourceSystem,
+        string SourceDocumentType,
+        string SourceDocumentId,
+        DateOnly ExpectedReceiptDate,
+        decimal Quantity,
+        string? ExceptionType,
+        string? ReasonCode);
+
+    private sealed record ScheduledReceiptException(
+        string ExceptionType,
+        string SourceSystem,
+        string SourceDocumentType,
+        string SourceDocumentId,
+        DateOnly ExpectedReceiptDate,
+        decimal Quantity,
+        string ReasonCode);
 
     private sealed record SupplyConsumption(
         decimal Shortage,
@@ -713,7 +940,8 @@ public static class MrpCalculator
         decimal UsedAvailableQuantity,
         decimal UsedScheduledReceiptQuantity,
         decimal SafetyStockQuantity,
-        IReadOnlyCollection<UsedScheduledReceipt> UsedReceipts);
+        IReadOnlyCollection<UsedScheduledReceipt> UsedReceipts,
+        IReadOnlyCollection<ScheduledReceiptException> ExceptionReceipts);
 
     private sealed record QuantityConversion(decimal Quantity, IReadOnlyCollection<string> Summaries);
 
@@ -724,62 +952,4 @@ public static class MrpCalculator
         public decimal AvailableQuantity { get; set; } = availableQuantity;
     }
 
-    private sealed class UomConverter
-    {
-        private readonly IReadOnlyDictionary<(string FromUomCode, string ToUomCode), UomConversionSnapshot> conversions;
-
-        private UomConverter(IReadOnlyDictionary<(string FromUomCode, string ToUomCode), UomConversionSnapshot> conversions)
-        {
-            this.conversions = conversions;
-        }
-
-        public static UomConverter Create(IReadOnlyCollection<UomConversionSnapshot> conversions)
-        {
-            return new UomConverter(conversions
-                .GroupBy(x => (Normalize(x.FromUomCode), Normalize(x.ToUomCode)))
-                .ToDictionary(x => x.Key, x => x.First()));
-        }
-
-        // MasterData UOM conversions are global by unit pair; triggerSkuCode is only diagnostic context.
-        public decimal Convert(string triggerSkuCode, string fromUomCode, string toUomCode, decimal quantity)
-        {
-            var from = Normalize(fromUomCode);
-            var to = Normalize(toUomCode);
-            if (!conversions.TryGetValue((from, to), out var conversion))
-            {
-                throw new InvalidOperationException($"Missing global UOM conversion from '{fromUomCode}' to planning UOM '{toUomCode}' while normalizing SKU '{triggerSkuCode}'.");
-            }
-
-            if (conversion.Factor <= 0m)
-            {
-                throw new InvalidOperationException($"Invalid global UOM conversion from '{fromUomCode}' to planning UOM '{toUomCode}' while normalizing SKU '{triggerSkuCode}': factor must be positive.");
-            }
-
-            var converted = Round(quantity * conversion.Factor + conversion.Offset, conversion.Precision, conversion.RoundingMode);
-            if (converted < 0m)
-            {
-                throw new InvalidOperationException($"Invalid global UOM conversion from '{fromUomCode}' to planning UOM '{toUomCode}' while normalizing SKU '{triggerSkuCode}': negative quantity after conversion is not allowed.");
-            }
-
-            return converted;
-        }
-
-        private static decimal Round(decimal value, int precision, string roundingMode)
-        {
-            var digits = Math.Clamp(precision, 0, 12);
-            return Normalize(roundingMode) switch
-            {
-                "BANKERS" or "TO-EVEN" or "TOEVEN" => Math.Round(value, digits, MidpointRounding.ToEven),
-                "CEILING" or "UP" => RoundToward(value, digits, ceiling: true),
-                "FLOOR" or "DOWN" => RoundToward(value, digits, ceiling: false),
-                _ => Math.Round(value, digits, MidpointRounding.AwayFromZero),
-            };
-        }
-
-        private static decimal RoundToward(decimal value, int digits, bool ceiling)
-        {
-            var scale = (decimal)Math.Pow(10, digits);
-            return (ceiling ? Math.Ceiling(value * scale) : Math.Floor(value * scale)) / scale;
-        }
-    }
 }

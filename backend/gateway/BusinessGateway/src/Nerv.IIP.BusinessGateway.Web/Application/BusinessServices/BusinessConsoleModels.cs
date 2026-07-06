@@ -1667,6 +1667,41 @@ public sealed record BusinessConsolePlanningDemandCancelRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId);
 
+public sealed record BusinessConsoleForecastInputListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode = null,
+    string? SiteCode = null,
+    DateOnly? FromDate = null,
+    DateOnly? ToDate = null);
+
+public sealed record BusinessConsoleCreateOrUpdateForecastInputRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ForecastReference,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    DateOnly PeriodStartDate,
+    DateOnly PeriodEndDate,
+    decimal Quantity,
+    int BackwardConsumptionDays = 0,
+    int ForwardConsumptionDays = 0);
+
+public sealed record BusinessConsoleForecastInputItem(
+    string ForecastInputId,
+    string ForecastReference,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    DateOnly PeriodStartDate,
+    DateOnly PeriodEndDate,
+    decimal Quantity,
+    int BackwardConsumptionDays,
+    int ForwardConsumptionDays);
+
+public sealed record BusinessConsoleForecastInputListResponse(IReadOnlyCollection<BusinessConsoleForecastInputItem> Items);
+
 public sealed record BusinessConsoleRunMrpRequest(
     string OrganizationId,
     string EnvironmentId,
