@@ -61,10 +61,19 @@ const uid = `sl-${Math.random().toString(36).slice(2, 8)}`
         <stop offset="1" :stop-color="color ?? 'var(--sb-cyan)'" stop-opacity="0" />
       </linearGradient>
     </defs>
-    <path v-if="area" :d="geom.area" :fill="`url(#${uid}-fill)`" />
+    <!-- d 同时走 attribute（兜底）与 style（Chromium 可对 CSS d 做 transition，
+         点数恒定 → 数据更新时折线平滑变形而非跳变） -->
+    <path
+      v-if="area"
+      class="sb-sl-area"
+      :d="geom.area"
+      :style="{ d: `path('${geom.area}')` }"
+      :fill="`url(#${uid}-fill)`"
+    />
     <path
       class="sb-sl-line"
       :d="geom.line"
+      :style="{ d: `path('${geom.line}')` }"
       fill="none"
       stroke="var(--sb-sl-color, var(--sb-cyan))"
       stroke-width="1.5"
@@ -94,5 +103,16 @@ const uid = `sl-${Math.random().toString(36).slice(2, 8)}`
 /* crisp hairline with just a whisper of glow — no heavy blur */
 .sb-sl-line {
   filter: drop-shadow(0 0 2.5px var(--sb-cyan-dim));
+}
+/* 数据增长动效：新数据到达时折线/面积平滑变形（emphasized 减速，无回弹） */
+.sb-sl-line,
+.sb-sl-area {
+  transition: d 0.6s var(--sb-ease-emphasized);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-sl-line,
+  .sb-sl-area {
+    transition: none;
+  }
 }
 </style>
