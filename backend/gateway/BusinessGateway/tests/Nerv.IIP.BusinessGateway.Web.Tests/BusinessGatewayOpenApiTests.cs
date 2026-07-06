@@ -122,6 +122,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/planning/demands", "get", "listBusinessConsolePlanningDemands");
         AssertOperationId(paths, "/api/business-console/v1/planning/demands", "post", "createOrUpdateBusinessConsolePlanningDemand");
         AssertOperationId(paths, "/api/business-console/v1/planning/demands/{demandSourceId}/cancel", "post", "cancelBusinessConsolePlanningDemand");
+        AssertOperationId(paths, "/api/business-console/v1/planning/forecasts", "get", "listBusinessConsolePlanningForecasts");
+        AssertOperationId(paths, "/api/business-console/v1/planning/forecasts", "post", "createOrUpdateBusinessConsolePlanningForecast");
         AssertOperationId(paths, "/api/business-console/v1/planning/mrp-runs", "post", "runBusinessConsolePlanningMrp");
         AssertOperationId(paths, "/api/business-console/v1/planning/mrp-runs", "get", "listBusinessConsolePlanningMrpRuns");
         AssertOperationId(paths, "/api/business-console/v1/planning/mrp-runs/{runId}/pegging", "get", "getBusinessConsolePlanningMrpPegging");

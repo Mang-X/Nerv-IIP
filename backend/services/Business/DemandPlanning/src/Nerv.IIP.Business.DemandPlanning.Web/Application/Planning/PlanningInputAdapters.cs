@@ -403,10 +403,48 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
+                && x.DemandType != "forecast"
                 && x.DueDate >= horizonStart
                 && x.DueDate <= horizonEnd)
             .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
             .ToListAsync(cancellationToken);
+        var forecastInputs = await dbContext.ForecastInputs
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.PeriodEndDate >= horizonStart
+                && x.PeriodStartDate <= horizonEnd)
+            .OrderBy(x => x.PeriodStartDate)
+            .ThenBy(x => x.ForecastReference)
+            .ToListAsync(cancellationToken);
+        var forecastDemands = forecastInputs
+            .Select(forecast =>
+            {
+                var consumptionStart = forecast.PeriodStartDate.AddDays(-forecast.BackwardConsumptionDays);
+                var consumptionEnd = forecast.PeriodEndDate.AddDays(forecast.ForwardConsumptionDays);
+                var consumed = demandSources
+                    .Where(demand => IsForecastConsumingDemand(demand)
+                        && string.Equals(demand.SkuCode, forecast.SkuCode, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(demand.UomCode, forecast.UomCode, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(demand.SiteCode, forecast.SiteCode, StringComparison.OrdinalIgnoreCase)
+                        && demand.DueDate >= consumptionStart
+                        && demand.DueDate <= consumptionEnd)
+                    .Sum(demand => demand.Quantity);
+                var remaining = Math.Max(0m, forecast.Quantity - consumed);
+                return remaining <= 0m
+                    ? null
+                    : new DemandSnapshot(
+                        forecast.ForecastReference,
+                        forecast.SkuCode,
+                        forecast.UomCode,
+                        forecast.SiteCode,
+                        remaining,
+                        forecast.PeriodEndDate,
+                        "forecast");
+            })
+            .Where(x => x is not null)
+            .Select(x => x!)
+            .ToArray();
         var mpsBuckets = await dbContext.MasterProductionSchedules
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
@@ -425,11 +463,18 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             .ToListAsync(cancellationToken);
 
         return demandSources
+            .Concat(forecastDemands)
             .Concat(mpsBuckets)
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SourceType)
             .ThenBy(x => x.DemandSourceReference)
             .ToArray();
+    }
+
+    private static bool IsForecastConsumingDemand(DemandSnapshot demand)
+    {
+        return string.Equals(demand.SourceType, "sales-order", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(demand.SourceType, "sales", StringComparison.OrdinalIgnoreCase);
     }
 }
 

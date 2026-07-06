@@ -207,6 +207,17 @@ public static class MrpCalculator
                     Math.Max(0, planningParameter?.SafetyStockQuantity ?? 0m),
                     availability,
                     scheduledReceipts);
+                suggestions.AddRange(supply.ExceptionReceipts.Select(x => BuildScheduledReceiptExceptionSuggestion(
+                    x.ExceptionType,
+                    first,
+                    group.Key.RequiredDate,
+                    x.ExpectedReceiptDate,
+                    x.Quantity,
+                    x.ReasonCode,
+                    demandPegging,
+                    peggingVersion: IsMakeItem(planningParameter?.ProcurementType, version) ? version : null,
+                    grossRequirement,
+                    supply)));
                 var netRequirement = supply.Shortage;
                 if (netRequirement <= 0)
                 {
@@ -324,7 +335,129 @@ public static class MrpCalculator
             }
         }
 
+        suggestions.AddRange(scheduledReceipts
+            .SelectMany(x => x.Value.Select(y => new { Key = x.Key, Receipt = y }))
+            .Where(x => x.Receipt.RemainingQuantity > 0)
+            .OrderBy(x => x.Receipt.ExpectedReceiptDate)
+            .ThenBy(x => x.Key.SkuCode, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.Receipt.SourceSystem, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.Receipt.SourceDocumentType, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.Receipt.SourceDocumentId, StringComparer.OrdinalIgnoreCase)
+            .Select(x => BuildCancelExceptionSuggestion(x.Key, x.Receipt)));
+
         return suggestions;
+    }
+
+    private static CalculatedPlanningSuggestion BuildScheduledReceiptExceptionSuggestion(
+        string suggestionType,
+        Requirement requirement,
+        DateOnly requiredDate,
+        DateOnly receiptDate,
+        decimal quantity,
+        string reasonCode,
+        IReadOnlyCollection<DemandPegging> demandPegging,
+        ProductionVersionSnapshot? peggingVersion,
+        decimal grossRequirement,
+        SupplyConsumption supply)
+    {
+        var receiptLinks = supply.ExceptionReceipts
+            .Where(x => string.Equals(x.ExceptionType, suggestionType, StringComparison.OrdinalIgnoreCase)
+                && x.ExpectedReceiptDate == receiptDate
+                && string.Equals(x.ReasonCode, reasonCode, StringComparison.OrdinalIgnoreCase))
+            .Select(x => new CalculatedPeggingLink(
+                "scheduled-receipt",
+                $"{x.SourceSystem}:{x.SourceDocumentType}:{x.SourceDocumentId}",
+                requirement.SkuCode,
+                null,
+                x.Quantity,
+                peggingVersion?.ProductionVersionReference,
+                peggingVersion?.ManufacturingBomReference,
+                peggingVersion?.RoutingReference,
+                "scheduled-receipt",
+                x.Quantity))
+            .ToArray();
+        var peggingLinks = demandPegging
+            .Select(x => new CalculatedPeggingLink(
+                "demand",
+                x.DemandSourceReference,
+                x.ParentSkuCode,
+                x.ComponentSkuCode,
+                x.Quantity,
+                peggingVersion?.ProductionVersionReference,
+                peggingVersion?.ManufacturingBomReference,
+                peggingVersion?.RoutingReference,
+                x.SourceType,
+                x.Quantity))
+            .Concat(receiptLinks)
+            .ToArray();
+
+        return new CalculatedPlanningSuggestion(
+            suggestionType,
+            requirement.SkuCode,
+            requirement.UomCode,
+            requirement.SiteCode,
+            quantity,
+            requiredDate,
+            receiptDate,
+            reasonCode,
+            new CalculatedNetRequirementExplanation(
+                grossRequirement,
+                supply.OnHandQuantity,
+                supply.ReservedQuantity,
+                supply.UsedAvailableQuantity,
+                quantity,
+                supply.SafetyStockQuantity,
+                0m,
+                quantity,
+                requirement.ScrapRate,
+                requirement.YieldRate,
+                "scheduled-receipt",
+                $"{quantity:g29} scheduled receipt should move from {receiptDate:O} to {requiredDate:O}",
+                requirement.UomConversions,
+                []),
+            peggingLinks);
+    }
+
+    private static CalculatedPlanningSuggestion BuildCancelExceptionSuggestion(ItemKey key, ScheduledReceiptState receipt)
+    {
+        var quantity = receipt.RemainingQuantity;
+        return new CalculatedPlanningSuggestion(
+            "cancel",
+            key.SkuCode,
+            key.UomCode,
+            key.SiteCode,
+            quantity,
+            receipt.ExpectedReceiptDate,
+            receipt.ExpectedReceiptDate,
+            "scheduled-receipt-unneeded",
+            new CalculatedNetRequirementExplanation(
+                0m,
+                0m,
+                0m,
+                0m,
+                quantity,
+                0m,
+                0m,
+                quantity,
+                0m,
+                1m,
+                "scheduled-receipt",
+                $"{quantity:g29} scheduled receipt has no matching requirement",
+                [],
+                []),
+            [
+                new CalculatedPeggingLink(
+                    "scheduled-receipt",
+                    $"{receipt.SourceSystem}:{receipt.SourceDocumentType}:{receipt.SourceDocumentId}",
+                    key.SkuCode,
+                    null,
+                    quantity,
+                    null,
+                    null,
+                    null,
+                    "scheduled-receipt",
+                    quantity),
+            ]);
     }
 
     private static Requirement NormalizeDemand(
@@ -444,11 +577,43 @@ public static class MrpCalculator
 
                 receipt.RemainingQuantity -= used;
                 remainingRequirement -= used;
-                usedReceipts.Add(new UsedScheduledReceipt(receipt.SourceSystem, receipt.SourceDocumentType, receipt.SourceDocumentId, used));
+                usedReceipts.Add(new UsedScheduledReceipt(
+                    receipt.SourceSystem,
+                    receipt.SourceDocumentType,
+                    receipt.SourceDocumentId,
+                    receipt.ExpectedReceiptDate,
+                    used,
+                    receipt.ExpectedReceiptDate < requiredDate ? "reschedule-out" : null,
+                    receipt.ExpectedReceiptDate < requiredDate ? "scheduled-receipt-early" : null));
                 if (remainingRequirement <= 0)
                 {
                     break;
                 }
+            }
+
+            foreach (var receipt in receipts.Where(x => x.ExpectedReceiptDate > requiredDate && x.RemainingQuantity > 0))
+            {
+                if (remainingRequirement <= 0)
+                {
+                    break;
+                }
+
+                var used = Math.Min(receipt.RemainingQuantity, remainingRequirement);
+                if (used <= 0)
+                {
+                    continue;
+                }
+
+                receipt.RemainingQuantity -= used;
+                remainingRequirement -= used;
+                usedReceipts.Add(new UsedScheduledReceipt(
+                    receipt.SourceSystem,
+                    receipt.SourceDocumentType,
+                    receipt.SourceDocumentId,
+                    receipt.ExpectedReceiptDate,
+                    used,
+                    "reschedule-in",
+                    "scheduled-receipt-late"));
             }
         }
 
@@ -459,7 +624,17 @@ public static class MrpCalculator
             usedAvailable,
             usedReceipts.Sum(x => x.Quantity),
             safetyStockQuantity,
-            usedReceipts);
+            usedReceipts,
+            usedReceipts.Where(x => x.ExceptionType is not null)
+                .Select(x => new ScheduledReceiptException(
+                    x.ExceptionType!,
+                    x.SourceSystem,
+                    x.SourceDocumentType,
+                    x.SourceDocumentId,
+                    x.ExpectedReceiptDate,
+                    x.Quantity,
+                    x.ReasonCode!))
+                .ToArray());
     }
 
     private static IReadOnlyCollection<decimal> ApplyLotSizing(
@@ -704,7 +879,23 @@ public static class MrpCalculator
         public decimal RemainingQuantity { get; set; } = snapshot.Quantity;
     }
 
-    private sealed record UsedScheduledReceipt(string SourceSystem, string SourceDocumentType, string SourceDocumentId, decimal Quantity);
+    private sealed record UsedScheduledReceipt(
+        string SourceSystem,
+        string SourceDocumentType,
+        string SourceDocumentId,
+        DateOnly ExpectedReceiptDate,
+        decimal Quantity,
+        string? ExceptionType,
+        string? ReasonCode);
+
+    private sealed record ScheduledReceiptException(
+        string ExceptionType,
+        string SourceSystem,
+        string SourceDocumentType,
+        string SourceDocumentId,
+        DateOnly ExpectedReceiptDate,
+        decimal Quantity,
+        string ReasonCode);
 
     private sealed record SupplyConsumption(
         decimal Shortage,
@@ -713,7 +904,8 @@ public static class MrpCalculator
         decimal UsedAvailableQuantity,
         decimal UsedScheduledReceiptQuantity,
         decimal SafetyStockQuantity,
-        IReadOnlyCollection<UsedScheduledReceipt> UsedReceipts);
+        IReadOnlyCollection<UsedScheduledReceipt> UsedReceipts,
+        IReadOnlyCollection<ScheduledReceiptException> ExceptionReceipts);
 
     private sealed record QuantityConversion(decimal Quantity, IReadOnlyCollection<string> Summaries);
 

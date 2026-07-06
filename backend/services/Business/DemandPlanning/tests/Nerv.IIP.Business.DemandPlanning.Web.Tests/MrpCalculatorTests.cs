@@ -146,6 +146,87 @@ public sealed class MrpCalculatorTests
     }
 
     [Fact]
+    public void Late_scheduled_receipt_creates_reschedule_in_exception_instead_of_duplicate_new_supply()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("SO-1001", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1), "sales-order"),
+            ],
+            availability: [],
+            bomComponents: [],
+            scheduledReceipts:
+            [
+                new ScheduledReceiptSnapshot("SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 5), "erp", "purchase-order", "PO-1001"),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var exception = Assert.Single(suggestions);
+        Assert.Equal("reschedule-in", exception.SuggestionType);
+        Assert.Equal("SKU-FG-1000", exception.SkuCode);
+        Assert.Equal(10m, exception.Quantity);
+        Assert.Equal(new DateOnly(2026, 6, 1), exception.RequiredDate);
+        Assert.Equal(new DateOnly(2026, 6, 5), exception.ReleaseDate);
+        Assert.Equal("scheduled-receipt-late", exception.ReasonCode);
+        Assert.Contains(exception.PeggingLinks, x => x.PeggingType == "demand" && x.DemandSourceReference == "SO-1001");
+        Assert.Contains(exception.PeggingLinks, x => x.PeggingType == "scheduled-receipt" && x.DemandSourceReference == "erp:purchase-order:PO-1001");
+    }
+
+    [Fact]
+    public void Early_scheduled_receipt_used_by_future_requirement_creates_reschedule_out_exception()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("SO-1001", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 10), "sales-order"),
+            ],
+            availability: [],
+            bomComponents: [],
+            scheduledReceipts:
+            [
+                new ScheduledReceiptSnapshot("SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1), "erp", "purchase-order", "PO-1001"),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var exception = Assert.Single(suggestions);
+        Assert.Equal("reschedule-out", exception.SuggestionType);
+        Assert.Equal(10m, exception.Quantity);
+        Assert.Equal(new DateOnly(2026, 6, 10), exception.RequiredDate);
+        Assert.Equal(new DateOnly(2026, 6, 1), exception.ReleaseDate);
+        Assert.Equal("scheduled-receipt-early", exception.ReasonCode);
+        Assert.Contains(exception.PeggingLinks, x => x.PeggingType == "demand" && x.DemandSourceReference == "SO-1001");
+        Assert.Contains(exception.PeggingLinks, x => x.PeggingType == "scheduled-receipt" && x.DemandSourceReference == "erp:purchase-order:PO-1001");
+    }
+
+    [Fact]
+    public void Unused_scheduled_receipt_creates_cancel_exception_when_no_matching_requirement_exists()
+    {
+        var input = NewInput(
+            demands: [],
+            availability: [],
+            bomComponents: [],
+            scheduledReceipts:
+            [
+                new ScheduledReceiptSnapshot("SKU-RM-1000", "pcs", "SITE-01", 6m, new DateOnly(2026, 6, 15), "erp", "purchase-order", "PO-2001"),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var exception = Assert.Single(suggestions);
+        Assert.Equal("cancel", exception.SuggestionType);
+        Assert.Equal("SKU-RM-1000", exception.SkuCode);
+        Assert.Equal(6m, exception.Quantity);
+        Assert.Equal(new DateOnly(2026, 6, 15), exception.RequiredDate);
+        Assert.Equal(new DateOnly(2026, 6, 15), exception.ReleaseDate);
+        Assert.Equal("scheduled-receipt-unneeded", exception.ReasonCode);
+        var receipt = Assert.Single(exception.PeggingLinks);
+        Assert.Equal("scheduled-receipt", receipt.PeggingType);
+        Assert.Equal("erp:purchase-order:PO-2001", receipt.DemandSourceReference);
+    }
+
+    [Fact]
     public void Multi_uom_inputs_are_normalized_to_planning_uom_before_netting_and_pegging()
     {
         var input = NewInput(

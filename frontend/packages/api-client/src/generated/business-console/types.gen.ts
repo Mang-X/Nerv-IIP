@@ -1902,6 +1902,49 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleP
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleForecastInputListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleForecastInputListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleForecastInputListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleForecastInputItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleForecastInputItem = {
+    forecastInputId?: string;
+    forecastReference?: string;
+    skuCode?: string;
+    uomCode?: string;
+    siteCode?: string;
+    periodStartDate?: string;
+    periodEndDate?: string;
+    quantity?: number;
+    backwardConsumptionDays?: number;
+    forwardConsumptionDays?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleForecastInputListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleForecastInputItem = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleForecastInputItem | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateForecastInputRequest = {
+    organizationId: string;
+    environmentId: string;
+    forecastReference: string;
+    skuCode: string;
+    uomCode: string;
+    siteCode: string;
+    periodStartDate?: string;
+    periodEndDate?: string;
+    quantity?: number;
+    backwardConsumptionDays?: number;
+    forwardConsumptionDays?: number;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRunMrpResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRunMrpResponse | null;
 };
@@ -8231,6 +8274,79 @@ export type CancelBusinessConsolePlanningDemandResponses = {
 };
 
 export type CancelBusinessConsolePlanningDemandResponse = CancelBusinessConsolePlanningDemandResponses[keyof CancelBusinessConsolePlanningDemandResponses];
+
+export type ListBusinessConsolePlanningForecastsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        skuCode?: string | null;
+        siteCode?: string | null;
+        fromDate?: string | null;
+        toDate?: string | null;
+    };
+    url: '/api/business-console/v1/planning/forecasts';
+};
+
+export type ListBusinessConsolePlanningForecastsErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsolePlanningForecastsError = ListBusinessConsolePlanningForecastsErrors[keyof ListBusinessConsolePlanningForecastsErrors];
+
+export type ListBusinessConsolePlanningForecastsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleForecastInputListResponse;
+};
+
+export type ListBusinessConsolePlanningForecastsResponse = ListBusinessConsolePlanningForecastsResponses[keyof ListBusinessConsolePlanningForecastsResponses];
+
+export type CreateOrUpdateBusinessConsolePlanningForecastData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateForecastInputRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/planning/forecasts';
+};
+
+export type CreateOrUpdateBusinessConsolePlanningForecastErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateOrUpdateBusinessConsolePlanningForecastError = CreateOrUpdateBusinessConsolePlanningForecastErrors[keyof CreateOrUpdateBusinessConsolePlanningForecastErrors];
+
+export type CreateOrUpdateBusinessConsolePlanningForecastResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleForecastInputItem;
+};
+
+export type CreateOrUpdateBusinessConsolePlanningForecastResponse = CreateOrUpdateBusinessConsolePlanningForecastResponses[keyof CreateOrUpdateBusinessConsolePlanningForecastResponses];
 
 export type ListBusinessConsolePlanningMrpRunsData = {
     body?: never;

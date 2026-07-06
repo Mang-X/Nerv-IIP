@@ -48,9 +48,14 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         ReasonCode = DemandPlanningText.Required(reasonCode, nameof(reasonCode));
         Status = PlanningSuggestionStatus.Open;
         CreatedAtUtc = DateTimeOffset.UtcNow;
-        this.AddDomainEvent(SuggestionType == "planned-work-order"
-            ? new PlannedWorkOrderSuggestedDomainEvent(this)
-            : new PlannedPurchaseSuggestedDomainEvent(this));
+        if (SuggestionType == "planned-work-order")
+        {
+            this.AddDomainEvent(new PlannedWorkOrderSuggestedDomainEvent(this));
+        }
+        else if (SuggestionType == "planned-purchase")
+        {
+            this.AddDomainEvent(new PlannedPurchaseSuggestedDomainEvent(this));
+        }
     }
 
     public string OrganizationId { get; private set; } = string.Empty;

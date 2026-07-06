@@ -185,6 +185,32 @@ public sealed class BusinessGatewayAuthorizationTests
         Assert.Null(auth.LastRequirement.ResourceId);
     }
 
+    [Theory]
+    [InlineData("GET", "/api/business-console/v1/planning/forecasts?skuCode=SKU-FG-1000&siteCode=SITE-01", BusinessGatewayPermissions.PlanningDemandsRead)]
+    [InlineData("POST", "/api/business-console/v1/planning/forecasts", BusinessGatewayPermissions.PlanningDemandsManage)]
+    public async Task Planning_forecast_facade_returns_forbidden_when_iam_denies(
+        string method,
+        string path,
+        string expectedPermission)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        using var request = new HttpRequestMessage(new HttpMethod(method), $"{path}{(path.Contains('?') ? '&' : '?')}organizationId=org-001&environmentId=env-dev")
+        {
+            Content = method != "GET"
+                ? JsonContent.Create(ValidPostBody(path))
+                : null
+        };
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Equal(expectedPermission, auth.LastRequirement!.PermissionCode);
+    }
+
     [Fact]
     public async Task Business_console_endpoint_rejects_context_mismatch_before_permission_check()
     {
@@ -368,6 +394,20 @@ public sealed class BusinessGatewayAuthorizationTests
             siteCode = "SITE-01",
             quantity = 10,
             dueDate = "2026-06-01",
+        },
+        "/api/business-console/v1/planning/forecasts" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            forecastReference = "FCST-001",
+            skuCode = "SKU-FG-1000",
+            uomCode = "pcs",
+            siteCode = "SITE-01",
+            periodStartDate = "2026-06-01",
+            periodEndDate = "2026-06-30",
+            quantity = 120m,
+            backwardConsumptionDays = 7,
+            forwardConsumptionDays = 7,
         },
         "/api/business-console/v1/planning/mps" or "/api/business-console/v1/planning/mps/mps-001" => new
         {
@@ -844,6 +884,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions/resolve", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/forecasts", BusinessGatewayPermissions.PlanningDemandsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/forecasts", BusinessGatewayPermissions.PlanningDemandsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mps", BusinessGatewayPermissions.PlanningMpsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/mps", BusinessGatewayPermissions.PlanningMpsManage);
         routes.Add(HttpMethod.Put, "/api/business-console/v1/planning/mps/mps-001", BusinessGatewayPermissions.PlanningMpsManage);

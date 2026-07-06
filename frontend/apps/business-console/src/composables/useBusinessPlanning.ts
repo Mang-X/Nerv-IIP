@@ -49,7 +49,7 @@ export interface PlanningRunSelection {
 }
 
 export interface PlanningSuggestionTypeFilter {
-  /** '', 'planned-work-order', or 'planned-purchase' — '' means all types. */
+  /** '', planned supply suggestion, or MRP exception type. Empty means all types. */
   type: string
 }
 
