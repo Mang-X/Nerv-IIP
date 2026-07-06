@@ -1,25 +1,24 @@
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
+using Nerv.IIP.ConnectorHost.Connectors.OpcUa;
 
-namespace Nerv.IIP.ConnectorHost.Connectors.OpcUa;
+namespace Nerv.IIP.ConnectorHost.Connectors.Modbus;
 
-public sealed class OpcUaConnector(
-    OpcUaConnectorOptions options,
-    IOpcUaClient opcUaClient,
+public sealed class ModbusConnector(
+    ModbusConnectorOptions options,
+    IModbusTcpClient modbusClient,
     IIndustrialTelemetrySamplesClient samplesClient,
     Func<DateTimeOffset>? utcNow = null) : IConnector, IIndustrialTelemetryCollectionConnector
 {
-    private readonly Dictionary<(string NodeId, DateTimeOffset BucketStartUtc), TelemetryBucket> _buckets = [];
-    private readonly Dictionary<(string NodeId, DateTimeOffset BucketStartUtc), DateTimeOffset> _sealedBucketKeys = [];
-    private readonly Dictionary<string, OpcUaTagSubscription> _tagsByNodeId = options.Tags.ToDictionary(x => x.NodeId, StringComparer.Ordinal);
+    private readonly Dictionary<(byte UnitId, ModbusRegisterTable Table, ushort Address, DateTimeOffset BucketStartUtc), ModbusTelemetryBucket> _buckets = [];
+    private readonly Dictionary<(byte UnitId, ModbusRegisterTable Table, ushort Address, DateTimeOffset BucketStartUtc), DateTimeOffset> _sealedBucketKeys = [];
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Func<DateTimeOffset> _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
-    private readonly TimeSpan _sealedBucketRetention = CalculateSealedBucketRetention(options.Tags);
+    private readonly TimeSpan _sealedBucketRetention = CalculateSealedBucketRetention(options.Registers);
 
-    public OpcUaConnectorState CurrentState { get; private set; } = new(
+    public ModbusConnectorState CurrentState { get; private set; } = new(
         "stopped",
         "unknown",
-        "OPC UA collector has not run yet.",
-        0,
+        "Modbus TCP collector has not run yet.",
         0,
         0,
         0,
@@ -32,24 +31,52 @@ public sealed class OpcUaConnector(
         var attempts = 0;
         while (true)
         {
+            var pollingCompleted = false;
             try
             {
-                await ConnectBrowseAndSubscribeAsync(cancellationToken);
+                await modbusClient.ConnectAsync(new ModbusConnectionOptions(options.Endpoint, options.CredentialReference), cancellationToken);
+
+                if (options.Registers.Count == 0)
+                {
+                    await UpdateStateAsync(state => state with
+                    {
+                        ReportedStatus = "running",
+                        HealthStatus = "degraded",
+                        Summary = "Modbus TCP collector is connected but has no configured register mappings."
+                    }, cancellationToken);
+                    return;
+                }
+
+                var observedAtUtc = _utcNow();
+                foreach (var mapping in options.Registers)
+                {
+                    var samples = await modbusClient.ReadRegistersAsync(mapping, observedAtUtc, cancellationToken);
+                    if (samples.Count == 0)
+                    {
+                        await MarkDroppedSampleAsync(cancellationToken);
+                        continue;
+                    }
+
+                    foreach (var sample in samples)
+                    {
+                        await HandleSampleAsync(mapping, sample, cancellationToken);
+                    }
+                }
+
+                pollingCompleted = true;
                 await FlushClosedBucketsAsync(_utcNow(), cancellationToken);
                 await MarkRunningAsync(cancellationToken);
                 return;
             }
-            catch (OpcUaConnectionLostException) when (attempts < options.MaxReconnectAttempts)
+            catch (Exception ex) when (!pollingCompleted && ex is not OperationCanceledException && attempts < options.MaxReconnectAttempts)
             {
                 attempts++;
                 await UpdateStateAsync(state => state with
                 {
                     HealthStatus = "degraded",
-                    Summary = "OPC UA subscription disconnected; reconnecting.",
-                    ReconnectCount = state.ReconnectCount + 1,
-                    SubscriptionRecoveries = state.SubscriptionRecoveries + 1
+                    Summary = "Modbus TCP polling failed; reconnecting.",
+                    ReconnectCount = state.ReconnectCount + 1
                 }, cancellationToken);
-                await opcUaClient.DisconnectAsync(cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -57,7 +84,7 @@ public sealed class OpcUaConnector(
                 {
                     ReportedStatus = "stopped",
                     HealthStatus = "unhealthy",
-                    Summary = $"OPC UA collection failed: {ex.Message}"
+                    Summary = $"Modbus TCP collection failed: {ex.Message}"
                 }, cancellationToken);
                 throw;
             }
@@ -66,7 +93,7 @@ public sealed class OpcUaConnector(
 
     public async Task<IReadOnlyList<ConnectorTarget>> DiscoverAsync(CancellationToken cancellationToken)
     {
-        OpcUaConnectorState state;
+        ModbusConnectorState state;
         IReadOnlyDictionary<string, string> metadata;
         await _gate.WaitAsync(cancellationToken);
         try
@@ -82,73 +109,41 @@ public sealed class OpcUaConnector(
         IReadOnlyList<ConnectorTarget> targets =
         [
             new(
-                $"opcua-{options.ConnectorId}",
-                $"OPC UA {options.ConnectorId}",
-                "opcua",
-                "opcua-collector",
-                "OPC UA Collector",
+                $"modbus-{options.ConnectorId}",
+                $"Modbus TCP {options.ConnectorId}",
+                "modbus-tcp",
+                "modbus-collector",
+                "Modbus TCP Collector",
                 "1.0",
-                $"opcua-{options.ConnectorId}",
-                $"OPC UA {options.EndpointUrl}",
+                $"modbus-{options.ConnectorId}",
+                $"Modbus TCP {options.Endpoint}",
                 state.ReportedStatus,
                 state.HealthStatus,
                 [
                     new ConnectorCapability("runtime.status", "1.0", "runtime", ["inspect"]),
-                    new ConnectorCapability("industrial-telemetry.ingest", "1.0", "telemetry", ["browse", "subscribe", "sample"])
+                    new ConnectorCapability("industrial-telemetry.ingest", "1.0", "telemetry", ["poll", "sample"])
                 ],
                 metadata)
         ];
         return targets;
     }
 
-    private async Task ConnectBrowseAndSubscribeAsync(CancellationToken cancellationToken)
-    {
-        await opcUaClient.ConnectAsync(new OpcUaConnectionOptions(
-            options.EndpointUrl,
-            options.SecurityPolicy,
-            options.SecurityMode,
-            options.CredentialReference,
-            options.AutoAcceptUntrustedServerCertificates), cancellationToken);
-
-        _ = await opcUaClient.BrowseAsync(options.BrowseRootNodeId, cancellationToken);
-
-        if (options.Tags.Count == 0)
-        {
-            await UpdateStateAsync(state => state with
-            {
-                ReportedStatus = "running",
-                HealthStatus = "degraded",
-                Summary = "OPC UA collector is connected but has no configured tag subscriptions."
-            }, cancellationToken);
-            return;
-        }
-
-        await opcUaClient.SubscribeAsync(options.Tags, HandleDataChangeAsync, cancellationToken);
-    }
-
-    private async Task HandleDataChangeAsync(OpcUaDataChange change, CancellationToken cancellationToken)
+    private async Task HandleSampleAsync(ModbusRegisterMapping mapping, ModbusRegisterSample sample, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            if (!_tagsByNodeId.TryGetValue(change.NodeId, out var tag)
-                || !string.Equals(change.Status, "Good", StringComparison.OrdinalIgnoreCase)
-                || !OpcUaValueConversion.TryConvertDecimal(change.Value, out var value))
+            if (sample.UnitId != mapping.UnitId || sample.Table != mapping.Table || sample.Address != mapping.Address)
             {
                 MarkDroppedSample();
                 return;
             }
 
-            var bucketStartUtc = FloorToBucket(change.SourceTimestampUtc, tag.BucketSeconds);
-            var bucketKey = (tag.NodeId, bucketStartUtc);
-            var bucketEndUtc = bucketStartUtc.AddSeconds(tag.BucketSeconds);
-            if (bucketEndUtc < _utcNow() - _sealedBucketRetention)
-            {
-                MarkDroppedSample();
-                return;
-            }
-
-            if (_sealedBucketKeys.ContainsKey(bucketKey))
+            var value = sample.Value * mapping.Scale + mapping.Offset;
+            var bucketStartUtc = FloorToBucket(sample.ObservedAtUtc, mapping.BucketSeconds);
+            var bucketKey = (mapping.UnitId, mapping.Table, mapping.Address, bucketStartUtc);
+            var bucketEndUtc = bucketStartUtc.AddSeconds(mapping.BucketSeconds);
+            if (bucketEndUtc < _utcNow() - _sealedBucketRetention || _sealedBucketKeys.ContainsKey(bucketKey))
             {
                 MarkDroppedSample();
                 return;
@@ -156,7 +151,7 @@ public sealed class OpcUaConnector(
 
             if (!_buckets.TryGetValue(bucketKey, out var bucket))
             {
-                bucket = new TelemetryBucket(tag, bucketStartUtc, bucketEndUtc);
+                bucket = new ModbusTelemetryBucket(mapping, bucketStartUtc, bucketEndUtc);
                 _buckets[bucketKey] = bucket;
             }
 
@@ -164,7 +159,7 @@ public sealed class OpcUaConnector(
             CurrentState = CurrentState with
             {
                 ReceivedSamples = CurrentState.ReceivedSamples + 1,
-                LastSampleAtUtc = change.SourceTimestampUtc
+                LastSampleAtUtc = sample.ObservedAtUtc
             };
         }
         finally
@@ -206,7 +201,7 @@ public sealed class OpcUaConnector(
             var closedBuckets = _buckets
                 .Where(x => x.Value.BucketEndUtc <= nowUtc)
                 .OrderBy(x => x.Value.BucketStartUtc)
-                .ThenBy(x => x.Value.Tag.TagKey)
+                .ThenBy(x => x.Value.Mapping.TagKey)
                 .ToArray();
             if (closedBuckets.Length == 0)
             {
@@ -251,7 +246,7 @@ public sealed class OpcUaConnector(
         }
     }
 
-    private async Task MarkBucketPostedAsync(TelemetryBucket bucket, CancellationToken cancellationToken)
+    private async Task MarkBucketPostedAsync(ModbusTelemetryBucket bucket, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken);
         try
@@ -274,18 +269,31 @@ public sealed class OpcUaConnector(
         {
             DroppedSamples = CurrentState.DroppedSamples + 1,
             HealthStatus = "degraded",
-            Summary = "OPC UA collector dropped one or more invalid or late samples."
+            Summary = "Modbus TCP collector dropped one or more invalid or late samples."
         };
     }
 
-    private RecordIndustrialTelemetrySampleRequest CreateRequest(TelemetryBucket bucket)
+    private async Task MarkDroppedSampleAsync(CancellationToken cancellationToken)
     {
-        var normalizedTagKey = bucket.Tag.TagKey.Trim().ToLowerInvariant();
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            MarkDroppedSample();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private RecordIndustrialTelemetrySampleRequest CreateRequest(ModbusTelemetryBucket bucket)
+    {
+        var normalizedTagKey = bucket.Mapping.TagKey.Trim().ToLowerInvariant();
         var bucketStartUnixMilliseconds = bucket.BucketStartUtc.ToUnixTimeMilliseconds();
         return new RecordIndustrialTelemetrySampleRequest(
             options.OrganizationId,
             options.EnvironmentId,
-            bucket.Tag.DeviceAssetId,
+            bucket.Mapping.DeviceAssetId,
             normalizedTagKey,
             bucket.BucketStartUtc,
             bucket.BucketEndUtc,
@@ -293,8 +301,8 @@ public sealed class OpcUaConnector(
             bucket.MinValue,
             bucket.MaxValue,
             bucket.AverageValue,
-            $"opcua:{options.ConnectorId}:{normalizedTagKey}:{bucketStartUnixMilliseconds}",
-            "opcua",
+            $"modbus:{options.ConnectorId}:{normalizedTagKey}:{bucketStartUnixMilliseconds}",
+            "modbus",
             $"{options.ConnectorHostId}/{options.ConnectorId}");
     }
 
@@ -308,13 +316,13 @@ public sealed class OpcUaConnector(
                 ReportedStatus = "running",
                 HealthStatus = health,
                 Summary = health == "healthy"
-                ? "OPC UA collector is connected and sampling."
-                : "OPC UA collector is connected with recoverable sampling issues."
+                    ? "Modbus TCP collector is polling and sampling."
+                    : "Modbus TCP collector is polling with recoverable sampling issues."
             };
         }, cancellationToken);
     }
 
-    private async Task UpdateStateAsync(Func<OpcUaConnectorState, OpcUaConnectorState> update, CancellationToken cancellationToken)
+    private async Task UpdateStateAsync(Func<ModbusConnectorState, ModbusConnectorState> update, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken);
         try
@@ -327,21 +335,17 @@ public sealed class OpcUaConnector(
         }
     }
 
-    private IReadOnlyDictionary<string, string> CreateMetadata(OpcUaConnectorState state)
+    private IReadOnlyDictionary<string, string> CreateMetadata(ModbusConnectorState state)
     {
         var metadata = new Dictionary<string, string>
         {
-            ["endpointUrl"] = options.EndpointUrl,
-            ["securityPolicy"] = options.SecurityPolicy,
-            ["securityMode"] = options.SecurityMode,
+            ["endpoint"] = options.Endpoint,
             ["credentialReference"] = options.CredentialReference ?? string.Empty,
-            ["browseRootNodeId"] = options.BrowseRootNodeId,
-            ["tagCount"] = options.Tags.Count.ToString(),
+            ["registerCount"] = options.Registers.Count.ToString(),
             ["receivedSamples"] = state.ReceivedSamples.ToString(),
             ["postedBuckets"] = state.PostedBuckets.ToString(),
             ["droppedSamples"] = state.DroppedSamples.ToString(),
             ["reconnectCount"] = state.ReconnectCount.ToString(),
-            ["subscriptionRecoveries"] = state.SubscriptionRecoveries.ToString(),
             ["sealedBucketCount"] = _sealedBucketKeys.Count.ToString()
         };
 
@@ -362,7 +366,7 @@ public sealed class OpcUaConnector(
     {
         if (bucketSeconds <= 0)
         {
-            throw new InvalidOperationException("OPC UA tag bucketSeconds must be greater than zero.");
+            throw new InvalidOperationException("Modbus register bucketSeconds must be greater than zero.");
         }
 
         var unixSeconds = timestampUtc.ToUnixTimeSeconds();
@@ -370,13 +374,13 @@ public sealed class OpcUaConnector(
         return DateTimeOffset.FromUnixTimeSeconds(bucketStartUnixSeconds);
     }
 
-    private static TimeSpan CalculateSealedBucketRetention(IReadOnlyList<OpcUaTagSubscription> tags)
+    private static TimeSpan CalculateSealedBucketRetention(IReadOnlyList<ModbusRegisterMapping> mappings)
     {
-        var maxBucketSeconds = tags.Count == 0 ? 60 : tags.Max(x => Math.Max(x.BucketSeconds, 1));
+        var maxBucketSeconds = mappings.Count == 0 ? 60 : mappings.Max(x => Math.Max(x.BucketSeconds, 1));
         return TimeSpan.FromSeconds(Math.Max(60, maxBucketSeconds * 5));
     }
 
     private sealed record BucketFlushItem(
-        (string NodeId, DateTimeOffset BucketStartUtc) Key,
-        TelemetryBucket Bucket);
+        (byte UnitId, ModbusRegisterTable Table, ushort Address, DateTimeOffset BucketStartUtc) Key,
+        ModbusTelemetryBucket Bucket);
 }

@@ -325,7 +325,7 @@ Nerv-IIP/
 | 平台控制面 | IAM、Gateway-wide permission enforcement、Console Auth、IAM Admin、AppHub、Ops restart/approval gate、Connector Host 注册/心跳/状态、FileStorage metadata/tus、本地 Notification 站内消息/任务、ExternalClient、事件可靠性与部署产物基线。 | DLQ replay、发布演练、生产安全和性能 gate 继续按 focused issue hardening。 | #728 Notification 外部通道 provider、偏好/订阅、限流、模板映射；完整 OAuth/OIDC/WebAuthn、日志 UI、客户现场备份恢复。 |
 | 主数据、工程与计划 | BusinessMasterData、ProductEngineering、DemandPlanning/MRP、BusinessScheduling / APS lite 均已有服务、schema、AppHost、BusinessGateway facade 或 focused verify；Scheduling 已支持排程问题、方案、资源负载、冲突、gantt 和 release handoff。 | Scheduling 继续接入库存、质量、维护和设备可用性变化；Business Console/PDA 继续补真实工作流、权限裁剪和错误处理。 | 高级 APS 优化器、复杂仿真、自动重排策略、前端甘特高级交互。 |
 | 执行、仓储、质量与经营 | MES、WMS、Inventory、Quality、ERP Procurement/Sales/Finance MVP 已形成 P0 业务闭环；BusinessApproval、BarcodeLabel 已有后端与部分前端入口。 | ERP/WMS/Inventory/MES/Quality/Approval/Notification 的事件、facade、页面和验收脚本继续按真实链路收口。 | ERP 月结/税务/银行/完整财务报表、FEFO/FIFO、ASN 差异、directed putaway、LPN/HU、BarcodeLabel 打印管理/扫码记录正式前端。 |
-| 设备运行、维护与现场能力 | IndustrialTelemetry 已有 tag mapping、HTTP bucket 采样入口、DeviceStateSnapshot、TelemetrySummary、AlarmRaised/AlarmCleared、OEE/runtime-availability 读面；Maintenance 已消费报警开单/清除并发布 AssetUnavailable/AssetRestored；MES/Scheduling 已消费维护可用性事件。 | 本批已立项 #683-#690：OPC UA 采集、报警通知联动、运行小时聚合、DeviceStateChanged 下游消费、报警 ack/shelve/escalation 等现场能力深化。 | Modbus TCP/MQTT 采集、设备控制命令下发、historian raw/hourly/daily 分层存储、完整 CMMS 工作台、独立设备大屏。 |
+| 设备运行、维护与现场能力 | IndustrialTelemetry 已有 tag mapping、HTTP bucket 采样入口、DeviceStateSnapshot、TelemetrySummary、AlarmRaised/AlarmCleared、OEE/runtime-availability 读面；Connector Host 已提供 OPC UA、Modbus TCP 和 MQTT 采集连接器；Maintenance 已消费报警开单/清除并发布 AssetUnavailable/AssetRestored；MES/Scheduling 已消费维护可用性事件。 | 本批已立项 #683-#690：OPC UA/Modbus/MQTT 采集、报警通知联动、运行小时聚合、DeviceStateChanged 下游消费、报警 ack/shelve/escalation 等现场能力深化。 | 设备控制命令下发、historian raw/hourly/daily 分层存储、完整 CMMS 工作台、独立设备大屏。 |
 | 业务前端与移动 | BusinessGateway `/api/business-console/v1/**`、Business Console PC 工作台、Business PDA v1 已成为真实业务入口；Business Console 已有 MasterData、ProductEngineering、Planning、Inventory、Quality、MES、ERP、WMS、Equipment/Maintenance 和 APS lite route-ready 页面。 | 已落地页面继续补真实操作、上下文穿透、空状态和 focused verification。 | 独立 `/api/mobile/v1/**`、mobile OpenAPI/api-client、扫码解释、设备注册、离线 outbox/sync。 |
 
 Business PDA v1 当前复用 `@nerv-iip/api-client` 的 business-console 稳定导出，通过 BusinessGateway 现有 `/api/business-console/v1/**` facade 工作；独立 `/api/mobile/v1/**`、mobile OpenAPI 快照、离线 outbox/sync、设备注册和扫码解释仍是后续移动专用 API 轨道。
@@ -358,7 +358,7 @@ pnpm -C frontend --filter @nerv-iip/business-pda build
 
 ## 非目标
 
-1. 当前已交付代码还没有真实 OPC UA/Modbus/MQTT 采集器、设备控制命令下发或 historian 明细存储；这些能力不再作为永久外部边界，而是由 Connector Host、IndustrialTelemetry、Ops 和后续 issue 分阶段纳入平台自有能力。
+1. 当前已交付代码已有 OPC UA、Modbus TCP 和 MQTT 采集器，但还没有设备控制命令下发或 historian 明细存储；这些能力不再作为永久外部边界，而是由 Connector Host、IndustrialTelemetry、Ops 和后续 issue 分阶段纳入平台自有能力。
 2. 当前不承诺完整行业套件的所有高级能力；P0 聚焦数字工厂主链路，税务、银行、完整总账月结、高级 APS 优化、完整 CMMS、LPN/HU、FEFO/FIFO 等按业务优先级后续扩展。
 3. 当前不做模型托管平台；AI 能力先服务治理、查询、知识检索和低风险动作。
 4. 当前不做微前端与复杂前端运行时抽象；多应用前端通过明确 workspace app/package 边界演进。
