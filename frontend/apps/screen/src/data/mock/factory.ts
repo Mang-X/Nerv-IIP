@@ -9,7 +9,7 @@ export function buildFactoryOverview(): FactoryOverview {
     kpis: [
       { label: '今日产量', value: output, unit: '件', delta: '较昨日 +6.2%', spark: spark() },
       { label: '计划达成率', value: rate, unit: '%', delta: '较昨日 +1.4%', spark: spark() },
-      { label: '综合 OEE', value: oee, unit: '%', delta: '较昨日 +2.1%', spark: spark() },
+      { label: '综合 OEE', value: oee, unit: '%', delta: '较昨日 +2.1%', spark: spark() }, // 🟠 综合 OEE 暂等于可用率（性能/良品率无真实端点），待 #570
       { label: '未恢复告警', value: 3, unit: '条', delta: '较昨日 -2', spark: spark() },
     ],
     workshops: [
@@ -22,8 +22,8 @@ export function buildFactoryOverview(): FactoryOverview {
     ],
     oee: [
       { label: '可用率', value: oee },
-      { label: '性能率', value: jitter(92, 4) },
-      { label: '良品率', value: +(97 + Math.random() * 2).toFixed(1) },
+      { label: '性能率', value: jitter(92, 4) }, // 🟠 占位值，无真实端点，待 #570
+      { label: '良品率', value: +(97 + Math.random() * 2).toFixed(1) }, // 🟠 占位值，无真实端点，待 #570
     ],
     alarms: [
       { id: 'AL-2041', level: 'critical', text: '电池车间 PACK-03 急停触发', time: '14:31' },
