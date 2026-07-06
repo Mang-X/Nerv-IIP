@@ -1,6 +1,7 @@
 using MediatR;
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -10,10 +11,13 @@ using Nerv.IIP.AppHub.Infrastructure;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.AppHub.Web.Application.Commands;
+using NetCorePal.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.AppHub.Web.Tests;
 
@@ -55,6 +59,170 @@ public sealed class AppHubIntegrationEventTests
         Assert.Equal("starting", integrationEvent.Payload.PreviousStatus);
         Assert.Equal("running", integrationEvent.Payload.CurrentStatus);
         Assert.Equal(DateTimeOffset.Parse("2026-05-15T00:00:10Z"), integrationEvent.Payload.ChangedAtUtc);
+    }
+
+    [Fact]
+    public void Connector_host_unreachable_and_restored_converters_map_heartbeat_lifecycle_events()
+    {
+        var unreachableConverter = new ConnectorHostUnreachableIntegrationEventConverter();
+        var restoredConverter = new ConnectorHostRestoredIntegrationEventConverter();
+        var unreachableDomainEvent = new ConnectorHostUnreachableDomainEvent(
+            "org-001",
+            "env-dev",
+            "connector-host-001",
+            "demo-api-001",
+            DateTimeOffset.Parse("2026-07-06T01:00:00Z"),
+            DateTimeOffset.Parse("2026-07-06T01:06:00Z"),
+            TimeSpan.FromMinutes(5));
+        var restoredDomainEvent = new ConnectorHostRestoredDomainEvent(
+            "org-001",
+            "env-dev",
+            "connector-host-001",
+            "demo-api-001",
+            DateTimeOffset.Parse("2026-07-06T01:08:00Z"));
+
+        var unreachable = unreachableConverter.Convert(unreachableDomainEvent);
+        var restored = restoredConverter.Convert(restoredDomainEvent);
+
+        Assert.Equal(AppHubIntegrationEventTypes.ConnectorHostUnreachable, unreachable.EventType);
+        Assert.Equal(AppHubIntegrationEventSources.AppHub, unreachable.SourceService);
+        Assert.Equal("org-001", unreachable.OrganizationId);
+        Assert.Equal("env-dev", unreachable.EnvironmentId);
+        Assert.Equal("connector-host-001", unreachable.Payload.ConnectorHostId);
+        Assert.Equal("demo-api-001", unreachable.Payload.InstanceKey);
+        Assert.Equal(300, unreachable.Payload.HeartbeatTimeoutSeconds);
+        Assert.False(string.IsNullOrWhiteSpace(unreachable.CorrelationId));
+        Assert.Equal("demo-api-001", unreachable.CausationId);
+        Assert.Equal("apphub:connector-host-unreachable:org-001:env-dev:connector-host-001:demo-api-001:2026-07-06T01:06:00.0000000+00:00", unreachable.IdempotencyKey);
+
+        Assert.Equal(AppHubIntegrationEventTypes.ConnectorHostRestored, restored.EventType);
+        Assert.False(string.IsNullOrWhiteSpace(restored.CorrelationId));
+        Assert.Equal("demo-api-001", restored.CausationId);
+        Assert.Equal("connector-host-001", restored.Payload.ConnectorHostId);
+        Assert.Equal("demo-api-001", restored.Payload.InstanceKey);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-06T01:08:00Z"), restored.Payload.RestoredAtUtc);
+    }
+
+    [Fact]
+    public async Task Heartbeat_timeout_scan_marks_stale_instance_unreachable_once()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"apphub-heartbeat-scan-{Guid.CreateVersion7():N}", databaseRoot);
+        await using var dbContext = CreateDbContext(options);
+        var instance = new ApplicationInstance(
+            "org-001",
+            "env-dev",
+            "connector-host-001",
+            "demo-api",
+            "1.0.0",
+            "node-001",
+            "demo-api-001",
+            "demo-api",
+            new Dictionary<string, string>(),
+            [new CapabilityDescriptor("lifecycle.restart", "1.0", "lifecycle", ["restart"], new Dictionary<string, string>())]);
+        instance.RecordHeartbeat(DateTimeOffset.Parse("2026-07-06T01:00:00Z"), true, 12);
+        dbContext.ApplicationInstances.Add(instance);
+        await dbContext.SaveChangesAsync();
+        instance.ClearDomainEvents();
+        var scanner = new AppHubHeartbeatTimeoutScanner(dbContext);
+
+        var first = await scanner.ScanAsync(
+            DateTimeOffset.Parse("2026-07-06T01:06:00Z"),
+            TimeSpan.FromMinutes(5),
+            take: 10,
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var second = await scanner.ScanAsync(
+            DateTimeOffset.Parse("2026-07-06T01:07:00Z"),
+            TimeSpan.FromMinutes(5),
+            take: 10,
+            CancellationToken.None);
+
+        Assert.Equal(1, first.MarkedUnreachableCount);
+        Assert.Equal(0, second.MarkedUnreachableCount);
+        await using var assertionDbContext = CreateDbContext(options);
+        var persisted = await assertionDbContext.ApplicationInstances
+            .Include(x => x.Heartbeat)
+            .SingleAsync(x => x.InstanceKey == "demo-api-001");
+        Assert.NotNull(persisted.Heartbeat);
+        Assert.False(persisted.Heartbeat.Reachable);
+    }
+
+    [Fact]
+    public async Task Heartbeat_timeout_scan_command_publishes_unreachable_integration_event_through_unit_of_work()
+    {
+        var databaseName = $"apphub-heartbeat-command-{Guid.CreateVersion7():N}";
+        var databaseRoot = new InMemoryDatabaseRoot();
+        using var provider = CreateHeartbeatScanCommandProvider(databaseName, databaseRoot);
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var instance = new ApplicationInstance(
+                "org-001",
+                "env-dev",
+                "connector-host-001",
+                "demo-api",
+                "1.0.0",
+                "node-001",
+                "demo-api-command-001",
+                "demo-api",
+                new Dictionary<string, string>(),
+                [new CapabilityDescriptor("lifecycle.restart", "1.0", "lifecycle", ["restart"], new Dictionary<string, string>())]);
+            instance.RecordHeartbeat(DateTimeOffset.Parse("2026-07-06T01:00:00Z"), true, 12);
+            dbContext.ApplicationInstances.Add(instance);
+            await dbContext.SaveChangesAsync();
+        }
+
+        AppHubHeartbeatTimeoutScanResult result;
+        using (var scope = provider.CreateScope())
+        {
+            var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+            result = await sender.Send(new AppHubHeartbeatTimeoutScanCommand(
+                DateTimeOffset.Parse("2026-07-06T01:06:00Z"),
+                TimeSpan.FromMinutes(5),
+                Take: 10));
+        }
+
+        var publisher = provider.GetRequiredService<RecordingIntegrationEventPublisher>();
+        var integrationEvent = Assert.IsType<ConnectorHostUnreachableIntegrationEvent>(Assert.Single(publisher.Published));
+        Assert.Equal(1, result.MarkedUnreachableCount);
+        Assert.Equal(AppHubIntegrationEventTypes.ConnectorHostUnreachable, integrationEvent.EventType);
+        Assert.Equal("connector-host-001", integrationEvent.Payload.ConnectorHostId);
+        Assert.False(string.IsNullOrWhiteSpace(integrationEvent.CorrelationId));
+    }
+
+    [Fact]
+    public async Task Heartbeat_timeout_scan_skips_legacy_instances_without_connector_host()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"apphub-heartbeat-scan-legacy-{Guid.CreateVersion7():N}", databaseRoot);
+        await using var dbContext = CreateDbContext(options);
+        var instance = new ApplicationInstance(
+            "org-001",
+            "env-dev",
+            "",
+            "demo-api",
+            "1.0.0",
+            "node-001",
+            "legacy-demo-api-001",
+            "demo-api",
+            new Dictionary<string, string>(),
+            [new CapabilityDescriptor("lifecycle.restart", "1.0", "lifecycle", ["restart"], new Dictionary<string, string>())]);
+        instance.RecordHeartbeat(DateTimeOffset.Parse("2026-07-06T01:00:00Z"), true, 12);
+        dbContext.ApplicationInstances.Add(instance);
+        await dbContext.SaveChangesAsync();
+        var scanner = new AppHubHeartbeatTimeoutScanner(dbContext);
+
+        var result = await scanner.ScanAsync(
+            DateTimeOffset.Parse("2026-07-06T01:06:00Z"),
+            TimeSpan.FromMinutes(5),
+            take: 10,
+            CancellationToken.None);
+
+        Assert.Equal(0, result.MarkedUnreachableCount);
+        Assert.True(instance.Heartbeat!.Reachable);
+        Assert.Empty(instance.GetDomainEvents().OfType<ConnectorHostUnreachableDomainEvent>());
     }
 
     [Fact]
@@ -466,6 +634,28 @@ public sealed class AppHubIntegrationEventTests
             .Options;
     }
 
+    private static ServiceProvider CreateHeartbeatScanCommandProvider(string databaseName, InMemoryDatabaseRoot databaseRoot)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMediatR(configuration =>
+        {
+            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
+            configuration.AddUnitOfWorkBehaviors();
+        });
+        services.AddIntegrationEvents(typeof(Program));
+        services.AddSingleton<RecordingIntegrationEventPublisher>();
+        services.AddSingleton<IIntegrationEventPublisher>(serviceProvider =>
+            serviceProvider.GetRequiredService<RecordingIntegrationEventPublisher>());
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options
+                .UseInMemoryDatabase(databaseName, databaseRoot)
+                .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+        services.AddUnitOfWork<ApplicationDbContext>();
+        services.AddScoped<AppHubHeartbeatTimeoutScanner>();
+        return services.BuildServiceProvider();
+    }
+
     private static ServiceProvider CreateServiceProvider(ApplicationDbContext dbContext)
     {
         return new ServiceCollection()
@@ -581,4 +771,16 @@ public sealed class AppHubIntegrationEventTests
         }
     }
 
+    private sealed class RecordingIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        public List<object> Published { get; } = [];
+
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(
+            TIntegrationEvent integrationEvent,
+            CancellationToken cancellationToken)
+        {
+            Published.Add(integrationEvent!);
+            return Task.CompletedTask;
+        }
+    }
 }

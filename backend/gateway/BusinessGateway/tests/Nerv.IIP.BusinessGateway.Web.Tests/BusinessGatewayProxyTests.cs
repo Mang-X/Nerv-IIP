@@ -1172,6 +1172,44 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Planning_forecast_facade_uses_internal_service_token_for_downstream_business_service()
+    {
+        var planning = new RecordingPlanningClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var list = await client.GetAsync("/api/business-console/v1/planning/forecasts?organizationId=org-001&environmentId=env-dev&skuCode=SKU-FG-1000&siteCode=SITE-01");
+        var create = await client.PostAsJsonAsync("/api/business-console/v1/planning/forecasts", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            forecastReference = "FC-2026-06-SKU-FG-1000",
+            skuCode = "SKU-FG-1000",
+            uomCode = "pcs",
+            siteCode = "SITE-01",
+            periodStartDate = "2026-06-01",
+            periodEndDate = "2026-06-30",
+            quantity = 10m,
+            backwardConsumptionDays = 7,
+            forwardConsumptionDays = 3,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        Assert.Equal("internal-test-token", planning.LastInternalToken);
+        Assert.Equal(new BusinessConsoleForecastInputListRequest("org-001", "env-dev", "SKU-FG-1000", "SITE-01"), planning.LastForecastListRequest);
+        Assert.Equal("FC-2026-06-SKU-FG-1000", planning.LastCreateForecastRequest!.ForecastReference);
+        Assert.Equal(7, planning.LastCreateForecastRequest.BackwardConsumptionDays);
+    }
+
+    [Fact]
     public async Task Planning_mrp_pegging_exposes_source_type_and_gross_demand()
     {
         var planning = new RecordingPlanningClient
@@ -2125,7 +2163,7 @@ public sealed class BusinessGatewayProxyTests
         await telemetry.GetRuntimeAvailabilityAsync("internal-token-001", request, CancellationToken.None);
         await telemetry.GetDeviceRuntimeAvailabilityAsync("internal-token-001", "DEV-OIL-01", request, CancellationToken.None);
         await telemetry.GetDeviceCurrentStateAsync("internal-token-001", "DEV-OIL-01", new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"), CancellationToken.None);
-        await telemetry.ListActiveAlarmsAsync("internal-token-001", new BusinessConsoleEquipmentAlarmListRequest("org-001", "env-dev", null, "raised"), CancellationToken.None);
+        await telemetry.ListActiveAlarmsAsync("internal-token-001", new BusinessConsoleEquipmentAlarmListRequest("org-001", "env-dev", null, null), CancellationToken.None);
         await telemetry.ListAlarmRulesAsync("internal-token-001", new BusinessConsoleTelemetryAlarmRuleListRequest("org-001", "env-dev", "DEV-OIL-01", true), CancellationToken.None);
         await telemetry.CreateOrUpdateAlarmRuleAsync("internal-token-001", new BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest("org-001", "env-dev", "DEV-OIL-01", "RULE-001", "TEMP_HIGH", "warning", "temperature", ">=", 95m, "celsius", true), CancellationToken.None);
         await telemetry.QueryOeeAsync("internal-token-001", new BusinessConsoleTelemetryOeeRequest("org-001", "env-dev", "DEV-OIL-01", request.WindowStartUtc, request.WindowEndUtc), CancellationToken.None);
@@ -2139,7 +2177,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("/api/business/v1/iiot/devices/DEV-OIL-01/current-state", telemetryHandler.Requests[2].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev", telemetryHandler.Requests[2].RequestUri!.Query.TrimStart('?'));
         Assert.Equal("/api/business/v1/iiot/alarms", telemetryHandler.Requests[3].RequestUri!.AbsolutePath);
-        Assert.Equal("organizationId=org-001&environmentId=env-dev&status=raised&skip=0&take=100", telemetryHandler.Requests[3].RequestUri!.Query.TrimStart('?'));
+        Assert.Equal("organizationId=org-001&environmentId=env-dev&status=active&skip=0&take=100", telemetryHandler.Requests[3].RequestUri!.Query.TrimStart('?'));
         Assert.Equal("/api/business/v1/iiot/alarm-rules", telemetryHandler.Requests[4].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OIL-01&isEnabled=true&skip=0&take=100", telemetryHandler.Requests[4].RequestUri!.Query.TrimStart('?'));
         Assert.Equal(HttpMethod.Post, telemetryHandler.Requests[5].Method);
@@ -5950,6 +5988,10 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
 
     public BusinessConsolePlanningDemandCancelRequest? LastCancelDemandRequest { get; private set; }
 
+    public BusinessConsoleForecastInputListRequest? LastForecastListRequest { get; private set; }
+
+    public BusinessConsoleCreateOrUpdateForecastInputRequest? LastCreateForecastRequest { get; private set; }
+
     public BusinessConsoleAcceptedResponse AcceptedSuggestionResponse { get; init; } =
         new(true, "BusinessMes", "WorkOrder", "WO-001");
 
@@ -6098,6 +6140,48 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
         LastCancelledDemandSourceId = demandSourceId;
         LastCancelDemandRequest = request;
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public Task<BusinessConsoleForecastInputListResponse> ListForecastInputsAsync(
+        string internalBearerToken,
+        BusinessConsoleForecastInputListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastForecastListRequest = request;
+        return Task.FromResult(new BusinessConsoleForecastInputListResponse([
+            new BusinessConsoleForecastInputItem(
+                "forecast-001",
+                "FC-2026-06-SKU-FG-1000",
+                "SKU-FG-1000",
+                "pcs",
+                "SITE-01",
+                new DateOnly(2026, 6, 1),
+                new DateOnly(2026, 6, 30),
+                10m,
+                7,
+                3),
+        ]));
+    }
+
+    public Task<BusinessConsoleForecastInputItem> CreateOrUpdateForecastInputAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateForecastInputRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateForecastRequest = request;
+        return Task.FromResult(new BusinessConsoleForecastInputItem(
+            "forecast-created",
+            request.ForecastReference,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.PeriodStartDate,
+            request.PeriodEndDate,
+            request.Quantity,
+            request.BackwardConsumptionDays,
+            request.ForwardConsumptionDays));
     }
 
     public Task<BusinessConsoleRunMrpResponse> RunMrpAsync(
@@ -6997,14 +7081,48 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleEquipmentAlarmListPageResponse(
         [
-            new EquipmentRuntimeAlarmSummary(
+            new BusinessConsoleTelemetryAlarmEventItem(
                 "alarm-001",
+                request.OrganizationId,
+                request.EnvironmentId,
                 "DEV-OIL-01",
                 "TEMP_HIGH",
                 "critical",
+                "raised",
                 DateTimeOffset.Parse("2026-06-01T08:20:00Z", CultureInfo.InvariantCulture),
+                null,
                 "EXT-ALARM-001"),
         ], 1));
+    }
+
+    public Task<BusinessConsoleAlarmLifecycleResponse> AcknowledgeAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleAcknowledgeAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
+    }
+
+    public Task<BusinessConsoleAlarmLifecycleResponse> ShelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleShelveAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
+    }
+
+    public Task<BusinessConsoleAlarmLifecycleResponse> UnshelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleUnshelveAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
     }
 }
 

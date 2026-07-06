@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.ForecastInputAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
@@ -112,6 +113,73 @@ public sealed class ListDemandSourcesQueryHandler(ApplicationDbContext dbContext
                 x.SiteCode,
                 x.Quantity,
                 x.DueDate))
+            .ToListAsync(cancellationToken);
+    }
+}
+
+public sealed record ListForecastInputsQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode,
+    string? SiteCode,
+    DateOnly? FromDate,
+    DateOnly? ToDate) : IQuery<IReadOnlyCollection<ForecastInputResponse>>;
+
+public sealed record ForecastInputResponse(
+    ForecastInputId ForecastInputId,
+    string ForecastReference,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    DateOnly PeriodStartDate,
+    DateOnly PeriodEndDate,
+    decimal Quantity,
+    int BackwardConsumptionDays,
+    int ForwardConsumptionDays);
+
+public sealed class ListForecastInputsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListForecastInputsQuery, IReadOnlyCollection<ForecastInputResponse>>
+{
+    public async Task<IReadOnlyCollection<ForecastInputResponse>> Handle(ListForecastInputsQuery request, CancellationToken cancellationToken)
+    {
+        var query = dbContext.ForecastInputs.AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+        if (!string.IsNullOrWhiteSpace(request.SkuCode))
+        {
+            query = query.Where(x => x.SkuCode == request.SkuCode);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SiteCode))
+        {
+            query = query.Where(x => x.SiteCode == request.SiteCode);
+        }
+
+        if (request.FromDate is not null)
+        {
+            query = query.Where(x => x.PeriodEndDate >= request.FromDate);
+        }
+
+        if (request.ToDate is not null)
+        {
+            query = query.Where(x => x.PeriodStartDate <= request.ToDate);
+        }
+
+        return await query
+            .OrderBy(x => x.PeriodStartDate)
+            .ThenBy(x => x.SkuCode)
+            .ThenBy(x => x.SiteCode)
+            .ThenBy(x => x.ForecastReference)
+            .Select(x => new ForecastInputResponse(
+                x.Id,
+                x.ForecastReference,
+                x.SkuCode,
+                x.UomCode,
+                x.SiteCode,
+                x.PeriodStartDate,
+                x.PeriodEndDate,
+                x.Quantity,
+                x.BackwardConsumptionDays,
+                x.ForwardConsumptionDays))
             .ToListAsync(cancellationToken);
     }
 }

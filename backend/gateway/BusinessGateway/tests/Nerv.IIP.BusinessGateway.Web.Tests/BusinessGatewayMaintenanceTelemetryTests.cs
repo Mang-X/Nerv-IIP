@@ -385,6 +385,54 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public async Task Equipment_alarm_lifecycle_actions_use_alarm_write_permission_and_forward_payloads()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var telemetry = new RecordingTelemetryFacadeClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var ackResponse = await client.PostAsJsonAsync("/api/business-console/v1/equipment/alarms/alarm-001/acknowledge", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            acknowledgedAtUtc = "2026-07-06T08:05:00Z",
+            acknowledgedBy = "operator-001",
+        });
+        var shelveResponse = await client.PostAsJsonAsync("/api/business-console/v1/equipment/alarms/alarm-001/shelve", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            shelvedAtUtc = "2026-07-06T08:06:00Z",
+            durationMinutes = 30,
+            shelvedBy = "operator-001",
+            reason = "maintenance check",
+        });
+        var unshelveResponse = await client.PostAsJsonAsync("/api/business-console/v1/equipment/alarms/alarm-001/unshelve", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            unshelvedAtUtc = "2026-07-06T08:40:00Z",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, ackResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, shelveResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, unshelveResponse.StatusCode);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.IiotAlarmsWrite);
+        Assert.Equal("internal-test-token", telemetry.LastInternalToken);
+        Assert.Equal("alarm-001", telemetry.LastAlarmLifecycleId);
+        var request = Assert.IsType<BusinessConsoleUnshelveAlarmRequest>(telemetry.LastAlarmLifecycleRequest);
+        Assert.Equal("org-001", request.OrganizationId);
+    }
+
+    [Fact]
     public async Task Telemetry_and_equipment_alarm_lists_forward_paging_and_filters()
     {
         var telemetry = new RecordingTelemetryFacadeClient();
@@ -760,6 +808,10 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
 
     public BusinessConsoleEquipmentAlarmListRequest? LastEquipmentAlarmListRequest { get; private set; }
 
+    public string? LastAlarmLifecycleId { get; private set; }
+
+    public object? LastAlarmLifecycleRequest { get; private set; }
+
     public string? LastHistoryDeviceAssetId { get; private set; }
 
     public BusinessConsoleTelemetryHistoryRequest? LastHistoryRequest { get; private set; }
@@ -915,5 +967,41 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
         LastInternalToken = internalBearerToken;
         LastEquipmentAlarmListRequest = request;
         return Task.FromResult(new BusinessConsoleEquipmentAlarmListPageResponse([], 42));
+    }
+
+    public Task<BusinessConsoleAlarmLifecycleResponse> AcknowledgeAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleAcknowledgeAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastAlarmLifecycleId = alarmEventId;
+        LastAlarmLifecycleRequest = request;
+        return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
+    }
+
+    public Task<BusinessConsoleAlarmLifecycleResponse> ShelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleShelveAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastAlarmLifecycleId = alarmEventId;
+        LastAlarmLifecycleRequest = request;
+        return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
+    }
+
+    public Task<BusinessConsoleAlarmLifecycleResponse> UnshelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleUnshelveAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastAlarmLifecycleId = alarmEventId;
+        LastAlarmLifecycleRequest = request;
+        return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
     }
 }

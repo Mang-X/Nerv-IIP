@@ -19,7 +19,7 @@ public sealed class OperationTemplateEntityTypeConfiguration : IEntityTypeConfig
             .HasComment("Operation template identifier.");
         builder.Property(x => x.OperationCode).IsRequired().HasMaxLength(128).HasComment("Registered operation code.");
         builder.Property(x => x.DisplayName).IsRequired().HasMaxLength(200).HasComment("Operation display name.");
-        builder.Property(x => x.ParameterSchemaJson).IsRequired().HasComment("JSON schema describing accepted operation parameters.");
+        builder.Property(x => x.ParameterSchemaJson).IsRequired().HasComment("JSON schema produced by Ops operation type registration and consumed by Gateway or Connector Host clients to validate operation parameters; additive optional schema fields are compatible, required field or semantic changes require Ops contract versioning.");
         builder.Property(x => x.RiskLevel).IsRequired().HasMaxLength(32).HasComment("Operation risk level.");
         builder.Property(x => x.DefaultMaxAttempts).HasComment("Default maximum execution attempts.");
         builder.Property(x => x.DefaultLeaseDurationSeconds).HasComment("Default connector lease duration in seconds.");

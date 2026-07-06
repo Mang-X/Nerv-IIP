@@ -569,6 +569,15 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     raisedAtUtc?: string;
     clearedAtUtc?: string | null;
     externalAlarmId?: string;
+    acknowledgedAtUtc?: string | null;
+    acknowledgedBy?: string | null;
+    shelvedAtUtc?: string | null;
+    shelvedUntilUtc?: string | null;
+    shelvedBy?: string | null;
+    shelveReason?: string | null;
+    escalatedAtUtc?: string | null;
+    escalationReason?: string | null;
+    escalationRecipientRefs?: Array<string> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryAlarmListRequest = {
@@ -1900,6 +1909,49 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningDemandCancelRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleForecastInputListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleForecastInputListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleForecastInputListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleForecastInputItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleForecastInputItem = {
+    forecastInputId?: string;
+    forecastReference?: string;
+    skuCode?: string;
+    uomCode?: string;
+    siteCode?: string;
+    periodStartDate?: string;
+    periodEndDate?: string;
+    quantity?: number;
+    backwardConsumptionDays?: number;
+    forwardConsumptionDays?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleForecastInputListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleForecastInputItem = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleForecastInputItem | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateForecastInputRequest = {
+    organizationId: string;
+    environmentId: string;
+    forecastReference: string;
+    skuCode: string;
+    uomCode: string;
+    siteCode: string;
+    periodStartDate?: string;
+    periodEndDate?: string;
+    quantity?: number;
+    backwardConsumptionDays?: number;
+    forwardConsumptionDays?: number;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRunMrpResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4510,12 +4562,42 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEquipmentAlarmLi
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentAlarmListPageResponse = {
-    items?: Array<NervIipContractsEquipmentRuntimeEquipmentRuntimeAlarmSummary>;
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryAlarmEventItem>;
     total?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentAlarmListRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAlarmLifecycleResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAlarmLifecycleResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAlarmLifecycleResponse = {
+    alarmEventId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAcknowledgeAlarmRequest = {
+    organizationId: string;
+    environmentId: string;
+    acknowledgedAtUtc?: string;
+    acknowledgedBy?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleShelveAlarmRequest = {
+    organizationId: string;
+    environmentId: string;
+    shelvedAtUtc?: string;
+    durationMinutes?: number;
+    shelvedBy?: string;
+    reason?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUnshelveAlarmRequest = {
+    organizationId: string;
+    environmentId: string;
+    unshelvedAtUtc?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeRuleListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -8231,6 +8313,79 @@ export type CancelBusinessConsolePlanningDemandResponses = {
 };
 
 export type CancelBusinessConsolePlanningDemandResponse = CancelBusinessConsolePlanningDemandResponses[keyof CancelBusinessConsolePlanningDemandResponses];
+
+export type ListBusinessConsolePlanningForecastsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        skuCode?: string | null;
+        siteCode?: string | null;
+        fromDate?: string | null;
+        toDate?: string | null;
+    };
+    url: '/api/business-console/v1/planning/forecasts';
+};
+
+export type ListBusinessConsolePlanningForecastsErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsolePlanningForecastsError = ListBusinessConsolePlanningForecastsErrors[keyof ListBusinessConsolePlanningForecastsErrors];
+
+export type ListBusinessConsolePlanningForecastsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleForecastInputListResponse;
+};
+
+export type ListBusinessConsolePlanningForecastsResponse = ListBusinessConsolePlanningForecastsResponses[keyof ListBusinessConsolePlanningForecastsResponses];
+
+export type CreateOrUpdateBusinessConsolePlanningForecastData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateForecastInputRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/planning/forecasts';
+};
+
+export type CreateOrUpdateBusinessConsolePlanningForecastErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateOrUpdateBusinessConsolePlanningForecastError = CreateOrUpdateBusinessConsolePlanningForecastErrors[keyof CreateOrUpdateBusinessConsolePlanningForecastErrors];
+
+export type CreateOrUpdateBusinessConsolePlanningForecastResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleForecastInputItem;
+};
+
+export type CreateOrUpdateBusinessConsolePlanningForecastResponse = CreateOrUpdateBusinessConsolePlanningForecastResponses[keyof CreateOrUpdateBusinessConsolePlanningForecastResponses];
 
 export type ListBusinessConsolePlanningMrpRunsData = {
     body?: never;
@@ -13174,6 +13329,111 @@ export type ListBusinessConsoleEquipmentAlarmsResponses = {
 };
 
 export type ListBusinessConsoleEquipmentAlarmsResponse = ListBusinessConsoleEquipmentAlarmsResponses[keyof ListBusinessConsoleEquipmentAlarmsResponses];
+
+export type AcknowledgeBusinessConsoleEquipmentAlarmData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAcknowledgeAlarmRequest;
+    path: {
+        alarmEventId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/equipment/alarms/{alarmEventId}/acknowledge';
+};
+
+export type AcknowledgeBusinessConsoleEquipmentAlarmErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type AcknowledgeBusinessConsoleEquipmentAlarmError = AcknowledgeBusinessConsoleEquipmentAlarmErrors[keyof AcknowledgeBusinessConsoleEquipmentAlarmErrors];
+
+export type AcknowledgeBusinessConsoleEquipmentAlarmResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAlarmLifecycleResponse;
+};
+
+export type AcknowledgeBusinessConsoleEquipmentAlarmResponse = AcknowledgeBusinessConsoleEquipmentAlarmResponses[keyof AcknowledgeBusinessConsoleEquipmentAlarmResponses];
+
+export type ShelveBusinessConsoleEquipmentAlarmData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleShelveAlarmRequest;
+    path: {
+        alarmEventId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/equipment/alarms/{alarmEventId}/shelve';
+};
+
+export type ShelveBusinessConsoleEquipmentAlarmErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ShelveBusinessConsoleEquipmentAlarmError = ShelveBusinessConsoleEquipmentAlarmErrors[keyof ShelveBusinessConsoleEquipmentAlarmErrors];
+
+export type ShelveBusinessConsoleEquipmentAlarmResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAlarmLifecycleResponse;
+};
+
+export type ShelveBusinessConsoleEquipmentAlarmResponse = ShelveBusinessConsoleEquipmentAlarmResponses[keyof ShelveBusinessConsoleEquipmentAlarmResponses];
+
+export type UnshelveBusinessConsoleEquipmentAlarmData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUnshelveAlarmRequest;
+    path: {
+        alarmEventId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/equipment/alarms/{alarmEventId}/unshelve';
+};
+
+export type UnshelveBusinessConsoleEquipmentAlarmErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type UnshelveBusinessConsoleEquipmentAlarmError = UnshelveBusinessConsoleEquipmentAlarmErrors[keyof UnshelveBusinessConsoleEquipmentAlarmErrors];
+
+export type UnshelveBusinessConsoleEquipmentAlarmResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAlarmLifecycleResponse;
+};
+
+export type UnshelveBusinessConsoleEquipmentAlarmResponse = UnshelveBusinessConsoleEquipmentAlarmResponses[keyof UnshelveBusinessConsoleEquipmentAlarmResponses];
 
 export type ListBusinessConsoleBarcodeRulesData = {
     body?: never;

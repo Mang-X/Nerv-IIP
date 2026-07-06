@@ -17,3 +17,11 @@ public sealed record DeviceStateChangedDomainEvent(DeviceStateSnapshot DeviceSta
 public sealed record AlarmRaisedDomainEvent(AlarmEvent AlarmEvent) : IDomainEvent;
 
 public sealed record AlarmClearedDomainEvent(AlarmEvent AlarmEvent) : IDomainEvent;
+
+public sealed record AlarmAcknowledgedDomainEvent(AlarmEvent AlarmEvent) : IDomainEvent;
+
+public sealed record AlarmShelvedDomainEvent(AlarmEvent AlarmEvent) : IDomainEvent;
+
+public sealed record AlarmUnshelvedDomainEvent(AlarmEvent AlarmEvent) : IDomainEvent;
+
+public sealed record AlarmEscalatedDomainEvent(AlarmEvent AlarmEvent) : IDomainEvent;

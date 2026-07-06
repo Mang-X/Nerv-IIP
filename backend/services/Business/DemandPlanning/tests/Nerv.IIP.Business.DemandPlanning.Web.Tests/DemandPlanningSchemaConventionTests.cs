@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.DemandPlanning.Domain;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.ForecastInputAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
@@ -38,6 +39,7 @@ public sealed class DemandPlanningSchemaConventionTests
         var businessEntities = new[]
         {
             typeof(DemandSource),
+            typeof(ForecastInput),
             typeof(MasterProductionSchedule),
             typeof(MrpRun),
             typeof(PlanningSuggestion),

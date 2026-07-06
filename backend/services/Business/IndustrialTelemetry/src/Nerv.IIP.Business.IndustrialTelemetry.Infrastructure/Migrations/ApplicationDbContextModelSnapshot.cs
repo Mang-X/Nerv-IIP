@@ -29,6 +29,17 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasComment("Alarm event identifier.");
 
+                    b.Property<DateTimeOffset?>("AcknowledgedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("acknowledged_at_utc")
+                        .HasComment("UTC time when an operator acknowledged the active alarm.");
+
+                    b.Property<string>("AcknowledgedBy")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("acknowledged_by")
+                        .HasComment("Actor that acknowledged the active alarm.");
+
                     b.Property<string>("AlarmCode")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -66,6 +77,23 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Owning environment identifier.");
+
+                    b.Property<DateTimeOffset?>("EscalatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("escalated_at_utc")
+                        .HasComment("UTC time when the alarm was escalated.");
+
+                    b.Property<string>("EscalationReason")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("escalation_reason")
+                        .HasComment("Reason code that triggered alarm escalation.");
+
+                    b.Property<string>("EscalationRecipientRefsText")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("escalation_recipient_refs")
+                        .HasComment("Semicolon-separated Notification recipient refs used for alarm escalation.");
 
                     b.Property<string>("ExternalAlarmId")
                         .IsRequired()
@@ -111,6 +139,28 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnName("severity")
                         .HasComment("Alarm severity level.");
 
+                    b.Property<string>("ShelveReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("shelve_reason")
+                        .HasComment("Reason recorded when the alarm was shelved.");
+
+                    b.Property<DateTimeOffset?>("ShelvedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("shelved_at_utc")
+                        .HasComment("UTC time when the alarm was temporarily shelved.");
+
+                    b.Property<string>("ShelvedBy")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("shelved_by")
+                        .HasComment("Actor that shelved the alarm.");
+
+                    b.Property<DateTimeOffset?>("ShelvedUntilUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("shelved_until_utc")
+                        .HasComment("UTC expiry time for temporary alarm shelving.");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -143,12 +193,12 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "AlarmCode", "ExternalAlarmId")
                         .IsUnique()
                         .HasDatabaseName("IX_alarm_events_organization_id_environment_id_device_asset_i~1")
-                        .HasFilter("status = 'raised'");
+                        .HasFilter("status <> 'cleared'");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "ExternalAlarmId")
                         .IsUnique()
                         .HasDatabaseName("IX_alarm_events_organization_id_environment_id_device_asset_i~2")
-                        .HasFilter("status = 'raised' AND tag_key IS NOT NULL");
+                        .HasFilter("status <> 'cleared' AND tag_key IS NOT NULL");
 
                     b.ToTable("alarm_events", "industrial_telemetry", t =>
                         {
