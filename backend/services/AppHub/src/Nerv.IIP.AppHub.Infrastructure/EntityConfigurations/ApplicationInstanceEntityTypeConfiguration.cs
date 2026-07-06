@@ -16,6 +16,7 @@ public sealed class ApplicationInstanceEntityTypeConfiguration : IEntityTypeConf
         builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Application instance aggregate id");
         builder.Property(x => x.OrganizationId).IsRequired().HasMaxLength(100).HasComment("Organization id");
         builder.Property(x => x.EnvironmentId).IsRequired().HasMaxLength(100).HasComment("Environment id");
+        builder.Property(x => x.ConnectorHostId).IsRequired().HasMaxLength(160).HasComment("Connector Host protocol identity that owns the instance heartbeat and state reports.");
         builder.Property(x => x.ApplicationKey).IsRequired().HasMaxLength(160).HasComment("Application protocol key");
         builder.Property(x => x.Version).IsRequired().HasMaxLength(100).HasComment("Application version");
         builder.Property(x => x.NodeKey).IsRequired().HasMaxLength(160).HasComment("Node protocol key");
@@ -34,6 +35,7 @@ public sealed class ApplicationInstanceEntityTypeConfiguration : IEntityTypeConf
         builder.Property(x => x.Deleted).HasConversion(x => x.Value, x => new Deleted(x)).HasComment("Soft delete flag");
         builder.Property(x => x.RowVersion).HasConversion(x => x.VersionNumber, x => new RowVersion(x)).HasComment("Optimistic row version");
         builder.HasIndex(x => x.InstanceKey).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ConnectorHostId });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ApplicationKey });
         builder.HasOne(x => x.Heartbeat).WithOne().HasForeignKey<InstanceHeartbeat>(x => x.ApplicationInstanceId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.StateHistory).WithOne().HasForeignKey(x => x.ApplicationInstanceId).OnDelete(DeleteBehavior.Cascade);

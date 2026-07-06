@@ -18,6 +18,7 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
     public ApplicationInstance(
         string organizationId,
         string environmentId,
+        string connectorHostId,
         string applicationKey,
         string version,
         string nodeKey,
@@ -28,6 +29,7 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
     {
         OrganizationId = organizationId;
         EnvironmentId = environmentId;
+        ConnectorHostId = connectorHostId;
         ApplicationKey = applicationKey;
         Version = version;
         NodeKey = nodeKey;
@@ -38,8 +40,33 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
         this.AddDomainEvent(new ApplicationInstanceRegisteredDomainEvent(organizationId, environmentId, instanceKey));
     }
 
+    public ApplicationInstance(
+        string organizationId,
+        string environmentId,
+        string applicationKey,
+        string version,
+        string nodeKey,
+        string instanceKey,
+        string instanceName,
+        IReadOnlyDictionary<string, string> metadata,
+        IReadOnlyList<CapabilityDescriptor> capabilities)
+        : this(
+            organizationId,
+            environmentId,
+            string.Empty,
+            applicationKey,
+            version,
+            nodeKey,
+            instanceKey,
+            instanceName,
+            metadata,
+            capabilities)
+    {
+    }
+
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
+    public string ConnectorHostId { get; private set; } = string.Empty;
     public string ApplicationKey { get; private set; } = string.Empty;
     public string Version { get; private set; } = string.Empty;
     public string NodeKey { get; private set; } = string.Empty;
@@ -58,6 +85,7 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
     public void UpdateRegistration(
         string organizationId,
         string environmentId,
+        string connectorHostId,
         string applicationKey,
         string version,
         string nodeKey,
@@ -67,6 +95,7 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
     {
         OrganizationId = organizationId;
         EnvironmentId = environmentId;
+        ConnectorHostId = connectorHostId;
         ApplicationKey = applicationKey;
         Version = version;
         NodeKey = nodeKey;
@@ -75,8 +104,31 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
         Capabilities = capabilities.ToList();
     }
 
+    public void UpdateRegistration(
+        string organizationId,
+        string environmentId,
+        string applicationKey,
+        string version,
+        string nodeKey,
+        string instanceName,
+        IReadOnlyDictionary<string, string> metadata,
+        IReadOnlyList<CapabilityDescriptor> capabilities)
+    {
+        UpdateRegistration(
+            organizationId,
+            environmentId,
+            ConnectorHostId,
+            applicationKey,
+            version,
+            nodeKey,
+            instanceName,
+            metadata,
+            capabilities);
+    }
+
     public void RecordHeartbeat(DateTimeOffset heartbeatAtUtc, bool reachable, int latencyMs)
     {
+        var wasUnreachable = Heartbeat is not null && !Heartbeat.Reachable;
         if (Heartbeat is null)
         {
             Heartbeat = new InstanceHeartbeat(Id, heartbeatAtUtc, reachable, latencyMs);
@@ -87,6 +139,39 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
         }
 
         this.AddDomainEvent(new ApplicationHeartbeatRecordedDomainEvent(InstanceKey, heartbeatAtUtc, reachable));
+        if (wasUnreachable && reachable && !string.IsNullOrWhiteSpace(ConnectorHostId))
+        {
+            this.AddDomainEvent(new ConnectorHostRestoredDomainEvent(
+                OrganizationId,
+                EnvironmentId,
+                ConnectorHostId,
+                InstanceKey,
+                heartbeatAtUtc));
+        }
+    }
+
+    public bool MarkHeartbeatUnreachable(DateTimeOffset detectedAtUtc, TimeSpan heartbeatTimeout)
+    {
+        if (Heartbeat is null || !Heartbeat.Reachable || string.IsNullOrWhiteSpace(ConnectorHostId))
+        {
+            return false;
+        }
+
+        if (Heartbeat.LastHeartbeatAtUtc.Add(heartbeatTimeout) > detectedAtUtc)
+        {
+            return false;
+        }
+
+        Heartbeat.MarkUnreachable();
+        this.AddDomainEvent(new ConnectorHostUnreachableDomainEvent(
+            OrganizationId,
+            EnvironmentId,
+            ConnectorHostId,
+            InstanceKey,
+            Heartbeat.LastHeartbeatAtUtc,
+            detectedAtUtc,
+            heartbeatTimeout));
+        return true;
     }
 
     public void RecordStateSnapshot(
@@ -213,6 +298,11 @@ public class InstanceHeartbeat : Entity<InstanceHeartbeatId>
         LastHeartbeatAtUtc = lastHeartbeatAtUtc;
         Reachable = reachable;
         LatencyMs = latencyMs;
+    }
+
+    public void MarkUnreachable()
+    {
+        Reachable = false;
     }
 }
 

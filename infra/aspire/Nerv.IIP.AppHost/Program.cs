@@ -95,6 +95,8 @@ var apphub = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddPro
     .WithEnvironment("ConnectorHostCredential__EnvironmentId", connectorHostEnvironmentId)
     .WithEnvironment("ConnectorHostCredential__Secret", iamSeedConnectorHostSecret)
     .WithEnvironment("ConnectorIngestionToken__SigningKey", connectorIngestionTokenSigningKey)
+    .WithEnvironment("AppHub__HeartbeatTimeoutScan__Enabled", "true")
+    .WithEnvironment("AppHub__HeartbeatTimeoutScan__HeartbeatTimeout", "00:05:00")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(appHubDatabase, "AppHubDb")
     .WithReference(redis)
