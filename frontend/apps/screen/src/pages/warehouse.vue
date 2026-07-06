@@ -1,0 +1,1163 @@
+<script setup lang="ts">
+import { ScreenPanel, Sparkline, StatusLight, StatusTag } from '@nerv-iip/ui'
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Bot,
+  ClipboardCheck,
+  Container,
+  Forklift,
+  MoveHorizontal,
+  MoveVertical,
+  OctagonAlert,
+  PackageSearch,
+  Scale,
+} from 'lucide-vue-next'
+import { type Component, computed, watch } from 'vue'
+import { useAccessScope } from '@/access/useAccessScope'
+import type { WarehouseBoard, WarehouseOpsTick, WcsAdapterKind, WhTaskRow } from '@/data/contracts/warehouse'
+import { fetchWarehouseBoard, fetchWarehouseOpsTick } from '@/data/fetchers/warehouse'
+import ScreenLayout from '@/layouts/ScreenLayout.vue'
+import { ScrollBoard, useScreenData } from '@/screen-kit'
+
+// 仓储物流大屏（MAN-318）：WMS 作业指挥屏 —— 一眼掌握当日出入库进度、
+// 上架/拣货/盘点积压与流速、WCS 失败告警，调度人力补到积压环节。
+// 刷新分层：主数据（KPI/出入库进度）5s · 任务看板/WCS 3s（同源纯函数，口径一致）；
+// 页面隐藏时 useScreenData 统一暂停轮询。库存资产域无读面，一期不做（诚实定位）。
+const scope = useAccessScope()
+const { data: board, lastUpdated, refresh } = useScreenData<WarehouseBoard>(
+  () => fetchWarehouseBoard(scope.currentFactoryId),
+  { intervalMs: 5000 },
+)
+const { data: ops, refresh: refreshOps } = useScreenData<WarehouseOpsTick>(
+  () => fetchWarehouseOpsTick(scope.currentFactoryId),
+  { intervalMs: 3000 },
+)
+watch(
+  () => [scope.currentFactoryId, scope.personaId],
+  () => {
+    void refresh()
+    void refreshOps()
+  },
+)
+
+const factoryName = computed(
+  () => scope.factories.find((f) => f.id === scope.currentFactoryId)?.name ?? '全部车间',
+)
+const nf = new Intl.NumberFormat('en-US')
+
+/** 分钟 → 龄期短格式（45m / 1h 12m） */
+function fmtAge(min: number): string {
+  if (min >= 60) return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`
+  return `${min}m`
+}
+const updatedAt = computed(() => {
+  const t = lastUpdated.value
+  if (!t) return '—'
+  const d = new Date(t)
+  const p = (x: number) => String(x).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+})
+
+// —— 顶部 KPI 带：六格大数字（进度 / 积压 / 失败 / 差异），语义色渐隐强调线 ——
+interface BandCell {
+  icon: Component
+  label: string
+  value: string
+  unit: string
+  sub: string
+  /** 数字与强调线的语义色（积压是工作量非异常 —— 保持中性，异常色只给超时/失败/差异） */
+  tone: 'cyan' | 'neutral' | 'warn' | 'bad' | 'ok'
+  /** 副行独立语义色（如积压格的「超时 N」红标） */
+  subTone?: 'warn' | 'bad'
+}
+const bandCells = computed<BandCell[]>(() => {
+  const b = board.value
+  if (!b) return []
+  return [
+    {
+      icon: ArrowDownToLine,
+      label: '当日入库进度',
+      value: String(b.kpis.inboundPct),
+      unit: '%',
+      sub: `${nf.format(b.inbound.linesDone)}/${nf.format(b.inbound.linesTotal)} 行`,
+      tone: 'cyan',
+    },
+    {
+      icon: ArrowUpFromLine,
+      label: '当日出库进度',
+      value: String(b.kpis.outboundPct),
+      unit: '%',
+      sub: `${nf.format(b.outbound.linesDone)}/${nf.format(b.outbound.linesTotal)} 行`,
+      tone: 'cyan',
+    },
+    {
+      icon: PackageSearch,
+      label: '拣货积压',
+      value: String(b.kpis.pickBacklog),
+      unit: '项',
+      sub: b.pick.overdue > 0 ? `超时 ${b.pick.overdue}` : '无超时',
+      tone: 'neutral',
+      subTone: b.pick.overdue > 0 ? 'bad' : undefined,
+    },
+    {
+      icon: Forklift,
+      label: '上架积压',
+      value: String(b.kpis.putawayBacklog),
+      unit: '项',
+      sub: b.putaway.overdue > 0 ? `超时 ${b.putaway.overdue}` : '无超时',
+      tone: 'neutral',
+      subTone: b.putaway.overdue > 0 ? 'bad' : undefined,
+    },
+    {
+      icon: OctagonAlert,
+      label: 'WCS 失败',
+      value: String(b.kpis.wcsFailed),
+      unit: '条',
+      sub:
+        b.kpis.wcsFailed > 0
+          ? `累计重试 ${b.wcs.failures.reduce((n, x) => n + x.retries, 0)} 次`
+          : '链路正常',
+      tone: b.kpis.wcsFailed > 0 ? 'bad' : 'ok',
+    },
+    {
+      icon: Scale,
+      label: '盘点差异',
+      value: String(b.kpis.countVariance),
+      unit: '位',
+      sub: `已盘 ${b.count.counted}/${b.count.planned} 位`,
+      tone: b.kpis.countVariance > 0 ? 'warn' : 'ok',
+    },
+  ]
+})
+
+// —— 作业任务看板（3s tick 优先，主数据兜底；两者同源必然一致）——
+const pick = computed(() => ops.value?.pick ?? board.value?.pick)
+const putaway = computed(() => ops.value?.putaway ?? board.value?.putaway)
+const count = computed(() => ops.value?.count ?? board.value?.count)
+const wcs = computed(() => ops.value?.wcs ?? board.value?.wcs)
+const overdueTop = computed(() => ops.value?.overdueTop ?? board.value?.overdueTop ?? [])
+
+interface TaskGroupView {
+  key: string
+  icon: Component
+  title: string
+  rows: WhTaskRow[]
+  backlog: number
+  overdue: number
+  isCount: boolean
+  meta: string
+  flex: number
+  speed: number
+}
+const taskGroups = computed<TaskGroupView[]>(() => {
+  const p = pick.value
+  const pa = putaway.value
+  const c = count.value
+  if (!p || !pa || !c) return []
+  return [
+    {
+      key: 'pick',
+      icon: PackageSearch,
+      title: '拣货',
+      rows: p.rows,
+      backlog: p.backlog,
+      overdue: p.overdue,
+      isCount: false,
+      meta: `今日完成 ${nf.format(p.doneToday)}`,
+      flex: 1.5,
+      speed: 24,
+    },
+    {
+      key: 'putaway',
+      icon: Forklift,
+      title: '上架',
+      rows: pa.rows,
+      backlog: pa.backlog,
+      overdue: pa.overdue,
+      isCount: false,
+      meta: `今日完成 ${nf.format(pa.doneToday)}`,
+      flex: 1.15,
+      speed: 20,
+    },
+    {
+      key: 'count',
+      icon: ClipboardCheck,
+      title: '盘点',
+      rows: c.rows,
+      backlog: c.rows.length,
+      overdue: c.overdue,
+      isCount: true,
+      meta: `已盘 ${c.counted}/${c.planned} 位`,
+      flex: 0.9,
+      speed: 16,
+    },
+  ]
+})
+const taskSummary = computed(() => {
+  const p = pick.value
+  const pa = putaway.value
+  if (!p || !pa) return ''
+  const created = p.createdToday + pa.createdToday
+  const done = p.doneToday + pa.doneToday
+  return `今日创建 ${nf.format(created)} · 已完成 ${nf.format(done)} · 在办 ${p.backlog + pa.backlog}`
+})
+
+const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
+  stacker: Container,
+  agv: Bot,
+  conveyor: MoveHorizontal,
+  hoist: MoveVertical,
+}
+</script>
+
+<template>
+  <ScreenLayout title="Nerv-IIP 仓储物流大屏" :line="factoryName" screen="指挥中心大屏 04">
+    <div v-if="board" class="wb">
+      <!-- 顶部 KPI 带：六格大数字 + 语义色渐隐强调线 -->
+      <ScreenPanel class="wb-band">
+        <div class="wb-band-in">
+          <div v-for="c in bandCells" :key="c.label" class="wb-kpi">
+            <dt class="wb-kpi-t">
+              <component :is="c.icon" :size="13" :stroke-width="1.8" class="wb-kpi-ic" />{{ c.label }}
+            </dt>
+            <dd class="wb-kpi-v" :class="c.tone">
+              <span class="wb-num">{{ c.value }}<small>{{ c.unit }}</small></span>
+              <i class="wb-kpi-line" :class="c.tone" aria-hidden="true" />
+            </dd>
+            <span
+              class="wb-kpi-sub"
+              :class="{ bad: (c.subTone ?? c.tone) === 'bad', warn: (c.subTone ?? c.tone) === 'warn' }"
+            >{{ c.sub }}</span>
+          </div>
+        </div>
+      </ScreenPanel>
+
+      <div class="wb-main">
+        <!-- 左：出入库双进度（大数字 + 发丝进度条 + 12h 流量） -->
+        <section class="wb-flows">
+          <ScreenPanel title="当日入库 · ASN" class="wb-flow">
+            <template #extra>
+              <span class="wb-flow-docs">收货单 {{ board.inbound.docsDone }}/{{ board.inbound.docsTotal }}</span>
+            </template>
+            <div class="wb-flow-hero">
+              <span class="wb-flow-v">
+                {{ nf.format(board.inbound.linesDone) }}<small>/ {{ nf.format(board.inbound.linesTotal) }} 行</small>
+              </span>
+            </div>
+            <div class="wb-bar"><i :style="{ width: `${board.inbound.pct}%` }" /></div>
+            <div class="wb-flow-meta">
+              <span>
+                收货完成率
+                <b>{{ board.inbound.docsTotal > 0 ? Math.round((board.inbound.docsDone / board.inbound.docsTotal) * 100) : 0 }}%</b>
+              </span>
+              <span v-if="board.inbound.postFailedDocs > 0" class="wb-postfail">
+                过账失败 {{ board.inbound.postFailedDoc }}
+              </span>
+              <span v-else class="wb-postok"><i class="wb-okdot" />过账无异常</span>
+            </div>
+            <div class="wb-flow-spark">
+              <Sparkline :data="board.inbound.hourly" area />
+            </div>
+            <div class="wb-flow-x">
+              <span>{{ board.inbound.hourLabels[0] }}</span>
+              <span>{{ board.inbound.hourLabels[6] }}</span>
+              <span>现在</span>
+            </div>
+          </ScreenPanel>
+
+          <ScreenPanel title="当日出库 · SO" class="wb-flow out">
+            <template #extra>
+              <span class="wb-flow-docs">发运 {{ board.outbound.docsDone }}/{{ board.outbound.docsTotal }} 单</span>
+            </template>
+            <div class="wb-flow-hero">
+              <span class="wb-flow-v">
+                {{ nf.format(board.outbound.linesDone) }}<small>/ {{ nf.format(board.outbound.linesTotal) }} 行</small>
+              </span>
+            </div>
+            <div class="wb-bar"><i :style="{ width: `${board.outbound.pct}%` }" /></div>
+            <div class="wb-flow-meta">
+              <span>客户 <b>{{ board.outbound.customers }}</b> 家</span>
+              <span v-if="board.outbound.latestShipment" class="wb-latest">最近发运 {{ board.outbound.latestShipment }}</span>
+            </div>
+            <div class="wb-flow-spark">
+              <Sparkline :data="board.outbound.hourly" area color="var(--sb-indigo)" />
+            </div>
+            <div class="wb-flow-x">
+              <span>{{ board.outbound.hourLabels[0] }}</span>
+              <span>{{ board.outbound.hourLabels[6] }}</span>
+              <span>现在</span>
+            </div>
+          </ScreenPanel>
+        </section>
+
+        <!-- 中：作业任务看板（拣货 / 上架 / 盘点分组，超时红标，自动滚动） -->
+        <ScreenPanel title="作业任务看板" class="wb-tasks">
+          <template #extra>
+            <span class="wb-tasks-sum">{{ taskSummary }}</span>
+          </template>
+          <div class="wb-tk">
+            <section
+              v-for="g in taskGroups"
+              :key="g.key"
+              class="tg"
+              :data-kind="g.key"
+              :style="{ flex: g.flex }"
+            >
+              <header class="tg-h">
+                <component :is="g.icon" :size="14" :stroke-width="1.8" class="tg-ic" />
+                <b class="tg-name">{{ g.title }}</b>
+                <span class="tg-cnt">{{ g.isCount ? '待盘' : '积压' }} <b>{{ g.backlog }}</b></span>
+                <em v-if="g.overdue > 0" class="tg-late">超时 {{ g.overdue }}</em>
+                <span v-if="g.isCount && count" class="tg-var" :class="{ on: count.variance > 0 }">
+                  差异 {{ count.variance }} 位
+                </span>
+                <span class="tg-rule" aria-hidden="true" />
+                <span class="tg-done">{{ g.meta }}</span>
+              </header>
+              <div class="tg-cols" :class="{ count: g.isCount }">
+                <template v-if="!g.isCount">
+                  <span>单号</span><span>物料</span><span class="r">数量</span><span>库位流向</span><span>来源单</span><span class="r">龄期</span>
+                </template>
+                <template v-else>
+                  <span>单号</span><span>物料</span><span class="r">账面数量</span><span>待盘库位</span><span class="r">龄期</span>
+                </template>
+              </div>
+              <div class="tg-list">
+                <ScrollBoard :items="g.rows" :row-key="(r: WhTaskRow) => r.id" :speed="g.speed">
+                  <template #row="{ item }">
+                    <div class="tg-row" :class="{ count: g.isCount, late: item.overdue }">
+                      <span class="tg-id">{{ item.id }}</span>
+                      <span class="tg-sku">{{ item.sku }}</span>
+                      <span class="tg-qty r">{{ nf.format(item.qty) }}<small> {{ item.unit }}</small></span>
+                      <span v-if="!g.isCount" class="tg-route">
+                        <span class="tg-from">{{ item.from }}</span>
+                        <i class="tg-arrow" aria-hidden="true">→</i>
+                        <span class="tg-to">{{ item.to }}</span>
+                      </span>
+                      <span v-else class="tg-route">{{ item.from }}</span>
+                      <span v-if="!g.isCount" class="tg-ref">{{ item.ref }}</span>
+                      <span class="tg-age r" :class="{ late: item.overdue }">
+                        {{ fmtAge(item.ageMin) }}<em v-if="item.overdue">超时</em>
+                      </span>
+                    </div>
+                  </template>
+                </ScrollBoard>
+              </div>
+            </section>
+          </div>
+        </ScreenPanel>
+
+        <!-- 右：WCS 自动化（失败告警榜 · 指令状态 · 任务超时榜） -->
+        <section class="wb-wcs">
+          <ScreenPanel
+            title="WCS 失败告警"
+            :accent="wcs && wcs.failures.length > 0 ? 'red' : undefined"
+            class="wb-fails"
+          >
+            <template #extra>
+              <span class="wf-count" :class="{ calm: !wcs || wcs.failures.length === 0 }">
+                {{ wcs && wcs.failures.length > 0 ? `${wcs.failures.length} 条未恢复` : '链路正常' }}
+              </span>
+            </template>
+            <div v-if="wcs" class="wf-list">
+              <div v-for="x in wcs.failures" :key="x.cmd" class="wf-row">
+                <i class="wf-dot" aria-hidden="true" />
+                <div class="wf-main">
+                  <div class="wf-top">
+                    <b class="wf-ad">{{ x.adapter }}</b>
+                    <span class="wf-cmd">{{ x.cmd }}</span>
+                    <span class="wf-since">{{ x.firstAt }} 起 · {{ x.sinceMin }} min</span>
+                  </div>
+                  <div class="wf-sub">
+                    <span class="wf-err">{{ x.error }}</span>
+                    <em class="wf-retry">重试 {{ x.retries }} 次</em>
+                  </div>
+                </div>
+              </div>
+              <div v-if="wcs.failures.length === 0" class="wf-empty">
+                <StatusLight tone="run" label="无失败指令" />
+              </div>
+            </div>
+          </ScreenPanel>
+
+          <ScreenPanel title="WCS 指令状态" class="wb-adapters">
+            <div v-if="wcs" class="wa">
+              <dl class="wa-strip">
+                <div>
+                  <dt>排队</dt>
+                  <dd>{{ wcs.counts.queued }}</dd>
+                </div>
+                <div>
+                  <dt>执行中</dt>
+                  <dd class="run">{{ wcs.counts.running }}</dd>
+                </div>
+                <div>
+                  <dt>今日完成</dt>
+                  <dd>{{ nf.format(wcs.counts.completed) }}</dd>
+                </div>
+                <div>
+                  <dt>失败</dt>
+                  <dd :class="{ bad: wcs.counts.failed > 0 }">{{ wcs.counts.failed }}</dd>
+                </div>
+              </dl>
+              <div class="wa-rows">
+                <div v-for="a in wcs.adapters" :key="a.kind" class="wa-row">
+                  <component :is="ADAPTER_ICONS[a.kind]" :size="14" :stroke-width="1.8" class="wa-ic" />
+                  <span class="wa-name">{{ a.label }}</span>
+                  <span class="wa-nums">执行 <b>{{ a.running }}</b> · 排队 <b>{{ a.queued }}</b></span>
+                  <span class="wa-done">完成 {{ nf.format(a.completed) }}</span>
+                  <b v-if="a.failed > 0" class="wa-fail">失败 {{ a.failed }}</b>
+                </div>
+              </div>
+            </div>
+          </ScreenPanel>
+
+          <ScreenPanel title="任务超时榜 · TOP5" class="wb-overdue">
+            <template #extra>
+              <StatusTag tone="amber" label="龄期推算 · 待 #570" />
+            </template>
+            <div class="wo-list">
+              <div v-for="(r, i) in overdueTop" :key="r.id" class="wo-row">
+                <b class="wo-rank" :class="{ top: i === 0 }">{{ i + 1 }}</b>
+                <span class="wo-id">{{ r.id }}</span>
+                <span class="wo-kind">{{ r.kindLabel }}</span>
+                <span class="wo-sku">{{ r.sku }}</span>
+                <b class="wo-age">{{ fmtAge(r.ageMin) }}</b>
+              </div>
+              <div v-if="overdueTop.length === 0" class="wo-empty">
+                <StatusLight tone="run" label="无超时任务" />
+              </div>
+            </div>
+          </ScreenPanel>
+        </section>
+      </div>
+
+      <footer class="wb-foot">
+        <span>WMS 作业域演示数据 · 龄期 / 吞吐 / 适配器聚合为前端推算 · 库存资产读面 待 #570</span>
+        <span class="wb-foot-r">
+          当日吞吐 <b>{{ nf.format(board.kpis.throughputLines) }}</b> 行
+          （入 {{ nf.format(board.inbound.linesDone) }} · 出 {{ nf.format(board.outbound.linesDone) }}）
+          · 更新 <b class="wb-foot-ts">{{ updatedAt }}</b>
+        </span>
+      </footer>
+    </div>
+    <div v-else class="wb-loading">连接数据…</div>
+  </ScreenLayout>
+</template>
+
+<style scoped>
+.wb {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.wb-loading {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  color: var(--sb-muted);
+  font-size: 15px;
+}
+
+/* —— 顶部 KPI 带：六格 + 发丝分隔 —— */
+.wb-band {
+  flex: none;
+}
+.wb-band-in {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+}
+.wb-kpi {
+  position: relative;
+  padding: 2px 22px;
+}
+.wb-kpi + .wb-kpi::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--sb-divider);
+}
+.wb-kpi-t {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--sb-muted);
+}
+.wb-kpi-ic {
+  color: var(--sb-faint);
+  flex: none;
+}
+.wb-kpi-v {
+  margin: 8px 0 0;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  font-size: 38px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--sb-text);
+  font-variant-numeric: tabular-nums;
+  text-shadow: var(--sb-value-glow);
+}
+.wb-kpi-v.bad {
+  color: var(--sb-red);
+  text-shadow: 0 0 20px rgba(239, 90, 99, 0.4);
+}
+.wb-kpi-v.warn {
+  color: var(--sb-amber);
+  text-shadow: none;
+}
+.wb-num {
+  display: inline-flex;
+  align-items: flex-end;
+  line-height: 1;
+}
+.wb-num small {
+  font-size: 0.42em;
+  font-weight: 600;
+  margin-left: 3px;
+  padding-bottom: 0.12em;
+  color: var(--sb-muted);
+}
+/* 数据强调线：语义色渐隐短线（同 line 屏 .lb-score-line 语言，替代图标装饰） */
+.wb-kpi-line {
+  width: 44px;
+  height: 2px;
+  margin-top: 9px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.32), transparent);
+  opacity: 0.8;
+}
+.wb-kpi-line.cyan {
+  background: linear-gradient(90deg, var(--sb-cyan), transparent);
+}
+.wb-kpi-line.bad {
+  background: linear-gradient(90deg, var(--sb-red), transparent);
+}
+.wb-kpi-line.warn {
+  background: linear-gradient(90deg, var(--sb-amber), transparent);
+}
+.wb-kpi-line.ok {
+  background: linear-gradient(90deg, var(--sb-green), transparent);
+}
+.wb-kpi-sub {
+  display: block;
+  margin-top: 7px;
+  font-size: 12px;
+  color: var(--sb-faint);
+  font-variant-numeric: tabular-nums;
+}
+.wb-kpi-sub.bad {
+  color: var(--sb-red);
+}
+.wb-kpi-sub.warn {
+  color: var(--sb-amber);
+}
+
+/* —— 主体三列 —— */
+.wb-main {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 452px minmax(0, 1fr) 464px;
+  gap: 14px;
+}
+
+/* —— 左列：出入库双进度 —— */
+.wb-flows {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+.wb-flow {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.wb-flow-docs {
+  font-size: 12.5px;
+  color: var(--sb-muted);
+  font-variant-numeric: tabular-nums;
+}
+.wb-flow-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.wb-flow-v {
+  font-size: 46px;
+  font-weight: 800;
+  line-height: 1;
+  color: #fff;
+  text-shadow: var(--sb-value-glow);
+  font-variant-numeric: tabular-nums;
+}
+.wb-flow-v small {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--sb-muted);
+  margin-left: 7px;
+}
+/* 发丝进度条：3px 轨道 + 语义色渐变充盈 */
+.wb-bar {
+  height: 3px;
+  margin-top: 13px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+.wb-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(74, 166, 238, 0.35), var(--sb-cyan));
+  transition: width 0.6s var(--sb-ease-emphasized);
+}
+.wb-flow.out .wb-bar i {
+  background: linear-gradient(90deg, rgba(139, 155, 230, 0.35), var(--sb-indigo));
+}
+.wb-flow-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--sb-muted);
+  font-variant-numeric: tabular-nums;
+}
+.wb-flow-meta b {
+  color: var(--sb-text);
+  font-weight: 700;
+}
+.wb-postfail {
+  color: var(--sb-red);
+  font-weight: 600;
+}
+.wb-postok {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sb-faint);
+}
+.wb-okdot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sb-green);
+  box-shadow: 0 0 6px var(--sb-green);
+}
+.wb-latest {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sb-faint);
+}
+.wb-flow-spark {
+  flex: 1;
+  min-height: 44px;
+  margin-top: 13px;
+}
+.wb-flow-x {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--sb-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* —— 中列：作业任务看板 —— */
+.wb-tasks {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.wb-tasks-sum {
+  font-size: 12.5px;
+  color: var(--sb-muted);
+  font-variant-numeric: tabular-nums;
+}
+.wb-tk {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tg {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.tg + .tg {
+  border-top: 1px solid var(--sb-divider);
+  padding-top: 10px;
+}
+.tg-h {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 22px;
+}
+.tg-ic {
+  color: var(--sb-faint);
+  flex: none;
+}
+.tg-name {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--sb-text);
+}
+.tg-cnt {
+  font-size: 12.5px;
+  color: var(--sb-muted);
+  font-variant-numeric: tabular-nums;
+}
+.tg-cnt b {
+  color: var(--sb-text);
+  font-weight: 700;
+}
+.tg-late {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sb-red);
+  font-variant-numeric: tabular-nums;
+}
+.tg-var {
+  font-size: 12px;
+  color: var(--sb-faint);
+  font-variant-numeric: tabular-nums;
+}
+.tg-var.on {
+  color: var(--sb-amber);
+}
+.tg-rule {
+  flex: 1;
+  height: 1px;
+  margin: 0 4px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.07), transparent);
+}
+.tg-done {
+  font-size: 12px;
+  color: var(--sb-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 列头与行共用 grid 模板（发丝行分隔） */
+.tg-cols,
+.tg-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) 84px 232px 92px 72px;
+  gap: 10px;
+  align-items: center;
+}
+.tg-cols.count,
+.tg-row.count {
+  grid-template-columns: 76px minmax(0, 1fr) 110px 150px 72px;
+}
+.tg-cols {
+  margin-top: 7px;
+  padding: 0 2px 5px;
+  font-size: 11.5px;
+  color: var(--sb-faint);
+  border-bottom: 1px solid var(--sb-divider);
+}
+.r {
+  text-align: right;
+}
+.tg-list {
+  flex: 1;
+  min-height: 34px;
+}
+.tg-row {
+  padding: 6.5px 2px;
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--sb-divider);
+}
+.tg-id {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--sb-cyan);
+  white-space: nowrap;
+}
+.tg-row.late .tg-id {
+  color: var(--sb-red);
+}
+.tg-sku {
+  color: var(--sb-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tg-qty {
+  color: var(--sb-text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tg-qty small {
+  font-weight: 400;
+  color: var(--sb-faint);
+  font-size: 11px;
+}
+.tg-route {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--sb-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.tg-from {
+  color: var(--sb-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tg-arrow {
+  font-style: normal;
+  color: var(--sb-faint);
+  opacity: 0.7;
+  flex: none;
+}
+.tg-to {
+  color: var(--sb-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tg-ref {
+  font-family: ui-monospace, monospace;
+  font-size: 11.5px;
+  color: var(--sb-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tg-age {
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-muted);
+  white-space: nowrap;
+}
+.tg-age.late {
+  color: var(--sb-red);
+  font-weight: 700;
+}
+.tg-age em {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 600;
+  margin-left: 4px;
+  letter-spacing: 0.04em;
+}
+
+/* —— 右列：WCS 自动化 —— */
+.wb-wcs {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+.wb-fails {
+  flex: none;
+}
+.wf-count {
+  font-size: 13px;
+  color: var(--sb-red);
+  font-variant-numeric: tabular-nums;
+}
+.wf-count.calm {
+  color: var(--sb-green);
+}
+.wf-list {
+  display: flex;
+  flex-direction: column;
+}
+.wf-row {
+  display: flex;
+  gap: 10px;
+  padding: 9px 2px;
+}
+.wf-row + .wf-row {
+  border-top: 1px solid var(--sb-divider);
+}
+/* 失败红脉冲 —— 辉光只给活数据 */
+.wf-dot {
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--sb-red);
+  box-shadow: 0 0 9px var(--sb-red);
+  flex: none;
+  animation: wf-pulse 1.6s ease-in-out infinite;
+}
+@keyframes wf-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.wf-main {
+  flex: 1;
+  min-width: 0;
+}
+.wf-top {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  min-width: 0;
+}
+.wf-ad {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--sb-text);
+  flex: none;
+}
+.wf-cmd {
+  font-family: ui-monospace, monospace;
+  font-size: 11.5px;
+  color: var(--sb-muted);
+  flex: none;
+}
+.wf-since {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: 12px;
+  color: var(--sb-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wf-sub {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+  min-width: 0;
+}
+.wf-err {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--sb-red);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wf-retry {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--sb-muted);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.wf-empty {
+  padding: 12px 2px;
+  display: flex;
+  justify-content: center;
+}
+
+/* WCS 指令状态：状态分布条 + 适配器行 */
+.wb-adapters {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.wa {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.wa-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 0 0 4px;
+}
+.wa-strip > div {
+  border: 1px solid var(--sb-line);
+  border-top-color: rgba(255, 255, 255, 0.09);
+  border-radius: var(--sb-radius);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 8px 11px;
+}
+.wa-strip dt {
+  font-size: 11.5px;
+  color: var(--sb-muted);
+}
+.wa-strip dd {
+  margin: 4px 0 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--sb-text);
+  font-variant-numeric: tabular-nums;
+}
+.wa-strip dd.run {
+  color: var(--sb-cyan);
+}
+.wa-strip dd.bad {
+  color: var(--sb-red);
+}
+.wa-rows {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+}
+.wa-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 2px;
+  font-size: 13px;
+}
+.wa-row + .wa-row {
+  border-top: 1px solid var(--sb-divider);
+}
+.wa-ic {
+  color: var(--sb-faint);
+  flex: none;
+}
+.wa-name {
+  flex: none;
+  width: 88px;
+  color: var(--sb-text-2);
+  white-space: nowrap;
+}
+.wa-nums {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--sb-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.wa-nums b {
+  color: var(--sb-text);
+  font-weight: 700;
+}
+.wa-done {
+  flex: none;
+  font-size: 12px;
+  color: var(--sb-faint);
+  font-variant-numeric: tabular-nums;
+}
+.wa-fail {
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--sb-red);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 任务超时榜 */
+.wb-overdue {
+  flex: none;
+}
+.wo-list {
+  display: flex;
+  flex-direction: column;
+}
+.wo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 2px;
+  font-size: 13px;
+}
+.wo-row + .wo-row {
+  border-top: 1px solid var(--sb-divider);
+}
+.wo-rank {
+  width: 18px;
+  flex: none;
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--sb-faint);
+  font-variant-numeric: tabular-nums;
+}
+.wo-rank.top {
+  color: var(--sb-red);
+}
+.wo-id {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--sb-cyan);
+  flex: none;
+  width: 66px;
+}
+.wo-kind {
+  flex: none;
+  font-size: 12px;
+  color: var(--sb-muted);
+}
+.wo-sku {
+  flex: 1;
+  min-width: 0;
+  color: var(--sb-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wo-age {
+  flex: none;
+  font-weight: 700;
+  color: var(--sb-red);
+  font-variant-numeric: tabular-nums;
+}
+.wo-empty {
+  padding: 10px 2px;
+  display: flex;
+  justify-content: center;
+}
+
+/* —— 页脚 —— */
+.wb-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 12.5px;
+  color: var(--sb-faint);
+  border-top: 1px solid var(--sb-divider);
+  padding-top: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.wb-foot-r b {
+  color: var(--sb-text-2);
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-dot {
+    animation: none;
+  }
+  .wb-bar i {
+    transition: none;
+  }
+}
+</style>

@@ -1,4 +1,4 @@
-export type ScreenKey = 'factory' | 'equipment' | 'line'
+export type ScreenKey = 'factory' | 'equipment' | 'line' | 'workshop' | 'warehouse' | 'quality'
 
 export interface Persona {
   id: string
@@ -20,7 +20,7 @@ export const PERSONAS: Persona[] = [
     factoryIds: ['F01', 'F02'],
     workshopIds: 'all',
     lineIds: 'all',
-    allowedScreens: ['factory', 'equipment', 'line'],
+    allowedScreens: ['factory', 'equipment', 'line', 'workshop', 'warehouse', 'quality'],
   },
   {
     id: 'workshop-lead',
@@ -28,7 +28,7 @@ export const PERSONAS: Persona[] = [
     factoryIds: ['F01'],
     workshopIds: ['WS-BATTERY'],
     lineIds: 'all',
-    allowedScreens: ['line'],
+    allowedScreens: ['line', 'workshop'],
   },
 ]
 

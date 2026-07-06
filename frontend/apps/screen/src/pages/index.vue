@@ -125,7 +125,10 @@ const scopeCounts = computed(() => {
         <div v-else class="hall-kpi-skl" aria-hidden="true" />
       </div>
 
-      <main class="hall-cards" :class="{ single: cards.length === 1 }">
+      <main
+        class="hall-cards"
+        :class="{ single: cards.length === 1, grid: cards.length > 3 }"
+      >
         <RouterLink v-for="s in cards" :key="s.key" :to="s.route" class="hall-card-link">
           <LauncherCard :title="s.title" :desc="s.desc" :icon="iconOf(s.icon)" :glance="glanceOf(s.key)" />
         </RouterLink>
@@ -244,6 +247,73 @@ const scopeCounts = computed(() => {
 .hall-cards.single .hall-card-link {
   flex: 0 1 620px;
   height: min(600px, 100%);
+}
+/* 4+ 张卡（M2 后 6 屏）：3×2 网格 + 卡内密度收紧（页面级适配，组件原版不动） */
+.hall-cards.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 18px;
+}
+/* grid 子项默认 min-height:auto 会被 chips 内容撑破行高 —— 强制可收缩，超出裁切 */
+.hall-cards.grid .hall-card-link {
+  min-height: 0;
+}
+.hall-cards.grid :deep(.lc) {
+  overflow: hidden;
+}
+.hall-cards.grid :deep(.lc) {
+  padding: 18px 22px 14px;
+}
+.hall-cards.grid :deep(.lc-ic) {
+  width: 38px;
+  height: 38px;
+}
+.hall-cards.grid :deep(.lc-ic svg) {
+  width: 22px;
+  height: 22px;
+}
+.hall-cards.grid :deep(.lc-title) {
+  font-size: 20px;
+}
+.hall-cards.grid :deep(.lc-desc) {
+  margin-top: 2px;
+  font-size: 12.5px;
+}
+.hall-cards.grid :deep(.lc-stats) {
+  margin-top: 6px;
+}
+.hall-cards.grid :deep(.lc-stat) {
+  padding: 6px 2px;
+}
+.hall-cards.grid :deep(.lc-stat dt) {
+  font-size: 13px;
+}
+.hall-cards.grid :deep(.lc-stat dd) {
+  font-size: 19px;
+}
+.hall-cards.grid :deep(.lc-zone) {
+  margin: 8px 0 6px;
+  padding-top: 8px;
+  gap: 6px;
+}
+.hall-cards.grid :deep(.lc-zone-t) {
+  font-size: 12px;
+}
+.hall-cards.grid :deep(.lc-chips) {
+  gap: 6px;
+  /* 一瞥只保完整首行：整行级裁切，绝不出现半截 chip 残影 */
+  max-height: 23px;
+  overflow: hidden;
+}
+.hall-cards.grid :deep(.lc-chip) {
+  height: 23px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.hall-cards.grid :deep(.lc-foot) {
+  padding-top: 8px;
+  font-size: 12.5px;
 }
 .hall-card-link {
   flex: 1 1 0;

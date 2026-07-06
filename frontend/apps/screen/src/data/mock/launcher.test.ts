@@ -23,7 +23,14 @@ describe('buildLauncherSummary', () => {
           expect(v).toBeLessThanOrEqual(100)
         }
         expect(s.kpis.openAlarms).toBeGreaterThanOrEqual(0)
-        expect(s.glances.map((g) => g.key)).toEqual(['factory', 'equipment', 'line'])
+        expect(s.glances.map((g) => g.key)).toEqual([
+          'factory',
+          'equipment',
+          'line',
+          'workshop',
+          'warehouse',
+          'quality',
+        ])
         for (const g of s.glances) {
           expect(g.stats).toHaveLength(3)
           expect(g.chipsLabel).toBeTruthy()
@@ -59,5 +66,21 @@ describe('buildLauncherSummary', () => {
       expect(nums.every((n) => Number.isFinite(n) && n >= 0)).toBe(true)
       expect(nums.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(s.kpis.totalDevices)
     }
+  })
+
+  it('M2 一瞥与各屏 mock 同源：车间报警状态、仓储 WCS 失败、质量超期 NCR（F01 事故画像）', () => {
+    const s = buildLauncherSummary('F01')
+    const ws = s.glances.find((g) => g.key === 'workshop')
+    // 电芯线卷绕机报警 → 车间总览卡红态、车间 chips 含报警电池车间
+    expect(ws?.state).toBe('alarm')
+    expect(ws?.chips.some((c) => c.label === '电池车间' && c.tone === 'alarm')).toBe(true)
+    const wh = s.glances.find((g) => g.key === 'warehouse')
+    // 仓储常驻 2 条 WCS 失败（午后 3 条），一瞥必须反映
+    expect(wh?.state).toBe('alarm')
+    expect(wh?.chips.some((c) => c.tone === 'alarm')).toBe(true)
+    const q = s.glances.find((g) => g.key === 'quality')
+    // 质量屏 F01 画像固定 2 条超期 NCR、帕累托 TOP1 为电芯缺陷
+    expect(q?.state).toBe('alarm')
+    expect(q?.chips[0]?.label).toBe('极片对齐度超差')
   })
 })

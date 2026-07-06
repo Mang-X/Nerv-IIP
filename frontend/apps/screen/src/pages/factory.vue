@@ -10,6 +10,7 @@ import {
   Target,
 } from 'lucide-vue-next'
 import { type Component, computed, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
 import WorkshopHealthCard from '@/components/factory/WorkshopHealthCard.vue'
 import type { FactoryOverview } from '@/data/contracts/factory'
@@ -124,7 +125,16 @@ const bandCells = computed<BandCell[]>(() => {
             </span>
           </div>
           <div class="matrix-grid">
-            <WorkshopHealthCard v-for="w in ov.workshops" :key="w.id" :cell="w" />
+            <!-- 可看车间总览屏时，车间卡可点击下钻（M2 · /workshop/[id]） -->
+            <component
+              :is="scope.canSeeScreen('workshop') ? RouterLink : 'div'"
+              v-for="w in ov.workshops"
+              :key="w.id"
+              :to="scope.canSeeScreen('workshop') ? `/workshop/${w.id}` : undefined"
+              class="matrix-cell-link"
+            >
+              <WorkshopHealthCard :cell="w" />
+            </component>
             <div class="more-card">
               <span class="more-t">更多指标接入中</span>
               <span class="more-d">不良率 · 设备在线率 · 产出良率趋势</span>
@@ -301,6 +311,30 @@ const bandCells = computed<BandCell[]>(() => {
   grid-template-columns: repeat(3, 1fr);
   grid-auto-rows: 1fr;
   gap: 14px;
+}
+/* 车间卡下钻包装：填满格子，交互态交给卡片自身的 hover 语言 */
+.matrix-cell-link {
+  display: block;
+  min-height: 0;
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--sb-radius);
+}
+.matrix-cell-link:is(a) {
+  cursor: pointer;
+}
+.matrix-cell-link:is(a):hover :deep(.whc) {
+  border-color: rgba(135, 208, 255, 0.26);
+  border-top-color: rgba(135, 208, 255, 0.34);
+}
+.matrix-cell-link:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--sb-bg),
+    0 0 0 4px var(--sb-cyan-dim);
+}
+.matrix-cell-link > :deep(.whc) {
+  height: 100%;
 }
 
 /* 区块标题（无外壳区域用）：与 ScreenPanel 升级后的标题同款语言 */
