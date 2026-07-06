@@ -33,7 +33,10 @@ withDefaults(
 <template>
   <header class="sb-hd">
     <div class="sb-hd-left">
-      <i class="sb-hd-glyph" aria-hidden="true" />
+      <svg class="sb-hd-core" viewBox="0 0 28 28" aria-hidden="true">
+        <polygon points="14,2.5 24.5,8.25 24.5,19.75 14,25.5 3.5,19.75 3.5,8.25" />
+        <rect class="sb-hd-core-dot" x="10.9" y="10.9" width="6.2" height="6.2" transform="rotate(45 14 14)" />
+      </svg>
       <h1 class="sb-hd-t">{{ title }}</h1>
     </div>
     <div class="sb-hd-tools">
@@ -56,7 +59,7 @@ withDefaults(
   color: var(--sb-text);
   font-variant-numeric: tabular-nums;
 }
-/* 底线升级：两端微亮的渐变发丝线（替代平灰 border，2026-07 生产走查） */
+/* 底线：整条极淡发丝，仅标题块下方一段亮起（局部光，不做整条亮线） */
 .sb-hd::after {
   content: '';
   position: absolute;
@@ -64,47 +67,65 @@ withDefaults(
   right: 0;
   bottom: 0;
   height: 1px;
-  background: linear-gradient(
-    90deg,
-    rgba(126, 190, 255, 0.5),
-    rgba(255, 255, 255, 0.08) 28%,
-    rgba(255, 255, 255, 0.08) 72%,
-    rgba(126, 190, 255, 0.3)
-  );
+  background: rgba(255, 255, 255, 0.06);
 }
 .sb-hd-left {
+  position: relative;
+  align-self: stretch;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 15px;
 }
-/* 页头标题的双斜切能量块 */
-.sb-hd-glyph {
-  position: relative;
-  width: 11px;
-  height: 26px;
-  flex: none;
-  border-radius: 2px;
-  transform: skewX(-16deg);
-  background: linear-gradient(180deg, var(--sb-cyan), rgba(74, 166, 238, 0.3));
-  box-shadow: 0 0 14px rgba(74, 166, 238, 0.6);
-}
-.sb-hd-glyph::after {
+/* 亮段跟随标题块宽度自适应，右端渐隐并落一枚菱形节点 */
+.sb-hd-left::after {
   content: '';
   position: absolute;
-  left: 15px;
-  top: 4px;
-  bottom: 4px;
-  width: 5px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, rgba(120, 190, 255, 0.6), rgba(74, 166, 238, 0.12));
+  left: 0;
+  right: -56px;
+  bottom: 0;
+  height: 1px;
+  z-index: 1;
+  background: linear-gradient(90deg, rgba(126, 190, 255, 0.55), rgba(126, 190, 255, 0.25) 70%, transparent);
+}
+.sb-hd-left::before {
+  content: '';
+  position: absolute;
+  right: -59px;
+  bottom: -2.5px;
+  width: 6px;
+  height: 6px;
+  transform: rotate(45deg);
+  background: var(--sb-cyan);
+  box-shadow: 0 0 8px rgba(74, 166, 238, 0.7);
+}
+/* 页头核心徽标：六边形线框 + 中心菱点缓呼吸（与面板斜切块小标题分层） */
+.sb-hd-core {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+.sb-hd-core polygon {
+  fill: none;
+  stroke: rgba(126, 190, 255, 0.6);
+  stroke-width: 1.5;
+}
+.sb-hd-core-dot {
+  fill: var(--sb-cyan);
+  filter: drop-shadow(0 0 5px rgba(74, 166, 238, 0.8));
+  animation: sb-hd-core 3.6s ease-in-out infinite;
+}
+@keyframes sb-hd-core {
+  50% {
+    opacity: 0.4;
+  }
 }
 .sb-hd-t {
-  font-size: 31px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  margin: 0 0 0 8px;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  margin: 0;
   color: #fff;
-  text-shadow: 0 0 24px rgba(110, 190, 255, 0.42);
+  text-shadow: 0 0 26px rgba(110, 190, 255, 0.45);
 }
 .sb-hd-tools {
   display: flex;
@@ -123,5 +144,10 @@ withDefaults(
 }
 .sb-hd-menu {
   cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-hd-core-dot {
+    animation: none;
+  }
 }
 </style>

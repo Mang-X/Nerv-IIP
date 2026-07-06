@@ -35,44 +35,54 @@ const date = computed(() => WEEKDAYS[now.value.getDay()])
 <template>
   <ScreenScaler :design-width="1920" :design-height="1080">
     <div class="screen-layout">
-      <!-- 舱底装饰：四角角标 + 电路走线 + 稀疏光点（个别节点缓呼吸），不做大面积泛光 -->
-      <svg class="screen-layout__deco" viewBox="0 0 1920 1080" aria-hidden="true">
-        <!-- 四角角标 -->
-        <g class="corners">
-          <path d="M14 64 V26 a12 12 0 0 1 12 -12 H64" />
-          <path d="M1856 14 h38 a12 12 0 0 1 12 12 v38" />
-          <path d="M14 1016 v38 a12 12 0 0 0 12 12 h38" />
-          <path d="M1906 1016 v38 a12 12 0 0 1 -12 12 h-38" />
-          <rect x="22" y="22" width="5" height="5" />
-          <rect x="1893" y="22" width="5" height="5" />
-          <rect x="22" y="1053" width="5" height="5" />
-          <rect x="1893" y="1053" width="5" height="5" />
-        </g>
-        <!-- 电路走线（左下 / 右上），端点带节点 -->
-        <g class="traces">
-          <path d="M30 992 V884 l46 -46 H332" />
-          <circle cx="30" cy="992" r="3" class="node" />
-          <circle cx="76" cy="838" r="2.6" class="node breathe" />
-          <circle cx="332" cy="838" r="3" class="node breathe delay" />
-          <path d="M1890 96 v96 l-46 46 H1600" />
-          <circle cx="1890" cy="96" r="3" class="node" />
-          <circle cx="1844" cy="238" r="2.6" class="node breathe delay2" />
-          <circle cx="1600" cy="238" r="3" class="node breathe" />
-        </g>
-        <!-- 稀疏光点（隐隐星尘） -->
-        <g class="dust">
-          <circle cx="410" cy="180" r="1.4" />
-          <circle cx="700" cy="88" r="1.1" class="breathe" />
-          <circle cx="1130" cy="150" r="1.5" />
-          <circle cx="1460" cy="70" r="1.2" class="breathe delay" />
-          <circle cx="240" cy="520" r="1.2" />
-          <circle cx="1700" cy="480" r="1.4" class="breathe delay2" />
-          <circle cx="920" cy="1030" r="1.3" />
-          <circle cx="1330" cy="960" r="1.1" class="breathe" />
-          <circle cx="560" cy="880" r="1.4" class="breathe delay2" />
-          <circle cx="1820" cy="740" r="1.2" />
-          <circle cx="90" cy="330" r="1.3" class="breathe delay" />
-          <circle cx="1560" cy="860" r="1.2" />
+      <!-- 舱底 v3：点阵粒子场（密度自顶向下渐隐）——现代、简洁，替代线网格 -->
+      <div class="screen-layout__dots" aria-hidden="true" />
+      <!-- 光路：两条贝塞尔光径 + 流动光点（数据在流动的活感），reduced-motion 隐藏光点 -->
+      <svg class="screen-layout__paths" viewBox="0 0 1920 1080" aria-hidden="true">
+        <defs>
+          <linearGradient id="sl-path-a" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0" stop-color="rgba(120,190,255,0)" />
+            <stop offset="0.5" stop-color="rgba(120,190,255,0.16)" />
+            <stop offset="1" stop-color="rgba(120,190,255,0)" />
+          </linearGradient>
+          <linearGradient id="sl-path-b" x1="1" y1="1" x2="0" y2="0">
+            <stop offset="0" stop-color="rgba(139,155,230,0)" />
+            <stop offset="0.5" stop-color="rgba(139,155,230,0.1)" />
+            <stop offset="1" stop-color="rgba(139,155,230,0)" />
+          </linearGradient>
+        </defs>
+        <path
+          id="sl-route-a"
+          d="M -80 940 C 500 1040, 820 560, 1200 620 S 1800 150, 2000 120"
+          fill="none"
+          stroke="url(#sl-path-a)"
+          stroke-width="1.2"
+        />
+        <path
+          id="sl-route-b"
+          d="M 2000 880 C 1480 780, 1180 1010, 740 900 S 180 470, -80 560"
+          fill="none"
+          stroke="url(#sl-path-b)"
+          stroke-width="1"
+        />
+        <circle class="comet" r="2.6" fill="#9fd4ff">
+          <animateMotion dur="26s" repeatCount="indefinite">
+            <mpath href="#sl-route-a" />
+          </animateMotion>
+        </circle>
+        <circle class="comet dim" r="2.2" fill="#aab6ef">
+          <animateMotion dur="34s" begin="-14s" repeatCount="indefinite">
+            <mpath href="#sl-route-b" />
+          </animateMotion>
+        </circle>
+        <!-- 点阵场里亮起的几颗活点（错相缓呼吸），坐标落在 26px 栅格上 -->
+        <g class="sparks">
+          <circle cx="390" cy="182" r="1.8" />
+          <circle cx="1014" cy="130" r="1.6" class="s2" />
+          <circle cx="1560" cy="234" r="1.8" class="s3" />
+          <circle cx="234" cy="546" r="1.6" class="s2" />
+          <circle cx="1716" cy="676" r="1.6" class="s3" />
+          <circle cx="702" cy="1014" r="1.8" />
         </g>
       </svg>
       <ScreenHeader class="screen-layout__chrome" :title="title" :time="time" :date="date" :line="line" :screen="screen" />
@@ -93,22 +103,24 @@ const date = computed(() => WEEKDAYS[now.value.getDay()])
   flex-direction: column;
   position: relative;
   isolation: isolate;
-  /* 舱底：顶缘细灯带 + 对齐网格 + 底部收暗 —— 不铺大面积泛光，
-     氛围由 SVG 走线/光点与面板通透共同给出 */
+  /* 舱底：顶缘细灯带 + 底部收暗；氛围主体交给点阵场与光路 */
   background:
-    linear-gradient(180deg, rgba(96, 180, 255, 0.05), transparent 34px),
+    linear-gradient(180deg, rgba(96, 180, 255, 0.045), transparent 30px),
     linear-gradient(180deg, transparent 84%, rgba(0, 0, 0, 0.3)),
-    linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px),
     var(--sb-bg);
-  background-size:
-    auto,
-    auto,
-    64px 64px,
-    64px 64px,
-    auto;
 }
-.screen-layout__deco {
+/* 点阵粒子场：1px 光点阵，顶部密亮、向下渐隐（mask 控密度） */
+.screen-layout__dots {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: radial-gradient(circle, rgba(150, 195, 255, 0.13) 1px, transparent 1.5px);
+  background-size: 26px 26px;
+  -webkit-mask-image: radial-gradient(1300px 760px at 50% 0%, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.2) 58%, rgba(0, 0, 0, 0.08));
+  mask-image: radial-gradient(1300px 760px at 50% 0%, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.2) 58%, rgba(0, 0, 0, 0.08));
+}
+.screen-layout__paths {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -116,39 +128,27 @@ const date = computed(() => WEEKDAYS[now.value.getDay()])
   pointer-events: none;
   z-index: 0;
 }
-.screen-layout__deco .corners path {
-  fill: none;
-  stroke: rgba(126, 190, 255, 0.42);
-  stroke-width: 2;
+.screen-layout__paths .comet {
+  filter: drop-shadow(0 0 6px rgba(140, 205, 255, 0.85));
 }
-.screen-layout__deco .corners rect {
-  fill: rgba(126, 190, 255, 0.5);
+.screen-layout__paths .comet.dim {
+  opacity: 0.7;
+  filter: drop-shadow(0 0 5px rgba(150, 165, 235, 0.7));
 }
-.screen-layout__deco .traces path {
-  fill: none;
-  stroke: rgba(126, 190, 255, 0.14);
-  stroke-width: 1.5;
+.screen-layout__paths .sparks circle {
+  fill: rgba(165, 210, 255, 0.5);
+  filter: drop-shadow(0 0 4px rgba(140, 205, 255, 0.6));
+  animation: sl-spark 4.6s ease-in-out infinite;
 }
-.screen-layout__deco .node {
-  fill: rgba(126, 190, 255, 0.45);
-  filter: drop-shadow(0 0 4px rgba(126, 190, 255, 0.5));
+.screen-layout__paths .sparks .s2 {
+  animation-delay: 1.5s;
 }
-.screen-layout__deco .dust circle {
-  fill: rgba(185, 220, 255, 0.32);
+.screen-layout__paths .sparks .s3 {
+  animation-delay: 3.1s;
 }
-/* 个别节点/光点缓呼吸 —— 隐隐的活感，reduced-motion 静止 */
-.screen-layout__deco .breathe {
-  animation: sl-node 4.2s ease-in-out infinite;
-}
-.screen-layout__deco .breathe.delay {
-  animation-delay: 1.4s;
-}
-.screen-layout__deco .breathe.delay2 {
-  animation-delay: 2.8s;
-}
-@keyframes sl-node {
+@keyframes sl-spark {
   50% {
-    opacity: 0.25;
+    opacity: 0.15;
   }
 }
 .screen-layout__chrome,
@@ -162,7 +162,10 @@ const date = computed(() => WEEKDAYS[now.value.getDay()])
   margin-top: 16px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .screen-layout__deco .breathe {
+  .screen-layout__paths .comet {
+    display: none;
+  }
+  .screen-layout__paths .sparks circle {
     animation: none;
   }
 }

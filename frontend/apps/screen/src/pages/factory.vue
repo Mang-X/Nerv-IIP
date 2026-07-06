@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { RingGauge, ScreenPanel, StatusTag } from '@nerv-iip/ui'
-import { computed, watch } from 'vue'
+import {
+  AlertTriangle,
+  CalendarClock,
+  ClipboardList,
+  FileWarning,
+  PackageCheck,
+  PowerOff,
+  Target,
+} from 'lucide-vue-next'
+import { type Component, computed, watch } from 'vue'
 import { useAccessScope } from '@/access/useAccessScope'
 import WorkshopHealthCard from '@/components/factory/WorkshopHealthCard.vue'
 import type { FactoryOverview } from '@/data/contracts/factory'
@@ -28,10 +37,11 @@ const factoryName = computed(
 
 const nf = new Intl.NumberFormat('en-US')
 
-// —— 顶部 KPI 带（达成率环 + 7 格；语义色只落在异常数字上）——
+// —— 顶部 KPI 带（达成率环 + 7 格；图标块承接语义色，异常数字同色）——
 interface BandCell {
   label: string
   value: string
+  icon: Component
   sub?: string
   tone?: 'bad' | 'warn'
 }
@@ -39,18 +49,34 @@ const bandCells = computed<BandCell[]>(() => {
   const k = ov.value?.kpis
   if (!k) return []
   return [
-    { label: '今日产量（件）', value: nf.format(k.todayOutput) },
-    { label: '计划产量（件）', value: nf.format(k.todayPlan) },
-    { label: '在产工单', value: String(k.wipOrders) },
-    { label: '超期 / 风险工单', value: String(k.riskOrders), tone: k.riskOrders > 0 ? 'bad' : undefined },
+    { label: '今日产量（件）', value: nf.format(k.todayOutput), icon: PackageCheck },
+    { label: '计划产量（件）', value: nf.format(k.todayPlan), icon: Target },
+    { label: '在产工单', value: String(k.wipOrders), icon: ClipboardList },
+    {
+      label: '超期 / 风险工单',
+      value: String(k.riskOrders),
+      icon: CalendarClock,
+      tone: k.riskOrders > 0 ? 'bad' : undefined,
+    },
     {
       label: '未恢复告警',
       value: String(k.openAlarms),
+      icon: AlertTriangle,
       sub: `严重 ${k.criticalAlarms}`,
       tone: k.criticalAlarms > 0 ? 'bad' : k.openAlarms > 0 ? 'warn' : undefined,
     },
-    { label: '未结停机', value: String(k.openDowntime), tone: k.openDowntime > 0 ? 'warn' : undefined },
-    { label: '未结不良单', value: String(k.openNcr), tone: k.openNcr > 0 ? 'warn' : undefined },
+    {
+      label: '未结停机',
+      value: String(k.openDowntime),
+      icon: PowerOff,
+      tone: k.openDowntime > 0 ? 'warn' : undefined,
+    },
+    {
+      label: '未结不良单',
+      value: String(k.openNcr),
+      icon: FileWarning,
+      tone: k.openNcr > 0 ? 'warn' : undefined,
+    },
   ]
 })
 </script>
@@ -70,9 +96,14 @@ const bandCells = computed<BandCell[]>(() => {
           />
           <div class="band-cells">
             <div v-for="c in bandCells" :key="c.label" class="band-cell">
-              <div class="band-v" :class="c.tone">{{ c.value }}</div>
-              <div class="band-l">
-                {{ c.label }}<span v-if="c.sub" class="band-sub" :class="c.tone">· {{ c.sub }}</span>
+              <span class="band-ic" :class="c.tone">
+                <component :is="c.icon" :size="19" :stroke-width="1.8" />
+              </span>
+              <div class="band-txt">
+                <div class="band-v" :class="c.tone">{{ c.value }}</div>
+                <div class="band-l">
+                  {{ c.label }}<span v-if="c.sub" class="band-sub" :class="c.tone">· {{ c.sub }}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -181,8 +212,11 @@ const bandCells = computed<BandCell[]>(() => {
 }
 .band-cell {
   flex: 1;
-  padding: 6px 20px;
+  padding: 6px 18px;
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 13px;
 }
 .band-cell + .band-cell::before {
   content: '';
@@ -193,8 +227,33 @@ const bandCells = computed<BandCell[]>(() => {
   width: 1px;
   background: var(--sb-divider);
 }
+/* 指标图标块：语义色随异常态（中性 / 青 / 黄 / 红） */
+.band-ic {
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--sb-text-2);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+}
+.band-ic.warn {
+  color: var(--sb-amber);
+  background: rgba(242, 193, 78, 0.09);
+  border-color: rgba(242, 193, 78, 0.24);
+}
+.band-ic.bad {
+  color: var(--sb-red);
+  background: rgba(239, 90, 99, 0.1);
+  border-color: rgba(239, 90, 99, 0.26);
+}
+.band-txt {
+  min-width: 0;
+}
 .band-v {
-  font-size: 33px;
+  font-size: 31px;
   font-weight: 700;
   line-height: 1;
   color: var(--sb-text);
