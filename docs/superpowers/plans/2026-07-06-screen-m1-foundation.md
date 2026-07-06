@@ -19,6 +19,8 @@
 - **诚实标注**：占位指标（OEE 性能/质量率=1、综合 OEE≈可用率）统一走占位 badge/tooltip 标注「≈可用率」「待 #570」；`IsSourceFresh` 驱动失联灰条防假绿；无闭环能力（安灯）标注「待 MAN-322」。
 - **门禁（每任务/每屏）**：`pnpm -C frontend --filter @nerv-iip/screen typecheck && test && build` 全过；关键逻辑有 vitest；每屏另加 preview 实机截图确认。
 - **分支**：本地基单独分支 `feat/screen-m1-foundation`；随后三屏各自 `mang/man-314-*` / `mang/man-317-*` / `mang/man-316-*`。
+- **执行顺序（按依赖）**：**F2 → F1 → F3 → F4 → F5**（scope 依赖 masterdata，故 F2 先于 F1）。每个任务提交时全树必须可编译。
+- **测试命令**：统一跑整套 `pnpm -C frontend --filter @nerv-iip/screen test`（`vp test` 的名字过滤不保证透传；各任务 Run 里的过滤名仅示意定位）。
 
 ---
 
@@ -459,9 +461,8 @@ git commit -m "feat(screen): 共享 masterdata 映射字典 + fixtures 工具"
 - Create: `frontend/apps/screen/src/data/contracts/factory.ts`
 - Create: `frontend/apps/screen/src/data/mock/factory.ts`
 - Create: `frontend/apps/screen/src/data/fetchers/factory.ts`
-- Delete: `frontend/apps/screen/src/mock/factory.ts`
-- Modify: `frontend/apps/screen/src/pages/factory.vue`（F4 会创建；此处约定其 import 路径）
 - Test: `frontend/apps/screen/src/data/fetchers/factory.test.ts`
+- （旧 `mock/factory.ts` 的删除与 `index.vue`/`factory.vue` 的 import 切换在 **F4** 做，保证本任务独立可编译）
 
 **Interfaces:**
 - Consumes: 无（迁移现有 `mock/factory.ts` 内容，`create*`→`build*`、`fetch*Mock`→`fetch*`）。
@@ -594,21 +595,16 @@ export async function fetchFactoryOverview(): Promise<FactoryOverview> {
 }
 ```
 
-- [ ] **Step 6: 删除旧文件并跑测试**
+- [ ] **Step 6: 跑测试确认通过（不删旧文件、不改 index.vue，保持可编译）**
 
-```bash
-git rm frontend/apps/screen/src/mock/factory.ts
-```
-Run: `pnpm -C frontend --filter @nerv-iip/screen test -- fetchers/factory`
-Expected: PASS（1 passed）
+Run: `pnpm -C frontend --filter @nerv-iip/screen test`
+Expected: 全绿；新增 `fetchers/factory`(1) 通过。本任务**只新增 `data/` 文件**，不删 `mock/factory.ts`、不改 `pages/index.vue`，故全树可编译（`data/mock/factory.ts` 与旧 `mock/factory.ts` 暂重复，由 F4 删旧并切换 import）。
 
-> 注：`pages/index.vue` 现仍 import `@/mock/factory`——F4 会把该内容迁到 `pages/factory.vue` 并改 import 到 `@/data/*`、把 `index.vue` 改为 launcher。F3、F4 在同一分支连续进行，中途 `pnpm typecheck` 可能因 index.vue 悬空 import 暂红，F4 结束后转绿；**F3 的提交前先完成 F4 的 factory.vue 迁移**（见 F4 Step 3）以保持每次提交可编译。
-
-- [ ] **Step 7: 提交（与 F4 的 factory.vue 迁移一起，保证可编译）**
+- [ ] **Step 7: 提交**
 
 ```bash
 git add frontend/apps/screen/src/data/
-git commit -m "refactor(screen): 工厂数据迁入 data/ 三段式 seam（contracts/mock/fetchers）"
+git commit -m "refactor(screen): 新增 data/ 三段式 seam（工厂契约/mock/fetcher）"
 ```
 
 ---
@@ -623,6 +619,7 @@ git commit -m "refactor(screen): 工厂数据迁入 data/ 三段式 seam（contr
 - Create: `frontend/apps/screen/src/pages/line/index.vue`（占位）
 - Create: `frontend/apps/screen/src/pages/line/[id].vue`（占位）
 - Modify: `frontend/apps/screen/src/router/index.ts`（scope 守卫）
+- Delete: `frontend/apps/screen/src/mock/factory.ts`（内容已在 F3 迁入 `data/`；本任务切换 import 后删除）
 - Test: `frontend/apps/screen/src/data/screens.test.ts`
 
 **Interfaces:**
@@ -710,15 +707,17 @@ export function screenForPath(path: string): ScreenKey | undefined {
 <script setup lang="ts">
 import * as icons from 'lucide-vue-next'
 import { ScreenPanel } from '@nerv-iip/ui'
-import { computed } from 'vue'
+import { type Component, computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
 import { SCREENS } from '@/data/screens'
 
 const scope = useAccessScope()
 const cards = computed(() => SCREENS.filter((s) => scope.canSeeScreen(s.key)))
-function iconOf(name: string) {
-  return (icons as Record<string, unknown>)[name] ?? icons.SquareDashed
+// lucide 图标按名取用；显式转 Component 以过 vue-tsc 的 <component :is> 类型校验。
+const iconMap = icons as unknown as Record<string, Component>
+function iconOf(name: string): Component {
+  return iconMap[name] ?? iconMap.SquareDashed
 }
 </script>
 
@@ -924,12 +923,15 @@ Expected: PASS（2 passed）
 Run: `pnpm -C frontend --filter @nerv-iip/screen typecheck`
 Expected: 通过（无悬空 import）
 
-- [ ] **Step 9: 提交**
+- [ ] **Step 9: 删除旧文件并提交**
 
 ```bash
+git rm frontend/apps/screen/src/mock/factory.ts
 git add frontend/apps/screen/src/data/screens.ts frontend/apps/screen/src/data/screens.test.ts frontend/apps/screen/src/pages/ frontend/apps/screen/src/router/index.ts
-git commit -m "feat(screen): / 大屏选择页 + 屏注册表 + scope 路由守卫 + 占位页"
+git commit -m "feat(screen): / 大屏选择页 + 屏注册表 + scope 路由守卫 + 占位页（工厂迁 /factory，删旧 mock）"
 ```
+
+> 提交前跑 `pnpm -C frontend --filter @nerv-iip/screen typecheck` 确认 `pages/index.vue` 已无 `@/mock/factory` 悬空 import、`pages/factory.vue` 已切到 `@/data/*`。
 
 ---
 
