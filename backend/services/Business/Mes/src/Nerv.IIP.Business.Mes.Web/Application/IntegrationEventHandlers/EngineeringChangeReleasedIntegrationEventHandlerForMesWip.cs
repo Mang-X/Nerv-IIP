@@ -1,8 +1,10 @@
 using DotNetCore.CAP;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
@@ -16,7 +18,8 @@ namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    IOptions<MesEngineeringChangeOptions> options)
+    IOptions<MesEngineeringChangeOptions> options,
+    IMediator? mediator = null)
     : IIntegrationEventHandler<EngineeringChangeReleasedIntegrationEvent>, ICapSubscribe
 {
     public const string TopicName = EngineeringChangeReleasedIntegrationEventTopic.TopicName;
@@ -35,6 +38,15 @@ public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
         IIntegrationEventDeadLetterStore deadLetterStore,
         MesEngineeringChangeOptions options)
         : this(dbContext, deadLetterStore, Options.Create(options))
+    {
+    }
+
+    public EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
+        ApplicationDbContext dbContext,
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        MesEngineeringChangeOptions options,
+        IMediator mediator)
+        : this(dbContext, deadLetterStore, Options.Create(options), mediator)
     {
     }
 
@@ -109,7 +121,7 @@ public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
                     !string.IsNullOrWhiteSpace(affected.SupersededByVersionId))
                 {
                     workOrder.RebindProductionVersionForEngineeringChange(affected.SupersededByVersionId);
-                    dbContext.EngineeringChangeWorkOrderImpacts.Add(MesEngineeringChangeWorkOrderImpact.AutoRebound(
+                    await AddImpactAsync(MesEngineeringChangeWorkOrderImpact.AutoRebound(
                         integrationEvent.OrganizationId,
                         integrationEvent.EnvironmentId,
                         workOrder.WorkOrderId,
@@ -119,12 +131,12 @@ public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
                         affected.VersionId,
                         affected.SupersededByVersionId,
                         integrationEvent.Payload.EffectiveDate,
-                        integrationEvent.OccurredAtUtc));
+                        integrationEvent.OccurredAtUtc), cancellationToken);
                 }
                 else
                 {
                     workOrder.Hold($"Engineering change {integrationEvent.Payload.ChangeNumber} requires production version confirmation.");
-                    dbContext.EngineeringChangeWorkOrderImpacts.Add(MesEngineeringChangeWorkOrderImpact.BlockedForManualConfirmation(
+                    await AddImpactAsync(MesEngineeringChangeWorkOrderImpact.BlockedForManualConfirmation(
                         integrationEvent.OrganizationId,
                         integrationEvent.EnvironmentId,
                         workOrder.WorkOrderId,
@@ -134,13 +146,13 @@ public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
                         affected.VersionId,
                         affected.SupersededByVersionId,
                         integrationEvent.Payload.EffectiveDate,
-                        integrationEvent.OccurredAtUtc));
+                        integrationEvent.OccurredAtUtc), cancellationToken);
                 }
 
                 continue;
             }
 
-            dbContext.EngineeringChangeWorkOrderImpacts.Add(MesEngineeringChangeWorkOrderImpact.PendingDecision(
+            await AddImpactAsync(MesEngineeringChangeWorkOrderImpact.PendingDecision(
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
                 workOrder.WorkOrderId,
@@ -150,7 +162,7 @@ public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
                 affected.VersionId,
                 affected.SupersededByVersionId,
                 integrationEvent.Payload.EffectiveDate,
-                integrationEvent.OccurredAtUtc));
+                integrationEvent.OccurredAtUtc), cancellationToken);
         }
     }
 
@@ -170,14 +182,36 @@ public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
             return;
         }
 
-        dbContext.EngineeringChangeWorkOrderImpacts.Add(MesEngineeringChangeWorkOrderImpact.ArchivedProductionVersion(
+        await AddImpactAsync(MesEngineeringChangeWorkOrderImpact.ArchivedProductionVersion(
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
             integrationEvent.Payload.ChangeNumber,
             affected.VersionId,
             affected.SupersededByVersionId,
             integrationEvent.Payload.EffectiveDate,
-            integrationEvent.OccurredAtUtc));
+            integrationEvent.OccurredAtUtc), cancellationToken);
+    }
+
+    private async Task AddImpactAsync(
+        MesEngineeringChangeWorkOrderImpact impact,
+        CancellationToken cancellationToken)
+    {
+        dbContext.EngineeringChangeWorkOrderImpacts.Add(impact);
+        var impactDetected = impact.GetDomainEvents()
+            .OfType<MesEngineeringChangeWorkOrderImpactDetectedDomainEvent>()
+            .SingleOrDefault();
+        if (impactDetected is null)
+        {
+            return;
+        }
+
+        if (mediator is not null &&
+            impact.Status != MesEngineeringChangeImpactStatuses.ArchivedProductionVersion)
+        {
+            await mediator.Publish(impactDetected, cancellationToken);
+        }
+
+        impact.ClearDomainEvents();
     }
 
     private async Task<bool> HasImpactAsync(

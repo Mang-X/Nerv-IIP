@@ -1,10 +1,13 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+using Nerv.IIP.Business.Mes.Web;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
@@ -24,6 +27,66 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 
 public sealed class MesEngineeringChangeNotificationAcceptanceTests
 {
+    [Fact]
+    public async Task Mes_eco_wip_impact_dispatches_registered_converter_to_notification_task()
+    {
+        await using var mesProvider = CreateMesDispatchProvider();
+        using var mesScope = mesProvider.CreateScope();
+        var mesDb = mesScope.ServiceProvider.GetRequiredService<MesDbContext>();
+        var publisher = mesScope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>();
+        Assert.NotEmpty(mesScope.ServiceProvider
+            .GetServices<INotificationHandler<MesEngineeringChangeWorkOrderImpactDetectedDomainEvent>>());
+        var started = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-STARTED-DISPATCH",
+            "SKU-FG-1000",
+            "PV-OLD",
+            10m,
+            10,
+            DateTimeOffset.Parse("2026-07-06T16:00:00Z"),
+            "PCS");
+        started.MarkReleased();
+        started.Start(DateTimeOffset.Parse("2026-07-06T08:00:00Z"));
+        mesDb.WorkOrders.Add(started);
+        await mesDb.SaveChangesAsync();
+        publisher.Published.Clear();
+
+        var mesHandler = new EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new MesEngineeringChangeOptions { NotStartedPolicy = MesEngineeringChangeNotStartedPolicy.AutoRebind },
+            mesScope.ServiceProvider.GetRequiredService<IMediator>());
+
+        await mesHandler.HandleAsync(CreateEngineeringChangeReleasedEvent(), CancellationToken.None);
+        await mesDb.SaveChangesAsync();
+
+        var impactEvent = Assert.Single(
+            publisher.Published.OfType<WorkOrderEngineeringChangeImpactDetectedIntegrationEvent>());
+        Assert.Equal(MesIntegrationEventTypes.WorkOrderEngineeringChangeImpactDetected, impactEvent.EventType);
+        Assert.Equal("WO-STARTED-DISPATCH", impactEvent.Payload.WorkOrderId);
+        Assert.Equal(MesEngineeringChangeImpactContractStatuses.PendingDecision, impactEvent.Payload.ImpactStatus);
+
+        await using var notificationDb = CreateNotificationContext();
+        var notificationHandler = new WorkOrderEngineeringChangeImpactDetectedIntegrationEventHandlerForNotification(
+            new NotificationCommandExecutingSender(notificationDb),
+            notificationDb,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            CreateNotificationConfiguration(),
+            TimeProvider.System);
+        await notificationHandler.HandleAsync(impactEvent, CancellationToken.None);
+
+        var intent = await notificationDb.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+        Assert.Equal(MesIntegrationEventTypes.WorkOrderEngineeringChangeImpactDetected, intent.SourceEventType);
+        Assert.Equal("WO-STARTED-DISPATCH", intent.ResourceId);
+        Assert.Equal(["role:process-engineer", "role:production-planner"], intent.Messages.Select(x => x.RecipientRef).Order(StringComparer.Ordinal));
+        Assert.Equal(2, intent.Tasks.Count);
+        Assert.Contains("ECO-721", intent.Summary, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Mes_eco_wip_impact_event_flows_to_notification_task()
     {
@@ -95,6 +158,21 @@ public sealed class MesEngineeringChangeNotificationAcceptanceTests
             .UseInMemoryDatabase($"mes-eco-notification-acceptance-notification-{Guid.NewGuid():N}")
             .Options;
         return new NotificationDbContext(options, new NoopMediator());
+    }
+
+    private static ServiceProvider CreateMesDispatchProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMediatR(mediatR => mediatR.RegisterServicesFromAssembly(typeof(MesCapServiceCollectionExtensions).Assembly));
+        services.AddIntegrationEvents(typeof(MesCapServiceCollectionExtensions))
+            .UseCap<MesDbContext>(cap => cap.RegisterServicesFromAssemblies(typeof(MesCapServiceCollectionExtensions)));
+        services.AddSingleton<RecordingIntegrationEventPublisher>();
+        services.AddSingleton<IIntegrationEventPublisher>(serviceProvider =>
+            serviceProvider.GetRequiredService<RecordingIntegrationEventPublisher>());
+        services.AddDbContext<MesDbContext>(options =>
+            options.UseInMemoryDatabase($"mes-eco-notification-dispatch-{Guid.NewGuid():N}"));
+        return services.BuildServiceProvider();
     }
 
     private static IConfiguration CreateNotificationConfiguration()
@@ -174,6 +252,19 @@ public sealed class MesEngineeringChangeNotificationAcceptanceTests
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException("This test sender does not support streams.");
+        }
+    }
+
+    private sealed class RecordingIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        public List<object> Published { get; } = [];
+
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(
+            TIntegrationEvent integrationEvent,
+            CancellationToken cancellationToken)
+        {
+            Published.Add(integrationEvent!);
+            return Task.CompletedTask;
         }
     }
 
