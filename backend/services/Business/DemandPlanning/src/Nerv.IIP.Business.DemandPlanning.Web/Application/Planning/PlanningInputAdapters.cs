@@ -181,13 +181,15 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
         DateOnly horizonEnd,
         CancellationToken cancellationToken)
     {
-        var initialDemands = await LoadDemandsAsync(
+        // Forecast consumption needs MasterData planning UOM context, but planning UOM
+        // lookup itself needs the SKU/UOM/site seed set. This first pass intentionally
+        // captures only raw source coverage for upstream snapshot requests; final MRP
+        // demands are loaded again after planning parameters and UOM conversions arrive.
+        var initialDemands = await LoadDemandSeedSnapshotsAsync(
             organizationId,
             environmentId,
             horizonStart,
             horizonEnd,
-            [],
-            [],
             cancellationToken);
         if (initialDemands.Count == 0)
         {
@@ -458,6 +460,7 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 x.BucketDate,
                 "mps"))
             .ToListAsync(cancellationToken);
+        var converter = PlanningUomConverter.Create(uomConversions);
         var forecastDemands = forecastInputs
             .Select(forecast =>
             {
@@ -466,11 +469,11 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 var forecastUomCode = ResolvePlanningUom(forecast.SkuCode, forecast.SiteCode, forecast.UomCode, planningParameters);
                 var hasPlanningUomContext = planningParameters.Count > 0 || uomConversions.Count > 0;
                 var forecastQuantity = ConvertForecastConsumptionQuantity(
+                    converter,
                     forecast.SkuCode,
                     forecast.UomCode,
                     forecastUomCode,
                     forecast.Quantity,
-                    uomConversions,
                     requireConversion: true);
                 var consumed = demandSources
                     .Concat(mpsBuckets)
@@ -480,11 +483,11 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                         && demand.DueDate >= consumptionStart
                         && demand.DueDate <= consumptionEnd)
                     .Sum(demand => ConvertForecastConsumptionQuantity(
+                        converter,
                         demand.SkuCode,
                         demand.UomCode,
                         forecastUomCode,
                         demand.Quantity,
-                        uomConversions,
                         hasPlanningUomContext));
                 var remaining = Math.Max(0m, forecastQuantity - consumed);
                 return remaining <= 0m
@@ -504,6 +507,63 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
 
         return demandSources
             .Concat(forecastDemands)
+            .Concat(mpsBuckets)
+            .OrderBy(x => x.DueDate)
+            .ThenBy(x => x.SourceType)
+            .ThenBy(x => x.DemandSourceReference)
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyCollection<DemandSnapshot>> LoadDemandSeedSnapshotsAsync(
+        string organizationId,
+        string environmentId,
+        DateOnly horizonStart,
+        DateOnly horizonEnd,
+        CancellationToken cancellationToken)
+    {
+        var demandSources = await dbContext.DemandSources
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.DemandType != "forecast"
+                && x.DueDate >= horizonStart
+                && x.DueDate <= horizonEnd)
+            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
+            .ToListAsync(cancellationToken);
+        var forecastInputs = await dbContext.ForecastInputs
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.PeriodEndDate >= horizonStart
+                && x.PeriodStartDate <= horizonEnd)
+            .Select(x => new DemandSnapshot(
+                x.ForecastReference,
+                x.SkuCode,
+                x.UomCode,
+                x.SiteCode,
+                x.Quantity,
+                ClampForecastDueDate(x.PeriodEndDate, horizonStart, horizonEnd),
+                "forecast"))
+            .ToListAsync(cancellationToken);
+        var mpsBuckets = await dbContext.MasterProductionSchedules
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.Status == MasterProductionScheduleStatus.Released
+                && x.BucketDate >= horizonStart
+                && x.BucketDate <= horizonEnd)
+            .Select(x => new DemandSnapshot(
+                $"MPS:{x.Id}",
+                x.SkuCode,
+                x.UomCode,
+                x.SiteCode,
+                x.Quantity,
+                x.BucketDate,
+                "mps"))
+            .ToListAsync(cancellationToken);
+
+        return demandSources
+            .Concat(forecastInputs)
             .Concat(mpsBuckets)
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SourceType)
@@ -543,61 +603,24 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
     }
 
     private static decimal ConvertForecastConsumptionQuantity(
+        PlanningUomConverter converter,
         string skuCode,
         string fromUomCode,
         string toUomCode,
         decimal quantity,
-        IReadOnlyCollection<UomConversionSnapshot> uomConversions,
         bool requireConversion)
     {
-        if (string.Equals(fromUomCode, toUomCode, StringComparison.OrdinalIgnoreCase))
+        if (converter.TryConvert(skuCode, fromUomCode, toUomCode, quantity, "forecast consumption UOM", out var converted))
         {
-            return quantity;
+            return converted;
         }
 
-        var conversion = uomConversions.FirstOrDefault(x =>
-            string.Equals(x.FromUomCode, fromUomCode, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(x.ToUomCode, toUomCode, StringComparison.OrdinalIgnoreCase));
-        if (conversion is null)
+        if (requireConversion)
         {
-            if (requireConversion)
-            {
-                throw new InvalidOperationException($"Missing global UOM conversion from '{fromUomCode}' to forecast consumption UOM '{toUomCode}' while normalizing SKU '{skuCode}'.");
-            }
-
-            return 0m;
+            return converter.Convert(skuCode, fromUomCode, toUomCode, quantity, "forecast consumption UOM");
         }
 
-        if (conversion.Factor <= 0m)
-        {
-            throw new InvalidOperationException($"Invalid global UOM conversion from '{fromUomCode}' to forecast consumption UOM '{toUomCode}' while normalizing SKU '{skuCode}': factor must be positive.");
-        }
-
-        var converted = Round(quantity * conversion.Factor + conversion.Offset, conversion.Precision, conversion.RoundingMode);
-        if (converted < 0m)
-        {
-            throw new InvalidOperationException($"Invalid global UOM conversion from '{fromUomCode}' to forecast consumption UOM '{toUomCode}' while normalizing SKU '{skuCode}': negative quantity after conversion is not allowed.");
-        }
-
-        return converted;
-    }
-
-    private static decimal Round(decimal value, int precision, string roundingMode)
-    {
-        var digits = Math.Clamp(precision, 0, 12);
-        return roundingMode.Trim().ToUpperInvariant() switch
-        {
-            "BANKERS" or "TO-EVEN" or "TOEVEN" => Math.Round(value, digits, MidpointRounding.ToEven),
-            "CEILING" or "UP" => RoundToward(value, digits, ceiling: true),
-            "FLOOR" or "DOWN" => RoundToward(value, digits, ceiling: false),
-            _ => Math.Round(value, digits, MidpointRounding.AwayFromZero),
-        };
-    }
-
-    private static decimal RoundToward(decimal value, int digits, bool ceiling)
-    {
-        var scale = (decimal)Math.Pow(10, digits);
-        return (ceiling ? Math.Ceiling(value * scale) : Math.Floor(value * scale)) / scale;
+        return 0m;
     }
 }
 

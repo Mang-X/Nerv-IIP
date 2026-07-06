@@ -131,7 +131,7 @@ public static class MrpCalculator
         var planningParameters = input.PlanningParameters
             .GroupBy(x => SkuSiteKey.Create(x.SkuCode, x.SiteCode))
             .ToDictionary(x => x.Key, x => x.First());
-        var converter = UomConverter.Create(input.UomConversions);
+        var converter = PlanningUomConverter.Create(input.UomConversions);
         var availability = input.Availability
             .Select(x => NormalizeAvailability(x, planningParameters, converter))
             .GroupBy(x => ItemKey.Create(x.SkuCode, x.UomCode, x.SiteCode))
@@ -454,7 +454,7 @@ public static class MrpCalculator
     private static Requirement NormalizeDemand(
         DemandSnapshot demand,
         IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters,
-        UomConverter converter)
+        PlanningUomConverter converter)
     {
         var planningUom = ResolvePlanningUom(demand.SkuCode, demand.SiteCode, demand.UomCode, planningParameters);
         var conversion = ConvertQuantity(demand.SkuCode, demand.UomCode, planningUom, demand.Quantity, converter);
@@ -475,7 +475,7 @@ public static class MrpCalculator
     private static InventoryAvailabilitySnapshot NormalizeAvailability(
         InventoryAvailabilitySnapshot availability,
         IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters,
-        UomConverter converter)
+        PlanningUomConverter converter)
     {
         var planningUom = ResolvePlanningUom(availability.SkuCode, availability.SiteCode, availability.UomCode, planningParameters);
         var availableConversion = ConvertQuantity(availability.SkuCode, availability.UomCode, planningUom, availability.AvailableQuantity, converter);
@@ -493,7 +493,7 @@ public static class MrpCalculator
     private static ScheduledReceiptSnapshot NormalizeScheduledReceipt(
         ScheduledReceiptSnapshot receipt,
         IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters,
-        UomConverter converter)
+        PlanningUomConverter converter)
     {
         var planningUom = ResolvePlanningUom(receipt.SkuCode, receipt.SiteCode, receipt.UomCode, planningParameters);
         var conversion = ConvertQuantity(receipt.SkuCode, receipt.UomCode, planningUom, receipt.Quantity, converter);
@@ -521,14 +521,14 @@ public static class MrpCalculator
         string fromUomCode,
         string toUomCode,
         decimal quantity,
-        UomConverter converter)
+        PlanningUomConverter converter)
     {
         if (string.Equals(Normalize(fromUomCode), Normalize(toUomCode), StringComparison.Ordinal))
         {
             return new QuantityConversion(quantity, []);
         }
 
-        var converted = converter.Convert(triggerSkuCode, fromUomCode, toUomCode, quantity);
+        var converted = converter.Convert(triggerSkuCode, fromUomCode, toUomCode, quantity, "planning UOM");
         return new QuantityConversion(converted, [$"{quantity} {fromUomCode} -> {converted} {toUomCode}"]);
     }
 
@@ -952,62 +952,4 @@ public static class MrpCalculator
         public decimal AvailableQuantity { get; set; } = availableQuantity;
     }
 
-    private sealed class UomConverter
-    {
-        private readonly IReadOnlyDictionary<(string FromUomCode, string ToUomCode), UomConversionSnapshot> conversions;
-
-        private UomConverter(IReadOnlyDictionary<(string FromUomCode, string ToUomCode), UomConversionSnapshot> conversions)
-        {
-            this.conversions = conversions;
-        }
-
-        public static UomConverter Create(IReadOnlyCollection<UomConversionSnapshot> conversions)
-        {
-            return new UomConverter(conversions
-                .GroupBy(x => (Normalize(x.FromUomCode), Normalize(x.ToUomCode)))
-                .ToDictionary(x => x.Key, x => x.First()));
-        }
-
-        // MasterData UOM conversions are global by unit pair; triggerSkuCode is only diagnostic context.
-        public decimal Convert(string triggerSkuCode, string fromUomCode, string toUomCode, decimal quantity)
-        {
-            var from = Normalize(fromUomCode);
-            var to = Normalize(toUomCode);
-            if (!conversions.TryGetValue((from, to), out var conversion))
-            {
-                throw new InvalidOperationException($"Missing global UOM conversion from '{fromUomCode}' to planning UOM '{toUomCode}' while normalizing SKU '{triggerSkuCode}'.");
-            }
-
-            if (conversion.Factor <= 0m)
-            {
-                throw new InvalidOperationException($"Invalid global UOM conversion from '{fromUomCode}' to planning UOM '{toUomCode}' while normalizing SKU '{triggerSkuCode}': factor must be positive.");
-            }
-
-            var converted = Round(quantity * conversion.Factor + conversion.Offset, conversion.Precision, conversion.RoundingMode);
-            if (converted < 0m)
-            {
-                throw new InvalidOperationException($"Invalid global UOM conversion from '{fromUomCode}' to planning UOM '{toUomCode}' while normalizing SKU '{triggerSkuCode}': negative quantity after conversion is not allowed.");
-            }
-
-            return converted;
-        }
-
-        private static decimal Round(decimal value, int precision, string roundingMode)
-        {
-            var digits = Math.Clamp(precision, 0, 12);
-            return Normalize(roundingMode) switch
-            {
-                "BANKERS" or "TO-EVEN" or "TOEVEN" => Math.Round(value, digits, MidpointRounding.ToEven),
-                "CEILING" or "UP" => RoundToward(value, digits, ceiling: true),
-                "FLOOR" or "DOWN" => RoundToward(value, digits, ceiling: false),
-                _ => Math.Round(value, digits, MidpointRounding.AwayFromZero),
-            };
-        }
-
-        private static decimal RoundToward(decimal value, int digits, bool ceiling)
-        {
-            var scale = (decimal)Math.Pow(10, digits);
-            return (ceiling ? Math.Ceiling(value * scale) : Math.Floor(value * scale)) / scale;
-        }
-    }
 }
