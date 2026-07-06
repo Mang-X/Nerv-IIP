@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
 using Nerv.IIP.Iam.Infrastructure;
@@ -82,9 +83,8 @@ public sealed class IamPostgresProfileTests
 
             var login = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
             login.EnsureSuccessStatusCode();
-            var auth = await login.Content.ReadFromJsonAsync<AuthResponse>();
+            var auth = await ReadResponseDataAsync<AuthResponse>(login);
 
-            Assert.NotNull(auth);
             Assert.False(string.IsNullOrWhiteSpace(auth.AccessToken));
             Assert.False(string.IsNullOrWhiteSpace(auth.RefreshToken));
             Assert.False(string.IsNullOrWhiteSpace(auth.SessionId));
@@ -101,8 +101,8 @@ public sealed class IamPostgresProfileTests
 
             var me = await client.GetAsync("/api/iam/v1/me");
             me.EnsureSuccessStatusCode();
-            var principal = await me.Content.ReadFromJsonAsync<MeResponse>();
-            Assert.Equal("user-admin", principal!.UserId);
+            var principal = await ReadResponseDataAsync<MeResponse>(me);
+            Assert.Equal("user-admin", principal.UserId);
             Assert.Equal("admin", principal.LoginName);
             Assert.Equal("user", principal.PrincipalType);
             Assert.Equal("org-001", principal.OrganizationId);
@@ -112,8 +112,7 @@ public sealed class IamPostgresProfileTests
 
             var refresh = await client.PostAsJsonAsync("/api/iam/v1/auth/refresh", new { refreshToken = auth.RefreshToken });
             refresh.EnsureSuccessStatusCode();
-            var rotated = await refresh.Content.ReadFromJsonAsync<AuthResponse>();
-            Assert.NotNull(rotated);
+            var rotated = await ReadResponseDataAsync<AuthResponse>(refresh);
             Assert.False(string.IsNullOrWhiteSpace(rotated.AccessToken));
             Assert.False(string.IsNullOrWhiteSpace(rotated.SessionId));
             Assert.NotEqual(auth.RefreshToken, rotated.RefreshToken);
@@ -134,8 +133,7 @@ public sealed class IamPostgresProfileTests
             client.DefaultRequestHeaders.Authorization = null;
             var secondLogin = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
             secondLogin.EnsureSuccessStatusCode();
-            var secondAuth = await secondLogin.Content.ReadFromJsonAsync<AuthResponse>();
-            Assert.NotNull(secondAuth);
+            var secondAuth = await ReadResponseDataAsync<AuthResponse>(secondLogin);
 
             client.DefaultRequestHeaders.Authorization = new("Bearer", secondAuth.AccessToken);
             var adminRevoke = await client.PostAsync($"/api/iam/v1/sessions/{secondAuth.SessionId}/revoke", null);
@@ -150,8 +148,8 @@ public sealed class IamPostgresProfileTests
                 "/api/iam/v1/connectors/credentials/validate",
                 new { connectorHostId = "connector-host-001", secret = "local-connector-secret" });
             connector.EnsureSuccessStatusCode();
-            var connectorPrincipal = await connector.Content.ReadFromJsonAsync<ConnectorPrincipalResponse>();
-            Assert.Equal("connector-host", connectorPrincipal!.PrincipalType);
+            var connectorPrincipal = await ReadResponseDataAsync<ConnectorPrincipalResponse>(connector);
+            Assert.Equal("connector-host", connectorPrincipal.PrincipalType);
             Assert.Equal("connector-host-001", connectorPrincipal.ConnectorHostId);
             Assert.Equal("org-001", connectorPrincipal.OrganizationId);
             Assert.Equal("env-dev", connectorPrincipal.EnvironmentId);
@@ -440,16 +438,15 @@ public sealed class IamPostgresProfileTests
 
             var login = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
             login.EnsureSuccessStatusCode();
-            var auth = await login.Content.ReadFromJsonAsync<AuthResponse>();
-            client.DefaultRequestHeaders.Authorization = new("Bearer", auth!.AccessToken);
+            var auth = await ReadResponseDataAsync<AuthResponse>(login);
+            client.DefaultRequestHeaders.Authorization = new("Bearer", auth.AccessToken);
 
             var create = await client.PostAsJsonAsync(
                 "/api/iam/v1/users",
                 new { loginName = "operator", email = "operator@nerv-iip.local", password = "Operator123!" });
             Assert.Equal(HttpStatusCode.Created, create.StatusCode);
-            var created = await create.Content.ReadFromJsonAsync<UserResponse>();
+            var created = await ReadResponseDataAsync<UserResponse>(create);
 
-            Assert.NotNull(created);
             Assert.False(string.IsNullOrWhiteSpace(created.UserId));
             Assert.Equal("operator", created.LoginName);
             Assert.Equal("operator@nerv-iip.local", created.Email);
@@ -459,9 +456,9 @@ public sealed class IamPostgresProfileTests
                 $"/api/iam/v1/users/{created.UserId}",
                 new { loginName = "operator-updated", email = "operator.updated@nerv-iip.local", enabled = true });
             patch.EnsureSuccessStatusCode();
-            var updated = await patch.Content.ReadFromJsonAsync<UserResponse>();
+            var updated = await ReadResponseDataAsync<UserResponse>(patch);
 
-            Assert.Equal(created.UserId, updated!.UserId);
+            Assert.Equal(created.UserId, updated.UserId);
             Assert.Equal("operator-updated", updated.LoginName);
             Assert.Equal("operator.updated@nerv-iip.local", updated.Email);
             Assert.True(updated.Enabled);
@@ -472,7 +469,7 @@ public sealed class IamPostgresProfileTests
             using (var scope = factory.Services.CreateScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                var user = await db.Users.SingleAsync(x => x.Id.Id == created.UserId);
+                var user = await db.Users.SingleAsync(x => x.Id == new UserId(created.UserId));
 
                 Assert.Equal("operator-updated", user.LoginName);
                 Assert.Equal("operator.updated@nerv-iip.local", user.Email);
@@ -594,12 +591,12 @@ public sealed class IamPostgresProfileTests
                 var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 var persistedRole = await db.Roles
                     .Include(x => x.Permissions)
-                    .SingleAsync(x => x.Id.Id == role.RoleId);
+                    .SingleAsync(x => x.Id == new RoleId(role.RoleId));
                 Assert.Equal(
                     ["iam.users.read", "ops.tasks.read"],
                     persistedRole.Permissions.Select(x => x.PermissionCode).Order().ToArray());
 
-                var resetUser = await db.Users.SingleAsync(x => x.Id.Id == user.UserId);
+                var resetUser = await db.Users.SingleAsync(x => x.Id == new UserId(user.UserId));
                 Assert.DoesNotContain("OldPassword123!", resetUser.PasswordHash, StringComparison.Ordinal);
                 Assert.DoesNotContain("NewPassword123!", resetUser.PasswordHash, StringComparison.Ordinal);
                 Assert.Equal(2, resetUser.PermissionVersion);
@@ -655,6 +652,7 @@ public sealed class IamPostgresProfileTests
                 new { loginName = "admin", password = "Admin123!" });
             adminLogin.EnsureSuccessStatusCode();
             var adminAuth = await ReadResponseDataAsync<AuthResponse>(adminLogin);
+            client.DefaultRequestHeaders.Authorization = new("Bearer", adminAuth.AccessToken);
 
             var create = await client.PostAsJsonAsync(
                 "/api/iam/v1/users",
@@ -700,8 +698,9 @@ public sealed class IamPostgresProfileTests
             using (var scope = factory.Services.CreateScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var typedUserId = new UserId(user.UserId);
                 var activeSessions = await db.UserSessions
-                    .Where(x => x.UserId.Id == user.UserId && x.RevokedAtUtc == null)
+                    .Where(x => x.UserId == typedUserId && x.RevokedAtUtc == null)
                     .ToListAsync();
                 Assert.Empty(activeSessions);
             }
@@ -742,8 +741,9 @@ public sealed class IamPostgresProfileTests
             using (var scope = factory.Services.CreateScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var typedHistoryUserId = new UserId(history.UserId);
                 var historyRows = await db.Set<UserPasswordHistory>()
-                    .Where(x => x.UserId.Id == history.UserId)
+                    .Where(x => x.UserId == typedHistoryUserId)
                     .ToListAsync();
                 Assert.NotEmpty(historyRows);
             }
