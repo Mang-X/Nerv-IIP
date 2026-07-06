@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
+using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
 
@@ -219,6 +220,15 @@ public sealed record ReleaseWorkOrderRequest(
     string OrganizationId,
     string EnvironmentId,
     [property: RouteParam] string WorkOrderId,
+    DateTimeOffset? ReleasedAtUtc);
+
+public sealed record ForceReleaseQualityHoldRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string SourceDocumentId,
+    string Reason,
+    string Actor,
+    string? SourceService,
     DateTimeOffset? ReleasedAtUtc);
 
 public sealed record CloseWorkOrderRequest(
@@ -596,6 +606,25 @@ public sealed class ReleaseWorkOrderEndpoint(ISender sender, TimeProvider timePr
             req.OrganizationId,
             req.EnvironmentId,
             req.WorkOrderId,
+            req.ReleasedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class ForceReleaseQualityHoldEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<ForceReleaseQualityHoldRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ForceReleaseQualityHoldEndpoint>());
+
+    public override async Task HandleAsync(ForceReleaseQualityHoldRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ForceReleaseQualityHoldCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            string.IsNullOrWhiteSpace(req.SourceService) ? QualityIntegrationEventSources.BusinessMes : req.SourceService,
+            req.SourceDocumentId,
+            req.Reason,
+            req.Actor,
             req.ReleasedAtUtc ?? timeProvider.GetUtcNow()), ct);
         await Send.OkAsync(response, ct);
     }
@@ -1227,6 +1256,7 @@ public static class MesEndpointContracts
         new(typeof(CloseWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/close", MesPermissionCodes.WorkOrdersManage, "closeBusinessMesWorkOrder"),
         new(typeof(HoldWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/hold", MesPermissionCodes.WorkOrdersManage, "holdBusinessMesWorkOrder"),
         new(typeof(CancelWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/cancel", MesPermissionCodes.WorkOrdersManage, "cancelBusinessMesWorkOrder"),
+        new(typeof(ForceReleaseQualityHoldEndpoint), "POST", "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release", MesPermissionCodes.QualityWrite, "forceReleaseBusinessMesQualityHold"),
         new(typeof(GetMaterialReadinessEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialReadiness"),
         new(typeof(CreateMaterialIssueRequestEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/material-issue-requests", MesPermissionCodes.MaterialsManage, "createBusinessMesMaterialIssueRequest"),
         new(typeof(ListMaterialIssueRequestsEndpoint), "GET", "/api/business/v1/mes/material-issue-requests", MesPermissionCodes.MaterialsRead, "listBusinessMesMaterialIssueRequests"),

@@ -88,6 +88,25 @@ public sealed class DisableConsoleIamUserEndpoint(
 }
 
 [Tags("Console IAM")]
+[HttpPost("/api/console/v1/iam/users/{userId}/enable")]
+[GatewayOperationId("enableConsoleIamUser")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class EnableConsoleIamUserEndpoint(
+    IGatewayIamAuthClient iam,
+    IGatewayAuthorizationClient auth,
+    IGatewayIamAdminClient admin)
+    : AuthorizedProxyNoContentEndpoint(
+        iam,
+        auth,
+        GatewayPermissions.IamUsersManage)
+{
+    protected override Task ForwardAsync(
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        admin.EnableUserAsync(bearerToken, Route<string>("userId")!, cancellationToken);
+}
+
+[Tags("Console IAM")]
 [HttpPost("/api/console/v1/iam/users/{userId}/reset-password")]
 [GatewayOperationId("resetConsoleIamUserPassword")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]

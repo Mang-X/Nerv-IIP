@@ -22,6 +22,9 @@ vi.mock('@nerv-iip/api-client', () => ({
   disableConsoleIamUserMutationOptions: vi.fn(() => ({
     mutation: vi.fn(),
   })),
+  enableConsoleIamUserMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(),
+  })),
   listConsoleIamRolesQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listConsoleIamRoles' }],
     query: vi.fn(),

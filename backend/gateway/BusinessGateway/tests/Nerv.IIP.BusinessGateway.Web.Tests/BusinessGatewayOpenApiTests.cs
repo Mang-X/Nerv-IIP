@@ -106,6 +106,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/engineering/standard-operations/{operationCode}", "put", "updateBusinessConsoleEngineeringStandardOperation");
         AssertOperationId(paths, "/api/business-console/v1/engineering/standard-operations/{operationCode}/archive", "post", "archiveBusinessConsoleEngineeringStandardOperation");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-changes/release", "post", "releaseBusinessConsoleEngineeringChange");
+        AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-changes/cancel-scheduled", "post", "cancelScheduledBusinessConsoleEngineeringChange");
+        AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-changes/reschedule", "post", "rescheduleBusinessConsoleEngineeringChange");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-changes/impact-preview", "post", "previewBusinessConsoleEngineeringChangeImpact");
         AssertOperationId(paths, "/api/business-console/v1/engineering/production-versions", "get", "listBusinessConsoleEngineeringProductionVersions");
         AssertOperationId(paths, "/api/business-console/v1/engineering/production-versions", "post", "createBusinessConsoleEngineeringProductionVersion");

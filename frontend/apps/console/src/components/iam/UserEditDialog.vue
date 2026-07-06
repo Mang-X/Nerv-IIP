@@ -24,10 +24,11 @@ const props = defineProps<{
 const open = defineModel<boolean>('open', { default: false })
 
 const emit = defineEmits<{
-  submit: [payload: Required<ConsoleUpdateIamUserRequest>]
+  submit: [payload: ConsoleUpdateIamUserRequest]
 }>()
 
 const form = reactive({
+  accountExpiresDate: '',
   email: '',
   enabled: true,
   loginName: '',
@@ -38,6 +39,7 @@ const errors = reactive({
 })
 
 function syncUser() {
+  form.accountExpiresDate = toDateInputValue(props.user?.accountExpiresAtUtc)
   form.email = props.user?.email ?? ''
   form.enabled = props.user?.enabled !== false
   form.loginName = props.user?.loginName ?? ''
@@ -63,11 +65,20 @@ function handleSubmit() {
   }
 
   emit('submit', {
+    accountExpiresAtUtc: toUtcEndOfDay(form.accountExpiresDate),
     email: form.email.trim(),
     enabled: form.enabled,
     loginName: form.loginName.trim(),
   })
   open.value = false
+}
+
+function toDateInputValue(value?: string | null) {
+  return value?.slice(0, 10) ?? ''
+}
+
+function toUtcEndOfDay(value: string) {
+  return value ? `${value}T23:59:59Z` : undefined
 }
 
 watch(() => props.user, syncUser, { immediate: true })
@@ -117,7 +128,16 @@ watch(open, (isOpen) => {
             <div class="grid gap-1">
               <FieldLabel for="iam-edit-enabled">启用</FieldLabel>
             </div>
-            <Checkbox id="iam-edit-enabled" v-model:checked="form.enabled" />
+            <Checkbox id="iam-edit-enabled" v-model="form.enabled" />
+          </Field>
+
+          <Field>
+            <FieldLabel for="iam-edit-account-expires">账号有效期</FieldLabel>
+            <Input
+              id="iam-edit-account-expires"
+              v-model="form.accountExpiresDate"
+              type="date"
+            />
           </Field>
         </FieldGroup>
 

@@ -12,6 +12,7 @@ using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Nerv.IIP.Business.ProductEngineering.Domain;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.Scheduling;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductionVersions;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.StandardOperations;
@@ -89,6 +90,11 @@ try
 
     builder.Services.AddProductEngineeringPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<ProductEngineeringCodingService>();
+    builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddSingleton<IProductEngineeringBusinessDateProvider, ConfigurationProductEngineeringBusinessDateProvider>();
+    builder.Services.AddScoped<EngineeringChangeScheduledReleaseService>();
+    builder.Services.AddHostedService<EngineeringChangeScheduledReleaseScheduler>();
+    builder.Services.AddScoped<ICommandLock<PromoteScheduledEngineeringChangeCommand>, PromoteScheduledEngineeringChangeCommandLock>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddHttpContextAccessor();

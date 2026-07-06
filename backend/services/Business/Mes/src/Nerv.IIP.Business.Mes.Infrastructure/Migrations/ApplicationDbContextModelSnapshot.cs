@@ -1074,6 +1074,29 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("event_type")
                         .HasComment("Latest Quality integration event type applied to this context.");
 
+                    b.Property<DateTimeOffset?>("HeldAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("held_at_utc")
+                        .HasComment("UTC time when the Quality hold was activated.");
+
+                    b.Property<string>("HeldBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("held_by")
+                        .HasComment("Quality actor or system source that activated the hold.");
+
+                    b.Property<string>("HeldInspectionRecordId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("held_inspection_record_id")
+                        .HasComment("Quality inspection record id that originally activated the current or historical hold.");
+
+                    b.Property<string>("HoldReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("hold_reason")
+                        .HasComment("Reason captured when the Quality hold was activated.");
+
                     b.Property<string>("InspectionPlanId")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -1104,6 +1127,35 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("recorded_at_utc")
                         .HasComment("UTC time when the latest Quality inspection result was recorded.");
+
+                    b.Property<string>("ReleaseInspectionRecordId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("release_inspection_record_id")
+                        .HasComment("Quality inspection record id that released the hold when release came from inspection results.");
+
+                    b.Property<string>("ReleaseReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("release_reason")
+                        .HasComment("Reason recorded when the Quality hold was released.");
+
+                    b.Property<string>("ReleaseSource")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("release_source")
+                        .HasComment("Release source such as quality inspection event type or manual-force-release.");
+
+                    b.Property<DateTimeOffset?>("ReleasedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("released_at_utc")
+                        .HasComment("UTC time when the Quality hold was released.");
+
+                    b.Property<string>("ReleasedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("released_by")
+                        .HasComment("Quality actor, system source or supervisor that released the hold.");
 
                     b.Property<string>("Result")
                         .IsRequired()

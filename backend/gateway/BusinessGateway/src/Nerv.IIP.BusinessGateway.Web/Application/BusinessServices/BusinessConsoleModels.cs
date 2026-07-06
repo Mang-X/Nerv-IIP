@@ -1431,6 +1431,19 @@ public sealed record BusinessConsoleAffectedVersionRequest(
     string VersionId,
     string? SupersededByVersionId = null);
 
+public sealed record BusinessConsoleCancelScheduledEngineeringChangeRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeNumber,
+    string Reason);
+
+public sealed record BusinessConsoleRescheduleEngineeringChangeRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeNumber,
+    DateOnly EffectiveDate,
+    string Reason);
+
 public sealed record BusinessConsoleEngineeringChangeImpactPreviewRequest(
     string OrganizationId,
     string EnvironmentId,

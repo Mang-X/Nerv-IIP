@@ -684,6 +684,181 @@ public sealed class MesPersistenceContractTests
     }
 
     [Fact]
+    public async Task Conditional_release_clears_only_matching_operation_hold_and_allows_dispatch_without_manual_intervention()
+    {
+        var services = CreateServices(nameof(Conditional_release_clears_only_matching_operation_hold_and_allows_dispatch_without_manual_intervention));
+        var now = DateTimeOffset.Parse("2026-07-05T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-QH-SCOPE", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.OperationTasks.AddRange(
+            OperationTask.Create(
+                "org-001",
+                "env-dev",
+                "WO-QH-SCOPE",
+                "OP-QH-SCOPE-10",
+                OperationTaskLifecycleStatus.Queued,
+                10,
+                "WC-FILL",
+                [],
+                now,
+                TimeSpan.FromMinutes(45),
+                null,
+                null),
+            OperationTask.Create(
+                "org-001",
+                "env-dev",
+                "WO-QH-SCOPE",
+                "OP-QH-SCOPE-20",
+                OperationTaskLifecycleStatus.Queued,
+                20,
+                "WC-PACK",
+                [],
+                now,
+                TimeSpan.FromMinutes(45),
+                null,
+                null));
+        await dbContext.SaveChangesAsync();
+
+        var qualityConsumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
+        await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-qh-scope-rejected-10",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-QH-SCOPE-REJECTED-10",
+            "OP-QH-SCOPE-10",
+            now.AddMinutes(1)),
+            CancellationToken.None);
+        await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-qh-scope-rejected-20",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-QH-SCOPE-REJECTED-20",
+            "OP-QH-SCOPE-20",
+            now.AddMinutes(2)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var blockedDispatch = await Assert.ThrowsAsync<KnownException>(() =>
+            new AssignDispatchTaskCommandHandler(dbContext).Handle(
+                new AssignDispatchTaskCommand("org-001", "env-dev", "OP-QH-SCOPE-10", "operator-a", null, "shift-a", now.AddMinutes(3)),
+                CancellationToken.None));
+        Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, blockedDispatch.Message);
+
+        await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-qh-scope-conditional-10",
+            QualityIntegrationEventTypes.InspectionConditionalReleased,
+            "QI-QH-SCOPE-RELEASED-10",
+            "OP-QH-SCOPE-10",
+            now.AddMinutes(4),
+            dispositionReason: "conditional release for OP-QH-SCOPE-10 only"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var releasedDispatch = await new AssignDispatchTaskCommandHandler(dbContext).Handle(
+            new AssignDispatchTaskCommand("org-001", "env-dev", "OP-QH-SCOPE-10", "operator-a", null, "shift-a", now.AddMinutes(5)),
+            CancellationToken.None);
+        Assert.Equal("Accepted", releasedDispatch.Status);
+
+        var stillBlockedDispatch = await Assert.ThrowsAsync<KnownException>(() =>
+            new AssignDispatchTaskCommandHandler(dbContext).Handle(
+                new AssignDispatchTaskCommand("org-001", "env-dev", "OP-QH-SCOPE-20", "operator-b", null, "shift-b", now.AddMinutes(6)),
+                CancellationToken.None));
+        Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, stillBlockedDispatch.Message);
+
+        var releasedHold = await dbContext.QualityHoldContexts.SingleAsync(x => x.SourceDocumentId == "OP-QH-SCOPE-10");
+        var activeHold = await dbContext.QualityHoldContexts.SingleAsync(x => x.SourceDocumentId == "OP-QH-SCOPE-20");
+        Assert.False(releasedHold.Active);
+        Assert.Equal("QI-QH-SCOPE-REJECTED-10", releasedHold.HeldInspectionRecordId);
+        Assert.Equal("QI-QH-SCOPE-RELEASED-10", releasedHold.ReleaseInspectionRecordId);
+        Assert.Equal(now.AddMinutes(4), releasedHold.ReleasedAtUtc);
+        Assert.Equal("quality.InspectionConditionalReleased", releasedHold.ReleaseSource);
+        Assert.True(activeHold.Active);
+    }
+
+    [Fact]
+    public async Task Force_release_quality_hold_requires_reason_and_is_idempotent()
+    {
+        var services = CreateServices(nameof(Force_release_quality_hold_requires_reason_and_is_idempotent));
+        var now = DateTimeOffset.Parse("2026-07-05T09:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-QH-FORCE", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-QH-FORCE",
+            "OP-QH-FORCE-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            null,
+            null));
+        await dbContext.SaveChangesAsync();
+
+        var qualityConsumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
+        await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-qh-force-rejected",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-QH-FORCE-REJECTED",
+            "WO-QH-FORCE",
+            now.AddMinutes(1)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var validator = new ForceReleaseQualityHoldCommandValidator();
+        var validation = validator.Validate(new ForceReleaseQualityHoldCommand(
+            "org-001",
+            "env-dev",
+            QualityIntegrationEventSources.BusinessMes,
+            "WO-QH-FORCE",
+            "",
+            "supervisor-001",
+            now.AddMinutes(2)));
+        Assert.False(validation.IsValid);
+
+        var handler = new ForceReleaseQualityHoldCommandHandler(dbContext);
+        var first = await handler.Handle(
+            new ForceReleaseQualityHoldCommand(
+                "org-001",
+                "env-dev",
+                QualityIntegrationEventSources.BusinessMes,
+                "WO-QH-FORCE",
+                "QA supervisor approved urgent release after recheck.",
+                "supervisor-001",
+                now.AddMinutes(3)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var second = await handler.Handle(
+            new ForceReleaseQualityHoldCommand(
+                "org-001",
+                "env-dev",
+                QualityIntegrationEventSources.BusinessMes,
+                "WO-QH-FORCE",
+                "second release should be idempotent",
+                "supervisor-002",
+                now.AddMinutes(4)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var hold = await dbContext.QualityHoldContexts.SingleAsync(x => x.SourceDocumentId == "WO-QH-FORCE");
+        Assert.Equal("Accepted", first.Status);
+        Assert.Equal("Accepted", second.Status);
+        Assert.False(hold.Active);
+        Assert.Equal("QI-QH-FORCE-REJECTED", hold.HeldInspectionRecordId);
+        Assert.Equal("manual-force-release", hold.ReleaseSource);
+        Assert.Equal("QA supervisor approved urgent release after recheck.", hold.ReleaseReason);
+        Assert.Equal("supervisor-001", hold.ReleasedBy);
+        Assert.Equal(now.AddMinutes(3), hold.ReleasedAtUtc);
+    }
+
+    [Fact]
     public async Task Foundation_readiness_reports_quality_plan_and_equipment_blocking_reason_codes()
     {
         var services = CreateServices(nameof(Foundation_readiness_reports_quality_plan_and_equipment_blocking_reason_codes));
@@ -964,6 +1139,44 @@ public sealed class MesPersistenceContractTests
                 CancellationToken.None));
 
         Assert.Contains(EquipmentRuntimeReasonCodes.ActiveAlarm, exception.Message);
+    }
+
+    [Fact]
+    public async Task Dispatch_without_active_quality_hold_does_not_block_on_missing_quality_plan()
+    {
+        var services = CreateServices(nameof(Dispatch_without_active_quality_hold_does_not_block_on_missing_quality_plan));
+        var now = DateTimeOffset.Parse("2026-07-05T10:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-DISPATCH-NO-PV", "FG-FSA", null, 10m, 20, now.AddHours(8)));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-DISPATCH-NO-PV",
+            "OP-DISPATCH-NO-PV-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            null,
+            null));
+        await dbContext.SaveChangesAsync();
+
+        var response = await new AssignDispatchTaskCommandHandler(dbContext).Handle(
+            new AssignDispatchTaskCommand(
+                "org-001",
+                "env-dev",
+                "OP-DISPATCH-NO-PV-10",
+                "operator-001",
+                null,
+                "SHIFT-A",
+                now.AddMinutes(15)),
+            CancellationToken.None);
+
+        Assert.Equal("Accepted", response.Status);
     }
 
     [Fact]
@@ -2086,7 +2299,8 @@ public sealed class MesPersistenceContractTests
         string eventType,
         string inspectionRecordId,
         string workOrderId,
-        DateTimeOffset occurredAtUtc)
+        DateTimeOffset occurredAtUtc,
+        string? dispositionReason = null)
     {
         var result = eventType == QualityIntegrationEventTypes.InspectionPassed
             ? "passed"
@@ -2114,7 +2328,7 @@ public sealed class MesPersistenceContractTests
                 "FG-FSA",
                 10m,
                 result,
-                eventType == QualityIntegrationEventTypes.InspectionRejected ? "critical-defect" : null,
+                dispositionReason ?? (eventType == QualityIntegrationEventTypes.InspectionRejected ? "critical-defect" : null),
                 [],
                 occurredAtUtc));
     }

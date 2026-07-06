@@ -22,7 +22,9 @@ public sealed record BusinessConsoleCreateMaintenanceWorkOrderRequest(
     string Priority,
     string? SourceAlarmId,
     string OpenedBy,
-    string? AssetUnavailableReason);
+    string? AssetUnavailableReason,
+    string? AssignedTechnicianUserId = null,
+    int? EstimatedLaborMinutes = null);
 
 public sealed record BusinessConsoleCreateMaintenanceWorkOrderResponse(string WorkOrderId);
 
@@ -32,7 +34,11 @@ public sealed record BusinessConsoleCompleteMaintenanceWorkOrderRequest(
     string Result,
     string DowntimeReasonCode,
     int DowntimeMinutes,
-    IReadOnlyCollection<BusinessConsoleMaintenanceSparePartInput> SpareParts);
+    IReadOnlyCollection<BusinessConsoleMaintenanceSparePartInput> SpareParts,
+    int? ActualLaborMinutes = null,
+    decimal? SparePartCostAmount = null,
+    decimal? ExternalServiceCostAmount = null,
+    string? CostCurrencyCode = null);
 
 public sealed record BusinessConsoleCompleteMaintenanceWorkOrderResponse(bool Accepted);
 
@@ -60,6 +66,13 @@ public sealed record BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse(
     int GeneratedCount,
     IReadOnlyCollection<string> WorkOrderIds);
 
+public sealed record BusinessConsoleMaintenanceInspectionMeasurementInput(
+    string CharacteristicCode,
+    decimal MeasuredValue,
+    string UomCode,
+    decimal? LowerSpecLimit = null,
+    decimal? UpperSpecLimit = null);
+
 public sealed record BusinessConsoleRecordMaintenanceInspectionRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -67,7 +80,8 @@ public sealed record BusinessConsoleRecordMaintenanceInspectionRequest(
     string? WorkOrderId,
     string Inspector,
     string Result,
-    DateTimeOffset InspectedAtUtc);
+    DateTimeOffset InspectedAtUtc,
+    IReadOnlyCollection<BusinessConsoleMaintenanceInspectionMeasurementInput>? Measurements = null);
 
 public sealed record BusinessConsoleRecordMaintenanceInspectionResponse(string InspectionId);
 
@@ -84,7 +98,13 @@ public sealed record BusinessConsoleMaintenanceWorkOrderItem(
     string Status,
     string? SourceAlarmId,
     string? RelatedAlarmId,
-    DateTimeOffset OpenedAtUtc);
+    DateTimeOffset OpenedAtUtc,
+    string? AssignedTechnicianUserId = null,
+    int? EstimatedLaborMinutes = null,
+    int? ActualLaborMinutes = null,
+    decimal? SparePartCostAmount = null,
+    decimal? ExternalServiceCostAmount = null,
+    string? CostCurrencyCode = null);
 
 public sealed record BusinessConsoleMaintenancePlanListResponse(
     IReadOnlyCollection<BusinessConsoleMaintenancePlanItem> Items,
@@ -111,7 +131,16 @@ public sealed record BusinessConsoleMaintenanceInspectionItem(
     string? WorkOrderId,
     string Inspector,
     string Result,
-    DateTimeOffset InspectedAtUtc);
+    DateTimeOffset InspectedAtUtc,
+    IReadOnlyCollection<BusinessConsoleMaintenanceInspectionMeasurementItem>? Measurements = null);
+
+public sealed record BusinessConsoleMaintenanceInspectionMeasurementItem(
+    string CharacteristicCode,
+    decimal MeasuredValue,
+    string UomCode,
+    decimal? LowerSpecLimit,
+    decimal? UpperSpecLimit,
+    bool IsWithinSpec);
 
 public sealed record BusinessConsoleMaintenanceSparePartListResponse(
     IReadOnlyCollection<BusinessConsoleMaintenanceSparePartItem> Items,
@@ -142,6 +171,60 @@ public sealed record BusinessConsoleQueryMaintenanceAssetReliabilityRequest(
     string EnvironmentId,
     DateTimeOffset WindowStartUtc,
     DateTimeOffset WindowEndUtc);
+
+public sealed record BusinessConsoleQueryMaintenanceReliabilitySummaryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    string? DeviceAssetId = null,
+    string? TechnicianUserId = null);
+
+public sealed record BusinessConsoleMaintenanceReliabilitySummaryResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    IReadOnlyCollection<BusinessConsoleMaintenanceReliabilitySummaryItem> Items);
+
+public sealed record BusinessConsoleMaintenanceReliabilitySummaryItem(
+    string DeviceAssetId,
+    string? AssignedTechnicianUserId,
+    string? CostCurrencyCode,
+    int WorkOrderCount,
+    int EstimatedLaborMinutes,
+    int ActualLaborMinutes,
+    decimal SparePartCostAmount,
+    decimal ExternalServiceCostAmount,
+    decimal TotalCostAmount);
+
+public sealed record BusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string CharacteristicCode,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc);
+
+public sealed record BusinessConsoleMaintenanceInspectionMeasurementTrendResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string CharacteristicCode,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    IReadOnlyCollection<BusinessConsoleMaintenanceInspectionMeasurementTrendItem> Items);
+
+public sealed record BusinessConsoleMaintenanceInspectionMeasurementTrendItem(
+    string InspectionId,
+    string? PlanId,
+    string? WorkOrderId,
+    DateTimeOffset InspectedAtUtc,
+    decimal MeasuredValue,
+    string UomCode,
+    decimal? LowerSpecLimit,
+    decimal? UpperSpecLimit,
+    bool IsWithinSpec);
 
 public sealed record BusinessConsoleAssetReliabilityResponse(
     string OrganizationId,
