@@ -15,7 +15,7 @@ public sealed class AlarmEscalationScheduler(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!configuration.GetValue<bool>("IndustrialTelemetry:AlarmEscalation:Enabled"))
+        if (!ReadEnabled(configuration, logger))
         {
             return;
         }
@@ -128,6 +128,40 @@ public sealed class AlarmEscalationScheduler(
             configured,
             DefaultInterval);
         return DefaultInterval;
+    }
+
+    private static bool ReadEnabled(IConfiguration configuration, ILogger logger)
+    {
+        var configured = configuration["IndustrialTelemetry:AlarmEscalation:Enabled"];
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return false;
+        }
+
+        var normalized = configured.Trim();
+        if (bool.TryParse(normalized, out var enabled))
+        {
+            return enabled;
+        }
+
+        if (string.Equals(normalized, "1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "yes", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "on", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.Equals(normalized, "0", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "no", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "off", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        logger.LogWarning(
+            "IndustrialTelemetry alarm escalation enabled value {EnabledValue} is invalid; disabling scheduler.",
+            configured);
+        return false;
     }
 
     private static AlarmEscalationScope? TryReadScope(IConfiguration section, ILogger? logger)
