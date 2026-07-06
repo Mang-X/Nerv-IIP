@@ -15,6 +15,13 @@ public sealed class WmsQualityInspectionGateConsumerTests
 {
     private const string PostgresConnectionStringEnvironmentVariable = "NERV_IIP_TEST_POSTGRES";
 
+    private sealed record PostgresInspectionScenario(
+        string EventType,
+        string InboundOrderNo,
+        string ExpectedGateStatus,
+        bool AllowsPutaway,
+        string TargetLocationCode);
+
     [Fact]
     public async Task Quality_passed_event_releases_wms_putaway_gate_for_received_stock()
     {
@@ -141,7 +148,7 @@ public sealed class WmsQualityInspectionGateConsumerTests
     }
 
     [WmsRealPostgresFact]
-    public async Task Quality_rejected_event_persists_gate_and_supplier_return_on_postgres()
+    public async Task Quality_events_persist_gate_and_putaway_outcome_on_postgres()
     {
         var postgresConnectionString = Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
         await using var database = await TemporaryPostgresDatabase.CreateAsync(postgresConnectionString, "wms_quality_gate");
@@ -149,36 +156,81 @@ public sealed class WmsQualityInspectionGateConsumerTests
         await using (var dbContext = CreatePostgresContext(database.ConnectionString))
         {
             await dbContext.Database.MigrateAsync();
-            var createdInbound = QualityRequiredInboundOrder("IN-QA-PG-REJ-001");
-            dbContext.InboundOrders.Add(createdInbound);
-            await dbContext.SaveChangesAsync(CancellationToken.None);
-            await new CompleteInboundOrderCommandHandler(dbContext).Handle(
-                new CompleteInboundOrderCommand(createdInbound.Id, "idem-in-pg-rej-001"),
-                CancellationToken.None);
-            await dbContext.SaveChangesAsync(CancellationToken.None);
-
             var handler = new QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate(
                 dbContext,
                 new InMemoryIntegrationEventDeadLetterStore());
-            await handler.HandleAsync(
-                CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected, "IN-QA-PG-REJ-001"),
-                CancellationToken.None);
+
+            foreach (var scenario in PostgresInspectionScenarios())
+            {
+                var createdInbound = QualityRequiredInboundOrder(scenario.InboundOrderNo);
+                dbContext.InboundOrders.Add(createdInbound);
+                await dbContext.SaveChangesAsync(CancellationToken.None);
+                await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+                    new CompleteInboundOrderCommand(createdInbound.Id, $"idem-{scenario.InboundOrderNo.ToLowerInvariant()}"),
+                    CancellationToken.None);
+                await dbContext.SaveChangesAsync(CancellationToken.None);
+
+                await handler.HandleAsync(
+                    CreateInspectionEvent(scenario.EventType, scenario.InboundOrderNo),
+                    CancellationToken.None);
+            }
         }
 
         await using var assertionContext = CreatePostgresContext(database.ConnectionString);
-        var persistedInbound = await assertionContext.InboundOrders
-            .Include(x => x.Lines)
-            .SingleAsync(x => x.InboundOrderNo == "IN-QA-PG-REJ-001");
-        var persistedLine = Assert.Single(persistedInbound.Lines);
+        foreach (var scenario in PostgresInspectionScenarios())
+        {
+            var persistedInbound = await assertionContext.InboundOrders
+                .Include(x => x.Lines)
+                .SingleAsync(x => x.InboundOrderNo == scenario.InboundOrderNo);
+            var persistedLine = Assert.Single(persistedInbound.Lines);
+            Assert.Equal(InboundOrderStatus.Completed, persistedInbound.Status);
+            Assert.Equal(scenario.ExpectedGateStatus, persistedLine.QualityGateStatus);
+            Assert.Equal("QI-001", persistedLine.InspectionRecordId);
+
+            if (scenario.AllowsPutaway)
+            {
+                var task = await new CreatePutawayTaskCommandHandler(assertionContext).Handle(
+                    new CreatePutawayTaskCommand(persistedInbound.Id, $"PUT-{scenario.InboundOrderNo}", "LINE-001", "LOC-STAGE", scenario.TargetLocationCode, 5m),
+                    CancellationToken.None);
+                await assertionContext.SaveChangesAsync(CancellationToken.None);
+                Assert.True(await assertionContext.WarehouseTasks.AnyAsync(x => x.Id == task));
+            }
+            else
+            {
+                await Assert.ThrowsAsync<InvalidOperationException>(() => new CreatePutawayTaskCommandHandler(assertionContext).Handle(
+                    new CreatePutawayTaskCommand(persistedInbound.Id, $"PUT-{scenario.InboundOrderNo}", "LINE-001", "LOC-STAGE", scenario.TargetLocationCode, 5m),
+                    CancellationToken.None));
+            }
+        }
+
         var supplierReturn = await assertionContext.SupplierReturnRequests.SingleAsync();
-        Assert.Equal(InboundOrderStatus.Completed, persistedInbound.Status);
-        Assert.Equal(InboundQualityGateStatuses.Rejected, persistedLine.QualityGateStatus);
-        Assert.Equal("QI-001", persistedLine.InspectionRecordId);
         Assert.Equal("IN-QA-PG-REJ-001", supplierReturn.InboundOrderNo);
         Assert.Equal("QI-001", supplierReturn.InspectionRecordId);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => new CreatePutawayTaskCommandHandler(assertionContext).Handle(
-            new CreatePutawayTaskCommand(persistedInbound.Id, "PUT-QA-PG-REJ-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m),
-            CancellationToken.None));
+    }
+
+    private static IReadOnlyCollection<PostgresInspectionScenario> PostgresInspectionScenarios()
+    {
+        return
+        [
+            new PostgresInspectionScenario(
+                QualityIntegrationEventTypes.InspectionPassed,
+                "IN-QA-PG-PASS-001",
+                InboundQualityGateStatuses.Passed,
+                true,
+                "LOC-A-01"),
+            new PostgresInspectionScenario(
+                QualityIntegrationEventTypes.InspectionConditionalReleased,
+                "IN-QA-PG-COND-001",
+                InboundQualityGateStatuses.ConditionalReleased,
+                true,
+                "LOC-RESTRICTED-01"),
+            new PostgresInspectionScenario(
+                QualityIntegrationEventTypes.InspectionRejected,
+                "IN-QA-PG-REJ-001",
+                InboundQualityGateStatuses.Rejected,
+                false,
+                "LOC-A-01"),
+        ];
     }
 
     private static InboundOrder QualityRequiredInboundOrder(string inboundOrderNo)
