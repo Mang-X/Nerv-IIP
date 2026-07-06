@@ -195,9 +195,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
             <ScreenPanel title="节拍达成" class="lb-takt">
               <div class="lb-takt-in">
                 <div class="lb-takt-v" :class="{ late: board.takt.deviationPct > 0 }">
-                  <span class="lb-ic-chip" :class="{ late: board.takt.deviationPct > 0 }">
-                    <Timer :size="19" :stroke-width="2" />
-                  </span>
+                  <Timer :size="21" :stroke-width="1.6" class="lb-ic-chip" />
                   <span class="lb-num">{{ board.takt.deviationPct > 0 ? '+' : '' }}{{ board.takt.deviationPct }}<small>%</small></span>
                 </div>
                 <p class="lb-takt-sub">
@@ -214,7 +212,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
               </template>
               <div class="lb-oee-in">
                 <div class="lb-oee-big" :class="{ warn: board.oee.overall < 75, bad: board.oee.overall < 55 }">
-                  <span class="lb-ic-chip"><Gauge :size="19" :stroke-width="2" /></span>
+                  <Gauge :size="21" :stroke-width="1.6" class="lb-ic-chip" />
                   <span class="lb-num">{{ board.oee.overall }}<small>%</small></span>
                 </div>
                 <dl class="lb-oee-rates">
@@ -635,7 +633,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
 .lb-takt-v {
   display: inline-flex;
   align-items: center;
-  gap: 13px;
+  gap: 11px;
   font-size: 42px;
   font-weight: 800;
   line-height: 1;
@@ -736,7 +734,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
 .lb-oee-big {
   display: inline-flex;
   align-items: center;
-  gap: 13px;
+  gap: 11px;
   font-size: 44px;
   font-weight: 800;
   line-height: 1;
@@ -745,18 +743,12 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
   flex: none;
 }
 
-/* 语义色图标块（跟随父级色，比裸图标精致）：OEE / 节拍共用 */
+/* 图标：发丝级去饱和线性符号（无填充块、无边框、静态不发光 —— 遵循 screen
+   哲学「辉光只给活数据」）。数字才是主角，图标克制陪衬。 */
 .lb-ic-chip {
-  width: 42px;
-  height: 42px;
   flex: none;
-  border-radius: 11px;
-  display: grid;
-  place-items: center;
-  color: inherit;
-  background: color-mix(in srgb, currentColor 13%, transparent);
-  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-  box-shadow: 0 0 14px -4px currentColor;
+  display: inline-flex;
+  color: var(--sb-faint);
 }
 /* 大数字 + 单位下标（% 沉右下，与「秒」同款底对齐） */
 .lb-num {

@@ -117,7 +117,7 @@ const kpiItems = computed<KpiCell[]>(() => {
                   <span v-if="c.offlineDevices > 0" class="ls-off">{{ c.offlineDevices }} 台失联</span>
                 </header>
                 <h3 class="ls-name">
-                  <span class="ls-ic" :class="c.state"><Factory :size="18" :stroke-width="2" /></span>{{ c.name }}
+                  <span class="ls-ic"><Factory :size="19" :stroke-width="1.6" /></span>{{ c.name }}
                 </h3>
                 <p class="ls-ws">{{ c.workshopName }}<template v-if="c.currentWo"> · {{ c.currentWo }}</template></p>
             <div class="ls-nums">
@@ -299,26 +299,12 @@ const kpiItems = computed<KpiCell[]>(() => {
   align-items: center;
   gap: 9px;
 }
+/* 产线名 leading 图标：发丝级去饱和线性符号（无填充块/边框/发光）。
+   状态由状态灯 + 卡片边框 + 异常文案表达，图标只作类型标识、克制陪衬。 */
 .ls-ic {
-  width: 32px;
-  height: 32px;
   flex: none;
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  color: var(--sb-cyan);
-  background: rgba(74, 166, 238, 0.1);
-  border: 1px solid rgba(74, 166, 238, 0.24);
-}
-.ls-ic.attention {
-  color: var(--sb-amber);
-  background: rgba(242, 193, 78, 0.1);
-  border-color: rgba(242, 193, 78, 0.26);
-}
-.ls-ic.alarm {
-  color: var(--sb-red);
-  background: rgba(239, 90, 99, 0.12);
-  border-color: rgba(239, 90, 99, 0.3);
+  display: inline-flex;
+  color: var(--sb-muted);
 }
 .ls-ws {
   margin: 4px 0 0;
