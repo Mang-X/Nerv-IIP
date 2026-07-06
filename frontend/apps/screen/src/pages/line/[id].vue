@@ -139,15 +139,19 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
                 <span class="lb-dev-state" :class="d.state">{{ d.stateLabel }}</span>
                 <ChevronDown :size="14" class="lb-chev" :class="{ open: expandedDev === d.id }" />
               </button>
-              <div v-if="expandedDev === d.id" class="lb-dev-detail">
-                <div v-for="p in d.params" :key="p.label" class="lb-dp">
-                  <span class="lb-dp-l">{{ p.label }}</span>
-                  <span class="lb-dp-spark"><Sparkline :data="p.spark" :color="paramColor(p.kind, p.tone)" /></span>
-                  <b :style="{ color: paramColor(p.kind, p.tone) }">
-                    {{ p.value === null ? '—' : `${p.value}${p.unit}` }}
-                  </b>
+              <Transition name="dev">
+                <div v-if="expandedDev === d.id" class="lb-dev-detail">
+                  <div class="lb-dev-detail-in">
+                    <div v-for="p in d.params" :key="p.label" class="lb-dp">
+                      <span class="lb-dp-l">{{ p.label }}</span>
+                      <span class="lb-dp-spark"><Sparkline :data="p.spark" :color="paramColor(p.kind, p.tone)" /></span>
+                      <b :style="{ color: paramColor(p.kind, p.tone) }">
+                        {{ p.value === null ? '—' : `${p.value}${p.unit}` }}
+                      </b>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </Transition>
             </div>
           </div>
 
@@ -191,8 +195,10 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
             <ScreenPanel title="节拍达成" class="lb-takt">
               <div class="lb-takt-in">
                 <div class="lb-takt-v" :class="{ late: board.takt.deviationPct > 0 }">
-                  <Timer :size="26" class="lb-takt-ic" :class="{ late: board.takt.deviationPct > 0 }" />
-                  {{ board.takt.deviationPct > 0 ? '+' : '' }}{{ board.takt.deviationPct }}<small>%</small>
+                  <span class="lb-ic-chip" :class="{ late: board.takt.deviationPct > 0 }">
+                    <Timer :size="19" :stroke-width="2" />
+                  </span>
+                  <span class="lb-num">{{ board.takt.deviationPct > 0 ? '+' : '' }}{{ board.takt.deviationPct }}<small>%</small></span>
                 </div>
                 <p class="lb-takt-sub">
                   标准 {{ board.takt.standardSec }}s · 实际
@@ -208,7 +214,8 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
               </template>
               <div class="lb-oee-in">
                 <div class="lb-oee-big" :class="{ warn: board.oee.overall < 75, bad: board.oee.overall < 55 }">
-                  <Gauge :size="22" class="lb-oee-ic" />{{ board.oee.overall }}<small>%</small>
+                  <span class="lb-ic-chip"><Gauge :size="19" :stroke-width="2" /></span>
+                  <span class="lb-num">{{ board.oee.overall }}<small>%</small></span>
                 </div>
                 <dl class="lb-oee-rates">
                   <div>
@@ -425,6 +432,40 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+/* 设备参数折叠：grid/max-height 高度过渡（展开无跳变、无滚动条闪烁） */
+.lb-dev-detail {
+  overflow: hidden;
+}
+.lb-dev-detail-in {
+  padding: 4px 2px 10px 17px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dev-enter-active,
+.dev-leave-active {
+  transition:
+    max-height 0.26s var(--sb-ease),
+    opacity 0.2s var(--sb-ease);
+}
+.dev-enter-from,
+.dev-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+.dev-enter-to,
+.dev-leave-from {
+  max-height: 200px;
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dev-enter-active,
+  .dev-leave-active {
+    transition: none;
+  }
 }
 .lb-devs-t {
   margin: 0 0 6px;
@@ -594,23 +635,12 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
 .lb-takt-v {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 13px;
   font-size: 42px;
   font-weight: 800;
   line-height: 1;
   color: var(--sb-green);
   font-variant-numeric: tabular-nums;
-}
-.lb-takt-ic {
-  color: var(--sb-green);
-  opacity: 0.85;
-}
-.lb-takt-ic.late {
-  color: var(--sb-red);
-}
-.lb-takt-v small {
-  font-size: 20px;
-  font-weight: 600;
 }
 .lb-takt-v.late {
   color: var(--sb-red);
@@ -706,7 +736,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
 .lb-oee-big {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 13px;
   font-size: 44px;
   font-weight: 800;
   line-height: 1;
@@ -714,13 +744,31 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
   font-variant-numeric: tabular-nums;
   flex: none;
 }
-.lb-oee-ic {
-  color: currentColor;
-  opacity: 0.85;
+
+/* 语义色图标块（跟随父级色，比裸图标精致）：OEE / 节拍共用 */
+.lb-ic-chip {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  color: inherit;
+  background: color-mix(in srgb, currentColor 13%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  box-shadow: 0 0 14px -4px currentColor;
 }
-.lb-oee-big small {
-  font-size: 19px;
+/* 大数字 + 单位下标（% 沉右下，与「秒」同款底对齐） */
+.lb-num {
+  display: inline-flex;
+  align-items: flex-end;
+  line-height: 1;
+}
+.lb-num small {
+  font-size: 0.42em;
   font-weight: 600;
+  margin-left: 2px;
+  padding-bottom: 0.14em;
 }
 .lb-oee-big.warn {
   color: var(--sb-amber);
@@ -766,12 +814,6 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
 }
 .lb-chev.open {
   transform: rotate(180deg);
-}
-.lb-dev-detail {
-  padding: 4px 2px 10px 17px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
 }
 .lb-dp {
   display: flex;

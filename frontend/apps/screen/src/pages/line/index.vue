@@ -38,8 +38,11 @@ const rowsSrc = computed(() => {
   for (let i = 0; i < list.length; i += COLS) out.push(list.slice(i, i + COLS))
   return out
 })
+// 行高：卡片自然高 ~258 + 行间距 16 → itemHeight 必须精确匹配，否则虚拟定位错位重叠
+const CARD_H = 258
+const ROW_GAP = 16
 const { list: vRows, containerProps, wrapperProps } = useVirtualList(rowsSrc, {
-  itemHeight: 244,
+  itemHeight: CARD_H + ROW_GAP,
   overscan: 1,
 })
 // 视野内产线集：滚动改变可见行 → 立即补取（避免滚入卡趋势短暂空白）
@@ -203,19 +206,22 @@ const kpiItems = computed<KpiCell[]>(() => {
   font-variant-numeric: tabular-nums;
 }
 
-/* 虚拟滚动容器：flex:1 + min-height:0 收进画布，仅此处滚动（修幽灵滚动条） */
+/* 虚拟滚动容器：flex:1 + min-height:0 收进画布，仅此处滚动（修幽灵滚动条）；
+   overflow-x hidden + scrollbar-gutter stable 消除横/竖条抖动闪烁 */
 .ls-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 4px;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
+/* 行高 = CARD_H(258) + ROW_GAP(16)，与 itemHeight 精确一致 → 不重叠 */
 .ls-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 14px;
-  height: 230px;
-  margin-bottom: 14px;
+  height: 258px;
+  margin-bottom: 16px;
 }
 .ls-link {
   display: block;
@@ -232,9 +238,10 @@ const kpiItems = computed<KpiCell[]>(() => {
 .ls-card {
   height: 100%;
   box-sizing: border-box;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  padding: 13px 17px 11px;
+  padding: 14px 17px 12px;
   border-radius: var(--sb-radius);
   background: linear-gradient(180deg, var(--sb-panel-a), var(--sb-panel-b));
   border: 1px solid var(--sb-line);
