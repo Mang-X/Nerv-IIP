@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { buildQualityBoard } from './quality'
 import { buildWorkshopBoard, composeWorkshopState } from './workshop'
 
 describe('composeWorkshopState（车间态归并）', () => {
@@ -35,11 +36,44 @@ describe('buildWorkshopBoard（报警车间 · 与产线/设备屏同源）', ()
     expect(b!.crew.leader).toBeTruthy()
     expect(b!.crew.handoverIssues).toBe(1)
     expect(b!.crew.handoverNote).toContain('卷绕机')
-    // 临期预警引用电芯线当前工单（与产线屏同号）；NCR 待办 1 条
+    // 临期预警引用电芯线当前工单（与产线屏同号）
     const bat = b!.lines.find((l) => l.id === 'LN-BAT-1')!
     expect(b!.woAlerts.some((w) => w.kind === 'dueSoon' && w.code === bat.currentWo)).toBe(true)
-    expect(b!.quality.ncr).toHaveLength(1)
-    expect(b!.quality.ncr[0].code).toMatch(/^NCR-/)
+    // NCR 与质量屏严格同一批（单号/缺陷从 buildQualityBoard 过滤本车间，不另编）
+    const qCodes = new Set(buildQualityBoard('F01').ncrs.map((r) => r.code))
+    expect(b!.quality.ncr.length).toBeGreaterThanOrEqual(2)
+    for (const n of b!.quality.ncr) expect(qCodes.has(n.code)).toBe(true)
+    expect(b!.quality.ncr.some((n) => n.code === 'NCR-26-041' && n.text === '极片对齐度超差')).toBe(true)
+    // 事件流含已恢复历史（当班全貌），且历史全部沉底、活跃异常在前
+    const firstResolved = b!.events.findIndex((e) => e.resolved)
+    expect(firstResolved).toBeGreaterThan(0)
+    expect(b!.events.slice(firstResolved).every((e) => e.resolved)).toBe(true)
+    expect(b!.events.length).toBeGreaterThanOrEqual(4)
+    // 已恢复短停计入当班停机（作战室口径 = 当班累计）：急停 + PACK 短停 8min
+    expect(b!.downtime.count).toBe(2)
+  })
+
+  it('车间效率 OEE：A×P×Q 勾稽、各线对比含报警线垫底、30 天趋势末点与 KPI 勾稽', () => {
+    const b = buildWorkshopBoard('WS-BATTERY')!
+    const { overall, availability, performance, quality, byLine } = b.oee
+    expect(overall).toBe(Math.round((availability * performance * quality) / 10000))
+    for (const v of [availability, performance, quality]) {
+      expect(v).toBeGreaterThan(0)
+      expect(v).toBeLessThanOrEqual(100)
+    }
+    // 各线对比：与产线卡一一对应；报警的电芯线 OEE 低于正常的 PACK 线
+    expect(byLine.map((l) => l.lineId).sort()).toEqual(b.lines.map((l) => l.id).sort())
+    const batOee = byLine.find((l) => l.lineId === 'LN-BAT-1')!
+    const packOee = byLine.find((l) => l.lineId === 'LN-BAT-2')!
+    expect(batOee.state).toBe('alarm')
+    expect(batOee.oee).toBeLessThan(packOee.oee)
+    // 近 30 天：三列等长、末点 = 今日截至当前（与 KPI 勾稽）、周日排产低谷
+    expect(b.daily30.output).toHaveLength(30)
+    expect(b.daily30.plan).toHaveLength(30)
+    expect(b.daily30.labels).toHaveLength(30)
+    expect(b.daily30.output.at(-1)).toBe(b.output.actual)
+    const peakPlan = Math.max(...b.daily30.plan)
+    expect(b.daily30.plan.some((p) => p < peakPlan * 0.5)).toBe(true)
   })
 
   it('勾稽：车间产量/计划/达成/设备数/失联/状态计数 = Σ 本车间产线卡（数字精确同源）', () => {
@@ -102,7 +136,7 @@ describe('buildWorkshopBoard（报警车间 · 与产线/设备屏同源）', ()
     }
   })
 
-  it('正常车间（WS-STAMP）：无红线、事件流为空（空态=健康）、无停机/NCR/交付预警', () => {
+  it('正常车间（WS-STAMP）：无红线、事件流为空（空态=健康，不为填屏造历史）、无停机/交付预警', () => {
     const b = buildWorkshopBoard('WS-STAMP')!
     expect(b.state).not.toBe('alarm')
     expect(b.lines.every((l) => l.state !== 'alarm')).toBe(true)
@@ -111,16 +145,23 @@ describe('buildWorkshopBoard（报警车间 · 与产线/设备屏同源）', ()
     expect(b.events).toHaveLength(0)
     expect(b.downtime.count).toBe(0)
     expect(b.downtime.totalMin).toBe(0)
-    expect(b.quality.ncr).toHaveLength(0)
+    // 质量屏有一条冲压一线 NCR（待验证尾声）—— 跨屏同一事实，不因空态美学隐藏
+    expect(b.quality.ncr.map((n) => n.code)).toEqual(['NCR-26-045'])
     expect(b.woAlerts).toHaveLength(0)
+    // 健康车间 OEE 高位
+    expect(b.oee.overall).toBeGreaterThanOrEqual(85)
   })
 
-  it('WS-WELD：失联角标计数 ≥1（防假绿）+ 失联/预警进流但不计停机', () => {
+  it('WS-WELD：失联角标计数 ≥1（防假绿）+ 失联/预警进流；已恢复短停计入当班停机', () => {
     const b = buildWorkshopBoard('WS-WELD')!
     expect(b.offlineDevices).toBeGreaterThanOrEqual(1)
     expect(b.events.some((e) => e.text.includes('数据链路失联'))).toBe(true)
-    expect(b.events.some((e) => e.level === 'warn')).toBe(true)
-    expect(b.downtime.count).toBe(0)
+    expect(b.events.some((e) => e.level === 'warn' && !e.resolved)).toBe(true)
+    // 输送滚床已恢复短停 5min：进流（灰显沉底）且计入当班停机统计
+    const resolved = b.events.find((e) => e.resolved && e.level === 'downtime')
+    expect(resolved?.text).toContain('输送滚床')
+    expect(b.downtime.count).toBe(1)
+    expect(b.downtime.totalMin).toBe(5)
   })
 
   it('班组诚实口径：应到 8–20 人、技能覆盖 ≤100、大多数车间交接遗留 0', () => {

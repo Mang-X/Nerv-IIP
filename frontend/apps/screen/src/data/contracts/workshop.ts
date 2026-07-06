@@ -46,7 +46,9 @@ export interface DowntimeInfo {
   totalMin: number
 }
 
-/** 停机/报警事件（与设备屏画像同源；warn=未恢复预警，info=换型/失联） */
+/** 停机/报警事件（与设备屏画像同源；warn=未恢复预警，info=换型/失联）。
+ *  resolved=已闭环历史（当班已恢复的短停/预警）—— 活跃异常置顶、历史沉底灰显，
+ *  让作战室事件流有当班全貌而不虚增「在烧的火」。 */
 export interface WorkshopEvent {
   id: string
   time: string
@@ -54,6 +56,7 @@ export interface WorkshopEvent {
   lineName: string
   text: string
   status: string
+  resolved?: boolean
 }
 
 /** 缺料行（线边齐套缺口 Top；wo/需求量与产线屏当前工单同源）🟡 */
@@ -103,6 +106,32 @@ export interface WoAlert {
   dueText: string
 }
 
+/** 单线 OEE 摘要（效率对比条）🟡 班内推算 */
+export interface LineOee {
+  lineId: string
+  name: string
+  state: LineState
+  /** OEE 0–100 = A×P×Q（与产线屏同族口径） */
+  oee: number
+}
+
+/** 车间效率（spec「设备 & OEE」）：A=停机推 / P=节拍推（plan 加权）/ Q=FPY，
+ *  overall = A×P×Q 勾稽；byLine 为各线对比（报警线垫底一眼可见）🟡 待 #570 校准 */
+export interface WorkshopOee {
+  overall: number
+  availability: number
+  performance: number
+  quality: number
+  byLine: LineOee[]
+}
+
+/** 近 30 天车间日产量（末点 = 今日截至当前，与 output.actual 勾稽；周日排产低谷）🟡 */
+export interface Daily30 {
+  output: number[]
+  plan: number[]
+  labels: string[]
+}
+
 /** 当班班组（✅ 花名册/班次/交接为平台真实能力；⚠️ 在岗/人效为数据缺口，不展示） */
 export interface CrewInfo {
   teamName: string
@@ -134,6 +163,10 @@ export interface WorkshopBoard {
   lines: LineSummaryCard[]
   lineStates: LineStateCounts
   shiftCurve: ShiftCurve
+  /** 近 30 天日产量（趋势第二时间维度） */
+  daily30: Daily30
+  /** 车间效率（OEE 聚合 + 各线对比） */
+  oee: WorkshopOee
   devices: DeviceCounts
   downtime: DowntimeInfo
   /** 当前停机/报警事件流（正常车间为空 —— 空态 = 健康） */

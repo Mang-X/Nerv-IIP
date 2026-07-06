@@ -10,17 +10,21 @@
 import type { LineState, LineSummaryCard } from '@/data/contracts/line'
 import type {
   CrewInfo,
+  Daily30,
+  LineOee,
   NcrItem,
   ShiftCurve,
   ShortageItem,
   WoAlert,
   WorkshopBoard,
   WorkshopEvent,
+  WorkshopOee,
 } from '@/data/contracts/workshop'
 import { buildEquipmentOverview } from './equipment'
 import { clock, jitter, seq } from './fixtures'
 import { buildLineCards, shiftNow } from './line'
 import { linesByWorkshop, workshopsByFactory } from './masterdata'
+import { buildQualityBoard } from './quality'
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n))
@@ -79,10 +83,26 @@ const SHORTAGE_SPECS: Record<string, ShortageSpec[]> = {
   ],
 }
 
-// NCR 待办（✅ 平台有 NCR；异常是例外：仅报警/缺料叙事车间有待办）
-const NCR_PROFILES: Record<string, NcrItem[]> = {
-  'WS-BATTERY': [{ code: 'NCR-0871', lineName: '电芯线', text: '极片对齐度超差', status: '待处置' }],
-  'WS-ASSY': [{ code: 'NCR-0864', lineName: '总装二线', text: '风挡密封条压伤', status: '返修中' }],
+// —— 当班已闭环事件（短停/预警已恢复）：作战室事件流要有当班全貌 ——
+// 活跃异常置顶、历史沉底灰显；已恢复短停计入当班停机统计（与 downtime 对账）。
+// 健康对照车间（冲压/注塑/机加）保持空 —— 空态 = 健康，不为填屏造事件。
+const RESOLVED_POOL: Record<
+  string,
+  { lineName: string; level: WorkshopEvent['level']; text: string; status: string; minsAgo: number; durMin?: number }[]
+> = {
+  'WS-BATTERY': [
+    { lineName: 'PACK 线', level: 'downtime', text: 'PACK 线体 上料卡滞短停 8 min', status: '已恢复', minsAgo: 152, durMin: 8 },
+    { lineName: '电芯线', level: 'warn', text: '化成柜 B 温度越限预警', status: '已恢复 · 复归正常', minsAgo: 205 },
+  ],
+  'WS-WELD': [
+    { lineName: '焊装二线', level: 'downtime', text: '输送滚床 2# 光电误触发短停 5 min', status: '已恢复', minsAgo: 118, durMin: 5 },
+  ],
+  'WS-ASSY': [
+    { lineName: '总装三线', level: 'warn', text: 'AGV 牵引车 02 低电量告警', status: '已恢复 · 已换电', minsAgo: 96 },
+  ],
+  'WS-PAINT': [
+    { lineName: '涂装一线', level: 'warn', text: '喷房送风压差预警', status: '已恢复 · 滤网已换', minsAgo: 178 },
+  ],
 }
 
 // 未恢复预警（与设备屏 ALARM_POOL 同一叙事：文本/线别/时距一致）
@@ -131,6 +151,30 @@ function buildShiftCurve(
   actual[k] = actualTotal
   plan[k] = planTotal
   return { actual, plan, labels }
+}
+
+/** 近 30 天车间日产量：日计划 = 当班计划节奏 × 20h 有效工时（双班），周日排产 30%；
+ *  末点 = 今日截至当前实际（与 KPI output.actual 精确勾稽，「今天还没过完」是真实的）。 */
+function buildDaily30(planShift: number, actual: number, elapsedMin: number): Daily30 {
+  const dayPlan = Math.max(200, Math.round((planShift / elapsedMin) * 60 * 20))
+  const output: number[] = []
+  const plan: number[] = []
+  const labels: string[] = []
+  const today = new Date()
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i)
+    labels.push(`${d.getMonth() + 1}/${d.getDate()}`)
+    if (i === 0) {
+      output.push(actual)
+      plan.push(dayPlan)
+      continue
+    }
+    const sunday = d.getDay() === 0
+    const p = sunday ? Math.round(dayPlan * 0.3) : dayPlan
+    plan.push(p)
+    output.push(clamp(jitter(Math.round(p * 0.96), Math.round(p * 0.06)), Math.round(p * 0.85), p))
+  }
+  return { output, plan, labels }
 }
 
 /** /workshop/[id] 车间总览；scope 外或不存在的车间返回 null（越权防护）。 */
@@ -231,25 +275,40 @@ export function buildWorkshopBoard(
       status: wPoolItem.status,
     })
   }
-  const rank: Record<WorkshopEvent['level'], number> = { alarm: 0, downtime: 1, warn: 2, info: 3 }
-  events.sort((a, b) => rank[a.level] - rank[b.level])
 
-  // ④ 当班停机：急停 + 待修 + 换型（按线计 1 次）；计划保养不计（计划内非异常）
+  // ④ 当班停机（含已恢复短停 —— 作战室口径是「当班累计」，不只看未恢复）；
+  //    急停 + 待修 + 换型（按线计 1 次）+ 已恢复短停；计划保养不计（计划内非异常）。
+  //    按线记账（dtByLine）供线级 OEE 可用率推算。
   let dtCount = 0
   let dtMin = 0
-  for (const d of devs) {
-    if (d.state === 'alarm') {
-      dtCount += 1
-      dtMin += clamp(jitter(30, 8), 18, 45)
-    } else if (d.state === 'down') {
-      dtCount += 1
-      dtMin += clamp(jitter(96, 10), 80, 120)
-    }
-  }
-  for (const _ of changeoverByLine) {
+  const dtByLine = new Map<string, number>()
+  const addDt = (lineName: string, min: number) => {
     dtCount += 1
-    dtMin += clamp(jitter(38, 10), 25, 55)
+    dtMin += min
+    dtByLine.set(lineName, (dtByLine.get(lineName) ?? 0) + min)
   }
+  for (const d of devs) {
+    if (d.state === 'alarm') addDt(d.lineName, clamp(jitter(30, 8), 18, 45))
+    else if (d.state === 'down') addDt(d.lineName, clamp(jitter(96, 10), 80, 120))
+  }
+  for (const [lineName] of changeoverByLine) addDt(lineName, clamp(jitter(38, 10), 25, 55))
+
+  for (const [i, r] of (RESOLVED_POOL[workshopId] ?? []).entries()) {
+    events.push({
+      id: `EV-R${i}-${workshopId}`,
+      time: clock(r.minsAgo + jitter(2, 3)),
+      level: r.level,
+      lineName: r.lineName,
+      text: r.text,
+      status: r.status,
+      resolved: true,
+    })
+    if (r.level === 'downtime') addDt(r.lineName, r.durMin ?? 5)
+  }
+  const rank: Record<WorkshopEvent['level'], number> = { alarm: 0, downtime: 1, warn: 2, info: 3 }
+  events.sort(
+    (a, b) => rank[a.level] + (a.resolved ? 10 : 0) - (rank[b.level] + (b.resolved ? 10 : 0)),
+  )
   const downtime = { count: dtCount, totalMin: dtMin }
 
   // ⑤ 齐套：与产线屏 kitting 同口径；缺料需求量 = 该线当前工单计划数同式（ceil(plan/100)×100）
@@ -273,16 +332,64 @@ export function buildWorkshopBoard(
     shortages,
   }
 
-  // ⑥ 质量：报废/返修沿产线屏 lineMetrics 同族口径（≈0.8% + 少量返修）；FPY = 良品/完工
+  // ⑥ 质量：报废/返修沿产线屏 lineMetrics 同族口径（≈0.8% + 少量返修）；FPY = 良品/完工。
+  //    NCR 直接从质量屏 mock 过滤本车间产线 —— 单号/缺陷/状态与 /quality 屏严格同一批
+  //    （NCR-26-xxx，不再各屏手写一套编号）。
   let scrap = 0
   let rework = 0
+  const fpyByLine = new Map<string, number>()
   for (const l of lines) {
-    scrap += clamp(Math.round(l.output.good * 0.008) + clamp(jitter(1, 2), 0, 2), 0, l.output.good)
-    rework += clamp(jitter(2, 3), 0, 4)
+    const s = clamp(Math.round(l.output.good * 0.008) + clamp(jitter(1, 2), 0, 2), 0, l.output.good)
+    const r = clamp(jitter(2, 3), 0, 4)
+    scrap += s
+    rework += r
+    const doneL = l.output.good + s + r
+    fpyByLine.set(l.id, doneL > 0 ? Math.round((l.output.good / doneL) * 100) : 100)
   }
   const done = actual + scrap + rework
   const fpy = done > 0 ? Math.round((actual / done) * 1000) / 10 : 100
-  const quality = { scrap, rework, fpy, ncr: NCR_PROFILES[workshopId] ?? [] }
+  const wsLineIds = new Set(linesByWorkshop(workshopId).map((l) => l.id))
+  const ncr: NcrItem[] = buildQualityBoard(factoryId)
+    .ncrs.filter((r) => r.lineId && wsLineIds.has(r.lineId))
+    .map((r) => ({
+      code: r.code,
+      lineName: r.source,
+      text: r.defect,
+      status: r.disposition ? `${r.statusLabel} · ${r.disposition}` : r.statusLabel,
+    }))
+  const quality = { scrap, rework, fpy, ncr }
+
+  // ⑥b 车间效率（spec「设备 & OEE」）：A = 1 − 停机/(班时×线数)、P = 节拍达成
+  //    （plan 加权，与产线屏 P=标准节拍/实际节拍同族）、Q = FPY；overall = A×P×Q。
+  //    byLine 用各线自己的停机/节拍/FPY —— 报警线 OEE 垫底一眼可见。
+  const oeeA = clamp(Math.round((1 - dtMin / (elapsed * lines.length)) * 100), 55, 100)
+  const oeeP =
+    plan > 0
+      ? clamp(
+          Math.round(
+            lines.reduce(
+              (n, l) => n + l.output.plan * (100 / (1 + Math.max(0, l.taktDeviationPct) / 100)),
+              0,
+            ) / plan,
+          ),
+          60,
+          100,
+        )
+      : 100
+  const oeeQ = Math.round(fpy)
+  const byLine: LineOee[] = lines.map((l) => {
+    const a = clamp(Math.round((1 - (dtByLine.get(l.name) ?? 0) / elapsed) * 100), 55, 100)
+    const p = clamp(Math.round(100 / (1 + Math.max(0, l.taktDeviationPct) / 100)), 60, 100)
+    const q = fpyByLine.get(l.id) ?? 98
+    return { lineId: l.id, name: l.name, state: l.state, oee: Math.round((a * p * q) / 10000) }
+  })
+  const oee: WorkshopOee = {
+    overall: Math.round((oeeA * oeeP * oeeQ) / 10000),
+    availability: oeeA,
+    performance: oeeP,
+    quality: oeeQ,
+    byLine,
+  }
 
   // ⑦ 工单交付预警（编号走 196x 段，不与产线屏当前工单 194x 冲突；异常是例外）
   const woAlerts: WoAlert[] = []
@@ -340,6 +447,8 @@ export function buildWorkshopBoard(
       shift.name === '早班' ? 8 : 20,
       lineStates.alarm > 0,
     ),
+    daily30: buildDaily30(plan, actual, elapsed),
+    oee,
     devices,
     downtime,
     events,

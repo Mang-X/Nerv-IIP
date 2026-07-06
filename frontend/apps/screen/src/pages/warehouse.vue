@@ -59,7 +59,16 @@ const updatedAt = computed(() => {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 })
 
-// —— 顶部 KPI 带：六格大数字（进度 / 积压 / 失败 / 差异），语义色渐隐强调线 ——
+// —— 顶部 KPI 带：出库进度 hero（发不出货是仓库第一失职 —— 指挥屏第一焦点）+
+//    五格（入库/积压/差异/失败），语义色渐隐强调线，主次分明 ——
+const heroKpi = computed(() => {
+  const b = board.value
+  if (!b) return null
+  return {
+    value: b.kpis.outboundPct,
+    sub: `${nf.format(b.outbound.linesDone)}/${nf.format(b.outbound.linesTotal)} 行 · 发运 ${b.outbound.docsDone}/${b.outbound.docsTotal} 单`,
+  }
+})
 interface BandCell {
   icon: Component
   label: string
@@ -81,14 +90,6 @@ const bandCells = computed<BandCell[]>(() => {
       value: String(b.kpis.inboundPct),
       unit: '%',
       sub: `${nf.format(b.inbound.linesDone)}/${nf.format(b.inbound.linesTotal)} 行`,
-      tone: 'cyan',
-    },
-    {
-      icon: ArrowUpFromLine,
-      label: '当日出库进度',
-      value: String(b.kpis.outboundPct),
-      unit: '%',
-      sub: `${nf.format(b.outbound.linesDone)}/${nf.format(b.outbound.linesTotal)} 行`,
       tone: 'cyan',
     },
     {
@@ -214,12 +215,20 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
 <template>
   <ScreenLayout title="Nerv-IIP 仓储物流大屏" :line="factoryName" screen="指挥中心大屏 04">
     <div v-if="board" class="wb">
-      <!-- 顶部 KPI 带：六格大数字 + 语义色渐隐强调线 -->
+      <!-- 顶部 KPI 带：出库进度 hero + 五格，语义色渐隐强调线 -->
       <ScreenPanel class="wb-band">
         <div class="wb-band-in">
+          <div v-if="heroKpi" class="wb-hero">
+            <div class="wb-hero-v">
+              <span class="wb-num">{{ heroKpi.value }}<small>%</small></span>
+              <i class="wb-kpi-line cyan" aria-hidden="true" />
+            </div>
+            <div class="wb-hero-l"><ArrowUpFromLine :size="15" :stroke-width="1.8" class="wb-kpi-ic" />当日出库进度</div>
+            <span class="wb-hero-sub">{{ heroKpi.sub }}</span>
+          </div>
           <div v-for="c in bandCells" :key="c.label" class="wb-kpi">
             <dt class="wb-kpi-t">
-              <component :is="c.icon" :size="13" :stroke-width="1.8" class="wb-kpi-ic" />{{ c.label }}
+              <component :is="c.icon" :size="15" :stroke-width="1.8" class="wb-kpi-ic" />{{ c.label }}
             </dt>
             <dd class="wb-kpi-v" :class="c.tone">
               <span class="wb-num">{{ c.value }}<small>{{ c.unit }}</small></span>
@@ -462,19 +471,58 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   font-size: 15px;
 }
 
-/* —— 顶部 KPI 带：六格 + 发丝分隔 —— */
+/* —— 顶部 KPI 带：出库 hero + 五格 + 发丝分隔（主次分明，远视距标签 14px 起） —— */
 .wb-band {
   flex: none;
 }
 .wb-band-in {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: 300px repeat(5, 1fr);
+  align-items: center;
+}
+.wb-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 2px 26px 0 8px;
+}
+.wb-hero-v {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  font-size: 48px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--sb-text);
+  font-variant-numeric: tabular-nums;
+  text-shadow: var(--sb-value-glow);
+}
+.wb-hero-v .wb-num small {
+  font-size: 19px;
+  font-weight: 600;
+  margin-left: 3px;
+  color: var(--sb-muted);
+}
+.wb-hero-l {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+  font-size: 14.5px;
+  color: var(--sb-muted);
+}
+.wb-hero-sub {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--sb-faint);
+  font-variant-numeric: tabular-nums;
 }
 .wb-kpi {
   position: relative;
   padding: 2px 22px;
 }
-.wb-kpi + .wb-kpi::before {
+.wb-kpi::before {
   content: '';
   position: absolute;
   left: 0;
@@ -483,11 +531,12 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   width: 1px;
   background: var(--sb-divider);
 }
+/* dt 必须块级 —— inline 级会与数字并排（格宽变化时布局不稳定） */
 .wb-kpi-t {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
+  gap: 7px;
+  font-size: 14px;
   color: var(--sb-muted);
 }
 .wb-kpi-ic {
@@ -499,7 +548,7 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;
-  font-size: 38px;
+  font-size: 34px;
   font-weight: 800;
   line-height: 1;
   color: var(--sb-text);

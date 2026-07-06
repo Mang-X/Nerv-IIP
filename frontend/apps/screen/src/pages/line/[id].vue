@@ -36,6 +36,15 @@ function fmtMin(min: number): string {
 }
 const nf = new Intl.NumberFormat('en-US')
 
+// 返回目标按来路识别（跳转链路闭环：车间屏下钻来 → 回该车间，其余回产线总览）。
+// history.state.back 由 vue-router 维护，本身非响应式 —— 挂 route.fullPath 触发重读。
+const backLink = computed(() => {
+  void route.fullPath
+  const back = typeof history.state?.back === 'string' ? history.state.back : ''
+  if (back.startsWith('/workshop/')) return { to: back, label: '返回车间总览' }
+  return { to: '/line', label: '返回产线总览' }
+})
+
 // —— 趋势图（实际 vs 节拍产能）：今日 12h / 近 30 天 tab 切换；
 //    y 轴刻度随数据生成、x 轴抽稀、悬停按点取值 ——
 const trendRange = ref<string | number>('12h')
@@ -343,14 +352,14 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
       </div>
 
       <footer class="lb-foot">
-        <RouterLink to="/line" class="lb-back">‹ 返回产线总览</RouterLink>
+        <RouterLink :to="backLink.to" class="lb-back">‹ {{ backLink.label }}</RouterLink>
         <span>产量 / 节拍 / 合格率为演示推算 · 待 #570</span>
       </footer>
     </div>
 
     <div v-else class="lb-empty">
       <p>该产线不在当前账号权限范围内，或不存在</p>
-      <RouterLink to="/line" class="lb-back">‹ 返回产线总览</RouterLink>
+      <RouterLink :to="backLink.to" class="lb-back">‹ {{ backLink.label }}</RouterLink>
     </div>
   </ScreenLayout>
 </template>

@@ -139,26 +139,26 @@ const trendPin = computed(() => {
 
           <div class="qb-cells">
             <div class="qb-cell">
-              <dt><FileWarning :size="14" class="qb-cell-ic" />待处置 NCR</dt>
+              <dt><FileWarning :size="15" class="qb-cell-ic" />待处置 NCR</dt>
               <dd :class="{ warn: board.kpis.openNcr > 0 }">{{ board.kpis.openNcr }}</dd>
               <p class="qb-cell-sub" :class="{ bad: board.kpis.overdueNcr > 0 }">
                 超期 {{ board.kpis.overdueNcr }}
               </p>
             </div>
             <div class="qb-cell">
-              <dt><ClipboardList :size="14" class="qb-cell-ic" />检验积压</dt>
+              <dt><ClipboardList :size="15" class="qb-cell-ic" />检验积压</dt>
               <dd>{{ board.kpis.inspectionBacklog }}</dd>
               <p class="qb-cell-sub" :class="{ warn: board.kpis.backlogOldestHours > 24 }">
                 最老 {{ fmtAge(board.kpis.backlogOldestHours) }}
               </p>
             </div>
             <div class="qb-cell">
-              <dt><FileCheck2 :size="14" class="qb-cell-ic" />条件放行在途</dt>
+              <dt><FileCheck2 :size="15" class="qb-cell-ic" />条件放行在途</dt>
               <dd>{{ board.kpis.conditionalRelease }}</dd>
               <p class="qb-cell-sub">含让步接收</p>
             </div>
             <div class="qb-cell">
-              <dt><Scale :size="14" class="qb-cell-ic" />MRB 待评审</dt>
+              <dt><Scale :size="15" class="qb-cell-ic" />MRB 待评审</dt>
               <dd>{{ board.kpis.mrbPending }}</dd>
               <p class="qb-cell-sub">评审即出处置</p>
             </div>
@@ -358,7 +358,7 @@ const trendPin = computed(() => {
   background: var(--sb-divider);
 }
 .qb-hero-t {
-  font-size: 13px;
+  font-size: 14.5px;
   color: var(--sb-muted);
   letter-spacing: 0.04em;
 }
@@ -419,11 +419,12 @@ const trendPin = computed(() => {
   width: 1px;
   background: var(--sb-divider);
 }
+/* 大屏远视距：KPI 标签 14px 起 */
 .qb-cell dt {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
+  gap: 7px;
+  font-size: 14px;
   color: var(--sb-muted);
   white-space: nowrap;
 }

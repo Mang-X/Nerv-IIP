@@ -9,7 +9,7 @@ import {
   Recycle,
   UserRound,
 } from 'lucide-vue-next'
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
 import WorkshopLineCard from '@/components/workshop/WorkshopLineCard.vue'
@@ -66,22 +66,47 @@ const achTone = computed(() => {
   return a < 85 ? 'bad' : a < 93 ? 'warn' : ''
 })
 
-// —— 当班累计曲线：y 轴刻度随数据生成、x 轴抽稀、常驻 pin 在最新点 ——
+// —— 产量趋势：当班累计 / 近 30 天双时间维度（与产线屏趋势同一交互语言）；
+//    y 轴刻度随数据生成、x 轴抽稀、当班模式常驻 pin 在最新点 ——
+const trendRange = ref<string | number>('shift')
+const WS_TREND_RANGES = [
+  { label: '当班累计', value: 'shift' },
+  { label: '近 30 天', value: '30d' },
+]
+const trendData = computed(() => {
+  const b = board.value
+  if (!b) return null
+  if (trendRange.value === '30d') {
+    return {
+      actual: b.daily30.output,
+      plan: b.daily30.plan,
+      hoverLabels: b.daily30.labels,
+      xLabels: b.daily30.labels.filter((_, i) => i % 5 === 0),
+      actualLabel: '日产量',
+      planLabel: '日计划',
+    }
+  }
+  const labels = b.shiftCurve.labels
+  return {
+    actual: b.shiftCurve.actual,
+    plan: b.shiftCurve.plan,
+    hoverLabels: labels,
+    xLabels: labels.length > 9 ? labels.filter((_, i) => i % 2 === 0) : labels,
+    actualLabel: '实际累计',
+    planLabel: '计划累计',
+  }
+})
 const trendY = computed(() => {
-  const c = board.value?.shiftCurve
-  if (!c) return []
-  const peak = Math.max(1, ...c.actual, ...c.plan)
+  const t = trendData.value
+  if (!t) return []
+  const peak = Math.max(1, ...t.actual, ...t.plan)
   const mag = 10 ** Math.floor(Math.log10(peak))
   const top = Math.ceil(peak / mag) * mag
   return Array.from({ length: 6 }, (_, i) => nf.format(Math.round((top * (5 - i)) / 5)))
 })
-const trendX = computed(() => {
-  const labels = board.value?.shiftCurve.labels ?? []
-  return labels.length > 9 ? labels.filter((_, i) => i % 2 === 0) : labels
-})
 const trendPin = computed(() => {
   const c = board.value?.shiftCurve
-  if (!c) return undefined
+  if (!c || trendRange.value !== 'shift') return undefined
   const last = c.actual.length - 1
   return {
     x: last,
@@ -135,33 +160,33 @@ const devSummary = computed(() => {
           </div>
           <dl class="wb-cells">
             <div class="wb-cell">
-              <dt><PackageCheck :size="13" class="wb-cell-ic" />当班产量（件）</dt>
+              <dt><PackageCheck :size="15" class="wb-cell-ic" />当班产量（件）</dt>
               <dd>
                 {{ nf.format(board.output.actual) }}<small>/ {{ nf.format(board.output.plan) }}</small>
               </dd>
             </div>
             <div class="wb-cell">
-              <dt><CircleCheck :size="13" class="wb-cell-ic" />一次合格率</dt>
+              <dt><CircleCheck :size="15" class="wb-cell-ic" />一次合格率</dt>
               <dd :class="{ warn: board.quality.fpy < 98 }">{{ board.quality.fpy }}<small>%</small></dd>
             </div>
             <div class="wb-cell">
-              <dt><Recycle :size="13" class="wb-cell-ic" />报废 / 返修</dt>
+              <dt><Recycle :size="15" class="wb-cell-ic" />报废 / 返修</dt>
               <dd>
                 {{ board.quality.scrap }}<small>/ {{ board.quality.rework }} 件</small>
               </dd>
             </div>
             <div class="wb-cell">
-              <dt><OctagonAlert :size="13" class="wb-cell-ic" />当班停机</dt>
+              <dt><OctagonAlert :size="15" class="wb-cell-ic" />当班停机</dt>
               <dd :class="{ bad: board.downtime.count > 0 }">
                 {{ board.downtime.count }}<small> 次 · {{ board.downtime.totalMin }} min</small>
               </dd>
             </div>
             <div class="wb-cell">
-              <dt><Boxes :size="13" class="wb-cell-ic" />物料齐套</dt>
+              <dt><Boxes :size="15" class="wb-cell-ic" />物料齐套</dt>
               <dd :class="{ warn: board.kitting.rate < 100 }">{{ board.kitting.rate }}<small>%</small></dd>
             </div>
             <div class="wb-cell">
-              <dt><ClipboardList :size="13" class="wb-cell-ic" />交接遗留</dt>
+              <dt><ClipboardList :size="15" class="wb-cell-ic" />交接遗留</dt>
               <dd :class="{ warn: board.crew.handoverIssues > 0 }">
                 {{ board.crew.handoverIssues }}<small> 项</small>
               </dd>
@@ -200,27 +225,68 @@ const devSummary = computed(() => {
           </div>
         </section>
 
-        <!-- 中：当班累计曲线 + 停机/报警事件流 -->
+        <!-- 中：产量趋势（当班累计 / 近 30 天）+ 车间效率 + 停机/报警事件流 -->
         <div class="wb-center">
           <TrendChart
+            v-if="trendData"
+            v-model:range="trendRange"
             class="wb-trend"
-            title="当班产量累计"
-            :actual="board.shiftCurve.actual"
-            :plan="board.shiftCurve.plan"
-            :hover-labels="board.shiftCurve.labels"
-            :x-labels="trendX"
+            title="产量趋势"
+            :actual="trendData.actual"
+            :plan="trendData.plan"
+            :hover-labels="trendData.hoverLabels"
+            :x-labels="trendData.xLabels"
             :y-labels="trendY"
             :tooltip="trendPin"
-            :tabs="false"
-            actual-label="实际累计"
-            plan-label="计划累计"
+            :actual-label="trendData.actualLabel"
+            :plan-label="trendData.planLabel"
+            :ranges="WS_TREND_RANGES"
           />
+          <ScreenPanel title="车间效率 OEE" class="wb-oee">
+            <template #extra>
+              <StatusTag tone="amber" label="班内推算 · 待 #570" />
+            </template>
+            <div class="wb-oee-in">
+              <div class="wb-oee-hero" :class="{ warn: board.oee.overall < 75, bad: board.oee.overall < 60 }">
+                <span class="wb-num">{{ board.oee.overall }}<small>%</small></span>
+                <i class="wb-score-line" aria-hidden="true" />
+              </div>
+              <dl class="wb-oee-apq">
+                <div>
+                  <dt>可用率 A</dt>
+                  <dd :class="{ warn: board.oee.availability < 90 }">{{ board.oee.availability }}<small>%</small></dd>
+                </div>
+                <div>
+                  <dt>性能率 P</dt>
+                  <dd :class="{ warn: board.oee.performance < 90 }">{{ board.oee.performance }}<small>%</small></dd>
+                </div>
+                <div>
+                  <dt>良品率 Q</dt>
+                  <dd>{{ board.oee.quality }}<small>%</small></dd>
+                </div>
+              </dl>
+              <div class="wb-oee-lines">
+                <div v-for="l in board.oee.byLine" :key="l.lineId" class="wb-oee-line">
+                  <span class="wb-oee-name">{{ l.name }}</span>
+                  <span class="wb-oee-track">
+                    <i :class="l.state" :style="{ width: `${l.oee}%` }" />
+                  </span>
+                  <b class="wb-oee-v" :class="l.state">{{ l.oee }}<small>%</small></b>
+                </div>
+              </div>
+            </div>
+          </ScreenPanel>
           <ScreenPanel title="停机 · 报警" class="wb-events">
             <template #extra>
               <span class="wb-dev-sum">{{ devSummary }}</span>
             </template>
             <div class="wb-ev-list sb-scroll">
-              <div v-for="e in board.events" :key="e.id" class="wb-ev" :class="e.level">
+              <div
+                v-for="e in board.events"
+                :key="e.id"
+                class="wb-ev"
+                :class="[e.level, { resolved: e.resolved }]"
+              >
                 <span class="wb-ev-time">{{ e.time }}</span>
                 <i class="wb-ev-dot" aria-hidden="true" />
                 <span class="wb-ev-line">{{ e.lineName }}</span>
@@ -306,7 +372,7 @@ const devSummary = computed(() => {
             </template>
             <div class="wb-crew-head">
               <span class="wb-crew-team">{{ board.crew.teamName }}</span>
-              <span class="wb-crew-lead"><UserRound :size="13" class="wb-cell-ic" />组长 {{ board.crew.leader }}</span>
+              <span class="wb-crew-lead"><UserRound :size="15" class="wb-cell-ic" />组长 {{ board.crew.leader }}</span>
             </div>
             <dl class="wb-crew-nums">
               <div>
@@ -467,12 +533,13 @@ const devSummary = computed(() => {
   width: 1px;
   background: var(--sb-divider);
 }
+/* 大屏远视距：KPI 标签 14px 起（12px 级挂墙不可读） */
 .wb-cell dt {
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--sb-muted);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
 }
 .wb-cell-ic {
   color: var(--sb-faint);
@@ -561,12 +628,22 @@ const devSummary = computed(() => {
   min-height: 0;
   min-width: 0;
 }
+/* 产线墙呈现策略：卡高固定（不随线数挤压变形），3 条内完整可见，
+   更多产线纵向滚动（挂墙轮巡场景配合页面轮播，不靠人手操作）。
+   flex 0 1 auto：线少时自然高（交付预警紧随其后，不悬空贴底），
+   线多时收缩为滚动容器。 */
 .wb-lines-list {
-  flex: 1;
+  flex: 0 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.wb-lines-list :deep(.wlc-link) {
+  flex: none;
+  height: 178px;
 }
 .wb-woa {
   flex: none;
@@ -632,16 +709,143 @@ const devSummary = computed(() => {
   flex: none;
 }
 
-/* 中列：趋势 + 事件流 */
+/* 中列：趋势 + 车间效率 + 事件流 */
 .wb-center {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   gap: 13px;
   min-height: 0;
   min-width: 0;
 }
 .wb-trend {
   min-height: 0;
+}
+
+/* 车间效率 OEE：总值 + A/P/Q 分解 + 各线对比条（报警线垫底一眼可见） */
+.wb-oee-in {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+.wb-oee-hero {
+  flex: none;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--sb-text);
+  font-variant-numeric: tabular-nums;
+  text-shadow: var(--sb-value-glow);
+}
+.wb-oee-hero.warn {
+  color: var(--sb-amber);
+  text-shadow: none;
+}
+.wb-oee-hero.bad {
+  color: var(--sb-red);
+  text-shadow: none;
+}
+.wb-oee-hero .wb-num small {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--sb-muted);
+  margin-left: 2px;
+}
+.wb-oee-apq {
+  flex: none;
+  margin: 0;
+  display: flex;
+  gap: 22px;
+  padding: 0 24px;
+  border-left: 1px solid var(--sb-divider);
+  border-right: 1px solid var(--sb-divider);
+}
+.wb-oee-apq dt {
+  font-size: 13px;
+  color: var(--sb-muted);
+  white-space: nowrap;
+}
+.wb-oee-apq dd {
+  margin: 6px 0 0;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--sb-text);
+  font-variant-numeric: tabular-nums;
+}
+.wb-oee-apq dd small {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--sb-muted);
+}
+.wb-oee-apq dd.warn {
+  color: var(--sb-amber);
+}
+.wb-oee-lines {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.wb-oee-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.wb-oee-name {
+  flex: none;
+  width: 74px;
+  font-size: 13.5px;
+  color: var(--sb-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 发丝轨道 + 语义色左实右消填充（同帕累托条语言，静态不发光） */
+.wb-oee-track {
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.wb-oee-track i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--sb-cyan), rgba(74, 166, 238, 0.3));
+  transition: width 0.6s var(--sb-ease-emphasized);
+}
+.wb-oee-track i.alarm {
+  background: linear-gradient(90deg, var(--sb-red), rgba(239, 90, 99, 0.3));
+}
+.wb-oee-track i.attention {
+  background: linear-gradient(90deg, var(--sb-amber), rgba(240, 173, 78, 0.3));
+}
+.wb-oee-v {
+  flex: none;
+  width: 52px;
+  text-align: right;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--sb-text);
+  font-variant-numeric: tabular-nums;
+}
+.wb-oee-v small {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--sb-muted);
+}
+.wb-oee-v.alarm {
+  color: var(--sb-red);
+}
+.wb-oee-v.attention {
+  color: var(--sb-amber);
 }
 .wb-events {
   display: flex;
@@ -691,6 +895,15 @@ const devSummary = computed(() => {
 .wb-ev.warn .wb-ev-dot {
   background: var(--sb-amber);
   box-shadow: 0 0 8px var(--sb-amber);
+}
+/* 已闭环历史：整行灰显、点无辉光 —— 当班全貌但不虚增「在烧的火」 */
+.wb-ev.resolved {
+  opacity: 0.52;
+}
+.wb-ev.resolved .wb-ev-dot {
+  background: var(--sb-faint);
+  box-shadow: none;
+  animation: none;
 }
 @keyframes wb-ev-pulse {
   50% {
