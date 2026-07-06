@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildEquipmentOverview, chunkIds, DEVICE_BATCH_LIMIT } from './equipment'
+import { buildDeviceDetail, buildEquipmentOverview, chunkIds, DEVICE_BATCH_LIMIT } from './equipment'
 import { devicesByWorkshop, workshopsByFactory } from './masterdata'
 
 const ROUNDS = 15
@@ -58,5 +58,45 @@ describe('buildEquipmentOverview', () => {
     const s = buildEquipmentOverview('F01', ['WS-BATTERY'])
     expect(s.devices).toHaveLength(devicesByWorkshop('WS-BATTERY').length)
     for (const d of s.devices) expect(['电芯线', 'PACK 线']).toContain(d.lineName)
+  })
+
+  it('格上关键参数：每台 ≥2；断线全「—」；报警设备存在超限红参数', () => {
+    const s = buildEquipmentOverview('F01')
+    for (const d of s.devices) expect(d.params.length).toBeGreaterThanOrEqual(2)
+    const off = s.devices.find((d) => d.state === 'offline')
+    expect(off).toBeDefined()
+    expect(off!.params.every((p) => p.value === '—')).toBe(true)
+    const alarm = s.devices.find((d) => d.state === 'alarm')
+    expect(alarm).toBeDefined()
+    expect(alarm!.params.some((p) => p.tone === 'bad')).toBe(true)
+  })
+})
+
+describe('buildDeviceDetail', () => {
+  it('同源画像、4 参数 12 点趋势（值=末点）、维修档案联动、断线无数据', () => {
+    const s = buildEquipmentOverview('F01')
+    const alarm = s.devices.find((d) => d.state === 'alarm')!
+    const det = buildDeviceDetail(alarm.id)
+    expect(det).not.toBeNull()
+    expect(det!.device.id).toBe(alarm.id)
+    expect(det!.params).toHaveLength(4)
+    for (const p of det!.params) {
+      expect(p.spark).toHaveLength(12)
+      expect(p.value).toBe(p.spark[p.spark.length - 1])
+    }
+    // 报警设备 ↔ 维修单闭环（WO-1934）；有故障样本 → 单机 MTBF 有值
+    expect(det!.repairs.some((r) => r.wo === 'WO-1934')).toBe(true)
+    expect(det!.mtbfHours).not.toBeNull()
+    // 正常设备无故障样本 → 单机 MTBF/MTTR null（页面显「—」）
+    const ok = s.devices.find((d) => d.state === 'run')!
+    const detOk = buildDeviceDetail(ok.id)!
+    expect(detOk.mtbfHours).toBeNull()
+    expect(detOk.mttrMinutes).toBeNull()
+    // 断线设备：参数无数据（value null + spark 空 → 图示虚线占位）
+    const off = s.devices.find((d) => d.state === 'offline')!
+    const detOff = buildDeviceDetail(off.id)!
+    expect(detOff.params.every((p) => p.value === null && p.spark.length === 0)).toBe(true)
+    // 未知设备 → null
+    expect(buildDeviceDetail('DEV-999')).toBeNull()
   })
 })

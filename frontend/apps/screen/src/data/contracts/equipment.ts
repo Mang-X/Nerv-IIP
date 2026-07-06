@@ -5,17 +5,30 @@
 /** 一期与连接器约定的标准状态词表（后端 state 为自由小写字符串） */
 export type DeviceState = 'run' | 'idle' | 'down' | 'alarm' | 'offline'
 
+/** 格上简版关键参数（🟠 演示数据流，historian/实时采集接入待 #570） */
+export interface DeviceParamBrief {
+  label: string
+  /** 已带单位的展示值；断线设备为「—」 */
+  value: string
+  tone?: 'warn' | 'bad'
+}
+
 export interface DeviceCell {
   id: string
   code: string
   name: string
+  lineId: string
   lineName: string
+  workshopId: string
+  workshopName: string
   state: DeviceState
   stateLabel: string
   /** 活动阻塞原因 ✅（overview activeBlocks），无则不显示 */
   block?: string
   /** IsSourceFresh ✅ —— false 即断线，防「假绿」 */
   sourceFresh: boolean
+  /** 格上显示的 2 个关键参数 */
+  params: DeviceParamBrief[]
 }
 
 /** 五态互斥，和恒等于设备总数 */
@@ -84,4 +97,31 @@ export interface EquipmentOverview {
   reliability: Reliability
   pmTasks: PmTask[]
   inspections: InspectionRow[]
+}
+
+// —— 设备详情（点击设备格按需取数，形状对齐未来单设备端点）——
+
+/** 详情页参数：当前值 + 近 12 点趋势；断线设备 spark 为空（图示虚线占位） */
+export interface DeviceParamSeries {
+  label: string
+  /** 数值；断线为 null，页面显「—」 */
+  value: number | null
+  unit: string
+  spark: number[]
+  tone?: 'warn' | 'bad'
+}
+
+export interface DeviceDetail {
+  device: DeviceCell
+  workCenterName: string
+  managerName: string
+  /** 4 个关键参数带趋势 🟠 演示数据流，historian 待 #570 */
+  params: DeviceParamSeries[]
+  /** 该设备的维修单 / PM / 点检（无则空数组，页面显「暂无」） */
+  repairs: RepairOrder[]
+  pmTasks: PmTask[]
+  inspections: InspectionRow[]
+  /** 单机可靠性：无故障样本 → null 显「—」 */
+  mtbfHours: number | null
+  mttrMinutes: number | null
 }

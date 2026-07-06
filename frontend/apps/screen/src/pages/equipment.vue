@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { AlarmTable, RingGauge, ScreenPanel, StatusTag } from '@nerv-iip/ui'
-import { computed, watch } from 'vue'
+import { AlarmTable, RingGauge, ScreenPanel, ScreenSegmented, StatusTag } from '@nerv-iip/ui'
+import { computed, ref, watch } from 'vue'
 import { useAccessScope } from '@/access/useAccessScope'
+import DeviceDetailModal from '@/components/equipment/DeviceDetailModal.vue'
 import DeviceStatusWall from '@/components/equipment/DeviceStatusWall.vue'
-import type { EquipmentOverview } from '@/data/contracts/equipment'
-import { fetchEquipmentOverview } from '@/data/fetchers/equipment'
+import type { DeviceCell, DeviceDetail, EquipmentOverview } from '@/data/contracts/equipment'
+import { fetchDeviceDetail, fetchEquipmentOverview } from '@/data/fetchers/equipment'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 import { useScreenData } from '@/screen-kit'
 
@@ -26,18 +27,37 @@ const factoryName = computed(
   () => scope.factories.find((f) => f.id === scope.currentFactoryId)?.name ?? '全部车间',
 )
 
-// —— 五态计数条（墙体标题行右侧）——
-const countItems = computed(() => {
-  const c = ov.value?.counts
-  if (!c) return []
-  return [
-    { k: 'run', label: '运行', v: c.run },
-    { k: 'idle', label: '待机', v: c.idle },
-    { k: 'down', label: '停机', v: c.down },
-    { k: 'alarm', label: '报警', v: c.alarm },
-    { k: 'offline', label: '断线', v: c.offline },
-  ]
+// —— 墙体排列视图（平铺 / 按车间分组 / 按产线行式）——
+type WallView = 'flat' | 'workshop' | 'line'
+const view = ref<WallView>('flat')
+const viewModel = computed<string | number>({
+  get: () => view.value,
+  set: (v) => {
+    view.value = v as WallView
+  },
 })
+const VIEW_OPTIONS = [
+  { label: '平铺', value: 'flat' },
+  { label: '按车间', value: 'workshop' },
+  { label: '按产线', value: 'line' },
+]
+
+// —— 设备详情弹窗（点击设备格按需取数）——
+const detailOpen = ref(false)
+const detailLoading = ref(false)
+const detail = ref<DeviceDetail | null>(null)
+async function openDevice(d: DeviceCell) {
+  detailOpen.value = true
+  detailLoading.value = true
+  detail.value = null
+  detail.value = await fetchDeviceDetail(d.id, scope.currentFactoryId, scope.persona.workshopIds)
+  detailLoading.value = false
+  if (!detail.value) detailOpen.value = false
+}
+function closeDetail() {
+  detailOpen.value = false
+  detail.value = null
+}
 
 // —— 可靠性四格（MTBF/MTTR 无样本 null → 「—」）——
 const relCells = computed(() => {
@@ -63,13 +83,9 @@ const relCells = computed(() => {
               <i class="sec-glyph" aria-hidden="true" />
               <span class="sec-t">设备状态全景墙</span>
               <span class="sec-rule" aria-hidden="true" />
-              <span class="counts">
-                <span v-for="c in countItems" :key="c.k" class="count" :class="c.k">
-                  <i />{{ c.label }} <b>{{ c.v }}</b>
-                </span>
-              </span>
+              <ScreenSegmented v-model="viewModel" :options="VIEW_OPTIONS" />
             </div>
-            <DeviceStatusWall :devices="ov.devices" />
+            <DeviceStatusWall :devices="ov.devices" :counts="ov.counts" :view="view" @select="openDevice" />
           </section>
 
           <AlarmTable title="未恢复报警" :rows="ov.alarms" more="" class="alarms" />
@@ -136,6 +152,8 @@ const relCells = computed(() => {
       </div>
     </div>
     <div v-else class="eq-loading">连接数据…</div>
+
+    <DeviceDetailModal v-if="detailOpen" :detail="detail" :loading="detailLoading" @close="closeDetail" />
   </ScreenLayout>
 </template>
 
@@ -206,54 +224,6 @@ const relCells = computed(() => {
   height: 1px;
   margin: 0 6px;
   background: linear-gradient(90deg, rgba(135, 208, 255, 0.28), rgba(255, 255, 255, 0.05) 45%, transparent);
-}
-
-/* 五态计数条 */
-.counts {
-  display: inline-flex;
-  align-items: center;
-  gap: 16px;
-  white-space: nowrap;
-}
-.count {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--sb-text-2);
-}
-.count b {
-  font-size: 17px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--sb-text);
-}
-.count i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--sb-faint);
-}
-.count.run i {
-  background: var(--sb-green);
-  box-shadow: 0 0 7px var(--sb-green);
-}
-.count.idle i {
-  background: var(--sb-amber);
-  box-shadow: 0 0 7px var(--sb-amber);
-}
-.count.alarm i {
-  background: var(--sb-red);
-  box-shadow: 0 0 7px var(--sb-red);
-}
-.count.alarm b {
-  color: var(--sb-red);
-}
-.count.down i {
-  background: var(--sb-muted);
-}
-.count.offline i {
-  background: var(--sb-faint);
 }
 
 /* —— 右列 —— */

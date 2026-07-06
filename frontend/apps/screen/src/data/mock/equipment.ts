@@ -2,6 +2,9 @@
 // （不随轮询跳变），数量/进度类微抖。🟠 计数/时长等待 #570 真实聚合端点。
 import type {
   DeviceCell,
+  DeviceDetail,
+  DeviceParamBrief,
+  DeviceParamSeries,
   DeviceState,
   EquipmentOverview,
   InspectionRow,
@@ -12,7 +15,7 @@ import type {
   StateCounts,
 } from '@/data/contracts/equipment'
 import { clock, jitter } from './fixtures'
-import { devicesByWorkshop, LINES, workshopsByFactory } from './masterdata'
+import { devicesByWorkshop, LINES, WORK_CENTERS, WORKSHOPS, workshopsByFactory } from './masterdata'
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n))
@@ -49,6 +52,70 @@ const STATE_LABELS: Record<DeviceState, string> = {
   offline: '断线',
 }
 
+// —— 关键参数（🟠 演示数据流，historian/实时采集接入待 #570）——
+interface ParamSpec {
+  label: string
+  base: number
+  amp: number
+  dp: number
+  unit: string
+}
+const HOST_PARAMS: ParamSpec[] = [
+  { label: '主轴转速', base: 1450, amp: 80, dp: 0, unit: 'rpm' },
+  { label: '电机温度', base: 58, amp: 8, dp: 0, unit: '℃' },
+  { label: '负载电流', base: 32, amp: 5, dp: 1, unit: 'A' },
+  { label: '振动速度', base: 2.4, amp: 0.7, dp: 1, unit: 'mm/s' },
+]
+const AUX_PARAMS: ParamSpec[] = [
+  { label: '气源压力', base: 0.62, amp: 0.06, dp: 2, unit: 'MPa' },
+  { label: '液压压力', base: 8.5, amp: 0.9, dp: 1, unit: 'MPa' },
+  { label: '油温', base: 46, amp: 6, dp: 0, unit: '℃' },
+  { label: '冷却流量', base: 28, amp: 5, dp: 0, unit: 'L/min' },
+]
+
+function jitterF(base: number, amp: number, dp: number): number {
+  return +(base + (Math.random() - 0.5) * amp).toFixed(dp)
+}
+function seriesOf(spec: ParamSpec, n = 12): number[] {
+  return Array.from({ length: n }, () => jitterF(spec.base, spec.amp, spec.dp))
+}
+
+function deviceKind(name: string): '主机' | '辅机' {
+  return name.includes('主机') ? '主机' : '辅机'
+}
+
+/** 状态修饰后的参数序列：报警主机超温、急停/停机转速归零、断线无数据（spark 空）。 */
+export function paramSeriesFor(kind: '主机' | '辅机', state: DeviceState): DeviceParamSeries[] {
+  const specs = kind === '主机' ? HOST_PARAMS : AUX_PARAMS
+  return specs.map((spec, i) => {
+    if (state === 'offline') return { label: spec.label, value: null, unit: spec.unit, spark: [] }
+    let eff = spec
+    let tone: 'warn' | 'bad' | undefined
+    if (kind === '主机' && i === 0 && state !== 'run') {
+      // 急停/停机/待机：主轴转速归零（待机属正常，不标色）
+      eff = { ...spec, base: 0, amp: 0 }
+      tone = state === 'idle' ? undefined : 'warn'
+    }
+    if (kind === '主机' && i === 1 && state === 'alarm') {
+      eff = { ...spec, base: 92, amp: 4 } // 电机温度超限
+      tone = 'bad'
+    }
+    const spark = seriesOf(eff)
+    return { label: spec.label, value: spark[spark.length - 1], unit: spec.unit, spark, tone }
+  })
+}
+
+/** 格上简版：取前 2 个参数，值并入单位；断线为「—」。 */
+function paramBriefs(kind: '主机' | '辅机', state: DeviceState): DeviceParamBrief[] {
+  return paramSeriesFor(kind, state)
+    .slice(0, 2)
+    .map((p) => ({
+      label: p.label,
+      value: p.value === null ? '—' : `${p.value}${p.unit}`,
+      tone: p.tone,
+    }))
+}
+
 export function buildEquipmentOverview(
   factoryId = 'F01',
   workshopIds: string[] | 'all' = 'all',
@@ -63,21 +130,26 @@ export function buildEquipmentOverview(
   const byId = new Map(rawDevices.map((d) => [d.id, d]))
   const lineNameOf = (lineId: string) => LINES.find((l) => l.id === lineId)?.name ?? lineId
 
+  const workshopNameOf = (id: string) => WORKSHOPS.find((w) => w.id === id)?.name ?? id
   const devices: DeviceCell[] = batches.flatMap((batch) =>
     batch.map((id) => {
       const d = byId.get(id)!
-      const kind = d.name.includes('主机') ? '主机' : '辅机'
+      const kind = deviceKind(d.name)
       const p = DEVICE_PROFILES[`${d.lineId}:${kind}`]
       const state: DeviceState = p?.state ?? 'run'
       return {
         id: d.id,
         code: d.code,
         name: d.name,
+        lineId: d.lineId,
         lineName: lineNameOf(d.lineId),
+        workshopId: d.workshopId,
+        workshopName: workshopNameOf(d.workshopId),
         state,
         stateLabel: STATE_LABELS[state],
         block: p?.block,
         sourceFresh: p?.sourceFresh ?? true,
+        params: paramBriefs(kind, state),
       }
     }),
   )
@@ -194,4 +266,31 @@ export function buildEquipmentOverview(
   ]
 
   return { factoryId, counts, devices, alarms, repairs, reliability, pmTasks, inspections }
+}
+
+/** 设备详情（点击按需取）：与全景墙同源画像 + 全参数趋势 + 该设备的保养维修档案。 */
+export function buildDeviceDetail(
+  deviceId: string,
+  factoryId = 'F01',
+  workshopIds: string[] | 'all' = 'all',
+): DeviceDetail | null {
+  const ov = buildEquipmentOverview(factoryId, workshopIds)
+  const device = ov.devices.find((d) => d.id === deviceId)
+  if (!device) return null
+  const kind = deviceKind(device.name)
+  const wc = WORK_CENTERS.find((w) => w.lineId === device.lineId)
+  const manager = WORKSHOPS.find((w) => w.id === device.workshopId)?.managerName ?? '—'
+  // 单机可靠性：有故障样本（报警/停机中）才有值，否则 null 显「—」
+  const hasIssue = device.state === 'alarm' || device.state === 'down'
+  return {
+    device,
+    workCenterName: wc?.name ?? '—',
+    managerName: manager,
+    params: paramSeriesFor(kind, device.state),
+    repairs: ov.repairs.filter((r) => r.device === device.name),
+    pmTasks: ov.pmTasks.filter((t) => t.device === device.name),
+    inspections: ov.inspections.filter((i) => i.device === device.name),
+    mtbfHours: hasIssue ? clamp(jitter(52, 10), 24, 90) : null,
+    mttrMinutes: hasIssue ? clamp(jitter(45, 10), 20, 80) : null,
+  }
 }
