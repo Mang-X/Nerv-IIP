@@ -64,17 +64,29 @@ export interface OpenAlarmRow {
   status: string
 }
 
+/** 维修状态机阶段（现实衡量：状态流转 + 时间，非拍脑袋的百分比进度） */
+export const REPAIR_STAGES = ['已派工', '维修中', '待验证', '已关闭'] as const
+export type RepairStage = (typeof REPAIR_STAGES)[number]
+
 export interface RepairOrder {
   wo: string
   device: string
   issue: string
-  /** 0–100 */
-  progress: number
-  stage: string
-  /** 未关闭/超时 🟡 */
+  stage: RepairStage
+  /** 报修时刻 HH:mm */
+  reportedAt: string
+  /** 已历时（报修至今，分钟）🟡 */
+  elapsedMin: number
+  /** 预计完成 / SLA 文本，如「预计 17:30」「备件到货后 2h」 */
+  etaText: string
+  /** 阻塞原因（如 待备件 · 送风机轴承），维修中被卡时给出 */
+  blockedBy?: string
+  /** 超 SLA 🟡 */
   overdue: boolean
   /** 报警已恢复待确认 ✅ */
   awaitingConfirm: boolean
+  /** 维修责任人 */
+  assignee: string
 }
 
 export interface Reliability {

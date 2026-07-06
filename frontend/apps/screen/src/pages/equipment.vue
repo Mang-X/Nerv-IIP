@@ -4,7 +4,8 @@ import { computed, ref, watch } from 'vue'
 import { useAccessScope } from '@/access/useAccessScope'
 import DeviceDetailModal from '@/components/equipment/DeviceDetailModal.vue'
 import DeviceStatusWall from '@/components/equipment/DeviceStatusWall.vue'
-import type { DeviceCell, DeviceParamsTick, EquipmentOverview } from '@/data/contracts/equipment'
+import type { DeviceCell, DeviceParamsTick, EquipmentOverview, RepairOrder } from '@/data/contracts/equipment'
+import { REPAIR_STAGES } from '@/data/contracts/equipment'
 import { fetchDeviceParamsTick, fetchEquipmentOverview } from '@/data/fetchers/equipment'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 import { useScreenData } from '@/screen-kit'
@@ -78,6 +79,11 @@ function closeDetail() {
   tickStart()
 }
 
+/** 维修状态机当前阶段序号（步进器用） */
+function stageIdx(r: RepairOrder): number {
+  return REPAIR_STAGES.indexOf(r.stage)
+}
+
 // —— 可靠性四格（MTBF/MTTR 无样本 null → 「—」）——
 const relCells = computed(() => {
   const r = ov.value?.reliability
@@ -135,26 +141,33 @@ const relCells = computed(() => {
             </div>
           </ScreenPanel>
 
-          <ScreenPanel title="维修工单进度" class="repairs">
+          <ScreenPanel title="维修工单" class="repairs">
             <div class="rp-list sb-scroll">
               <div v-for="r in ov.repairs" :key="r.wo" class="rp-row">
                 <div class="rp-top">
                   <span class="rp-wo">{{ r.wo }}</span>
                   <span class="rp-dev">{{ r.device }} · {{ r.issue }}</span>
                   <StatusTag v-if="r.overdue" tone="red" label="超时" />
+                  <StatusTag v-else-if="r.blockedBy" tone="amber" label="待备件" />
                   <StatusTag v-else-if="r.awaitingConfirm" tone="cyan" label="待确认" />
-                  <StatusTag v-else-if="r.stage === '待备件'" tone="amber" label="待备件" />
-                  <span v-else class="rp-stage">{{ r.stage }}</span>
                 </div>
-                <div class="rp-bar-row">
-                  <div class="rp-bar">
+                <!-- 现实衡量：状态机步进 + 报修时刻/已历时/SLA + 责任人（非百分比进度） -->
+                <div class="rp-meta">
+                  <span class="rp-steps" :aria-label="`当前阶段 ${r.stage}`">
                     <i
-                      :class="{ overdue: r.overdue, done: r.progress >= 100 }"
-                      :style="{ width: `${r.progress}%` }"
+                      v-for="(s, i) in REPAIR_STAGES"
+                      :key="s"
+                      class="rp-step"
+                      :class="{ on: i <= stageIdx(r), cur: i === stageIdx(r), late: r.overdue && i === stageIdx(r) }"
+                      :title="s"
                     />
-                  </div>
-                  <b class="rp-pct">{{ r.progress }}%</b>
+                  </span>
+                  <b class="rp-stage" :class="{ late: r.overdue }">{{ r.stage }}</b>
+                  <span class="rp-time">报修 {{ r.reportedAt }} · 已 {{ r.elapsedMin }} min</span>
+                  <span class="rp-eta" :class="{ late: r.overdue }">{{ r.etaText }}</span>
+                  <span class="rp-assignee">{{ r.assignee }}</span>
                 </div>
+                <div v-if="r.blockedBy" class="rp-blocked">{{ r.blockedBy }}</div>
               </div>
             </div>
           </ScreenPanel>
@@ -335,44 +348,82 @@ const relCells = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.rp-stage {
-  font-size: 12.5px;
-  color: var(--sb-muted);
-  flex: none;
-}
-.rp-bar-row {
+/* 状态机步进器：达成点亮，当前点带光晕；超时当前点转红 */
+.rp-meta {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-top: 8px;
-}
-.rp-bar {
-  flex: 1;
-  height: 6px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.07);
-  overflow: hidden;
-}
-.rp-bar i {
-  display: block;
-  height: 100%;
-  border-radius: 3px;
-  background: var(--sb-cyan);
-  transition: width 0.6s var(--sb-ease-emphasized);
-}
-.rp-bar i.overdue {
-  background: var(--sb-red);
-}
-.rp-bar i.done {
-  background: var(--sb-green);
-}
-.rp-pct {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--sb-muted);
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  color: var(--sb-text);
-  width: 44px;
-  text-align: right;
+}
+.rp-steps {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+.rp-step {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  position: relative;
+}
+.rp-step + .rp-step {
+  margin-left: 15px;
+}
+.rp-step + .rp-step::before {
+  content: '';
+  position: absolute;
+  right: 10px;
+  top: 3px;
+  width: 12px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.rp-step.on {
+  background: var(--sb-cyan);
+}
+.rp-step.on + .rp-step.on::before {
+  background: var(--sb-cyan-dim);
+}
+.rp-step.cur {
+  box-shadow: 0 0 7px var(--sb-cyan-dim);
+}
+.rp-step.cur.late {
+  background: var(--sb-red);
+  box-shadow: 0 0 7px var(--sb-red);
+}
+.rp-stage {
+  font-weight: 600;
+  color: var(--sb-text-2);
+  flex: none;
+}
+.rp-stage.late {
+  color: var(--sb-red);
+}
+.rp-time {
+  flex: none;
+}
+.rp-eta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rp-eta.late {
+  color: var(--sb-red);
+}
+.rp-assignee {
+  flex: none;
+  color: var(--sb-text-2);
+}
+.rp-blocked {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--sb-amber);
 }
 
 .pm-list {

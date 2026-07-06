@@ -175,11 +175,13 @@ function leaveSpark() {
                     <span class="ddm-wo">{{ r.wo }}</span>
                     <span class="ddm-issue">{{ r.issue }}</span>
                     <StatusTag v-if="r.overdue" tone="red" label="超时" />
+                    <StatusTag v-else-if="r.blockedBy" tone="amber" label="待备件" />
                     <StatusTag v-else-if="r.awaitingConfirm" tone="cyan" label="待确认" />
                     <span v-else class="ddm-stage">{{ r.stage }}</span>
                   </div>
-                  <div class="ddm-bar">
-                    <i :class="{ overdue: r.overdue, done: r.progress >= 100 }" :style="{ width: `${r.progress}%` }" />
+                  <div class="ddm-repair-meta" :class="{ late: r.overdue }">
+                    {{ r.stage }} · 报修 {{ r.reportedAt }} · 已历时 {{ r.elapsedMin }} min · {{ r.etaText }} ·
+                    {{ r.assignee }}
                   </div>
                 </div>
               </div>
@@ -490,24 +492,14 @@ function leaveSpark() {
   font-size: 12px;
   color: var(--sb-muted);
 }
-.ddm-bar {
-  height: 5px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.07);
-  overflow: hidden;
-  margin-top: 7px;
+.ddm-repair-meta {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--sb-muted);
+  font-variant-numeric: tabular-nums;
 }
-.ddm-bar i {
-  display: block;
-  height: 100%;
-  border-radius: 3px;
-  background: var(--sb-cyan);
-}
-.ddm-bar i.overdue {
-  background: var(--sb-red);
-}
-.ddm-bar i.done {
-  background: var(--sb-green);
+.ddm-repair-meta.late {
+  color: var(--sb-red);
 }
 .ddm-list {
   margin-top: 4px;

@@ -249,7 +249,7 @@ function pick(d: DeviceCell) {
           <div v-if="tipDetail.repairs[0]" class="dsw-tip-repair">
             <span class="wo">{{ tipDetail.repairs[0].wo }}</span>
             <span class="txt">{{ tipDetail.repairs[0].issue }}</span>
-            <b>{{ tipDetail.repairs[0].progress }}%</b>
+            <b>{{ tipDetail.repairs[0].stage }} · {{ tipDetail.repairs[0].elapsedMin }}min</b>
           </div>
           <div v-if="tipDetail.pmTasks[0]" class="dsw-tip-pm">
             PM · {{ tipDetail.pmTasks[0].task }}

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { REPAIR_STAGES } from '@/data/contracts/equipment'
 import {
   buildDeviceDetail,
   buildEquipmentOverview,
@@ -39,13 +40,16 @@ describe('buildEquipmentOverview', () => {
       expect(s.counts.offline).toBeGreaterThan(0)
       // 报警行都已触发工单（闭环 ✅）
       for (const a of s.alarms) expect(a.wo).toMatch(/^WO-/)
-      // 维修单进度在界内，且存在 超时/待确认 两种演示态
+      // 维修单按状态机 + 时间衡量（非百分比）；存在 超时/待确认/待备件 三种演示态
       for (const r of s.repairs) {
-        expect(r.progress).toBeGreaterThanOrEqual(0)
-        expect(r.progress).toBeLessThanOrEqual(100)
+        expect(REPAIR_STAGES).toContain(r.stage)
+        expect(r.elapsedMin).toBeGreaterThan(0)
+        expect(r.reportedAt).toMatch(/^\d{2}:\d{2}$/)
+        expect(r.assignee).toBeTruthy()
       }
       expect(s.repairs.some((r) => r.overdue)).toBe(true)
       expect(s.repairs.some((r) => r.awaitingConfirm)).toBe(true)
+      expect(s.repairs.some((r) => r.blockedBy)).toBe(true)
       // 可靠性：F01 样本充足，MTBF/MTTR 有值
       expect(s.reliability.mtbfHours).not.toBeNull()
       expect(s.reliability.availability).toBeGreaterThanOrEqual(0)
