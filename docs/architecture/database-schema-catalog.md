@@ -532,13 +532,14 @@ Source:
 5. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/20260526022515_AddAppHubIntegrationEventDeadLetters.cs`
 6. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/20260609060902_AddAppHubConsumerInboxIdempotency.cs`
 7. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/20260624150915_UseIdempotencyKeyForProcessedIntegrationEvents.cs`
+8. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/20260706064319_AddConnectorHostHeartbeatLifecycle.cs`
 
 | Table | Kind | Purpose | Key relationships and indexes |
 | --- | --- | --- | --- |
 | `applications` | business | 应用目录聚合根，记录 organization/environment 范围内的应用键和显示名称。 | `Id` 为 Guid v7 强类型 ID；`OrganizationId + EnvironmentId + ApplicationKey` 唯一；级联拥有 `application_versions`。 |
 | `application_versions` | business | 应用版本子实体，记录一个应用已注册的版本号。 | `ApplicationId` 指向 `applications`；`ApplicationId + Version` 唯一。 |
 | `managed_nodes` | business | Connector host 或受管节点目录，记录节点键、名称和部署形态。 | `Id` 为 Guid v7 强类型 ID；`OrganizationId + EnvironmentId + NodeKey` 唯一。 |
-| `application_instances` | business | 应用实例聚合根，记录实例键、版本、节点、状态、健康和 connector 上报扩展信息。 | `InstanceKey` 唯一；`OrganizationId + EnvironmentId + ApplicationKey` 支持按应用查实例；拥有 heartbeat、状态历史和状态变化。 |
+| `application_instances` | business | 应用实例聚合根，记录实例键、版本、节点、状态、健康、Connector Host 归属和 connector 上报扩展信息。 | `InstanceKey` 唯一；`OrganizationId + EnvironmentId + ApplicationKey` 支持按应用查实例；`OrganizationId + EnvironmentId + ConnectorHostId` 支持按 Connector Host 扫描心跳生命周期；拥有 heartbeat、状态历史和状态变化。 |
 | `instance_heartbeat` | business | 应用实例最近一次心跳事实。 | `ApplicationInstanceId` 唯一，和 `application_instances` 一对一。 |
 | `instance_state_history` | business | 应用实例状态观测历史，用于状态追踪、诊断和后续告警分析。 | `ApplicationInstanceId + ObservedAtUtc` 支持按实例时间线查询。 |
 | `instance_status_changes` | business | 应用实例状态转换历史，记录 previous/current status 和变更时间。 | `ApplicationInstanceId + ChangedAtUtc` 支持按实例状态变更时间线查询。 |
