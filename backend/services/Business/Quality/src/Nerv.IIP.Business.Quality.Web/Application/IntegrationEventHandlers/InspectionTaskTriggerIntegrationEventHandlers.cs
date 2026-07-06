@@ -234,18 +234,9 @@ public sealed class MesFinishedGoodsReceiptRequestedIntegrationEventHandlerForCr
 
 internal static class InspectionTaskGeneration
 {
-    private static readonly HashSet<string> SkipStatuses = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "exempt",
-        "inspection-exempt",
-        "skip-inspection",
-        "sampling-skip",
-        "sampling-skipped",
-    };
-
     public static bool ShouldSkipInspection(string? qualityStatus)
     {
-        return !string.IsNullOrWhiteSpace(qualityStatus) && SkipStatuses.Contains(qualityStatus.Trim());
+        return WmsReceivingQualityStatuses.ShouldSkipInspection(qualityStatus);
     }
 
     public static async Task TryAddTaskAsync(
