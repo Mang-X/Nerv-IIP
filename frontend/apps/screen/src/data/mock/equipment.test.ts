@@ -78,11 +78,15 @@ describe('buildEquipmentOverview', () => {
     for (const i of s.inspections) expect(names.has(i.device)).toBe(true)
   })
 
-  it('档案数据量达到真实密度（F01：报警 ≥10、维修 ≥5、PM ≥4、点检 ≥6）', () => {
+  it('档案量符合「正常工厂日」画像：异常少量、台账留档（F01）', () => {
     const s = buildEquipmentOverview('F01')
-    expect(s.alarms.length).toBeGreaterThanOrEqual(10)
-    expect(s.repairs.length).toBeGreaterThanOrEqual(5)
+    // 异常是例外：未恢复报警/进行中维修各只有少量
+    expect(s.alarms.length).toBeGreaterThanOrEqual(4)
+    expect(s.alarms.length).toBeLessThanOrEqual(9)
+    expect(s.repairs.length).toBeGreaterThanOrEqual(3)
+    expect(s.repairs.length).toBeLessThanOrEqual(6)
     expect(s.pmTasks.length).toBeGreaterThanOrEqual(4)
+    // 点检台账（合格记录）保留在设备档案维度
     expect(s.inspections.length).toBeGreaterThanOrEqual(6)
   })
 

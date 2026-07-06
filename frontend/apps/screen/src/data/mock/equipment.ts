@@ -247,20 +247,12 @@ export function buildEquipmentOverview(
 
   // —— 未恢复报警表（级别·未恢复时长·已触发工单 ✅ 闭环；叙事 + 常规池）——
   const hasAlarm = counts.alarm > 0
+  // 正常工厂日的未恢复报警是少量例外（多了本身就是事故）——池子只放真 open 项
   const ALARM_POOL: { line: string; level: 'sev' | 'gen'; name: string; minsAgo: number; status: string }[] = [
-    { line: '焊装二线', level: 'sev', name: '激光焊接站 保护镜片污染', minsAgo: 96, status: `维修中 ${clamp(jitter(64, 10), 40, 90)} min` },
-    { line: '涂装线', level: 'gen', name: '流平烘干炉 烘房温度波动', minsAgo: 82, status: `观察中 ${clamp(jitter(12, 5), 5, 25)} min` },
     { line: '焊装一线', level: 'gen', name: '焊接机器人 R02 伺服过载预警', minsAgo: 108, status: '已确认 · 待处理' },
-    { line: '冲压二线', level: 'gen', name: '1000T 压机 模具寿命预警', minsAgo: 122, status: '计划换模' },
     { line: '电芯线', level: 'gen', name: '注液机 注液量偏差预警', minsAgo: 137, status: `观察中 ${clamp(jitter(30, 8), 15, 50)} min` },
-    { line: '总装二线', level: 'gen', name: 'AGV 牵引车 02 电量低于阈值', minsAgo: 150, status: '已恢复' },
     { line: '涂装线', level: 'gen', name: '空调送风机组 过滤网压差高', minsAgo: 166, status: '待保养' },
-    { line: '冲压一线', level: 'gen', name: '送料机器人 气源压力波动', minsAgo: 184, status: '已恢复' },
-    { line: '总装一线', level: 'gen', name: '下线检测台 相机标定漂移', minsAgo: 201, status: '待校准' },
-    { line: '电芯线', level: 'gen', name: '化成柜 A 温度均匀性偏差', minsAgo: 218, status: `观察中 ${clamp(jitter(40, 10), 20, 60)} min` },
-    { line: 'PACK 线', level: 'gen', name: '气密检测台 泄漏率临界', minsAgo: 232, status: '复测中' },
     { line: '机加线', level: 'gen', name: '加工中心 M01 刀具寿命预警', minsAgo: 240, status: '计划换刀' },
-    { line: '注塑一线', level: 'gen', name: '注塑机 1600T 料温偏高', minsAgo: 252, status: `观察中 ${clamp(jitter(18, 6), 8, 30)} min` },
   ]
   const alarms: OpenAlarmRow[] = [
     ...(hasAlarm
@@ -346,30 +338,6 @@ export function buildEquipmentOverview(
       overdue: false,
       awaitingConfirm: true,
       assignee: '马春生',
-    },
-    {
-      wo: 'WO-1912',
-      device: '涂胶机',
-      issue: '胶泵密封件更换',
-      stage: '维修中',
-      reportedAt: clock(74),
-      elapsedMin: clamp(jitter(74, 6), 60, 95),
-      etaText: '预计 16:50',
-      overdue: false,
-      awaitingConfirm: false,
-      assignee: '郑立波',
-    },
-    {
-      wo: 'WO-1907',
-      device: '焊接机器人 R02',
-      issue: '伺服电机异响排查',
-      stage: '维修中',
-      reportedAt: clock(58),
-      elapsedMin: clamp(jitter(58, 6), 45, 75),
-      etaText: '预计 17:10',
-      overdue: false,
-      awaitingConfirm: false,
-      assignee: '刘志远',
     },
     {
       wo: 'WO-1903',

@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { AlarmTable, RingGauge, ScreenPanel, ScreenSegmented, StatusTag } from '@nerv-iip/ui'
+import { RingGauge, ScreenPanel, ScreenSegmented, StatusLight, StatusTag } from '@nerv-iip/ui'
 import { computed, ref, watch } from 'vue'
 import { useAccessScope } from '@/access/useAccessScope'
 import DeviceDetailModal from '@/components/equipment/DeviceDetailModal.vue'
 import DeviceStatusWall from '@/components/equipment/DeviceStatusWall.vue'
-import type { DeviceCell, DeviceParamsTick, EquipmentOverview, RepairOrder } from '@/data/contracts/equipment'
-import { REPAIR_STAGES } from '@/data/contracts/equipment'
+import type { DeviceCell, DeviceParamsTick, EquipmentOverview } from '@/data/contracts/equipment'
 import { fetchDeviceParamsTick, fetchEquipmentOverview } from '@/data/fetchers/equipment'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 import { useScreenData } from '@/screen-kit'
@@ -79,10 +78,55 @@ function closeDetail() {
   tickStart()
 }
 
-/** 维修状态机当前阶段序号（步进器用） */
-function stageIdx(r: RepairOrder): number {
-  return REPAIR_STAGES.indexOf(r.stage)
+// —— 异常与待办：报警(open)/维修(进行中)/PM(到期) 合并事件流，严重度排序。
+//    正常工厂日应寥寥数条 —— 空即健康，空态显示「运行平稳」。 ——
+interface EventRow {
+  key: string
+  tone: 'red' | 'amber' | 'cyan'
+  time?: string
+  text: string
+  tag: string
+  late?: boolean
 }
+const events = computed<EventRow[]>(() => {
+  const s = ov.value
+  if (!s) return []
+  const out: EventRow[] = []
+  for (const a of s.alarms) {
+    if (a.status.startsWith('已恢复')) continue
+    out.push({
+      key: `al-${a.wo}-${a.name}`,
+      tone: a.level === 'sev' ? 'red' : 'amber',
+      time: a.time,
+      text: `${a.line} · ${a.name}`,
+      tag: a.status,
+      late: a.level === 'sev',
+    })
+  }
+  for (const r of s.repairs) {
+    if (r.stage === '已关闭') continue
+    out.push({
+      key: r.wo,
+      tone: r.overdue ? 'red' : r.blockedBy ? 'amber' : 'cyan',
+      time: r.reportedAt,
+      text: `${r.wo} · ${r.device} ${r.issue}`,
+      tag: r.overdue ? `已超期 · ${r.assignee}` : r.blockedBy ? '待备件' : `${r.stage} · ${r.assignee}`,
+      late: r.overdue,
+    })
+  }
+  for (const t of s.pmTasks) {
+    if (t.state === 'done') continue
+    out.push({
+      key: `pm-${t.device}-${t.task}`,
+      tone: t.state === 'overdue' ? 'amber' : 'cyan',
+      text: `PM · ${t.device} ${t.task}`,
+      tag: t.due,
+      late: t.state === 'overdue',
+    })
+  }
+  const rank = { red: 0, amber: 1, cyan: 2 }
+  return out.sort((a, b) => rank[a.tone] - rank[b.tone])
+})
 
 // —— 可靠性四格（MTBF/MTTR 无样本 null → 「—」）——
 const relCells = computed(() => {
@@ -101,37 +145,33 @@ const relCells = computed(() => {
   <ScreenLayout title="Nerv-IIP 设备监控大屏" :line="factoryName" screen="指挥中心大屏 02">
     <div v-if="ov" class="eq">
       <div class="main">
-        <!-- 左列：设备状态全景墙（无外壳，浮在舱底上）+ 未恢复报警表 -->
-        <div class="left">
-          <section class="wall-wrap">
-            <div class="sec-h">
-              <i class="sec-glyph" aria-hidden="true" />
-              <span class="sec-t">设备状态全景墙</span>
-              <span class="sec-rule" aria-hidden="true" />
-              <ScreenSegmented v-model="viewModel" :options="VIEW_OPTIONS" />
-            </div>
-            <DeviceStatusWall
-              :devices="devicesLive"
-              :counts="ov.counts"
-              :view="view"
-              :factory-id="scope.currentFactoryId"
-              :workshop-ids="scope.persona.workshopIds"
-              @select="openDevice"
-              @visible="(ids) => (visibleIds = ids)"
-            />
-          </section>
+        <!-- 主体：设备状态全景墙（视图焦点，占绝对主导） -->
+        <section class="wall-wrap">
+          <div class="sec-h">
+            <i class="sec-glyph" aria-hidden="true" />
+            <span class="sec-t">设备状态全景墙</span>
+            <span class="sec-rule" aria-hidden="true" />
+            <ScreenSegmented v-model="viewModel" :options="VIEW_OPTIONS" />
+          </div>
+          <DeviceStatusWall
+            :devices="devicesLive"
+            :counts="ov.counts"
+            :view="view"
+            :factory-id="scope.currentFactoryId"
+            :workshop-ids="scope.persona.workshopIds"
+            @select="openDevice"
+            @visible="(ids) => (visibleIds = ids)"
+          />
+        </section>
 
-          <AlarmTable title="未恢复报警" :rows="ov.alarms" more="" class="alarms" />
-        </div>
-
-        <!-- 右列：可靠性 / 维修工单进度 / 今日保养与点检 -->
+        <!-- 右窄栏：可靠性 + 异常与待办（正常日寥寥数条，空即健康） -->
         <div class="side">
-          <ScreenPanel title="可靠性 · 时间稼动率">
+          <ScreenPanel title="可靠性">
             <template #extra>
-              <StatusTag tone="amber" label="≈ 可用率 · 非完整 OEE" />
+              <StatusTag tone="amber" label="≈ 可用率 · 待 #570" />
             </template>
             <div class="rel">
-              <RingGauge :value="ov.reliability.availability" label="时间稼动率" :size="118" />
+              <RingGauge :value="ov.reliability.availability" label="时间稼动率" :size="104" />
               <dl class="rel-grid">
                 <div v-for="c in relCells" :key="c.label">
                   <dt>{{ c.label }}</dt>
@@ -141,55 +181,25 @@ const relCells = computed(() => {
             </div>
           </ScreenPanel>
 
-          <ScreenPanel title="维修工单" class="repairs">
-            <div class="rp-list sb-scroll">
-              <div v-for="r in ov.repairs" :key="r.wo" class="rp-row">
-                <div class="rp-top">
-                  <span class="rp-wo">{{ r.wo }}</span>
-                  <span class="rp-dev">{{ r.device }} · {{ r.issue }}</span>
-                  <StatusTag v-if="r.overdue" tone="red" label="超时" />
-                  <StatusTag v-else-if="r.blockedBy" tone="amber" label="待备件" />
-                  <StatusTag v-else-if="r.awaitingConfirm" tone="cyan" label="待确认" />
-                </div>
-                <!-- 现实衡量：状态机步进 + 报修时刻/已历时/SLA + 责任人（非百分比进度） -->
-                <div class="rp-meta">
-                  <span class="rp-steps" :aria-label="`当前阶段 ${r.stage}`">
-                    <i
-                      v-for="(s, i) in REPAIR_STAGES"
-                      :key="s"
-                      class="rp-step"
-                      :class="{ on: i <= stageIdx(r), cur: i === stageIdx(r), late: r.overdue && i === stageIdx(r) }"
-                      :title="s"
-                    />
-                  </span>
-                  <b class="rp-stage" :class="{ late: r.overdue }">{{ r.stage }}</b>
-                  <span class="rp-time">报修 {{ r.reportedAt }} · 已 {{ r.elapsedMin }} min</span>
-                  <span class="rp-eta" :class="{ late: r.overdue }">{{ r.etaText }}</span>
-                  <span class="rp-assignee">{{ r.assignee }}</span>
-                </div>
-                <div v-if="r.blockedBy" class="rp-blocked">{{ r.blockedBy }}</div>
+          <ScreenPanel title="异常与待办" class="events">
+            <template #extra>
+              <span class="ev-count" :class="{ calm: events.length === 0 }">
+                {{ events.length === 0 ? '全部正常' : `${events.length} 项` }}
+              </span>
+            </template>
+            <div class="ev-list sb-scroll">
+              <div v-for="e in events" :key="e.key" class="ev-row">
+                <i class="ev-dot" :class="e.tone" />
+                <span v-if="e.time" class="ev-time">{{ e.time }}</span>
+                <span class="ev-txt">{{ e.text }}</span>
+                <span class="ev-tag" :class="{ late: e.late }">{{ e.tag }}</span>
+              </div>
+              <div v-if="events.length === 0" class="ev-empty">
+                <StatusLight tone="run" label="设备运行平稳" />
+                <p>无未恢复报警 · 无进行中维修 · 无到期保养</p>
               </div>
             </div>
-          </ScreenPanel>
-
-          <ScreenPanel title="今日保养与点检" class="pm">
-            <div class="pm-scroll sb-scroll">
-              <div class="pm-list">
-                <div v-for="t in ov.pmTasks" :key="t.device + t.task" class="pm-row">
-                  <span class="pm-dev">{{ t.device }}</span>
-                  <span class="pm-task">{{ t.task }}</span>
-                  <span class="pm-due" :class="t.state">{{ t.due }}</span>
-                </div>
-              </div>
-              <div class="insp-list">
-                <div v-for="i in ov.inspections" :key="i.time + i.device" class="insp-row">
-                  <span class="insp-time">{{ i.time }}</span>
-                  <span class="insp-txt">{{ i.device }} · {{ i.item }} · {{ i.by }}</span>
-                  <span class="insp-res" :class="{ bad: i.result === '异常' }">{{ i.result }}</span>
-                </div>
-              </div>
-            </div>
-            <p class="pm-note">停机帕累托 · 备件库存联动 · PM 达成率 / 点检完成率 · 待 #570</p>
+            <p class="ev-note">点检台账与维修历史见设备详情 · 帕累托/备件联动 待 #570</p>
           </ScreenPanel>
         </div>
       </div>
@@ -222,25 +232,13 @@ const relCells = computed(() => {
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-columns: 1.55fr 1fr;
+  grid-template-columns: 2.7fr 1fr;
   gap: 16px;
-}
-.left {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-height: 0;
 }
 .wall-wrap {
-  flex: 1.25;
   display: flex;
   flex-direction: column;
   min-height: 0;
-}
-.alarms {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
 }
 
 /* 区块标题（无外壳区域用）：与 ScreenPanel 标题同款语言 */
@@ -275,217 +273,88 @@ const relCells = computed(() => {
   background: linear-gradient(90deg, rgba(135, 208, 255, 0.28), rgba(255, 255, 255, 0.05) 45%, transparent);
 }
 
-/* —— 右列 —— */
+/* —— 右窄栏 —— */
 .side {
   display: grid;
-  grid-template-rows: auto 1fr 1fr;
+  grid-template-rows: auto 1fr;
   gap: 16px;
   min-height: 0;
 }
 .rel {
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 16px;
 }
 .rel-grid {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px 10px;
+  gap: 10px 8px;
   margin: 0;
 }
 .rel-grid dt {
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--sb-muted);
 }
 .rel-grid dd {
-  margin: 4px 0 0;
-  font-size: 24px;
+  margin: 3px 0 0;
+  font-size: 21px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--sb-text);
 }
 
-.repairs,
-.pm {
+/* 异常与待办：合并事件流（报警/维修/PM），空即健康 */
+.events {
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-.rp-list {
+.ev-count {
+  font-size: 13px;
+  color: var(--sb-amber);
+  font-variant-numeric: tabular-nums;
+}
+.ev-count.calm {
+  color: var(--sb-green);
+}
+.ev-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
   padding-right: 4px;
 }
-.rp-row + .rp-row {
-  border-top: 1px solid var(--sb-divider);
-  padding-top: 9px;
-}
-.rp-row {
-  padding-bottom: 9px;
-}
-.rp-top {
+.ev-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.rp-wo {
-  font-family: ui-monospace, monospace;
+  gap: 9px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--sb-divider);
   font-size: 13px;
-  color: var(--sb-cyan);
-  flex: none;
 }
-.rp-dev {
-  flex: 1;
-  min-width: 0;
-  font-size: 13.5px;
-  color: var(--sb-text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* 状态机步进器：达成点亮，当前点带光晕；超时当前点转红 */
-.rp-meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-  font-size: 12.5px;
-  color: var(--sb-muted);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.rp-steps {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-}
-.rp-step {
-  width: 7px;
-  height: 7px;
+.ev-dot {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.14);
-  position: relative;
+  flex: none;
 }
-.rp-step + .rp-step {
-  margin-left: 15px;
-}
-.rp-step + .rp-step::before {
-  content: '';
-  position: absolute;
-  right: 10px;
-  top: 3px;
-  width: 12px;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.14);
-}
-.rp-step.on {
-  background: var(--sb-cyan);
-}
-.rp-step.on + .rp-step.on::before {
-  background: var(--sb-cyan-dim);
-}
-.rp-step.cur {
-  box-shadow: 0 0 7px var(--sb-cyan-dim);
-}
-.rp-step.cur.late {
+.ev-dot.red {
   background: var(--sb-red);
   box-shadow: 0 0 7px var(--sb-red);
 }
-.rp-stage {
-  font-weight: 600;
-  color: var(--sb-text-2);
+.ev-dot.amber {
+  background: var(--sb-amber);
+  box-shadow: 0 0 7px var(--sb-amber);
+}
+.ev-dot.cyan {
+  background: var(--sb-cyan);
+}
+.ev-time {
   flex: none;
-}
-.rp-stage.late {
-  color: var(--sb-red);
-}
-.rp-time {
-  flex: none;
-}
-.rp-eta {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rp-eta.late {
-  color: var(--sb-red);
-}
-.rp-assignee {
-  flex: none;
-  color: var(--sb-text-2);
-}
-.rp-blocked {
-  margin-top: 5px;
-  font-size: 12px;
-  color: var(--sb-amber);
-}
-
-.pm-list {
-  display: flex;
-  flex-direction: column;
-}
-.pm-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 2px;
-  border-bottom: 1px solid var(--sb-divider);
-  font-size: 13.5px;
-}
-.pm-dev {
-  color: var(--sb-text-2);
-  flex: none;
-}
-.pm-task {
-  flex: 1;
-  min-width: 0;
   color: var(--sb-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.pm-due {
-  flex: none;
   font-variant-numeric: tabular-nums;
-  color: var(--sb-amber);
 }
-.pm-due.overdue {
-  color: var(--sb-red);
-}
-.pm-due.done {
-  color: var(--sb-green);
-}
-.pm-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-.insp-list {
-  display: flex;
-  flex-direction: column;
-  margin-top: 4px;
-}
-.insp-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 2px;
-  border-bottom: 1px solid var(--sb-divider);
-  font-size: 13px;
-}
-.insp-time {
-  font-variant-numeric: tabular-nums;
-  color: var(--sb-muted);
-  flex: none;
-}
-.insp-txt {
+.ev-txt {
   flex: 1;
   min-width: 0;
   color: var(--sb-text-2);
@@ -493,14 +362,32 @@ const relCells = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.insp-res {
+.ev-tag {
   flex: none;
-  color: var(--sb-green);
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sb-muted);
+  font-variant-numeric: tabular-nums;
 }
-.insp-res.bad {
+.ev-tag.late {
   color: var(--sb-red);
 }
-.pm-note {
+.ev-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.ev-empty p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--sb-muted);
+}
+.ev-note {
   margin: 8px 0 0;
   font-size: 12px;
   color: var(--sb-faint);
