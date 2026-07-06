@@ -341,14 +341,14 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             .Where(x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
                 && x.DeviceAssetId == request.DeviceAssetId
-                && x.Status == "raised")
+                && x.Status != "cleared")
             .ToListAsync(cancellationToken);
         var activeAlarms = activePersistedAlarms
             .Concat(dbContext.AlarmEvents.Local
                 .Where(x => x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId
                     && x.DeviceAssetId == request.DeviceAssetId
-                    && x.Status == "raised"))
+                    && x.Status != "cleared"))
             .DistinctBy(x => x.Id)
             .Where(alarm => ruleCodes.Any(ruleCode => IsAlarmForRule(alarm, ruleCode)))
             .ToArray();
@@ -714,7 +714,7 @@ public sealed class RaiseAlarmCommandHandler(ApplicationDbContext dbContext)
                 && x.DeviceAssetId == request.DeviceAssetId
                 && x.AlarmCode == request.AlarmCode
                 && x.ExternalAlarmId == request.ExternalAlarmId
-                && x.Status == "raised",
+                && x.Status != "cleared",
             cancellationToken);
         if (existing is not null)
         {
@@ -729,7 +729,7 @@ public sealed class RaiseAlarmCommandHandler(ApplicationDbContext dbContext)
                     && x.DeviceAssetId == request.DeviceAssetId
                     && x.TagKey == incoming.TagKey
                     && x.ExternalAlarmId == request.ExternalAlarmId
-                    && x.Status == "raised",
+                    && x.Status != "cleared",
                 cancellationToken);
             if (existing is not null)
             {
@@ -807,5 +807,204 @@ public sealed class ClearAlarmCommandHandler(ApplicationDbContext dbContext)
         }
 
         return alarm.Id;
+    }
+}
+
+public sealed record AcknowledgeAlarmCommand(
+    AlarmEventId AlarmEventId,
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset AcknowledgedAtUtc,
+    string AcknowledgedBy) : ICommand<AlarmEventId>;
+
+public sealed class AcknowledgeAlarmCommandValidator : AbstractValidator<AcknowledgeAlarmCommand>
+{
+    public AcknowledgeAlarmCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AcknowledgedBy).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class AcknowledgeAlarmCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<AcknowledgeAlarmCommand, AlarmEventId>
+{
+    public async Task<AlarmEventId> Handle(AcknowledgeAlarmCommand request, CancellationToken cancellationToken)
+    {
+        var alarm = await LoadAlarmAsync(dbContext, request.AlarmEventId, request.OrganizationId, request.EnvironmentId, cancellationToken);
+        try
+        {
+            alarm.Acknowledge(request.AcknowledgedAtUtc, request.AcknowledgedBy);
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
+
+        return alarm.Id;
+    }
+
+    internal static async Task<AlarmEvent> LoadAlarmAsync(
+        ApplicationDbContext dbContext,
+        AlarmEventId alarmEventId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.AlarmEvents.SingleOrDefaultAsync(
+            x => x.Id == alarmEventId
+                && x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId,
+            cancellationToken)
+            ?? throw new KnownException($"Alarm event was not found: {alarmEventId.Id:D}");
+    }
+}
+
+public sealed record ShelveAlarmCommand(
+    AlarmEventId AlarmEventId,
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset ShelvedAtUtc,
+    int DurationMinutes,
+    string ShelvedBy,
+    string? Reason) : ICommand<AlarmEventId>;
+
+public sealed class ShelveAlarmCommandValidator : AbstractValidator<ShelveAlarmCommand>
+{
+    public ShelveAlarmCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DurationMinutes).InclusiveBetween(1, 24 * 60);
+        RuleFor(x => x.ShelvedBy).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Reason).MaximumLength(300);
+    }
+}
+
+public sealed class ShelveAlarmCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<ShelveAlarmCommand, AlarmEventId>
+{
+    public async Task<AlarmEventId> Handle(ShelveAlarmCommand request, CancellationToken cancellationToken)
+    {
+        var alarm = await AcknowledgeAlarmCommandHandler.LoadAlarmAsync(dbContext, request.AlarmEventId, request.OrganizationId, request.EnvironmentId, cancellationToken);
+        try
+        {
+            alarm.Shelve(
+                request.ShelvedAtUtc,
+                request.ShelvedAtUtc.AddMinutes(request.DurationMinutes),
+                request.ShelvedBy,
+                request.Reason);
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
+
+        return alarm.Id;
+    }
+}
+
+public sealed record UnshelveAlarmCommand(
+    AlarmEventId AlarmEventId,
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset UnshelvedAtUtc) : ICommand<AlarmEventId>;
+
+public sealed class UnshelveAlarmCommandValidator : AbstractValidator<UnshelveAlarmCommand>
+{
+    public UnshelveAlarmCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class UnshelveAlarmCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<UnshelveAlarmCommand, AlarmEventId>
+{
+    public async Task<AlarmEventId> Handle(UnshelveAlarmCommand request, CancellationToken cancellationToken)
+    {
+        var alarm = await AcknowledgeAlarmCommandHandler.LoadAlarmAsync(dbContext, request.AlarmEventId, request.OrganizationId, request.EnvironmentId, cancellationToken);
+        alarm.Unshelve(request.UnshelvedAtUtc);
+        return alarm.Id;
+    }
+}
+
+public sealed record RunAlarmEscalationsCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset AsOfUtc,
+    int UnacknowledgedTimeoutMinutes,
+    IReadOnlyCollection<string> SeverityLevels,
+    IReadOnlyCollection<string> RecipientRefs,
+    int MaxAlarms = 500) : ICommand<RunAlarmEscalationsResult>;
+
+public sealed record RunAlarmEscalationsResult(int EscalatedCount, IReadOnlyCollection<AlarmEventId> AlarmEventIds);
+
+public sealed class RunAlarmEscalationsCommandValidator : AbstractValidator<RunAlarmEscalationsCommand>
+{
+    public RunAlarmEscalationsCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.UnacknowledgedTimeoutMinutes).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.RecipientRefs).NotEmpty();
+        RuleForEach(x => x.RecipientRefs).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.MaxAlarms).InclusiveBetween(1, 5000);
+    }
+}
+
+public sealed class RunAlarmEscalationsCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<RunAlarmEscalationsCommand, RunAlarmEscalationsResult>
+{
+    public async Task<RunAlarmEscalationsResult> Handle(RunAlarmEscalationsCommand request, CancellationToken cancellationToken)
+    {
+        var alarms = await dbContext.AlarmEvents
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.Status != "cleared")
+            .OrderBy(x => x.RaisedAtUtc)
+            .Take(request.MaxAlarms)
+            .ToArrayAsync(cancellationToken);
+        var escalated = new List<AlarmEventId>();
+        var timeout = TimeSpan.FromMinutes(request.UnacknowledgedTimeoutMinutes);
+        var severityLevels = Normalize(request.SeverityLevels);
+        var recipientRefs = Normalize(request.RecipientRefs);
+        foreach (var alarm in alarms)
+        {
+            alarm.ExpireShelving(request.AsOfUtc);
+            if (!alarm.ShouldEscalateAt(request.AsOfUtc, timeout, severityLevels))
+            {
+                continue;
+            }
+
+            var reason = severityLevels.Any(level =>
+                string.Equals(level, alarm.Severity, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(level, alarm.Priority, StringComparison.OrdinalIgnoreCase))
+                ? "severity"
+                : "unacknowledged-timeout";
+            alarm.Escalate(request.AsOfUtc, reason, recipientRefs);
+            escalated.Add(alarm.Id);
+        }
+
+        return new RunAlarmEscalationsResult(escalated.Count, escalated);
+    }
+
+    private static IReadOnlyCollection<string> Normalize(IReadOnlyCollection<string> values)
+    {
+        return values
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 }

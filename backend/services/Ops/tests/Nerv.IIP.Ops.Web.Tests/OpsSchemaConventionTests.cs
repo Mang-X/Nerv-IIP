@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Infrastructure.Migrations;
 using Nerv.IIP.Testing.EntityFramework;
@@ -21,12 +22,14 @@ public sealed class OpsSchemaConventionTests
             typeof(OperationTask),
             typeof(OperationAttempt),
             typeof(AuditRecord),
+            typeof(OperationTemplate),
         };
 
         var jsonColumns = new[]
         {
             new JsonColumnRule(typeof(OperationTask), nameof(OperationTask.ParametersJson)),
             new JsonColumnRule(typeof(OperationAttempt), nameof(OperationAttempt.FailureJson)),
+            new JsonColumnRule(typeof(OperationTemplate), nameof(OperationTemplate.ParameterSchemaJson)),
         };
 
         var stringKeys = new[]
@@ -34,6 +37,7 @@ public sealed class OpsSchemaConventionTests
             new StringKeyRule(typeof(OperationTask), nameof(OperationTask.Id)),
             new StringKeyRule(typeof(OperationAttempt), nameof(OperationAttempt.Id)),
             new StringKeyRule(typeof(AuditRecord), nameof(AuditRecord.Id)),
+            new StringKeyRule(typeof(OperationTemplate), nameof(OperationTemplate.Id)),
         };
 
         var failures = new List<string>();

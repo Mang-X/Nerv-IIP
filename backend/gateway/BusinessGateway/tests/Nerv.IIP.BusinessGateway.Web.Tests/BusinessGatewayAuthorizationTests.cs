@@ -907,6 +907,9 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/devices/DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/availability?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/alarms", BusinessGatewayPermissions.IiotAlarmsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/equipment/alarms/alarm-001/acknowledge", BusinessGatewayPermissions.IiotAlarmsWrite);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/equipment/alarms/alarm-001/shelve", BusinessGatewayPermissions.IiotAlarmsWrite);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/equipment/alarms/alarm-001/unshelve", BusinessGatewayPermissions.IiotAlarmsWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/tags?deviceAssetId=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/alarm-rules?deviceAssetId=DEV-OIL-01", BusinessGatewayPermissions.IiotAlarmsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/samples", BusinessGatewayPermissions.IiotTelemetryWrite);

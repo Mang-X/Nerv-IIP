@@ -80,6 +80,37 @@ public sealed class IndustrialTelemetryAlarmNotificationConsumerTests
     }
 
     [Fact]
+    public async Task Handle_alarm_escalated_creates_critical_task_for_payload_recipients()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+        var integrationEvent = CreateAlarmEscalatedEvent(
+            "event-alarm-escalated",
+            "industrial-alarm-escalated:external-alarm-001");
+
+        await HandleEscalatedAsync(factory, integrationEvent);
+        await HandleEscalatedAsync(factory, integrationEvent);
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+        var processed = await dbContext.ProcessedIntegrationEvents.SingleAsync();
+
+        Assert.Equal(IndustrialTelemetryIntegrationEventTypes.AlarmEscalated, intent.SourceEventType);
+        Assert.Equal(NotificationIntentTypes.Task, intent.IntentType);
+        Assert.Equal(NotificationContractConstants.SeverityCritical, intent.Severity);
+        Assert.Equal("industrial-telemetry-alarm", intent.ResourceType);
+        Assert.Equal("external-alarm-001", intent.ResourceId);
+        Assert.Equal(["role:maintenance-manager", "user:lead-001"], intent.Messages.Select(x => x.RecipientRef).Order(StringComparer.Ordinal).ToArray());
+        Assert.Equal(2, intent.Tasks.Count);
+        Assert.Contains("escalated by critical-severity", intent.Summary, StringComparison.Ordinal);
+        Assert.Equal(AlarmEscalatedIntegrationEventHandlerForNotification.ConsumerName, processed.ConsumerName);
+        Assert.Equal("industrial-alarm-escalated:external-alarm-001", processed.IdempotencyKey);
+    }
+
+    [Fact]
     public async Task Handle_same_alarm_raised_event_twice_does_not_create_duplicate_notification()
     {
         using var factory = new NotificationConsumerWebApplicationFactory();
@@ -199,6 +230,16 @@ public sealed class IndustrialTelemetryAlarmNotificationConsumerTests
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
     }
 
+    private static async Task HandleEscalatedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        AlarmEscalatedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<AlarmEscalatedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<AlarmEscalatedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
     private static AlarmRaisedIntegrationEvent CreateAlarmRaisedEvent(
         string eventId,
         string idempotencyKey,
@@ -257,6 +298,36 @@ public sealed class IndustrialTelemetryAlarmNotificationConsumerTests
                 RaisedAtUtc: DateTimeOffset.Parse("2026-07-03T08:00:00Z"),
                 ClearedAtUtc: DateTimeOffset.Parse("2026-07-03T08:05:00Z"),
                 ExternalAlarmId: "external-alarm-001"));
+    }
+
+    private static AlarmEscalatedIntegrationEvent CreateAlarmEscalatedEvent(
+        string eventId,
+        string idempotencyKey,
+        string alarmEventId = "alarm-event-001")
+    {
+        return new AlarmEscalatedIntegrationEvent(
+            EventId: eventId,
+            EventType: IndustrialTelemetryIntegrationEventTypes.AlarmEscalated,
+            EventVersion: IndustrialTelemetryIntegrationEventVersions.V1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-07-03T08:30:00Z"),
+            SourceService: IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
+            CorrelationId: $"corr-{eventId}",
+            CausationId: alarmEventId,
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "system:industrial-telemetry",
+            IdempotencyKey: idempotencyKey,
+            Payload: new AlarmEscalatedPayload(
+                AlarmEventId: alarmEventId,
+                DeviceAssetId: "asset-001",
+                AlarmCode: "HI_TEMP",
+                Severity: "critical",
+                RaisedAtUtc: DateTimeOffset.Parse("2026-07-03T08:00:00Z"),
+                EscalatedAtUtc: DateTimeOffset.Parse("2026-07-03T08:30:00Z"),
+                ExternalAlarmId: "external-alarm-001",
+                EscalationReason: "critical-severity",
+                RecipientRefs: ["role:maintenance-manager", "user:lead-001"],
+                Priority: "p1"));
     }
 
     private sealed class NotificationConsumerWebApplicationFactory(IReadOnlyDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>
