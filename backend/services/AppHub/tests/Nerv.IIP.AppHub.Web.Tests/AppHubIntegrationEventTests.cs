@@ -10,6 +10,7 @@ using Nerv.IIP.AppHub.Infrastructure;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Messaging.CAP;
@@ -55,6 +56,87 @@ public sealed class AppHubIntegrationEventTests
         Assert.Equal("starting", integrationEvent.Payload.PreviousStatus);
         Assert.Equal("running", integrationEvent.Payload.CurrentStatus);
         Assert.Equal(DateTimeOffset.Parse("2026-05-15T00:00:10Z"), integrationEvent.Payload.ChangedAtUtc);
+    }
+
+    [Fact]
+    public void Connector_host_unreachable_and_restored_converters_map_heartbeat_lifecycle_events()
+    {
+        var unreachableConverter = new ConnectorHostUnreachableIntegrationEventConverter();
+        var restoredConverter = new ConnectorHostRestoredIntegrationEventConverter();
+        var unreachableDomainEvent = new ConnectorHostUnreachableDomainEvent(
+            "org-001",
+            "env-dev",
+            "connector-host-001",
+            "demo-api-001",
+            DateTimeOffset.Parse("2026-07-06T01:00:00Z"),
+            DateTimeOffset.Parse("2026-07-06T01:06:00Z"),
+            TimeSpan.FromMinutes(5));
+        var restoredDomainEvent = new ConnectorHostRestoredDomainEvent(
+            "org-001",
+            "env-dev",
+            "connector-host-001",
+            "demo-api-001",
+            DateTimeOffset.Parse("2026-07-06T01:08:00Z"));
+
+        var unreachable = unreachableConverter.Convert(unreachableDomainEvent);
+        var restored = restoredConverter.Convert(restoredDomainEvent);
+
+        Assert.Equal(AppHubIntegrationEventTypes.ConnectorHostUnreachable, unreachable.EventType);
+        Assert.Equal(AppHubIntegrationEventSources.AppHub, unreachable.SourceService);
+        Assert.Equal("org-001", unreachable.OrganizationId);
+        Assert.Equal("env-dev", unreachable.EnvironmentId);
+        Assert.Equal("connector-host-001", unreachable.Payload.ConnectorHostId);
+        Assert.Equal("demo-api-001", unreachable.Payload.InstanceKey);
+        Assert.Equal(300, unreachable.Payload.HeartbeatTimeoutSeconds);
+        Assert.Equal("apphub:connector-host-unreachable:org-001:env-dev:connector-host-001:demo-api-001:2026-07-06T01:06:00.0000000+00:00", unreachable.IdempotencyKey);
+
+        Assert.Equal(AppHubIntegrationEventTypes.ConnectorHostRestored, restored.EventType);
+        Assert.Equal("connector-host-001", restored.Payload.ConnectorHostId);
+        Assert.Equal("demo-api-001", restored.Payload.InstanceKey);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-06T01:08:00Z"), restored.Payload.RestoredAtUtc);
+    }
+
+    [Fact]
+    public async Task Heartbeat_timeout_scan_marks_stale_instance_unreachable_once()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"apphub-heartbeat-scan-{Guid.CreateVersion7():N}", databaseRoot);
+        await using var dbContext = CreateDbContext(options);
+        var instance = new ApplicationInstance(
+            "org-001",
+            "env-dev",
+            "connector-host-001",
+            "demo-api",
+            "1.0.0",
+            "node-001",
+            "demo-api-001",
+            "demo-api",
+            new Dictionary<string, string>(),
+            [new CapabilityDescriptor("lifecycle.restart", "1.0", "lifecycle", ["restart"], new Dictionary<string, string>())]);
+        instance.RecordHeartbeat(DateTimeOffset.Parse("2026-07-06T01:00:00Z"), true, 12);
+        dbContext.ApplicationInstances.Add(instance);
+        await dbContext.SaveChangesAsync();
+        instance.ClearDomainEvents();
+        var scanner = new AppHubHeartbeatTimeoutScanner(dbContext);
+
+        var first = await scanner.ScanAsync(
+            DateTimeOffset.Parse("2026-07-06T01:06:00Z"),
+            TimeSpan.FromMinutes(5),
+            take: 10,
+            CancellationToken.None);
+        var second = await scanner.ScanAsync(
+            DateTimeOffset.Parse("2026-07-06T01:07:00Z"),
+            TimeSpan.FromMinutes(5),
+            take: 10,
+            CancellationToken.None);
+
+        Assert.Equal(1, first.MarkedUnreachableCount);
+        Assert.Equal(0, second.MarkedUnreachableCount);
+        var persisted = await dbContext.ApplicationInstances
+            .Include(x => x.Heartbeat)
+            .SingleAsync(x => x.InstanceKey == "demo-api-001");
+        Assert.NotNull(persisted.Heartbeat);
+        Assert.False(persisted.Heartbeat.Reachable);
     }
 
     [Fact]

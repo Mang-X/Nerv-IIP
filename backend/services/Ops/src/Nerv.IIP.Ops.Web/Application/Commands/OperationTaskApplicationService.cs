@@ -334,9 +334,10 @@ public sealed class EfOperationTaskApplicationService(
             return template.ToSnapshot();
         }
 
-        if (string.Equals(operationCode, BuiltInOperationTemplates.LifecycleRestart.OperationCode, StringComparison.Ordinal))
+        var builtIn = BuiltInOperationTemplates.Find(operationCode);
+        if (builtIn is not null)
         {
-            return BuiltInOperationTemplates.LifecycleRestart;
+            return builtIn;
         }
 
         throw new InvalidOperationTaskRequestException($"Unsupported operation code: {operationCode}");
@@ -438,4 +439,76 @@ internal static class BuiltInOperationTemplates
         DefaultMaxAttempts: 3,
         DefaultLeaseDurationSeconds: 300,
         RequiresApproval: false);
+
+    public static readonly OperationTemplateSnapshot DeviceControlCommand = new(
+        "device.control.command",
+        Enabled: true,
+        DefaultMaxAttempts: 1,
+        DefaultLeaseDurationSeconds: 300,
+        RequiresApproval: true);
+
+    public static readonly OperationTemplateSnapshot ConfigReload = new(
+        "config.reload",
+        Enabled: true,
+        DefaultMaxAttempts: 3,
+        DefaultLeaseDurationSeconds: 300,
+        RequiresApproval: false);
+
+    public static readonly IReadOnlyList<OperationTemplateResponse> Responses =
+    [
+        Response(
+            "opt-lifecycle-restart",
+            "lifecycle.restart",
+            "Lifecycle restart",
+            "low",
+            LifecycleRestart),
+        Response(
+            "opt-device-control-command",
+            "device.control.command",
+            "Device control command",
+            "critical",
+            DeviceControlCommand),
+        Response(
+            "opt-config-reload",
+            "config.reload",
+            "Configuration reload",
+            "medium",
+            ConfigReload)
+    ];
+
+    public static OperationTemplateSnapshot? Find(string operationCode)
+    {
+        return string.IsNullOrWhiteSpace(operationCode)
+            ? null
+            : All.FirstOrDefault(x => string.Equals(x.OperationCode, operationCode.Trim(), StringComparison.Ordinal));
+    }
+
+    private static readonly IReadOnlyList<OperationTemplateSnapshot> All =
+    [
+        LifecycleRestart,
+        DeviceControlCommand,
+        ConfigReload
+    ];
+
+    private static OperationTemplateResponse Response(
+        string templateId,
+        string operationCode,
+        string displayName,
+        string riskLevel,
+        OperationTemplateSnapshot snapshot)
+    {
+        var now = DateTimeOffset.Parse("2026-05-21T00:00:00Z");
+        return new OperationTemplateResponse(
+            templateId,
+            operationCode,
+            displayName,
+            "{}",
+            riskLevel,
+            snapshot.DefaultMaxAttempts,
+            snapshot.DefaultLeaseDurationSeconds,
+            snapshot.RequiresApproval,
+            snapshot.Enabled,
+            now,
+            now);
+    }
 }
