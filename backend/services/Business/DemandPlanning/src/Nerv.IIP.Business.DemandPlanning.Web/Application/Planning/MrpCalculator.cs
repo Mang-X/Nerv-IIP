@@ -332,6 +332,8 @@ public static class MrpCalculator
             }
         }
 
+        ProtectSafetyStockWithRemainingReceipts(planningParameters, availability, scheduledReceipts);
+
         suggestions.AddRange(scheduledReceipts
             .SelectMany(x => x.Value.Select(y => new { Key = x.Key, Receipt = y }))
             .Where(x => x.Receipt.RemainingQuantity > 0)
@@ -624,6 +626,51 @@ public static class MrpCalculator
                     x.Quantity,
                     x.ReasonCode!))
                 .ToArray());
+    }
+
+    private static void ProtectSafetyStockWithRemainingReceipts(
+        IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters,
+        IDictionary<ItemKey, InventoryAvailabilityState> availability,
+        IReadOnlyDictionary<ItemKey, List<ScheduledReceiptState>> scheduledReceipts)
+    {
+        foreach (var (key, receipts) in scheduledReceipts.OrderBy(x => x.Key.SkuCode, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!planningParameters.TryGetValue(SkuSiteKey.Create(key.SkuCode, key.SiteCode), out var parameter)
+                || parameter.SafetyStockQuantity <= 0m)
+            {
+                continue;
+            }
+
+            var availableQuantity = availability.TryGetValue(key, out var state)
+                ? state.AvailableQuantity
+                : 0m;
+            var safetyDeficit = Math.Max(0m, parameter.SafetyStockQuantity - availableQuantity);
+            if (safetyDeficit <= 0m)
+            {
+                continue;
+            }
+
+            foreach (var receipt in receipts
+                .Where(x => x.RemainingQuantity > 0m)
+                .OrderBy(x => x.ExpectedReceiptDate)
+                .ThenBy(x => x.SourceSystem, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.SourceDocumentType, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.SourceDocumentId, StringComparer.OrdinalIgnoreCase))
+            {
+                var protectedQuantity = Math.Min(receipt.RemainingQuantity, safetyDeficit);
+                if (protectedQuantity <= 0m)
+                {
+                    continue;
+                }
+
+                receipt.RemainingQuantity -= protectedQuantity;
+                safetyDeficit -= protectedQuantity;
+                if (safetyDeficit <= 0m)
+                {
+                    break;
+                }
+            }
+        }
     }
 
     private static IReadOnlyCollection<decimal> ApplyLotSizing(

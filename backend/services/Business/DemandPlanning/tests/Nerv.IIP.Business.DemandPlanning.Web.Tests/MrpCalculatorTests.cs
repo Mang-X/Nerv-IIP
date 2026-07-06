@@ -258,6 +258,35 @@ public sealed class MrpCalculatorTests
     }
 
     [Fact]
+    public void Cancel_exception_keeps_receipt_quantity_needed_to_restore_safety_stock()
+    {
+        var input = NewInput(
+            demands: [],
+            availability:
+            [
+                new InventoryAvailabilitySnapshot("SKU-RM-1000", "pcs", "SITE-01", 2m),
+            ],
+            bomComponents: [],
+            scheduledReceipts:
+            [
+                new ScheduledReceiptSnapshot("SKU-RM-1000", "pcs", "SITE-01", 6m, new DateOnly(2026, 6, 15), "erp", "purchase-order", "PO-2001"),
+            ],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-RM-1000", "pcs", "SITE-01", 0, 5m, null, null, null, ProcurementType: "buy"),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var exception = Assert.Single(suggestions);
+        Assert.Equal("cancel", exception.SuggestionType);
+        Assert.Equal(3m, exception.Quantity);
+        Assert.Equal("scheduled-receipt-unneeded", exception.ReasonCode);
+        var receipt = Assert.Single(exception.PeggingLinks);
+        Assert.Equal(3m, receipt.Quantity);
+    }
+
+    [Fact]
     public void Multi_uom_inputs_are_normalized_to_planning_uom_before_netting_and_pegging()
     {
         var input = NewInput(
