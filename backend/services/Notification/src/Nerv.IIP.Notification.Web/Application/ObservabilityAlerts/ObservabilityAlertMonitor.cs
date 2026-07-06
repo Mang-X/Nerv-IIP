@@ -110,7 +110,24 @@ public sealed class ObservabilityAlertMonitor(
         var probes = scope.ServiceProvider.GetServices<IObservabilityAlertProbe>();
         foreach (var probe in probes)
         {
-            var samples = await probe.CollectAsync(now, cancellationToken);
+            IReadOnlyCollection<ObservabilityAlertSample> samples;
+            try
+            {
+                samples = await probe.CollectAsync(now, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Observability alert probe failed Probe={ProbeType}",
+                    probe.GetType().FullName);
+                continue;
+            }
+
             foreach (var sample in samples)
             {
                 var state = GetState(sample.RuleId);
@@ -124,16 +141,51 @@ public sealed class ObservabilityAlertMonitor(
                             continue;
                         }
 
-                        await SubmitAsync(mediator, sample, currentOptions, now, resolved: false, cancellationToken);
+                        if (!state.Active)
+                        {
+                            state.ActivationSequence++;
+                        }
+
+                        var firingDuplicate = await SubmitAsync(
+                            mediator,
+                            sample,
+                            currentOptions,
+                            now,
+                            state.ActivationSequence,
+                            resolved: false,
+                            cancellationToken);
                         state.Active = true;
                         state.LastSubmittedAtUtc = now;
-                        submitted++;
+                        if (firingDuplicate)
+                        {
+                            suppressed++;
+                        }
+                        else
+                        {
+                            submitted++;
+                        }
+
                         break;
                     case ObservabilityAlertStatus.Resolved when state.Active:
-                        await SubmitAsync(mediator, sample, currentOptions, now, resolved: true, cancellationToken);
+                        var resolvedDuplicate = await SubmitAsync(
+                            mediator,
+                            sample,
+                            currentOptions,
+                            now,
+                            state.ActivationSequence,
+                            resolved: true,
+                            cancellationToken);
                         state.Active = false;
                         state.LastSubmittedAtUtc = now;
-                        submitted++;
+                        if (resolvedDuplicate)
+                        {
+                            suppressed++;
+                        }
+                        else
+                        {
+                            submitted++;
+                        }
+
                         break;
                 }
             }
@@ -142,17 +194,18 @@ public sealed class ObservabilityAlertMonitor(
         return new ObservabilityAlertMonitorResult(submitted, suppressed);
     }
 
-    private async Task SubmitAsync(
+    private async Task<bool> SubmitAsync(
         IMediator mediator,
         ObservabilityAlertSample sample,
         ObservabilityAlertOptions currentOptions,
         DateTimeOffset now,
+        long activationSequence,
         bool resolved,
         CancellationToken cancellationToken)
     {
         var windowStart = TruncateToWindow(now, currentOptions.DedupeWindow);
         var dedupeKeyPrefix = resolved ? "observability-alert-resolved" : "observability-alert";
-        var dedupeKey = $"{dedupeKeyPrefix}:{sample.RuleId}:{windowStart:yyyyMMddHHmm}";
+        var dedupeKey = $"{dedupeKeyPrefix}:{sample.RuleId}:{activationSequence}:{windowStart:yyyyMMddHHmm}";
         var severity = resolved
             ? NotificationContractConstants.SeverityInfo
             : NormalizeSeverity(sample.Severity);
@@ -180,6 +233,8 @@ public sealed class ObservabilityAlertMonitor(
             resolved,
             response.Duplicate,
             severity);
+
+        return response.Duplicate;
     }
 
     private AlertState GetState(string ruleId)
@@ -219,6 +274,7 @@ public sealed class ObservabilityAlertMonitor(
     private sealed class AlertState
     {
         public bool Active { get; set; }
+        public long ActivationSequence { get; set; }
         public DateTimeOffset? LastSubmittedAtUtc { get; set; }
     }
 }

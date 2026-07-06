@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -85,13 +86,64 @@ public sealed class ObservabilityAlertMonitorTests
         Assert.Equal("observability", intents[0].SourceService);
         Assert.Equal("observability.AlertFiring", intents[0].SourceEventType);
         Assert.Equal(NotificationContractConstants.SeverityCritical, intents[0].Severity);
-        Assert.Equal("observability-alert:service-health:apphub:202607050100", intents[0].DedupeKey);
+        Assert.Equal("observability-alert:service-health:apphub:1:202607050100", intents[0].DedupeKey);
         Assert.Equal(NotificationIntentTypes.Task, intents[0].IntentType);
         Assert.Equal("role:ops-admin", Assert.Single(intents[0].Messages).RecipientRef);
         Assert.Equal("observability.AlertResolved", intents[1].SourceEventType);
         Assert.Equal(NotificationContractConstants.SeverityInfo, intents[1].Severity);
+        Assert.Equal("observability-alert-resolved:service-health:apphub:1:202607050100", intents[1].DedupeKey);
         Assert.Equal(NotificationIntentTypes.Message, intents[1].IntentType);
         Assert.Contains("resolved", intents[1].Summary, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Alert_monitor_uses_new_dedupe_scope_after_resolved_refire()
+    {
+        var probe = new SequenceAlertProbe(
+            new ObservabilityAlertSample("service-health:apphub", "apphub health", ObservabilityAlertStatus.Firing, "HTTP 503", "apphub"),
+            new ObservabilityAlertSample("service-health:apphub", "apphub health", ObservabilityAlertStatus.Resolved, "HTTP 200", "apphub"),
+            new ObservabilityAlertSample("service-health:apphub", "apphub health", ObservabilityAlertStatus.Firing, "HTTP 503", "apphub"));
+        using var factory = CreateMonitorFactory(probe);
+
+        var first = await factory.Services.GetRequiredService<ObservabilityAlertMonitor>()
+            .CheckOnceAsync(DateTimeOffset.Parse("2026-07-05T01:00:00Z"), CancellationToken.None);
+        var resolved = await factory.Services.GetRequiredService<ObservabilityAlertMonitor>()
+            .CheckOnceAsync(DateTimeOffset.Parse("2026-07-05T01:12:00Z"), CancellationToken.None);
+        var refired = await factory.Services.GetRequiredService<ObservabilityAlertMonitor>()
+            .CheckOnceAsync(DateTimeOffset.Parse("2026-07-05T01:24:00Z"), CancellationToken.None);
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intents = await dbContext.NotificationIntents
+            .OrderBy(x => x.CreatedAtUtc)
+            .ToArrayAsync();
+
+        Assert.Equal(1, first.SubmittedCount);
+        Assert.Equal(1, resolved.SubmittedCount);
+        Assert.Equal(1, refired.SubmittedCount);
+        Assert.Equal(3, intents.Length);
+        Assert.Equal("observability-alert:service-health:apphub:1:202607050100", intents[0].DedupeKey);
+        Assert.Equal("observability-alert-resolved:service-health:apphub:1:202607050100", intents[1].DedupeKey);
+        Assert.Equal("observability-alert:service-health:apphub:2:202607050100", intents[2].DedupeKey);
+    }
+
+    [Fact]
+    public async Task Alert_monitor_continues_after_single_probe_unexpected_exception()
+    {
+        var probe = new SequenceAlertProbe(
+            new ObservabilityAlertSample("service-health:apphub", "apphub health", ObservabilityAlertStatus.Firing, "HTTP 503", "apphub"));
+        using var factory = CreateMonitorFactory(probe, includeThrowingProbe: true);
+
+        var result = await factory.Services.GetRequiredService<ObservabilityAlertMonitor>()
+            .CheckOnceAsync(DateTimeOffset.Parse("2026-07-05T01:00:00Z"), CancellationToken.None);
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = Assert.Single(await dbContext.NotificationIntents.ToArrayAsync());
+
+        Assert.Equal(1, result.SubmittedCount);
+        Assert.Equal("observability.AlertFiring", intent.SourceEventType);
+        Assert.Equal("observability-alert:service-health:apphub:1:202607050100", intent.DedupeKey);
     }
 
     [Fact]
@@ -182,6 +234,39 @@ public sealed class ObservabilityAlertMonitorTests
         Assert.Null(request.CapacityMegabytes);
     }
 
+    private static WebApplicationFactory<Program> CreateMonitorFactory(
+        SequenceAlertProbe probe,
+        bool includeThrowingProbe = false)
+    {
+        return new NotificationEndpointTests.NotificationWebApplicationFactory()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Observability:Alerts:Enabled"] = "true",
+                        ["Observability:Alerts:OrganizationId"] = "org-001",
+                        ["Observability:Alerts:EnvironmentId"] = "env-001",
+                        ["Observability:Alerts:RecipientRefs:0"] = "role:ops-admin",
+                        ["Observability:Alerts:DedupeWindow"] = "00:30:00",
+                        ["Observability:Alerts:SilentWindow"] = "00:10:00"
+                    });
+                });
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IObservabilityAlertProbe>();
+                    if (includeThrowingProbe)
+                    {
+                        services.AddScoped<IObservabilityAlertProbe, ThrowingAlertProbe>();
+                    }
+
+                    services.AddSingleton(probe);
+                    services.AddScoped<IObservabilityAlertProbe>(sp => sp.GetRequiredService<SequenceAlertProbe>());
+                });
+            });
+    }
+
     private sealed class SequenceAlertProbe(params ObservabilityAlertSample[] samples) : IObservabilityAlertProbe
     {
         private int index;
@@ -192,6 +277,12 @@ public sealed class ObservabilityAlertMonitorTests
             index++;
             return Task.FromResult<IReadOnlyCollection<ObservabilityAlertSample>>([sample]);
         }
+    }
+
+    private sealed class ThrowingAlertProbe : IObservabilityAlertProbe
+    {
+        public Task<IReadOnlyCollection<ObservabilityAlertSample>> CollectAsync(DateTimeOffset now, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Simulated unexpected probe failure.");
     }
 
     private sealed class RecordingDatabaseWatermarkReader(double value) : IDatabaseWatermarkReader
