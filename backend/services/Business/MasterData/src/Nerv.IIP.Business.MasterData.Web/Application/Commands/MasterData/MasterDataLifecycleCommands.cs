@@ -343,6 +343,8 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                 return Detail(workCenter);
             case "device-asset":
                 var device = await FindDeviceAssetAsync(request, cancellationToken);
+                var purchaseCurrencyCode = DeviceAssetCommandValidator.NormalizeCurrencyCode(request.PurchaseCurrencyCode, device.PurchaseCurrencyCode);
+                DeviceAssetCommandValidator.EnsureValidComponents(request.Components?.Select(x => new DeviceAssetComponentDraft(x.ComponentCode, x.ComponentName, x.Quantity, x.Critical)).ToArray());
                 device.UpdateCapability(
                     request.Model ?? device.Model,
                     request.LineCode ?? device.LineCode,
@@ -359,7 +361,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                 device.UpdateLedger(
                     request.PurchaseDate ?? device.PurchaseDate,
                     request.PurchaseCost ?? device.PurchaseCost,
-                    request.PurchaseCurrencyCode ?? device.PurchaseCurrencyCode,
+                    purchaseCurrencyCode,
                     request.WarrantyExpiresOn ?? device.WarrantyExpiresOn,
                     request.SupplierPartnerCode ?? device.SupplierPartnerCode,
                     request.SiteCode ?? device.SiteCode,

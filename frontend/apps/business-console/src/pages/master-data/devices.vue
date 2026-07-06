@@ -161,9 +161,20 @@ const listRows = computed(() => {
 const canCreateDevice = computed(() =>
   [createForm.model, createForm.manufacturer, createForm.serialNo,
     createForm.assetClassCode, createForm.siteCode, createForm.workshopCode,
-    createForm.lineCode, createForm.workCenterCode, createForm.stationCode, createForm.criticality].every(isNonEmpty),
+    createForm.lineCode, createForm.workCenterCode, createForm.stationCode, createForm.criticality].every(isNonEmpty)
+  && !currencyValidationMessage.value
+  && !componentValidationMessage.value,
 )
 const listErrorMessage = computed(() => formatError(devices.error.value))
+const currencyValidationMessage = computed(() => {
+  const code = createForm.purchaseCurrencyCode.trim()
+  if (!code) return ''
+  return /^[a-z]{3}$/i.test(code) ? '' : '币种必须是 3 位字母编码。'
+})
+const componentValidationMessage = computed(() => {
+  const invalid = createForm.components.find((component) => isComponentReady(component) && componentQuantity(component) <= 0)
+  return invalid ? '部件数量必须大于 0。' : ''
+})
 
 watch(createOpen, (open) => { if (open) createShowErrors.value = false })
 watch([keyword, pageSize], () => { page.value = 1 })
@@ -269,12 +280,22 @@ function optionalNumber(value: string | number | null | undefined) {
   const parsed = Number(trimmed)
   return Number.isFinite(parsed) ? parsed : undefined
 }
+function normalizedCurrencyCode(value: string) {
+  const code = value.trim()
+  return code ? code.toUpperCase() : undefined
+}
+function isComponentReady(component: DeviceComponentForm) {
+  return component.componentCode.trim().length > 0 && component.componentName.trim().length > 0
+}
+function componentQuantity(component: DeviceComponentForm) {
+  return optionalNumber(component.quantity) ?? 1
+}
 function componentPayload(): NonNullable<BusinessConsoleRegisterDeviceAssetRequest['components']> {
   return createForm.components
     .map((component) => ({
       componentCode: component.componentCode.trim(),
       componentName: component.componentName.trim(),
-      quantity: optionalNumber(component.quantity) ?? 1,
+      quantity: componentQuantity(component),
       critical: component.critical,
     }))
     .filter((component) => component.componentCode.length > 0 && component.componentName.length > 0)
@@ -287,7 +308,7 @@ function deviceLedgerPayload() {
     stationCode: createForm.stationCode.trim(),
     purchaseDate: optionalText(createForm.purchaseDate),
     purchaseCost: optionalNumber(createForm.purchaseCost),
-    purchaseCurrencyCode: optionalText(createForm.purchaseCurrencyCode),
+    purchaseCurrencyCode: normalizedCurrencyCode(createForm.purchaseCurrencyCode),
     warrantyExpiresOn: optionalText(createForm.warrantyExpiresOn),
     supplierPartnerCode: optionalText(createForm.supplierPartnerCode),
     parentDeviceId: optionalText(createForm.parentDeviceId),
@@ -376,7 +397,7 @@ async function submitDevice() {
               <DialogProDescription>{{ editingCode ? '修改设备档案（编码不可修改）。带 * 为必填项。' : '为产线与工作中心登记一台设备资产。带 * 为必填项。' }}</DialogProDescription>
             </DialogProHeader>
             <form class="grid gap-4" @submit.prevent="submitDevice">
-              <p v-if="createShowErrors && !canCreateDevice" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
+              <p v-if="createShowErrors && !canCreateDevice" class="text-sm text-destructive" role="alert">请检查标红字段后再提交。</p>
               <FieldProGroup class="grid gap-3 sm:grid-cols-2">
                 <FieldPro v-if="editingCode">
                   <FieldProLabel for="dev-code">设备编码</FieldProLabel>
@@ -465,9 +486,10 @@ async function submitDevice() {
                   <FieldProLabel for="dev-purchase-cost">购置成本</FieldProLabel>
                   <InputPro id="dev-purchase-cost" v-model="createForm.purchaseCost" type="number" min="0" step="0.01" />
                 </FieldPro>
-                <FieldPro>
+                <FieldPro :data-invalid="createShowErrors && Boolean(currencyValidationMessage)">
                   <FieldProLabel for="dev-currency">币种</FieldProLabel>
                   <InputPro id="dev-currency" v-model="createForm.purchaseCurrencyCode" autocomplete="off" maxlength="3" />
+                  <FieldProDescription v-if="createShowErrors && currencyValidationMessage">{{ currencyValidationMessage }}</FieldProDescription>
                 </FieldPro>
                 <FieldPro>
                   <FieldProLabel for="dev-warranty">保修到期</FieldProLabel>
@@ -507,9 +529,10 @@ async function submitDevice() {
                     <FieldProLabel :for="`dev-component-name-${index}`">部件名称</FieldProLabel>
                     <InputPro :id="`dev-component-name-${index}`" v-model="component.componentName" autocomplete="off" />
                   </FieldPro>
-                  <FieldPro>
+                  <FieldPro :data-invalid="createShowErrors && isComponentReady(component) && componentQuantity(component) <= 0">
                     <FieldProLabel :for="`dev-component-qty-${index}`">数量</FieldProLabel>
                     <InputPro :id="`dev-component-qty-${index}`" v-model="component.quantity" type="number" min="0.001" step="0.001" />
+                    <FieldProDescription v-if="createShowErrors && isComponentReady(component) && componentQuantity(component) <= 0">必须大于 0。</FieldProDescription>
                   </FieldPro>
                   <FieldPro orientation="horizontal" class="items-center gap-2 self-end pb-2">
                     <CheckboxPro :id="`dev-component-critical-${index}`" v-model:checked="component.critical" />

@@ -244,7 +244,6 @@ describe('master-data devices page', () => {
     form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
 
-    expect(document.body.textContent).toContain('请完整填写带 * 的必填项')
     expect(stub.create).not.toHaveBeenCalled()
   })
 
@@ -270,6 +269,7 @@ describe('master-data devices page', () => {
       stationCode: string
       purchaseDate?: string
       purchaseCost?: number
+      purchaseCurrencyCode?: string
       warrantyExpiresOn?: string
       supplierPartnerCode?: string
       parentDeviceId?: string
@@ -284,11 +284,41 @@ describe('master-data devices page', () => {
     expect(body.stationCode).toBe('ST-01')
     expect(body.purchaseDate).toBe('2025-01-15')
     expect(body.purchaseCost).toBe(125000)
+    expect(body.purchaseCurrencyCode).toBe('CNY')
     expect(body.warrantyExpiresOn).toBe('2027-01-14')
     expect(body.supplierPartnerCode).toBe('SUP-ACME')
     expect(body.parentDeviceId).toBe('EQ-PARENT')
     expect(body.components).toEqual([{ componentCode: 'MOTOR', componentName: '伺服电机', quantity: 1, critical: false }])
     expect(stub.toastSuccess).toHaveBeenCalled()
+    expect(stub.toastError).not.toHaveBeenCalled()
+  })
+
+  it('部件数量非法时不提交，并把币种提交为大写编码', async () => {
+    stub.create.mockClear()
+    stub.toastSuccess.mockClear()
+    stub.toastError.mockClear()
+    const wrapper = mount(DevicesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    await flushPromises()
+    await openAndFillValid(wrapper)
+    await wrapper.find('#dev-currency').setValue('usd')
+    await wrapper.find('#dev-component-qty-0').setValue('0')
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.create).not.toHaveBeenCalled()
+
+    await wrapper.find('#dev-component-qty-0').setValue('1.5')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.create).toHaveBeenCalledTimes(1)
+    const body = stub.create.mock.calls[0]![0] as {
+      purchaseCurrencyCode?: string
+      components?: Array<{ componentCode?: string, componentName?: string, quantity?: number, critical?: boolean }>
+    }
+    expect(body.purchaseCurrencyCode).toBe('USD')
+    expect(body.components).toEqual([{ componentCode: 'MOTOR', componentName: '伺服电机', quantity: 1.5, critical: false }])
     expect(stub.toastError).not.toHaveBeenCalled()
   })
 

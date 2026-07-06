@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
@@ -1397,6 +1398,73 @@ public sealed class MasterDataApiContractTests
         Assert.Contains(created, x => x.ResourceType == "team-member" && x.Code == "T-001:user-001");
         Assert.Contains(created, x => x.ResourceType == "reference-data-code" && x.Code == "scratch");
         Assert.Equal(16, dbContext.ChangeTracker.Entries().Count(entry => entry.State == EntityState.Added));
+    }
+
+    [Fact]
+    public async Task Device_asset_commands_reject_invalid_component_quantity_and_currency()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var registerHandler = new RegisterDeviceAssetCommandHandler(new DeviceAssetRepository(dbContext));
+
+        var invalidQuantity = await Assert.ThrowsAsync<KnownException>(() => registerHandler.Handle(
+            new RegisterDeviceAssetCommand(
+                OrganizationId: "org-001",
+                EnvironmentId: "env-dev",
+                Code: "EQ-BAD-QTY",
+                Model: "Mixer 500",
+                LineCode: "LINE-001",
+                WorkCenterCode: "WC-001",
+                AssetClassCode: "mixer",
+                Manufacturer: "ACME",
+                SerialNo: "SN-001",
+                MinimumCapacity: 10m,
+                MaximumCapacity: 500m,
+                CapacityUomCode: "kg",
+                Criticality: "critical",
+                Maintainable: true,
+                TelemetryEnabled: true,
+                ExternalReferences: new Dictionary<string, string>(),
+                Components: [new DeviceAssetComponentDraft("MOTOR", "Drive motor", 0m, true)]),
+            CancellationToken.None));
+        Assert.Contains("quantity must be greater than zero", invalidQuantity.Message, StringComparison.OrdinalIgnoreCase);
+
+        var invalidCurrency = await Assert.ThrowsAsync<KnownException>(() => registerHandler.Handle(
+            new RegisterDeviceAssetCommand(
+                OrganizationId: "org-001",
+                EnvironmentId: "env-dev",
+                Code: "EQ-BAD-CURRENCY",
+                Model: "Mixer 500",
+                LineCode: "LINE-001",
+                WorkCenterCode: "WC-001",
+                AssetClassCode: "mixer",
+                Manufacturer: "ACME",
+                SerialNo: "SN-002",
+                MinimumCapacity: 10m,
+                MaximumCapacity: 500m,
+                CapacityUomCode: "kg",
+                Criticality: "critical",
+                Maintainable: true,
+                TelemetryEnabled: true,
+                ExternalReferences: new Dictionary<string, string>(),
+                PurchaseCurrencyCode: "USDT"),
+            CancellationToken.None));
+        Assert.Contains("3-letter ISO 4217", invalidCurrency.Message, StringComparison.OrdinalIgnoreCase);
+
+        dbContext.DeviceAssets.Add(DeviceAsset.Register("org-001", "env-dev", "EQ-OK", "Mixer 500", "LINE-001", "WC-001"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var updateHandler = new UpdateMasterDataResourceCommandHandler(dbContext, new ReferenceDataCodeRepository(dbContext));
+
+        var invalidUpdate = await Assert.ThrowsAsync<KnownException>(() => updateHandler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "device-asset",
+                "EQ-OK",
+                Components: [new DeviceAssetComponentDetail("MOTOR", "Drive motor", -1m, true)]),
+            CancellationToken.None));
+        Assert.Contains("quantity must be greater than zero", invalidUpdate.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

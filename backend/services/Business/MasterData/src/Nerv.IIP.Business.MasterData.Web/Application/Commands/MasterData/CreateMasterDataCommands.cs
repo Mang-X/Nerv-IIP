@@ -963,6 +963,9 @@ public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository rep
 {
     public async Task<MasterDataResourceResult> Handle(RegisterDeviceAssetCommand request, CancellationToken cancellationToken)
     {
+        var purchaseCurrencyCode = DeviceAssetCommandValidator.NormalizeCurrencyCode(request.PurchaseCurrencyCode);
+        DeviceAssetCommandValidator.EnsureValidComponents(request.Components);
+
         var allocation = await MasterDataCodeGenerator.AllocateAsync(
             codingService,
             "device-asset",
@@ -986,7 +989,7 @@ public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository rep
                 request.ExternalReferences.Select(x => $"{x.Key}:{x.Value}"),
                 request.PurchaseDate,
                 request.PurchaseCost,
-                request.PurchaseCurrencyCode,
+                purchaseCurrencyCode,
                 request.WarrantyExpiresOn,
                 request.SupplierPartnerCode,
                 request.SiteCode,
@@ -1027,7 +1030,7 @@ public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository rep
             .WithLedger(
                 request.PurchaseDate,
                 request.PurchaseCost,
-                request.PurchaseCurrencyCode ?? string.Empty,
+                purchaseCurrencyCode,
                 request.WarrantyExpiresOn,
                 request.SupplierPartnerCode ?? string.Empty,
                 request.SiteCode ?? string.Empty,
@@ -1039,6 +1042,44 @@ public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository rep
             .ReplaceComponents(request.Components ?? []);
         await repository.AddAsync(asset, cancellationToken);
         return new MasterDataResourceResult("device-asset", asset.Code, asset.Model);
+    }
+}
+
+internal static class DeviceAssetCommandValidator
+{
+    public static string NormalizeCurrencyCode(string? value)
+    {
+        var code = value?.Trim();
+        if (string.IsNullOrEmpty(code))
+        {
+            return string.Empty;
+        }
+
+        if (code.Length != 3 || code.Any(x => !char.IsAsciiLetter(x)))
+        {
+            throw new KnownException("Device asset purchase currency code must be a 3-letter ISO 4217 code.");
+        }
+
+        return code.ToUpperInvariant();
+    }
+
+    public static string NormalizeCurrencyCode(string? value, string fallback)
+    {
+        return value is null ? fallback : NormalizeCurrencyCode(value);
+    }
+
+    public static void EnsureValidComponents(IReadOnlyCollection<DeviceAssetComponentDraft>? components)
+    {
+        if (components is null)
+        {
+            return;
+        }
+
+        var invalid = components.FirstOrDefault(x => x.Quantity <= 0m);
+        if (invalid is not null)
+        {
+            throw new KnownException($"Device asset component '{invalid.ComponentCode}' quantity must be greater than zero.");
+        }
     }
 }
 
