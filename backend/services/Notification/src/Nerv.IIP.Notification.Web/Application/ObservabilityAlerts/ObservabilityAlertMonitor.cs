@@ -41,7 +41,6 @@ public sealed class ObservabilityAlertRuleOptions
     public double WatermarkPercent { get; set; } = 85;
     public double? CapacityMegabytes { get; set; }
     public string? MetricName { get; set; }
-    public double? CurrentValue { get; set; }
     public TimeSpan HeartbeatMaxAge { get; set; } = TimeSpan.FromMinutes(5);
     public int QueryPageSize { get; set; } = 250;
 
@@ -447,11 +446,6 @@ public sealed class PostgreSqlWatermarkAlertProbe(
 
     private async Task<double?> ReadPercentAsync(ObservabilityAlertRuleOptions rule, CancellationToken cancellationToken)
     {
-        if (rule.CurrentValue is not null)
-        {
-            return rule.CurrentValue;
-        }
-
         var connectionStringName = string.IsNullOrWhiteSpace(rule.ConnectionStringName)
             ? "NotificationDb"
             : rule.ConnectionStringName;

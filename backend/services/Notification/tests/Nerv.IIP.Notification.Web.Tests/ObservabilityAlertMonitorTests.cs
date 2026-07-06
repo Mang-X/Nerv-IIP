@@ -130,7 +130,6 @@ public sealed class ObservabilityAlertMonitorTests
                     Name = "PostgreSQL connection watermark",
                     Kind = "postgres-watermark",
                     MetricName = "connections",
-                    CurrentValue = 91,
                     WatermarkPercent = 80
                 }
             ]
@@ -161,8 +160,9 @@ public sealed class ObservabilityAlertMonitorTests
             new StaticHttpClientFactory(staleHeartbeatPayload),
             options,
             NullLogger<AppHubConnectorHeartbeatAlertProbe>.Instance);
+        var databaseWatermarkReader = new RecordingDatabaseWatermarkReader(91);
         var postgresProbe = new PostgreSqlWatermarkAlertProbe(
-            new FixedDatabaseWatermarkReader(91),
+            databaseWatermarkReader,
             options,
             NullLogger<PostgreSqlWatermarkAlertProbe>.Instance);
 
@@ -176,6 +176,10 @@ public sealed class ObservabilityAlertMonitorTests
         Assert.Equal(ObservabilityAlertStatus.Firing, postgres.Status);
         Assert.Contains("stale", heartbeat.Summary, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("91", postgres.Summary, StringComparison.Ordinal);
+        var request = Assert.Single(databaseWatermarkReader.Requests);
+        Assert.Equal("NotificationDb", request.ConnectionStringName);
+        Assert.Equal("connections", request.MetricName);
+        Assert.Null(request.CapacityMegabytes);
     }
 
     private sealed class SequenceAlertProbe(params ObservabilityAlertSample[] samples) : IObservabilityAlertProbe
@@ -190,10 +194,15 @@ public sealed class ObservabilityAlertMonitorTests
         }
     }
 
-    private sealed class FixedDatabaseWatermarkReader(double value) : IDatabaseWatermarkReader
+    private sealed class RecordingDatabaseWatermarkReader(double value) : IDatabaseWatermarkReader
     {
-        public Task<double?> ReadPercentAsync(DatabaseWatermarkReadRequest request, CancellationToken cancellationToken) =>
-            Task.FromResult<double?>(value);
+        public List<DatabaseWatermarkReadRequest> Requests { get; } = [];
+
+        public Task<double?> ReadPercentAsync(DatabaseWatermarkReadRequest request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.FromResult<double?>(value);
+        }
     }
 
     private static async Task<Nerv.IIP.Messaging.CAP.IntegrationEventDeadLetterMessage> AddDeadLetterAsync(
