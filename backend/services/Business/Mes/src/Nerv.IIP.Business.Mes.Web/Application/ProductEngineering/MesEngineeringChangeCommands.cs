@@ -49,7 +49,11 @@ public sealed class RecordEngineeringChangeDecisionCommandHandler(ApplicationDbC
         try
         {
             var decidedAtUtc = timeProvider.GetUtcNow();
-            impact.RecordDecision(request.Decision, request.DecidedBy, request.Reason, decidedAtUtc);
+            if (!impact.RecordDecision(request.Decision, request.DecidedBy, request.Reason, decidedAtUtc))
+            {
+                return;
+            }
+
             var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(x =>
                     x.OrganizationId == request.OrganizationId &&
                     x.EnvironmentId == request.EnvironmentId &&

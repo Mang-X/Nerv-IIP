@@ -168,7 +168,7 @@ public sealed class MesEngineeringChangeWorkOrderImpact : Entity<MesEngineeringC
             detectedAtUtc);
     }
 
-    public void RecordDecision(string decision, string decidedBy, string reason, DateTimeOffset decidedAtUtc)
+    public bool RecordDecision(string decision, string decidedBy, string reason, DateTimeOffset decidedAtUtc)
     {
         decision = DomainGuard.Required(decision, nameof(decision));
         if (decision is not MesEngineeringChangeDecisions.ContinueWithArchivedVersion and not MesEngineeringChangeDecisions.AbortWorkOrder)
@@ -181,11 +181,22 @@ public sealed class MesEngineeringChangeWorkOrderImpact : Entity<MesEngineeringC
             throw new InvalidOperationException("Archived production version marker cannot receive a work order decision.");
         }
 
+        if (Status == MesEngineeringChangeImpactStatuses.Decided)
+        {
+            if (string.Equals(Decision, decision, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            throw new InvalidOperationException($"MES engineering change decision already recorded as '{Decision}'.");
+        }
+
         Decision = decision;
         DecidedBy = DomainGuard.Required(decidedBy, nameof(decidedBy));
         DecisionReason = DomainGuard.Required(reason, nameof(reason));
         DecidedAtUtc = decidedAtUtc;
         Status = MesEngineeringChangeImpactStatuses.Decided;
+        return true;
     }
 
     private static MesEngineeringChangeWorkOrderImpact CreateWorkOrderImpact(

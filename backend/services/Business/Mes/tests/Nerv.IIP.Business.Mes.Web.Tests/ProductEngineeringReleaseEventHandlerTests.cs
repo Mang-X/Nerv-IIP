@@ -293,6 +293,98 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
     }
 
     [Fact]
+    public async Task RecordEngineeringChangeDecisionCommand_KeepsFirstDecisionAndRejectsConflictingDuplicate()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"mes-product-engineering-change-decision-idempotency-{Guid.CreateVersion7():N}", databaseRoot)
+            .Options;
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var blocked = WorkOrder.Create("org-001", "env-dev", "WO-DUP", "SKU-FG-1000", "PV-OLD", 10m, 10, DateTimeOffset.Parse("2026-07-06T16:00:00Z"), "PCS");
+            blocked.MarkReleased();
+            blocked.Hold("Engineering change ECO-721 requires production version confirmation.");
+            dbContext.WorkOrders.Add(blocked);
+            dbContext.EngineeringChangeWorkOrderImpacts.Add(MesEngineeringChangeWorkOrderImpact.BlockedForManualConfirmation(
+                "org-001",
+                "env-dev",
+                "WO-DUP",
+                "SKU-FG-1000",
+                WorkOrder.ReleasedStatus,
+                "ECO-721",
+                "PV-OLD",
+                "PV-NEW",
+                new DateOnly(2026, 7, 6),
+                DateTimeOffset.Parse("2026-07-06T08:00:00Z")));
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new RecordEngineeringChangeDecisionCommandHandler(
+                dbContext,
+                new FixedTimeProvider(DateTimeOffset.Parse("2026-07-06T09:00:00Z")));
+            await handler.Handle(
+                new RecordEngineeringChangeDecisionCommand(
+                    "org-001",
+                    "env-dev",
+                    "WO-DUP",
+                    "ECO-721",
+                    MesEngineeringChangeDecisions.ContinueWithArchivedVersion,
+                    "planner-001",
+                    "Deviation approved"),
+                CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new RecordEngineeringChangeDecisionCommandHandler(
+                dbContext,
+                new FixedTimeProvider(DateTimeOffset.Parse("2026-07-06T10:00:00Z")));
+            await handler.Handle(
+                new RecordEngineeringChangeDecisionCommand(
+                    "org-001",
+                    "env-dev",
+                    "WO-DUP",
+                    "ECO-721",
+                    MesEngineeringChangeDecisions.ContinueWithArchivedVersion,
+                    "planner-002",
+                    "Duplicate submission"),
+                CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using (var assertionDbContext = CreateDbContext(options))
+        {
+            var impact = await assertionDbContext.EngineeringChangeWorkOrderImpacts.SingleAsync();
+            Assert.Equal(MesEngineeringChangeDecisions.ContinueWithArchivedVersion, impact.Decision);
+            Assert.Equal("planner-001", impact.DecidedBy);
+            Assert.Equal("Deviation approved", impact.DecisionReason);
+            Assert.Equal(DateTimeOffset.Parse("2026-07-06T09:00:00Z"), impact.DecidedAtUtc);
+            Assert.Equal(WorkOrder.ReleasedStatus, (await assertionDbContext.WorkOrders.SingleAsync()).Status);
+        }
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new RecordEngineeringChangeDecisionCommandHandler(
+                dbContext,
+                new FixedTimeProvider(DateTimeOffset.Parse("2026-07-06T11:00:00Z")));
+            var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+                new RecordEngineeringChangeDecisionCommand(
+                    "org-001",
+                    "env-dev",
+                    "WO-DUP",
+                    "ECO-721",
+                    MesEngineeringChangeDecisions.AbortWorkOrder,
+                    "planner-003",
+                    "Conflicting duplicate"),
+                CancellationToken.None));
+            Assert.Contains("already recorded", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
     public async Task RecordEngineeringChangeDecisionCommand_ContinuesBlockedOrderOrAbortsImpactedOrder()
     {
         var databaseRoot = new InMemoryDatabaseRoot();
@@ -457,6 +549,11 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
     private static ApplicationDbContext CreateDbContext(DbContextOptions<ApplicationDbContext> options)
     {
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
     private sealed class NoopMediator : IMediator
