@@ -36,17 +36,17 @@
   --sb-muted: #aeb9c8;
   --sb-faint: #828c9c;
 
-  /* effects — restrained: a white highlight carries structure, glow is a whisper */
-  --sb-highlight: rgba(255, 255, 255, 0.32); /* top white edge highlight */
-  /* panel edge — a VISIBLE blue-cyan hairline that brightens down the two sides;
-     white is reserved for the top highlight (--sb-highlight), not the edge body. */
-  /* left side brighter than right (light comes from the upper-left) */
+  /* effects — restrained: hairlines carry structure, glow is a whisper.
+     2026-07 评审收敛：顶部高光压到只比底边亮一丝（大屏实机上原 0.32 白线存在感过强），
+     边缘渐变整体调暗 —— 面板边框整圈近暗，不再有亮边打架。 */
+  --sb-highlight: rgba(255, 255, 255, 0.09); /* top white edge highlight — a whisper */
+  /* panel edge — a quiet blue hairline, marginally brighter down the two sides */
   --sb-edge-gradient: linear-gradient(
     90deg,
-    rgba(135, 208, 255, 0.82),
-    rgba(135, 208, 255, 0.12) 16%,
-    rgba(135, 208, 255, 0.12) 84%,
-    rgba(135, 208, 255, 0.5)
+    rgba(135, 208, 255, 0.28),
+    rgba(135, 208, 255, 0.08) 16%,
+    rgba(135, 208, 255, 0.08) 84%,
+    rgba(135, 208, 255, 0.18)
   );
   --sb-value-glow: 0 0 12px rgba(150, 190, 235, 0.18); /* faint white-blue on big numbers */
   --sb-edge-glow: rgba(95, 170, 230, 0.3); /* tiny corner-only glow */

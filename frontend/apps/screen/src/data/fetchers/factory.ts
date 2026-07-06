@@ -2,7 +2,10 @@
 import type { FactoryOverview } from '@/data/contracts/factory'
 import { buildFactoryOverview } from '@/data/mock/factory'
 
-export async function fetchFactoryOverview(): Promise<FactoryOverview> {
-  await new Promise((resolve) => setTimeout(resolve, 280))
-  return buildFactoryOverview()
+export async function fetchFactoryOverview(
+  factoryId = 'F01',
+  workshopIds: string[] | 'all' = 'all',
+): Promise<FactoryOverview> {
+  await new Promise((resolve) => setTimeout(resolve, 260))
+  return buildFactoryOverview(factoryId, workshopIds)
 }
