@@ -17,10 +17,13 @@ const props = withDefaults(
     suffix?: string
     /** Outer diameter in px. */
     size?: number
+    /** Center value font-size in px — bump for hero rings so大环大字一致. */
+    valueSize?: number
   }>(),
   {
     suffix: '%',
     size: 140,
+    valueSize: 28,
   },
 )
 
@@ -62,7 +65,9 @@ const uid = `rg-${Math.random().toString(36).slice(2, 8)}`
       />
     </svg>
     <div class="sb-rg-c">
-      <div class="sb-rg-v">{{ shown }}<small>{{ suffix }}</small></div>
+      <div class="sb-rg-v" :style="{ fontSize: `${valueSize}px` }">
+        {{ shown }}<small :style="{ fontSize: `${Math.round(valueSize / 2)}px` }">{{ suffix }}</small>
+      </div>
       <div class="sb-rg-l">{{ label }}</div>
     </div>
   </div>

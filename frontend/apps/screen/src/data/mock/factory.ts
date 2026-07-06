@@ -87,6 +87,8 @@ export function buildFactoryOverview(
   const criticalAlarms = cells.reduce((n, c) => n + c.critAlarms, 0)
   const kpis = {
     achievement: planSum > 0 ? clamp(Math.round((actualSum / planSum) * 100), 0, 100) : 0, // 🟠 待 #570
+    todayOutput: actualSum, // 🟠 待 #570
+    todayPlan: planSum, // 🟠 待 #570
     wipOrders: cells.reduce((n, c) => n + c.wip, 0),
     riskOrders: cells.reduce((n, c) => n + c.overdue, 0) + clamp(jitter(1, 2), 0, 2), // 超期 + 临期风险 🟠
     openAlarms: criticalAlarms + clamp(jitter(3, 2), 1, 6),

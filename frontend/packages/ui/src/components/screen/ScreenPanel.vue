@@ -21,7 +21,9 @@ defineProps<{
   <section :class="cn('sb-panel', accent, $props.class)">
     <span v-if="accent" class="sb-panel-accent" />
     <div v-if="title || $slots.extra" class="sb-panel-h">
+      <i v-if="title" class="sb-panel-glyph" aria-hidden="true" />
       <span class="sb-panel-t">{{ title }}<slot name="title-extra" /></span>
+      <span class="sb-panel-rule" aria-hidden="true" />
       <div v-if="$slots.extra" class="sb-panel-extra"><slot name="extra" /></div>
     </div>
     <slot />
@@ -94,16 +96,37 @@ defineProps<{
 .sb-panel-h {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 11px;
   margin-bottom: 12px;
+  min-height: 24px;
+}
+/* 斜切能量块 —— 面板标题的统一特效前缀（2026-07 生产走查加入） */
+.sb-panel-glyph {
+  width: 8px;
+  height: 18px;
+  flex: none;
+  border-radius: 2px;
+  transform: skewX(-16deg);
+  background: linear-gradient(180deg, var(--sb-cyan), rgba(74, 166, 238, 0.25));
+  box-shadow: 0 0 11px rgba(74, 166, 238, 0.55);
 }
 .sb-panel-t {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--sb-text-2);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #fff;
+  text-shadow: 0 0 16px rgba(96, 180, 255, 0.4);
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
+}
+/* 标题与右侧工具之间的渐隐引导线 */
+.sb-panel-rule {
+  flex: 1;
+  height: 1px;
+  margin: 0 6px;
+  background: linear-gradient(90deg, rgba(135, 208, 255, 0.28), rgba(255, 255, 255, 0.05) 45%, transparent);
 }
 .sb-panel-extra {
   font-size: 13px;

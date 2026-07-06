@@ -11,6 +11,10 @@ export type WorkshopHealth = 'red' | 'yellow' | 'green'
 export interface FactoryKpis {
   /** 今日全厂达成率 0–100 🟡 */
   achievement: number
+  /** 今日实际产量（件，车间实际之和）🟡 */
+  todayOutput: number
+  /** 今日计划产量（件，车间计划之和）🟡 */
+  todayPlan: number
   /** 在产工单 ✅ */
   wipOrders: number
   /** 超期/风险工单 🟡 */

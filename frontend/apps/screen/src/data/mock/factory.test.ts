@@ -34,6 +34,8 @@ describe('buildFactoryOverview', () => {
       const seq = s.workshops.map((w) => order[w.health])
       expect([...seq].sort((a, b) => a - b)).toEqual(seq)
       // KPI 聚合与矩阵一致
+      expect(s.kpis.todayOutput).toBe(s.workshops.reduce((n, w) => n + w.actualQty, 0))
+      expect(s.kpis.todayPlan).toBe(s.workshops.reduce((n, w) => n + w.planQty, 0))
       expect(s.kpis.criticalAlarms).toBe(s.workshops.reduce((n, w) => n + w.critAlarms, 0))
       expect(s.kpis.openDowntime).toBe(s.workshops.reduce((n, w) => n + w.openDowntime, 0))
       expect(s.kpis.wipOrders).toBe(s.workshops.reduce((n, w) => n + w.wip, 0))

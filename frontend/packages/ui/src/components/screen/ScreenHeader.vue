@@ -32,7 +32,10 @@ withDefaults(
 
 <template>
   <header class="sb-hd">
-    <h1 class="sb-hd-t">{{ title }}</h1>
+    <div class="sb-hd-left">
+      <i class="sb-hd-glyph" aria-hidden="true" />
+      <h1 class="sb-hd-t">{{ title }}</h1>
+    </div>
     <div class="sb-hd-tools">
       <span v-if="time"><Clock :size="15" />{{ time }}</span>
       <span v-if="date"><Calendar :size="15" />{{ date }}</span>
@@ -45,25 +48,69 @@ withDefaults(
 
 <style scoped>
 .sb-hd {
-  height: 66px;
+  position: relative;
+  height: 70px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--sb-line);
   color: var(--sb-text);
   font-variant-numeric: tabular-nums;
 }
+/* 底线升级：两端微亮的渐变发丝线（替代平灰 border，2026-07 生产走查） */
+.sb-hd::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(126, 190, 255, 0.5),
+    rgba(255, 255, 255, 0.08) 28%,
+    rgba(255, 255, 255, 0.08) 72%,
+    rgba(126, 190, 255, 0.3)
+  );
+}
+.sb-hd-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+/* 页头标题的双斜切能量块 */
+.sb-hd-glyph {
+  position: relative;
+  width: 11px;
+  height: 26px;
+  flex: none;
+  border-radius: 2px;
+  transform: skewX(-16deg);
+  background: linear-gradient(180deg, var(--sb-cyan), rgba(74, 166, 238, 0.3));
+  box-shadow: 0 0 14px rgba(74, 166, 238, 0.6);
+}
+.sb-hd-glyph::after {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 4px;
+  bottom: 4px;
+  width: 5px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, rgba(120, 190, 255, 0.6), rgba(74, 166, 238, 0.12));
+}
 .sb-hd-t {
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  margin: 0;
+  font-size: 31px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  margin: 0 0 0 8px;
+  color: #fff;
+  text-shadow: 0 0 24px rgba(110, 190, 255, 0.42);
 }
 .sb-hd-tools {
   display: flex;
   align-items: center;
   gap: 28px;
-  color: var(--sb-muted);
+  color: var(--sb-text-2);
   font-size: 14px;
 }
 .sb-hd-tools span {
@@ -72,7 +119,7 @@ withDefaults(
   gap: 8px;
 }
 .sb-hd-tools svg {
-  color: var(--sb-faint);
+  color: var(--sb-muted);
 }
 .sb-hd-menu {
   cursor: default;
