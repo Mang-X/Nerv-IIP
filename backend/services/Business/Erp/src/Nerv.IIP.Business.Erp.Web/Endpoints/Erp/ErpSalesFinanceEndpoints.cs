@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CostCandidateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
@@ -82,7 +83,14 @@ public sealed record RegisterAccountPayablePaymentRequest(
     decimal PaymentExchangeRate = 1m,
     IReadOnlyCollection<PayablePaymentAllocationCommandLine>? Allocations = null);
 public sealed record RegisterAccountReceivableCollectionRequest(string OrganizationId, string EnvironmentId, string ReceivableNo, decimal Amount, DateOnly CollectionDate, string CashAccountCode, string IdempotencyKey);
+public sealed record ExecutePaymentExecutionRequest(string OrganizationId, string EnvironmentId, string PaymentExecutionNo, string ExecutedBy = "system:business-erp");
+public sealed record MatchCashReceiptRequest(string OrganizationId, string EnvironmentId, string CashReceiptNo);
+public sealed record OpenAccountingPeriodRequest(string OrganizationId, string EnvironmentId, string PeriodCode, DateOnly StartDate, DateOnly EndDate);
+public sealed record OpenAccountingPeriodResponse(AccountingPeriodId AccountingPeriodId);
+public sealed record CloseAccountingPeriodRequest(string OrganizationId, string EnvironmentId, string PeriodCode, string ClosedBy, string Reason);
+public sealed record ReopenAccountingPeriodRequest(string OrganizationId, string EnvironmentId, string PeriodCode, string ReopenedBy, string Reason);
 public sealed record GetFinanceSummaryRequest(string OrganizationId, string EnvironmentId);
+public sealed record GetFinancePeriodRequest(string OrganizationId, string EnvironmentId, DateOnly PeriodStartDate, DateOnly PeriodEndDate);
 public sealed record ListFinanceDocumentsRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -260,6 +268,29 @@ public sealed class RegisterAccountPayablePaymentEndpoint(ISender sender) : ErpE
     }
 }
 
+public sealed class ApprovePaymentExecutionEndpoint(ISender sender) : ErpEndpoint<RegisterAccountPayablePaymentRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<ApprovePaymentExecutionEndpoint>());
+
+    public override async Task HandleAsync(RegisterAccountPayablePaymentRequest req, CancellationToken ct)
+    {
+        var paymentExecutionNo = await sender.Send(new ApprovePaymentExecutionCommand(req.OrganizationId, req.EnvironmentId, req.PayableNo, req.Amount, req.PaymentDate, req.CashAccountCode, req.IdempotencyKey, req.PaymentCurrencyCode, req.PaymentExchangeRate, req.Allocations), ct);
+        await Send.OkAsync(paymentExecutionNo.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ExecutePaymentExecutionEndpoint(ISender sender) : ErpEndpoint<ExecutePaymentExecutionRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<ExecutePaymentExecutionEndpoint>());
+
+    public override async Task HandleAsync(ExecutePaymentExecutionRequest req, CancellationToken ct)
+    {
+        var paymentExecutionNo = Route<string>("paymentExecutionNo") ?? req.PaymentExecutionNo;
+        await sender.Send(new ExecutePaymentExecutionCommand(req.OrganizationId, req.EnvironmentId, paymentExecutionNo, req.ExecutedBy), ct);
+        await Send.OkAsync("executed".AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class RegisterAccountReceivableCollectionEndpoint(ISender sender) : ErpEndpoint<RegisterAccountReceivableCollectionRequest, ResponseData<string>>
 {
     public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<RegisterAccountReceivableCollectionEndpoint>());
@@ -271,6 +302,62 @@ public sealed class RegisterAccountReceivableCollectionEndpoint(ISender sender) 
     }
 }
 
+public sealed class RegisterCashReceiptEndpoint(ISender sender) : ErpEndpoint<RegisterAccountReceivableCollectionRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<RegisterCashReceiptEndpoint>());
+
+    public override async Task HandleAsync(RegisterAccountReceivableCollectionRequest req, CancellationToken ct)
+    {
+        var cashReceiptNo = await sender.Send(new RegisterCashReceiptCommand(req.OrganizationId, req.EnvironmentId, req.ReceivableNo, req.Amount, req.CollectionDate, req.CashAccountCode, req.IdempotencyKey), ct);
+        await Send.OkAsync(cashReceiptNo.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class MatchCashReceiptEndpoint(ISender sender) : ErpEndpoint<MatchCashReceiptRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<MatchCashReceiptEndpoint>());
+
+    public override async Task HandleAsync(MatchCashReceiptRequest req, CancellationToken ct)
+    {
+        var cashReceiptNo = Route<string>("cashReceiptNo") ?? req.CashReceiptNo;
+        await sender.Send(new MatchCashReceiptCommand(req.OrganizationId, req.EnvironmentId, cashReceiptNo), ct);
+        await Send.OkAsync("matched".AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class OpenAccountingPeriodEndpoint(ISender sender) : ErpEndpoint<OpenAccountingPeriodRequest, ResponseData<OpenAccountingPeriodResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<OpenAccountingPeriodEndpoint>());
+
+    public override async Task HandleAsync(OpenAccountingPeriodRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new OpenAccountingPeriodCommand(req.OrganizationId, req.EnvironmentId, req.PeriodCode, req.StartDate, req.EndDate), ct);
+        await Send.OkAsync(new OpenAccountingPeriodResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CloseAccountingPeriodEndpoint(ISender sender) : ErpEndpoint<CloseAccountingPeriodRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<CloseAccountingPeriodEndpoint>());
+
+    public override async Task HandleAsync(CloseAccountingPeriodRequest req, CancellationToken ct)
+    {
+        await sender.Send(new CloseAccountingPeriodCommand(req.OrganizationId, req.EnvironmentId, req.PeriodCode, req.ClosedBy, req.Reason), ct);
+        await Send.OkAsync("closed".AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ReopenAccountingPeriodEndpoint(ISender sender) : ErpEndpoint<ReopenAccountingPeriodRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<ReopenAccountingPeriodEndpoint>());
+
+    public override async Task HandleAsync(ReopenAccountingPeriodRequest req, CancellationToken ct)
+    {
+        await sender.Send(new ReopenAccountingPeriodCommand(req.OrganizationId, req.EnvironmentId, req.PeriodCode, req.ReopenedBy, req.Reason), ct);
+        await Send.OkAsync("reopened".AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class GetFinanceSummaryEndpoint(ISender sender) : ErpEndpoint<GetFinanceSummaryRequest, ResponseData<FinanceSummaryResponse>>
 {
     public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<GetFinanceSummaryEndpoint>());
@@ -278,6 +365,28 @@ public sealed class GetFinanceSummaryEndpoint(ISender sender) : ErpEndpoint<GetF
     public override async Task HandleAsync(GetFinanceSummaryRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new GetFinanceSummaryQuery(req.OrganizationId, req.EnvironmentId), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetTrialBalanceEndpoint(ISender sender) : ErpEndpoint<GetFinancePeriodRequest, ResponseData<TrialBalanceResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<GetTrialBalanceEndpoint>());
+
+    public override async Task HandleAsync(GetFinancePeriodRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetTrialBalanceQuery(req.OrganizationId, req.EnvironmentId, req.PeriodStartDate, req.PeriodEndDate), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetMonthEndChecklistEndpoint(ISender sender) : ErpEndpoint<GetFinancePeriodRequest, ResponseData<MonthEndChecklistResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<GetMonthEndChecklistEndpoint>());
+
+    public override async Task HandleAsync(GetFinancePeriodRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetMonthEndChecklistQuery(req.OrganizationId, req.EnvironmentId, req.PeriodStartDate, req.PeriodEndDate), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -375,8 +484,17 @@ public static class ErpFinanceEndpointContracts
         new(typeof(CreateCostCandidateEndpoint), "POST", "/api/business/v1/erp/finance/cost-candidates", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpCostCandidate"),
         new(typeof(PostJournalVoucherEndpoint), "POST", "/api/business/v1/erp/finance/vouchers", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "postErpJournalVoucher"),
         new(typeof(RegisterAccountPayablePaymentEndpoint), "POST", "/api/business/v1/erp/finance/payables/payment", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "registerErpAccountPayablePayment"),
+        new(typeof(ApprovePaymentExecutionEndpoint), "POST", "/api/business/v1/erp/finance/payment-executions", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "approveErpPaymentExecution"),
+        new(typeof(ExecutePaymentExecutionEndpoint), "POST", "/api/business/v1/erp/finance/payment-executions/{paymentExecutionNo}/execute", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "executeErpPaymentExecution"),
         new(typeof(RegisterAccountReceivableCollectionEndpoint), "POST", "/api/business/v1/erp/finance/receivables/collection", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "registerErpAccountReceivableCollection"),
+        new(typeof(RegisterCashReceiptEndpoint), "POST", "/api/business/v1/erp/finance/cash-receipts", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "registerErpCashReceipt"),
+        new(typeof(MatchCashReceiptEndpoint), "POST", "/api/business/v1/erp/finance/cash-receipts/{cashReceiptNo}/match", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "matchErpCashReceipt"),
+        new(typeof(OpenAccountingPeriodEndpoint), "POST", "/api/business/v1/erp/finance/accounting-periods", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "openErpAccountingPeriod"),
+        new(typeof(CloseAccountingPeriodEndpoint), "POST", "/api/business/v1/erp/finance/accounting-periods/close", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "closeErpAccountingPeriod"),
+        new(typeof(ReopenAccountingPeriodEndpoint), "POST", "/api/business/v1/erp/finance/accounting-periods/reopen", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "reopenErpAccountingPeriod"),
         new(typeof(ListJournalVouchersEndpoint), "GET", "/api/business/v1/erp/finance/vouchers", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpJournalVouchers"),
+        new(typeof(GetTrialBalanceEndpoint), "GET", "/api/business/v1/erp/finance/trial-balance", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpTrialBalance"),
+        new(typeof(GetMonthEndChecklistEndpoint), "GET", "/api/business/v1/erp/finance/month-end-checklist", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpMonthEndChecklist"),
         new(typeof(GetFinanceSummaryEndpoint), "GET", "/api/business/v1/erp/finance/summary", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpFinanceSummary"),
         new(typeof(ListAccountPayablesEndpoint), "GET", "/api/business/v1/erp/finance/payables", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpAccountPayables"),
         new(typeof(ListAccountReceivablesEndpoint), "GET", "/api/business/v1/erp/finance/receivables", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpAccountReceivables"),

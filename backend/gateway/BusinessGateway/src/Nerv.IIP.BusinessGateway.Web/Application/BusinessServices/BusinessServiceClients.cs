@@ -706,6 +706,16 @@ public interface IBusinessErpClient
         BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleErpTrialBalanceResponse> GetTrialBalanceAsync(
+        string internalBearerToken,
+        BusinessConsoleErpPeriodRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleErpMonthEndChecklistResponse> GetMonthEndChecklistAsync(
+        string internalBearerToken,
+        BusinessConsoleErpPeriodRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleOpenErpOpportunityResponse> OpenOpportunityAsync(
         string internalBearerToken,
         BusinessConsoleOpenErpOpportunityRequest request,
@@ -749,6 +759,41 @@ public interface IBusinessErpClient
     Task<BusinessConsolePostErpJournalVoucherResponse> PostJournalVoucherAsync(
         string internalBearerToken,
         BusinessConsolePostErpJournalVoucherRequest request,
+        CancellationToken cancellationToken);
+
+    Task<string> ApprovePaymentExecutionAsync(
+        string internalBearerToken,
+        BusinessConsoleApproveErpPaymentExecutionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<string> ExecutePaymentExecutionAsync(
+        string internalBearerToken,
+        BusinessConsoleExecuteErpPaymentExecutionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<string> RegisterCashReceiptAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterErpCashReceiptRequest request,
+        CancellationToken cancellationToken);
+
+    Task<string> MatchCashReceiptAsync(
+        string internalBearerToken,
+        BusinessConsoleMatchErpCashReceiptRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleOpenErpAccountingPeriodResponse> OpenAccountingPeriodAsync(
+        string internalBearerToken,
+        BusinessConsoleOpenErpAccountingPeriodRequest request,
+        CancellationToken cancellationToken);
+
+    Task<string> CloseAccountingPeriodAsync(
+        string internalBearerToken,
+        BusinessConsoleCloseErpAccountingPeriodRequest request,
+        CancellationToken cancellationToken);
+
+    Task<string> ReopenAccountingPeriodAsync(
+        string internalBearerToken,
+        BusinessConsoleReopenErpAccountingPeriodRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleErpFinanceSummaryResponse> GetFinanceSummaryAsync(
@@ -4723,6 +4768,28 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleErpTrialBalanceResponse> GetTrialBalanceAsync(
+        string internalBearerToken,
+        BusinessConsoleErpPeriodRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpTrialBalanceResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/finance/trial-balance?" + PeriodQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleErpMonthEndChecklistResponse> GetMonthEndChecklistAsync(
+        string internalBearerToken,
+        BusinessConsoleErpPeriodRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpMonthEndChecklistResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/finance/month-end-checklist?" + PeriodQuery(request),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleOpenErpOpportunityResponse> OpenOpportunityAsync(
         string internalBearerToken,
         BusinessConsoleOpenErpOpportunityRequest request,
@@ -4822,6 +4889,83 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             request,
             cancellationToken);
 
+    public Task<string> ApprovePaymentExecutionAsync(
+        string internalBearerToken,
+        BusinessConsoleApproveErpPaymentExecutionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<string>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/erp/finance/payment-executions",
+            request,
+            cancellationToken);
+
+    public Task<string> ExecutePaymentExecutionAsync(
+        string internalBearerToken,
+        BusinessConsoleExecuteErpPaymentExecutionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<string>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/erp/finance/payment-executions/{Uri.EscapeDataString(request.PaymentExecutionNo)}/execute",
+            request,
+            cancellationToken);
+
+    public Task<string> RegisterCashReceiptAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterErpCashReceiptRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<string>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/erp/finance/cash-receipts",
+            request,
+            cancellationToken);
+
+    public Task<string> MatchCashReceiptAsync(
+        string internalBearerToken,
+        BusinessConsoleMatchErpCashReceiptRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<string>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/erp/finance/cash-receipts/{Uri.EscapeDataString(request.CashReceiptNo)}/match",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleOpenErpAccountingPeriodResponse> OpenAccountingPeriodAsync(
+        string internalBearerToken,
+        BusinessConsoleOpenErpAccountingPeriodRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleOpenErpAccountingPeriodResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/erp/finance/accounting-periods",
+            request,
+            cancellationToken);
+
+    public Task<string> CloseAccountingPeriodAsync(
+        string internalBearerToken,
+        BusinessConsoleCloseErpAccountingPeriodRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<string>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/erp/finance/accounting-periods/close",
+            request,
+            cancellationToken);
+
+    public Task<string> ReopenAccountingPeriodAsync(
+        string internalBearerToken,
+        BusinessConsoleReopenErpAccountingPeriodRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<string>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/erp/finance/accounting-periods/reopen",
+            request,
+            cancellationToken);
+
     public Task<BusinessConsoleErpFinanceSummaryResponse> GetFinanceSummaryAsync(
         string internalBearerToken,
         BusinessConsoleErpContextRequest request,
@@ -4867,6 +5011,15 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             "/api/business/v1/erp/finance/cost-candidates/by-source?" + SourceDocumentQuery(request),
             null,
             cancellationToken);
+
+    private static string PeriodQuery(BusinessConsoleErpPeriodRequest request)
+    {
+        return Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("periodStartDate", request.PeriodStartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+            ("periodEndDate", request.PeriodEndDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+    }
 
     private async Task<BusinessConsoleErpPurchaseOrderListResponse> ListPurchaseOrdersCoreAsync(
         string internalBearerToken,
