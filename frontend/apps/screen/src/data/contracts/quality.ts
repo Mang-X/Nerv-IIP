@@ -125,9 +125,15 @@ export interface DefectTrend30 {
   labels: string[]
 }
 
-/** 今日近 12h 不良率趋势（整点滚动）🟡 */
+/** 今日近 12h 不良率趋势（整点滚动，分层结构与 30 天视图一致）🟡
+ *  ratePct = 过程检（管控主线）；iqc/fqc 为对比层；factory = 全厂加权
+ *  （按各层当日检验件数加权，与三层区件数勾稽）🟠 小时级分层无真实读面，待 #570 */
 export interface DefectTrend12h {
+  /** 过程检（IPQC）每小时件不良率 % —— 主线 */
   ratePct: number[]
+  iqc: number[]
+  fqc: number[]
+  factory: number[]
   labels: string[]
 }
 

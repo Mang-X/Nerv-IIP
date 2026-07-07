@@ -67,6 +67,27 @@ describe('buildQualityBoard（F01 · 勾稽自洽）', () => {
     for (const l of b.trend12h.labels) expect(l).toMatch(/^\d{2}:00$/)
     expect(b.trend12h.ratePct.at(-1)!).toBeGreaterThan(ipqcLimit)
     for (const v of b.trend12h.ratePct.slice(0, 9)) expect(v).toBeLessThan(ipqcLimit)
+    // 12h 分层结构与 30 天一致：三层等长；全厂 = 各层按当日检验件数逐点加权（勾稽）；
+    // 平稳层（来料/成品）全程在各自管控限内
+    expect(b.trend12h.iqc).toHaveLength(12)
+    expect(b.trend12h.fqc).toHaveLength(12)
+    expect(b.trend12h.factory).toHaveLength(12)
+    const wI = b.layers.find((l) => l.key === 'iqc')!.pieceInspected
+    const wP = b.layers.find((l) => l.key === 'ipqc')!.pieceInspected
+    const wF = b.layers.find((l) => l.key === 'fqc')!.pieceInspected
+    for (let i = 0; i < 12; i++) {
+      const exp =
+        Math.round(
+          ((b.trend12h.iqc[i] * wI + b.trend12h.ratePct[i] * wP + b.trend12h.fqc[i] * wF) /
+            (wI + wP + wF)) *
+            100,
+        ) / 100
+      expect(b.trend12h.factory[i]).toBe(exp)
+    }
+    for (const v of b.trend12h.iqc)
+      expect(v).toBeLessThan(b.layers.find((l) => l.key === 'iqc')!.limitPct)
+    for (const v of b.trend12h.fqc)
+      expect(v).toBeLessThan(b.layers.find((l) => l.key === 'fqc')!.limitPct)
 
     expect(b.trend30.ratePct).toHaveLength(30)
     expect(b.trend30.lots).toHaveLength(30)

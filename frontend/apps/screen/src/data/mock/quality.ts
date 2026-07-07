@@ -281,15 +281,26 @@ function buildPareto(
   return { items, total }
 }
 
-function buildTrend12h(p: QualityProfile): DefectTrend12h {
+/** 12h 分层结构与 30 天视图一致：主线过程检（事故拉升），来料/成品平稳基线，
+ *  全厂 = 按各层当日检验件数**逐点加权**（与三层区件数勾稽，单测锁定）。 */
+function buildTrend12h(p: QualityProfile, layers: InspectionLayer[]): DefectTrend12h {
   const { bases, hotFrom, calm, hot } = p.hourly
-  return {
-    ratePct: bases.map((b, i) => {
-      const [lo, hi] = i >= hotFrom ? hot : calm
-      return round2(clamp(jf(b, 0.2), lo, hi))
-    }),
-    labels: hourLabels12(),
-  }
+  const ipqc = bases.map((b, i) => {
+    const [lo, hi] = i >= hotFrom ? hot : calm
+    return round2(clamp(jf(b, 0.2), lo, hi))
+  })
+  const seedOf = (key: InspectionLayer['key']) => layers.find((l) => l.key === key)!
+  // 平稳层围绕各自当日件不良率小幅波动（无事故段）
+  const flat = (base: number) =>
+    bases.map(() => round2(clamp(jf(base, 0.14), Math.max(0.08, base - 0.18), base + 0.18)))
+  const iqc = flat(seedOf('iqc').pieceDefectPct)
+  const fqc = flat(seedOf('fqc').pieceDefectPct)
+  const wI = seedOf('iqc').pieceInspected
+  const wP = seedOf('ipqc').pieceInspected
+  const wF = seedOf('fqc').pieceInspected
+  const wSum = wI + wP + wF
+  const factory = ipqc.map((v, i) => round2((iqc[i] * wI + v * wP + fqc[i] * wF) / wSum))
+  return { ratePct: ipqc, iqc, fqc, factory, labels: hourLabels12() }
 }
 
 function buildTrend30(p: QualityProfile, todayRate: number, todayLots: number): DefectTrend30 {
@@ -369,6 +380,6 @@ export function buildQualityBoard(
     paretoTotal,
     layers,
     trend30: buildTrend30(p, defectRatePct, batchTotal),
-    trend12h: buildTrend12h(p),
+    trend12h: buildTrend12h(p, layers),
   }
 }

@@ -96,8 +96,12 @@ const trendData = computed(() => {
     plan: b.trend12h.ratePct.map(() => limit),
     hoverLabels: b.trend12h.labels,
     xLabels: b.trend12h.labels.filter((_, i) => i % 2 === 0),
-    // 12h 无分层时序读面（诚实缺口，不造假分层小时数据）
-    series: undefined,
+    // 与 30 天视图同构：全厂（参考）+ 来料/成品 —— 两个 tab 一致的分层读法
+    series: [
+      { label: '全厂', color: 'rgba(200, 214, 235, 0.65)', data: b.trend12h.factory },
+      { label: 'IQC', color: LAYER_COLORS.iqc, data: b.trend12h.iqc },
+      { label: 'FQC', color: LAYER_COLORS.fqc, data: b.trend12h.fqc },
+    ],
   }
 })
 // y 轴刻度：与 TrendChart 内部量程算法同式（数据向上取整，含分层序列），标签才不说谎
@@ -496,12 +500,14 @@ const trendPin = computed(() => {
 }
 
 /* —— 主体三列 —— */
+/* fr 必须包 minmax(0,·)：裸 fr 的隐式 min-width = 内容宽，
+   多序列图例一长就把整列撑溢出（30 天 tab 宽度异常的根因） */
 .qb-main {
   flex: 1;
   min-height: 0;
   min-width: 0;
   display: grid;
-  grid-template-columns: 1.42fr 1.18fr 1fr;
+  grid-template-columns: minmax(0, 1.42fr) minmax(0, 1.18fr) minmax(0, 1fr);
   gap: 16px;
 }
 .qb-mid,
@@ -519,6 +525,7 @@ const trendPin = computed(() => {
 }
 .qb-trend {
   min-height: 0;
+  min-width: 0;
 }
 /* 红线阈值线：把 TrendChart 的 plan（indigo）在本面板内重映射为红（组件零改动） */
 .qb-trend {
