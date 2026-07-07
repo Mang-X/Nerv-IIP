@@ -177,7 +177,11 @@ public sealed class EngineeringChangeReleasedIntegrationEventConverter(IProductE
                 EventIds.AggregateId(change.Id?.Id, change.ChangeNumber),
                 change.ChangeNumber,
                 change.AffectedVersions.Select(x => x.VersionId).ToArray(),
-                change.EffectiveDate ?? DateOnly.FromDateTime(occurredAtUtc.UtcDateTime)));
+                change.EffectiveDate ?? DateOnly.FromDateTime(occurredAtUtc.UtcDateTime),
+                change.AffectedVersions.Select(x => new EngineeringChangeAffectedVersionPayload(
+                    x.VersionKind,
+                    x.VersionId,
+                    x.SupersededByVersionId)).ToArray()));
     }
 }
 

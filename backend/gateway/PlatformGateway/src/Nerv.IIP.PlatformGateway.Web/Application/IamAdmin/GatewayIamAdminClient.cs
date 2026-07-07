@@ -26,6 +26,8 @@ public interface IGatewayIamAdminClient
 
     Task DisableUserAsync(string bearerToken, string userId, CancellationToken cancellationToken);
 
+    Task EnableUserAsync(string bearerToken, string userId, CancellationToken cancellationToken);
+
     Task ResetUserPasswordAsync(
         string bearerToken,
         string userId,
@@ -101,6 +103,14 @@ public sealed class HttpGatewayIamAdminClient(HttpClient httpClient) : IGatewayI
             () => null,
             HttpMethod.Post,
             $"/api/iam/v1/users/{Uri.EscapeDataString(userId)}/disable",
+            bearerToken,
+            cancellationToken);
+
+    public Task EnableUserAsync(string bearerToken, string userId, CancellationToken cancellationToken) =>
+        SendNoContentAsync(
+            () => null,
+            HttpMethod.Post,
+            $"/api/iam/v1/users/{Uri.EscapeDataString(userId)}/enable",
             bearerToken,
             cancellationToken);
 

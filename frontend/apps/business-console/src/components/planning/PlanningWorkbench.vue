@@ -270,6 +270,9 @@ const suggestionTypeFilterOptions = [
   { label: '全部类型', value: 'all' },
   { label: '生产建议 (→MES)', value: 'planned-work-order' },
   { label: '采购建议 (→ERP)', value: 'planned-purchase' },
+  { label: '提前调整', value: 'reschedule-in' },
+  { label: '延期调整', value: 'reschedule-out' },
+  { label: '取消计划收货', value: 'cancel' },
 ]
 
 const demandColumns: DataTableProColumn<BusinessConsoleDemandSourceItem>[] = [
@@ -348,6 +351,7 @@ async function releaseMps(row: BusinessConsoleMpsBucketItem) {
 }
 async function acceptPlanningSuggestion(row: BusinessConsolePlanningSuggestionItem) {
   if (!row.suggestionId || !row.suggestionType) return
+  if (!isAcceptableSuggestion(row.suggestionType)) return
   if (acceptingSuggestionId.value) return
   acceptingSuggestionId.value = row.suggestionId
   try {
@@ -391,7 +395,23 @@ function demandTypeLabel(value?: string | null) {
   return ({ 'forecast': '预测', 'safety-stock': '安全库存', 'sales-order': '销售订单' } as Record<string, string>)[value ?? ''] ?? (value || '未指定')
 }
 function suggestionTypeLabel(value?: string | null) {
-  return ({ 'planned-purchase': '采购建议', 'planned-work-order': '生产建议' } as Record<string, string>)[value ?? ''] ?? (value || '未指定')
+  return ({
+    'planned-purchase': '采购建议',
+    'planned-work-order': '生产建议',
+    'reschedule-in': '提前调整',
+    'reschedule-out': '延期调整',
+    'cancel': '取消收货',
+  } as Record<string, string>)[value ?? ''] ?? (value || '未指定')
+}
+function suggestionTypeTone(value?: string | null): StatusTone {
+  if (value === 'planned-work-order') return 'info'
+  if (value === 'planned-purchase') return 'neutral'
+  if (value === 'reschedule-in' || value === 'reschedule-out') return 'warning'
+  if (value === 'cancel') return 'danger'
+  return 'neutral'
+}
+function isAcceptableSuggestion(value?: string | null) {
+  return value === 'planned-work-order' || value === 'planned-purchase'
 }
 function reasonLabel(value?: string | null) {
   const map: Record<string, string> = {
@@ -933,7 +953,7 @@ function openPeggingSource(row: BusinessConsoleMrpPeggingItem) {
         <template #cell-suggestionType="{ row }">
           <StatusBadgePro
             :label="suggestionTypeLabel(row.suggestionType)"
-            :tone="row.suggestionType === 'planned-work-order' ? 'info' : 'neutral'"
+            :tone="suggestionTypeTone(row.suggestionType)"
           />
         </template>
         <template #cell-skuCode="{ row }">
@@ -991,7 +1011,7 @@ function openPeggingSource(row: BusinessConsoleMrpPeggingItem) {
         <template #cell-status="{ row }"><StatusBadgePro :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
         <template #cell-actions="{ row }">
           <ButtonPro
-            v-if="isOpen(row.status)"
+            v-if="isOpen(row.status) && isAcceptableSuggestion(row.suggestionType)"
             size="sm"
             type="button"
             variant="outline"
@@ -1002,6 +1022,7 @@ function openPeggingSource(row: BusinessConsoleMrpPeggingItem) {
             <CheckIcon v-else aria-hidden="true" />
             接受
           </ButtonPro>
+          <span v-else-if="isOpen(row.status)" class="text-sm text-muted-foreground">异常待处理</span>
         </template>
       </DataTablePro>
     </TabsProContent>

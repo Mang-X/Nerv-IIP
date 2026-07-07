@@ -334,9 +334,10 @@ public sealed class EfOperationTaskApplicationService(
             return template.ToSnapshot();
         }
 
-        if (string.Equals(operationCode, BuiltInOperationTemplates.LifecycleRestart.OperationCode, StringComparison.Ordinal))
+        var builtIn = BuiltInOperationTemplates.Find(operationCode);
+        if (builtIn is not null)
         {
-            return BuiltInOperationTemplates.LifecycleRestart;
+            return builtIn;
         }
 
         throw new InvalidOperationTaskRequestException($"Unsupported operation code: {operationCode}");
@@ -432,10 +433,27 @@ public sealed class EfOperationLeaseReaper(
 
 internal static class BuiltInOperationTemplates
 {
-    public static readonly OperationTemplateSnapshot LifecycleRestart = new(
-        "lifecycle.restart",
-        Enabled: true,
-        DefaultMaxAttempts: 3,
-        DefaultLeaseDurationSeconds: 300,
-        RequiresApproval: false);
+    public static readonly IReadOnlyList<OperationTemplateResponse> Responses =
+        BuiltInOperationTemplateCatalog.Definitions.Select(ToResponse).ToArray();
+
+    public static OperationTemplateSnapshot? Find(string operationCode)
+    {
+        return BuiltInOperationTemplateCatalog.Find(operationCode)?.ToSnapshot();
+    }
+
+    private static OperationTemplateResponse ToResponse(BuiltInOperationTemplateDefinition definition)
+    {
+        return new OperationTemplateResponse(
+            definition.OperationTemplateId,
+            definition.OperationCode,
+            definition.DisplayName,
+            definition.ParameterSchemaJson,
+            definition.RiskLevel,
+            definition.DefaultMaxAttempts,
+            definition.DefaultLeaseDurationSeconds,
+            definition.RequiresApproval,
+            definition.Enabled,
+            BuiltInOperationTemplateCatalog.MetadataTimestampUtc,
+            BuiltInOperationTemplateCatalog.MetadataTimestampUtc);
+    }
 }

@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
+using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using DomainScheduleResult = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleResult;
 using DomainScheduleTrigger = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleTrigger;
 using DomainScheduledOperationSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduledOperationSnapshot;
@@ -253,32 +254,54 @@ public sealed class CancelWorkOrderCommandHandler(ApplicationDbContext dbContext
 {
     public async Task<MesAcceptedResponse> Handle(CancelWorkOrderCommand request, CancellationToken cancellationToken)
     {
-        var workOrder = await WorkOrderLifecycleCommandGuards.GetWorkOrderAsync(
+        return await WorkOrderCancellationOrchestrator.CancelAsync(
             dbContext,
             request.OrganizationId,
             request.EnvironmentId,
             request.WorkOrderId,
+            request.Reason,
+            request.CancelledAtUtc,
+            cancellationToken);
+    }
+}
+
+internal static class WorkOrderCancellationOrchestrator
+{
+    public static async Task<MesAcceptedResponse> CancelAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        string reason,
+        DateTimeOffset cancelledAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var workOrder = await WorkOrderLifecycleCommandGuards.GetWorkOrderAsync(
+            dbContext,
+            organizationId,
+            environmentId,
+            workOrderId,
             cancellationToken);
 
         var materialIssueRequests = await dbContext.MaterialIssueRequests
-            .Where(x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.WorkOrderId == request.WorkOrderId)
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.WorkOrderId == workOrderId)
             .ToListAsync(cancellationToken);
         var finishedGoodsReceiptRequests = await dbContext.FinishedGoodsReceiptRequests
-            .Where(x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.WorkOrderId == request.WorkOrderId)
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.WorkOrderId == workOrderId)
             .ToListAsync(cancellationToken);
         var operationTasks = await dbContext.OperationTasks
-            .Where(x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.WorkOrderId == request.WorkOrderId)
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.WorkOrderId == workOrderId)
             .ToListAsync(cancellationToken);
 
         WorkOrderLifecycleCommandGuards.ApplyTransition(workOrder, x => x.Cancel(
-            request.Reason,
-            request.CancelledAtUtc,
+            reason,
+            cancelledAtUtc,
             materialIssueRequests.Select(materialIssueRequest => materialIssueRequest.RequestNo).ToArray()));
 
         foreach (var materialIssueRequest in materialIssueRequests)
@@ -294,7 +317,7 @@ public sealed class CancelWorkOrderCommandHandler(ApplicationDbContext dbContext
                         x.MaterialId == materialIssueRequest.MaterialId &&
                         x.MaterialLotId == materialIssueRequest.MaterialLotId)
                     .SumAsync(x => x.ConsumedQuantity, cancellationToken);
-                materialIssueRequest.CancelForWorkOrderCancellation(request.CancelledAtUtc, consumedQuantity);
+                materialIssueRequest.CancelForWorkOrderCancellation(cancelledAtUtc, consumedQuantity);
             }
             catch (InvalidOperationException exception)
             {
@@ -313,10 +336,10 @@ public sealed class CancelWorkOrderCommandHandler(ApplicationDbContext dbContext
 
         foreach (var operationTask in operationTasks)
         {
-            operationTask.Cancel(request.CancelledAtUtc);
+            operationTask.Cancel(cancelledAtUtc);
         }
 
-        return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, request.CancelledAtUtc);
+        return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, cancelledAtUtc);
     }
 }
 
@@ -422,6 +445,12 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
         var sourceSystem = string.IsNullOrWhiteSpace(request.SourceSystem) ? "DemandPlanning" : request.SourceSystem.Trim();
         var sourceDocumentType = string.IsNullOrWhiteSpace(request.SourceDocumentType) ? "PlanningSuggestion" : request.SourceDocumentType.Trim();
         var sourceDocumentId = string.IsNullOrWhiteSpace(request.SourceDocumentId) ? request.ProductionPlanId.Trim() : request.SourceDocumentId.Trim();
+        await MesArchivedProductionVersionGuard.ThrowIfArchivedAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ProductionVersionId,
+            cancellationToken);
         var allocation = await _codingService.AllocateWorkOrderIdAsync(
             request.OrganizationId,
             request.EnvironmentId,

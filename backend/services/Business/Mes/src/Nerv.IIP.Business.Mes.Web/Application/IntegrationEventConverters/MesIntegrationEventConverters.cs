@@ -58,7 +58,9 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
         string? lotNo,
         decimal quantity,
         DateTimeOffset requestedAtUtc,
-        decimal? unitCost = null)
+        decimal? unitCost = null,
+        DateOnly? productionDate = null,
+        DateOnly? expiryDate = null)
     {
         var movementType = quantity < 0 ? "outbound" : "inbound";
         return new InventoryMovementRequestedIntegrationEvent(
@@ -90,7 +92,9 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
                 null,
                 quantity,
                 requestedAtUtc,
-                UnitCost: unitCost));
+                UnitCost: unitCost,
+                ProductionDate: productionDate,
+                ExpiryDate: expiryDate));
     }
 }
 
@@ -115,7 +119,9 @@ public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter
             request.ProducedLotNo,
             domainEvent.Quantity,
             occurredAtUtc,
-            request.UnitCost);
+            request.UnitCost,
+            request.ProductionDate,
+            request.ExpiryDate);
     }
 }
 
@@ -454,6 +460,41 @@ public sealed class WorkOrderClosedIntegrationEventConverter
                 workOrder.CompletedQuantity,
                 workOrder.ScrapQuantity,
                 domainEvent.ClosedAtUtc));
+    }
+}
+
+public sealed class WorkOrderEngineeringChangeImpactDetectedIntegrationEventConverter
+    : IIntegrationEventConverter<MesEngineeringChangeWorkOrderImpactDetectedDomainEvent, WorkOrderEngineeringChangeImpactDetectedIntegrationEvent>
+{
+    public WorkOrderEngineeringChangeImpactDetectedIntegrationEvent Convert(MesEngineeringChangeWorkOrderImpactDetectedDomainEvent domainEvent)
+    {
+        var impact = domainEvent.Impact;
+        var idempotencyKey = EventIds.Idempotency(
+            "engineering-change-impact",
+            impact.OrganizationId,
+            impact.EnvironmentId,
+            impact.ChangeNumber,
+            impact.WorkOrderId);
+        return new WorkOrderEngineeringChangeImpactDetectedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.WorkOrderEngineeringChangeImpactDetected,
+            MesIntegrationEventVersions.V1,
+            impact.DetectedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            idempotencyKey,
+            impact.WorkOrderId,
+            impact.OrganizationId,
+            impact.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new WorkOrderEngineeringChangeImpactDetectedPayload(
+                impact.WorkOrderId,
+                impact.SkuId,
+                impact.ChangeNumber,
+                impact.ArchivedProductionVersionId,
+                impact.SupersededByProductionVersionId,
+                impact.Status,
+                impact.EffectiveDate));
     }
 }
 

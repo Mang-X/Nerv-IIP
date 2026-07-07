@@ -9,6 +9,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Auth;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
@@ -35,9 +36,35 @@ public abstract class IndustrialTelemetryEndpoint<TRequest, TResponse> : Endpoin
     }
 }
 
-public sealed record CreateTelemetryTagRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, string TagKey, string ValueType, string UnitCode, string SamplingPolicy);
+public sealed record CreateTelemetryTagRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string TagKey,
+    string ValueType,
+    string UnitCode,
+    string SamplingPolicy,
+    bool IsWritable = false,
+    decimal? ControlMinValue = null,
+    decimal? ControlMaxValue = null,
+    IReadOnlyCollection<string>? ControlAllowedValues = null);
 public sealed record CreateTelemetryTagResponse(TelemetryTagId TelemetryTagId);
 public sealed record ListTelemetryTagsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, int Skip = 0, int Take = 100);
+public sealed record CreateDeviceControlCommandRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ConnectorHostId,
+    string InstanceKey,
+    string DeviceAssetId,
+    string CommandType,
+    string? TagKey,
+    string? Value,
+    IReadOnlyDictionary<string, string>? Parameters,
+    string RequestedBy,
+    string Reason,
+    string IdempotencyKey,
+    string CorrelationId);
+public sealed record CreateDeviceControlCommandResponse(string OperationTaskId, string Status, OperationApprovalSummary? Approval);
 public sealed record CreateOrUpdateAlarmRuleRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -91,6 +118,19 @@ public sealed record PostAlarmEventRequest(
     decimal? ThresholdValue = null,
     string? UnitCode = null);
 public sealed record PostAlarmEventResponse(AlarmEventId AlarmEventId);
+public sealed record AcknowledgeAlarmRequest(string OrganizationId, string EnvironmentId, DateTimeOffset AcknowledgedAtUtc, string AcknowledgedBy);
+public sealed record ShelveAlarmRequest(string OrganizationId, string EnvironmentId, DateTimeOffset ShelvedAtUtc, int DurationMinutes, string ShelvedBy, string? Reason);
+public sealed record UnshelveAlarmRequest(string OrganizationId, string EnvironmentId, DateTimeOffset? UnshelvedAtUtc);
+public sealed record RunAlarmEscalationsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset AsOfUtc,
+    int UnacknowledgedTimeoutMinutes,
+    IReadOnlyCollection<string> SeverityLevels,
+    IReadOnlyCollection<string> RecipientRefs,
+    int MaxAlarms = 500);
+public sealed record AlarmLifecycleResponse(AlarmEventId AlarmEventId);
+public sealed record RunAlarmEscalationsResponse(int EscalatedCount, IReadOnlyCollection<AlarmEventId> AlarmEventIds);
 public sealed record ListAlarmEventsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, string? Status, int Skip = 0, int Take = 100);
 public sealed record QueryDeviceTimelineRequest(string DeviceAssetId, string? OrganizationId, string? EnvironmentId, DateTimeOffset? FromUtc, DateTimeOffset? ToUtc);
 public sealed record QueryOeeRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
@@ -105,8 +145,32 @@ public sealed class CreateTelemetryTagEndpoint(ISender sender) : IndustrialTelem
 
     public override async Task HandleAsync(CreateTelemetryTagRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateTelemetryTagCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.TagKey, req.ValueType, req.UnitCode, req.SamplingPolicy), ct);
+        var id = await sender.Send(new CreateTelemetryTagCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.TagKey, req.ValueType, req.UnitCode, req.SamplingPolicy, req.IsWritable, req.ControlMinValue, req.ControlMaxValue, req.ControlAllowedValues), ct);
         await Send.OkAsync(new CreateTelemetryTagResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CreateDeviceControlCommandEndpoint(ISender sender) : IndustrialTelemetryEndpoint<CreateDeviceControlCommandRequest, ResponseData<CreateDeviceControlCommandResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<CreateDeviceControlCommandEndpoint>());
+
+    public override async Task HandleAsync(CreateDeviceControlCommandRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new CreateDeviceControlCommandCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ConnectorHostId,
+            req.InstanceKey,
+            req.DeviceAssetId,
+            req.CommandType,
+            req.TagKey,
+            req.Value,
+            req.Parameters,
+            req.RequestedBy,
+            req.Reason,
+            req.IdempotencyKey,
+            req.CorrelationId), ct);
+        await Send.OkAsync(new CreateDeviceControlCommandResponse(result.OperationTaskId, result.Status, result.Approval).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -180,6 +244,50 @@ public sealed class PostAlarmEventEndpoint(ISender sender) : IndustrialTelemetry
             ? await sender.Send(new RaiseAlarmCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.AlarmCode, req.Severity, req.RaisedAtUtc, req.ExternalAlarmId, req.Priority, req.TagKey, req.ObservedValue, req.ThresholdValue, req.UnitCode), ct)
             : await sender.Send(new ClearAlarmCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.AlarmCode, req.ExternalAlarmId, req.ClearedAtUtc.Value, req.ClearedBy ?? string.Empty, req.ClearReason), ct);
         await Send.OkAsync(new PostAlarmEventResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class AcknowledgeAlarmEndpoint(ISender sender) : IndustrialTelemetryEndpoint<AcknowledgeAlarmRequest, ResponseData<AlarmLifecycleResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<AcknowledgeAlarmEndpoint>());
+
+    public override async Task HandleAsync(AcknowledgeAlarmRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new AcknowledgeAlarmCommand(AlarmEventRouteIds.Parse(Route<string>("alarmEventId")), req.OrganizationId, req.EnvironmentId, req.AcknowledgedAtUtc, req.AcknowledgedBy), ct);
+        await Send.OkAsync(new AlarmLifecycleResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ShelveAlarmEndpoint(ISender sender) : IndustrialTelemetryEndpoint<ShelveAlarmRequest, ResponseData<AlarmLifecycleResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<ShelveAlarmEndpoint>());
+
+    public override async Task HandleAsync(ShelveAlarmRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new ShelveAlarmCommand(AlarmEventRouteIds.Parse(Route<string>("alarmEventId")), req.OrganizationId, req.EnvironmentId, req.ShelvedAtUtc, req.DurationMinutes, req.ShelvedBy, req.Reason), ct);
+        await Send.OkAsync(new AlarmLifecycleResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class UnshelveAlarmEndpoint(ISender sender) : IndustrialTelemetryEndpoint<UnshelveAlarmRequest, ResponseData<AlarmLifecycleResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<UnshelveAlarmEndpoint>());
+
+    public override async Task HandleAsync(UnshelveAlarmRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new UnshelveAlarmCommand(AlarmEventRouteIds.Parse(Route<string>("alarmEventId")), req.OrganizationId, req.EnvironmentId, req.UnshelvedAtUtc ?? DateTimeOffset.UtcNow), ct);
+        await Send.OkAsync(new AlarmLifecycleResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class RunAlarmEscalationsEndpoint(ISender sender) : IndustrialTelemetryEndpoint<RunAlarmEscalationsRequest, ResponseData<RunAlarmEscalationsResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<RunAlarmEscalationsEndpoint>());
+
+    public override async Task HandleAsync(RunAlarmEscalationsRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new RunAlarmEscalationsCommand(req.OrganizationId, req.EnvironmentId, req.AsOfUtc, req.UnacknowledgedTimeoutMinutes, req.SeverityLevels, req.RecipientRefs, req.MaxAlarms), ct);
+        await Send.OkAsync(new RunAlarmEscalationsResponse(result.EscalatedCount, result.AlarmEventIds).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -275,6 +383,38 @@ public sealed class ListTelemetryTagsRequestValidator : Validator<ListTelemetryT
     }
 }
 
+public sealed class CreateDeviceControlCommandRequestValidator : Validator<CreateDeviceControlCommandRequest>
+{
+    public CreateDeviceControlCommandRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ConnectorHostId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.InstanceKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.CommandType)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(DeviceControlCommandValidation.IsSupportedCommandType)
+            .WithMessage("Device control command type must be write-tag, start-stop or parameter-set.");
+        When(x => DeviceControlCommandValidation.IsSingleTagCommand(x.CommandType), () =>
+        {
+            RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
+            RuleFor(x => x.Value).NotEmpty().MaximumLength(256);
+        });
+        When(x => DeviceControlCommandValidation.IsParameterSetCommand(x.CommandType), () =>
+        {
+            RuleFor(x => x.Parameters).NotEmpty();
+            RuleForEach(x => x.Parameters!.Keys).NotEmpty().MaximumLength(150);
+            RuleForEach(x => x.Parameters!.Values).NotEmpty().MaximumLength(256);
+        });
+        RuleFor(x => x.RequestedBy).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.CorrelationId).NotEmpty().MaximumLength(150);
+    }
+}
+
 public sealed class ListAlarmRulesRequestValidator : Validator<ListAlarmRulesRequest>
 {
     public ListAlarmRulesRequestValidator()
@@ -301,11 +441,16 @@ public static class IndustrialTelemetryEndpointContracts
     [
         new(typeof(CreateTelemetryTagEndpoint), "POST", "/api/business/v1/iiot/tags", IndustrialTelemetryPermissionCodes.TagsManage, InternalServiceAuthorizationPolicy.Name, "createBusinessIiotTelemetryTag"),
         new(typeof(ListTelemetryTagsEndpoint), "GET", "/api/business/v1/iiot/tags", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotTelemetryTags"),
+        new(typeof(CreateDeviceControlCommandEndpoint), "POST", "/api/business/v1/iiot/device-control-commands", IndustrialTelemetryPermissionCodes.DeviceControlWrite, InternalServiceAuthorizationPolicy.Name, "createBusinessIiotDeviceControlCommand"),
         new(typeof(CreateOrUpdateAlarmRuleEndpoint), "POST", "/api/business/v1/iiot/alarm-rules", IndustrialTelemetryPermissionCodes.AlarmRulesManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdateBusinessIiotAlarmRule"),
         new(typeof(ListAlarmRulesEndpoint), "GET", "/api/business/v1/iiot/alarm-rules", IndustrialTelemetryPermissionCodes.AlarmsRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotAlarmRules"),
         new(typeof(RecordTelemetrySampleEndpoint), "POST", "/api/business/v1/iiot/samples", IndustrialTelemetryPermissionCodes.TelemetryWrite, InternalServiceAuthorizationPolicy.Name, "recordBusinessIiotTelemetrySample"),
         new(typeof(PostAlarmEventEndpoint), "POST", "/api/business/v1/iiot/alarms", IndustrialTelemetryPermissionCodes.AlarmsWrite, InternalServiceAuthorizationPolicy.Name, "raiseBusinessIiotAlarm"),
         new(typeof(ListAlarmEventsEndpoint), "GET", "/api/business/v1/iiot/alarms", IndustrialTelemetryPermissionCodes.AlarmsRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotAlarms"),
+        new(typeof(AcknowledgeAlarmEndpoint), "POST", "/api/business/v1/iiot/alarms/{alarmEventId}/acknowledge", IndustrialTelemetryPermissionCodes.AlarmsWrite, InternalServiceAuthorizationPolicy.Name, "acknowledgeBusinessIiotAlarm"),
+        new(typeof(ShelveAlarmEndpoint), "POST", "/api/business/v1/iiot/alarms/{alarmEventId}/shelve", IndustrialTelemetryPermissionCodes.AlarmsWrite, InternalServiceAuthorizationPolicy.Name, "shelveBusinessIiotAlarm"),
+        new(typeof(UnshelveAlarmEndpoint), "POST", "/api/business/v1/iiot/alarms/{alarmEventId}/unshelve", IndustrialTelemetryPermissionCodes.AlarmsWrite, InternalServiceAuthorizationPolicy.Name, "unshelveBusinessIiotAlarm"),
+        new(typeof(RunAlarmEscalationsEndpoint), "POST", "/api/business/v1/iiot/alarms/escalations/run", IndustrialTelemetryPermissionCodes.AlarmsWrite, InternalServiceAuthorizationPolicy.Name, "runBusinessIiotAlarmEscalations"),
         new(typeof(QueryDeviceTimelineEndpoint), "GET", "/api/business/v1/iiot/devices/{deviceAssetId}/timeline", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotDeviceTimeline"),
         new(typeof(QueryOeeEndpoint), "GET", "/api/business/v1/iiot/oee", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotOee"),
         new(typeof(QueryRuntimeHoursEndpoint), "GET", "/api/business/v1/iiot/runtime-hours", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotRuntimeHours"),
@@ -320,5 +465,18 @@ public static class IndustrialTelemetryEndpointContracts
     {
         contract = All.SingleOrDefault(x => x.EndpointType == endpointType);
         return contract is not null;
+    }
+}
+
+internal static class AlarmEventRouteIds
+{
+    public static AlarmEventId Parse(string? value)
+    {
+        if (!Guid.TryParse(value, out var id))
+        {
+            throw new KnownException("Alarm event id is invalid.");
+        }
+
+        return new AlarmEventId(id);
     }
 }

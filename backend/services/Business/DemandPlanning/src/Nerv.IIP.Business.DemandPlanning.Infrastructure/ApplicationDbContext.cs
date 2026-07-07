@@ -1,6 +1,7 @@
 using MediatR;
 using Nerv.IIP.Business.DemandPlanning.Domain;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.ForecastInputAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
@@ -13,6 +14,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage
 {
     public DbSet<DemandSource> DemandSources => Set<DemandSource>();
+    public DbSet<ForecastInput> ForecastInputs => Set<ForecastInput>();
     public DbSet<MasterProductionSchedule> MasterProductionSchedules => Set<MasterProductionSchedule>();
     public DbSet<MrpRun> MrpRuns => Set<MrpRun>();
     public DbSet<PlanningSuggestion> PlanningSuggestions => Set<PlanningSuggestion>();

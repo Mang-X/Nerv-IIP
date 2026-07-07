@@ -7,6 +7,7 @@ public static class MesIntegrationEventTypes
     public const string WorkOrderReleased = "mes.WorkOrderReleased";
     public const string WorkOrderCompleted = "mes.WorkOrderCompleted";
     public const string WorkOrderClosed = "mes.WorkOrderClosed";
+    public const string WorkOrderEngineeringChangeImpactDetected = "mes.WorkOrderEngineeringChangeImpactDetected";
     public const string OperationTaskCompleted = "mes.OperationTaskCompleted";
     public const string FinishedGoodsReceiptRequested = "mes.FinishedGoodsReceiptRequested";
 }
@@ -99,6 +100,40 @@ public sealed record WorkOrderClosedPayload(
     decimal GoodQuantity,
     decimal ScrapQuantity,
     DateTimeOffset ClosedAtUtc);
+
+public static class MesEngineeringChangeImpactContractStatuses
+{
+    public const string PendingDecision = "pending-decision";
+    public const string AutoRebound = "auto-rebound";
+    public const string BlockedForManualConfirmation = "blocked-for-manual-confirmation";
+    public const string Decided = "decided";
+}
+
+public sealed record WorkOrderEngineeringChangeImpactDetectedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    WorkOrderEngineeringChangeImpactDetectedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record WorkOrderEngineeringChangeImpactDetectedPayload(
+    string WorkOrderId,
+    string SkuCode,
+    string ChangeNumber,
+    string ArchivedProductionVersionId,
+    string? SupersededByProductionVersionId,
+    string ImpactStatus,
+    DateOnly EffectiveDate);
 
 public sealed record OperationTaskCompletedIntegrationEvent(
     string EventId,

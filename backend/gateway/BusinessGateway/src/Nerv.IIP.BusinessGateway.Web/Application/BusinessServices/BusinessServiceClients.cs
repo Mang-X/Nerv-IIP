@@ -4,7 +4,9 @@ using System.Net.Http.Json;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Scheduling;
 
@@ -223,7 +225,8 @@ public interface IBusinessInventoryClient
     Task<BusinessConsolePostStockMovementResponse> PostMovementAsync(
         string internalBearerToken,
         BusinessConsolePostStockMovementRequest request,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? forwardedPermissions = null);
 
     Task<BusinessConsoleCreateStockCountTaskResponse> CreateCountTaskAsync(
         string internalBearerToken,
@@ -451,6 +454,16 @@ public interface IBusinessProductEngineeringClient
         BusinessConsoleReleaseEngineeringChangeRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleEngineeringEntityResponse> CancelScheduledEngineeringChangeAsync(
+        string internalBearerToken,
+        BusinessConsoleCancelScheduledEngineeringChangeRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleEngineeringEntityResponse> RescheduleEngineeringChangeAsync(
+        string internalBearerToken,
+        BusinessConsoleRescheduleEngineeringChangeRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleEngineeringChangeImpactPreviewResponse> PreviewEngineeringChangeImpactAsync(
         string internalBearerToken,
         BusinessConsoleEngineeringChangeImpactPreviewRequest request,
@@ -539,6 +552,16 @@ public interface IBusinessPlanningClient
         string internalBearerToken,
         string demandSourceId,
         BusinessConsolePlanningDemandCancelRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleForecastInputListResponse> ListForecastInputsAsync(
+        string internalBearerToken,
+        BusinessConsoleForecastInputListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleForecastInputItem> CreateOrUpdateForecastInputAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateForecastInputRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleRunMrpResponse> RunMrpAsync(
@@ -861,6 +884,24 @@ public interface IBusinessIndustrialTelemetryClient
         string internalBearerToken,
         BusinessConsoleEquipmentAlarmListRequest request,
         CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAlarmLifecycleResponse> AcknowledgeAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleAcknowledgeAlarmRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAlarmLifecycleResponse> ShelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleShelveAlarmRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAlarmLifecycleResponse> UnshelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleUnshelveAlarmRequest request,
+        CancellationToken cancellationToken);
 }
 
 public interface IBusinessMaintenanceClient
@@ -912,6 +953,11 @@ public interface IBusinessMaintenanceClient
         BusinessConsoleMaintenanceListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMaintenanceInspectionMeasurementTrendResponse> QueryInspectionMeasurementTrendAsync(
+        string internalBearerToken,
+        BusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMaintenanceSparePartListResponse> ListSparePartsAsync(
         string internalBearerToken,
         BusinessConsoleMaintenanceListRequest request,
@@ -937,6 +983,11 @@ public interface IBusinessMaintenanceClient
         string internalBearerToken,
         string deviceAssetId,
         BusinessConsoleQueryMaintenanceAssetReliabilityRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMaintenanceReliabilitySummaryResponse> QueryReliabilitySummaryAsync(
+        string internalBearerToken,
+        BusinessConsoleQueryMaintenanceReliabilitySummaryRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -2084,7 +2135,16 @@ public sealed class HttpBusinessIamDirectoryClient(HttpClient httpClient)
             cancellationToken);
 }
 
-public sealed class HttpBusinessInventoryClient(HttpClient httpClient)
+public sealed class BusinessGatewayInventoryForwardedPermissionOptions
+{
+    public string Issuer { get; set; } = "business-gateway";
+
+    public string? SigningKey { get; set; }
+}
+
+public sealed class HttpBusinessInventoryClient(
+    HttpClient httpClient,
+    IOptions<BusinessGatewayInventoryForwardedPermissionOptions> forwardedPermissionOptions)
     : BusinessServiceHttpClient(httpClient), IBusinessInventoryClient
 {
     public Task<BusinessConsoleInventoryAvailabilityResponse> GetAvailabilityAsync(
@@ -2112,13 +2172,20 @@ public sealed class HttpBusinessInventoryClient(HttpClient httpClient)
     public Task<BusinessConsolePostStockMovementResponse> PostMovementAsync(
         string internalBearerToken,
         BusinessConsolePostStockMovementRequest request,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? forwardedPermissions = null) =>
         SendAsync<BusinessConsolePostStockMovementResponse>(
             internalBearerToken,
             HttpMethod.Post,
             "/api/inventory/v1/movements",
             request,
-            cancellationToken);
+            cancellationToken,
+            configureRequest: httpRequest => AddForwardedPermissions(
+                httpRequest,
+                forwardedPermissions,
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.IdempotencyKey));
 
     public Task<BusinessConsoleCreateStockCountTaskResponse> CreateCountTaskAsync(
         string internalBearerToken,
@@ -2150,6 +2217,43 @@ public sealed class HttpBusinessInventoryClient(HttpClient httpClient)
         string CountTaskId,
         decimal CountedQuantity,
         string IdempotencyKey);
+
+    private void AddForwardedPermissions(
+        HttpRequestMessage request,
+        IReadOnlyCollection<string>? forwardedPermissions,
+        string organizationId,
+        string environmentId,
+        string requestKey)
+    {
+        if (forwardedPermissions is null || forwardedPermissions.Count == 0)
+        {
+            return;
+        }
+
+        var options = forwardedPermissionOptions.Value;
+        if (string.IsNullOrWhiteSpace(options.SigningKey))
+        {
+            return;
+        }
+
+        var permissions = string.Join(' ', forwardedPermissions.Order(StringComparer.Ordinal));
+        var issuedAtUnixSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var signature = InventoryForwardedPermissionHeaders.CreateSignature(
+            options.SigningKey,
+            options.Issuer,
+            permissions,
+            organizationId,
+            environmentId,
+            requestKey,
+            issuedAtUnixSeconds);
+        request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.PermissionsHeaderName, permissions);
+        request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.IssuerHeaderName, options.Issuer);
+        request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.OrganizationHeaderName, organizationId);
+        request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.EnvironmentHeaderName, environmentId);
+        request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.RequestKeyHeaderName, requestKey);
+        request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.IssuedAtHeaderName, issuedAtUnixSeconds.ToString(CultureInfo.InvariantCulture));
+        request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.SignatureHeaderName, signature);
+    }
 }
 
 public sealed class HttpBusinessQualityClient(HttpClient httpClient)
@@ -2924,6 +3028,28 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             request,
             cancellationToken);
 
+    public Task<BusinessConsoleEngineeringEntityResponse> CancelScheduledEngineeringChangeAsync(
+        string internalBearerToken,
+        BusinessConsoleCancelScheduledEngineeringChangeRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringEntityResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/engineering/engineering-changes/cancel-scheduled",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleEngineeringEntityResponse> RescheduleEngineeringChangeAsync(
+        string internalBearerToken,
+        BusinessConsoleRescheduleEngineeringChangeRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringEntityResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/engineering/engineering-changes/reschedule",
+            request,
+            cancellationToken);
+
     public Task<BusinessConsoleEngineeringChangeImpactPreviewResponse> PreviewEngineeringChangeImpactAsync(
         string internalBearerToken,
         BusinessConsoleEngineeringChangeImpactPreviewRequest request,
@@ -3190,6 +3316,56 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         return new BusinessConsoleAcceptedResponse(true);
     }
 
+    public Task<BusinessConsoleForecastInputListResponse> ListForecastInputsAsync(
+        string internalBearerToken,
+        BusinessConsoleForecastInputListRequest request,
+        CancellationToken cancellationToken) =>
+        ListForecastInputsCoreAsync(internalBearerToken, request, cancellationToken);
+
+    private async Task<BusinessConsoleForecastInputListResponse> ListForecastInputsCoreAsync(
+        string internalBearerToken,
+        BusinessConsoleForecastInputListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var items = await SendAsync<IReadOnlyCollection<BusinessConsoleForecastInputItem>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/planning/forecasts?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", request.SkuCode),
+                ("siteCode", request.SiteCode),
+                ("fromDate", request.FromDate),
+                ("toDate", request.ToDate)),
+            null,
+            cancellationToken);
+        return new BusinessConsoleForecastInputListResponse(items);
+    }
+
+    public async Task<BusinessConsoleForecastInputItem> CreateOrUpdateForecastInputAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateForecastInputRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamCreateOrUpdateForecastInputResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/planning/forecasts",
+            request,
+            cancellationToken);
+        return new BusinessConsoleForecastInputItem(
+            response.ForecastInputId,
+            request.ForecastReference,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.PeriodStartDate,
+            request.PeriodEndDate,
+            request.Quantity,
+            request.BackwardConsumptionDays,
+            request.ForwardConsumptionDays);
+    }
+
     public async Task<BusinessConsoleRunMrpResponse> RunMrpAsync(
         string internalBearerToken,
         BusinessConsoleRunMrpRequest request,
@@ -3391,6 +3567,8 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         };
 
     private sealed record DownstreamCreateOrUpdateDemandSourceResponse(string DemandSourceId);
+
+    private sealed record DownstreamCreateOrUpdateForecastInputResponse(string ForecastInputId);
 
     private sealed record DownstreamMpsBucketItem(
         string MpsId,
@@ -3685,7 +3863,16 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 alarm.Status,
                 alarm.RaisedAtUtc,
                 alarm.ClearedAtUtc,
-                alarm.ExternalAlarmId)).ToArray(), page.Total);
+                alarm.ExternalAlarmId,
+                alarm.AcknowledgedAtUtc,
+                alarm.AcknowledgedBy,
+                alarm.ShelvedAtUtc,
+                alarm.ShelvedUntilUtc,
+                alarm.ShelvedBy,
+                alarm.ShelveReason,
+                alarm.EscalatedAtUtc,
+                alarm.EscalationReason,
+                alarm.EscalationRecipientRefs)).ToArray(), page.Total);
     }
 
     public async Task<BusinessConsoleTelemetryHistoryResponse> QueryHistoryAsync(
@@ -3772,19 +3959,58 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.DeviceAssetId,
-                request.Status ?? "raised",
+                request.Status ?? "active",
                 request.Skip,
                 request.Take),
             cancellationToken);
         return new BusinessConsoleEquipmentAlarmListPageResponse(
-            alarms.Items.Select(alarm => new EquipmentRuntimeAlarmSummary(
-                alarm.AlarmEventId,
-                alarm.DeviceAssetId,
-                alarm.AlarmCode,
-                alarm.Severity,
-                alarm.RaisedAtUtc,
-                alarm.ExternalAlarmId)).ToArray(),
+            alarms.Items,
             alarms.Total);
+    }
+
+    public async Task<BusinessConsoleAlarmLifecycleResponse> AcknowledgeAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleAcknowledgeAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamAlarmLifecycleResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/iiot/alarms/{Uri.EscapeDataString(alarmEventId)}/acknowledge",
+            request,
+            cancellationToken);
+        return new BusinessConsoleAlarmLifecycleResponse(FormatJsonScalar(response.AlarmEventId));
+    }
+
+    public async Task<BusinessConsoleAlarmLifecycleResponse> ShelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleShelveAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamAlarmLifecycleResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/iiot/alarms/{Uri.EscapeDataString(alarmEventId)}/shelve",
+            request,
+            cancellationToken);
+        return new BusinessConsoleAlarmLifecycleResponse(FormatJsonScalar(response.AlarmEventId));
+    }
+
+    public async Task<BusinessConsoleAlarmLifecycleResponse> UnshelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleUnshelveAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamAlarmLifecycleResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/iiot/alarms/{Uri.EscapeDataString(alarmEventId)}/unshelve",
+            request,
+            cancellationToken);
+        return new BusinessConsoleAlarmLifecycleResponse(FormatJsonScalar(response.AlarmEventId));
     }
 
     private static string AvailabilityQuery(BusinessConsoleEquipmentAvailabilityRequest request) =>
@@ -3830,7 +4056,16 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         string Status,
         DateTimeOffset RaisedAtUtc,
         DateTimeOffset? ClearedAtUtc,
-        string ExternalAlarmId);
+        string ExternalAlarmId,
+        DateTimeOffset? AcknowledgedAtUtc = null,
+        string? AcknowledgedBy = null,
+        DateTimeOffset? ShelvedAtUtc = null,
+        DateTimeOffset? ShelvedUntilUtc = null,
+        string? ShelvedBy = null,
+        string? ShelveReason = null,
+        DateTimeOffset? EscalatedAtUtc = null,
+        string? EscalationReason = null,
+        IReadOnlyCollection<string>? EscalationRecipientRefs = null);
 
     private sealed record DownstreamTelemetryTagListItem(
         JsonElement TelemetryTagId,
@@ -3864,6 +4099,8 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         JsonElement? DeviceStateSnapshotId);
 
     private sealed record DownstreamPostTelemetryAlarmResponse(JsonElement AlarmEventId);
+
+    private sealed record DownstreamAlarmLifecycleResponse(JsonElement AlarmEventId);
 }
 
 public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
@@ -3898,7 +4135,11 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 request.Result,
                 request.DowntimeReasonCode,
                 request.DowntimeMinutes,
-                request.SpareParts),
+                request.SpareParts,
+                request.ActualLaborMinutes,
+                request.SparePartCostAmount,
+                request.ExternalServiceCostAmount,
+                request.CostCurrencyCode),
             cancellationToken);
         return new BusinessConsoleCompleteMaintenanceWorkOrderResponse(true);
     }
@@ -3922,7 +4163,13 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 workOrder.Status,
                 workOrder.SourceAlarmId,
                 null,
-                workOrder.OpenedAtUtc)).ToArray(),
+                workOrder.OpenedAtUtc,
+                workOrder.AssignedTechnicianUserId,
+                workOrder.EstimatedLaborMinutes,
+                workOrder.ActualLaborMinutes,
+                workOrder.SparePartCostAmount,
+                workOrder.ExternalServiceCostAmount,
+                workOrder.CostCurrencyCode)).ToArray(),
             workOrders.Skip,
             workOrders.Take,
             workOrders.Total);
@@ -4036,10 +4283,41 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 FormatOptionalJsonScalar(inspection.WorkOrderId),
                 inspection.Inspector,
                 inspection.Result,
-                inspection.InspectedAtUtc)).ToArray(),
+                inspection.InspectedAtUtc,
+                inspection.Measurements ?? [])).ToArray(),
             inspections.Skip,
             inspections.Take,
             inspections.Total);
+    }
+
+    public async Task<BusinessConsoleMaintenanceInspectionMeasurementTrendResponse> QueryInspectionMeasurementTrendAsync(
+        string internalBearerToken,
+        BusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest request,
+        CancellationToken cancellationToken)
+    {
+        var trend = await SendAsync<DownstreamMaintenanceInspectionMeasurementTrendResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/maintenance/inspection-measurements/trends?" + InspectionMeasurementTrendQuery(request),
+            null,
+            cancellationToken);
+        return new BusinessConsoleMaintenanceInspectionMeasurementTrendResponse(
+            trend.OrganizationId,
+            trend.EnvironmentId,
+            trend.DeviceAssetId,
+            trend.CharacteristicCode,
+            trend.WindowStartUtc,
+            trend.WindowEndUtc,
+            trend.Items.Select(item => new BusinessConsoleMaintenanceInspectionMeasurementTrendItem(
+                FormatJsonScalar(item.InspectionId),
+                FormatOptionalJsonScalar(item.PlanId),
+                FormatOptionalJsonScalar(item.WorkOrderId),
+                item.InspectedAtUtc,
+                item.MeasuredValue,
+                item.UomCode,
+                item.LowerSpecLimit,
+                item.UpperSpecLimit,
+                item.IsWithinSpec)).ToArray());
     }
 
     public async Task<BusinessConsoleMaintenanceSparePartListResponse> ListSparePartsAsync(
@@ -4117,6 +4395,17 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleMaintenanceReliabilitySummaryResponse> QueryReliabilitySummaryAsync(
+        string internalBearerToken,
+        BusinessConsoleQueryMaintenanceReliabilitySummaryRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMaintenanceReliabilitySummaryResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/maintenance/reliability/summary?" + ReliabilitySummaryQuery(request),
+            null,
+            cancellationToken);
+
     private static string AvailabilityQuery(BusinessConsoleEquipmentAvailabilityRequest request) =>
         Query(
             ("organizationId", request.OrganizationId),
@@ -4137,6 +4426,24 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         Query(
             ("organizationId", request.OrganizationId),
             ("environmentId", request.EnvironmentId),
+            ("windowStartUtc", request.WindowStartUtc),
+            ("windowEndUtc", request.WindowEndUtc));
+
+    private static string ReliabilitySummaryQuery(BusinessConsoleQueryMaintenanceReliabilitySummaryRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("windowStartUtc", request.WindowStartUtc),
+            ("windowEndUtc", request.WindowEndUtc),
+            ("deviceAssetId", request.DeviceAssetId),
+            ("technicianUserId", request.TechnicianUserId));
+
+    private static string InspectionMeasurementTrendQuery(BusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("deviceAssetId", request.DeviceAssetId),
+            ("characteristicCode", request.CharacteristicCode),
             ("windowStartUtc", request.WindowStartUtc),
             ("windowEndUtc", request.WindowEndUtc));
 
@@ -4166,7 +4473,13 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string Priority,
         string Status,
         string? SourceAlarmId,
-        DateTimeOffset OpenedAtUtc);
+        DateTimeOffset OpenedAtUtc,
+        string? AssignedTechnicianUserId = null,
+        int? EstimatedLaborMinutes = null,
+        int? ActualLaborMinutes = null,
+        decimal? SparePartCostAmount = null,
+        decimal? ExternalServiceCostAmount = null,
+        string? CostCurrencyCode = null);
 
     private sealed record DownstreamMaintenancePlanListItem(
         JsonElement PlanId,
@@ -4181,7 +4494,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         JsonElement? WorkOrderId,
         string Inspector,
         string Result,
-        DateTimeOffset InspectedAtUtc);
+        DateTimeOffset InspectedAtUtc,
+        IReadOnlyCollection<BusinessConsoleMaintenanceInspectionMeasurementItem>? Measurements = null);
 
     private sealed record DownstreamMaintenanceSparePartListItem(
         JsonElement SparePartLineId,
@@ -4198,7 +4512,11 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string Result,
         string DowntimeReasonCode,
         int DowntimeMinutes,
-        IReadOnlyCollection<BusinessConsoleMaintenanceSparePartInput> SpareParts);
+        IReadOnlyCollection<BusinessConsoleMaintenanceSparePartInput> SpareParts,
+        int? ActualLaborMinutes = null,
+        decimal? SparePartCostAmount = null,
+        decimal? ExternalServiceCostAmount = null,
+        string? CostCurrencyCode = null);
 
     private sealed record DownstreamCreateMaintenancePlanResponse(JsonElement PlanId);
 
@@ -4209,6 +4527,26 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
     private sealed record DownstreamRecordMaintenanceInspectionResponse(JsonElement InspectionId);
 
     private sealed record DownstreamCreateMaintenanceSparePartResponse(JsonElement SparePartLineId);
+
+    private sealed record DownstreamMaintenanceInspectionMeasurementTrendResponse(
+        string OrganizationId,
+        string EnvironmentId,
+        string DeviceAssetId,
+        string CharacteristicCode,
+        DateTimeOffset WindowStartUtc,
+        DateTimeOffset WindowEndUtc,
+        IReadOnlyCollection<DownstreamMaintenanceInspectionMeasurementTrendItem> Items);
+
+    private sealed record DownstreamMaintenanceInspectionMeasurementTrendItem(
+        JsonElement InspectionId,
+        JsonElement? PlanId,
+        JsonElement? WorkOrderId,
+        DateTimeOffset InspectedAtUtc,
+        decimal MeasuredValue,
+        string UomCode,
+        decimal? LowerSpecLimit,
+        decimal? UpperSpecLimit,
+        bool IsWithinSpec);
 }
 
 public sealed class HttpBusinessErpClient(HttpClient httpClient)

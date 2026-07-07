@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Nerv.IIP.Business.Inventory.Domain;
 using NetCorePal.Extensions.DependencyInjection;
 
@@ -9,7 +10,8 @@ public static class InventoryPersistenceServiceCollectionExtensions
     public static IServiceCollection AddInventoryPostgreSqlPersistence(
         this IServiceCollection services,
         string? connectionString,
-        bool enableSensitiveDataLogging = false)
+        bool enableSensitiveDataLogging = false,
+        params IInterceptor[] interceptors)
     {
         if (string.IsNullOrWhiteSpace(connectionString))
         {
@@ -25,6 +27,11 @@ public static class InventoryPersistenceServiceCollectionExtensions
             if (enableSensitiveDataLogging)
             {
                 options.EnableSensitiveDataLogging();
+            }
+
+            if (interceptors.Length > 0)
+            {
+                options.AddInterceptors(interceptors);
             }
 
             options.EnableDetailedErrors();

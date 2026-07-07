@@ -574,7 +574,7 @@ public sealed class NotificationEndpointTests
         return data.Deserialize<T>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
     }
 
-    private sealed class NotificationWebApplicationFactory : WebApplicationFactory<Program>
+    public sealed class NotificationWebApplicationFactory : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
         {

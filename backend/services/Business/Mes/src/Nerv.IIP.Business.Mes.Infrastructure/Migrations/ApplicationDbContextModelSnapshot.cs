@@ -23,6 +23,123 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate.MesEngineeringChangeWorkOrderImpact", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("MES engineering change impact identifier.");
+
+                    b.Property<string>("ArchivedProductionVersionId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("archived_production_version_id")
+                        .HasComment("ProductEngineering production version id archived by the ECO release.");
+
+                    b.Property<string>("ChangeNumber")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("change_number")
+                        .HasComment("ProductEngineering ECO number that caused the MES impact.");
+
+                    b.Property<DateTimeOffset?>("DecidedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("decided_at_utc")
+                        .HasComment("UTC time when the MES ECO decision was recorded.");
+
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("decided_by")
+                        .HasComment("User or actor id that recorded the MES ECO decision.");
+
+                    b.Property<string>("Decision")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("decision")
+                        .HasComment("Planner or process-engineer decision for a started affected work order.");
+
+                    b.Property<string>("DecisionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("decision_reason")
+                        .HasComment("Human-readable basis for continuing or aborting the affected work order.");
+
+                    b.Property<DateTimeOffset>("DetectedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("detected_at_utc")
+                        .HasComment("UTC time when MES consumed the ECO release and detected this impact.");
+
+                    b.Property<DateOnly>("EffectiveDate")
+                        .HasColumnType("date")
+                        .HasColumnName("effective_date")
+                        .HasComment("Factory business date when the ECO became effective.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id for the MES execution context.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("SkuId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_id")
+                        .HasComment("MasterData SKU public id for the affected work order, or * for archived production-version marker rows.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("MES ECO impact status: archived-production-version, pending-decision, auto-rebound, blocked-for-manual-confirmation, or decided.");
+
+                    b.Property<string>("SupersededByProductionVersionId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("superseded_by_production_version_id")
+                        .HasComment("Successor ProductEngineering production version id when the ECO declares one.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES work order id affected by the ECO, or production-version marker id for archived-version guards.");
+
+                    b.Property<string>("WorkOrderStatusAtDetection")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("work_order_status_at_detection")
+                        .HasComment("MES work order status observed when the ECO impact was detected.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ArchivedProductionVersionId", "Status")
+                        .HasDatabaseName("ix_eco_impacts_scope_archived_pv_status");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId", "ChangeNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ux_eco_impacts_scope_work_order_change");
+
+                    b.ToTable("engineering_change_work_order_impacts", "mes", t =>
+                        {
+                            t.HasComment("MES work-order impacts and archived production-version references detected from ProductEngineering ECO release events.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -36,6 +153,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id for the receipt request.");
+
+                    b.Property<DateOnly?>("ExpiryDate")
+                        .HasColumnType("date")
+                        .HasColumnName("expiry_date")
+                        .HasComment("Optional finished-goods batch expiry date carried to Inventory FEFO.");
 
                     b.Property<DateTimeOffset?>("InventoryPostingFailedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -85,6 +207,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("produced_lot_no")
                         .HasComment("Optional produced finished-goods lot number requested for receipt.");
+
+                    b.Property<DateOnly?>("ProductionDate")
+                        .HasColumnType("date")
+                        .HasColumnName("production_date")
+                        .HasComment("Optional finished-goods batch production date carried to Inventory.");
 
                     b.Property<decimal>("Quantity")
                         .HasPrecision(18, 6)

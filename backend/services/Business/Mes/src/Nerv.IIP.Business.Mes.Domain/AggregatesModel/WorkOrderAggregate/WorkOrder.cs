@@ -189,6 +189,17 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         ProductionVersionId = normalizedProductionVersionId;
     }
 
+    public void RebindProductionVersionForEngineeringChange(string productionVersionId)
+    {
+        var normalizedProductionVersionId = DomainGuard.Required(productionVersionId, nameof(productionVersionId));
+        if (Status is not CreatedStatus and not ReleasedStatus)
+        {
+            throw new InvalidOperationException("Only not-started work orders can be rebound after an engineering change.");
+        }
+
+        ProductionVersionId = normalizedProductionVersionId;
+    }
+
     private void ThrowIfCannotRelease()
     {
         if (Status == ReleasedStatus)
@@ -223,6 +234,23 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         HoldReason = DomainGuard.Required(reason, nameof(reason));
         Status = HoldStatus;
+    }
+
+    public void ResolveEngineeringChangeHold(string statusBeforeHold)
+    {
+        var normalizedStatus = DomainGuard.Required(statusBeforeHold, nameof(statusBeforeHold));
+        if (Status != HoldStatus)
+        {
+            return;
+        }
+
+        if (normalizedStatus is not CreatedStatus and not ReleasedStatus and not StartedStatus)
+        {
+            throw new InvalidOperationException($"Cannot restore work order from engineering change hold to status '{normalizedStatus}'.");
+        }
+
+        Status = normalizedStatus;
+        HoldReason = null;
     }
 
     public bool Cancel(string reason, DateTimeOffset cancelledAtUtc, IReadOnlyCollection<string>? materialIssueRequestNos = null)

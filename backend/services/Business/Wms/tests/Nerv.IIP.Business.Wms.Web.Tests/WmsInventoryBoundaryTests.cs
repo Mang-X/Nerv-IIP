@@ -530,6 +530,34 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
+    public async Task Picking_task_releases_fefo_allocations_when_wms_rejects_split_pick()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-FEFO-SPLIT-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", null, null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventory = new FakeWmsInventoryReservationClient("res-fefo-a", "res-fefo-b")
+        {
+            SplitFefoAllocation = true,
+        };
+
+        await Assert.ThrowsAsync<KnownException>(() => new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-FEFO-SPLIT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None));
+
+        Assert.Empty(dbContext.WarehouseTasks.Local);
+        Assert.Equal(["res-fefo-a", "res-fefo-b"], inventory.ReleaseRequests.Select(x => x.ReservationId).ToArray());
+        Assert.Equal([2m, 2m], inventory.ReleaseRequests.Select(x => x.Quantity).ToArray());
+    }
+
+    [Fact]
     public async Task Picking_task_does_not_reserve_inventory_when_outbound_is_closed()
     {
         await using var dbContext = CreateContext();
@@ -654,6 +682,7 @@ public sealed class WmsInventoryBoundaryTests
         {
             Assert.Equal("COUNT-FREEZE-001", request.CountTaskCode);
             Assert.Equal("LOC-A-01", request.LocationCode);
+            Assert.StartsWith("wms-count-freeze:", request.IdempotencyKey, StringComparison.Ordinal);
         });
         Assert.Collection(inventory.CountAdjustmentRequests, request =>
         {
@@ -807,10 +836,12 @@ public sealed class WmsInventoryBoundaryTests
     private sealed class FakeWmsInventoryReservationClient(params string[] reservationIds) : IWmsInventoryReservationClient
     {
         public List<WmsInventoryReservationRequest> Requests { get; } = [];
+        public List<WmsInventoryFefoReservationRequest> FefoRequests { get; } = [];
         public List<WmsInventoryReservationReleaseRequest> ReleaseRequests { get; } = [];
         public List<WmsInventoryCountTaskRequest> CountTaskRequests { get; } = [];
         public List<WmsInventoryCountAdjustmentRequest> CountAdjustmentRequests { get; } = [];
         public List<string> ReservationResults { get; } = [];
+        public bool SplitFefoAllocation { get; init; }
         public string CountTaskId { get; init; } = Guid.CreateVersion7().ToString();
         public string InventoryMovementId { get; init; } = Guid.CreateVersion7().ToString();
 
@@ -822,6 +853,28 @@ public sealed class WmsInventoryBoundaryTests
             var reservationId = reservationIds[Math.Min(Requests.Count - 1, reservationIds.Length - 1)];
             ReservationResults.Add(reservationId);
             return Task.FromResult(new WmsInventoryReservationResult(reservationId, request.Quantity, 0m));
+        }
+
+        public Task<WmsInventoryFefoReservationResult> ReserveFefoAsync(
+            WmsInventoryFefoReservationRequest request,
+            CancellationToken cancellationToken)
+        {
+            FefoRequests.Add(request);
+            var reservationId = reservationIds[Math.Min(FefoRequests.Count - 1, reservationIds.Length - 1)];
+            ReservationResults.Add(reservationId);
+            if (SplitFefoAllocation)
+            {
+                return Task.FromResult(new WmsInventoryFefoReservationResult(
+                    [
+                        new WmsInventoryFefoReservationAllocation(reservationIds[0], request.LocationCode ?? "LOC-A-01", "LOT-FEFO-A", null, null, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(10), request.Quantity / 2m, 0m),
+                        new WmsInventoryFefoReservationAllocation(reservationIds[1], request.LocationCode ?? "LOC-A-01", "LOT-FEFO-B", null, null, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(20), request.Quantity / 2m, 0m)
+                    ],
+                    request.Quantity));
+            }
+
+            return Task.FromResult(new WmsInventoryFefoReservationResult(
+                [new WmsInventoryFefoReservationAllocation(reservationId, request.LocationCode ?? "LOC-A-01", "LOT-FEFO", null, null, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30), request.Quantity, 0m)],
+                request.Quantity));
         }
 
         public Task<WmsInventoryReservationReleaseResult> ReleaseAsync(

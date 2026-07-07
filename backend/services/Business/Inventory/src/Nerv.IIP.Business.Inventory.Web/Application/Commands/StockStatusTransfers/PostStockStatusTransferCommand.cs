@@ -22,7 +22,9 @@ public sealed record PostStockStatusTransferCommand(
     string? SerialNo,
     string OwnerType,
     string? OwnerId,
-    decimal Quantity) : ICommand<PostStockStatusTransferResult>;
+    decimal Quantity,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null) : ICommand<PostStockStatusTransferResult>;
 
 public sealed record PostStockStatusTransferResult(
     StockMovementId OutboundMovementId,
@@ -51,6 +53,7 @@ public sealed class PostStockStatusTransferCommandValidator : AbstractValidator<
         RuleFor(x => x.OwnerType).RequiredInventoryCode(50);
         RuleFor(x => x.OwnerId).OptionalInventoryCode(100);
         RuleFor(x => x.Quantity).GreaterThan(0);
+        RuleFor(x => x.ExpiryDate).GreaterThanOrEqualTo(x => x.ProductionDate!.Value).When(x => x.ProductionDate is not null && x.ExpiryDate is not null);
     }
 }
 
@@ -90,6 +93,8 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
         }
 
         var transferUnitCost = source.MovingAverageUnitCost;
+        var productionDate = request.ProductionDate ?? source.ProductionDate;
+        var expiryDate = request.ExpiryDate ?? source.ExpiryDate;
         var outbound = StockMovement.Post(
             request.OrganizationId,
             request.EnvironmentId,
@@ -103,11 +108,13 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
             request.SiteCode,
             request.LocationCode,
             request.LotNo,
-                request.SerialNo,
-                sourceStatus,
-                ownerType,
-                request.OwnerId,
-                -request.Quantity);
+            request.SerialNo,
+            sourceStatus,
+            ownerType,
+            request.OwnerId,
+            -request.Quantity,
+            ProductionDate: productionDate,
+            ExpiryDate: expiryDate);
         try
         {
             source.ApplyMovement(outbound);
@@ -119,7 +126,7 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
 
         dbContext.StockMovements.Add(outbound);
 
-        var target = await FindLedgerAsync(request, targetStatus, cancellationToken);
+        var target = await FindLedgerAsync(request, targetStatus, productionDate, expiryDate, cancellationToken);
         if (target is null)
         {
             target = StockLedger.Create(
@@ -133,7 +140,9 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
                 request.SerialNo,
                 targetStatus,
                 ownerType,
-                request.OwnerId);
+                request.OwnerId,
+                productionDate,
+                expiryDate);
             dbContext.StockLedgers.Add(target);
         }
 
@@ -155,7 +164,9 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
             ownerType,
             request.OwnerId,
             request.Quantity,
-            transferUnitCost);
+            transferUnitCost,
+            productionDate,
+            expiryDate);
         try
         {
             target.ApplyMovement(inbound);
@@ -184,7 +195,18 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
     private Task<StockLedger?> FindLedgerAsync(PostStockStatusTransferCommand request, string qualityStatus, CancellationToken cancellationToken)
     {
         var ownerType = StockOwnerType.Normalize(request.OwnerType);
-        return dbContext.StockLedgers.SingleOrDefaultAsync(
+        return FindLedgerAsync(request, qualityStatus, request.ProductionDate, request.ExpiryDate, cancellationToken);
+    }
+
+    private Task<StockLedger?> FindLedgerAsync(
+        PostStockStatusTransferCommand request,
+        string qualityStatus,
+        DateOnly? productionDate,
+        DateOnly? expiryDate,
+        CancellationToken cancellationToken)
+    {
+        var ownerType = StockOwnerType.Normalize(request.OwnerType);
+        var query = dbContext.StockLedgers.Where(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
                 && x.SkuCode == request.SkuCode
@@ -195,7 +217,17 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
                 && x.SerialNo == request.SerialNo
                 && x.QualityStatus == qualityStatus
                 && x.OwnerType == ownerType
-                && x.OwnerId == request.OwnerId,
-            cancellationToken);
+                && x.OwnerId == request.OwnerId);
+        if (productionDate is not null)
+        {
+            query = query.Where(x => x.ProductionDate == productionDate);
+        }
+
+        if (expiryDate is not null)
+        {
+            query = query.Where(x => x.ExpiryDate == expiryDate);
+        }
+
+        return query.SingleOrDefaultAsync(cancellationToken);
     }
 }

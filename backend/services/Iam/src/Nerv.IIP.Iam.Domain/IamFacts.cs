@@ -12,7 +12,12 @@ public sealed record UserFact(
     int PermissionVersion,
     int FailedLoginCount = 0,
     DateTimeOffset? LastFailedLoginAtUtc = null,
-    DateTimeOffset? LockoutUntilUtc = null);
+    DateTimeOffset? LockoutUntilUtc = null,
+    DateTimeOffset? AccountExpiresAtUtc = null,
+    DateTimeOffset? PasswordChangedAtUtc = null,
+    DateTimeOffset? PasswordExpiresAtUtc = null,
+    bool PasswordChangeRequired = false,
+    IReadOnlyList<string>? PasswordHistoryHashes = null);
 public sealed record RoleFact(string RoleId, string RoleName, IReadOnlySet<string> PermissionCodes);
 public sealed record MembershipFact(string UserId, string OrganizationId, string EnvironmentId, IReadOnlySet<string> RoleIds);
 public sealed record UserSessionFact(
@@ -138,6 +143,7 @@ public static class NervIipSeedPermissions
         "business.iiot.alarm-rules.manage",
         "business.iiot.telemetry.read",
         "business.iiot.telemetry.write",
+        "business.iiot.device-control.write",
         "business.iiot.alarms.read",
         "business.iiot.alarms.write",
         "business.maintenance.work-orders.read",

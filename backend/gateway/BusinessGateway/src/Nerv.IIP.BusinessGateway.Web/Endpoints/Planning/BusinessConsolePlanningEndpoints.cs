@@ -217,6 +217,50 @@ public sealed class CancelBusinessConsolePlanningDemandEndpoint(
 }
 
 [Tags("Business Console Planning")]
+[HttpGet("/api/business-console/v1/planning/forecasts")]
+[BusinessGatewayOperationId("listBusinessConsolePlanningForecasts")]
+public sealed class ListBusinessConsolePlanningForecastsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessPlanningClient planning,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleForecastInputListRequest, BusinessConsoleForecastInputListResponse>(
+        auth,
+        BusinessGatewayPermissions.PlanningDemandsRead)
+{
+    protected override string OrganizationId(BusinessConsoleForecastInputListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleForecastInputListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleForecastInputListResponse> ForwardAsync(
+        BusinessConsoleForecastInputListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        planning.ListForecastInputsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Planning")]
+[HttpPost("/api/business-console/v1/planning/forecasts")]
+[BusinessGatewayOperationId("createOrUpdateBusinessConsolePlanningForecast")]
+public sealed class CreateOrUpdateBusinessConsolePlanningForecastEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessPlanningClient planning,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateOrUpdateForecastInputRequest, BusinessConsoleForecastInputItem>(
+        auth,
+        BusinessGatewayPermissions.PlanningDemandsManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateOrUpdateForecastInputRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateOrUpdateForecastInputRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleForecastInputItem> ForwardAsync(
+        BusinessConsoleCreateOrUpdateForecastInputRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        planning.CreateOrUpdateForecastInputAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Planning")]
 [HttpPost("/api/business-console/v1/planning/mrp-runs")]
 [BusinessGatewayOperationId("runBusinessConsolePlanningMrp")]
 public sealed class RunBusinessConsolePlanningMrpEndpoint(
@@ -435,6 +479,37 @@ public sealed class BusinessConsolePlanningDemandCancelRequestValidator
         RuleFor(x => x.DemandSourceId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleForecastInputListRequestValidator
+    : Validator<BusinessConsoleForecastInputListRequest>
+{
+    public BusinessConsoleForecastInputListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkuCode).MaximumLength(100);
+        RuleFor(x => x.SiteCode).MaximumLength(100);
+        RuleFor(x => x.ToDate).GreaterThanOrEqualTo(x => x.FromDate).When(x => x.FromDate is not null && x.ToDate is not null);
+    }
+}
+
+public sealed class BusinessConsoleCreateOrUpdateForecastInputRequestValidator
+    : Validator<BusinessConsoleCreateOrUpdateForecastInputRequest>
+{
+    public BusinessConsoleCreateOrUpdateForecastInputRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ForecastReference).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PeriodEndDate).GreaterThanOrEqualTo(x => x.PeriodStartDate);
+        RuleFor(x => x.Quantity).GreaterThan(0);
+        RuleFor(x => x.BackwardConsumptionDays).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.ForwardConsumptionDays).GreaterThanOrEqualTo(0);
     }
 }
 

@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
@@ -34,9 +35,13 @@ public sealed record VerifyCorrectiveActionEffectivenessRequest(
     CorrectiveActionId CorrectiveActionId,
     string VerifiedByUserId,
     string Result,
-    DateTimeOffset VerifiedAtUtc);
+    DateTimeOffset VerifiedAtUtc,
+    InspectionRecordId? EffectivenessInspectionRecordId);
 
-public sealed record CloseCorrectiveActionRequest(CorrectiveActionId CorrectiveActionId, string ClosedByUserId);
+public sealed record CloseCorrectiveActionRequest(
+    CorrectiveActionId CorrectiveActionId,
+    string ClosedByUserId,
+    string? CloseApprovalChainId);
 
 public sealed class OpenCorrectiveActionEndpoint(ISender sender)
     : QualityEndpoint<OpenCorrectiveActionRequest, ResponseData<OpenCorrectiveActionResponse>>
@@ -114,7 +119,8 @@ public sealed class VerifyCorrectiveActionEffectivenessEndpoint(ISender sender)
             req.CorrectiveActionId,
             req.VerifiedByUserId,
             req.Result,
-            req.VerifiedAtUtc), ct);
+            req.VerifiedAtUtc,
+            req.EffectivenessInspectionRecordId), ct);
         await Send.OkAsync(new AcceptedResponse(true).AsResponseData(), cancellation: ct);
     }
 }
@@ -129,7 +135,7 @@ public sealed class CloseCorrectiveActionEndpoint(ISender sender)
 
     public override async Task HandleAsync(CloseCorrectiveActionRequest req, CancellationToken ct)
     {
-        await sender.Send(new CloseCorrectiveActionCommand(req.CorrectiveActionId, req.ClosedByUserId), ct);
+        await sender.Send(new CloseCorrectiveActionCommand(req.CorrectiveActionId, req.ClosedByUserId, req.CloseApprovalChainId), ct);
         await Send.OkAsync(new AcceptedResponse(true).AsResponseData(), cancellation: ct);
     }
 }

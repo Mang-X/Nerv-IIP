@@ -1,4 +1,5 @@
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Iam.Web.Application.Users;
 
 namespace Nerv.IIP.Iam.Web.Application.Auth;
 
@@ -128,5 +129,23 @@ public sealed class LogoutCommandHandler(IIamAuthService auth)
     public async Task Handle(LogoutCommand request, CancellationToken cancellationToken)
     {
         await auth.RevokeSessionAsync(request.SessionId, "logout", null, cancellationToken);
+    }
+}
+
+public sealed record ChangePasswordCommand(
+    string UserId,
+    string CurrentPassword,
+    string NewPassword) : ICommand;
+
+public sealed class ChangePasswordCommandHandler(IIamUserApplicationService users)
+    : ICommandHandler<ChangePasswordCommand>
+{
+    public async Task Handle(ChangePasswordCommand request, CancellationToken cancellationToken)
+    {
+        await users.ChangePasswordAsync(
+            request.UserId,
+            request.CurrentPassword,
+            request.NewPassword,
+            cancellationToken);
     }
 }

@@ -33,6 +33,8 @@ public sealed record UpdateMasterDataResourceCommand(
     string? BatchTrackingPolicy = null,
     string? SerialTrackingPolicy = null,
     string? ShelfLifePolicyCode = null,
+    int? ShelfLifeDays = null,
+    int? NearExpiryThresholdDays = null,
     string? StorageConditionCode = null,
     string? DefaultBarcodeRuleCode = null,
     bool? QualityRequired = null,
@@ -179,7 +181,9 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     request.LifecycleStatus ?? sku.LifecycleStatus,
                     request.PurchasingEnabled ?? sku.PurchasingEnabled,
                     request.ManufacturingEnabled ?? sku.ManufacturingEnabled,
-                    request.SalesEnabled ?? sku.SalesEnabled);
+                    request.SalesEnabled ?? sku.SalesEnabled,
+                    request.ShelfLifeDays ?? sku.ShelfLifeDays,
+                    request.NearExpiryThresholdDays ?? sku.NearExpiryThresholdDays);
                 return Detail(sku);
             case "unit-of-measure":
                 var uom = await FindUnitOfMeasureAsync(request, cancellationToken);
@@ -512,6 +516,8 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
             x.BatchTrackingPolicy,
             x.SerialTrackingPolicy,
             x.ShelfLifePolicyCode,
+            x.ShelfLifeDays,
+            x.NearExpiryThresholdDays,
             x.StorageConditionCode,
             x.DefaultBarcodeRuleCode,
             x.QualityRequired,

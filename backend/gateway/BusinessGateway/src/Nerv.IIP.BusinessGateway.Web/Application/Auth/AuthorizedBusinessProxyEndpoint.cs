@@ -13,6 +13,8 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
     string permissionCode) : Endpoint<TRequest, ResponseData<TResponse>>
     where TRequest : notnull
 {
+    protected IBusinessGatewayAuthorizationClient AuthorizationClient => auth;
+
     public override async Task HandleAsync(TRequest req, CancellationToken ct)
     {
         var bearerToken = await BusinessGatewayAuthorization.RequirePermissionAsync(

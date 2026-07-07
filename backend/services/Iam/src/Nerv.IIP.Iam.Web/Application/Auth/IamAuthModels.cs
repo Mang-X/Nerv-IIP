@@ -5,6 +5,7 @@ namespace Nerv.IIP.Iam.Web.Application.Auth;
 public sealed record LoginRequest(string LoginName, string Password);
 public sealed record RefreshRequest(string RefreshToken);
 public sealed record LogoutRequest(string? SessionId);
+public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public sealed record ValidateConnectorCredentialRequest(string ConnectorHostId, string Secret);
 public sealed record ClientCredentialsTokenRequest(string ClientId, string ClientSecret, string? Scope);
 public sealed record OidcLoginCallbackRequest(
@@ -15,7 +16,12 @@ public sealed record OidcLoginCallbackRequest(
     string EnvironmentId,
     string CallbackSecret);
 public sealed record MfaChallengeVerifyRequest(string Code);
-public sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
+public sealed record AuthResponse(
+    string AccessToken,
+    string RefreshToken,
+    string SessionId,
+    DateTimeOffset ExpiresAtUtc,
+    bool PasswordChangeRequired = false);
 public sealed record ClientCredentialsTokenResponse(string AccessToken, string TokenType, DateTimeOffset ExpiresAtUtc, string Scope);
 public sealed record EnterpriseAuthResponse(bool MfaRequired, string? MfaChallengeId, AuthResponse? Session)
 {
@@ -55,6 +61,8 @@ public interface IIamAuthService
         CancellationToken cancellationToken);
 
     Task<CurrentPrincipalResponse?> GetCurrentPrincipalAsync(HttpContext httpContext, CancellationToken cancellationToken);
+
+    Task<string?> GetAuthenticatedUserIdAsync(HttpContext httpContext, CancellationToken cancellationToken);
 
     Task<bool> UserHasPermissionAsync(
         string userId,

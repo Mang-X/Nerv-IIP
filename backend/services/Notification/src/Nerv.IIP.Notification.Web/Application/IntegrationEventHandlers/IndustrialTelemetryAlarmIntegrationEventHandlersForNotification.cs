@@ -231,6 +231,92 @@ public sealed class AlarmClearedIntegrationEventHandlerForNotification(
 
 }
 
+[IntegrationEventConsumer("Nerv.IIP.Contracts.IndustrialTelemetry.AlarmEscalatedIntegrationEvent", ConsumerName)]
+public sealed class AlarmEscalatedIntegrationEventHandlerForNotification(
+    ISender sender,
+    ApplicationDbContext dbContext,
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    TimeProvider timeProvider)
+    : IIntegrationEventHandler<AlarmEscalatedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "notification.industrial-telemetry-alarm-escalated";
+
+    private readonly IntegrationEventConsumerGuard<AlarmEscalatedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            IndustrialTelemetryIntegrationEventTypes.AlarmEscalated,
+            IndustrialTelemetryIntegrationEventVersions.V1));
+
+    public async Task HandleAsync(
+        AlarmEscalatedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
+
+    [CapSubscribe("Nerv.IIP.Contracts.IndustrialTelemetry.AlarmEscalatedIntegrationEvent", Group = ConsumerName)]
+    public Task HandleCapAsync(
+        AlarmEscalatedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(
+        AlarmEscalatedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload
+            ?? throw new KnownException("Industrial telemetry alarm escalation payload is required.");
+        var eventId = IndustrialTelemetryAlarmNotification.Required(integrationEvent.EventId, "Integration event id is required.");
+        var eventType = IndustrialTelemetryAlarmNotification.Required(integrationEvent.EventType, "Integration event type is required.");
+        var sourceService = IndustrialTelemetryAlarmNotification.Required(integrationEvent.SourceService, "Integration event source service is required.");
+        var organizationId = IndustrialTelemetryAlarmNotification.Required(integrationEvent.OrganizationId, "Integration event organization is required.");
+        var environmentId = IndustrialTelemetryAlarmNotification.Required(integrationEvent.EnvironmentId, "Integration event environment is required.");
+        IndustrialTelemetryAlarmNotification.Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required.");
+        var externalAlarmId = IndustrialTelemetryAlarmNotification.Required(payload.ExternalAlarmId, "Industrial telemetry external alarm id is required.");
+        var alarmEventId = IndustrialTelemetryAlarmNotification.Required(payload.AlarmEventId, "Industrial telemetry alarm event id is required.");
+        var deviceAssetId = IndustrialTelemetryAlarmNotification.Required(payload.DeviceAssetId, "Industrial telemetry alarm device asset id is required.");
+        var alarmCode = IndustrialTelemetryAlarmNotification.Required(payload.AlarmCode, "Industrial telemetry alarm code is required.");
+        var escalationReason = IndustrialTelemetryAlarmNotification.Required(payload.EscalationReason, "Industrial telemetry alarm escalation reason is required.");
+        var recipientRefs = payload.RecipientRefs
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (recipientRefs.Length == 0)
+        {
+            throw new KnownException("Industrial telemetry alarm escalation recipients are required.");
+        }
+
+        if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            ConsumerName,
+            integrationEvent,
+            timeProvider.GetUtcNow(),
+            cancellationToken))
+        {
+            return;
+        }
+
+        var request = new SubmitNotificationIntentRequest(
+            SourceService: sourceService,
+            SourceEventType: eventType,
+            SourceEventId: eventId,
+            IntentType: NotificationContractConstants.IntentTypeTask,
+            Severity: NotificationContractConstants.SeverityCritical,
+            DedupeKey: $"industrial-telemetry-alarm-escalated:{externalAlarmId}:{alarmEventId}",
+            Resource: new NotificationResourceRef("industrial-telemetry-alarm", externalAlarmId, null),
+            Title: $"Industrial telemetry alarm escalated: {alarmCode}",
+            Summary: $"Alarm {alarmCode} on device {deviceAssetId} escalated by {escalationReason} at {payload.EscalatedAtUtc:O}.",
+            SuggestedRecipientRefs: recipientRefs);
+
+        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+    }
+}
+
 internal static class IndustrialTelemetryAlarmNotification
 {
     public static string Required(string? value, string message)

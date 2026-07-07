@@ -21,7 +21,9 @@ public sealed record WmsInboundLineInput(
     string? SerialNo,
     string QualityStatus,
     string OwnerType,
-    string? OwnerId);
+    string? OwnerId,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);
 
 public sealed record WmsOutboundLineInput(
     string LineNo,
@@ -70,7 +72,7 @@ public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbCont
             request.SourceDocumentType,
             request.SourceDocumentId,
             request.SiteCode,
-            request.Lines.Select(x => new InboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.ReceivedQuantity, x.StagingLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId)));
+            request.Lines.Select(x => new InboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.ReceivedQuantity, x.StagingLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId, x.ProductionDate, x.ExpiryDate)));
         dbContext.InboundOrders.Add(order);
         await Task.CompletedTask;
         return order.Id;
@@ -195,38 +197,105 @@ public sealed class CreatePickingTaskCommandHandler(
 
         // Remote Inventory reservation and local WMS task persistence are not atomic; the stable
         // line-level idempotency key lets command retries recover the same reservation.
-        var inventoryReservationId = line.InventoryReservationId ?? (inventoryReservationClient is null
-            ? null
-            : (await inventoryReservationClient.ReserveAsync(
-                new WmsInventoryReservationRequest(
-                    outbound.OrganizationId,
-                    outbound.EnvironmentId,
-                    "wms",
-                    outbound.OutboundOrderNo,
-                    line.LineNo,
-                    WmsInventoryReservationIdempotencyKeys.ForPickingTask(outbound, line.LineNo),
-                    line.SkuCode,
-                    line.UomCode,
-                    outbound.SiteCode,
-                    request.FromLocationCode,
-                    line.LotNo,
-                    line.SerialNo,
-                    line.QualityStatus,
-                    line.OwnerType,
-                    line.OwnerId,
-                    request.Quantity),
-                cancellationToken)).ReservationId);
+        var reservation = line.InventoryReservationId is null && inventoryReservationClient is not null
+            ? await ReserveInventoryForPickingAsync(inventoryReservationClient, outbound, line, request.FromLocationCode, request.Quantity, cancellationToken)
+            : null;
+        var inventoryReservationId = line.InventoryReservationId ?? reservation?.ReservationId;
         var task = outbound.CreatePickingTask(
             request.TaskNo,
             request.LineNo,
             request.FromLocationCode,
             request.ToLocationCode,
             request.Quantity,
-            inventoryReservationId);
+            inventoryReservationId,
+            reservation?.LocationCode,
+            reservation?.LotNo,
+            reservation?.SerialNo);
         dbContext.WarehouseTasks.Add(task);
         return task.Id;
     }
+
+    private static async Task<PickingReservationResult> ReserveInventoryForPickingAsync(
+        IWmsInventoryReservationClient inventoryReservationClient,
+        OutboundOrder outbound,
+        OutboundOrderLine line,
+        string fromLocationCode,
+        decimal quantity,
+        CancellationToken cancellationToken)
+    {
+        var idempotencyKey = WmsInventoryReservationIdempotencyKeys.ForPickingTask(outbound, line.LineNo);
+        if (string.IsNullOrWhiteSpace(line.LotNo))
+        {
+            var fefo = await inventoryReservationClient.ReserveFefoAsync(
+                new WmsInventoryFefoReservationRequest(
+                    outbound.OrganizationId,
+                    outbound.EnvironmentId,
+                    "wms",
+                    outbound.OutboundOrderNo,
+                    line.LineNo,
+                    idempotencyKey,
+                    line.SkuCode,
+                    line.UomCode,
+                    outbound.SiteCode,
+                    line.QualityStatus,
+                    line.OwnerType,
+                    line.OwnerId,
+                    quantity,
+                    fromLocationCode),
+                cancellationToken);
+            if (fefo.Allocations.Count != 1)
+            {
+                await ReleaseRejectedFefoAllocationsAsync(inventoryReservationClient, fefo, cancellationToken);
+                throw new KnownException("Inventory FEFO reservation split the picking line; WMS split-pick execution is outside the current issue scope.");
+            }
+
+            var allocation = fefo.Allocations.Single();
+            if (allocation.ReservedQuantity != quantity)
+            {
+                await ReleaseRejectedFefoAllocationsAsync(inventoryReservationClient, fefo, cancellationToken);
+                throw new KnownException("Inventory FEFO reservation split the picking line; WMS split-pick execution is outside the current issue scope.");
+            }
+
+            return new PickingReservationResult(allocation.ReservationId, allocation.LocationCode, allocation.LotNo, allocation.SerialNo);
+        }
+
+        var reservation = await inventoryReservationClient.ReserveAsync(
+            new WmsInventoryReservationRequest(
+                outbound.OrganizationId,
+                outbound.EnvironmentId,
+                "wms",
+                outbound.OutboundOrderNo,
+                line.LineNo,
+                idempotencyKey,
+                line.SkuCode,
+                line.UomCode,
+                outbound.SiteCode,
+                fromLocationCode,
+                line.LotNo,
+                line.SerialNo,
+                line.QualityStatus,
+                line.OwnerType,
+                line.OwnerId,
+                quantity),
+            cancellationToken);
+        return new PickingReservationResult(reservation.ReservationId, fromLocationCode, reservation.LotNo ?? line.LotNo, line.SerialNo);
+    }
+
+    private static async Task ReleaseRejectedFefoAllocationsAsync(
+        IWmsInventoryReservationClient inventoryReservationClient,
+        WmsInventoryFefoReservationResult fefo,
+        CancellationToken cancellationToken)
+    {
+        foreach (var allocation in fefo.Allocations)
+        {
+            await inventoryReservationClient.ReleaseAsync(
+                new WmsInventoryReservationReleaseRequest(allocation.ReservationId, allocation.ReservedQuantity),
+                cancellationToken);
+        }
+    }
 }
+
+public sealed record PickingReservationResult(string ReservationId, string LocationCode, string? LotNo, string? SerialNo);
 
 public sealed record RecordWarehouseTaskProgressCommand(WarehouseTaskId WarehouseTaskId, decimal ExecutedQuantity) : ICommand;
 
@@ -493,7 +562,8 @@ public sealed class CreateCountExecutionCommandHandler(
             null,
             "qualified",
             "company",
-            null);
+            null,
+            WmsInventoryReservationIdempotencyKeys.ForCountExecution(count));
     }
 }
 
@@ -661,6 +731,12 @@ internal static class WmsInventoryReservationIdempotencyKeys
     {
         var raw = $"{outbound.OrganizationId}:{outbound.EnvironmentId}:{outbound.OutboundOrderNo}:{lineNo}:{retryIdempotencyKey}";
         return $"wms-retry-res:{StableHash(raw)}";
+    }
+
+    public static string ForCountExecution(CountExecution count)
+    {
+        var raw = $"{count.OrganizationId}:{count.EnvironmentId}:{count.CountNo}";
+        return $"wms-count-freeze:{StableHash(raw)}";
     }
 
     private static string StableHash(string raw)

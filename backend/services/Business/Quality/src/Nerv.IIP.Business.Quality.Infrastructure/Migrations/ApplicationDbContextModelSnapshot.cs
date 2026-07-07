@@ -38,6 +38,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("capa_code")
                         .HasComment("Human-readable CAPA code.");
 
+                    b.Property<string>("CloseApprovalChainId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("close_approval_chain_id")
+                        .HasComment("Optional BusinessApproval chain id that approved CAPA closure.");
+
                     b.Property<DateTimeOffset?>("ClosedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("closed_at_utc")
@@ -65,6 +71,11 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("due_at_utc")
                         .HasComment("UTC due time for CAPA completion.");
+
+                    b.Property<Guid?>("EffectivenessInspectionRecordId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("effectiveness_inspection_record_id")
+                        .HasComment("Passed Quality inspection record that verifies CAPA effectiveness.");
 
                     b.Property<string>("EffectivenessResult")
                         .HasMaxLength(1000)
@@ -133,6 +144,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "CapaCode")
                         .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "CloseApprovalChainId")
+                        .HasDatabaseName("ix_corrective_actions_close_approval_chain");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "EffectivenessInspectionRecordId")
+                        .HasDatabaseName("ix_corrective_actions_effectiveness_inspection");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceNcrId");
 

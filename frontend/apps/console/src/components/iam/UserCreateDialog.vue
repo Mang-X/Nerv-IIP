@@ -19,10 +19,11 @@ import { reactive, watch } from 'vue'
 const open = defineModel<boolean>('open', { default: false })
 
 const emit = defineEmits<{
-  submit: [payload: Required<ConsoleCreateIamUserRequest>]
+  submit: [payload: ConsoleCreateIamUserRequest]
 }>()
 
 const form = reactive({
+  accountExpiresDate: '',
   email: '',
   loginName: '',
   password: '',
@@ -34,6 +35,7 @@ const errors = reactive({
 })
 
 function resetForm() {
+  form.accountExpiresDate = ''
   form.email = ''
   form.loginName = ''
   form.password = ''
@@ -61,6 +63,7 @@ function handleSubmit() {
   }
 
   emit('submit', {
+    accountExpiresAtUtc: toUtcEndOfDay(form.accountExpiresDate),
     email: form.email.trim(),
     loginName: form.loginName.trim(),
     password: form.password,
@@ -74,6 +77,10 @@ watch(open, (isOpen) => {
     resetForm()
   }
 })
+
+function toUtcEndOfDay(value: string) {
+  return value ? `${value}T23:59:59Z` : undefined
+}
 </script>
 
 <template>
@@ -121,6 +128,15 @@ watch(open, (isOpen) => {
               type="password"
             />
             <FieldError v-if="errors.password" :errors="[errors.password]" />
+          </Field>
+
+          <Field>
+            <FieldLabel for="iam-create-account-expires">账号有效期</FieldLabel>
+            <Input
+              id="iam-create-account-expires"
+              v-model="form.accountExpiresDate"
+              type="date"
+            />
           </Field>
         </FieldGroup>
 

@@ -35,6 +35,8 @@ public sealed class StockReservation : Entity<StockReservationId>, IAggregateRoo
         QualityStatus = ledger.QualityStatus;
         OwnerType = ledger.OwnerType;
         OwnerId = ledger.OwnerId;
+        ProductionDate = ledger.ProductionDate;
+        ExpiryDate = ledger.ExpiryDate;
         ReservedQuantity = Positive(quantity, nameof(quantity));
         OpenQuantity = ReservedQuantity;
         Status = "open";
@@ -57,6 +59,8 @@ public sealed class StockReservation : Entity<StockReservationId>, IAggregateRoo
     public string QualityStatus { get; private set; } = string.Empty;
     public string OwnerType { get; private set; } = string.Empty;
     public string? OwnerId { get; private set; }
+    public DateOnly? ProductionDate { get; private set; }
+    public DateOnly? ExpiryDate { get; private set; }
     public decimal ReservedQuantity { get; private set; }
     public decimal ReleasedQuantity { get; private set; }
     public decimal AllocatedQuantity { get; private set; }
@@ -125,6 +129,8 @@ public sealed class StockReservation : Entity<StockReservationId>, IAggregateRoo
             && QualityStatus == other.QualityStatus
             && OwnerType == other.OwnerType
             && OwnerId == other.OwnerId
+            && ProductionDate == other.ProductionDate
+            && ExpiryDate == other.ExpiryDate
             && ReservedQuantity == other.ReservedQuantity;
     }
 

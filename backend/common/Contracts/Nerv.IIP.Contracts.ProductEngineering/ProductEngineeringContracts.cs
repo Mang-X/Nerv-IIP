@@ -181,4 +181,10 @@ public sealed record EngineeringChangeReleasedPayload(
     string ChangeId,
     string ChangeNumber,
     IReadOnlyCollection<string> AffectedVersionIds,
-    DateOnly EffectiveDate);
+    DateOnly EffectiveDate,
+    IReadOnlyCollection<EngineeringChangeAffectedVersionPayload> AffectedVersions);
+
+public sealed record EngineeringChangeAffectedVersionPayload(
+    string VersionKind,
+    string VersionId,
+    string? SupersededByVersionId);

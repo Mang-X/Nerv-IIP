@@ -272,6 +272,46 @@ public sealed class MasterDataAggregateTests
     }
 
     [Fact]
+    public void Sku_rejects_invalid_shelf_life_threshold_policy()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "FG-BAD-SHELF-0",
+            "Bad Shelf Life",
+            "EA",
+            "finished-good",
+            "finished-goods",
+            "lot-required",
+            "not-serialized",
+            "SHELF",
+            "ambient",
+            "ean13",
+            true,
+            [],
+            shelfLifeDays: 0,
+            nearExpiryThresholdDays: 0));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "FG-BAD-THRESHOLD",
+            "Bad Threshold",
+            "EA",
+            "finished-good",
+            "finished-goods",
+            "lot-required",
+            "not-serialized",
+            "SHELF",
+            "ambient",
+            "ean13",
+            true,
+            [],
+            shelfLifeDays: 30,
+            nearExpiryThresholdDays: 31));
+    }
+
+    [Fact]
     public void Sku_obsolete_status_is_terminal_and_disables_business_usage()
     {
         var sku = Sku.CreateIndustrial(

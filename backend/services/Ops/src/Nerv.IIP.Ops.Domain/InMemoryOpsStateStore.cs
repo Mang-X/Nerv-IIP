@@ -35,14 +35,10 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
     private const int MaxAuditRecordsResponseSize = 500;
     private readonly object _gate = new();
     private readonly Dictionary<string, string> _idempotency = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, OperationTemplateSnapshot> _templates = new(StringComparer.Ordinal)
-    {
-        ["lifecycle.restart"] = new OperationTemplateSnapshot("lifecycle.restart", true, 3, 300, false)
-    };
-    private readonly Dictionary<string, OperationTemplateFact> _templateResponses = new(StringComparer.Ordinal)
-    {
-        ["lifecycle.restart"] = BuiltInTemplateResponse()
-    };
+    private readonly Dictionary<string, OperationTemplateSnapshot> _templates = BuiltInOperationTemplateCatalog.Definitions
+        .ToDictionary(x => x.OperationCode, x => x.ToSnapshot(), StringComparer.Ordinal);
+    private readonly Dictionary<string, OperationTemplateFact> _templateResponses = BuiltInOperationTemplateCatalog.Definitions
+        .ToDictionary(x => x.OperationCode, x => x.ToFact(), StringComparer.Ordinal);
     private readonly List<OperationTaskFact> _tasks = [];
     private readonly List<OperationAttemptFact> _attempts = [];
     private readonly List<AuditRecordFact> _auditRecords = [];
@@ -289,7 +285,8 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                     leasedUntilUtc,
                     attemptNo,
                     maxAttempts,
-                    null));
+                    null,
+                    new Dictionary<string, string>()));
 
                 ReplaceTask(task with { Status = "dispatched" });
                 AddAudit(task.OperationTaskId, "operation.claimed", request.ConnectorHostId, now, task.CorrelationId);
@@ -617,20 +614,4 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         _attempts[_attempts.FindIndex(x => x.AttemptId == attempt.AttemptId)] = attempt;
     }
 
-    private static OperationTemplateFact BuiltInTemplateResponse()
-    {
-        var now = DateTimeOffset.Parse("2026-05-21T00:00:00Z");
-        return new OperationTemplateFact(
-            "opt-lifecycle-restart",
-            "lifecycle.restart",
-            "Lifecycle restart",
-            "{}",
-            "low",
-            3,
-            300,
-            RequiresApproval: false,
-            Enabled: true,
-            now,
-            now);
-    }
 }

@@ -11,8 +11,8 @@ using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Iam.Web.Endpoints.Users;
 
-public sealed record CreateUserRequest(string LoginName, string Email, string Password);
-public sealed record UpdateUserRequest(string LoginName, string Email, bool Enabled);
+public sealed record CreateUserRequest(string LoginName, string Email, string Password, DateTimeOffset? AccountExpiresAtUtc);
+public sealed record UpdateUserRequest(string LoginName, string Email, bool Enabled, DateTimeOffset? AccountExpiresAtUtc);
 public sealed record ResetUserPasswordRequest(string NewPassword);
 public sealed record ListUsersRequest(
     int? PageIndex,
@@ -104,7 +104,7 @@ public sealed class CreateUserEndpoint(IIamPermissionAuthorizer authorizer, IMed
 
         var req = await HttpContext.Request.ReadFromJsonAsync<CreateUserRequest>(ct)
             ?? throw new BadHttpRequestException("Request body is required.");
-        var response = await mediator.Send(new CreateUserCommand(req.LoginName, req.Email, req.Password), ct);
+        var response = await mediator.Send(new CreateUserCommand(req.LoginName, req.Email, req.Password, req.AccountExpiresAtUtc), ct);
         await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCodes.Status201Created, response, ct);
     }
 }
@@ -124,8 +124,26 @@ public sealed class PatchUserEndpoint(IIamPermissionAuthorizer authorizer, IMedi
         var req = await HttpContext.Request.ReadFromJsonAsync<UpdateUserRequest>(ct)
             ?? throw new BadHttpRequestException("Request body is required.");
         var userId = Route<string>("userId") ?? string.Empty;
-        var response = await mediator.Send(new UpdateUserCommand(userId, req.LoginName, req.Email, req.Enabled), ct);
+        var response = await mediator.Send(new UpdateUserCommand(userId, req.LoginName, req.Email, req.Enabled, req.AccountExpiresAtUtc), ct);
         await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
+[HttpPost("/api/iam/v1/users/{userId}/enable")]
+[AllowAnonymous]
+public sealed class EnableUserEndpoint(IIamPermissionAuthorizer authorizer, IMediator mediator)
+    : EndpointWithoutRequest
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.users.manage", ct))
+        {
+            return;
+        }
+
+        var userId = Route<string>("userId") ?? string.Empty;
+        await mediator.Send(new EnableUserCommand(userId), ct);
+        HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
     }
 }
 

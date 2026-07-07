@@ -51,6 +51,24 @@ public sealed class LogoutEndpoint(IMediator mediator) : Endpoint<LogoutRequest>
     }
 }
 
+[HttpPost("/api/iam/v1/auth/change-password")]
+[AllowAnonymous]
+public sealed class ChangePasswordEndpoint(IIamAuthService auth, IMediator mediator) : Endpoint<ChangePasswordRequest>
+{
+    public override async Task HandleAsync(ChangePasswordRequest req, CancellationToken ct)
+    {
+        var userId = await auth.GetAuthenticatedUserIdAsync(HttpContext, ct);
+        if (userId is null)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status401Unauthorized, "Unauthorized.", ct);
+            return;
+        }
+
+        await mediator.Send(new ChangePasswordCommand(userId, req.CurrentPassword, req.NewPassword), ct);
+        HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
+    }
+}
+
 [HttpPost("/api/iam/v1/connectors/credentials/validate")]
 [AllowAnonymous]
 public sealed class ValidateConnectorCredentialEndpoint(IIamAuthService auth) : Endpoint<ValidateConnectorCredentialRequest, ResponseData<ConnectorPrincipalResponse>>

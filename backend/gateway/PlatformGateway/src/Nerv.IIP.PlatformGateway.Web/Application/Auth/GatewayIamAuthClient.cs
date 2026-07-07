@@ -62,7 +62,13 @@ public sealed class HttpGatewayIamAuthClient(HttpClient httpClient) : IGatewayIa
     }
 
     private static ConsoleAuthResponse ToConsoleAuthResponse(IamAuthResponse session, ConsolePrincipalResponse principal) =>
-        new(session.AccessToken, session.RefreshToken, session.SessionId, session.ExpiresAtUtc, principal);
+        new(
+            session.AccessToken,
+            session.RefreshToken,
+            session.SessionId,
+            session.ExpiresAtUtc,
+            session.PasswordChangeRequired,
+            principal);
 
     private async Task<T> SendForJsonAsync<T>(
         Func<HttpContent?> contentFactory,
@@ -160,7 +166,8 @@ public sealed class HttpGatewayIamAuthClient(HttpClient httpClient) : IGatewayIa
         string AccessToken,
         string RefreshToken,
         string SessionId,
-        DateTimeOffset ExpiresAtUtc);
+        DateTimeOffset ExpiresAtUtc,
+        bool PasswordChangeRequired = false);
 
     private sealed record IamCurrentPrincipalResponse(
         string UserId,
