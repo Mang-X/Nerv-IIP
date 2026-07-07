@@ -3,6 +3,7 @@ using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
@@ -22,6 +23,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     private const string ProductionReportReversalUniqueIndexName = "ux_production_reports_scope_reversed_report_no";
 
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
+
+    public DbSet<MesEngineeringChangeWorkOrderImpact> EngineeringChangeWorkOrderImpacts => Set<MesEngineeringChangeWorkOrderImpact>();
 
     public DbSet<OperationTask> OperationTasks => Set<OperationTask>();
 

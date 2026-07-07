@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
+using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
@@ -64,6 +65,8 @@ if (!builder.Environment.IsProduction() && string.IsNullOrWhiteSpace(connectionS
 builder.Services.AddMesPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
 builder.Services.AddScoped<IMesPlanningStore, PersistentMesPlanningStore>();
 builder.Services.AddScoped<MesFoundationReadinessService>();
+builder.Services.Configure<MesEngineeringChangeOptions>(
+    builder.Configuration.GetSection("Mes:EngineeringChange"));
 builder.Services.AddSingleton<RuleScheduler>();
 builder.Services.AddScoped<MesCodingService>();
 builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();

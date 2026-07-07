@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Nerv.IIP.Business.Mes.Domain;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
@@ -42,6 +43,7 @@ public sealed class MesSchemaConventionTests
         var businessEntities = new[]
         {
             typeof(WorkOrder),
+            typeof(MesEngineeringChangeWorkOrderImpact),
             typeof(OperationTask),
             typeof(ProductionReport),
             typeof(ProductionReportMaterialConsumption),

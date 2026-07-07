@@ -26,7 +26,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(45, MesEndpointContracts.All.Count);
+        Assert.Equal(46, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -93,6 +93,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/cancel"
             && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
             && x.OperationId == "cancelBusinessMesWorkOrder");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions"
+            && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
+            && x.OperationId == "recordBusinessMesEngineeringChangeDecision");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release"

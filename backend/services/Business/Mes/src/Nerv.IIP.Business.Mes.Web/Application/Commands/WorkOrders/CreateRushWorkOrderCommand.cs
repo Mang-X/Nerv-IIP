@@ -1,5 +1,7 @@
+using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
+using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
@@ -24,7 +26,11 @@ public sealed record CreateRushWorkOrderResponse(
     MesScheduleResult Schedule,
     IReadOnlyCollection<string> AffectedWorkOrderIds);
 
-public sealed class CreateRushWorkOrderCommandHandler(IMesPlanningStore store, RuleScheduler scheduler, MesCodingService? codingService = null)
+public sealed class CreateRushWorkOrderCommandHandler(
+    IMesPlanningStore store,
+    RuleScheduler scheduler,
+    MesCodingService? codingService = null,
+    ApplicationDbContext? dbContext = null)
     : ICommandHandler<CreateRushWorkOrderCommand, CreateRushWorkOrderResponse>
 {
     private const int RushPriority = 1000;
@@ -32,6 +38,16 @@ public sealed class CreateRushWorkOrderCommandHandler(IMesPlanningStore store, R
 
     public async Task<CreateRushWorkOrderResponse> Handle(CreateRushWorkOrderCommand request, CancellationToken cancellationToken)
     {
+        if (dbContext is not null)
+        {
+            await MesArchivedProductionVersionGuard.ThrowIfArchivedAsync(
+                dbContext,
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.ProductionVersionId,
+                cancellationToken);
+        }
+
         var allocation = await _codingService.AllocateWorkOrderIdAsync(
             request.OrganizationId,
             request.EnvironmentId,
