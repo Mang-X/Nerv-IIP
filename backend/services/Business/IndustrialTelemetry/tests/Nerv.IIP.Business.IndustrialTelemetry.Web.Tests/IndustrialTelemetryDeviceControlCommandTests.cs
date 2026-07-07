@@ -45,7 +45,7 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
         });
 
         Assert.Empty(factory.OpsClient.CreatedRequests);
-        Assert.NotEqual(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]

@@ -103,13 +103,52 @@ public sealed class CreateDeviceControlCommandCommandValidator : AbstractValidat
         RuleFor(x => x.ConnectorHostId).NotEmpty().MaximumLength(128);
         RuleFor(x => x.InstanceKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.CommandType).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.TagKey).MaximumLength(150);
-        RuleFor(x => x.Value).MaximumLength(256);
+        RuleFor(x => x.CommandType)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(IsSupportedCommandType)
+            .WithMessage("Device control command type must be write-tag, start-stop or parameter-set.");
+        When(x => IsSingleTagCommand(x.CommandType), () =>
+        {
+            RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
+            RuleFor(x => x.Value).NotEmpty().MaximumLength(256);
+        });
+        When(x => IsParameterSetCommand(x.CommandType), () =>
+        {
+            RuleFor(x => x.Parameters).NotEmpty();
+            RuleForEach(x => x.Parameters!.Keys).NotEmpty().MaximumLength(150);
+            RuleForEach(x => x.Parameters!.Values).NotEmpty().MaximumLength(256);
+        });
         RuleFor(x => x.RequestedBy).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.CorrelationId).NotEmpty().MaximumLength(150);
+    }
+
+    private static bool IsSupportedCommandType(string commandType)
+    {
+        return IsSingleTagCommand(commandType) || IsParameterSetCommand(commandType);
+    }
+
+    private static bool IsSingleTagCommand(string commandType)
+    {
+        if (string.IsNullOrWhiteSpace(commandType))
+        {
+            return false;
+        }
+
+        var normalized = commandType.Trim().ToLowerInvariant();
+        return normalized is "write-tag" or "start-stop";
+    }
+
+    private static bool IsParameterSetCommand(string commandType)
+    {
+        if (string.IsNullOrWhiteSpace(commandType))
+        {
+            return false;
+        }
+
+        return string.Equals(commandType.Trim(), "parameter-set", StringComparison.OrdinalIgnoreCase);
     }
 }
 
@@ -120,7 +159,7 @@ public sealed class CreateDeviceControlCommandCommandHandler(
 {
     public async Task<OperationTaskResponse> Handle(CreateDeviceControlCommandCommand request, CancellationToken cancellationToken)
     {
-        var commandType = NormalizeCommandType(request.CommandType);
+        var commandType = IndustrialTelemetryText.RequiredLower(request.CommandType, nameof(request.CommandType));
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["connectorHostId"] = request.ConnectorHostId.Trim(),
@@ -220,16 +259,6 @@ public sealed class CreateDeviceControlCommandCommandHandler(
         }
     }
 
-    private static string NormalizeCommandType(string commandType)
-    {
-        return IndustrialTelemetryText.RequiredLower(commandType, nameof(commandType)) switch
-        {
-            "write-tag" => "write-tag",
-            "start-stop" => "start-stop",
-            "parameter-set" => "parameter-set",
-            var value => value
-        };
-    }
 }
 
 public sealed record CreateOrUpdateAlarmRuleCommand(

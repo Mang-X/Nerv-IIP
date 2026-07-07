@@ -45,25 +45,25 @@ public sealed class OpcUaDeviceControlOperationExecutor(
             options.AutoAcceptUntrustedServerCertificates), cancellationToken);
         try
         {
-            foreach (var write in writes.Writes)
+            var successfulWriteCount = 0;
+            for (var index = 0; index < writes.Writes.Count; index++)
             {
+                var write = writes.Writes[index];
                 var receipt = await opcUaClient.WriteAsync(new OpcUaWriteRequest(write.NodeId, write.Value), cancellationToken);
+                AddReceiptOutput(output, index, write, receipt);
                 if (!string.Equals(receipt.Status, "Good", StringComparison.OrdinalIgnoreCase))
                 {
-                    output["deviceReceiptCode"] = receipt.ReceiptCode;
-                    output["deviceReceiptMessage"] = receipt.Message;
-                    output["nodeId"] = write.NodeId;
-                    output["writtenValue"] = write.Value;
+                    output["failedWriteIndex"] = index.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    output["successfulWriteCount"] = successfulWriteCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    output["writeCount"] = writes.Writes.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
                     return ConnectorOperationExecution.Failed("opcua.write.rejected", receipt.Message, "runtime", false, output);
                 }
 
-                output["deviceReceiptCode"] = receipt.ReceiptCode;
-                output["deviceReceiptMessage"] = receipt.Message;
-                output["nodeId"] = write.NodeId;
-                output["writtenValue"] = write.Value;
+                successfulWriteCount++;
             }
 
             output["writeCount"] = writes.Writes.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            output["successfulWriteCount"] = successfulWriteCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
             return ConnectorOperationExecution.Success(output);
         }
         finally
@@ -133,6 +133,25 @@ public sealed class OpcUaDeviceControlOperationExecutor(
             ["operationTaskId"] = task.OperationTaskId,
             ["instanceKey"] = task.InstanceKey
         });
+    }
+
+    private static void AddReceiptOutput(
+        IDictionary<string, string> output,
+        int index,
+        OpcUaPlannedWrite write,
+        OpcUaWriteReceipt receipt)
+    {
+        var prefix = $"receipt.{index.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+        output[$"{prefix}.status"] = receipt.Status;
+        output[$"{prefix}.code"] = receipt.ReceiptCode;
+        output[$"{prefix}.message"] = receipt.Message;
+        output[$"{prefix}.nodeId"] = write.NodeId;
+        output[$"{prefix}.writtenValue"] = write.Value;
+
+        output["deviceReceiptCode"] = receipt.ReceiptCode;
+        output["deviceReceiptMessage"] = receipt.Message;
+        output["nodeId"] = write.NodeId;
+        output["writtenValue"] = write.Value;
     }
 
     private sealed record OpcUaPlannedWrite(string NodeId, string Value);

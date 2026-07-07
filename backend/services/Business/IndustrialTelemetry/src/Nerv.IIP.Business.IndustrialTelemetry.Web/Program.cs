@@ -124,7 +124,7 @@ try
     }
 
     app.UseNervIipRequestLocalization();
-    app.UseKnownExceptionHandler();
+    app.UseKnownExceptionHandler(_ => new() { KnownExceptionStatusCode = System.Net.HttpStatusCode.BadRequest });
     app.UseStaticFiles();
     app.UseRouting();
     app.UseAuthentication();
