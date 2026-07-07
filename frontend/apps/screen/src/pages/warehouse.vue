@@ -376,7 +376,7 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
                 {{ wcs && wcs.failures.length > 0 ? `${wcs.failures.length} 条未恢复` : '链路正常' }}
               </span>
             </template>
-            <div v-if="wcs" class="wf-list">
+            <ScreenScrollArea v-if="wcs" class="wf-list">
               <div v-for="x in wcs.failures" :key="x.cmd" class="wf-row">
                 <i class="wf-dot" aria-hidden="true" />
                 <div class="wf-main">
@@ -394,7 +394,7 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
               <div v-if="wcs.failures.length === 0" class="wf-empty">
                 <StatusLight tone="run" label="无失败指令" />
               </div>
-            </div>
+            </ScreenScrollArea>
           </ScreenPanel>
 
           <ScreenPanel title="WCS 指令状态" class="wb-adapters">
@@ -417,7 +417,7 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
                   <dd :class="{ bad: wcs.counts.failed > 0 }">{{ wcs.counts.failed }}</dd>
                 </div>
               </dl>
-              <div class="wa-rows">
+              <ScreenScrollArea class="wa-rows">
                 <div v-for="a in wcs.adapters" :key="a.kind" class="wa-row">
                   <component :is="ADAPTER_ICONS[a.kind]" :size="14" :stroke-width="1.8" class="wa-ic" />
                   <span class="wa-name">{{ a.label }}</span>
@@ -425,7 +425,7 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
                   <span class="wa-done">完成 {{ nf.format(a.completed) }}</span>
                   <b v-if="a.failed > 0" class="wa-fail">失败 {{ a.failed }}</b>
                 </div>
-              </div>
+              </ScreenScrollArea>
             </div>
           </ScreenPanel>
 
@@ -943,9 +943,9 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
 .wf-count.calm {
   color: var(--sb-green);
 }
+/* 失败榜：3–4 条完整显示，更多滚动（数据量变化不挤压下方面板） */
 .wf-list {
-  display: flex;
-  flex-direction: column;
+  max-height: 236px;
 }
 .wf-row {
   display: flex;
@@ -1081,9 +1081,6 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
 .wa-rows {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-evenly;
 }
 .wa-row {
   display: flex;

@@ -222,6 +222,32 @@ const devSummary = computed(() => {
               <WorkshopLineCard v-for="l in board.lines" :key="l.id" :card="l" />
             </div>
           </ScreenScrollArea>
+          <ScreenPanel title="当班班组" class="wb-crew">
+            <template #extra>
+              <StatusTag tone="amber" label="花名册口径 · 考勤未接入" />
+            </template>
+            <div class="wb-crew-head">
+              <span class="wb-crew-team">{{ board.crew.teamName }}</span>
+              <span class="wb-crew-lead"><UserRound :size="15" class="wb-cell-ic" />组长 {{ board.crew.leader }}</span>
+            </div>
+            <dl class="wb-crew-nums">
+              <div>
+                <dt>计划应到</dt>
+                <dd>{{ board.crew.headcountPlanned }}<small> 人</small></dd>
+              </div>
+              <div>
+                <dt>技能覆盖</dt>
+                <dd>{{ board.crew.skillCoverage }}<small>%</small></dd>
+              </div>
+              <div>
+                <dt>交接遗留</dt>
+                <dd :class="{ warn: board.crew.handoverIssues > 0 }">
+                  {{ board.crew.handoverIssues }}<small> 项</small>
+                </dd>
+              </div>
+            </dl>
+            <p v-if="board.crew.handoverNote" class="wb-crew-note">{{ board.crew.handoverNote }}</p>
+          </ScreenPanel>
           <div class="wb-woa">
             <h5 class="wb-sub-h">工单交付预警</h5>
             <div v-for="w in board.woAlerts" :key="w.code" class="wb-woa-row">
@@ -235,7 +261,7 @@ const devSummary = computed(() => {
           </div>
         </section>
 
-        <!-- 中：产量趋势（当班累计 / 近 30 天）+ 车间效率 + 停机/报警事件流 -->
+        <!-- 中：产量趋势（当班累计 / 近 30 天，拿大头）+ 停机/报警事件流（固定高内滚） -->
         <div class="wb-center">
           <TrendChart
             v-if="trendData"
@@ -252,40 +278,6 @@ const devSummary = computed(() => {
             :plan-label="trendData.planLabel"
             :ranges="WS_TREND_RANGES"
           />
-          <ScreenPanel title="车间效率 OEE" class="wb-oee">
-            <template #extra>
-              <StatusTag tone="amber" label="班内推算 · 待 #570" />
-            </template>
-            <div class="wb-oee-in">
-              <div class="wb-oee-hero" :class="{ warn: board.oee.overall < 75, bad: board.oee.overall < 60 }">
-                <span class="wb-num">{{ board.oee.overall }}<small>%</small></span>
-                <i class="wb-score-line" aria-hidden="true" />
-              </div>
-              <dl class="wb-oee-apq">
-                <div>
-                  <dt>可用率 A</dt>
-                  <dd :class="{ warn: board.oee.availability < 90 }">{{ board.oee.availability }}<small>%</small></dd>
-                </div>
-                <div>
-                  <dt>性能率 P</dt>
-                  <dd :class="{ warn: board.oee.performance < 90 }">{{ board.oee.performance }}<small>%</small></dd>
-                </div>
-                <div>
-                  <dt>良品率 Q</dt>
-                  <dd>{{ board.oee.quality }}<small>%</small></dd>
-                </div>
-              </dl>
-              <div class="wb-oee-lines">
-                <div v-for="l in board.oee.byLine" :key="l.lineId" class="wb-oee-line">
-                  <span class="wb-oee-name">{{ l.name }}</span>
-                  <span class="wb-oee-track">
-                    <i :class="l.state" :style="{ width: `${l.oee}%` }" />
-                  </span>
-                  <b class="wb-oee-v" :class="l.state">{{ l.oee }}<small>%</small></b>
-                </div>
-              </div>
-            </div>
-          </ScreenPanel>
           <ScreenPanel title="停机 · 报警" class="wb-events">
             <template #extra>
               <span class="wb-dev-sum">{{ devSummary }}</span>
@@ -310,8 +302,42 @@ const devSummary = computed(() => {
           </ScreenPanel>
         </div>
 
-        <!-- 右：齐套/缺料 · 质量 · 班组（诚实口径） -->
+        <!-- 右：车间效率 OEE · 齐套/缺料 · 质量（指标域；班组随「人」归左列执行域） -->
         <div class="wb-right">
+          <ScreenPanel title="车间效率 OEE" class="wb-oee">
+            <template #extra>
+              <StatusTag tone="amber" label="班内推算 · 待 #570" />
+            </template>
+            <div class="wb-oee-top">
+              <div class="wb-oee-hero" :class="{ warn: board.oee.overall < 75, bad: board.oee.overall < 60 }">
+                <span class="wb-num">{{ board.oee.overall }}<small>%</small></span>
+                <i class="wb-score-line" aria-hidden="true" />
+              </div>
+              <dl class="wb-oee-apq">
+                <div>
+                  <dt>可用率 A</dt>
+                  <dd :class="{ warn: board.oee.availability < 90 }">{{ board.oee.availability }}<small>%</small></dd>
+                </div>
+                <div>
+                  <dt>性能率 P</dt>
+                  <dd :class="{ warn: board.oee.performance < 90 }">{{ board.oee.performance }}<small>%</small></dd>
+                </div>
+                <div>
+                  <dt>良品率 Q</dt>
+                  <dd>{{ board.oee.quality }}<small>%</small></dd>
+                </div>
+              </dl>
+            </div>
+            <div class="wb-oee-lines">
+              <div v-for="l in board.oee.byLine" :key="l.lineId" class="wb-oee-line">
+                <span class="wb-oee-name">{{ l.name }}</span>
+                <span class="wb-oee-track">
+                  <i :class="l.state" :style="{ width: `${l.oee}%` }" />
+                </span>
+                <b class="wb-oee-v" :class="l.state">{{ l.oee }}<small>%</small></b>
+              </div>
+            </div>
+          </ScreenPanel>
           <ScreenPanel title="物料齐套" class="wb-kit">
             <div class="wb-kit-top">
               <div class="wb-kit-v" :class="{ warn: board.kitting.rate < 100 }">
@@ -349,21 +375,15 @@ const devSummary = computed(() => {
             </ScreenScrollArea>
           </ScreenPanel>
 
-          <ScreenPanel title="当班质量" class="wb-quality">
-            <dl class="wb-q-nums">
-              <div>
-                <dt>一次合格率</dt>
-                <dd :class="{ warn: board.quality.fpy < 98 }">{{ board.quality.fpy }}<small>%</small></dd>
-              </div>
-              <div>
-                <dt>报废</dt>
-                <dd :class="{ bad: board.quality.scrap > 0 }">{{ board.quality.scrap }}<small> 件</small></dd>
-              </div>
-              <div>
-                <dt>返修</dt>
-                <dd :class="{ warn: board.quality.rework > 0 }">{{ board.quality.rework }}<small> 件</small></dd>
-              </div>
-            </dl>
+          <ScreenPanel title="当班质量 · NCR 待办" class="wb-quality">
+            <template #extra>
+              <!-- FPY/报废/返修大数字在顶部 KPI 带已有 —— 此处只留摘要，面板专注 NCR -->
+              <span class="wb-q-sum">
+                FPY <b :class="{ warn: board.quality.fpy < 98 }">{{ board.quality.fpy }}%</b>
+                · 报废 <b :class="{ bad: board.quality.scrap > 0 }">{{ board.quality.scrap }}</b>
+                · 返修 <b>{{ board.quality.rework }}</b>
+              </span>
+            </template>
             <ScreenScrollArea class="wb-ncr">
               <div v-for="n in board.quality.ncr" :key="n.code" class="wb-ncr-row">
                 <span class="wb-ncr-code">{{ n.code }}</span>
@@ -374,33 +394,6 @@ const devSummary = computed(() => {
                 <i class="wb-ok-dot" />无待办 NCR
               </div>
             </ScreenScrollArea>
-          </ScreenPanel>
-
-          <ScreenPanel title="当班班组" class="wb-crew">
-            <template #extra>
-              <StatusTag tone="amber" label="花名册口径 · 考勤未接入" />
-            </template>
-            <div class="wb-crew-head">
-              <span class="wb-crew-team">{{ board.crew.teamName }}</span>
-              <span class="wb-crew-lead"><UserRound :size="15" class="wb-cell-ic" />组长 {{ board.crew.leader }}</span>
-            </div>
-            <dl class="wb-crew-nums">
-              <div>
-                <dt>计划应到</dt>
-                <dd>{{ board.crew.headcountPlanned }}<small> 人</small></dd>
-              </div>
-              <div>
-                <dt>技能覆盖</dt>
-                <dd>{{ board.crew.skillCoverage }}<small>%</small></dd>
-              </div>
-              <div>
-                <dt>交接遗留</dt>
-                <dd :class="{ warn: board.crew.handoverIssues > 0 }">
-                  {{ board.crew.handoverIssues }}<small> 项</small>
-                </dd>
-              </div>
-            </dl>
-            <p v-if="board.crew.handoverNote" class="wb-crew-note">{{ board.crew.handoverNote }}</p>
           </ScreenPanel>
         </div>
       </div>
@@ -717,10 +710,10 @@ const devSummary = computed(() => {
   flex: none;
 }
 
-/* 中列：趋势 + 车间效率 + 事件流 */
+/* 中列：趋势（拿大头）+ 事件流（固定高内滚） */
 .wb-center {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 13px;
   min-height: 0;
   min-width: 0;
@@ -729,18 +722,21 @@ const devSummary = computed(() => {
   min-height: 0;
 }
 
-/* 车间效率 OEE：总值 + A/P/Q 分解 + 各线对比条（报警线垫底一眼可见） */
-.wb-oee-in {
+/* 车间效率 OEE（右列竖版）：hero + A/P/Q 一行，各线对比条全宽在下 */
+.wb-oee {
+  flex: none;
+}
+.wb-oee-top {
   display: flex;
   align-items: center;
-  gap: 26px;
+  gap: 18px;
 }
 .wb-oee-hero {
   flex: none;
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;
-  font-size: 44px;
+  font-size: 38px;
   font-weight: 800;
   line-height: 1;
   color: var(--sb-text);
@@ -756,35 +752,36 @@ const devSummary = computed(() => {
   text-shadow: none;
 }
 .wb-oee-hero .wb-num small {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--sb-muted);
   margin-left: 2px;
 }
 .wb-oee-apq {
-  flex: none;
+  flex: 1;
+  min-width: 0;
   margin: 0;
   display: flex;
-  gap: 22px;
-  padding: 0 24px;
+  justify-content: space-between;
+  gap: 12px;
+  padding-left: 18px;
   border-left: 1px solid var(--sb-divider);
-  border-right: 1px solid var(--sb-divider);
 }
 .wb-oee-apq dt {
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--sb-muted);
   white-space: nowrap;
 }
 .wb-oee-apq dd {
   margin: 6px 0 0;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
   line-height: 1;
   color: var(--sb-text);
   font-variant-numeric: tabular-nums;
 }
 .wb-oee-apq dd small {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--sb-muted);
 }
@@ -792,11 +789,12 @@ const devSummary = computed(() => {
   color: var(--sb-amber);
 }
 .wb-oee-lines {
-  flex: 1;
-  min-width: 0;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--sb-divider);
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 6px;
 }
 .wb-oee-line {
   display: flex;
@@ -867,7 +865,7 @@ const devSummary = computed(() => {
 }
 .wb-ev-list {
   min-height: 52px;
-  max-height: 176px;
+  max-height: 264px;
 }
 .wb-ev {
   display: flex;
@@ -970,13 +968,13 @@ const devSummary = computed(() => {
   display: flex;
   align-items: center;
   gap: 24px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 .wb-kit-v {
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;
-  font-size: 42px;
+  font-size: 36px;
   font-weight: 800;
   line-height: 1;
   color: var(--sb-green);
@@ -997,7 +995,7 @@ const devSummary = computed(() => {
 }
 .wb-kit-mini dd {
   margin: 5px 0 0;
-  font-size: 23px;
+  font-size: 20px;
   font-weight: 700;
   line-height: 1;
   color: var(--sb-text);
@@ -1006,8 +1004,9 @@ const devSummary = computed(() => {
 .wb-kit-mini dd.bad {
   color: var(--sb-red);
 }
+/* 缺料明细：两行完整显示，更多滚动 —— 右列高度预算优先保证当班质量 NCR 可见 */
 .wb-shorts {
-  max-height: 236px;
+  max-height: 104px;
 }
 .wb-short {
   display: flex;
@@ -1075,39 +1074,25 @@ const devSummary = computed(() => {
   flex: 1;
   min-height: 0;
 }
-.wb-q-nums {
-  margin: 0;
-  display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr;
-  gap: 10px;
-}
-.wb-q-nums dt {
+/* 面板标题右侧的质量摘要（大数字在 KPI 带，不重复占面板空间） */
+.wb-q-sum {
   font-size: 12.5px;
   color: var(--sb-muted);
-}
-.wb-q-nums dd {
-  margin: 5px 0 0;
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--sb-text);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.wb-q-nums dd small {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--sb-muted);
+.wb-q-sum b {
+  color: var(--sb-text);
+  font-weight: 700;
 }
-.wb-q-nums dd.warn {
+.wb-q-sum b.warn {
   color: var(--sb-amber);
 }
-.wb-q-nums dd.bad {
+.wb-q-sum b.bad {
   color: var(--sb-red);
 }
 .wb-ncr {
-  margin-top: 9px;
-  padding-top: 7px;
-  border-top: 1px solid var(--sb-divider);
+  margin-top: 2px;
 }
 .wb-ncr-row {
   display: flex;
