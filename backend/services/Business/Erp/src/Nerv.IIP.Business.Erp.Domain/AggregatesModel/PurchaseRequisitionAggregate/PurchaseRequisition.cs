@@ -53,6 +53,8 @@ public sealed class PurchaseRequisition : Entity<PurchaseRequisitionId>, IAggreg
     public decimal Quantity { get; private set; }
     public DateOnly RequiredDate { get; private set; }
     public PurchaseRequisitionStatus Status { get; private set; }
+    public string? ConvertedPurchaseOrderNo { get; private set; }
+    public DateTime? ConvertedAtUtc { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
 
     public static PurchaseRequisition CreateFromSuggestion(
@@ -67,5 +69,28 @@ public sealed class PurchaseRequisition : Entity<PurchaseRequisitionId>, IAggreg
         DateOnly requiredDate)
     {
         return new PurchaseRequisition(organizationId, environmentId, requisitionNo, suggestionId, skuCode, uomCode, siteCode, quantity, requiredDate);
+    }
+
+    public void MarkConverted(string purchaseOrderNo)
+    {
+        var normalizedPurchaseOrderNo = ErpText.Required(purchaseOrderNo, nameof(purchaseOrderNo));
+        if (Status == PurchaseRequisitionStatus.Converted)
+        {
+            if (!string.Equals(ConvertedPurchaseOrderNo, normalizedPurchaseOrderNo, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Purchase requisition has already been converted to another purchase order.");
+            }
+
+            return;
+        }
+
+        if (Status != PurchaseRequisitionStatus.Open)
+        {
+            throw new InvalidOperationException("Only open purchase requisitions can be converted.");
+        }
+
+        Status = PurchaseRequisitionStatus.Converted;
+        ConvertedPurchaseOrderNo = normalizedPurchaseOrderNo;
+        ConvertedAtUtc = DateTime.UtcNow;
     }
 }

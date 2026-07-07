@@ -16271,6 +16271,61 @@
         ]
       }
     },
+    "/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order": {
+      "post": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrder",
+        "requestBody": {
+          "x-name": "BusinessConsoleConvertErpPurchaseRequisitionsRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConvertErpPurchaseRequisitionsRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConvertErpPurchaseRequisitionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/erp/procurement/supplier-quotations": {
       "post": {
         "tags": [
@@ -35366,6 +35421,29 @@
           "promisedDate": {
             "type": "string",
             "format": "date"
+          },
+          "sources": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderLineSourceItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderLineSourceItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "purchaseRequisitionNo": {
+            "type": "string"
+          },
+          "purchaseRequisitionLineNo": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },
@@ -35537,6 +35615,15 @@
           "createdAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "convertedPurchaseOrderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "convertedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -35724,6 +35811,179 @@
           "requiredDate": {
             "type": "string",
             "format": "date"
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConvertErpPurchaseRequisitionsResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConvertErpPurchaseRequisitionsResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConvertErpPurchaseRequisitionsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "purchaseOrderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "purchaseOrderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "rfqNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "supplierCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "lines": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConvertedErpPurchaseOrderLine"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConvertedErpPurchaseOrderLine": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "lineNo": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "unitPrice": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "promisedDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConvertedErpPurchaseOrderLineSource"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConvertedErpPurchaseOrderLineSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "purchaseRequisitionNo": {
+            "type": "string"
+          },
+          "purchaseRequisitionLineNo": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConvertErpPurchaseRequisitionsRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "purchaseRequisitionNos",
+          "rfqSupplierCodes",
+          "currencyCode"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "purchaseRequisitionNos": {
+            "type": "array",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false,
+            "items": {
+              "type": "string"
+            }
+          },
+          "purchaseOrderNo": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "supplierCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "rfqSupplierCodes": {
+            "type": "array",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false,
+            "items": {
+              "type": "string"
+            }
+          },
+          "rfqNo": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "currencyCode": {
+            "type": "string",
+            "maxLength": 10,
+            "minLength": 0,
+            "nullable": false
           }
         }
       },

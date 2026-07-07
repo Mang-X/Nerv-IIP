@@ -18,11 +18,12 @@ import {
   SelectProValue,
   StatusBadgePro,
   Toolbar,
+  toast,
 } from '@nerv-iip/ui'
-import { RefreshCwIcon } from 'lucide-vue-next'
+import { RefreshCwIcon, ShoppingCartIcon } from 'lucide-vue-next'
 import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { firstQueryParam, formatDate, formatQuantity } from './shared'
+import { firstQueryParam, formatDate, formatError, formatQuantity } from './shared'
 
 definePage({ meta: { requiresAuth: true, title: '采购申请', requiredPermissions: ['business.erp.procurement.read'] } })
 
@@ -57,11 +58,36 @@ const columns: DataTableProColumn<BusinessConsoleErpPurchaseRequisitionItem>[] =
   { key: 'requiredDate', header: '需求日期', width: 'w-32', accessor: (r) => formatDate(r.requiredDate) },
   { key: 'siteCode', header: '工厂', width: 'w-28', accessor: (r) => r.siteCode ?? '-' },
   { key: 'status', header: '状态', width: 'w-28' },
+  { key: 'convertedPurchaseOrderNo', header: '采购订单', width: 'w-36', accessor: (r) => r.convertedPurchaseOrderNo ?? '-' },
   { key: 'suggestionId', header: 'MRP 建议', width: 'w-40', accessor: (r) => r.suggestionId ?? '-' },
+  { key: 'actions', header: '', align: 'end', width: 'w-36' },
 ]
 
 function statusLabel(value?: string | null) {
   return ({ Open: '待询价/转单', Converted: '已转单', Cancelled: '已取消' } as Record<string, string>)[value ?? ''] ?? value ?? '-'
+}
+
+function canConvert(row: BusinessConsoleErpPurchaseRequisitionItem) {
+  return row.status === 'Open' && !!row.requisitionNo
+}
+
+async function convertToPurchaseOrder(row: BusinessConsoleErpPurchaseRequisitionItem) {
+  if (!canConvert(row)) return
+  try {
+    const response = await requisitions.convertToPurchaseOrder([row.requisitionNo!])
+    const data = response?.success ? response.data : undefined
+    if (data?.status === 'PurchaseOrderCreated' || data?.status === 'AlreadyConverted') {
+      toast.success(data.purchaseOrderNo ? `已转采购订单 ${data.purchaseOrderNo}` : '采购申请已转采购订单')
+      return
+    }
+    if (data?.status === 'RfqCreated') {
+      toast.success(data.rfqNo ? `已生成 RFQ ${data.rfqNo}` : '已进入 RFQ 流程')
+      return
+    }
+    toast.warning('缺少有效价源，请先发起 RFQ')
+  } catch {
+    toast.error(formatError(requisitions.convertToPurchaseOrderError.value) || '转单失败，请稍后重试。')
+  }
 }
 </script>
 
@@ -114,6 +140,19 @@ function statusLabel(value?: string | null) {
     >
       <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template>
       <template #cell-status="{ row }"><StatusBadgePro :value="statusLabel(row.status)" /></template>
+      <template #cell-actions="{ row }">
+        <ButtonPro
+          v-if="canConvert(row)"
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="requisitions.convertToPurchaseOrderPending.value"
+          @click="convertToPurchaseOrder(row)"
+        >
+          <ShoppingCartIcon aria-hidden="true" />
+          转采购订单
+        </ButtonPro>
+      </template>
     </DataTablePro>
   </BusinessLayout>
 </template>

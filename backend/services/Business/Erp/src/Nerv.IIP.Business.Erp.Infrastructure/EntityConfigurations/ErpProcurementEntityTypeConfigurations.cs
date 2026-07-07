@@ -23,6 +23,8 @@ public sealed class PurchaseRequisitionEntityTypeConfiguration : IEntityTypeConf
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Required procurement quantity.");
         builder.Property(x => x.RequiredDate).HasColumnName("required_date").IsRequired().HasComment("Required date from planning.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Purchase requisition status.");
+        builder.Property(x => x.ConvertedPurchaseOrderNo).HasColumnName("converted_purchase_order_no").HasMaxLength(100).HasComment("Purchase order number generated from this requisition.");
+        builder.Property(x => x.ConvertedAtUtc).HasColumnName("converted_at_utc").HasComment("UTC time when this requisition was converted to a purchase order.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SuggestionId }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.RequisitionNo }).IsUnique();
@@ -159,8 +161,25 @@ public sealed class PurchaseOrderLineEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.OverReceiptTolerancePercent).HasColumnName("over_receipt_tolerance_percent").IsRequired().HasPrecision(9, 4).HasComment("Allowed over receipt tolerance percent for the line.");
         builder.Property(x => x.UnderReceiptTolerancePercent).HasColumnName("under_receipt_tolerance_percent").IsRequired().HasPrecision(9, 4).HasComment("Allowed under receipt tolerance percent for final delivery close.");
         builder.Property(x => x.FinalDelivery).HasColumnName("final_delivery").IsRequired().HasComment("Whether final delivery was declared and the line is closed despite remaining quantity.");
+        builder.HasMany(x => x.SourceLinks).WithOne().HasForeignKey("PurchaseOrderLineId").OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(x => x.SourceLinks).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.Ignore(x => x.OpenQuantity);
         builder.Ignore(x => x.LineAmount);
+    }
+}
+
+public sealed class PurchaseOrderLineSourceLinkEntityTypeConfiguration : IEntityTypeConfiguration<PurchaseOrderLineSourceLink>
+{
+    public void Configure(EntityTypeBuilder<PurchaseOrderLineSourceLink> builder)
+    {
+        builder.ToTable("purchase_order_line_sources", table => table.HasComment("ERP purchase order line source purchase requisition references."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseIdentityByDefaultColumn().HasComment("Purchase order line source row id.");
+        builder.Property<PurchaseOrderLineId>("PurchaseOrderLineId").HasColumnName("purchase_order_line_id").IsRequired().HasComment("Owning purchase order line id.");
+        builder.Property(x => x.PurchaseRequisitionNo).HasColumnName("purchase_requisition_no").IsRequired().HasMaxLength(100).HasComment("Source purchase requisition number.");
+        builder.Property(x => x.PurchaseRequisitionLineNo).HasColumnName("purchase_requisition_line_no").IsRequired().HasMaxLength(100).HasComment("Source purchase requisition line number.");
+        builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Quantity pegged from the source requisition line.");
+        builder.HasIndex("PurchaseOrderLineId", nameof(PurchaseOrderLineSourceLink.PurchaseRequisitionNo), nameof(PurchaseOrderLineSourceLink.PurchaseRequisitionLineNo)).IsUnique();
     }
 }
 

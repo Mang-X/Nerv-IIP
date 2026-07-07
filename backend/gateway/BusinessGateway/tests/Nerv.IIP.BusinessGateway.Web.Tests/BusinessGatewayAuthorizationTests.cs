@@ -362,6 +362,28 @@ public sealed class BusinessGatewayAuthorizationTests
         Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
     }
 
+    [Fact]
+    public async Task Business_console_purchase_requisition_convert_route_requires_erp_procurement_manage_permission()
+    {
+        const string path = "/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order";
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{path}?organizationId=org-001&environmentId=env-dev")
+        {
+            Content = JsonContent.Create(ValidPostBody(path))
+        };
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Equal(BusinessGatewayPermissions.ErpProcurementManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
+    }
+
     private static object ValidPostBody(string path)
     {
         if (BusinessConsoleTestRequestBodies.IsMasterDataCreatePath(path))
@@ -636,6 +658,13 @@ public sealed class BusinessGatewayAuthorizationTests
             siteCode = "SITE-01",
             quantity = 10,
             requiredDate = "2026-06-10",
+        },
+        "/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            purchaseRequisitionNos = new[] { "PR-001", "PR-002" },
+            purchaseOrderNo = "PO-REQ-001",
         },
         "/api/business-console/v1/wms/inbound-orders" => new
         {
@@ -944,6 +973,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/procurement/purchase-orders", BusinessGatewayPermissions.ErpProcurementRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/procurement/rfqs", BusinessGatewayPermissions.ErpProcurementRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/purchase-requisitions/from-suggestion", BusinessGatewayPermissions.ErpProcurementManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order", BusinessGatewayPermissions.ErpProcurementManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/rfqs", BusinessGatewayPermissions.ErpProcurementManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/supplier-quotations", BusinessGatewayPermissions.ErpProcurementManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/purchase-orders", BusinessGatewayPermissions.ErpProcurementManage);

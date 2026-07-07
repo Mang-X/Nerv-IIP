@@ -22,7 +22,13 @@ public sealed record PurchaseOrderLineDraft(
     decimal UnitPrice,
     DateOnly PromisedDate,
     decimal OverReceiptTolerancePercent = 0m,
-    decimal UnderReceiptTolerancePercent = 0m);
+    decimal UnderReceiptTolerancePercent = 0m,
+    IReadOnlyCollection<PurchaseOrderLineSourceDraft>? Sources = null);
+
+public sealed record PurchaseOrderLineSourceDraft(
+    string PurchaseRequisitionNo,
+    string PurchaseRequisitionLineNo,
+    decimal Quantity);
 
 public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
 {
@@ -177,6 +183,8 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
 
 public sealed class PurchaseOrderLine : Entity<PurchaseOrderLineId>
 {
+    private readonly List<PurchaseOrderLineSourceLink> sourceLinks = [];
+
     private PurchaseOrderLine()
     {
     }
@@ -192,6 +200,11 @@ public sealed class PurchaseOrderLine : Entity<PurchaseOrderLineId>
         OverReceiptTolerancePercent = ErpText.NonNegative(draft.OverReceiptTolerancePercent, nameof(draft.OverReceiptTolerancePercent));
         UnderReceiptTolerancePercent = ErpText.NonNegative(draft.UnderReceiptTolerancePercent, nameof(draft.UnderReceiptTolerancePercent));
         ReceivedQuantity = 0m;
+        sourceLinks.AddRange((draft.Sources ?? []).Select(PurchaseOrderLineSourceLink.Create));
+        if (sourceLinks.Count > 0 && sourceLinks.Sum(x => x.Quantity) != OrderedQuantity)
+        {
+            throw new ArgumentException("Purchase order line source quantities must equal ordered quantity.", nameof(draft));
+        }
     }
 
     public string LineNo { get; private set; } = string.Empty;
@@ -206,6 +219,7 @@ public sealed class PurchaseOrderLine : Entity<PurchaseOrderLineId>
     public bool FinalDelivery { get; private set; }
     public decimal OpenQuantity => FinalDelivery ? 0m : Math.Max(OrderedQuantity - ReceivedQuantity, 0m);
     public decimal LineAmount => OrderedQuantity * UnitPrice;
+    public IReadOnlyCollection<PurchaseOrderLineSourceLink> SourceLinks => sourceLinks;
 
     public static PurchaseOrderLine Create(PurchaseOrderLineDraft draft)
     {
@@ -233,5 +247,29 @@ public sealed class PurchaseOrderLine : Entity<PurchaseOrderLineId>
         {
             FinalDelivery = true;
         }
+    }
+}
+
+public sealed class PurchaseOrderLineSourceLink
+{
+    private PurchaseOrderLineSourceLink()
+    {
+    }
+
+    private PurchaseOrderLineSourceLink(PurchaseOrderLineSourceDraft draft)
+    {
+        PurchaseRequisitionNo = ErpText.Required(draft.PurchaseRequisitionNo, nameof(draft.PurchaseRequisitionNo));
+        PurchaseRequisitionLineNo = ErpText.Required(draft.PurchaseRequisitionLineNo, nameof(draft.PurchaseRequisitionLineNo));
+        Quantity = ErpText.Positive(draft.Quantity, nameof(draft.Quantity));
+    }
+
+    public long Id { get; private set; }
+    public string PurchaseRequisitionNo { get; private set; } = string.Empty;
+    public string PurchaseRequisitionLineNo { get; private set; } = string.Empty;
+    public decimal Quantity { get; private set; }
+
+    public static PurchaseOrderLineSourceLink Create(PurchaseOrderLineSourceDraft draft)
+    {
+        return new PurchaseOrderLineSourceLink(draft);
     }
 }
