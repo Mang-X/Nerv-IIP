@@ -255,6 +255,7 @@ export default defineConfig({
           text: '容器 / 外壳',
           items: [
             { text: 'ScreenPanel 面板', link: '/components/screen/screen-panel' },
+            { text: 'ScreenScrollArea 滚动区', link: '/components/screen/screen-scroll-area' },
             { text: 'BorderPanel 描边面板', link: '/components/screen/border-panel' },
             { text: 'TechFrame 科技边框', link: '/components/screen/tech-frame' },
             { text: 'TitleBar 标题栏', link: '/components/screen/title-bar' },
@@ -271,6 +272,9 @@ export default defineConfig({
             { text: 'DigitalFlop 数字翻牌', link: '/components/screen/digital-flop' },
             { text: 'Sparkline 迷你趋势', link: '/components/screen/sparkline' },
             { text: 'TrendChart 趋势图', link: '/components/screen/trend-chart' },
+            { text: 'ScreenBarChart 柱状图', link: '/components/screen/screen-bar-chart' },
+            { text: 'ScreenDonut 环形占比', link: '/components/screen/screen-donut' },
+            { text: 'ScreenPareto 帕累托', link: '/components/screen/screen-pareto' },
             { text: 'TaktGantt 节拍甘特', link: '/components/screen/takt-gantt' },
           ],
         },
