@@ -1,5 +1,5 @@
-using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
@@ -10,6 +10,8 @@ namespace Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
 
 public sealed class CapaAutomationOptions
 {
+    public static readonly string[] SupportedSeverities = ["minor", "major", "critical"];
+
     public bool Enabled { get; set; } = true;
 
     public string MinimumSeverity { get; set; } = "major";
@@ -23,6 +25,11 @@ public sealed class CapaAutomationOptions
     public string OwnerUserId { get; set; } = "system:quality";
 
     public int DueDays { get; set; } = 14;
+
+    public static bool IsSupportedSeverity(string? severity)
+    {
+        return SupportedSeverities.Any(x => string.Equals(x, severity?.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
 }
 
 public interface ICorrectiveActionCodeGenerator
@@ -71,7 +78,11 @@ public sealed class CapaAutomationService(
         if (!configured.Enabled
             || string.IsNullOrWhiteSpace(ncr.DispositionType)
             || !DispositionMatches(configured, ncr.DispositionType)
-            || await correctiveActionRepository.HasCapaForNcrAsync(ncr.Id.ToString(), cancellationToken)
+            || await correctiveActionRepository.HasCapaForNcrAsync(
+                ncr.OrganizationId,
+                ncr.EnvironmentId,
+                ncr.Id.ToString(),
+                cancellationToken)
             || !await SeverityMeetsThresholdAsync(ncr, configured.MinimumSeverity, cancellationToken))
         {
             return;
@@ -121,14 +132,25 @@ public sealed class CapaAutomationService(
         return options.Dispositions.Any(x => string.Equals(x, dispositionType, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static int SeverityRank(string? severity)
+    private static int SeverityRank(string severity)
     {
-        return severity?.Trim().ToLowerInvariant() switch
+        return severity.Trim().ToLowerInvariant() switch
         {
             "minor" => 1,
             "major" => 2,
             "critical" => 3,
-            _ => int.MaxValue,
+            _ => throw new ArgumentOutOfRangeException(nameof(severity), severity, "Unsupported CAPA automation severity."),
         };
+    }
+}
+
+public sealed class CapaAutomationOptionsValidator : IValidateOptions<CapaAutomationOptions>
+{
+    public ValidateOptionsResult Validate(string? name, CapaAutomationOptions options)
+    {
+        return CapaAutomationOptions.IsSupportedSeverity(options.MinimumSeverity)
+            ? ValidateOptionsResult.Success
+            : ValidateOptionsResult.Fail(
+                $"Quality:CapaAutomation:MinimumSeverity must be one of: {string.Join(", ", CapaAutomationOptions.SupportedSeverities)}.");
     }
 }

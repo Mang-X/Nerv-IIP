@@ -27,7 +27,7 @@ public sealed class SubmitNonconformanceReportDispositionCommandValidator : Abst
 public sealed class SubmitNonconformanceReportDispositionCommandHandler(
     INonconformanceReportRepository repository,
     IApprovalChainStatusClient approvalChainStatusClient,
-    ICapaAutomationService? capaAutomationService = null)
+    ICapaAutomationService capaAutomationService)
     : ICommandHandler<SubmitNonconformanceReportDispositionCommand>
 {
     public async Task Handle(SubmitNonconformanceReportDispositionCommand request, CancellationToken cancellationToken)
@@ -58,10 +58,7 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(
             request.DispositionApprovalChainId,
             request.AttachmentFileIds,
             request.MrbReviews);
-        if (capaAutomationService is not null)
-        {
-            await capaAutomationService.OpenForDispositionIfRequiredAsync(ncr, cancellationToken);
-        }
+        await capaAutomationService.OpenForDispositionIfRequiredAsync(ncr, cancellationToken);
     }
 }
 
@@ -102,7 +99,11 @@ public sealed class CompleteNonconformanceReportInventoryDispositionCommandHandl
             if (IsPostedScrapAdjustment(request) && IsFullDispositionQuantity(ncr, request.Quantity))
             {
                 if (NonconformanceReport.RequiresEffectiveCapa(ncr.SourceType, ncr.DispositionType)
-                    && !await correctiveActionRepository.HasEffectiveCapaForNcrAsync(ncr.Id.ToString(), cancellationToken))
+                    && !await correctiveActionRepository.HasEffectiveCapaForNcrAsync(
+                        ncr.OrganizationId,
+                        ncr.EnvironmentId,
+                        ncr.Id.ToString(),
+                        cancellationToken))
                 {
                     ncr.RecordScrapDispositionMovement(request.InventoryMovementId, request.Quantity);
                     return;

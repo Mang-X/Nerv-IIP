@@ -126,8 +126,8 @@ public sealed class CorrectiveAction : Entity<CorrectiveActionId>, IAggregateRoo
         string verifiedByUserId,
         string result,
         DateTimeOffset verifiedAtUtc,
-        InspectionRecordId? effectivenessInspectionRecordId = null,
-        string? effectivenessInspectionResult = null)
+        InspectionRecordId effectivenessInspectionRecordId,
+        string effectivenessInspectionResult)
     {
         EnsureOpen();
         if (!Actions.Any(x => x.ActionType is "corrective" or "preventive"))

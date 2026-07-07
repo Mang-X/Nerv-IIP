@@ -118,8 +118,11 @@ try
     builder.Services.AddScoped<IInspectionSourceDocumentVerifier, ErpPurchaseReceiptInspectionSourceDocumentVerifier>();
     builder.Services.AddScoped<IQualityIntegrationEventContextAccessor, HttpQualityIntegrationEventContextAccessor>();
     builder.Services.AddScoped<INonconformanceReportCodeGenerator, NonconformanceReportCodeGenerator>();
-    builder.Services.Configure<CapaAutomationOptions>(builder.Configuration.GetSection("Quality:CapaAutomation"));
+    builder.Services.AddOptions<CapaAutomationOptions>()
+        .Bind(builder.Configuration.GetSection("Quality:CapaAutomation"))
+        .ValidateOnStart();
     builder.Services.Configure<CapaCloseApprovalOptions>(builder.Configuration.GetSection("Quality:CapaCloseApproval"));
+    builder.Services.AddSingleton<IValidateOptions<CapaAutomationOptions>, CapaAutomationOptionsValidator>();
     builder.Services.AddScoped<ICorrectiveActionCodeGenerator, CorrectiveActionCodeGenerator>();
     builder.Services.AddScoped<ICapaAutomationService, CapaAutomationService>();
     builder.Services.AddSingleton(TimeProvider.System);

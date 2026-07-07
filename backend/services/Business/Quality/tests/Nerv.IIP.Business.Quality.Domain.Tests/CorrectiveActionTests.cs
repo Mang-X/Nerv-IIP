@@ -41,7 +41,12 @@ public sealed class CorrectiveActionTests
         Assert.Throws<InvalidOperationException>(() => capa.Close("qa-manager-001"));
 
         Assert.Throws<InvalidOperationException>(() =>
-            capa.VerifyEffectiveness("qa-manager-001", "No recurrence in three lots", DateTimeOffset.Parse("2026-07-10T00:00:00Z")));
+            capa.VerifyEffectiveness(
+                "qa-manager-001",
+                "No recurrence in three lots",
+                DateTimeOffset.Parse("2026-07-10T00:00:00Z"),
+                new InspectionRecordId(Guid.CreateVersion7()),
+                "passed"));
 
         foreach (var action in capa.Actions)
         {
@@ -80,7 +85,12 @@ public sealed class CorrectiveActionTests
         capa.CompleteAction(firstAction.Id, firstAction.OwnerUserId, DateTimeOffset.Parse("2026-06-21T00:00:00Z"));
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            capa.VerifyEffectiveness("qa-manager-001", "No recurrence", DateTimeOffset.Parse("2026-07-10T00:00:00Z")));
+            capa.VerifyEffectiveness(
+                "qa-manager-001",
+                "No recurrence",
+                DateTimeOffset.Parse("2026-07-10T00:00:00Z"),
+                new InspectionRecordId(Guid.CreateVersion7()),
+                "passed"));
         Assert.Contains("complete", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -137,6 +147,11 @@ public sealed class CorrectiveActionTests
             dueAtUtc: DateTimeOffset.Parse("2026-06-30T00:00:00Z"));
 
         Assert.Throws<InvalidOperationException>(() =>
-            capa.VerifyEffectiveness("qa-manager-001", "No recurrence", DateTimeOffset.Parse("2026-07-10T00:00:00Z")));
+            capa.VerifyEffectiveness(
+                "qa-manager-001",
+                "No recurrence",
+                DateTimeOffset.Parse("2026-07-10T00:00:00Z"),
+                new InspectionRecordId(Guid.CreateVersion7()),
+                "passed"));
     }
 }

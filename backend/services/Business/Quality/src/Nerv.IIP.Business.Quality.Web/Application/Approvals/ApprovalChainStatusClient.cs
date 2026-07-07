@@ -38,21 +38,8 @@ public sealed class HttpApprovalChainStatusClient(
         string ncrCode,
         CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(chainId)}");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenProvider.BearerToken);
-
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Forbidden)
-        {
-            return false;
-        }
-
-        response.EnsureSuccessStatusCode();
-        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<ApprovalChainStatusResponse>>(
-            cancellationToken);
-        return envelope?.Data is { } chain
+        var chain = await GetChainAsync(chainId, cancellationToken);
+        return chain is not null
             && string.Equals(chain.Status, "approved", StringComparison.OrdinalIgnoreCase)
             && string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal)
             && string.Equals(chain.EnvironmentId, environmentId, StringComparison.Ordinal)

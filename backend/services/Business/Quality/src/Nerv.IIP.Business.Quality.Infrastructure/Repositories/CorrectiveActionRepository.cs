@@ -6,9 +6,17 @@ public interface ICorrectiveActionRepository : IRepository<CorrectiveAction, Cor
 {
     Task<CorrectiveAction?> GetWithActionsAsync(CorrectiveActionId id, CancellationToken cancellationToken);
 
-    Task<bool> HasCapaForNcrAsync(string sourceNcrId, CancellationToken cancellationToken = default);
+    Task<bool> HasCapaForNcrAsync(
+        string organizationId,
+        string environmentId,
+        string sourceNcrId,
+        CancellationToken cancellationToken = default);
 
-    Task<bool> HasEffectiveCapaForNcrAsync(string sourceNcrId, CancellationToken cancellationToken = default);
+    Task<bool> HasEffectiveCapaForNcrAsync(
+        string organizationId,
+        string environmentId,
+        string sourceNcrId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class CorrectiveActionRepository(ApplicationDbContext dbContext)
@@ -21,16 +29,30 @@ public sealed class CorrectiveActionRepository(ApplicationDbContext dbContext)
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
     }
 
-    public Task<bool> HasEffectiveCapaForNcrAsync(string sourceNcrId, CancellationToken cancellationToken = default)
+    public Task<bool> HasEffectiveCapaForNcrAsync(
+        string organizationId,
+        string environmentId,
+        string sourceNcrId,
+        CancellationToken cancellationToken = default)
     {
         return DbContext.CorrectiveActions.AnyAsync(
-            x => x.SourceNcrId == sourceNcrId
+            x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.SourceNcrId == sourceNcrId
                 && (x.Status == "effectiveness-verified" || x.Status == "closed"),
             cancellationToken);
     }
 
-    public Task<bool> HasCapaForNcrAsync(string sourceNcrId, CancellationToken cancellationToken = default)
+    public Task<bool> HasCapaForNcrAsync(
+        string organizationId,
+        string environmentId,
+        string sourceNcrId,
+        CancellationToken cancellationToken = default)
     {
-        return DbContext.CorrectiveActions.AnyAsync(x => x.SourceNcrId == sourceNcrId, cancellationToken);
+        return DbContext.CorrectiveActions.AnyAsync(
+            x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.SourceNcrId == sourceNcrId,
+            cancellationToken);
     }
 }

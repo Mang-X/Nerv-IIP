@@ -583,7 +583,8 @@ public sealed class QualityInspectionEndpointContractTests
         var approvalStatusClient = new FixedApprovalChainStatusClient(false);
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
-            approvalStatusClient);
+            approvalStatusClient,
+            new NoopCapaAutomationService());
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
@@ -621,7 +622,8 @@ public sealed class QualityInspectionEndpointContractTests
         var approvalStatusClient = new FixedApprovalChainStatusClient(true);
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
-            approvalStatusClient);
+            approvalStatusClient,
+            new NoopCapaAutomationService());
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
@@ -662,7 +664,8 @@ public sealed class QualityInspectionEndpointContractTests
             expectedNcrCode: "NCR-OTHER");
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
-            approvalStatusClient);
+            approvalStatusClient,
+            new NoopCapaAutomationService());
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
@@ -700,7 +703,8 @@ public sealed class QualityInspectionEndpointContractTests
         var approvalStatusClient = new FixedApprovalChainStatusClient(false);
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
-            approvalStatusClient);
+            approvalStatusClient,
+            new NoopCapaAutomationService());
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
@@ -921,6 +925,34 @@ public sealed class QualityInspectionEndpointContractTests
     }
 
     [Fact]
+    public async Task Capa_open_command_publishes_opened_integration_event()
+    {
+        const string databaseName = "quality-capa-opened-event";
+        await using var provider = CreateInMemoryMediatorProvider(databaseName);
+        var publisher = provider.GetRequiredService<RecordingIntegrationEventPublisher>();
+
+        using (var scope = provider.CreateScope())
+        {
+            var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+            await sender.Send(
+                new OpenCorrectiveActionCommand(
+                    "org-001",
+                    "env-dev",
+                    "CAPA-OPENED-UOW-001",
+                    null,
+                    "Root cause confirmed",
+                    "Contain affected material",
+                    "qa-manager-001",
+                    DateTimeOffset.Parse("2026-07-21T00:00:00Z")),
+                CancellationToken.None);
+        }
+
+        var opened = Assert.Single(publisher.Published.OfType<CapaOpenedIntegrationEvent>());
+        Assert.Equal("CAPA-OPENED-UOW-001", opened.Payload.CapaCode);
+        Assert.Null(opened.Payload.SourceNcrId);
+    }
+
+    [Fact]
     public async Task Capa_lifecycle_redrive_is_noop_for_closed_ncr_and_repeated_commands()
     {
         const string databaseName = "quality-capa-redrive-idempotent";
@@ -994,6 +1026,7 @@ public sealed class QualityInspectionEndpointContractTests
         }
 
         Assert.Single(publisher.Published.OfType<NcrClosedIntegrationEvent>());
+        Assert.Single(publisher.Published.OfType<CapaClosedIntegrationEvent>());
         Assert.DoesNotContain(publisher.Published, x => x is InventoryMovementRequestedIntegrationEvent);
     }
 
@@ -1102,6 +1135,9 @@ public sealed class QualityInspectionEndpointContractTests
         services.AddUnitOfWork<ApplicationDbContext>();
         services.AddScoped<INonconformanceReportRepository, NonconformanceReportRepository>();
         services.AddScoped<ICorrectiveActionRepository, CorrectiveActionRepository>();
+        services.AddSingleton<IApprovalChainStatusClient>(new FixedApprovalChainStatusClient(true));
+        services.AddSingleton<Microsoft.Extensions.Options.IOptions<CapaCloseApprovalOptions>>(
+            Microsoft.Extensions.Options.Options.Create(new CapaCloseApprovalOptions()));
         services.AddIntegrationEvents(typeof(Program));
         services.AddSingleton<IQualityIntegrationEventContextAccessor, FixedQualityIntegrationEventContextAccessor>();
         services.AddSingleton<RecordingIntegrationEventPublisher>();
@@ -1208,6 +1244,15 @@ public sealed class QualityInspectionEndpointContractTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult("NCR-INS-001");
+        }
+    }
+
+    private sealed class NoopCapaAutomationService : ICapaAutomationService
+    {
+        public Task OpenForDispositionIfRequiredAsync(NonconformanceReport ncr, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
         }
     }
 
