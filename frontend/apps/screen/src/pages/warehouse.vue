@@ -14,7 +14,9 @@ import {
   Scale,
 } from 'lucide-vue-next'
 import { type Component, computed, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
+import { useBackLink } from '@/composables/useBackLink'
 import type { WarehouseBoard, WarehouseOpsTick, WcsAdapterKind, WhTaskRow } from '@/data/contracts/warehouse'
 import { fetchWarehouseBoard, fetchWarehouseOpsTick } from '@/data/fetchers/warehouse'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
@@ -25,6 +27,7 @@ import { ScrollBoard, useScreenData } from '@/screen-kit'
 // 刷新分层：主数据（KPI/出入库进度）5s · 任务看板/WCS 3s（同源纯函数，口径一致）；
 // 页面隐藏时 useScreenData 统一暂停轮询。库存资产域无读面，一期不做（诚实定位）。
 const scope = useAccessScope()
+const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
 const { data: board, lastUpdated, refresh } = useScreenData<WarehouseBoard>(
   () => fetchWarehouseBoard(scope.currentFactoryId),
   { intervalMs: 5000 },
@@ -443,7 +446,10 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
       </div>
 
       <footer class="wb-foot">
-        <span>WMS 作业域演示数据 · 龄期 / 吞吐 / 适配器聚合为前端推算 · 库存资产读面 待 #570</span>
+        <span class="wb-foot-l">
+          <RouterLink :to="backLink.to" class="wb-back">‹ {{ backLink.label }}</RouterLink>
+          <span>WMS 作业域演示数据 · 龄期 / 吞吐 / 适配器聚合为前端推算 · 库存资产读面 待 #570</span>
+        </span>
         <span class="wb-foot-r">
           当日吞吐 <b>{{ nf.format(board.kpis.throughputLines) }}</b> 行
           （入 {{ nf.format(board.inbound.linesDone) }} · 出 {{ nf.format(board.outbound.linesDone) }}）
@@ -1199,6 +1205,18 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
 .wb-foot-r b {
   color: var(--sb-text-2);
   font-weight: 700;
+}
+.wb-foot-l {
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+.wb-back {
+  color: var(--sb-cyan);
+  text-decoration: none;
+  font-size: 13.5px;
+  flex: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

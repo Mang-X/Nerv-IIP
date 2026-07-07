@@ -5,6 +5,7 @@ import { Activity, AlertTriangle, Factory, PackageCheck, Workflow } from 'lucide
 import { type Component, computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
+import { useBackLink } from '@/composables/useBackLink'
 import type { LineSummaryCard } from '@/data/contracts/line'
 import { fetchLineCards } from '@/data/fetchers/line'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
@@ -13,6 +14,7 @@ import { useScreenData } from '@/screen-kit'
 // 产线选择器 = 迷你监控板（spec §四）：红线置顶（数据层排序）、scope 收窄、
 // 点卡进入单线大屏。行虚拟滚动 + 视野外停止请求趋势序列。4s 轮询。
 const scope = useAccessScope()
+const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
 const visibleIds = ref<string[]>([])
 const { data: cards, refresh } = useScreenData<LineSummaryCard[]>(
   () =>
@@ -151,6 +153,11 @@ const kpiItems = computed<KpiCell[]>(() => {
           </div>
         </div>
       </div>
+
+      <footer class="scr-foot">
+        <RouterLink :to="backLink.to" class="scr-back">‹ {{ backLink.label }}</RouterLink>
+        <span>产线状态与设备屏同源 · 产量 / 节拍为演示推算 · 待 #570；点卡进入单线屏</span>
+      </footer>
     </div>
     <div v-else class="ls-loading">连接数据…</div>
   </ScreenLayout>
@@ -169,6 +176,25 @@ const kpiItems = computed<KpiCell[]>(() => {
   place-content: center;
   color: var(--sb-muted);
   font-size: 15px;
+}
+/* 统一页脚：按来路返回 + 口径注记 */
+.scr-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--sb-divider);
+  padding-top: 10px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--sb-faint);
+}
+.scr-back {
+  color: var(--sb-cyan);
+  text-decoration: none;
+  font-size: 13.5px;
+  flex: none;
 }
 .sec-h {
   display: flex;

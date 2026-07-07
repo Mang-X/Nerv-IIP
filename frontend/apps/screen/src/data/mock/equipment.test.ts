@@ -57,13 +57,16 @@ describe('buildEquipmentOverview', () => {
     }
   })
 
-  it('小样本（WS-MACH 收窄 <6 台）MTBF/MTTR 为 null；F02 全量样本足有值', () => {
-    const narrow = buildEquipmentOverview('F02', ['WS-MACH'])
-    expect(narrow.devices.length).toBeLessThan(6)
-    expect(narrow.reliability.mtbfHours).toBeNull()
-    expect(narrow.reliability.mttrMinutes).toBeNull()
+  it('小样本保护：无设备样本 MTBF/MTTR 为 null（诚实缺口，不硬算）；样本足有值', () => {
+    // M2 扩容后所有真实车间均 ≥6 台（机加 2 线 9 台），小样本 null 分支用空收窄验证
+    const empty = buildEquipmentOverview('F01', ['WS-NONE'])
+    expect(empty.devices.length).toBe(0)
+    expect(empty.reliability.mtbfHours).toBeNull()
+    expect(empty.reliability.mttrMinutes).toBeNull()
+    const mach = buildEquipmentOverview('F02', ['WS-MACH'])
+    expect(mach.devices.length).toBeGreaterThanOrEqual(6)
+    expect(mach.reliability.mtbfHours).not.toBeNull()
     const full = buildEquipmentOverview('F02')
-    expect(full.devices.length).toBeGreaterThanOrEqual(6)
     expect(full.reliability.mtbfHours).not.toBeNull()
   })
 
@@ -71,8 +74,9 @@ describe('buildEquipmentOverview', () => {
     const s = buildEquipmentOverview('F01', ['WS-BATTERY'])
     expect(s.devices).toHaveLength(devicesByWorkshop('WS-BATTERY').length)
     const names = new Set(s.devices.map((d) => d.name))
-    for (const d of s.devices) expect(['电芯线', 'PACK 线']).toContain(d.lineName)
-    for (const a of s.alarms) expect(['电芯线', 'PACK 线']).toContain(a.line)
+    const batLines = ['电芯线', '电芯二线', '模组线', 'PACK 线', 'PACK 二线']
+    for (const d of s.devices) expect(batLines).toContain(d.lineName)
+    for (const a of s.alarms) expect(batLines).toContain(a.line)
     for (const r of s.repairs) expect(names.has(r.device)).toBe(true)
     for (const t of s.pmTasks) expect(names.has(t.device)).toBe(true)
     for (const i of s.inspections) expect(names.has(i.device)).toBe(true)

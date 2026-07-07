@@ -18,8 +18,11 @@ describe('buildWorkshopBoard（报警车间 · 与产线/设备屏同源）', ()
     expect(b!.workshopName).toBe('电池车间')
     expect(b!.managerName).toBe('孙立军')
     expect(b!.state).toBe('alarm')
-    // 两条线：电芯线（红）+ PACK 线；红线置顶（沿 buildLineCards 排序）
-    expect(b!.lines.map((l) => l.name).sort()).toEqual(['PACK 线', '电芯线'])
+    // 五条线（M2 扩容：电芯×2 + 模组 + PACK×2，多线滚动场景）；红线置顶（沿 buildLineCards 排序）
+    expect(b!.lines).toHaveLength(5)
+    expect(new Set(b!.lines.map((l) => l.name))).toEqual(
+      new Set(['电芯线', '电芯二线', '模组线', 'PACK 线', 'PACK 二线']),
+    )
     expect(b!.lines[0].name).toBe('电芯线')
     expect(b!.lines[0].state).toBe('alarm')
     // 事件流与设备屏画像同源：卷绕机 1# 急停 + 维修派工张建国（REPAIR_POOL 同人）

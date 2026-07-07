@@ -2,8 +2,10 @@
 import { ScreenPanel, TrendChart } from '@nerv-iip/ui'
 import { ClipboardList, FileCheck2, FileWarning, Scale } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
 import DefectPareto from '@/components/quality/DefectPareto.vue'
+import { useBackLink } from '@/composables/useBackLink'
 import { NCR_SLA_HOURS, type QualityBoard } from '@/data/contracts/quality'
 import { fetchQualityBoard } from '@/data/fetchers/quality'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
@@ -13,6 +15,7 @@ import { useScreenData } from '@/screen-kit'
 // 该催哪张 NCR、缺陷集中在哪条线。与产线屏同一个故事：电芯线卷绕机报警 ⇔
 // 帕累托 TOP1/2 电芯缺陷、最老超期 NCR 挂 WO-1951。5s 轮询。
 const scope = useAccessScope()
+const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
 const { data: board, refresh } = useScreenData<QualityBoard>(
   () => fetchQualityBoard(scope.currentFactoryId, scope.persona.workshopIds),
   { intervalMs: 5000 },
@@ -284,7 +287,10 @@ const trendPin = computed(() => {
       </div>
 
       <footer class="qb-foot">
-        <span>合格率 / 不良率 / 帕累托为演示推算 · NCR 与检验明细就绪</span>
+        <span class="qb-foot-l">
+          <RouterLink :to="backLink.to" class="qb-back">‹ {{ backLink.label }}</RouterLink>
+          <span>合格率 / 不良率 / 帕累托为演示推算 · NCR 与检验明细就绪</span>
+        </span>
         <span>缺陷码 Quality ↔ MES 口径映射 · MRB/CAPA · 聚合端点 待 #570</span>
       </footer>
     </div>
@@ -814,6 +820,18 @@ const trendPin = computed(() => {
 }
 
 /* —— 页脚（诚实标注） —— */
+.qb-foot-l {
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+.qb-back {
+  color: var(--sb-cyan);
+  text-decoration: none;
+  font-size: 13.5px;
+  flex: none;
+}
 .qb-foot {
   flex: none;
   display: flex;

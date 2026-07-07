@@ -4,6 +4,7 @@ import { ChevronDown, CircleCheck, OctagonAlert, UserRound, Users } from 'lucide
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
+import { useBackLink } from '@/composables/useBackLink'
 import { paramColor } from '@/components/equipment/paramColors'
 import LineAndonHero from '@/components/line/LineAndonHero.vue'
 import type { LineBoard } from '@/data/contracts/line'
@@ -36,14 +37,8 @@ function fmtMin(min: number): string {
 }
 const nf = new Intl.NumberFormat('en-US')
 
-// 返回目标按来路识别（跳转链路闭环：车间屏下钻来 → 回该车间，其余回产线总览）。
-// history.state.back 由 vue-router 维护，本身非响应式 —— 挂 route.fullPath 触发重读。
-const backLink = computed(() => {
-  void route.fullPath
-  const back = typeof history.state?.back === 'string' ? history.state.back : ''
-  if (back.startsWith('/workshop/')) return { to: back, label: '返回车间总览' }
-  return { to: '/line', label: '返回产线总览' }
-})
+// 返回链按来路识别（统一 composable）：车间下钻来回原车间、门厅来回门厅
+const backLink = useBackLink(() => ({ to: '/line', label: '返回产线监控' }))
 
 // —— 趋势图（实际 vs 节拍产能）：今日 12h / 近 30 天 tab 切换；
 //    y 轴刻度随数据生成、x 轴抽稀、悬停按点取值 ——

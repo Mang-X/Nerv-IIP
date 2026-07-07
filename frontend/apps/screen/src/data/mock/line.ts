@@ -43,6 +43,12 @@ const LINE_PROFILES: Record<string, LineProfile> = {
   'LN-INJ-1': { taktSec: 35, steps: ['原料干燥', '注塑成形', '取件', '去毛边'], product: '前保险杠骨架', keyIdx: 1 },
   'LN-INJ-2': { taktSec: 40, steps: ['混料', '注塑成形', '取件', '检验'], product: '仪表板本体', keyIdx: 1 },
   'LN-MACH-1': { taktSec: 210, steps: ['粗加工', '精加工', '清洗', '三坐标检测'], product: '电机壳体 EM-3', keyIdx: 1 },
+  // M2 扩容线（电池 5 线 / 焊装 4 线 / 机加 2 线；健康画像 —— 异常仍是例外）
+  'LN-WELD-4': { taktSec: 75, steps: ['装夹定位', '弧焊', '机器人焊接', '下件检测'], product: '副车架总成', keyIdx: 1 },
+  'LN-BAT-3': { taktSec: 14, steps: ['极片上料', '卷绕', '注液', '化成', '分容'], product: 'LFP-230Ah 电芯', keyIdx: 1 },
+  'LN-BAT-4': { taktSec: 55, steps: ['电芯配组', '堆叠焊接', 'BMS 装配', '下线测试'], product: '电池模组 M3', keyIdx: 1 },
+  'LN-BAT-5': { taktSec: 52, steps: ['模组入箱', '线束安装', '气密检测', 'EOL 测试'], product: '长续航电池包 PACK-120s', keyIdx: 1 },
+  'LN-MACH-2': { taktSec: 195, steps: ['粗加工', '精加工', '钻攻', '终检'], product: '变速箱壳体 GB-7', keyIdx: 1 },
 }
 const DEFAULT_LINE_PROFILE: LineProfile = { taktSec: 60, steps: ['上料', '加工', '检测'], product: '通用件', keyIdx: 1 }
 

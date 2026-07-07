@@ -32,7 +32,7 @@ describe('shiftNow（真实时钟班次）', () => {
 describe('buildLineCards（选择器 · 与设备屏同源）', () => {
   it('F01：电芯线红（卷绕机报警同源）、涂装黄、焊装二线失联角标、红线置顶', () => {
     const cards = buildLineCards('F01')
-    expect(cards.length).toBe(13) // F01：冲压3+焊装3+涂装2+总装3+电池2
+    expect(cards.length).toBe(17) // F01：冲压3+焊装4+涂装2+总装3+电池5（M2 扩容）
     const bat = cards.find((c) => c.name === '电芯线')
     expect(bat?.state).toBe('alarm')
     expect(bat?.alert).toContain('卷绕机 1#')
@@ -47,9 +47,11 @@ describe('buildLineCards（选择器 · 与设备屏同源）', () => {
     expect([...seqRank].sort((a, b) => a - b)).toEqual(seqRank)
   })
 
-  it('scope 收窄（workshop-lead）：只见电池车间两条线', () => {
+  it('scope 收窄（workshop-lead）：只见电池车间五条线', () => {
     const cards = buildLineCards('F01', ['WS-BATTERY'])
-    expect(cards.map((c) => c.name).sort()).toEqual(['PACK 线', '电芯线'])
+    expect(new Set(cards.map((c) => c.name))).toEqual(
+      new Set(['电芯线', '电芯二线', '模组线', 'PACK 线', 'PACK 二线']),
+    )
   })
 
   it('卡片信息密度：设备点排与设备数一致、产量/迷你趋势齐备', () => {

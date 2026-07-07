@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { RingGauge, ScreenPanel, ScreenSegmented, ScreenTabs, StatusLight, StatusTag } from '@nerv-iip/ui'
 import { computed, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
 import DeviceDetailModal from '@/components/equipment/DeviceDetailModal.vue'
+import { useBackLink } from '@/composables/useBackLink'
 import DeviceStatusWall from '@/components/equipment/DeviceStatusWall.vue'
 import type { DeviceCell, DeviceParamsTick, EquipmentOverview, RepairOrder } from '@/data/contracts/equipment'
 import { REPAIR_STAGES } from '@/data/contracts/equipment'
@@ -13,6 +15,7 @@ import { useScreenData } from '@/screen-kit'
 // 刷新频率分层：格上参数 2s 快刷（仅视野内设备）· 全景/计数/流 5s ·
 // 详情弹窗 3s（弹窗内部）；页面隐藏时 useScreenData 统一暂停轮询。
 const scope = useAccessScope()
+const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
 const { data: ov, refresh } = useScreenData<EquipmentOverview>(
   () => fetchEquipmentOverview(scope.currentFactoryId, scope.persona.workshopIds),
   { intervalMs: 5000 },
@@ -290,6 +293,11 @@ const relCells = computed(() => {
           </ScreenPanel>
         </div>
       </div>
+
+      <footer class="scr-foot">
+        <RouterLink :to="backLink.to" class="scr-back">‹ {{ backLink.label }}</RouterLink>
+        <span>设备状态 / 参数为演示数据流 · OEE 性能率与良品率为占位 · 待 #570</span>
+      </footer>
     </div>
     <div v-else class="eq-loading">连接数据…</div>
 
@@ -307,6 +315,9 @@ const relCells = computed(() => {
 .eq {
   height: 100%;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .eq-loading {
   height: 100%;
@@ -315,8 +326,26 @@ const relCells = computed(() => {
   color: var(--sb-muted);
   font-size: 15px;
 }
+/* 统一页脚：按来路返回 + 口径注记 */
+.scr-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--sb-divider);
+  padding-top: 10px;
+  font-size: 12.5px;
+  color: var(--sb-faint);
+}
+.scr-back {
+  color: var(--sb-cyan);
+  text-decoration: none;
+  font-size: 13.5px;
+  flex: none;
+}
 .main {
-  height: 100%;
+  flex: 1;
   min-height: 0;
   display: grid;
   grid-template-columns: 2.7fr 1fr;

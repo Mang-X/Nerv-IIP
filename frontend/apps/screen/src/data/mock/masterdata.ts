@@ -68,6 +68,15 @@ export const LINES: LineRef[] = [
   { id: 'LN-INJ-1', code: 'LN-INJ-1', name: '注塑一线', workshopId: 'WS-INJECT' },
   { id: 'LN-INJ-2', code: 'LN-INJ-2', name: '注塑二线', workshopId: 'WS-INJECT' },
   { id: 'LN-MACH-1', code: 'LN-MACH-1', name: '机加线', workshopId: 'WS-MACH' },
+  // —— 2026-07 M2 走查扩容：多线车间场景（电池 5 线 / 焊装 4 线 / 机加 2 线）。
+  // ⚠️ 新线一律**追加数组尾部**：LINES 的下标参与工单号推导（line/quality 两处
+  // seq('WO', 1940 + index) 同式）与设备 DEV-xxx 全局序号 —— 中间插入会把
+  // 既有编号（如电芯线 WO-1951）整体漂移，跨屏叙事全断。
+  { id: 'LN-WELD-4', code: 'LN-WELD-4', name: '焊装四线', workshopId: 'WS-WELD' },
+  { id: 'LN-BAT-3', code: 'LN-BAT-3', name: '电芯二线', workshopId: 'WS-BATTERY' },
+  { id: 'LN-BAT-4', code: 'LN-BAT-4', name: '模组线', workshopId: 'WS-BATTERY' },
+  { id: 'LN-BAT-5', code: 'LN-BAT-5', name: 'PACK 二线', workshopId: 'WS-BATTERY' },
+  { id: 'LN-MACH-2', code: 'LN-MACH-2', name: '机加二线', workshopId: 'WS-MACH' },
 ]
 
 // 每产线 1 个工作中心（mock 简化）
@@ -98,6 +107,12 @@ const LINE_DEVICES: Record<string, string[]> = {
   'LN-INJ-1': ['注塑机 1600T', '注塑机 800T', '取件机械手', '原料干燥机'],
   'LN-INJ-2': ['注塑机 1200T', '注塑机 650T', '机械手 2#', '混料机'],
   'LN-MACH-1': ['加工中心 M01', '加工中心 M02', '车铣复合 M03', '零件清洗机', '三坐标测量机'],
+  // M2 扩容线（追加尾部，理由见 LINES 注释）
+  'LN-WELD-4': ['焊接机器人 R31', '焊接机器人 R32', '弧焊工作站', '输送滚床 4#'],
+  'LN-BAT-3': ['卷绕机 3#', '卷绕机 4#', '注液机 2#', '化成柜 C', '化成柜 D', '分容柜 2#'],
+  'LN-BAT-4': ['模组堆叠机 2#', '激光焊接机', 'BMS 装配台', '模组测试柜'],
+  'LN-BAT-5': ['PACK 线体 2#', '气密检测台 2#', 'EOL 测试柜 2#', '包装线'],
+  'LN-MACH-2': ['加工中心 M04', '加工中心 M05', '滚齿机', '去毛刺机'],
 }
 let deviceSeq = 0
 export const DEVICES: DeviceRef[] = LINES.flatMap((l) =>

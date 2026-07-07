@@ -139,12 +139,11 @@ const cross = computed(() => {
   if (i == null) return null
   const cx = xAt(i, len)
   const cy = yAt(props.actual[i] ?? 0)
-  const cardW = 160
-  const cardH = 66
-  // Keep the card on-canvas: flip to the left of the rule near the right edge.
-  const cardX = cx + 14 + cardW > right ? cx - 14 - cardW : cx + 14
-  const cardY = Math.min(Math.max(top, cy - cardH / 2), bottom - cardH)
-  return { cx, cy, cardX, cardY, cardW, cardH, label, aVal, pVal }
+  // 信息卡为 HTML overlay（% 锚定）：SVG 用 preserveAspectRatio="none" 非均匀拉伸，
+  // rect/text 放 SVG 内会随容器宽高比被拉变形。右半区翻转到标线左侧、纵向钳制在画布内。
+  const flip = cx > (left + right) / 2
+  const cyClamped = Math.min(Math.max(cy, top + 36), bottom - 36)
+  return { cx, cy, cyClamped, flip, label, aVal, pVal }
 })
 
 const uid = Math.random().toString(36).slice(2, 8)
@@ -217,15 +216,26 @@ const uid = Math.random().toString(36).slice(2, 8)
             stroke-width="1"
             stroke-dasharray="2 4"
           />
-          <circle class="sb-tc-dot" :cx="cross.cx" :cy="cross.cy" r="3.5" />
-          <g :transform="`translate(${cross.cardX},${cross.cardY})`">
-            <rect class="sb-tc-card" :width="cross.cardW" :height="cross.cardH" rx="6" />
-            <text class="sb-tc-c-t" x="14" y="23" font-size="12">{{ cross.label }}</text>
-            <text class="sb-tc-c-a" x="14" y="43" font-size="13">● {{ actualLabel }}　{{ cross.aVal }}</text>
-            <text class="sb-tc-c-p" x="14" y="59" font-size="13">┄ {{ planLabel }}　{{ cross.pVal }}</text>
-          </g>
         </g>
       </svg>
+      <!-- 悬停点 + 信息卡：HTML overlay —— 文字层脱离 SVG 非均匀缩放坐标系，
+           任何容器宽高比 / ScreenScaler 缩放下都不变形 -->
+      <template v-if="cross">
+        <i
+          class="sb-tc-dot"
+          :style="{ left: `${(cross.cx / VB_W) * 100}%`, top: `${(cross.cy / VB_H) * 100}%` }"
+          aria-hidden="true"
+        />
+        <div
+          class="sb-tc-cardh"
+          :class="{ flip: cross.flip }"
+          :style="{ left: `${(cross.cx / VB_W) * 100}%`, top: `${(cross.cyClamped / VB_H) * 100}%` }"
+        >
+          <span class="sb-tc-c-t">{{ cross.label }}</span>
+          <span class="sb-tc-c-a">● {{ actualLabel }}<b>{{ cross.aVal }}</b></span>
+          <span class="sb-tc-c-p">┄ {{ planLabel }}<b>{{ cross.pVal }}</b></span>
+        </div>
+      </template>
     </div>
 
     <div class="sb-tc-x">
@@ -341,23 +351,54 @@ const uid = Math.random().toString(36).slice(2, 8)
   stroke: var(--sb-cyan);
   opacity: 0.55;
 }
+/* 悬停点（HTML，圆度不受 SVG 拉伸影响） */
 .sb-tc-dot {
-  fill: #fff;
-  filter: drop-shadow(0 0 4px var(--sb-cyan));
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 6px var(--sb-cyan);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
 }
-.sb-tc-card {
-  /* glassy dark card — translucent so the plot shows faintly through, white edge */
-  fill: rgba(9, 13, 22, 0.9);
-  stroke: rgba(255, 255, 255, 0.16);
+/* 信息卡（HTML overlay）：玻璃暗卡 + 白发丝边；右半区 flip 翻到标线左侧 */
+.sb-tc-cardh {
+  position: absolute;
+  z-index: 1;
+  transform: translate(14px, -50%);
+  min-width: 150px;
+  padding: 9px 14px 10px;
+  border-radius: 6px;
+  background: rgba(9, 13, 22, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.sb-tc-cardh.flip {
+  transform: translate(calc(-100% - 14px), -50%);
 }
 .sb-tc-c-t {
-  fill: var(--sb-muted);
+  font-size: 12.5px;
+  color: var(--sb-muted);
+  font-variant-numeric: tabular-nums;
 }
 .sb-tc-c-a {
-  fill: var(--sb-text);
+  font-size: 13px;
+  color: var(--sb-text);
 }
 .sb-tc-c-p {
-  fill: var(--sb-indigo);
+  font-size: 13px;
+  color: var(--sb-indigo);
+}
+.sb-tc-c-a b,
+.sb-tc-c-p b {
+  margin-left: 9px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 .sb-tc-x {
   display: flex;

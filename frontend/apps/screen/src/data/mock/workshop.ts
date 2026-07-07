@@ -93,6 +93,7 @@ const RESOLVED_POOL: Record<
   'WS-BATTERY': [
     { lineName: 'PACK 线', level: 'downtime', text: 'PACK 线体 上料卡滞短停 8 min', status: '已恢复', minsAgo: 152, durMin: 8 },
     { lineName: '电芯线', level: 'warn', text: '化成柜 B 温度越限预警', status: '已恢复 · 复归正常', minsAgo: 205 },
+    { lineName: '电芯二线', level: 'warn', text: '分容柜 2# 温度越限预警', status: '已恢复 · 复归正常', minsAgo: 235 },
   ],
   'WS-WELD': [
     { lineName: '焊装二线', level: 'downtime', text: '输送滚床 2# 光电误触发短停 5 min', status: '已恢复', minsAgo: 118, durMin: 5 },

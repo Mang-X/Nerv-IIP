@@ -13,6 +13,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
 import WorkshopLineCard from '@/components/workshop/WorkshopLineCard.vue'
+import { useBackLink } from '@/composables/useBackLink'
 import type { WorkshopBoard } from '@/data/contracts/workshop'
 import { fetchWorkshopBoard } from '@/data/fetchers/workshop'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
@@ -50,6 +51,13 @@ const wsModel = computed<string | number>({
 
 const stateTone = computed(() =>
   board.value?.state === 'alarm' ? ('alarm' as const) : board.value?.state === 'attention' ? ('idle' as const) : ('run' as const),
+)
+
+// 返回链按来路识别：门厅进回门厅、工厂总览下钻回工厂总览；直接输 URL 走 fallback
+const backLink = useBackLink(() =>
+  scope.canSeeScreen('factory')
+    ? { to: '/factory', label: '返回工厂总览' }
+    : { to: '/', label: '返回大屏门厅' },
 )
 
 /** 分钟 → 「Xh Ym」远距格式 */
@@ -396,16 +404,14 @@ const devSummary = computed(() => {
       </div>
 
       <footer class="wb-foot">
-        <RouterLink :to="scope.canSeeScreen('factory') ? '/factory' : '/'" class="wb-back">
-          ‹ {{ scope.canSeeScreen('factory') ? '返回工厂总览' : '返回大屏门厅' }}
-        </RouterLink>
+        <RouterLink :to="backLink.to" class="wb-back">‹ {{ backLink.label }}</RouterLink>
         <span>产量 / 达成 / 齐套为演示推算 · 待 #570；在岗 / 人效为数据缺口，仅展示花名册口径</span>
       </footer>
     </div>
 
     <div v-else class="wb-empty">
       <p>该车间不在当前账号权限范围内，或不存在</p>
-      <RouterLink to="/" class="wb-back">‹ 返回大屏门厅</RouterLink>
+      <RouterLink :to="backLink.to" class="wb-back">‹ {{ backLink.label }}</RouterLink>
     </div>
   </ScreenLayout>
 </template>

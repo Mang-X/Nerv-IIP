@@ -12,6 +12,7 @@ import {
 import { type Component, computed, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
+import { useBackLink } from '@/composables/useBackLink'
 import WorkshopHealthCard from '@/components/factory/WorkshopHealthCard.vue'
 import type { FactoryOverview } from '@/data/contracts/factory'
 import { fetchFactoryOverview } from '@/data/fetchers/factory'
@@ -19,6 +20,7 @@ import ScreenLayout from '@/layouts/ScreenLayout.vue'
 import { ScrollBoard, useScreenData } from '@/screen-kit'
 
 const scope = useAccessScope()
+const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
 const { data: ov, isStale, refresh } = useScreenData<FactoryOverview>(
   () => fetchFactoryOverview(scope.currentFactoryId, scope.persona.workshopIds),
   { intervalMs: 4000 },
@@ -186,6 +188,11 @@ const bandCells = computed<BandCell[]>(() => {
           </ScreenPanel>
         </div>
       </div>
+
+      <footer class="scr-foot">
+        <RouterLink :to="backLink.to" class="scr-back">‹ {{ backLink.label }}</RouterLink>
+        <span>车间归并 / 达成为前端聚合推算 · 待 #570；点车间卡进入车间总览</span>
+      </footer>
     </div>
     <div v-else class="fx-loading">连接数据…</div>
   </ScreenLayout>
@@ -204,6 +211,24 @@ const bandCells = computed<BandCell[]>(() => {
   place-content: center;
   color: var(--sb-muted);
   font-size: 15px;
+}
+/* 统一页脚：按来路返回 + 口径注记 */
+.scr-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--sb-divider);
+  padding-top: 10px;
+  font-size: 12.5px;
+  color: var(--sb-faint);
+}
+.scr-back {
+  color: var(--sb-cyan);
+  text-decoration: none;
+  font-size: 13.5px;
+  flex: none;
 }
 
 /* —— KPI 带 —— */
