@@ -230,12 +230,12 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
               <span class="wb-num">{{ heroKpi.value }}<small>%</small></span>
               <i class="wb-kpi-line cyan" aria-hidden="true" />
             </div>
-            <div class="wb-hero-l"><ArrowUpFromLine :size="15" :stroke-width="1.8" class="wb-kpi-ic" />当日出库进度</div>
+            <div class="wb-hero-l"><ArrowUpFromLine :size="17" :stroke-width="1.8" class="wb-kpi-ic" />当日出库进度</div>
             <span class="wb-hero-sub">{{ heroKpi.sub }}</span>
           </div>
           <div v-for="c in bandCells" :key="c.label" class="wb-kpi">
             <dt class="wb-kpi-t">
-              <component :is="c.icon" :size="15" :stroke-width="1.8" class="wb-kpi-ic" />{{ c.label }}
+              <component :is="c.icon" :size="17" :stroke-width="1.8" class="wb-kpi-ic" />{{ c.label }}
             </dt>
             <dd class="wb-kpi-v" :class="c.tone">
               <span class="wb-num">{{ c.value }}<small>{{ c.unit }}</small></span>

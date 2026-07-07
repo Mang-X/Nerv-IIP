@@ -70,6 +70,9 @@ interface LayerSeed {
   failedTop?: { name: string; count: number }
   pieceInspected: number
   pieceDefects: number
+  /** 该层近 30 天件不良率基线 %（trendRamp = 尾部事故酝酿抬升，F01 过程检） */
+  trendBase: number
+  trendRamp?: boolean
 }
 
 interface NcrSeed {
@@ -113,9 +116,9 @@ const PROFILES: Record<string, QualityProfile> = {
   // 不良率（件）刚越红线、帕累托 TOP1/2 电芯缺陷、超期 NCR 2 条（异常是例外）
   F01: {
     layers: [
-      { key: 'iqc', label: '来料检', code: 'IQC', lotsDone: 60, lotsPassed: 59, lotsDue: 68, carryOver: 2, oldestHours: 6, pieceInspected: 5200, pieceDefects: 38 },
-      { key: 'ipqc', label: '过程检', code: 'IPQC', lotsDone: 70, lotsPassed: 67, lotsDue: 84, carryOver: 9, oldestHours: 36, backlogTop: { name: '电芯线', count: 15 }, failedTop: { name: '电芯线', count: 3 }, pieceInspected: 7800, pieceDefects: 190 },
-      { key: 'fqc', label: '成品检', code: 'FQC', lotsDone: 62, lotsPassed: 61, lotsDue: 70, carryOver: 3, oldestHours: 7, pieceInspected: 3800, pieceDefects: 30 },
+      { key: 'iqc', label: '来料检', code: 'IQC', lotsDone: 60, lotsPassed: 59, lotsDue: 68, carryOver: 2, oldestHours: 6, pieceInspected: 5200, pieceDefects: 38, trendBase: 0.72 },
+      { key: 'ipqc', label: '过程检', code: 'IPQC', lotsDone: 70, lotsPassed: 67, lotsDue: 84, carryOver: 9, oldestHours: 36, backlogTop: { name: '电芯线', count: 15 }, failedTop: { name: '电芯线', count: 3 }, pieceInspected: 7800, pieceDefects: 190, trendBase: 1.85, trendRamp: true },
+      { key: 'fqc', label: '成品检', code: 'FQC', lotsDone: 62, lotsPassed: 61, lotsDue: 70, carryOver: 3, oldestHours: 7, pieceInspected: 3800, pieceDefects: 30, trendBase: 0.76 },
     ],
     ncrs: [
       // 龄期最长 + 超期：电芯线当前工单（与产线屏 WO-1951 / LFP-280Ah 电芯同源）
@@ -155,9 +158,9 @@ const PROFILES: Record<string, QualityProfile> = {
   // F02 华南制造中心：无事故，全绿基线（异常是例外的对照组）
   F02: {
     layers: [
-      { key: 'iqc', label: '来料检', code: 'IQC', lotsDone: 24, lotsPassed: 24, lotsDue: 26, carryOver: 0, oldestHours: 4, pieceInspected: 2600, pieceDefects: 12 },
-      { key: 'ipqc', label: '过程检', code: 'IPQC', lotsDone: 30, lotsPassed: 29, lotsDue: 33, carryOver: 1, oldestHours: 9, failedTop: { name: '注塑一线', count: 1 }, pieceInspected: 3400, pieceDefects: 26 },
-      { key: 'fqc', label: '成品检', code: 'FQC', lotsDone: 22, lotsPassed: 22, lotsDue: 24, carryOver: 0, oldestHours: 3, pieceInspected: 1800, pieceDefects: 9 },
+      { key: 'iqc', label: '来料检', code: 'IQC', lotsDone: 24, lotsPassed: 24, lotsDue: 26, carryOver: 0, oldestHours: 4, pieceInspected: 2600, pieceDefects: 12, trendBase: 0.44 },
+      { key: 'ipqc', label: '过程检', code: 'IPQC', lotsDone: 30, lotsPassed: 29, lotsDue: 33, carryOver: 1, oldestHours: 9, failedTop: { name: '注塑一线', count: 1 }, pieceInspected: 3400, pieceDefects: 26, trendBase: 0.72 },
+      { key: 'fqc', label: '成品检', code: 'FQC', lotsDone: 22, lotsPassed: 22, lotsDue: 24, carryOver: 0, oldestHours: 3, pieceInspected: 1800, pieceDefects: 9, trendBase: 0.48 },
     ],
     ncrs: [
       { n: 55, lineId: 'LN-INJ-1', defect: '缩痕超标', qty: 42, ageHours: 30, status: 'disposing', disposition: '报废' },
@@ -185,13 +188,29 @@ function hourLabels12(now = new Date()): string[] {
   return Array.from({ length: 12 }, (_, i) => `${String((h - 11 + i + 24) % 24).padStart(2, '0')}:00`)
 }
 
+/** 该层近 30 天件不良率：基线缓波，trendRamp 尾 3 天事故酝酿抬升；
+ *  末点 = 当日 pieceDefectPct（与三层区当日数字勾稽）。 */
+function layerTrend30(base: number, endPct: number, ramp: boolean): number[] {
+  const out: number[] = []
+  for (let i = 29; i >= 1; i--) {
+    const lift = ramp && i <= 3 ? (4 - i) * 0.24 : 0
+    out.push(round2(clamp(jf(base + lift, 0.16), Math.max(0.1, base - 0.22), base + lift + 0.24)))
+  }
+  out.push(endPct)
+  return out
+}
+
 function buildLayers(seeds: LayerSeed[]): InspectionLayer[] {
-  return seeds.map((s) => ({
-    ...s,
-    backlog: s.lotsDue - s.lotsDone + s.carryOver,
-    passRate: s.lotsDone > 0 ? round1((s.lotsPassed / s.lotsDone) * 100) : 100,
-    pieceDefectPct: s.pieceInspected > 0 ? round2((s.pieceDefects / s.pieceInspected) * 100) : 0,
-  }))
+  return seeds.map((s) => {
+    const pieceDefectPct = s.pieceInspected > 0 ? round2((s.pieceDefects / s.pieceInspected) * 100) : 0
+    return {
+      ...s,
+      backlog: s.lotsDue - s.lotsDone + s.carryOver,
+      passRate: s.lotsDone > 0 ? round1((s.lotsPassed / s.lotsDone) * 100) : 100,
+      pieceDefectPct,
+      trend30: layerTrend30(s.trendBase, pieceDefectPct, s.trendRamp ?? false),
+    }
+  })
 }
 
 function buildNcrs(seeds: NcrSeed[], workshopIds: string[] | 'all'): NcrRow[] {

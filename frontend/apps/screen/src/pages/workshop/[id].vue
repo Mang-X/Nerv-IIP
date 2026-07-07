@@ -168,33 +168,33 @@ const devSummary = computed(() => {
           </div>
           <dl class="wb-cells">
             <div class="wb-cell">
-              <dt><PackageCheck :size="15" class="wb-cell-ic" />当班产量（件）</dt>
+              <dt><PackageCheck :size="17" class="wb-cell-ic" />当班产量（件）</dt>
               <dd>
                 {{ nf.format(board.output.actual) }}<small>/ {{ nf.format(board.output.plan) }}</small>
               </dd>
             </div>
             <div class="wb-cell">
-              <dt><CircleCheck :size="15" class="wb-cell-ic" />一次合格率</dt>
+              <dt><CircleCheck :size="17" class="wb-cell-ic" />一次合格率</dt>
               <dd :class="{ warn: board.quality.fpy < 98 }">{{ board.quality.fpy }}<small>%</small></dd>
             </div>
             <div class="wb-cell">
-              <dt><Recycle :size="15" class="wb-cell-ic" />报废 / 返修</dt>
+              <dt><Recycle :size="17" class="wb-cell-ic" />报废 / 返修</dt>
               <dd>
                 {{ board.quality.scrap }}<small>/ {{ board.quality.rework }} 件</small>
               </dd>
             </div>
             <div class="wb-cell">
-              <dt><OctagonAlert :size="15" class="wb-cell-ic" />当班停机</dt>
+              <dt><OctagonAlert :size="17" class="wb-cell-ic" />当班停机</dt>
               <dd :class="{ bad: board.downtime.count > 0 }">
                 {{ board.downtime.count }}<small> 次 · {{ board.downtime.totalMin }} min</small>
               </dd>
             </div>
             <div class="wb-cell">
-              <dt><Boxes :size="15" class="wb-cell-ic" />物料齐套</dt>
+              <dt><Boxes :size="17" class="wb-cell-ic" />物料齐套</dt>
               <dd :class="{ warn: board.kitting.rate < 100 }">{{ board.kitting.rate }}<small>%</small></dd>
             </div>
             <div class="wb-cell">
-              <dt><ClipboardList :size="15" class="wb-cell-ic" />交接遗留</dt>
+              <dt><ClipboardList :size="17" class="wb-cell-ic" />交接遗留</dt>
               <dd :class="{ warn: board.crew.handoverIssues > 0 }">
                 {{ board.crew.handoverIssues }}<small> 项</small>
               </dd>
@@ -228,7 +228,7 @@ const devSummary = computed(() => {
             </template>
             <div class="wb-crew-head">
               <span class="wb-crew-team">{{ board.crew.teamName }}</span>
-              <span class="wb-crew-lead"><UserRound :size="15" class="wb-cell-ic" />组长 {{ board.crew.leader }}</span>
+              <span class="wb-crew-lead"><UserRound :size="17" class="wb-cell-ic" />组长 {{ board.crew.leader }}</span>
             </div>
             <dl class="wb-crew-nums">
               <div>
@@ -248,7 +248,7 @@ const devSummary = computed(() => {
             </dl>
             <p v-if="board.crew.handoverNote" class="wb-crew-note">{{ board.crew.handoverNote }}</p>
           </ScreenPanel>
-          <div class="wb-woa">
+          <div class="wb-woa" :class="{ 'is-empty': !board.woAlerts.length }">
             <h5 class="wb-sub-h">工单交付预警</h5>
             <div v-for="w in board.woAlerts" :key="w.code" class="wb-woa-row">
               <span class="wb-woa-code">{{ w.code }}</span>
@@ -626,6 +626,7 @@ const devSummary = computed(() => {
 .wb-lines {
   display: flex;
   flex-direction: column;
+  gap: 12px;
   min-height: 0;
   min-width: 0;
 }
@@ -644,13 +645,24 @@ const devSummary = computed(() => {
 }
 .wb-lines-in :deep(.wlc-link) {
   flex: none;
-  height: 178px;
+  height: 186px;
 }
 .wb-woa {
   flex: none;
-  margin-top: 11px;
   padding-top: 9px;
   border-top: 1px solid var(--sb-divider);
+}
+/* 空态一行化（多数车间无临期/超期）：标题与空态并排，省出的高度留给产线墙 */
+.wb-woa.is-empty {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.wb-woa.is-empty .wb-sub-h {
+  margin: 0;
+}
+.wb-woa.is-empty .wb-empty-row {
+  padding: 0;
 }
 .wb-sub-h {
   margin: 0 0 4px;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ScreenPanel, ScreenScrollArea, TrendChart } from '@nerv-iip/ui'
+import { ScreenPanel, ScreenScrollArea, Sparkline, TrendChart } from '@nerv-iip/ui'
 import { ClipboardList, FileCheck2, FileWarning, Scale } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -142,26 +142,26 @@ const trendPin = computed(() => {
 
           <div class="qb-cells">
             <div class="qb-cell">
-              <dt><FileWarning :size="15" class="qb-cell-ic" />待处置 NCR</dt>
+              <dt><FileWarning :size="17" class="qb-cell-ic" />待处置 NCR</dt>
               <dd :class="{ warn: board.kpis.openNcr > 0 }">{{ board.kpis.openNcr }}</dd>
               <p class="qb-cell-sub" :class="{ bad: board.kpis.overdueNcr > 0 }">
                 超期 {{ board.kpis.overdueNcr }}
               </p>
             </div>
             <div class="qb-cell">
-              <dt><ClipboardList :size="15" class="qb-cell-ic" />检验积压</dt>
+              <dt><ClipboardList :size="17" class="qb-cell-ic" />检验积压</dt>
               <dd>{{ board.kpis.inspectionBacklog }}</dd>
               <p class="qb-cell-sub" :class="{ warn: board.kpis.backlogOldestHours > 24 }">
                 最老 {{ fmtAge(board.kpis.backlogOldestHours) }}
               </p>
             </div>
             <div class="qb-cell">
-              <dt><FileCheck2 :size="15" class="qb-cell-ic" />条件放行在途</dt>
+              <dt><FileCheck2 :size="17" class="qb-cell-ic" />条件放行在途</dt>
               <dd>{{ board.kpis.conditionalRelease }}</dd>
               <p class="qb-cell-sub">含让步接收</p>
             </div>
             <div class="qb-cell">
-              <dt><Scale :size="15" class="qb-cell-ic" />MRB 待评审</dt>
+              <dt><Scale :size="17" class="qb-cell-ic" />MRB 待评审</dt>
               <dd>{{ board.kpis.mrbPending }}</dd>
               <p class="qb-cell-sub">评审即出处置</p>
             </div>
@@ -245,6 +245,16 @@ const trendPin = computed(() => {
                     {{ l.failedTop.name }} {{ l.failedTop.count }} 批未过
                   </b>
                 </p>
+                <!-- 分层 30 天件不良率：全厂一条总曲线掩盖分层差异，
+                     过程检的事故酝酿抬升在这里一眼可见 -->
+                <div class="qt-spark">
+                  <Sparkline
+                    :data="l.trend30"
+                    area
+                    :color="worstLayerKey === l.key ? 'var(--sb-amber)' : 'var(--sb-cyan)'"
+                  />
+                </div>
+                <p class="qt-spark-cap">近 30 天件不良率</p>
               </div>
             </div>
           </ScreenPanel>
@@ -711,6 +721,16 @@ const trendPin = computed(() => {
   font-size: 12px;
   color: var(--sb-faint);
   font-variant-numeric: tabular-nums;
+}
+/* 分层 30 天件不良率迷你趋势 */
+.qt-spark {
+  height: 30px;
+  margin-top: 9px;
+}
+.qt-spark-cap {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--sb-faint);
 }
 /* 未过批次来源：独立一行，避免与件不良率挤压截断 */
 .qt-fail {

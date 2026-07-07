@@ -85,6 +85,9 @@ export interface InspectionLayer {
   passRate: number
   /** 件不良率 % = pieceDefects / pieceInspected 🟠 */
   pieceDefectPct: number
+  /** 近 30 天该层件不良率 %（末点 = 当日 pieceDefectPct 勾稽）——
+   *  全厂一条总曲线掩盖分层差异，来料/过程/成品各自的趋势才是真实读法 🟠 */
+  trend30: number[]
 }
 
 export interface QualityKpis {
