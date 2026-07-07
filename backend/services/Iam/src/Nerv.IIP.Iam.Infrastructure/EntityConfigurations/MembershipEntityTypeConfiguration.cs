@@ -40,6 +40,33 @@ public sealed class MembershipEntityTypeConfiguration : IEntityTypeConfiguration
             .HasForeignKey(x => x.MembershipId)
             .OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Roles).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.HasMany(x => x.DataScopes)
+            .WithOne()
+            .HasForeignKey(x => x.MembershipId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(x => x.DataScopes).UsePropertyAccessMode(PropertyAccessMode.Field);
+    }
+}
+
+public sealed class MembershipDataScopeEntityTypeConfiguration : IEntityTypeConfiguration<MembershipDataScope>
+{
+    public void Configure(EntityTypeBuilder<MembershipDataScope> builder)
+    {
+        builder.ToTable("membership_data_scopes", table => table.HasComment("IAM data scope bindings owned by user memberships."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id)
+            .HasConversion(x => x.Id, x => new MembershipDataScopeId(x))
+            .ValueGeneratedNever()
+            .HasMaxLength(256)
+            .HasComment("Membership data scope identifier.");
+        builder.Property(x => x.MembershipId)
+            .HasConversion(x => x.Id, x => new MembershipId(x))
+            .IsRequired()
+            .HasMaxLength(64)
+            .HasComment("Owning membership identifier.");
+        builder.Property(x => x.ScopeType).IsRequired().HasMaxLength(32).HasComment("Data scope type: site, workshop or production-line.");
+        builder.Property(x => x.ScopeCode).IsRequired().HasMaxLength(128).HasComment("MasterData code for the data scope.");
+        builder.HasIndex(x => new { x.MembershipId, x.ScopeType, x.ScopeCode }).IsUnique();
     }
 }
 

@@ -12,6 +12,7 @@ using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
 using Nerv.IIP.Iam.Web.Application.Auth;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 using NetCorePal.Extensions.Domain;
 using NetCorePal.Extensions.Repository;
 
@@ -19,6 +20,80 @@ namespace Nerv.IIP.Iam.Web.Tests;
 
 public sealed class IamAuthServiceScopeTests
 {
+    [Fact]
+    public async Task PrincipalHasPermissionAsync_returns_effective_data_scope_and_records_audit()
+    {
+        await using var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDbContext(connection);
+        await db.Database.EnsureCreatedAsync();
+        var passwordService = new IamPasswordService();
+        var user = new User(
+            new UserId("user-data-scope"),
+            "scope-user",
+            "scope-user@nerv-iip.local",
+            passwordService.Hash("Password123!"),
+            true,
+            Guid.NewGuid().ToString("n"),
+            1);
+        var role = new Role(new RoleId("role-mes-workshop"), "MES Workshop", ["business.mes.work-orders.read"]);
+        role.ReplaceDataScopes([new DataScopeBinding("workshop", "WS-A")]);
+        var membership = new Membership(
+            new MembershipId("membership-data-scope"),
+            user.Id,
+            new OrganizationId("org-001"),
+            new IamEnvironmentId("env-dev"),
+            [role.Id]);
+        membership.ReplaceDataScopes([new DataScopeBinding("production-line", "LINE-A")]);
+
+        db.Users.Add(user);
+        db.Organizations.Add(new Organization(new OrganizationId("org-001"), "Nerv", "active"));
+        db.Environments.Add(new IamEnvironment(new IamEnvironmentId("env-dev"), new OrganizationId("org-001"), "Dev", "active"));
+        db.Roles.Add(role);
+        db.Memberships.Add(membership);
+        await db.SaveChangesAsync();
+
+        var audit = new RecordingSecurityAuditRecorder();
+        var service = new PostgreSqlIamAuthService(
+            new UserRepository(db),
+            new UserSessionRepository(db),
+            new MembershipRepository(db),
+            new ConnectorHostCredentialRepository(db),
+            new ExternalClientRepository(db),
+            passwordService,
+            CreateTokenService(),
+            Options.Create(new IamAuthenticationOptions()),
+            Options.Create(new EnterpriseIdentityOptions()),
+            new InMemoryMfaChallengeStore(),
+            audit,
+            NullLogger<PostgreSqlIamAuthService>.Instance,
+            new TestWebHostEnvironment());
+        var principal = new CurrentPrincipalResponse(
+            user.Id.Id,
+            user.LoginName,
+            user.Email,
+            "user",
+            "org-001",
+            "env-dev",
+            user.PermissionVersion,
+            ["business.mes.work-orders.read"]);
+
+        var result = await service.PrincipalHasPermissionAsync(
+            principal,
+            "org-001",
+            "env-dev",
+            "business.mes.work-orders.read",
+            "mes-work-order",
+            null,
+            CancellationToken.None);
+
+        Assert.True(result.Allowed);
+        Assert.NotNull(result.DataScope);
+        Assert.Equal(["WS-A"], result.DataScope!.WorkshopCodes);
+        Assert.Equal(["LINE-A"], result.DataScope.ProductionLineCodes);
+        Assert.Contains(audit.Records, record => record.Action == "iam.authorization.data-scope.matched");
+    }
+
     [Fact]
     public async Task GetCurrentPrincipalAsync_uses_access_token_membership_scope()
     {
@@ -333,6 +408,20 @@ public sealed class IamAuthServiceScopeTests
             return Task.FromResult(permissions);
         }
 
+        public Task<IReadOnlyList<DataScopeBinding>> ListEffectiveDataScopesAsync(
+            UserId userId,
+            OrganizationId organizationId,
+            IamEnvironmentId environmentId,
+            CancellationToken cancellationToken = default)
+        {
+            _ = userId;
+            _ = organizationId;
+            _ = environmentId;
+            _ = cancellationToken;
+            IReadOnlyList<DataScopeBinding> scopes = [];
+            return Task.FromResult(scopes);
+        }
+
         public Task<bool> UserHasMembershipAsync(
             UserId userId,
             OrganizationId organizationId,
@@ -364,4 +453,40 @@ public sealed class IamAuthServiceScopeTests
         public Membership Update(Membership entity) => throw new NotSupportedException();
         public Task<Membership> UpdateAsync(Membership entity, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
+
+    private sealed class RecordingSecurityAuditRecorder : ISecurityAuditRecorder
+    {
+        public List<AuditRecord> Records { get; } = [];
+
+        public Task RecordAsync(
+            SecurityAuditContext context,
+            string action,
+            string targetType,
+            string targetId,
+            string outcome,
+            object details,
+            DateTimeOffset occurredAtUtc,
+            CancellationToken cancellationToken)
+        {
+            _ = context;
+            _ = details;
+            _ = occurredAtUtc;
+            _ = cancellationToken;
+            Records.Add(new AuditRecord(action, targetType, targetId, outcome));
+            return Task.CompletedTask;
+        }
+
+        public Task RecordAndSaveAsync(
+            SecurityAuditContext context,
+            string action,
+            string targetType,
+            string targetId,
+            string outcome,
+            object details,
+            DateTimeOffset occurredAtUtc,
+            CancellationToken cancellationToken) =>
+            RecordAsync(context, action, targetType, targetId, outcome, details, occurredAtUtc, cancellationToken);
+    }
+
+    private sealed record AuditRecord(string Action, string TargetType, string TargetId, string Outcome);
 }

@@ -1,3 +1,4 @@
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 
 namespace Nerv.IIP.Iam.Web.Application.Auth;
@@ -38,6 +39,7 @@ public sealed record CurrentPrincipalResponse(
     int PermissionVersion,
     IReadOnlyList<string> PermissionCodes);
 public sealed record ConnectorPrincipalResponse(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
+public sealed record IamAuthorizationCheckResult(bool Allowed, AuthorizationDataScope? DataScope = null);
 
 public interface IIamAuthService
 {
@@ -95,7 +97,7 @@ public interface IIamAuthService
         string? ipAddress,
         CancellationToken cancellationToken);
 
-    Task<bool> PrincipalHasPermissionAsync(
+    Task<IamAuthorizationCheckResult> PrincipalHasPermissionAsync(
         CurrentPrincipalResponse principal,
         string organizationId,
         string environmentId,

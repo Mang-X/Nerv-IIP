@@ -2849,7 +2849,9 @@ public sealed record BusinessConsoleMesListRequest(
     string? ShiftId = null,
     string? DeviceAssetId = null,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? WorkCenterIds = null,
+    string? DeviceAssetIds = null);
 
 public sealed record BusinessConsoleMesListWithoutStatusRequest(
     string OrganizationId,

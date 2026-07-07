@@ -4015,6 +4015,7 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("deviceAssetId", request.DeviceAssetId),
+                ("deviceAssetIds", request.DeviceAssetIds),
                 ("status", request.Status),
                 ("skip", request.Skip),
                 ("take", request.Take)),
@@ -4129,7 +4130,8 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 request.DeviceAssetId,
                 request.Status ?? "active",
                 request.Skip,
-                request.Take),
+                request.Take,
+                request.DeviceAssetIds),
             cancellationToken);
         return new BusinessConsoleEquipmentAlarmListPageResponse(
             alarms.Items,
@@ -4320,7 +4322,12 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         var workOrders = await SendAsync<DownstreamMaintenancePagedResponse<DownstreamMaintenanceWorkOrderListItem>>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/maintenance/work-orders?" + ListQuery(request.OrganizationId, request.EnvironmentId, request.Skip, request.Take),
+            "/api/business/v1/maintenance/work-orders?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skip", request.Skip),
+                ("take", request.Take),
+                ("deviceAssetIds", request.DeviceAssetIds)),
             null,
             cancellationToken);
         return new BusinessConsoleMaintenanceWorkOrderListResponse(workOrders.Items.Select(workOrder =>
@@ -5817,8 +5824,10 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("status", request.Status),
             ("keyword", request.Keyword),
             ("workCenterId", request.WorkCenterId),
+            ("workCenterIds", request.WorkCenterIds),
             ("shiftId", request.ShiftId),
             ("deviceAssetId", request.DeviceAssetId),
+            ("deviceAssetIds", request.DeviceAssetIds),
             ("skip", request.Skip),
             ("take", request.Take));
 

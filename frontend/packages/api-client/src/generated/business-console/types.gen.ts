@@ -6110,6 +6110,7 @@ export type ListBusinessConsoleTelemetryAlarmsData = {
         status?: string | null;
         skip?: number;
         take?: number;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/telemetry/alarms';
 };
@@ -9197,6 +9198,8 @@ export type ListBusinessConsoleMesWorkOrdersData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
+        workCenterIds?: string | null;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/work-orders';
 };
@@ -9389,6 +9392,8 @@ export type ListBusinessConsoleMesMaterialIssueRequestsData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
+        workCenterIds?: string | null;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/material-issue-requests';
 };
@@ -9458,6 +9463,8 @@ export type ListBusinessConsoleMesDispatchTasksData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
+        workCenterIds?: string | null;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/dispatch-tasks';
 };
@@ -9527,6 +9534,8 @@ export type ListBusinessConsoleMesOperationTasksData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
+        workCenterIds?: string | null;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/operation-tasks';
 };
@@ -9727,6 +9736,8 @@ export type GetBusinessConsoleMesWipSummaryData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
+        workCenterIds?: string | null;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/wip';
 };
@@ -9854,6 +9865,8 @@ export type ListBusinessConsoleMesRelatedQualityItemsData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
+        workCenterIds?: string | null;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/related-quality-items';
 };
@@ -9891,6 +9904,8 @@ export type ListBusinessConsoleMesFinishedGoodsReceiptRequestsData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
+        workCenterIds?: string | null;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/finished-goods-receipt-requests';
 };
@@ -9955,6 +9970,8 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
+        workCenterIds?: string | null;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/downtime-events';
 };
@@ -10051,6 +10068,8 @@ export type ListBusinessConsoleMesShiftHandoversData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
+        workCenterIds?: string | null;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/shift-handovers';
 };
@@ -10243,6 +10262,8 @@ export type ListBusinessConsoleMesCapacityImpactsData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
+        workCenterIds?: string | null;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/capacity-impacts';
 };
@@ -11804,6 +11825,7 @@ export type ListBusinessConsoleMaintenanceWorkOrdersData = {
         environmentId: string;
         skip?: number;
         take?: number;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/maintenance/work-orders';
 };
@@ -11948,6 +11970,7 @@ export type ListBusinessConsoleMaintenancePlansData = {
         environmentId: string;
         skip?: number;
         take?: number;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/maintenance/plans';
 };
@@ -12052,6 +12075,7 @@ export type ListBusinessConsoleMaintenanceInspectionsData = {
         environmentId: string;
         skip?: number;
         take?: number;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/maintenance/inspections';
 };
@@ -12163,6 +12187,7 @@ export type ListBusinessConsoleMaintenanceSparePartsData = {
         environmentId: string;
         skip?: number;
         take?: number;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/maintenance/spare-parts';
 };
@@ -13897,6 +13922,7 @@ export type ListBusinessConsoleEquipmentAlarmsData = {
         status?: string | null;
         skip?: number;
         take?: number;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/equipment/alarms';
 };

@@ -76,6 +76,7 @@ public sealed class CompleteBusinessConsoleMaintenanceWorkOrderEndpoint(
 public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMaintenanceClient maintenance,
+    BusinessGatewayDataScopeFilter dataScopeFilter,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMaintenanceListRequest, BusinessConsoleMaintenanceWorkOrderListResponse>(
         auth,
@@ -85,11 +86,17 @@ public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMaintenanceListRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMaintenanceWorkOrderListResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMaintenanceWorkOrderListResponse> ForwardAsync(
         BusinessConsoleMaintenanceListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        maintenance.ListWorkOrdersAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var scopedRequest = await dataScopeFilter.ApplyToMaintenanceWorkOrdersAsync(
+            request,
+            AuthorizationResult?.DataScope,
+            cancellationToken);
+        return await maintenance.ListWorkOrdersAsync(tokenProvider.BearerToken, scopedRequest, cancellationToken);
+    }
 }
 
 [Tags("Business Console Maintenance")]

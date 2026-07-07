@@ -154,6 +154,7 @@ public sealed class PostBusinessConsoleTelemetryAlarmEndpoint(
 public sealed class ListBusinessConsoleTelemetryAlarmsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessIndustrialTelemetryClient telemetry,
+    BusinessGatewayDataScopeFilter dataScopeFilter,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleTelemetryAlarmListRequest, BusinessConsoleTelemetryAlarmEventListResponse>(
         auth,
@@ -167,11 +168,17 @@ public sealed class ListBusinessConsoleTelemetryAlarmsEndpoint(
 
     protected override string? ResourceId(BusinessConsoleTelemetryAlarmListRequest request) => request.DeviceAssetId;
 
-    protected override Task<BusinessConsoleTelemetryAlarmEventListResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleTelemetryAlarmEventListResponse> ForwardAsync(
         BusinessConsoleTelemetryAlarmListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        telemetry.ListAlarmsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var scopedRequest = await dataScopeFilter.ApplyToTelemetryAlarmsAsync(
+            request,
+            AuthorizationResult?.DataScope,
+            cancellationToken);
+        return await telemetry.ListAlarmsAsync(tokenProvider.BearerToken, scopedRequest, cancellationToken);
+    }
 }
 
 [Tags("Business Console Telemetry")]

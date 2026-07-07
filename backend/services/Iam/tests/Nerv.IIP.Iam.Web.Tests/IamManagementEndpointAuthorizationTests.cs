@@ -155,7 +155,7 @@ public sealed class IamManagementEndpointAuthorizationTests
         public Task<ClientCredentialsTokenResponse> IssueClientCredentialsTokenAsync(string clientId, string clientSecret, string? scope, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<EnterpriseAuthResponse> HandleOidcCallbackAsync(OidcLoginCallbackRequest request, string? clientInfo, string? ipAddress, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<EnterpriseAuthResponse> VerifyMfaChallengeAsync(string challengeId, string code, string? clientInfo, string? ipAddress, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<bool> PrincipalHasPermissionAsync(CurrentPrincipalResponse principal, string organizationId, string environmentId, string permissionCode, string? resourceType, string? resourceId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<IamAuthorizationCheckResult> PrincipalHasPermissionAsync(CurrentPrincipalResponse principal, string organizationId, string environmentId, string permissionCode, string? resourceType, string? resourceId, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class EmptyRoleApplicationService : IIamRoleApplicationService

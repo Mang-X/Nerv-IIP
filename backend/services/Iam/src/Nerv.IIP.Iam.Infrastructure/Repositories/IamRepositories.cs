@@ -164,6 +164,11 @@ public interface IMembershipRepository : IRepository<Membership, MembershipId>
         OrganizationId organizationId,
         IamEnvironmentId environmentId,
         CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<DataScopeBinding>> ListEffectiveDataScopesAsync(
+        UserId userId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        CancellationToken cancellationToken = default);
     Task<bool> UserHasMembershipAsync(
         UserId userId,
         OrganizationId organizationId,
@@ -238,6 +243,40 @@ public sealed class MembershipRepository(ApplicationDbContext context)
             .Distinct()
             .OrderBy(x => x)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<DataScopeBinding>> ListEffectiveDataScopesAsync(
+        UserId userId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var membershipScopes =
+            from membership in DbContext.Memberships
+            join membershipScope in DbContext.MembershipDataScopes on membership.Id equals membershipScope.MembershipId
+            where membership.UserId == userId
+                && membership.OrganizationId == organizationId
+                && membership.EnvironmentId == environmentId
+            select new { membershipScope.ScopeType, membershipScope.ScopeCode };
+
+        var roleScopes =
+            from membership in DbContext.Memberships
+            join membershipRole in DbContext.MembershipRoles on membership.Id equals membershipRole.MembershipId
+            join role in DbContext.Roles on membershipRole.RoleId equals role.Id
+            join roleScope in DbContext.RoleDataScopes on role.Id equals roleScope.RoleId
+            where membership.UserId == userId
+                && membership.OrganizationId == organizationId
+                && membership.EnvironmentId == environmentId
+                && role.Deleted == NotDeleted
+            select new { roleScope.ScopeType, roleScope.ScopeCode };
+
+        var scopes = await membershipScopes
+            .Concat(roleScopes)
+            .Distinct()
+            .OrderBy(x => x.ScopeType)
+            .ThenBy(x => x.ScopeCode)
+            .ToListAsync(cancellationToken);
+        return scopes.Select(x => new DataScopeBinding(x.ScopeType, x.ScopeCode)).ToArray();
     }
 
     public async Task<bool> UserHasMembershipAsync(

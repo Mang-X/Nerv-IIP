@@ -8,7 +8,8 @@ public sealed record BusinessConsoleMaintenanceListRequest(
     string OrganizationId,
     string EnvironmentId,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? DeviceAssetIds = null);
 
 public sealed record BusinessConsoleMaintenanceSparePartInput(
     string SkuCode,
