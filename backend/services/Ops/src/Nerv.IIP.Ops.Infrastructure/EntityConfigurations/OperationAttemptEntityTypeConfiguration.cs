@@ -24,6 +24,7 @@ public sealed class OperationAttemptEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.StartedAtUtc).HasComment("Attempt start time in UTC.");
         builder.Property(x => x.FinishedAtUtc).HasComment("Attempt finish time in UTC.");
         builder.Property(x => x.FailureJson).HasComment("JSON failure details produced by Connector Host execution, consumed by Ops and Gateway diagnostics; additive optional keys are compatible, removing or changing key semantics requires Ops contract versioning.");
+        builder.Property(x => x.OutputJson).HasComment("JSON connector execution output and device receipt metadata produced by Connector Host; additive optional keys are compatible, removing or changing key semantics requires Ops contract versioning.");
         builder.Property(x => x.LeaseId).HasMaxLength(64).HasComment("Lease identifier returned by Ops claim and required for heartbeat or abandon updates; null for legacy attempts created before lease claim protocol fields existed.");
         builder.Property(x => x.LeasedAtUtc).HasComment("UTC time when Ops granted this lease.");
         builder.Property(x => x.LeasedUntilUtc).HasComment("UTC time when the lease expires and becomes eligible for requeue.");

@@ -16,6 +16,10 @@ public sealed class TelemetryTagEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.ValueType).IsRequired().HasMaxLength(50).HasColumnName("value_type").HasComment("Telemetry value type such as number, bool, or text.");
         builder.Property(x => x.UnitCode).IsRequired().HasMaxLength(50).HasColumnName("unit_code").HasComment("Unit of measure code for summarized telemetry values.");
         builder.Property(x => x.SamplingPolicy).IsRequired().HasMaxLength(100).HasColumnName("sampling_policy").HasComment("Configured ingestion sampling policy.");
+        builder.Property(x => x.IsWritable).HasColumnName("is_writable").HasComment("Whether this telemetry tag may be used as a validated device control write target.");
+        builder.Property(x => x.ControlMinValue).HasColumnName("control_min_value").HasComment("Optional minimum allowed control value for numeric device control writes.");
+        builder.Property(x => x.ControlMaxValue).HasColumnName("control_max_value").HasComment("Optional maximum allowed control value for numeric device control writes.");
+        builder.Property(x => x.ControlAllowedValuesJson).IsRequired().HasColumnName("control_allowed_values_json").HasDefaultValue("[]").HasComment("JSON array of optional allowed literal values for device control writes; produced by IndustrialTelemetry tag metadata and consumed by device control validation, additive values are compatible.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").HasComment("UTC time when the tag mapping was created.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasComment("UTC time when the tag mapping was last updated.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey }).IsUnique();

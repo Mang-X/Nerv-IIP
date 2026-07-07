@@ -436,10 +436,11 @@ Source:
 4. `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/Migrations/20260601024046_AddRuntimeSourceMetadata.cs`
 5. `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/Migrations/20260605092510_AddIndustrialTelemetryAlarmRules.cs`
 6. `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/Migrations/20260703093236_AddActiveAlarmRuleUniqueness.cs`
+7. `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/Migrations/20260707021103_AddDeviceControlTagMetadata.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
-| `telemetry_tags` | business | IndustrialTelemetry 拥有的设备采集 tag 映射和采样策略元数据。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + device_asset_id + tag_key` 是业务唯一键；`value_type`、`unit_code` 和 `sampling_policy` 描述采集口径。 | tag 唯一索引防重复映射；设备/tag 维度支持采集配置查询。 | 创建后保留为采集元数据；PLC/DCS/SCADA 凭据不进入本 schema。 |
+| `telemetry_tags` | business | IndustrialTelemetry 拥有的设备采集 tag 映射、采样策略和可写控制值域元数据。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + device_asset_id + tag_key` 是业务唯一键；`value_type`、`unit_code` 和 `sampling_policy` 描述采集口径；`is_writable`、`control_min_value`、`control_max_value`、`control_allowed_values_json` 描述设备控制命令下发前的允许值域。 | tag 唯一索引防重复映射；设备/tag 维度支持采集配置查询和控制命令值域校验。 | 创建后保留为采集与控制元数据；PLC/DCS/SCADA 凭据不进入本 schema。 |
 | `alarm_rules` | business | IndustrialTelemetry 拥有的报警规则阈值配置，记录设备、tag、比较符、阈值、单位、严重级别、独立优先级、死区、开/关延时、最小持续时间和启停状态。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + device_asset_id + rule_code` 是业务唯一键；`deadband_value`、`on_delay_seconds`、`off_delay_seconds`、`min_duration_seconds` 和 `priority` 支撑 ISA-18.2 风格去抖与优先级。 | 规则唯一索引防重复；设备+tag 索引用于规则维护和受控评估查询。 | 规则配置可更新启停、阈值、去抖参数和优先级；不保存 PLC/DCS/SCADA 控制命令或凭据。 |
 | `device_state_snapshots` | business | 设备状态快照事实，记录设备状态、发生时间、来源系统/连接器和来源序列。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + source_system + source_connector + device_asset_id + source_sequence` 是幂等唯一键，且 source 元数据为空时按 not-distinct 参与唯一性；`occurred_at_unix_time_milliseconds` 和 `recorded_at_unix_time_milliseconds` 是由对应 UTC timestamp 派生的内部排序键。 | 来源 scope+序列唯一索引防重复写入；设备+时间索引用于时间线、current-state 和 runtime availability 查询；设备+发生/记录 Unix ms+source sequence 索引用于 provider-neutral current-state 排序和 DeviceStateChanged 发布门控。 | 只追加受控状态事实，不表达控制命令。 |
 | `alarm_events` | business | 工业报警生命周期事实，记录 raise、ack、shelve、escalation、clear、严重级别、独立优先级、触发 tag、观测值、阈值、单位和外部报警 ID。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + device_asset_id + alarm_code + external_alarm_id` 是非 cleared 状态下的外部报警幂等键；规则报警额外用 `organization_id + environment_id + device_asset_id + tag_key + external_alarm_id` 约束同一规则/tag 只能存在一个 active 事件；`status` 表示 `raised` / `acknowledged` / `shelved` / `cleared`；`acknowledged_at_utc`、`acknowledged_by`、`shelved_at_utc`、`shelved_until_utc`、`shelved_by`、`shelve_reason`、`escalated_at_utc`、`escalation_reason`、`escalation_recipient_refs` 记录处置生命周期；`tag_key`、`observed_value`、`threshold_value`、`unit_code` 为 RCA 上下文字段。 | 外部报警 active 唯一索引防重复 raise；规则 active 唯一索引兜底并发/规则定义变更时的同条件重复报警；设备+时间索引用于报警时间线和 RCA 查询。 | 报警创建后可确认、限时搁置、到期/手工解除搁置、一次性升级和清除；清除只补充 cleared facts，不删除历史；升级通过 `industrialTelemetry.AlarmEscalated` 交给 Notification 投递。 |
@@ -579,11 +580,12 @@ Source:
 4. `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/20260517074341_SchemaGovernanceMetadata.cs`
 5. `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/20260526091719_AddOperationApprovalFields.cs`
 6. `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/20260626130722_AddOpsAuditHashChain.cs`
+7. `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/20260707020801_PersistOperationAttemptOutput.cs`
 
 | Table | Kind | Purpose | Key relationships and indexes |
 | --- | --- | --- | --- |
 | `operation_tasks` | business | 运维操作任务聚合根，记录目标实例、操作码、请求人、幂等范围、参数、审批状态和当前执行状态。 | `Id` 为业务生成 string 强类型 ID；`IdempotencyScope` 唯一；`OrganizationId + EnvironmentId + Status + RequestedAtUtc` 支持任务列表、审批队列和状态扫描。 |
-| `operation_attempts` | business | 操作任务执行尝试，记录 connector host 领取、开始、完成和失败原因。 | `OperationTaskId` 指向 `operation_tasks`；索引用于按任务查执行历史。 |
+| `operation_attempts` | business | 操作任务执行尝试，记录 connector host 领取、开始、完成、失败原因和连接器输出回执。 | `OperationTaskId` 指向 `operation_tasks`；`OutputJson` 保存 Connector Host 返回的设备回执、写入值等输出元数据；索引用于按任务查执行历史。 |
 | `audit_records` | business | 操作任务审计记录，记录组织/环境 scope、动作、操作者、发生时间、correlation id、`SequenceNo`、`PreviousIntegrityHash` 和 `IntegrityHash`。 | `OperationTaskId + OccurredAtUtc` 支持按任务时间线展示审计；`OrganizationId + EnvironmentId + SequenceNo` 唯一约束保证同 scope 审计链序号不重复；`IntegrityHash` 对不可变审计字段、序号和前序哈希做 SHA-256 摘要，`PreviousIntegrityHash` 将记录链接为可校验链。 |
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义；用于消费幂等和重试。 |

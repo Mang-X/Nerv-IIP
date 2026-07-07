@@ -45,6 +45,10 @@ public sealed record OpcUaDataChange(
     DateTimeOffset SourceTimestampUtc,
     string Status);
 
+public sealed record OpcUaWriteRequest(string NodeId, string Value);
+
+public sealed record OpcUaWriteReceipt(string Status, string ReceiptCode, string Message);
+
 public sealed record RecordIndustrialTelemetrySampleRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -94,6 +98,13 @@ public interface IOpcUaClient
         IReadOnlyList<OpcUaTagSubscription> tags,
         Func<OpcUaDataChange, CancellationToken, Task> onDataChange,
         CancellationToken cancellationToken);
+
+    Task<OpcUaWriteReceipt> WriteAsync(OpcUaWriteRequest request, CancellationToken cancellationToken)
+    {
+        _ = request;
+        _ = cancellationToken;
+        throw new NotSupportedException("This OPC UA client does not support writes.");
+    }
 
     Task DisconnectAsync(CancellationToken cancellationToken);
 }

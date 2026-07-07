@@ -15,6 +15,7 @@ using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Sdk.Ops;
 using NetCorePal.Context.CAP;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
@@ -54,6 +55,13 @@ try
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
     builder.Services.AddHostedService<AlarmEscalationScheduler>();
+    builder.Services.AddScoped<IDeviceControlOpsClient, DeviceControlOpsClient>();
+    builder.Services.AddHttpClient<IOpsClient, HttpOpsClient>((services, client) =>
+    {
+        client.BaseAddress = new Uri(builder.Configuration["Ops:BaseUrl"] ?? "http://localhost:5103");
+        var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+    });
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
     if (isTesting && string.IsNullOrWhiteSpace(connectionString))

@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.DomainEvents;
+using System.Text.Json;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
 
@@ -39,6 +40,10 @@ public sealed class TelemetryTag : Entity<TelemetryTagId>, IAggregateRoot
     public string ValueType { get; private set; } = string.Empty;
     public string UnitCode { get; private set; } = string.Empty;
     public string SamplingPolicy { get; private set; } = string.Empty;
+    public bool IsWritable { get; private set; }
+    public decimal? ControlMinValue { get; private set; }
+    public decimal? ControlMaxValue { get; private set; }
+    public string ControlAllowedValuesJson { get; private set; } = "[]";
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
@@ -62,6 +67,27 @@ public sealed class TelemetryTag : Entity<TelemetryTagId>, IAggregateRoot
         UpdatedAtUtc = DateTimeOffset.UtcNow;
     }
 
+    public void ConfigureControl(
+        bool isWritable,
+        decimal? minValue,
+        decimal? maxValue,
+        IReadOnlyCollection<string> allowedValues)
+    {
+        if (minValue.HasValue && maxValue.HasValue && minValue.Value > maxValue.Value)
+        {
+            throw new ArgumentOutOfRangeException(nameof(minValue), "Control min value cannot be greater than max value.");
+        }
+
+        IsWritable = isWritable;
+        ControlMinValue = minValue;
+        ControlMaxValue = maxValue;
+        ControlAllowedValuesJson = JsonSerializer.Serialize(NormalizeAllowedValues(allowedValues));
+        UpdatedAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    public IReadOnlyCollection<string> ControlAllowedValues =>
+        JsonSerializer.Deserialize<IReadOnlyCollection<string>>(ControlAllowedValuesJson) ?? [];
+
     public bool HasSameBusinessKey(TelemetryTag other)
     {
         ArgumentNullException.ThrowIfNull(other);
@@ -69,5 +95,15 @@ public sealed class TelemetryTag : Entity<TelemetryTagId>, IAggregateRoot
             && EnvironmentId == other.EnvironmentId
             && DeviceAssetId == other.DeviceAssetId
             && TagKey == other.TagKey;
+    }
+
+    private static IReadOnlyCollection<string> NormalizeAllowedValues(IReadOnlyCollection<string> values)
+    {
+        return values
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 }

@@ -122,7 +122,8 @@ public sealed record OperationAttemptFact(
     DateTimeOffset LeasedUntilUtc,
     int AttemptNo,
     int MaxAttempts,
-    string? AbandonReason)
+    string? AbandonReason,
+    IReadOnlyDictionary<string, string> Output)
 {
     public string? FailureCode => Failure?.Code;
 }

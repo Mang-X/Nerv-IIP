@@ -203,7 +203,7 @@ public sealed class IndustrialTelemetryAggregateTests
     }
 
     [Fact]
-    public void Public_domain_facts_do_not_expose_control_payload_credential_or_scada_concepts()
+    public void Public_domain_facts_do_not_expose_payload_credential_or_scada_concepts()
     {
         var publicNames = new[]
             {
@@ -215,7 +215,7 @@ public sealed class IndustrialTelemetryAggregateTests
             .SelectMany(type => type.GetMembers(BindingFlags.Instance | BindingFlags.Public).Select(member => $"{type.Name}.{member.Name}"))
             .ToArray();
 
-        var forbidden = new[] { "Control", "CommandPayload", "Credential", "Secret", "Password", "Scada" };
+        var forbidden = new[] { "CommandPayload", "Credential", "Secret", "Password", "Scada" };
         Assert.DoesNotContain(publicNames, name => forbidden.Any(fragment => name.Contains(fragment, StringComparison.OrdinalIgnoreCase)));
     }
 }
