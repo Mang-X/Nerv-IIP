@@ -139,54 +139,110 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
             ledger.LedgerVersion);
         ledger.FreezeForCount(task.CountTaskCode);
         dbContext.StockCountTasks.Add(task);
+        return new CreateStockCountTaskResult(task.Id, task.ExpectedLedgerVersion);
+    }
+}
+
+public sealed class CreateStockCountTaskUniqueConflictBehavior<TRequest, TResponse>(ApplicationDbContext dbContext)
+    : IPipelineBehavior<TRequest, TResponse>
+    where TRequest : notnull
+{
+    public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
+    {
+        if (request is not CreateStockCountTaskCommand)
+        {
+            return await next(cancellationToken);
+        }
+
         try
         {
-            await dbContext.SaveChangesAsync(cancellationToken);
+            return await next(cancellationToken);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex) when (IsStockCountTaskUniqueConflict(ex, dbContext))
         {
-            dbContext.Entry(task).State = EntityState.Detached;
-            dbContext.Entry(ledger).State = EntityState.Detached;
+            dbContext.ChangeTracker.Clear();
+            return await next(cancellationToken);
+        }
+    }
 
-            var recovered = await dbContext.StockCountTasks.AsNoTracking().SingleOrDefaultAsync(
-                x => x.OrganizationId == request.OrganizationId
-                    && x.EnvironmentId == request.EnvironmentId
-                    && x.IdempotencyKey == idempotencyKey,
-                cancellationToken);
-            if (recovered is not null)
-            {
-                if (!recovered.HasSameCreationScope(
-                        request.CountTaskCode,
-                        request.SkuCode,
-                        request.UomCode,
-                        request.SiteCode,
-                        request.LocationCode,
-                        request.LotNo,
-                        request.SerialNo,
-                        request.QualityStatus,
-                        request.OwnerType,
-                        request.OwnerId))
-                {
-                    throw new KnownException("Stock count task idempotency key conflicts with an existing count scope.");
-                }
+    private static bool IsStockCountTaskUniqueConflict(DbUpdateException exception, ApplicationDbContext context)
+    {
+        return exception.Entries.Any(entry => entry.Entity is StockCountTask) &&
+            EnumerateExceptions(exception).Any(inner =>
+                IsPostgreSqlUniqueConflict(inner) ||
+                IsSqliteUniqueConflict(context, inner) ||
+                IsSqlServerUniqueConflict(context, inner) ||
+                IsMySqlUniqueConflict(context, inner));
+    }
 
-                return new CreateStockCountTaskResult(recovered.Id, recovered.ExpectedLedgerVersion);
-            }
+    private static IEnumerable<Exception> EnumerateExceptions(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            yield return current;
+        }
+    }
 
-            var recoveredCountCode = await dbContext.StockCountTasks.AsNoTracking().SingleOrDefaultAsync(
-                x => x.OrganizationId == request.OrganizationId
-                    && x.EnvironmentId == request.EnvironmentId
-                    && x.CountTaskCode == request.CountTaskCode,
-                cancellationToken);
-            if (recoveredCountCode is not null)
-            {
-                throw new KnownException("Stock count task code conflicts with an existing idempotency key.");
-            }
-
-            throw;
+    private static bool IsPostgreSqlUniqueConflict(Exception exception)
+    {
+        if (!string.Equals(exception.GetType().FullName, "Npgsql.PostgresException", StringComparison.Ordinal))
+        {
+            return false;
         }
 
-        return new CreateStockCountTaskResult(task.Id, task.ExpectedLedgerVersion);
+        return exception.GetType().GetProperty("SqlState")?.GetValue(exception) as string == "23505";
+    }
+
+    private static bool IsSqliteUniqueConflict(ApplicationDbContext context, Exception exception)
+    {
+        var providerName = context.Database.ProviderName ?? string.Empty;
+        var typeName = exception.GetType().FullName ?? string.Empty;
+        if (!providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) &&
+            !typeName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var errorCode = GetIntProperty(exception, "SqliteErrorCode");
+        var extendedErrorCode = GetIntProperty(exception, "SqliteExtendedErrorCode");
+        return errorCode == 19 || extendedErrorCode is 1555 or 2067;
+    }
+
+    private static bool IsSqlServerUniqueConflict(ApplicationDbContext context, Exception exception)
+    {
+        var providerName = context.Database.ProviderName ?? string.Empty;
+        var typeName = exception.GetType().FullName ?? string.Empty;
+        if (!providerName.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) &&
+            !typeName.Contains("SqlException", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return GetIntProperty(exception, "Number") is 2601 or 2627;
+    }
+
+    private static bool IsMySqlUniqueConflict(ApplicationDbContext context, Exception exception)
+    {
+        var providerName = context.Database.ProviderName ?? string.Empty;
+        var typeName = exception.GetType().FullName ?? string.Empty;
+        if (!providerName.Contains("MySql", StringComparison.OrdinalIgnoreCase) &&
+            !typeName.Contains("MySql", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return GetIntProperty(exception, "Number") == 1062;
+    }
+
+    private static int? GetIntProperty(Exception exception, string propertyName)
+    {
+        var value = exception.GetType().GetProperty(propertyName)?.GetValue(exception);
+        return value switch
+        {
+            int intValue => intValue,
+            uint uintValue => unchecked((int)uintValue),
+            _ => null,
+        };
     }
 }
 

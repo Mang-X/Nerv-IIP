@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using Nerv.IIP.Business.Inventory.Domain;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
@@ -143,6 +145,64 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
         Assert.Equal(concurrentResults[0].CountTaskId, count.InventoryCountTaskId);
     }
 
+    [RealPostgresFact]
+    public async Task Postgres_count_task_same_code_different_key_unique_conflict_reruns_as_domain_conflict()
+    {
+        const string countTaskCode = "COUNT-RPC-PG-CONFLICT";
+        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await using var inventoryDatabase = await TemporaryPostgresDatabase.CreateAsync(postgresConnectionString, "inv_rpc_conflict");
+        var saveRace = new StockCountTaskSaveRaceInterceptor(countTaskCode, 2);
+        await using var inventoryProvider = CreateInventoryPostgresProvider(inventoryDatabase.ConnectionString, saveRace);
+        await using (var scope = inventoryProvider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+            await db.Database.MigrateAsync();
+        }
+
+        await SeedInventoryPostgresAsync(
+            inventoryProvider,
+            "SKU-FG-1000",
+            "LOC-A-01",
+            null,
+            10m,
+            "seed-count-postgres-conflict",
+            ownerId: null);
+        var client = new InventoryMediatRTimeoutClient(inventoryProvider);
+        var firstRequest = new WmsInventoryCountTaskRequest(
+            "org-001",
+            "env-dev",
+            countTaskCode,
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            null,
+            null,
+            "qualified",
+            "company",
+            null,
+            "wms-count-freeze:postgres-conflict-a");
+        var secondRequest = firstRequest with
+        {
+            IdempotencyKey = "wms-count-freeze:postgres-conflict-b",
+        };
+
+        var first = client.CreateCountTaskAsync(firstRequest, CancellationToken.None);
+        var second = client.CreateCountTaskAsync(secondRequest, CancellationToken.None);
+        var exception = await Record.ExceptionAsync(() => Task.WhenAll(first, second));
+
+        Assert.NotNull(exception);
+        var successful = Assert.Single(new[] { first, second }, task => task.Status == TaskStatus.RanToCompletion);
+        var failed = Assert.Single(new[] { first, second }, task => task.IsFaulted);
+        var knownException = Assert.IsType<KnownException>(failed.Exception!.GetBaseException());
+        Assert.Contains("Stock count task code conflicts", knownException.Message, StringComparison.Ordinal);
+        await using var assertScope = inventoryProvider.CreateAsyncScope();
+        var inventoryDb = assertScope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        var task = Assert.Single(await inventoryDb.StockCountTasks.ToListAsync());
+        Assert.Equal(successful.Result.CountTaskId, task.Id.ToString());
+        Assert.True((await inventoryDb.StockLedgers.SingleAsync()).IsFrozenForCount);
+    }
+
     private static async Task SeedInventoryAsync(
         InventoryDbContext inventoryDb,
         string skuCode,
@@ -199,7 +259,7 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
         return new WmsDbContext(options, new NoopMediator());
     }
 
-    private static ServiceProvider CreateInventoryPostgresProvider(string connectionString)
+    private static ServiceProvider CreateInventoryPostgresProvider(string connectionString, params IInterceptor[] interceptors)
     {
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.AddConsole());
@@ -207,8 +267,26 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             .RegisterServicesFromAssembly(typeof(CreateStockCountTaskCommand).Assembly)
             .AddCommandLockBehavior()
             .AddKnownExceptionValidationBehavior()
+            .AddOpenBehavior(typeof(CreateStockCountTaskUniqueConflictBehavior<,>))
             .AddUnitOfWorkBehaviors());
-        services.AddInventoryPostgreSqlPersistence(connectionString);
+        if (interceptors.Length == 0)
+        {
+            services.AddInventoryPostgreSqlPersistence(connectionString);
+        }
+        else
+        {
+            services.AddDbContext<InventoryDbContext>(options =>
+            {
+                options.UseNpgsql(
+                    connectionString,
+                    npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", InventoryFacts.Schema));
+                options.AddInterceptors(interceptors);
+                options.EnableDetailedErrors();
+            });
+            services.AddRepositories(typeof(InventoryDbContext).Assembly);
+            services.AddUnitOfWork<InventoryDbContext>();
+        }
+
         services.AddInMemoryDistributedLock();
         services.AddScoped<ICommandLock<CreateStockCountTaskCommand>, CreateStockCountTaskCommandLock>();
         return services.BuildServiceProvider();
@@ -452,6 +530,40 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             CancellationToken cancellationToken)
         {
             throw new NotSupportedException("This test does not confirm count adjustments.");
+        }
+    }
+
+    private sealed class StockCountTaskSaveRaceInterceptor(string countTaskCode, int participantCount) : SaveChangesInterceptor
+    {
+        private readonly TaskCompletionSource allParticipantsArrived =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int arrivals;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (ShouldWait(eventData.Context))
+            {
+                if (Interlocked.Increment(ref arrivals) == participantCount)
+                {
+                    allParticipantsArrived.TrySetResult();
+                }
+
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(TimeSpan.FromSeconds(10));
+                await allParticipantsArrived.Task.WaitAsync(timeout.Token);
+            }
+
+            return await base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+
+        private bool ShouldWait(DbContext? context)
+        {
+            return context?.ChangeTracker.Entries<StockCountTask>().Any(entry =>
+                entry.State == EntityState.Added &&
+                string.Equals(entry.Entity.CountTaskCode, countTaskCode, StringComparison.Ordinal)) is true;
         }
     }
 

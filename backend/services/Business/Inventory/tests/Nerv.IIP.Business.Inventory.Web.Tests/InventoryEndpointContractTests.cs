@@ -882,6 +882,39 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
+    public void Count_task_unique_conflict_behavior_wraps_unit_of_work_save_in_real_mediatr_pipeline()
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            });
+        using var scope = factory.Services.CreateScope();
+
+        var behaviorTypes = scope.ServiceProvider
+            .GetServices<IPipelineBehavior<CreateStockCountTaskCommand, CreateStockCountTaskResult>>()
+            .Select(behavior => behavior.GetType())
+            .ToArray();
+        var uniqueConflictBehaviorIndex = Array.FindIndex(behaviorTypes, IsStockCountTaskUniqueConflictBehavior);
+        var unitOfWorkBehaviorIndex = Array.FindIndex(
+            behaviorTypes,
+            type => type.FullName?.Contains("UnitOfWorkBehavior", StringComparison.Ordinal) is true);
+
+        Assert.True(uniqueConflictBehaviorIndex >= 0, "Inventory count task unique conflict behavior must be registered.");
+        Assert.True(unitOfWorkBehaviorIndex >= 0, "Unit of work behavior must be registered.");
+        Assert.True(
+            uniqueConflictBehaviorIndex < unitOfWorkBehaviorIndex,
+            "Inventory count task unique conflict behavior must wrap unit of work save to catch DbUpdateException.");
+    }
+
+    private static bool IsStockCountTaskUniqueConflictBehavior(Type type)
+    {
+        return type.IsGenericType &&
+            type.GetGenericTypeDefinition() == typeof(CreateStockCountTaskUniqueConflictBehavior<,>);
+    }
+
+    [Fact]
     public async Task Cancel_count_task_command_releases_ledger_freeze()
     {
         await using var provider = CreateInMemoryProvider();

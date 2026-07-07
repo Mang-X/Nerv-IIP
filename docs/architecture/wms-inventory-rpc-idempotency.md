@@ -39,4 +39,5 @@ This keeps the compensation path local and deterministic: retry is the reconcili
 `WmsInventoryRpcIdempotencyAcceptanceTests` covers the cross-boundary behavior in two tiers:
 
 1. Fast in-memory WMS and Inventory contexts prove WMS retry recomputes the same key and recovers the same reservation or count task after a simulated post-commit timeout.
-2. The opt-in real PostgreSQL test, enabled by `NERV_IIP_TEST_POSTGRES`, runs WMS and Inventory against migrated PostgreSQL databases and verifies count-freeze timeout recovery plus concurrent retry convergence through the Inventory MediatR, UnitOfWork and command-lock pipeline.
+2. The opt-in real PostgreSQL tests, enabled by `NERV_IIP_TEST_POSTGRES`, run WMS and Inventory against migrated PostgreSQL databases. They verify count-freeze timeout recovery and same-key concurrent retry convergence through the Inventory MediatR, UnitOfWork and command-lock pipeline.
+3. A second opt-in PostgreSQL path forces two different idempotency keys with the same `count_task_code` to reach `SaveChangesAsync` concurrently. This exercises the database unique index, clears the failed EF tracker state, reruns the command inside the pipeline, and returns the domain count-code conflict without leaving an extra freeze.
