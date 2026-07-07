@@ -15,12 +15,15 @@ export interface WorkshopOutput {
   achievement: number
 }
 
-/** 当班累计曲线（班次开始 → 现在逐点累计；末点与 output 精确一致）🟡 */
+/** 当班累计曲线（班次开始 → 现在逐点累计；末点与 output 精确一致）🟡
+ *  byLine = 各产线分线累计（总曲线 = Σ 各线逐点，构造性勾稽）——
+ *  「车间产量」不只是一条总线，谁在贡献、谁在掉速要能分线看 */
 export interface ShiftCurve {
   actual: number[]
   plan: number[]
   /** 每点时刻标签（整点 HH:00，末点为当前 HH:mm） */
   labels: string[]
+  byLine: { lineId: string; name: string; state: LineState; data: number[] }[]
 }
 
 /** 产线状态计数（状态墙汇总） */

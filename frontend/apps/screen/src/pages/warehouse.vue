@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ScreenPanel, Sparkline, StatusLight, StatusTag } from '@nerv-iip/ui'
+import { ScreenBarChart, ScreenDonut, ScreenPanel, ScreenScrollArea, StatusLight, StatusTag } from '@nerv-iip/ui'
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -272,8 +272,12 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
               </span>
               <span v-else class="wb-postok"><i class="wb-okdot" />过账无异常</span>
             </div>
+            <!-- 小时流量是离散量 —— 柱状比面积曲线更诚实（每小时一根柱） -->
             <div class="wb-flow-spark">
-              <Sparkline :data="board.inbound.hourly" area />
+              <ScreenBarChart
+                :series="[{ label: '入库行', color: '#4aa6ee', data: board.inbound.hourly }]"
+                :hover-labels="board.inbound.hourLabels"
+              />
             </div>
             <div class="wb-flow-x">
               <span>{{ board.inbound.hourLabels[0] }}</span>
@@ -297,7 +301,10 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
               <span v-if="board.outbound.latestShipment" class="wb-latest">最近发运 {{ board.outbound.latestShipment }}</span>
             </div>
             <div class="wb-flow-spark">
-              <Sparkline :data="board.outbound.hourly" area color="var(--sb-indigo)" />
+              <ScreenBarChart
+                :series="[{ label: '出库行', color: '#8b9be6', data: board.outbound.hourly }]"
+                :hover-labels="board.outbound.hourLabels"
+              />
             </div>
             <div class="wb-flow-x">
               <span>{{ board.outbound.hourLabels[0] }}</span>
@@ -399,24 +406,19 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
 
           <ScreenPanel title="WCS 指令状态" class="wb-adapters">
             <div v-if="wcs" class="wa">
-              <dl class="wa-strip">
-                <div>
-                  <dt>排队</dt>
-                  <dd>{{ wcs.counts.queued }}</dd>
-                </div>
-                <div>
-                  <dt>执行中</dt>
-                  <dd class="run">{{ wcs.counts.running }}</dd>
-                </div>
-                <div>
-                  <dt>今日完成</dt>
-                  <dd>{{ nf.format(wcs.counts.completed) }}</dd>
-                </div>
-                <div>
-                  <dt>失败</dt>
-                  <dd :class="{ bad: wcs.counts.failed > 0 }">{{ wcs.counts.failed }}</dd>
-                </div>
-              </dl>
+              <!-- 链路负载构成（排队/执行/失败 = 当前在链指令）环形，中心 = 今日吞吐 -->
+              <ScreenDonut
+                class="wa-donut"
+                :size="88"
+                :segments="[
+                  { label: '排队', value: wcs.counts.queued, color: 'rgba(160, 200, 245, 0.45)' },
+                  { label: '执行中', value: wcs.counts.running, color: '#4aa6ee' },
+                  { label: '失败', value: wcs.counts.failed, color: '#ef5a63' },
+                ]"
+              >
+                <b class="wa-dn-num">{{ nf.format(wcs.counts.completed) }}</b>
+                <span class="wa-dn-cap">今日完成</span>
+              </ScreenDonut>
               <ScreenScrollArea class="wa-rows">
                 <div v-for="a in wcs.adapters" :key="a.kind" class="wa-row">
                   <component :is="ADAPTER_ICONS[a.kind]" :size="14" :stroke-width="1.8" class="wa-ic" />
@@ -943,9 +945,9 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
 .wf-count.calm {
   color: var(--sb-green);
 }
-/* 失败榜：3–4 条完整显示，更多滚动（数据量变化不挤压下方面板） */
+/* 失败榜：约 3 条完整显示，更多滚动（数据量变化不挤压下方面板） */
 .wf-list {
-  max-height: 236px;
+  max-height: 156px;
 }
 .wf-row {
   display: flex;
@@ -1047,40 +1049,28 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   display: flex;
   flex-direction: column;
 }
-.wa-strip {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin: 0 0 4px;
+.wa-donut {
+  flex: none;
+  padding: 0 4px 8px;
+  border-bottom: 1px solid var(--sb-divider);
+  margin-bottom: 4px;
 }
-.wa-strip > div {
-  border: 1px solid var(--sb-line);
-  border-top-color: rgba(255, 255, 255, 0.09);
-  border-radius: var(--sb-radius);
-  background: rgba(255, 255, 255, 0.02);
-  padding: 8px 11px;
-}
-.wa-strip dt {
-  font-size: 11.5px;
-  color: var(--sb-muted);
-}
-.wa-strip dd {
-  margin: 4px 0 0;
-  font-size: 20px;
-  font-weight: 700;
+.wa-dn-num {
+  font-size: 21px;
+  font-weight: 800;
   line-height: 1;
   color: var(--sb-text);
   font-variant-numeric: tabular-nums;
+  text-shadow: var(--sb-value-glow);
 }
-.wa-strip dd.run {
-  color: var(--sb-cyan);
-}
-.wa-strip dd.bad {
-  color: var(--sb-red);
+.wa-dn-cap {
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: var(--sb-muted);
 }
 .wa-rows {
   flex: 1;
-  min-height: 0;
+  min-height: 96px;
 }
 .wa-row {
   display: flex;

@@ -129,39 +129,41 @@ const REPAIR_ASSIGNEE: Record<string, string> = {
   '合装举升机': '刘志远',
 }
 
-/** 当班累计曲线：计划匀速、实际带噪声单调爬升；报警车间末段增量走低（与线趋势口径一致）。
- *  末点强制等于当班累计（与 KPI 大数字精确勾稽）。 */
+/** 当班累计曲线：计划匀速、实际带噪声单调爬升。**分线生成、逐点求和** ——
+ *  每线独立权重曲线（报警线末段增量掉到 45%，停机拖累在自己的曲线上可见），
+ *  车间总曲线 = Σ 各线逐点（构造性勾稽：总末点 = Σ 线末点 = KPI 大数字）。 */
 function buildShiftCurve(
-  actualTotal: number,
+  lines: LineSummaryCard[],
   planTotal: number,
   elapsedMin: number,
   startHour: number,
-  hasAlarm: boolean,
 ): ShiftCurve {
   const k = Math.max(1, Math.ceil(elapsedMin / 60))
   const ts = Array.from({ length: k + 1 }, (_, i) => Math.min(i * 60, elapsedMin))
   const labels = ts.map((t, i) =>
     i === k ? clock(0) : `${p2((startHour + Math.floor(t / 60)) % 24)}:00`,
   )
-  // 每小时段产出权重：±8% 噪声；报警车间最后一段掉到 45%（停机拖累）
-  const w: number[] = []
-  for (let i = 1; i <= k; i++) {
-    let wi = (ts[i] - ts[i - 1]) * (0.92 + Math.random() * 0.16)
-    if (hasAlarm && i === k) wi *= 0.45
-    w.push(wi)
-  }
-  const wSum = w.reduce((a, b) => a + b, 0)
-  const actual = [0]
-  const plan = [0]
-  let acc = 0
-  for (let i = 0; i < k; i++) {
-    acc += w[i]
-    actual.push(Math.round((actualTotal * acc) / wSum))
-    plan.push(Math.round((planTotal * ts[i + 1]) / elapsedMin))
-  }
-  actual[k] = actualTotal
-  plan[k] = planTotal
-  return { actual, plan, labels }
+  const byLine = lines.map((l) => {
+    // 每小时段产出权重：±8% 噪声；报警线最后一段掉到 45%（急停拖累）
+    const w: number[] = []
+    for (let i = 1; i <= k; i++) {
+      let wi = (ts[i] - ts[i - 1]) * (0.92 + Math.random() * 0.16)
+      if (l.state === 'alarm' && i === k) wi *= 0.45
+      w.push(wi)
+    }
+    const wSum = w.reduce((a, b) => a + b, 0)
+    const data = [0]
+    let acc = 0
+    for (let i = 0; i < k; i++) {
+      acc += w[i]
+      data.push(Math.round((l.output.good * acc) / wSum))
+    }
+    data[k] = l.output.good
+    return { lineId: l.id, name: l.name, state: l.state, data }
+  })
+  const actual = ts.map((_, i) => byLine.reduce((n, bl) => n + bl.data[i], 0))
+  const plan = ts.map((t, i) => (i === k ? planTotal : Math.round((planTotal * t) / elapsedMin)))
+  return { actual, plan, labels, byLine }
 }
 
 /** 近 30 天车间日产量：日计划 = 当班计划节奏 × 20h 有效工时（双班），周日排产 30%；
@@ -451,13 +453,7 @@ export function buildWorkshopBoard(
     output,
     lines,
     lineStates,
-    shiftCurve: buildShiftCurve(
-      actual,
-      plan,
-      elapsed,
-      shift.name === '早班' ? 8 : 20,
-      lineStates.alarm > 0,
-    ),
+    shiftCurve: buildShiftCurve(lines, plan, elapsed, shift.name === '早班' ? 8 : 20),
     daily30: buildDaily30(plan, actual, elapsed),
     oee,
     devices,

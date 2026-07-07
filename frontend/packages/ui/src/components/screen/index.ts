@@ -17,6 +17,8 @@ export { default as CapsuleBar } from './CapsuleBar.vue'
 export { default as DigitalFlop } from './DigitalFlop.vue'
 export { default as Sparkline } from './Sparkline.vue'
 export { default as TrendChart } from './TrendChart.vue'
+export { default as ScreenBarChart } from './ScreenBarChart.vue'
+export { default as ScreenDonut } from './ScreenDonut.vue'
 export { default as TaktGantt } from './TaktGantt.vue'
 
 // Data & status

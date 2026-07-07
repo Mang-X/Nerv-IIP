@@ -277,7 +277,7 @@ const trendPin = computed(() => {
             <template #extra>
               <span class="qb-cap">近 7 天 · {{ nf.format(board.paretoTotal) }} 件</span>
             </template>
-            <DefectPareto :items="board.pareto" />
+            <DefectPareto :items="board.pareto" :total="board.paretoTotal" />
           </ScreenPanel>
 
           <ScreenPanel title="检验任务积压" class="qb-backlog">

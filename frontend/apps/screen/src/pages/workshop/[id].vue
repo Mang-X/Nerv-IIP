@@ -81,6 +81,8 @@ const WS_TREND_RANGES = [
   { label: '当班累计', value: 'shift' },
   { label: '近 30 天', value: '30d' },
 ]
+// 分线曲线色：报警红 / 关注黄（语义直读），正常线冷色轮换
+const LINE_TREND_COLORS = ['#4aa6ee', '#45d089', '#8b9be6', '#5fb8c9', '#b48be6']
 const trendData = computed(() => {
   const b = board.value
   if (!b) return null
@@ -92,6 +94,7 @@ const trendData = computed(() => {
       xLabels: b.daily30.labels.filter((_, i) => i % 5 === 0),
       actualLabel: '日产量',
       planLabel: '日计划',
+      series: undefined,
     }
   }
   const labels = b.shiftCurve.labels
@@ -100,8 +103,15 @@ const trendData = computed(() => {
     plan: b.shiftCurve.plan,
     hoverLabels: labels,
     xLabels: labels.length > 9 ? labels.filter((_, i) => i % 2 === 0) : labels,
-    actualLabel: '实际累计',
-    planLabel: '计划累计',
+    actualLabel: '车间累计',
+    planLabel: '计划',
+    // 分线累计（总曲线 = Σ 各线，mock 构造性勾稽）：谁在贡献、谁在掉速分线可读
+    series: b.shiftCurve.byLine.map((l, i) => ({
+      label: l.name,
+      color:
+        l.state === 'alarm' ? '#ef5a63' : l.state === 'attention' ? '#f0ad4e' : LINE_TREND_COLORS[i % LINE_TREND_COLORS.length],
+      data: l.data,
+    })),
   }
 })
 const trendY = computed(() => {
@@ -274,6 +284,7 @@ const devSummary = computed(() => {
             :x-labels="trendData.xLabels"
             :y-labels="trendY"
             :tooltip="trendPin"
+            :series="trendData.series"
             :actual-label="trendData.actualLabel"
             :plan-label="trendData.planLabel"
             :ranges="WS_TREND_RANGES"
@@ -375,7 +386,7 @@ const devSummary = computed(() => {
             </ScreenScrollArea>
           </ScreenPanel>
 
-          <ScreenPanel title="当班质量 · NCR 待办" class="wb-quality">
+          <ScreenPanel title="当班质量" class="wb-quality">
             <template #extra>
               <!-- FPY/报废/返修大数字在顶部 KPI 带已有 —— 此处只留摘要，面板专注 NCR -->
               <span class="wb-q-sum">
@@ -1086,12 +1097,17 @@ const devSummary = computed(() => {
   flex: 1;
   min-height: 0;
 }
-/* 面板标题右侧的质量摘要（大数字在 KPI 带，不重复占面板空间） */
+/* 面板标题右侧的质量摘要（大数字在 KPI 带，不重复占面板空间）；
+   可收缩截断 —— 绝不超出面板宽 */
 .wb-q-sum {
+  display: block;
   font-size: 12.5px;
   color: var(--sb-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .wb-q-sum b {
   color: var(--sb-text);

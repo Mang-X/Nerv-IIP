@@ -136,6 +136,7 @@ defineProps<{
 .sb-panel-extra {
   font-size: 13px;
   color: var(--sb-muted);
+  min-width: 0;
 }
 /* status accent — a thin top line in the accent color, fading to its ends */
 .sb-panel-accent {
