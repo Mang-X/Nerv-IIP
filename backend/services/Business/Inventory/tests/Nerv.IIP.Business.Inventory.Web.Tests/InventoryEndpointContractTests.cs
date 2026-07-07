@@ -786,6 +786,135 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
+    public async Task Create_count_task_command_rejects_same_count_code_with_conflicting_scope()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var firstLedger = DomainLedgerFactory.NewLedger();
+        firstLedger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        var secondLedger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-B-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001");
+        secondLedger.ApplyMovement(DomainMovementFactory.InboundForLocation("LOC-B-01", "LOT-001", 8m));
+        dbContext.StockLedgers.AddRange(firstLedger, secondLedger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CreateStockCountTaskCommandHandler(dbContext);
+        await handler.Handle(
+            new CreateStockCountTaskCommand(
+                "org-001",
+                "env-dev",
+                "COUNT-CONFLICT-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "qualified",
+                "company",
+                "owner-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(
+                new CreateStockCountTaskCommand(
+                    "org-001",
+                    "env-dev",
+                    "COUNT-CONFLICT-001",
+                    "SKU-FG-1000",
+                    "kg",
+                    "SITE-01",
+                    "LOC-B-01",
+                    "LOT-001",
+                    null,
+                    "qualified",
+                    "company",
+                    "owner-001"),
+                CancellationToken.None));
+
+        Assert.Contains("conflicts", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(dbContext.StockCountTasks);
+    }
+
+    [Fact]
+    public async Task Create_count_task_command_uses_namespaced_fallback_idempotency_key()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CreateStockCountTaskCommandHandler(dbContext).Handle(
+            NewCreateCountTaskCommand("COUNT-FALLBACK-001", idempotencyKey: null),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var task = Assert.Single(dbContext.StockCountTasks);
+        Assert.Equal("count-code:COUNT-FALLBACK-001", task.IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task Create_count_task_command_lock_uses_idempotency_key_namespace()
+    {
+        var explicitSettings = await new CreateStockCountTaskCommandLock().GetLockKeysAsync(
+            NewCreateCountTaskCommand("COUNT-LOCK-001", idempotencyKey: "wms-count-freeze:abc"),
+            CancellationToken.None);
+        var fallbackSettings = await new CreateStockCountTaskCommandLock().GetLockKeysAsync(
+            NewCreateCountTaskCommand("COUNT-LOCK-001", idempotencyKey: null),
+            CancellationToken.None);
+
+        Assert.Equal("business-inventory:stock-count-task:org-001:env-dev:wms-count-freeze%3Aabc", explicitSettings.LockKey);
+        Assert.Equal("business-inventory:stock-count-task:org-001:env-dev:count-code%3ACOUNT-LOCK-001", fallbackSettings.LockKey);
+    }
+
+    [Fact]
+    public void Count_task_unique_conflict_behavior_wraps_unit_of_work_save_in_real_mediatr_pipeline()
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            });
+        using var scope = factory.Services.CreateScope();
+
+        var behaviorTypes = scope.ServiceProvider
+            .GetServices<IPipelineBehavior<CreateStockCountTaskCommand, CreateStockCountTaskResult>>()
+            .Select(behavior => behavior.GetType())
+            .ToArray();
+        var uniqueConflictBehaviorIndex = Array.FindIndex(behaviorTypes, IsStockCountTaskUniqueConflictBehavior);
+        var unitOfWorkBehaviorIndex = Array.FindIndex(
+            behaviorTypes,
+            type => type.FullName?.Contains("UnitOfWorkBehavior", StringComparison.Ordinal) is true);
+
+        Assert.True(uniqueConflictBehaviorIndex >= 0, "Inventory count task unique conflict behavior must be registered.");
+        Assert.True(unitOfWorkBehaviorIndex >= 0, "Unit of work behavior must be registered.");
+        Assert.True(
+            uniqueConflictBehaviorIndex < unitOfWorkBehaviorIndex,
+            "Inventory count task unique conflict behavior must wrap unit of work save to catch DbUpdateException.");
+    }
+
+    private static bool IsStockCountTaskUniqueConflictBehavior(Type type)
+    {
+        return type.IsGenericType &&
+            type.GetGenericTypeDefinition() == typeof(CreateStockCountTaskUniqueConflictBehavior<,>);
+    }
+
+    [Fact]
     public async Task Cancel_count_task_command_releases_ledger_freeze()
     {
         await using var provider = CreateInMemoryProvider();
@@ -1295,5 +1424,23 @@ public sealed class InventoryEndpointContractTests
             "company",
             "owner-001",
             quantity);
+    }
+
+    private static CreateStockCountTaskCommand NewCreateCountTaskCommand(string countTaskCode, string? idempotencyKey)
+    {
+        return new CreateStockCountTaskCommand(
+            "org-001",
+            "env-dev",
+            countTaskCode,
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001",
+            idempotencyKey);
     }
 }
