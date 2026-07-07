@@ -1,10 +1,13 @@
 using MediatR;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CashReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CostCandidateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.OpportunityAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate;
 using Nerv.IIP.Business.Erp.Domain;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
@@ -36,6 +39,9 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<DeliveryOrder> DeliveryOrders => Set<DeliveryOrder>();
     public DbSet<AccountPayable> AccountPayables => Set<AccountPayable>();
     public DbSet<AccountReceivable> AccountReceivables => Set<AccountReceivable>();
+    public DbSet<AccountingPeriod> AccountingPeriods => Set<AccountingPeriod>();
+    public DbSet<PaymentExecution> PaymentExecutions => Set<PaymentExecution>();
+    public DbSet<CashReceipt> CashReceipts => Set<CashReceipt>();
     public DbSet<JournalVoucher> JournalVouchers => Set<JournalVoucher>();
     public DbSet<CostCandidate> CostCandidates => Set<CostCandidate>();
     public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();

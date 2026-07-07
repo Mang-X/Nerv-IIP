@@ -198,7 +198,16 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates", "post", "createBusinessConsoleErpCostCandidate");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/cost-candidates", "get", "listBusinessConsoleErpCostCandidates");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/vouchers", "post", "postBusinessConsoleErpJournalVoucher");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/payment-executions", "post", "approveBusinessConsoleErpPaymentExecution");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/payment-executions/{paymentExecutionNo}/execute", "post", "executeBusinessConsoleErpPaymentExecution");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/cash-receipts", "post", "registerBusinessConsoleErpCashReceipt");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/cash-receipts/{cashReceiptNo}/match", "post", "matchBusinessConsoleErpCashReceipt");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/accounting-periods", "post", "openBusinessConsoleErpAccountingPeriod");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/accounting-periods/close", "post", "closeBusinessConsoleErpAccountingPeriod");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/accounting-periods/reopen", "post", "reopenBusinessConsoleErpAccountingPeriod");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/vouchers", "get", "listBusinessConsoleErpJournalVouchers");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/trial-balance", "get", "getBusinessConsoleErpTrialBalance");
+        AssertOperationId(paths, "/api/business-console/v1/erp/finance/month-end-checklist", "get", "getBusinessConsoleErpMonthEndChecklist");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/summary", "get", "getBusinessConsoleErpFinanceSummary");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/payables/by-source", "get", "getBusinessConsoleErpPayableBySourceDocument");
         AssertOperationId(paths, "/api/business-console/v1/erp/finance/receivables/by-source", "get", "getBusinessConsoleErpReceivableBySourceDocument");

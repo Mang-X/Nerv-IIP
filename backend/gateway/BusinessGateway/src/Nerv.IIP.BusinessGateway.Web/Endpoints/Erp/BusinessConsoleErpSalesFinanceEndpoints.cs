@@ -301,6 +301,166 @@ public sealed class PostBusinessConsoleErpJournalVoucherEndpoint(
 }
 
 [Tags("Business Console ERP")]
+[HttpPost("/api/business-console/v1/erp/finance/payment-executions")]
+[BusinessGatewayOperationId("approveBusinessConsoleErpPaymentExecution")]
+public sealed class ApproveBusinessConsoleErpPaymentExecutionEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleApproveErpPaymentExecutionRequest, string>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceManage)
+{
+    protected override string OrganizationId(BusinessConsoleApproveErpPaymentExecutionRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleApproveErpPaymentExecutionRequest request) => request.EnvironmentId;
+
+    protected override Task<string> ForwardAsync(
+        BusinessConsoleApproveErpPaymentExecutionRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ApprovePaymentExecutionAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpPost("/api/business-console/v1/erp/finance/payment-executions/{paymentExecutionNo}/execute")]
+[BusinessGatewayOperationId("executeBusinessConsoleErpPaymentExecution")]
+public sealed class ExecuteBusinessConsoleErpPaymentExecutionEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleExecuteErpPaymentExecutionRequest, string>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceManage)
+{
+    protected override string OrganizationId(BusinessConsoleExecuteErpPaymentExecutionRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleExecuteErpPaymentExecutionRequest request) => request.EnvironmentId;
+
+    protected override Task<string> ForwardAsync(
+        BusinessConsoleExecuteErpPaymentExecutionRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var downstreamRequest = request with { PaymentExecutionNo = Route<string>("paymentExecutionNo") ?? request.PaymentExecutionNo };
+        return erp.ExecutePaymentExecutionAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
+    }
+}
+
+[Tags("Business Console ERP")]
+[HttpPost("/api/business-console/v1/erp/finance/cash-receipts")]
+[BusinessGatewayOperationId("registerBusinessConsoleErpCashReceipt")]
+public sealed class RegisterBusinessConsoleErpCashReceiptEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleRegisterErpCashReceiptRequest, string>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceManage)
+{
+    protected override string OrganizationId(BusinessConsoleRegisterErpCashReceiptRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleRegisterErpCashReceiptRequest request) => request.EnvironmentId;
+
+    protected override Task<string> ForwardAsync(
+        BusinessConsoleRegisterErpCashReceiptRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.RegisterCashReceiptAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpPost("/api/business-console/v1/erp/finance/cash-receipts/{cashReceiptNo}/match")]
+[BusinessGatewayOperationId("matchBusinessConsoleErpCashReceipt")]
+public sealed class MatchBusinessConsoleErpCashReceiptEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMatchErpCashReceiptRequest, string>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceManage)
+{
+    protected override string OrganizationId(BusinessConsoleMatchErpCashReceiptRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMatchErpCashReceiptRequest request) => request.EnvironmentId;
+
+    protected override Task<string> ForwardAsync(
+        BusinessConsoleMatchErpCashReceiptRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var downstreamRequest = request with { CashReceiptNo = Route<string>("cashReceiptNo") ?? request.CashReceiptNo };
+        return erp.MatchCashReceiptAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
+    }
+}
+
+[Tags("Business Console ERP")]
+[HttpPost("/api/business-console/v1/erp/finance/accounting-periods")]
+[BusinessGatewayOperationId("openBusinessConsoleErpAccountingPeriod")]
+public sealed class OpenBusinessConsoleErpAccountingPeriodEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleOpenErpAccountingPeriodRequest, BusinessConsoleOpenErpAccountingPeriodResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceManage)
+{
+    protected override string OrganizationId(BusinessConsoleOpenErpAccountingPeriodRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleOpenErpAccountingPeriodRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleOpenErpAccountingPeriodResponse> ForwardAsync(
+        BusinessConsoleOpenErpAccountingPeriodRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.OpenAccountingPeriodAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpPost("/api/business-console/v1/erp/finance/accounting-periods/close")]
+[BusinessGatewayOperationId("closeBusinessConsoleErpAccountingPeriod")]
+public sealed class CloseBusinessConsoleErpAccountingPeriodEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCloseErpAccountingPeriodRequest, string>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceManage)
+{
+    protected override string OrganizationId(BusinessConsoleCloseErpAccountingPeriodRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCloseErpAccountingPeriodRequest request) => request.EnvironmentId;
+
+    protected override Task<string> ForwardAsync(
+        BusinessConsoleCloseErpAccountingPeriodRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.CloseAccountingPeriodAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpPost("/api/business-console/v1/erp/finance/accounting-periods/reopen")]
+[BusinessGatewayOperationId("reopenBusinessConsoleErpAccountingPeriod")]
+public sealed class ReopenBusinessConsoleErpAccountingPeriodEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleReopenErpAccountingPeriodRequest, string>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceManage)
+{
+    protected override string OrganizationId(BusinessConsoleReopenErpAccountingPeriodRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleReopenErpAccountingPeriodRequest request) => request.EnvironmentId;
+
+    protected override Task<string> ForwardAsync(
+        BusinessConsoleReopenErpAccountingPeriodRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ReopenAccountingPeriodAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
 [HttpGet("/api/business-console/v1/erp/finance/vouchers")]
 [BusinessGatewayOperationId("listBusinessConsoleErpJournalVouchers")]
 public sealed class ListBusinessConsoleErpJournalVouchersEndpoint(
@@ -320,6 +480,50 @@ public sealed class ListBusinessConsoleErpJournalVouchersEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         erp.ListJournalVouchersAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/finance/trial-balance")]
+[BusinessGatewayOperationId("getBusinessConsoleErpTrialBalance")]
+public sealed class GetBusinessConsoleErpTrialBalanceEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpPeriodRequest, BusinessConsoleErpTrialBalanceResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceRead)
+{
+    protected override string OrganizationId(BusinessConsoleErpPeriodRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleErpPeriodRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpTrialBalanceResponse> ForwardAsync(
+        BusinessConsoleErpPeriodRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.GetTrialBalanceAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/finance/month-end-checklist")]
+[BusinessGatewayOperationId("getBusinessConsoleErpMonthEndChecklist")]
+public sealed class GetBusinessConsoleErpMonthEndChecklistEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpPeriodRequest, BusinessConsoleErpMonthEndChecklistResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceRead)
+{
+    protected override string OrganizationId(BusinessConsoleErpPeriodRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleErpPeriodRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpMonthEndChecklistResponse> ForwardAsync(
+        BusinessConsoleErpPeriodRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.GetMonthEndChecklistAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console ERP")]

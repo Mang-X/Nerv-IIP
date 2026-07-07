@@ -1,4 +1,6 @@
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CashReceiptAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
@@ -651,6 +653,237 @@ public sealed class ErpBusinessGapClosureTests
             new ListAccountPayablesQuery("org-001", "env-dev", "open", null, 0, 10, new DateOnly(2026, 7, 20)),
             CancellationToken.None);
         Assert.Equal("1-30", Assert.Single(payables.Items).AgingBucket);
+    }
+
+    [Fact]
+    public async Task Closed_accounting_period_blocks_vouchers_until_reopened()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+
+        await new OpenAccountingPeriodCommandHandler(dbContext).Handle(
+            new OpenAccountingPeriodCommand("org-001", "env-dev", "2026-06", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new CloseAccountingPeriodCommandHandler(dbContext).Handle(
+            new CloseAccountingPeriodCommand("org-001", "env-dev", "2026-06", "u-controller", "month-end complete"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var postCommand = new PostJournalVoucherCommand(
+            "org-001",
+            "env-dev",
+            "JV-CLOSED-001",
+            new DateOnly(2026, 6, 20),
+            [
+                new JournalVoucherCommandLine("1401", 100m, 0m, "inventory"),
+                new JournalVoucherCommandLine("2202", 0m, 100m, "payable"),
+            ],
+            IdempotencyKey: "idem-jv-closed-001");
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new PostJournalVoucherCommandHandler(dbContext).Handle(postCommand, CancellationToken.None));
+
+        Assert.Contains("closed accounting period", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(dbContext.JournalVouchers);
+
+        await new ReopenAccountingPeriodCommandHandler(dbContext).Handle(
+            new ReopenAccountingPeriodCommand("org-001", "env-dev", "2026-06", "u-controller", "late integration exception"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new PostJournalVoucherCommandHandler(dbContext).Handle(postCommand with { IdempotencyKey = "idem-jv-reopened-001" }, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Single(dbContext.JournalVouchers);
+        Assert.Equal("late integration exception", dbContext.AccountingPeriods.Single().ReopenReason);
+    }
+
+    [Fact]
+    public async Task Payment_execution_and_cash_receipt_persist_documents_and_update_aging()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await new CreateAccountPayableCommandHandler(dbContext).Handle(
+            new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "INV-001", "SUP-001", 100m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
+            CancellationToken.None);
+        await new CreateAccountReceivableCommandHandler(dbContext).Handle(
+            new CreateAccountReceivableCommand("org-001", "env-dev", "AR-001", "DO-001", "CUS-001", 80m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 15), "NET14"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new RegisterAccountPayablePaymentCommandHandler(dbContext).Handle(
+            new RegisterAccountPayablePaymentCommand("org-001", "env-dev", "AP-001", 40m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ap-payment-715"),
+            CancellationToken.None);
+        await new RegisterAccountReceivableCollectionCommandHandler(dbContext).Handle(
+            new RegisterAccountReceivableCollectionCommand("org-001", "env-dev", "AR-001", 35m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ar-collection-715"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var payment = Assert.Single(dbContext.PaymentExecutions);
+        var receipt = Assert.Single(dbContext.CashReceipts);
+        Assert.Equal(PaymentExecutionStatus.Executed, payment.Status);
+        Assert.Equal(CashReceiptStatus.Matched, receipt.Status);
+        Assert.Equal(40m, Assert.Single(payment.Allocations).Amount);
+        Assert.Equal(35m, Assert.Single(receipt.Allocations).Amount);
+        Assert.Equal(60m, dbContext.AccountPayables.Single().OpenAmount);
+        Assert.Equal(45m, dbContext.AccountReceivables.Single().OpenAmount);
+
+        var receivables = await new ListAccountReceivablesQueryHandler(dbContext).Handle(
+            new ListAccountReceivablesQuery("org-001", "env-dev", "open", null, 0, 10, new DateOnly(2026, 7, 1)),
+            CancellationToken.None);
+        Assert.Equal("1-30", Assert.Single(receivables.Items).AgingBucket);
+    }
+
+    [Fact]
+    public async Task Payment_execution_and_cash_receipt_two_stage_lifecycle_updates_aging_only_when_executed_or_matched()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await new CreateAccountPayableCommandHandler(dbContext).Handle(
+            new CreateAccountPayableCommand("org-001", "env-dev", "AP-2STAGE-001", "INV-2STAGE-001", "SUP-001", 100m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
+            CancellationToken.None);
+        await new CreateAccountReceivableCommandHandler(dbContext).Handle(
+            new CreateAccountReceivableCommand("org-001", "env-dev", "AR-2STAGE-001", "DO-2STAGE-001", "CUS-001", 80m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 15), "NET14"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var paymentExecutionNo = await new ApprovePaymentExecutionCommandHandler(dbContext).Handle(
+            new ApprovePaymentExecutionCommand("org-001", "env-dev", "AP-2STAGE-001", 40m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ap-approve-715"),
+            CancellationToken.None);
+        var cashReceiptNo = await new RegisterCashReceiptCommandHandler(dbContext).Handle(
+            new RegisterCashReceiptCommand("org-001", "env-dev", "AR-2STAGE-001", 35m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ar-register-715"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(PaymentExecutionStatus.Approved, dbContext.PaymentExecutions.Single().Status);
+        Assert.Equal(CashReceiptStatus.Registered, dbContext.CashReceipts.Single().Status);
+        Assert.Equal(100m, dbContext.AccountPayables.Single().OpenAmount);
+        Assert.Equal(80m, dbContext.AccountReceivables.Single().OpenAmount);
+        Assert.DoesNotContain(dbContext.JournalVouchers, x => x.VoucherNo == paymentExecutionNo || x.VoucherNo == cashReceiptNo);
+
+        await new ExecutePaymentExecutionCommandHandler(dbContext).Handle(
+            new ExecutePaymentExecutionCommand("org-001", "env-dev", paymentExecutionNo, "u-finance"),
+            CancellationToken.None);
+        await new MatchCashReceiptCommandHandler(dbContext).Handle(
+            new MatchCashReceiptCommand("org-001", "env-dev", cashReceiptNo),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(PaymentExecutionStatus.Executed, dbContext.PaymentExecutions.Single().Status);
+        Assert.Equal(CashReceiptStatus.Matched, dbContext.CashReceipts.Single().Status);
+        Assert.Equal(60m, dbContext.AccountPayables.Single().OpenAmount);
+        Assert.Equal(45m, dbContext.AccountReceivables.Single().OpenAmount);
+        Assert.Contains(dbContext.JournalVouchers, x => x.VoucherNo == paymentExecutionNo);
+        Assert.Contains(dbContext.JournalVouchers, x => x.VoucherNo == cashReceiptNo);
+    }
+
+    [Fact]
+    public async Task Cash_receipt_match_posts_foreign_currency_voucher_with_receivable_exchange_rate()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await new CreateAccountReceivableCommandHandler(dbContext).Handle(
+            new CreateAccountReceivableCommand("org-001", "env-dev", "AR-USD-COLLECT-001", "DO-USD-COLLECT-001", "CUS-001", 80m, "USD", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30", ExchangeRate: 7.1m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var cashReceiptNo = await new RegisterCashReceiptCommandHandler(dbContext).Handle(
+            new RegisterCashReceiptCommand("org-001", "env-dev", "AR-USD-COLLECT-001", 35m, new DateOnly(2026, 6, 20), "BANK-USD", "idem-ar-usd-register-715"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new MatchCashReceiptCommandHandler(dbContext).Handle(
+            new MatchCashReceiptCommand("org-001", "env-dev", cashReceiptNo),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var voucher = dbContext.JournalVouchers.Single(x => x.VoucherNo == cashReceiptNo);
+        Assert.Contains(voucher.Lines, x => x.AccountCode == "BANK-USD" && x.CurrencyCode == "USD" && x.ExchangeRate == 7.1m && x.LocalDebitAmount == 248.5m);
+        Assert.Contains(voucher.Lines, x => x.AccountCode == "1122" && x.CurrencyCode == "USD" && x.ExchangeRate == 7.1m && x.LocalCreditAmount == 248.5m);
+        Assert.Equal(248.5m, dbContext.AccountReceivables.Single().LocalCollectedAmount);
+    }
+
+    [Fact]
+    public async Task Month_end_checklist_and_trial_balance_expose_minimum_close_read_model()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await new CreateAccountPayableCommandHandler(dbContext).Handle(
+            new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "INV-001", "SUP-001", 100m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
+            CancellationToken.None);
+        await new CreateAccountReceivableCommandHandler(dbContext).Handle(
+            new CreateAccountReceivableCommand("org-001", "env-dev", "AR-001", "DO-001", "CUS-001", 80m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
+            CancellationToken.None);
+        await new PostJournalVoucherCommandHandler(dbContext).Handle(
+            new PostJournalVoucherCommand(
+                "org-001",
+                "env-dev",
+                "JV-GRIR-OPEN",
+                new DateOnly(2026, 6, 15),
+                [
+                    new JournalVoucherCommandLine("1401", 25m, 0m, "inventory"),
+                    new JournalVoucherCommandLine(FinanceVoucherFactory.GoodsReceiptInvoiceReceiptAccountCode, 0m, 25m, "open GR/IR"),
+                ]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new ApprovePaymentExecutionCommandHandler(dbContext).Handle(
+            new ApprovePaymentExecutionCommand("org-001", "env-dev", "AP-001", 40m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ap-checklist-715"),
+            CancellationToken.None);
+        await new RegisterCashReceiptCommandHandler(dbContext).Handle(
+            new RegisterCashReceiptCommand("org-001", "env-dev", "AR-001", 35m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ar-checklist-715"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var trialBalance = await new GetTrialBalanceQueryHandler(dbContext).Handle(
+            new GetTrialBalanceQuery("org-001", "env-dev", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)),
+            CancellationToken.None);
+        var checklist = await new GetMonthEndChecklistQueryHandler(dbContext).Handle(
+            new GetMonthEndChecklistQuery("org-001", "env-dev", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)),
+            CancellationToken.None);
+
+        Assert.True(trialBalance.IsBalanced);
+        Assert.Contains(trialBalance.Lines, x => x.AccountCode == "1401" && x.LocalDebitAmount == 25m);
+        Assert.Equal(25m, checklist.GrIrLocalBalance);
+        Assert.Equal(3, checklist.PostedVoucherCount);
+        Assert.Equal(2, checklist.UnpostedDocumentCount);
+        Assert.Equal(0, checklist.UnmatchedSupplierInvoiceCount);
+    }
+
+    [Fact]
+    public async Task Payable_payment_rejects_batch_allocations_that_span_multiple_suppliers()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await new CreateAccountPayableCommandHandler(dbContext).Handle(
+            new CreateAccountPayableCommand("org-001", "env-dev", "AP-SUP-001", "INV-SUP-001", "SUP-001", 100m, "CNY"),
+            CancellationToken.None);
+        await new CreateAccountPayableCommandHandler(dbContext).Handle(
+            new CreateAccountPayableCommand("org-001", "env-dev", "AP-SUP-002", "INV-SUP-002", "SUP-002", 50m, "CNY"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new RegisterAccountPayablePaymentCommandHandler(dbContext).Handle(
+            new RegisterAccountPayablePaymentCommand(
+                "org-001",
+                "env-dev",
+                PayableNo: "",
+                Amount: 150m,
+                PaymentDate: new DateOnly(2026, 6, 20),
+                CashAccountCode: "BANK-001",
+                IdempotencyKey: "idem-ap-cross-supplier-715",
+                Allocations:
+                [
+                    new PayablePaymentAllocationCommandLine("AP-SUP-001", 100m),
+                    new PayablePaymentAllocationCommandLine("AP-SUP-002", 50m),
+                ]),
+            CancellationToken.None));
+
+        Assert.Contains("only settle payables", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

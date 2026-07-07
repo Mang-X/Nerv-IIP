@@ -4358,6 +4358,77 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     memo?: string;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApproveErpPaymentExecutionRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    payableNo?: string;
+    amount?: number;
+    paymentDate?: string;
+    cashAccountCode?: string;
+    idempotencyKey?: string;
+    paymentCurrencyCode?: string | null;
+    paymentExchangeRate?: number;
+    allocations?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPaymentAllocationLine> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPaymentAllocationLine = {
+    payableNo?: string;
+    amount?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleExecuteErpPaymentExecutionRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    executedBy?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterErpCashReceiptRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    receivableNo?: string;
+    amount?: number;
+    collectionDate?: string;
+    cashAccountCode?: string;
+    idempotencyKey?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMatchErpCashReceiptRequest = {
+    organizationId?: string;
+    environmentId?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleOpenErpAccountingPeriodResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOpenErpAccountingPeriodResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOpenErpAccountingPeriodResponse = {
+    accountingPeriodId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOpenErpAccountingPeriodRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    periodCode?: string;
+    startDate?: string;
+    endDate?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCloseErpAccountingPeriodRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    periodCode?: string;
+    closedBy?: string;
+    reason?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReopenErpAccountingPeriodRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    periodCode?: string;
+    reopenedBy?: string;
+    reason?: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpJournalVoucherListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpJournalVoucherListResponse | null;
 };
@@ -4382,6 +4453,45 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     debitAmount?: number;
     creditAmount?: number;
     memo?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpTrialBalanceResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpTrialBalanceResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpTrialBalanceResponse = {
+    periodStartDate?: string;
+    periodEndDate?: string;
+    totalLocalDebitAmount?: number;
+    totalLocalCreditAmount?: number;
+    isBalanced?: boolean;
+    lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpTrialBalanceLine>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpTrialBalanceLine = {
+    accountCode?: string;
+    debitAmount?: number;
+    creditAmount?: number;
+    localDebitAmount?: number;
+    localCreditAmount?: number;
+    localBalanceAmount?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPeriodRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpMonthEndChecklistResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMonthEndChecklistResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMonthEndChecklistResponse = {
+    periodStartDate?: string;
+    periodEndDate?: string;
+    unpostedDocumentCount?: number;
+    unmatchedSupplierInvoiceCount?: number;
+    grIrLocalBalance?: number;
+    postedVoucherCount?: number;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpFinanceSummaryResponse = NetCorePalExtensionsDtoResponseData & {
@@ -13042,6 +13152,263 @@ export type PostBusinessConsoleErpJournalVoucherResponses = {
 };
 
 export type PostBusinessConsoleErpJournalVoucherResponse = PostBusinessConsoleErpJournalVoucherResponses[keyof PostBusinessConsoleErpJournalVoucherResponses];
+
+export type ApproveBusinessConsoleErpPaymentExecutionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApproveErpPaymentExecutionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/erp/finance/payment-executions';
+};
+
+export type ApproveBusinessConsoleErpPaymentExecutionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ApproveBusinessConsoleErpPaymentExecutionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfString;
+};
+
+export type ApproveBusinessConsoleErpPaymentExecutionResponse = ApproveBusinessConsoleErpPaymentExecutionResponses[keyof ApproveBusinessConsoleErpPaymentExecutionResponses];
+
+export type ExecuteBusinessConsoleErpPaymentExecutionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleExecuteErpPaymentExecutionRequest;
+    path: {
+        paymentExecutionNo: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/erp/finance/payment-executions/{paymentExecutionNo}/execute';
+};
+
+export type ExecuteBusinessConsoleErpPaymentExecutionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ExecuteBusinessConsoleErpPaymentExecutionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfString;
+};
+
+export type ExecuteBusinessConsoleErpPaymentExecutionResponse = ExecuteBusinessConsoleErpPaymentExecutionResponses[keyof ExecuteBusinessConsoleErpPaymentExecutionResponses];
+
+export type RegisterBusinessConsoleErpCashReceiptData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterErpCashReceiptRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/erp/finance/cash-receipts';
+};
+
+export type RegisterBusinessConsoleErpCashReceiptErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RegisterBusinessConsoleErpCashReceiptResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfString;
+};
+
+export type RegisterBusinessConsoleErpCashReceiptResponse = RegisterBusinessConsoleErpCashReceiptResponses[keyof RegisterBusinessConsoleErpCashReceiptResponses];
+
+export type MatchBusinessConsoleErpCashReceiptData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMatchErpCashReceiptRequest;
+    path: {
+        cashReceiptNo: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/erp/finance/cash-receipts/{cashReceiptNo}/match';
+};
+
+export type MatchBusinessConsoleErpCashReceiptErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type MatchBusinessConsoleErpCashReceiptResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfString;
+};
+
+export type MatchBusinessConsoleErpCashReceiptResponse = MatchBusinessConsoleErpCashReceiptResponses[keyof MatchBusinessConsoleErpCashReceiptResponses];
+
+export type OpenBusinessConsoleErpAccountingPeriodData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOpenErpAccountingPeriodRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/erp/finance/accounting-periods';
+};
+
+export type OpenBusinessConsoleErpAccountingPeriodErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type OpenBusinessConsoleErpAccountingPeriodResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleOpenErpAccountingPeriodResponse;
+};
+
+export type OpenBusinessConsoleErpAccountingPeriodResponse = OpenBusinessConsoleErpAccountingPeriodResponses[keyof OpenBusinessConsoleErpAccountingPeriodResponses];
+
+export type CloseBusinessConsoleErpAccountingPeriodData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCloseErpAccountingPeriodRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/erp/finance/accounting-periods/close';
+};
+
+export type CloseBusinessConsoleErpAccountingPeriodErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CloseBusinessConsoleErpAccountingPeriodResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfString;
+};
+
+export type CloseBusinessConsoleErpAccountingPeriodResponse = CloseBusinessConsoleErpAccountingPeriodResponses[keyof CloseBusinessConsoleErpAccountingPeriodResponses];
+
+export type ReopenBusinessConsoleErpAccountingPeriodData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReopenErpAccountingPeriodRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/erp/finance/accounting-periods/reopen';
+};
+
+export type ReopenBusinessConsoleErpAccountingPeriodErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReopenBusinessConsoleErpAccountingPeriodResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfString;
+};
+
+export type ReopenBusinessConsoleErpAccountingPeriodResponse = ReopenBusinessConsoleErpAccountingPeriodResponses[keyof ReopenBusinessConsoleErpAccountingPeriodResponses];
+
+export type GetBusinessConsoleErpTrialBalanceData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        periodStartDate: string;
+        periodEndDate: string;
+    };
+    url: '/api/business-console/v1/erp/finance/trial-balance';
+};
+
+export type GetBusinessConsoleErpTrialBalanceErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleErpTrialBalanceResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpTrialBalanceResponse;
+};
+
+export type GetBusinessConsoleErpTrialBalanceResponse = GetBusinessConsoleErpTrialBalanceResponses[keyof GetBusinessConsoleErpTrialBalanceResponses];
+
+export type GetBusinessConsoleErpMonthEndChecklistData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        periodStartDate: string;
+        periodEndDate: string;
+    };
+    url: '/api/business-console/v1/erp/finance/month-end-checklist';
+};
+
+export type GetBusinessConsoleErpMonthEndChecklistErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleErpMonthEndChecklistResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpMonthEndChecklistResponse;
+};
+
+export type GetBusinessConsoleErpMonthEndChecklistResponse = GetBusinessConsoleErpMonthEndChecklistResponses[keyof GetBusinessConsoleErpMonthEndChecklistResponses];
 
 export type GetBusinessConsoleErpFinanceSummaryData = {
     body?: never;

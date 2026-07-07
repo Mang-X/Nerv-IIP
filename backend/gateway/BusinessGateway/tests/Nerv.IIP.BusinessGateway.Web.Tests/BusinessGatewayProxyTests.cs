@@ -1378,6 +1378,73 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Erp_finance_close_read_models_use_internal_service_token_and_pass_period_scope()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var trialBalance = await client.GetAsync("/api/business-console/v1/erp/finance/trial-balance?organizationId=org-001&environmentId=env-dev&periodStartDate=2026-06-01&periodEndDate=2026-06-30");
+
+        Assert.Equal(HttpStatusCode.OK, trialBalance.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal(new BusinessConsoleErpPeriodRequest("org-001", "env-dev", DateOnly.Parse("2026-06-01"), DateOnly.Parse("2026-06-30")), erp.LastFinancePeriodRequest);
+        using var trialBalanceDocument = JsonDocument.Parse(await trialBalance.Content.ReadAsStringAsync());
+        Assert.True(trialBalanceDocument.RootElement.GetProperty("data").GetProperty("isBalanced").GetBoolean());
+        Assert.Equal("1401", trialBalanceDocument.RootElement.GetProperty("data").GetProperty("lines")[0].GetProperty("accountCode").GetString());
+
+        var checklist = await client.GetAsync("/api/business-console/v1/erp/finance/month-end-checklist?organizationId=org-001&environmentId=env-dev&periodStartDate=2026-06-01&periodEndDate=2026-06-30");
+
+        Assert.Equal(HttpStatusCode.OK, checklist.StatusCode);
+        Assert.Equal(new BusinessConsoleErpPeriodRequest("org-001", "env-dev", DateOnly.Parse("2026-06-01"), DateOnly.Parse("2026-06-30")), erp.LastFinancePeriodRequest);
+        using var checklistDocument = JsonDocument.Parse(await checklist.Content.ReadAsStringAsync());
+        Assert.Equal(25m, checklistDocument.RootElement.GetProperty("data").GetProperty("grIrLocalBalance").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Erp_finance_payment_and_receipt_lifecycle_writes_use_internal_service_token()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var approvePayment = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/payment-executions",
+            new BusinessConsoleApproveErpPaymentExecutionRequest("org-001", "env-dev", "AP-001", 40m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ap-approve-001"));
+        var executePayment = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/payment-executions/PE-001/execute",
+            new BusinessConsoleExecuteErpPaymentExecutionRequest("org-001", "env-dev", "BODY-PE", "u-finance"));
+        var registerReceipt = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/cash-receipts",
+            new BusinessConsoleRegisterErpCashReceiptRequest("org-001", "env-dev", "AR-001", 35m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ar-register-001"));
+        var matchReceipt = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/cash-receipts/CR-001/match",
+            new BusinessConsoleMatchErpCashReceiptRequest("org-001", "env-dev", "BODY-CR"));
+
+        Assert.Equal(HttpStatusCode.OK, approvePayment.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, executePayment.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, registerReceipt.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, matchReceipt.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal("PE-001", erp.LastExecutePaymentExecutionRequest?.PaymentExecutionNo);
+        Assert.Equal("CR-001", erp.LastMatchCashReceiptRequest?.CashReceiptNo);
+    }
+
+    [Fact]
     public async Task Erp_create_only_documents_now_have_list_facades_with_server_paging_filters()
     {
         var erp = new RecordingErpClient();
@@ -6285,7 +6352,13 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public BusinessConsoleErpListRequest? LastJournalVoucherListRequest { get; private set; }
 
+    public BusinessConsoleErpPeriodRequest? LastFinancePeriodRequest { get; private set; }
+
     public BusinessConsoleErpSourceDocumentRequest? LastFinanceSourceDocumentRequest { get; private set; }
+
+    public BusinessConsoleExecuteErpPaymentExecutionRequest? LastExecutePaymentExecutionRequest { get; private set; }
+
+    public BusinessConsoleMatchErpCashReceiptRequest? LastMatchCashReceiptRequest { get; private set; }
 
     public Task<BusinessConsoleCreateErpPurchaseRequisitionResponse> CreatePurchaseRequisitionFromSuggestionAsync(
         string internalBearerToken,
@@ -6535,6 +6608,38 @@ internal sealed class RecordingErpClient : IBusinessErpClient
             1));
     }
 
+    public Task<BusinessConsoleErpTrialBalanceResponse> GetTrialBalanceAsync(
+        string internalBearerToken,
+        BusinessConsoleErpPeriodRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastFinancePeriodRequest = request;
+        return Task.FromResult(new BusinessConsoleErpTrialBalanceResponse(
+            request.PeriodStartDate,
+            request.PeriodEndDate,
+            100m,
+            100m,
+            true,
+            [new BusinessConsoleErpTrialBalanceLine("1401", 100m, 0m, 100m, 0m, 100m)]));
+    }
+
+    public Task<BusinessConsoleErpMonthEndChecklistResponse> GetMonthEndChecklistAsync(
+        string internalBearerToken,
+        BusinessConsoleErpPeriodRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastFinancePeriodRequest = request;
+        return Task.FromResult(new BusinessConsoleErpMonthEndChecklistResponse(
+            request.PeriodStartDate,
+            request.PeriodEndDate,
+            0,
+            1,
+            25m,
+            3));
+    }
+
     public Task<BusinessConsoleOpenErpOpportunityResponse> OpenOpportunityAsync(
         string internalBearerToken,
         BusinessConsoleOpenErpOpportunityRequest request,
@@ -6614,6 +6719,71 @@ internal sealed class RecordingErpClient : IBusinessErpClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsolePostErpJournalVoucherResponse("jv-001"));
+    }
+
+    public Task<string> ApprovePaymentExecutionAsync(
+        string internalBearerToken,
+        BusinessConsoleApproveErpPaymentExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult("PE-001");
+    }
+
+    public Task<string> ExecutePaymentExecutionAsync(
+        string internalBearerToken,
+        BusinessConsoleExecuteErpPaymentExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastExecutePaymentExecutionRequest = request;
+        return Task.FromResult("executed");
+    }
+
+    public Task<string> RegisterCashReceiptAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterErpCashReceiptRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult("CR-001");
+    }
+
+    public Task<string> MatchCashReceiptAsync(
+        string internalBearerToken,
+        BusinessConsoleMatchErpCashReceiptRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastMatchCashReceiptRequest = request;
+        return Task.FromResult("matched");
+    }
+
+    public Task<BusinessConsoleOpenErpAccountingPeriodResponse> OpenAccountingPeriodAsync(
+        string internalBearerToken,
+        BusinessConsoleOpenErpAccountingPeriodRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleOpenErpAccountingPeriodResponse("period-001"));
+    }
+
+    public Task<string> CloseAccountingPeriodAsync(
+        string internalBearerToken,
+        BusinessConsoleCloseErpAccountingPeriodRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult("closed");
+    }
+
+    public Task<string> ReopenAccountingPeriodAsync(
+        string internalBearerToken,
+        BusinessConsoleReopenErpAccountingPeriodRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult("reopened");
     }
 
     public Task<BusinessConsoleErpFinanceSummaryResponse> GetFinanceSummaryAsync(

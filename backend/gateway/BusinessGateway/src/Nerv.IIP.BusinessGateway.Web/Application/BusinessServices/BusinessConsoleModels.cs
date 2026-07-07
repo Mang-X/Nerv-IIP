@@ -2246,6 +2246,93 @@ public sealed record BusinessConsoleErpFinanceSummaryResponse(
     decimal CostCandidateAmount,
     int PostedVoucherCount);
 
+public sealed record BusinessConsoleErpPeriodRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateOnly PeriodStartDate,
+    DateOnly PeriodEndDate);
+
+public sealed record BusinessConsoleOpenErpAccountingPeriodRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string PeriodCode,
+    DateOnly StartDate,
+    DateOnly EndDate);
+
+public sealed record BusinessConsoleOpenErpAccountingPeriodResponse(string AccountingPeriodId);
+
+public sealed record BusinessConsoleCloseErpAccountingPeriodRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string PeriodCode,
+    string ClosedBy,
+    string Reason);
+
+public sealed record BusinessConsoleReopenErpAccountingPeriodRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string PeriodCode,
+    string ReopenedBy,
+    string Reason);
+
+public sealed record BusinessConsoleApproveErpPaymentExecutionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string PayableNo,
+    decimal Amount,
+    DateOnly PaymentDate,
+    string CashAccountCode,
+    string IdempotencyKey,
+    string? PaymentCurrencyCode = null,
+    decimal PaymentExchangeRate = 1m,
+    IReadOnlyCollection<BusinessConsoleErpPaymentAllocationLine>? Allocations = null);
+
+public sealed record BusinessConsoleErpPaymentAllocationLine(string PayableNo, decimal Amount);
+
+public sealed record BusinessConsoleExecuteErpPaymentExecutionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string PaymentExecutionNo,
+    string ExecutedBy = "system:business-gateway");
+
+public sealed record BusinessConsoleRegisterErpCashReceiptRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ReceivableNo,
+    decimal Amount,
+    DateOnly CollectionDate,
+    string CashAccountCode,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMatchErpCashReceiptRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string CashReceiptNo);
+
+public sealed record BusinessConsoleErpTrialBalanceResponse(
+    DateOnly PeriodStartDate,
+    DateOnly PeriodEndDate,
+    decimal TotalLocalDebitAmount,
+    decimal TotalLocalCreditAmount,
+    bool IsBalanced,
+    IReadOnlyCollection<BusinessConsoleErpTrialBalanceLine> Lines);
+
+public sealed record BusinessConsoleErpTrialBalanceLine(
+    string AccountCode,
+    decimal DebitAmount,
+    decimal CreditAmount,
+    decimal LocalDebitAmount,
+    decimal LocalCreditAmount,
+    decimal LocalBalanceAmount);
+
+public sealed record BusinessConsoleErpMonthEndChecklistResponse(
+    DateOnly PeriodStartDate,
+    DateOnly PeriodEndDate,
+    int UnpostedDocumentCount,
+    int UnmatchedSupplierInvoiceCount,
+    decimal GrIrLocalBalance,
+    int PostedVoucherCount);
+
 public sealed record BusinessConsoleErpPayableListResponse(
     IReadOnlyCollection<BusinessConsoleErpPayableItem> Items,
     int Total);
