@@ -19,6 +19,7 @@ export { default as Sparkline } from './Sparkline.vue'
 export { default as TrendChart } from './TrendChart.vue'
 export { default as ScreenBarChart } from './ScreenBarChart.vue'
 export { default as ScreenDonut } from './ScreenDonut.vue'
+export { default as ScreenPareto } from './ScreenPareto.vue'
 export { default as TaktGantt } from './TaktGantt.vue'
 
 // Data & status

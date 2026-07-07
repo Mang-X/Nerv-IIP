@@ -73,6 +73,8 @@ interface LayerSeed {
   /** 该层近 30 天件不良率基线 %（trendRamp = 尾部事故酝酿抬升，F01 过程检） */
   trendBase: number
   trendRamp?: boolean
+  /** 该层件不良率管控限 %（分层管控 —— 每层标准不同） */
+  limitPct: number
 }
 
 interface NcrSeed {
@@ -104,7 +106,8 @@ interface QualityProfile {
   pareto: ParetoSeed[]
   /** 帕累托长尾（TOP5 以外的其余缺陷件数，保证 Σ占比 < 100） */
   paretoTail: number
-  /** 近 12h 每小时不良率基线；hotFrom 起为红线拉升段（工厂无事故则为 12 = 无热段） */
+  /** 近 12h **过程检（IPQC）**每小时件不良率基线 —— 管控趋势看事故层，
+   *  不看全厂平均（分层管控限见 layers.limitPct）；hotFrom 起为越限拉升段 */
   hourly: { bases: number[]; hotFrom: number; calm: [number, number]; hot: [number, number] }
   trend30: { rateBase: number; rateAmp: number; rateClamp: [number, number]; ramp: number[]; lotsBase: number }
   /** 让步接收 NCR 之外的在途条件放行单数 */
@@ -116,9 +119,9 @@ const PROFILES: Record<string, QualityProfile> = {
   // 不良率（件）刚越红线、帕累托 TOP1/2 电芯缺陷、超期 NCR 2 条（异常是例外）
   F01: {
     layers: [
-      { key: 'iqc', label: '来料检', code: 'IQC', lotsDone: 60, lotsPassed: 59, lotsDue: 68, carryOver: 2, oldestHours: 6, pieceInspected: 5200, pieceDefects: 38, trendBase: 0.72 },
-      { key: 'ipqc', label: '过程检', code: 'IPQC', lotsDone: 70, lotsPassed: 67, lotsDue: 84, carryOver: 9, oldestHours: 36, backlogTop: { name: '电芯线', count: 15 }, failedTop: { name: '电芯线', count: 3 }, pieceInspected: 7800, pieceDefects: 190, trendBase: 1.85, trendRamp: true },
-      { key: 'fqc', label: '成品检', code: 'FQC', lotsDone: 62, lotsPassed: 61, lotsDue: 70, carryOver: 3, oldestHours: 7, pieceInspected: 3800, pieceDefects: 30, trendBase: 0.76 },
+      { key: 'iqc', label: '来料检', code: 'IQC', lotsDone: 60, lotsPassed: 59, lotsDue: 68, carryOver: 2, oldestHours: 6, pieceInspected: 5200, pieceDefects: 38, trendBase: 0.72, limitPct: 1.0 },
+      { key: 'ipqc', label: '过程检', code: 'IPQC', lotsDone: 70, lotsPassed: 67, lotsDue: 84, carryOver: 9, oldestHours: 36, backlogTop: { name: '电芯线', count: 15 }, failedTop: { name: '电芯线', count: 3 }, pieceInspected: 7800, pieceDefects: 190, trendBase: 1.85, trendRamp: true, limitPct: 2.2 },
+      { key: 'fqc', label: '成品检', code: 'FQC', lotsDone: 62, lotsPassed: 61, lotsDue: 70, carryOver: 3, oldestHours: 7, pieceInspected: 3800, pieceDefects: 30, trendBase: 0.76, limitPct: 1.0 },
     ],
     ncrs: [
       // 龄期最长 + 超期：电芯线当前工单（与产线屏 WO-1951 / LFP-280Ah 电芯同源）
@@ -158,9 +161,9 @@ const PROFILES: Record<string, QualityProfile> = {
   // F02 华南制造中心：无事故，全绿基线（异常是例外的对照组）
   F02: {
     layers: [
-      { key: 'iqc', label: '来料检', code: 'IQC', lotsDone: 24, lotsPassed: 24, lotsDue: 26, carryOver: 0, oldestHours: 4, pieceInspected: 2600, pieceDefects: 12, trendBase: 0.44 },
-      { key: 'ipqc', label: '过程检', code: 'IPQC', lotsDone: 30, lotsPassed: 29, lotsDue: 33, carryOver: 1, oldestHours: 9, failedTop: { name: '注塑一线', count: 1 }, pieceInspected: 3400, pieceDefects: 26, trendBase: 0.72 },
-      { key: 'fqc', label: '成品检', code: 'FQC', lotsDone: 22, lotsPassed: 22, lotsDue: 24, carryOver: 0, oldestHours: 3, pieceInspected: 1800, pieceDefects: 9, trendBase: 0.48 },
+      { key: 'iqc', label: '来料检', code: 'IQC', lotsDone: 24, lotsPassed: 24, lotsDue: 26, carryOver: 0, oldestHours: 4, pieceInspected: 2600, pieceDefects: 12, trendBase: 0.44, limitPct: 0.8 },
+      { key: 'ipqc', label: '过程检', code: 'IPQC', lotsDone: 30, lotsPassed: 29, lotsDue: 33, carryOver: 1, oldestHours: 9, failedTop: { name: '注塑一线', count: 1 }, pieceInspected: 3400, pieceDefects: 26, trendBase: 0.72, limitPct: 1.2 },
+      { key: 'fqc', label: '成品检', code: 'FQC', lotsDone: 22, lotsPassed: 22, lotsDue: 24, carryOver: 0, oldestHours: 3, pieceInspected: 1800, pieceDefects: 9, trendBase: 0.48, limitPct: 0.8 },
     ],
     ncrs: [
       { n: 55, lineId: 'LN-INJ-1', defect: '缩痕超标', qty: 42, ageHours: 30, status: 'disposing', disposition: '报废' },
@@ -176,7 +179,7 @@ const PROFILES: Record<string, QualityProfile> = {
       { defect: '端面平面度超差', lineId: 'LN-MACH-1', base: 2, amp: 0, lo: 2, hi: 2 },
     ],
     paretoTail: 9,
-    hourly: { bases: [0.55, 0.6, 0.5, 0.62, 0.58, 0.66, 0.6, 0.55, 0.64, 0.6, 0.58, 0.62], hotFrom: 12, calm: [0.4, 0.85], hot: [0.4, 0.85] },
+    hourly: { bases: [0.68, 0.74, 0.62, 0.76, 0.7, 0.8, 0.72, 0.66, 0.78, 0.72, 0.7, 0.75], hotFrom: 12, calm: [0.55, 0.98], hot: [0.55, 0.98] },
     trend30: { rateBase: 0.6, rateAmp: 0.16, rateClamp: [0.42, 0.82], ramp: [], lotsBase: 66 },
     extraRelease: 1,
   },

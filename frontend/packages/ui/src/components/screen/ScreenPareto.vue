@@ -1,19 +1,24 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ParetoItem } from '@/data/contracts/quality'
 
 /**
- * 缺陷帕累托 TOP5 —— 本地轻组件（packages/ui 原版零改动）。
- * 名称 + 发丝级条 + 件数/占比 + **累计占比 Σ**（没有累计线不算真帕累托：
- * 80/20 集中度要能直接读出）；条长按 TOP1 归一，TOP1 红 / TOP2 橙强调、
- * 其余青色渐弱；填充为语义色**渐隐**（左实右消，与数字强调线同源语言），
- * 不发光、不描边。底部汇总行 = TOP 合计 vs 长尾。抖动更新时条宽缓动。
+ * Screen — pareto. 帕累托 TOP-N（缺陷/停机原因/不良代码等"少数关键项"分析的
+ * 正确形态）：名称 + 发丝级条 + 数量/占比 + **累计占比 Σ**（没有累计不算真帕累托，
+ * 80/20 集中度要能直接读出）。条长按 TOP1 归一便于对比；轨道即 100% 全量口径，
+ * 竖刻度标累计位置；TOP1 红 / TOP2 橙强调、其余青色渐弱；填充语义色**渐隐**
+ * （左实右消，与数字强调线同源语言），不发光、不描边。底部汇总 = TOP 合计 vs 长尾。
  */
-const props = defineProps<{
-  items: ParetoItem[]
-  /** 全部缺陷件数（算长尾；不传则以 TOP 合计为分母，无长尾行） */
-  total?: number
-}>()
+const props = withDefaults(
+  defineProps<{
+    /** 降序项：label 主名、sub 次要来源（如产线名）、count 数量、pct 占全量 % */
+    items: { label: string; sub?: string; count: number; pct: number }[]
+    /** 全量总数（算长尾行；不传则无长尾行） */
+    total?: number
+    /** 数量单位（默认 件） */
+    unit?: string
+  }>(),
+  { total: undefined, unit: '件' },
+)
 
 const max = computed(() => Math.max(1, ...props.items.map((i) => i.count)))
 /** 逐行累计占比（80/20 集中度直读） */
@@ -35,56 +40,55 @@ function tone(i: number): 't1' | 't2' | 't3' {
 </script>
 
 <template>
-  <div class="dp">
-    <div v-for="(it, i) in items" :key="it.defect" class="dp-item">
-      <div class="dp-head">
-        <span class="dp-rank" :class="tone(i)">{{ String(i + 1).padStart(2, '0') }}</span>
-        <b class="dp-name">{{ it.defect }}</b>
-        <span class="dp-line">{{ it.lineName }}</span>
-        <span class="dp-count">{{ it.count }} 件</span>
-        <b class="dp-pct" :class="tone(i)">{{ it.pct.toFixed(1) }}<small>%</small></b>
+  <div class="sb-pa">
+    <div v-for="(it, i) in items" :key="it.label" class="sb-pa-item">
+      <div class="sb-pa-head">
+        <span class="sb-pa-rank" :class="tone(i)">{{ String(i + 1).padStart(2, '0') }}</span>
+        <b class="sb-pa-name">{{ it.label }}</b>
+        <span class="sb-pa-sub">{{ it.sub }}</span>
+        <span class="sb-pa-count">{{ it.count }} {{ unit }}</span>
+        <b class="sb-pa-pct" :class="tone(i)">{{ it.pct.toFixed(1) }}<small>%</small></b>
       </div>
-      <div class="dp-track">
-        <i class="dp-fill" :class="tone(i)" :style="{ width: `${(it.count / max) * 100}%` }" />
-        <!-- 累计占比刻度：整条轨道 = 100% 全量口径 -->
-        <i class="dp-cum-tick" :style="{ left: `${Math.min(100, cums[i])}%` }" aria-hidden="true" />
+      <div class="sb-pa-track">
+        <i class="sb-pa-fill" :class="tone(i)" :style="{ width: `${(it.count / max) * 100}%` }" />
+        <i class="sb-pa-cum-tick" :style="{ left: `${Math.min(100, cums[i])}%` }" aria-hidden="true" />
       </div>
-      <div class="dp-cum">Σ {{ cums[i].toFixed(1) }}%</div>
+      <div class="sb-pa-cum">Σ {{ cums[i].toFixed(1) }}%</div>
     </div>
-    <div class="dp-sum">
+    <div class="sb-pa-sum">
       <span>TOP{{ items.length }} 合计 <b>{{ topSum.toFixed(1) }}%</b></span>
-      <span v-if="total" class="dp-tail">长尾 {{ tailCount }} 件 · {{ (100 - topSum).toFixed(1) }}%</span>
+      <span v-if="total" class="sb-pa-tail">长尾 {{ tailCount }} {{ unit }} · {{ (100 - topSum).toFixed(1) }}%</span>
     </div>
   </div>
 </template>
 
 <style scoped>
-.dp {
+.sb-pa {
   display: flex;
   flex-direction: column;
   gap: 8px;
   font-variant-numeric: tabular-nums;
 }
-.dp-head {
+.sb-pa-head {
   display: flex;
   align-items: baseline;
   gap: 9px;
   min-width: 0;
   margin-bottom: 6px;
 }
-.dp-rank {
+.sb-pa-rank {
   flex: none;
   font-family: ui-monospace, monospace;
   font-size: 11px;
   color: var(--sb-faint);
 }
-.dp-rank.t1 {
+.sb-pa-rank.t1 {
   color: var(--sb-red);
 }
-.dp-rank.t2 {
+.sb-pa-rank.t2 {
   color: var(--sb-amber);
 }
-.dp-name {
+.sb-pa-name {
   flex: none;
   font-size: 13.5px;
   font-weight: 600;
@@ -94,7 +98,7 @@ function tone(i: number): 't1' | 't2' | 't3' {
   text-overflow: ellipsis;
   min-width: 0;
 }
-.dp-line {
+.sb-pa-sub {
   flex: 1;
   min-width: 0;
   font-size: 11.5px;
@@ -103,12 +107,12 @@ function tone(i: number): 't1' | 't2' | 't3' {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.dp-count {
+.sb-pa-count {
   flex: none;
   font-size: 12px;
   color: var(--sb-muted);
 }
-.dp-pct {
+.sb-pa-pct {
   flex: none;
   min-width: 52px;
   text-align: right;
@@ -117,29 +121,44 @@ function tone(i: number): 't1' | 't2' | 't3' {
   color: var(--sb-text-2);
   line-height: 1;
 }
-.dp-pct small {
+.sb-pa-pct small {
   font-size: 11px;
   font-weight: 600;
   margin-left: 1px;
 }
-.dp-pct.t1 {
+.sb-pa-pct.t1 {
   color: var(--sb-red);
 }
-.dp-pct.t2 {
+.sb-pa-pct.t2 {
   color: var(--sb-amber);
 }
 
 /* 发丝轨道 + 渐隐填充（左实右消；静态元素不发光）。
    轨道即 100% 全量口径 —— 填充是该项占比（TOP1 归一），
    竖刻度是**累计占比**位置（帕累托的 80/20 读法） */
-.dp-track {
+.sb-pa-track {
   position: relative;
   height: 5px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.045);
   box-shadow: inset 0 0 0 1px var(--sb-line);
 }
-.dp-cum-tick {
+.sb-pa-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s var(--sb-ease-emphasized);
+}
+.sb-pa-fill.t1 {
+  background: linear-gradient(90deg, rgba(239, 90, 99, 0.9), rgba(239, 90, 99, 0.22));
+}
+.sb-pa-fill.t2 {
+  background: linear-gradient(90deg, rgba(242, 193, 78, 0.85), rgba(242, 193, 78, 0.18));
+}
+.sb-pa-fill.t3 {
+  background: linear-gradient(90deg, rgba(74, 166, 238, 0.62), rgba(74, 166, 238, 0.1));
+}
+.sb-pa-cum-tick {
   position: absolute;
   top: -3px;
   bottom: -3px;
@@ -148,14 +167,14 @@ function tone(i: number): 't1' | 't2' | 't3' {
   background: rgba(180, 210, 250, 0.55);
   transition: left 0.6s var(--sb-ease-emphasized);
 }
-.dp-cum {
+.sb-pa-cum {
   margin-top: 4px;
   font-size: 10.5px;
   color: var(--sb-faint);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-.dp-sum {
+.sb-pa-sum {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -166,31 +185,17 @@ function tone(i: number): 't1' | 't2' | 't3' {
   color: var(--sb-muted);
   font-variant-numeric: tabular-nums;
 }
-.dp-sum b {
+.sb-pa-sum b {
   color: var(--sb-text);
   font-weight: 700;
 }
-.dp-tail {
+.sb-pa-tail {
   color: var(--sb-faint);
-}
-.dp-fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  transition: width 0.6s var(--sb-ease-emphasized);
-}
-.dp-fill.t1 {
-  background: linear-gradient(90deg, rgba(239, 90, 99, 0.9), rgba(239, 90, 99, 0.22));
-}
-.dp-fill.t2 {
-  background: linear-gradient(90deg, rgba(242, 193, 78, 0.85), rgba(242, 193, 78, 0.18));
-}
-.dp-fill.t3 {
-  background: linear-gradient(90deg, rgba(74, 166, 238, 0.62), rgba(74, 166, 238, 0.1));
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dp-fill {
+  .sb-pa-fill,
+  .sb-pa-cum-tick {
     transition: none;
   }
 }

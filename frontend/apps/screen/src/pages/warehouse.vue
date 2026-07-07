@@ -277,6 +277,7 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
               <ScreenBarChart
                 :series="[{ label: '入库行', color: '#4aa6ee', data: board.inbound.hourly }]"
                 :hover-labels="board.inbound.hourLabels"
+                autoplay
               />
             </div>
             <div class="wb-flow-x">
@@ -304,6 +305,8 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
               <ScreenBarChart
                 :series="[{ label: '出库行', color: '#8b9be6', data: board.outbound.hourly }]"
                 :hover-labels="board.outbound.hourLabels"
+                autoplay
+                :autoplay-ms="2800"
               />
             </div>
             <div class="wb-flow-x">
@@ -1070,7 +1073,11 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
 }
 .wa-rows {
   flex: 1;
-  min-height: 96px;
+  min-height: 60px;
+}
+/* 环形区图例更紧凑（右列窄面板预算） */
+.wa-donut :deep(.sb-dn-legend) {
+  gap: 4px;
 }
 .wa-row {
   display: flex;

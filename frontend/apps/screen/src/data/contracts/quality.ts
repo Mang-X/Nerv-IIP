@@ -6,7 +6,9 @@
 
 /** NCR 处置 SLA（小时）：超过即超期红标（演示阈值；SLA 管理待 #570） */
 export const NCR_SLA_HOURS = 48
-/** 不良率红线阈值 %（演示值；阈值管理待 #570） */
+/** 全厂件不良率参考线 %（仅汇总参考 —— 管控红线是**分层管控限**，见
+ *  InspectionLayer.limitPct：每种产品/工序标准不同，"全厂一条红线"不成立；
+ *  SKU 级管控限待 #570 阈值管理） */
 export const DEFECT_RED_LINE_PCT = 1.5
 
 /** NCR 处置状态机：待评审 → 处置中（返工/让步接收/报废/退供）→ 待验证（验证过 = 关闭出板） */
@@ -88,6 +90,9 @@ export interface InspectionLayer {
   /** 近 30 天该层件不良率 %（末点 = 当日 pieceDefectPct 勾稽）——
    *  全厂一条总曲线掩盖分层差异，来料/过程/成品各自的趋势才是真实读法 🟠 */
   trend30: number[]
+  /** 该层件不良率管控限 %（分层管控 —— 来料/过程/成品标准各异，
+   *  不存在全厂统一红线；SKU 级管控限待 #570）🟠 */
+  limitPct: number
 }
 
 export interface QualityKpis {

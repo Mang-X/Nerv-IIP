@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ScreenPanel, ScreenScrollArea, Sparkline, TrendChart } from '@nerv-iip/ui'
+import { ScreenPanel, ScreenPareto, ScreenScrollArea, Sparkline, TrendChart } from '@nerv-iip/ui'
 import { ClipboardList, FileCheck2, FileWarning, Scale } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
-import DefectPareto from '@/components/quality/DefectPareto.vue'
 import { useBackLink } from '@/composables/useBackLink'
 import { NCR_SLA_HOURS, type QualityBoard } from '@/data/contracts/quality'
 import { fetchQualityBoard } from '@/data/fetchers/quality'
@@ -39,9 +38,10 @@ function fmtAge(h: number): string {
   return h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${h}h`
 }
 
-const overRedLine = computed(
-  () => !!board.value && board.value.kpis.defectRatePct > board.value.kpis.redLinePct,
-)
+// 管控口径是**分层管控限**（每层/每类产品标准不同，全厂一条红线不成立）——
+// 焦点层 = 过程检 IPQC（事故所在、管控意义最强）；全厂率仅作汇总参考
+const ipqc = computed(() => board.value?.layers.find((l) => l.key === 'ipqc'))
+const overLimit = computed(() => !!ipqc.value && ipqc.value.pieceDefectPct > ipqc.value.limitPct)
 
 /** NCR 状态机分布（看板底部收口行） */
 const statusCount = computed(() => {
@@ -68,29 +68,32 @@ const TREND_RANGES = [
   { label: '近 30 天', value: '30d' },
 ]
 // 分层曲线用字面量色 —— --sb-indigo 在本页被局部重映射成红线色，变量会被污染
-const LAYER_COLORS: Record<string, string> = { iqc: '#5fbf7a', ipqc: '#f0ad4e', fqc: '#8b9be6' }
+const LAYER_COLORS: Record<string, string> = { iqc: '#5fbf7a', fqc: '#8b9be6' }
 const trendData = computed(() => {
   const b = board.value
-  if (!b) return null
-  const red = b.kpis.redLinePct
+  const focus = ipqc.value
+  if (!b || !focus) return null
+  // 红线 = 过程检管控限（分层管控：每层/每类产品标准不同，不存在全厂统一红线）
+  const limit = focus.limitPct
   if (trendRange.value === '30d') {
     return {
-      actual: b.trend30.ratePct,
-      plan: b.trend30.ratePct.map(() => red),
+      actual: focus.trend30,
+      plan: focus.trend30.map(() => limit),
       // 悬停带当日判定批次 —— 周日检验量低谷在这里读得到
       hoverLabels: b.trend30.labels.map((l, i) => `${l} · 判 ${nf.format(b.trend30.lots[i])} 批`),
       xLabels: b.trend30.labels.filter((_, i) => i % 5 === 0),
-      // 分层对比：全厂一条总曲线掩盖结构 —— 30 天视图叠加来料/过程/成品三层
-      series: b.layers.map((l) => ({
-        label: l.code,
-        color: LAYER_COLORS[l.key] ?? '#8b9be6',
-        data: l.trend30,
-      })),
+      // 对比序列：全厂汇总（参考）+ 来料/成品层
+      series: [
+        { label: '全厂', color: 'rgba(200, 214, 235, 0.65)', data: b.trend30.ratePct },
+        ...b.layers
+          .filter((l) => l.key !== 'ipqc')
+          .map((l) => ({ label: l.code, color: LAYER_COLORS[l.key] ?? '#8b9be6', data: l.trend30 })),
+      ],
     }
   }
   return {
     actual: b.trend12h.ratePct,
-    plan: b.trend12h.ratePct.map(() => red),
+    plan: b.trend12h.ratePct.map(() => limit),
     hoverLabels: b.trend12h.labels,
     xLabels: b.trend12h.labels.filter((_, i) => i % 2 === 0),
     // 12h 无分层时序读面（诚实缺口，不造假分层小时数据）
@@ -136,17 +139,18 @@ const trendPin = computed(() => {
             </p>
           </div>
 
-          <div class="qb-hero">
-            <dt class="qb-hero-t">整体不良率（件）</dt>
-            <div class="qb-hero-v" :class="overRedLine ? 'bad' : 'ok'">
-              <span class="qb-num">{{ board.kpis.defectRatePct.toFixed(2) }}<small>%</small></span>
+          <div v-if="ipqc" class="qb-hero">
+            <dt class="qb-hero-t">过程检不良率（IPQC · 件）</dt>
+            <div class="qb-hero-v" :class="overLimit ? 'bad' : 'ok'">
+              <span class="qb-num">{{ ipqc.pieceDefectPct.toFixed(2) }}<small>%</small></span>
               <i class="qb-score-line" aria-hidden="true" />
             </div>
             <p class="qb-hero-sub">
-              红线 {{ board.kpis.redLinePct.toFixed(2) }}%
-              <b v-if="overRedLine" class="qb-over">
-                越线 +{{ (board.kpis.defectRatePct - board.kpis.redLinePct).toFixed(2) }}pp
+              管控限 {{ ipqc.limitPct.toFixed(2) }}%
+              <b v-if="overLimit" class="qb-over">
+                越限 +{{ (ipqc.pieceDefectPct - ipqc.limitPct).toFixed(2) }}pp
               </b>
+              · 全厂 {{ board.kpis.defectRatePct.toFixed(2) }}%
             </p>
           </div>
 
@@ -233,8 +237,8 @@ const trendPin = computed(() => {
             :y-labels="trendY"
             :tooltip="trendPin"
             :series="trendData.series"
-            actual-label="全厂不良率"
-            plan-label="红线"
+            actual-label="过程检"
+            plan-label="管控限"
             :ranges="TREND_RANGES"
           />
 
@@ -251,7 +255,11 @@ const trendPin = computed(() => {
                 </div>
                 <p class="qt-sub">合格 <b>{{ l.lotsPassed }}</b> / {{ l.lotsDone }} 批</p>
                 <p class="qt-sub2">
-                  件不良 {{ l.pieceDefectPct.toFixed(2) }}%
+                  件不良
+                  <b class="qt-def" :class="{ bad: l.pieceDefectPct > l.limitPct }">
+                    {{ l.pieceDefectPct.toFixed(2) }}%
+                  </b>
+                  <span class="qt-limit">/ 限 {{ l.limitPct.toFixed(1) }}%</span>
                   <b v-if="l.failedTop && l.lotsDone - l.lotsPassed > 0" class="qt-fail">
                     {{ l.failedTop.name }} {{ l.failedTop.count }} 批未过
                   </b>
@@ -277,7 +285,10 @@ const trendPin = computed(() => {
             <template #extra>
               <span class="qb-cap">近 7 天 · {{ nf.format(board.paretoTotal) }} 件</span>
             </template>
-            <DefectPareto :items="board.pareto" :total="board.paretoTotal" />
+            <ScreenPareto
+              :items="board.pareto.map((p) => ({ label: p.defect, sub: p.lineName, count: p.count, pct: p.pct }))"
+              :total="board.paretoTotal"
+            />
           </ScreenPanel>
 
           <ScreenPanel title="检验任务积压" class="qb-backlog">
@@ -741,6 +752,16 @@ const trendPin = computed(() => {
 .qt-spark-cap {
   margin: 4px 0 0;
   font-size: 11px;
+  color: var(--sb-faint);
+}
+.qt-def {
+  font-weight: 700;
+  color: var(--sb-text-2);
+}
+.qt-def.bad {
+  color: var(--sb-red);
+}
+.qt-limit {
   color: var(--sb-faint);
 }
 /* 未过批次来源：独立一行，避免与件不良率挤压截断 */

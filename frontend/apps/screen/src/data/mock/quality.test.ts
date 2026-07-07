@@ -60,12 +60,13 @@ describe('buildQualityBoard（F01 · 勾稽自洽）', () => {
     for (const p of b.pareto) expect(p.pct).toBe(round1((p.count / b.paretoTotal) * 100))
   })
 
-  it('趋势：12h 尾段越红线（今晨事故）、此前在线下；30 天末点 = 当日 KPI、周日检验量低谷', () => {
+  it('趋势（过程检口径）：12h 尾段越过程管控限（今晨事故）、此前在限内；30 天末点 = 当日 KPI、周日检验量低谷', () => {
+    const ipqcLimit = b.layers.find((l) => l.key === 'ipqc')!.limitPct
     expect(b.trend12h.ratePct).toHaveLength(12)
     expect(b.trend12h.labels).toHaveLength(12)
     for (const l of b.trend12h.labels) expect(l).toMatch(/^\d{2}:00$/)
-    expect(b.trend12h.ratePct.at(-1)!).toBeGreaterThan(DEFECT_RED_LINE_PCT)
-    for (const v of b.trend12h.ratePct.slice(0, 9)) expect(v).toBeLessThan(DEFECT_RED_LINE_PCT)
+    expect(b.trend12h.ratePct.at(-1)!).toBeGreaterThan(ipqcLimit)
+    for (const v of b.trend12h.ratePct.slice(0, 9)) expect(v).toBeLessThan(ipqcLimit)
 
     expect(b.trend30.ratePct).toHaveLength(30)
     expect(b.trend30.lots).toHaveLength(30)
@@ -139,24 +140,34 @@ describe('buildQualityBoard（与产线屏同一个故事：电芯线卷绕机�
     expect(ipqc.failedTop?.count).toBe(ipqc.lotsDone - ipqc.lotsPassed)
   })
 
-  it('异常是例外：超期 ≤ 3、整体批合格率 ≥ 97、来料/成品层健康、不良率仅小幅越线', () => {
+  it('异常是例外 + 分层管控限：仅过程检小幅越限（事故层），来料/成品在各自限内', () => {
     expect(b.kpis.overdueNcr).toBeLessThanOrEqual(3)
     expect(b.kpis.batchPassRate).toBeGreaterThanOrEqual(97)
-    expect(b.layers.find((l) => l.key === 'iqc')!.passRate).toBeGreaterThanOrEqual(98)
-    expect(b.layers.find((l) => l.key === 'fqc')!.passRate).toBeGreaterThanOrEqual(98)
+    for (const l of b.layers) expect(l.limitPct).toBeGreaterThan(0)
+    const iqc = b.layers.find((l) => l.key === 'iqc')!
+    const ipqcL = b.layers.find((l) => l.key === 'ipqc')!
+    const fqc = b.layers.find((l) => l.key === 'fqc')!
+    expect(iqc.passRate).toBeGreaterThanOrEqual(98)
+    expect(fqc.passRate).toBeGreaterThanOrEqual(98)
+    // 管控口径：每层对照自己的管控限（全厂一条红线不成立）
+    expect(iqc.pieceDefectPct).toBeLessThan(iqc.limitPct)
+    expect(fqc.pieceDefectPct).toBeLessThan(fqc.limitPct)
+    expect(ipqcL.pieceDefectPct).toBeGreaterThan(ipqcL.limitPct)
+    expect(ipqcL.pieceDefectPct).toBeLessThan(ipqcL.limitPct + 0.5)
+    // 全厂汇总仍作参考口径保留
     expect(b.kpis.defectRatePct).toBeGreaterThan(DEFECT_RED_LINE_PCT)
-    expect(b.kpis.defectRatePct).toBeLessThan(DEFECT_RED_LINE_PCT + 0.5)
   })
 })
 
 describe('buildQualityBoard（对照与 scope）', () => {
-  it('F02 无事故基线：零超期、不良率在红线下、批合格率 ≥ 98（异常是例外的对照组）', () => {
+  it('F02 无事故基线：零超期、各层均在管控限内、批合格率 ≥ 98（异常是例外的对照组）', () => {
     const b = buildQualityBoard('F02')
     expect(b.kpis.overdueNcr).toBe(0)
-    expect(b.kpis.defectRatePct).toBeLessThan(DEFECT_RED_LINE_PCT)
+    for (const l of b.layers) expect(l.pieceDefectPct).toBeLessThan(l.limitPct)
     expect(b.kpis.batchPassRate).toBeGreaterThanOrEqual(98)
     expect(b.kpis.openNcr).toBeGreaterThanOrEqual(3)
-    for (const v of b.trend12h.ratePct) expect(v).toBeLessThan(DEFECT_RED_LINE_PCT)
+    const f02Limit = b.layers.find((l) => l.key === 'ipqc')!.limitPct
+    for (const v of b.trend12h.ratePct) expect(v).toBeLessThan(f02Limit)
     // KPI 仍与行/层数据勾稽
     expect(b.kpis.openNcr).toBe(b.ncrs.length)
     expect(b.kpis.inspectionBacklog).toBe(b.layers.reduce((n, l) => n + l.backlog, 0))
