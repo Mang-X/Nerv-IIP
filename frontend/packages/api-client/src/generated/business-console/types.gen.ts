@@ -4975,6 +4975,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleB
     sourceDocumentId?: string;
     result?: string;
     rejectionReason?: string | null;
+    downstreamProcessingStatus?: string;
     scannedAtUtc?: string;
 };
 

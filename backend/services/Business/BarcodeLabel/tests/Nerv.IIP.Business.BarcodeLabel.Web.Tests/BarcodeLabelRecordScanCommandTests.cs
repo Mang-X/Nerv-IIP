@@ -30,7 +30,44 @@ public sealed class BarcodeLabelRecordScanCommandTests
     }
 
     [Fact]
-    public async Task Record_scan_rejects_duplicate_serialized_epc_across_idempotency_keys()
+    public async Task Record_scan_natural_key_replay_with_new_idempotency_key_returns_existing_scan_without_duplicate_fact()
+    {
+        await using var dbContext = CreateDbContext();
+        var handler = new RecordScanCommandHandler(dbContext);
+
+        var firstId = await handler.Handle(NewInventoryScanCommand("idem-scan-gs1-001"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var secondId = await handler.Handle(NewInventoryScanCommand("idem-scan-gs1-002"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(firstId, secondId);
+        Assert.Equal(1, await dbContext.ScanRecords.CountAsync());
+        Assert.Equal(1, await dbContext.EpcisEvents.CountAsync());
+    }
+
+    [Fact]
+    public void Scan_record_marks_inventory_scan_as_downstream_requested_and_observation_scan_as_observed()
+    {
+        var inventoryScan = NewInventoryScan("idem-scan-gs1-001");
+        var receivingScan = ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "BC001",
+            "wms.receiving",
+            "ASN-001",
+            "idem-observed-001",
+            "accepted",
+            null);
+
+        Assert.Equal("requested", inventoryScan.DownstreamProcessingStatus);
+        Assert.Equal("observed", receivingScan.DownstreamProcessingStatus);
+    }
+
+    [Fact]
+    public async Task Record_scan_rejects_duplicate_serialized_epc_across_source_documents()
     {
         await using var dbContext = CreateDbContext();
         var handler = new RecordScanCommandHandler(dbContext);
@@ -40,7 +77,7 @@ public sealed class BarcodeLabelRecordScanCommandTests
         dbContext.ChangeTracker.Clear();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            handler.Handle(NewInventoryScanCommand("idem-scan-gs1-002"), CancellationToken.None));
+            handler.Handle(NewInventoryScanCommand("idem-scan-gs1-002", sourceDocumentId: "ASN-002"), CancellationToken.None));
 
         Assert.Contains("serialized barcode", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -131,7 +168,7 @@ public sealed class BarcodeLabelRecordScanCommandTests
         Assert.Contains("NOT NULL", exception.InnerException?.Message ?? exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static RecordScanCommand NewInventoryScanCommand(string idempotencyKey)
+    private static RecordScanCommand NewInventoryScanCommand(string idempotencyKey, string sourceDocumentId = "ASN-001")
     {
         return new RecordScanCommand(
             "org-001",
@@ -139,7 +176,7 @@ public sealed class BarcodeLabelRecordScanCommandTests
             "PDA-01",
             "(01)09506000134352(10)LOT-A(21)SN-0001(30)2",
             "inventory.receipt",
-            "ASN-001",
+            sourceDocumentId,
             idempotencyKey,
             "accepted",
             null,
