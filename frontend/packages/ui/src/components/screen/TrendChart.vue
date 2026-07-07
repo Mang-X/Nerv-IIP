@@ -170,16 +170,15 @@ const uid = Math.random().toString(36).slice(2, 8)
 
 <template>
   <ScreenPanel :title="title" class="sb-tc">
-    <template #title-extra>
+    <!-- 图例 + 范围切换独立一行（标题下方）：标题行不再挤，tabs 永远完整可见 -->
+    <div v-if="(series?.length ?? 0) > 0 || ranges?.length || tabs" class="sb-tc-bar">
       <em class="sb-tc-key">
         — {{ actualLabel }}　--- {{ planLabel }}
         <span v-for="s in series ?? []" :key="s.label" class="sb-tc-key-s">
           <i :style="{ background: s.color }" aria-hidden="true" />{{ s.label }}
         </span>
       </em>
-    </template>
-    <template v-if="ranges?.length" #extra>
-      <div class="sb-tc-tabs">
+      <div v-if="ranges?.length" class="sb-tc-tabs">
         <button
           v-for="r in ranges"
           :key="String(r.value)"
@@ -191,12 +190,11 @@ const uid = Math.random().toString(36).slice(2, 8)
           {{ r.label }}
         </button>
       </div>
-    </template>
-    <template v-else-if="tabs" #extra>
-      <div class="sb-tc-tabs">
+      <div v-else-if="tabs" class="sb-tc-tabs">
         <span class="on">今日</span><span>近7天</span><span>近30天</span>
       </div>
-    </template>
+    </div>
+    <em v-else class="sb-tc-key sb-tc-key-solo">— {{ actualLabel }}　--- {{ planLabel }}</em>
 
     <div class="sb-tc-body">
       <div class="sb-tc-y">
@@ -288,17 +286,28 @@ const uid = Math.random().toString(36).slice(2, 8)
   flex-direction: column;
   font-variant-numeric: tabular-nums;
 }
-/* 图例可收缩（多序列时不许把右侧 tabs 挤出面板头）：单行截断，真值在悬停卡 */
+/* 图例 + 范围切换工具行（标题下方独立一行）：图例左、tabs 右；
+   图例可收缩截断（真值在悬停卡），tabs 永远完整 */
+.sb-tc-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: -4px 0 9px;
+}
 .sb-tc-key {
+  flex: 1;
   font-size: 12px;
   color: var(--sb-muted);
   font-style: normal;
   font-weight: 400;
-  margin-left: 12px;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.sb-tc-key-solo {
+  display: block;
+  margin: -4px 0 9px;
 }
 /* tabs 永不收缩折行（图例才是可收缩方） */
 .sb-tc-tabs {
