@@ -45,6 +45,9 @@ export type NervIipContractsOpsOperationAttemptSummary = {
     leaseDurationSeconds?: number;
     maxAttempts?: number;
     abandonReason?: string | null;
+    output?: {
+        [key: string]: string;
+    } | null;
 };
 
 export type NervIipContractsOpsAuditRecordSummary = {

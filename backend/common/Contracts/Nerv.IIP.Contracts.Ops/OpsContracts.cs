@@ -54,7 +54,8 @@ public sealed record OperationAttemptSummary(
     int AttemptNo,
     int LeaseDurationSeconds,
     int MaxAttempts,
-    string? AbandonReason);
+    string? AbandonReason,
+    IReadOnlyDictionary<string, string>? Output = null);
 
 public sealed record AuditRecordSummary(
     string AuditRecordId,

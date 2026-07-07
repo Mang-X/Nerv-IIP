@@ -12,6 +12,9 @@ public static class QualityIntegrationEventTypes
     public const string DispositionDecided = "quality.DispositionDecided";
     public const string NcrClosed = "quality.NcrClosed";
     public const string InspectionTaskOverdue = "quality.InspectionTaskOverdue";
+    public const string CapaOpened = "quality.CapaOpened";
+    public const string CapaEffectivenessVerified = "quality.CapaEffectivenessVerified";
+    public const string CapaClosed = "quality.CapaClosed";
 }
 
 public static class QualityIntegrationEventVersions
@@ -113,6 +116,57 @@ public sealed record NcrClosedIntegrationEvent(
     string Actor,
     string IdempotencyKey,
     NcrClosedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record CapaOpenedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    CapaOpenedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record CapaEffectivenessVerifiedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    CapaEffectivenessVerifiedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record CapaClosedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    CapaClosedPayload Payload) : IIntegrationEventEnvelope
 {
     object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }
@@ -254,4 +308,30 @@ public sealed record NcrClosedPayload(
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId,
+    DateTimeOffset ClosedAtUtc);
+
+public sealed record CapaOpenedPayload(
+    string CorrectiveActionId,
+    string CapaCode,
+    string? SourceNcrId,
+    string OwnerUserId,
+    string Status,
+    DateTimeOffset DueAtUtc,
+    DateTimeOffset OpenedAtUtc);
+
+public sealed record CapaEffectivenessVerifiedPayload(
+    string CorrectiveActionId,
+    string CapaCode,
+    string? SourceNcrId,
+    string VerificationInspectionRecordId,
+    string VerifiedByUserId,
+    string Result,
+    DateTimeOffset VerifiedAtUtc);
+
+public sealed record CapaClosedPayload(
+    string CorrectiveActionId,
+    string CapaCode,
+    string? SourceNcrId,
+    string? CloseApprovalChainId,
+    string ClosedByUserId,
     DateTimeOffset ClosedAtUtc);

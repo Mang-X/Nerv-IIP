@@ -37,9 +37,10 @@ public sealed class IndustrialTelemetryEndpointContractTests
     {
         var contracts = IndustrialTelemetryEndpointContracts.All.ToArray();
 
-        Assert.Equal(17, contracts.Length);
+        Assert.Equal(18, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/tags" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TagsManage && x.OperationId == "createBusinessIiotTelemetryTag");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/tags" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "listBusinessIiotTelemetryTags");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/device-control-commands" && x.PermissionCode == IndustrialTelemetryPermissionCodes.DeviceControlWrite && x.OperationId == "createBusinessIiotDeviceControlCommand");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarm-rules" && x.PermissionCode == "business.iiot.alarm-rules.manage" && x.OperationId == "createOrUpdateBusinessIiotAlarmRule");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/alarm-rules" && x.PermissionCode == "business.iiot.alarms.read" && x.OperationId == "listBusinessIiotAlarmRules");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/samples" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryWrite && x.OperationId == "recordBusinessIiotTelemetrySample");
@@ -927,7 +928,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
-    public void Public_contracts_do_not_expose_control_payload_credential_or_scada_concepts()
+    public void Public_contracts_do_not_expose_payload_credential_or_scada_concepts()
     {
         var publicNames = typeof(IndustrialTelemetryEndpointContracts).Assembly
             .GetTypes()
@@ -935,7 +936,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
             .SelectMany(type => type.GetProperties().Select(property => $"{type.Name}.{property.Name}"))
             .ToArray();
 
-        var forbidden = new[] { "Control", "CommandPayload", "Credential", "Secret", "Password", "Scada" };
+        var forbidden = new[] { "CommandPayload", "Credential", "Secret", "Password", "Scada" };
         Assert.NotEmpty(publicNames);
         Assert.DoesNotContain(publicNames, name => forbidden.Any(fragment => name.Contains(fragment, StringComparison.OrdinalIgnoreCase)));
     }

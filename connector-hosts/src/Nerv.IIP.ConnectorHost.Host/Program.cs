@@ -34,6 +34,8 @@ if (builder.Configuration.GetValue("OpcUa:Enabled", false))
     builder.Services.AddSingleton<OpcUaConnector>();
     builder.Services.AddSingleton<IConnector>(sp => sp.GetRequiredService<OpcUaConnector>());
     builder.Services.AddSingleton<IIndustrialTelemetryCollectionConnector>(sp => sp.GetRequiredService<OpcUaConnector>());
+    builder.Services.AddSingleton<OpcUaDeviceControlOperationExecutor>();
+    builder.Services.AddSingleton<IConnectorOperationExecutor>(sp => sp.GetRequiredService<OpcUaDeviceControlOperationExecutor>());
 }
 if (builder.Configuration.GetValue("Modbus:Enabled", false))
 {

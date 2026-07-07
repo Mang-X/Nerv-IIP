@@ -2232,6 +2232,13 @@
           "abandonReason": {
             "type": "string",
             "nullable": true
+          },
+          "output": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         }
       },
