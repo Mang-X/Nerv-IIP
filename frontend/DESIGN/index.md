@@ -83,6 +83,10 @@ See `components/install-backlog.md` for full list and install commands.
 
 | Scenario | Pattern | File |
 |---|---|---|
+| 表单承载/行操作/列表-详情/操作后引导/空态·批量·筛选 + PDA（W2/W3 交互验收依据） | Interaction Patterns v1 | `patterns/interaction-patterns.md` |
+| 操作反馈：toast vs 内联校验 | Feedback & Notifications | `patterns/feedback-and-notifications.md` |
+| Business Console 列表工作台基线 | List Workbench | `patterns/pages/list-workbench.md` |
+| 主数据六类页型模板 | Master Data Templates | `patterns/pages/master-data-templates.md` |
 | Authentication / sign in | Login Page | `patterns/pages/login-page.md` |
 | CRUD list page with search/filter | List Page | `patterns/pages/list-page.md` |
 | Inline entity creation | Create Dialog | `patterns/flows/create-dialog.md` |

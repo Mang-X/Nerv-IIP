@@ -211,6 +211,8 @@ Toolbar
 
 **何时用**：所有页型的建档/改档。统一**分段 + 视觉层次 + 点提交才标红 + toast 反馈**。
 
+> **承载判定移交（2026-07 W0 起）**：Dialog / Sheet / 独立页的选择以 [`../interaction-patterns.md`](../interaction-patterns.md) §1 为准——**≤3 字段才用 Dialog；4~8 字段或含动态行用 Sheet；复杂多段/多步用独立页**。下文"Dialog 默认"仅指 ≤3 字段场景；本节其余约定（分段/校验时机/反馈/字段约定）不变。
+
 ### 标准骨架（Dialog 默认；字段多用 Drawer）
 ```
 DialogHeader
