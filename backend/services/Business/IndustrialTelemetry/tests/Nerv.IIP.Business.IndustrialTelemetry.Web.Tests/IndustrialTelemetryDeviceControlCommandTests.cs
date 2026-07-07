@@ -49,6 +49,56 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
     }
 
     [Fact]
+    public async Task Device_control_command_rejects_unsupported_command_type_before_creating_ops_task()
+    {
+        await using var factory = new DeviceControlHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/iiot/device-control-commands", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            connectorHostId = "connector-host-001",
+            instanceKey = "opcua-cell-01",
+            deviceAssetId = "DEV-CNC-01",
+            commandType = "calibrate",
+            requestedBy = "user:operator-001",
+            reason = "unsupported",
+            idempotencyKey = "idem-device-control-unsupported-001",
+            correlationId = "corr-device-control-unsupported-001",
+        });
+
+        Assert.Empty(factory.OpsClient.CreatedRequests);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Device_control_command_rejects_write_tag_without_tag_or_value_before_creating_ops_task()
+    {
+        await using var factory = new DeviceControlHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/iiot/device-control-commands", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            connectorHostId = "connector-host-001",
+            instanceKey = "opcua-cell-01",
+            deviceAssetId = "DEV-CNC-01",
+            commandType = "write-tag",
+            requestedBy = "user:operator-001",
+            reason = "missing tag and value",
+            idempotencyKey = "idem-device-control-missing-tag-value-001",
+            correlationId = "corr-device-control-missing-tag-value-001",
+        });
+
+        Assert.Empty(factory.OpsClient.CreatedRequests);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Device_control_command_creates_approval_gated_ops_task_with_auditable_parameters()
     {
         await using var factory = new DeviceControlHttpTestFactory();

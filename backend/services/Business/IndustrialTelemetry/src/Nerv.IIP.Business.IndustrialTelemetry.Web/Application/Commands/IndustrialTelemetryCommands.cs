@@ -94,6 +94,35 @@ public sealed record CreateDeviceControlCommandCommand(
     string IdempotencyKey,
     string CorrelationId) : ICommand<OperationTaskResponse>;
 
+internal static class DeviceControlCommandValidation
+{
+    public static bool IsSupportedCommandType(string commandType)
+    {
+        return IsSingleTagCommand(commandType) || IsParameterSetCommand(commandType);
+    }
+
+    public static bool IsSingleTagCommand(string commandType)
+    {
+        if (string.IsNullOrWhiteSpace(commandType))
+        {
+            return false;
+        }
+
+        var normalized = commandType.Trim().ToLowerInvariant();
+        return normalized is "write-tag" or "start-stop";
+    }
+
+    public static bool IsParameterSetCommand(string commandType)
+    {
+        if (string.IsNullOrWhiteSpace(commandType))
+        {
+            return false;
+        }
+
+        return string.Equals(commandType.Trim(), "parameter-set", StringComparison.OrdinalIgnoreCase);
+    }
+}
+
 public sealed class CreateDeviceControlCommandCommandValidator : AbstractValidator<CreateDeviceControlCommandCommand>
 {
     public CreateDeviceControlCommandCommandValidator()
@@ -106,14 +135,14 @@ public sealed class CreateDeviceControlCommandCommandValidator : AbstractValidat
         RuleFor(x => x.CommandType)
             .NotEmpty()
             .MaximumLength(50)
-            .Must(IsSupportedCommandType)
+            .Must(DeviceControlCommandValidation.IsSupportedCommandType)
             .WithMessage("Device control command type must be write-tag, start-stop or parameter-set.");
-        When(x => IsSingleTagCommand(x.CommandType), () =>
+        When(x => DeviceControlCommandValidation.IsSingleTagCommand(x.CommandType), () =>
         {
             RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
             RuleFor(x => x.Value).NotEmpty().MaximumLength(256);
         });
-        When(x => IsParameterSetCommand(x.CommandType), () =>
+        When(x => DeviceControlCommandValidation.IsParameterSetCommand(x.CommandType), () =>
         {
             RuleFor(x => x.Parameters).NotEmpty();
             RuleForEach(x => x.Parameters!.Keys).NotEmpty().MaximumLength(150);
@@ -123,32 +152,6 @@ public sealed class CreateDeviceControlCommandCommandValidator : AbstractValidat
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.CorrelationId).NotEmpty().MaximumLength(150);
-    }
-
-    private static bool IsSupportedCommandType(string commandType)
-    {
-        return IsSingleTagCommand(commandType) || IsParameterSetCommand(commandType);
-    }
-
-    private static bool IsSingleTagCommand(string commandType)
-    {
-        if (string.IsNullOrWhiteSpace(commandType))
-        {
-            return false;
-        }
-
-        var normalized = commandType.Trim().ToLowerInvariant();
-        return normalized is "write-tag" or "start-stop";
-    }
-
-    private static bool IsParameterSetCommand(string commandType)
-    {
-        if (string.IsNullOrWhiteSpace(commandType))
-        {
-            return false;
-        }
-
-        return string.Equals(commandType.Trim(), "parameter-set", StringComparison.OrdinalIgnoreCase);
     }
 }
 

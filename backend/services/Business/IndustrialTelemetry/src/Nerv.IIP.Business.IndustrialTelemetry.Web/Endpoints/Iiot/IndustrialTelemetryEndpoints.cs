@@ -392,9 +392,22 @@ public sealed class CreateDeviceControlCommandRequestValidator : Validator<Creat
         RuleFor(x => x.ConnectorHostId).NotEmpty().MaximumLength(128);
         RuleFor(x => x.InstanceKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.CommandType).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.TagKey).MaximumLength(150);
-        RuleFor(x => x.Value).MaximumLength(256);
+        RuleFor(x => x.CommandType)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(DeviceControlCommandValidation.IsSupportedCommandType)
+            .WithMessage("Device control command type must be write-tag, start-stop or parameter-set.");
+        When(x => DeviceControlCommandValidation.IsSingleTagCommand(x.CommandType), () =>
+        {
+            RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
+            RuleFor(x => x.Value).NotEmpty().MaximumLength(256);
+        });
+        When(x => DeviceControlCommandValidation.IsParameterSetCommand(x.CommandType), () =>
+        {
+            RuleFor(x => x.Parameters).NotEmpty();
+            RuleForEach(x => x.Parameters!.Keys).NotEmpty().MaximumLength(150);
+            RuleForEach(x => x.Parameters!.Values).NotEmpty().MaximumLength(256);
+        });
         RuleFor(x => x.RequestedBy).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
