@@ -104,10 +104,10 @@ describe('作业任务（规模 + 守恒 + 超时是例外）', () => {
     }
   })
 
-  it('超时是例外：全板 2–4 条且与超时榜一致（榜按龄期降序、TOP5 内）', () => {
+  it('超时是例外：全板 5–7 条（繁忙日画像，仍是少数）且与超时榜一致（榜按龄期降序、TOP5 内）', () => {
     const total = b.pick.overdue + b.putaway.overdue + b.count.overdue
-    expect(total).toBeGreaterThanOrEqual(2)
-    expect(total).toBeLessThanOrEqual(4)
+    expect(total).toBeGreaterThanOrEqual(5)
+    expect(total).toBeLessThanOrEqual(7)
     expect(b.overdueTop.length).toBe(Math.min(5, total))
     for (const r of b.overdueTop) expect(r.ageMin).toBeGreaterThan(OVERDUE_MIN)
     for (let i = 1; i < b.overdueTop.length; i++) {
@@ -163,8 +163,8 @@ describe('WCS（失败榜为事实源，聚合逐格勾稽）', () => {
 
   it('每适配器 total = queued+running+completed+failed；状态分布 = 各列合计', () => {
     const b = buildWarehouseBoard(at(14, 0))
-    expect(b.wcs.adapters).toHaveLength(4)
-    expect(new Set(b.wcs.adapters.map((a) => a.kind)).size).toBe(4)
+    expect(b.wcs.adapters).toHaveLength(6)
+    expect(new Set(b.wcs.adapters.map((a) => a.kind)).size).toBe(6)
     for (const a of b.wcs.adapters) {
       expect(a.total).toBe(a.queued + a.running + a.completed + a.failed)
     }
@@ -173,11 +173,11 @@ describe('WCS（失败榜为事实源，聚合逐格勾稽）', () => {
     }
   })
 
-  it('失败榜 1–3 条（午后含提升机第 3 条）、重试次数与时刻齐备', () => {
+  it('失败榜常驻 3 条（午后含提升机第 4 条）、重试次数与时刻齐备', () => {
     const noon = buildWarehouseBoard(at(14, 0))
-    expect(noon.wcs.failures).toHaveLength(3)
+    expect(noon.wcs.failures).toHaveLength(4)
     const morning = buildWarehouseBoard(at(9, 30))
-    expect(morning.wcs.failures).toHaveLength(2)
+    expect(morning.wcs.failures).toHaveLength(3)
     for (const x of noon.wcs.failures) {
       expect(x.cmd).toMatch(/^WCS-\d{5}$/)
       expect(x.retries).toBeGreaterThanOrEqual(1)

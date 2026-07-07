@@ -113,20 +113,26 @@ const PROFILES: Record<string, QualityProfile> = {
   // 不良率（件）刚越红线、帕累托 TOP1/2 电芯缺陷、超期 NCR 2 条（异常是例外）
   F01: {
     layers: [
-      { key: 'iqc', label: '来料检', code: 'IQC', lotsDone: 60, lotsPassed: 59, lotsDue: 64, carryOver: 1, oldestHours: 6, pieceInspected: 5200, pieceDefects: 38 },
-      { key: 'ipqc', label: '过程检', code: 'IPQC', lotsDone: 70, lotsPassed: 67, lotsDue: 78, carryOver: 6, oldestHours: 36, backlogTop: { name: '电芯线', count: 8 }, failedTop: { name: '电芯线', count: 3 }, pieceInspected: 7800, pieceDefects: 190 },
-      { key: 'fqc', label: '成品检', code: 'FQC', lotsDone: 62, lotsPassed: 61, lotsDue: 66, carryOver: 2, oldestHours: 7, pieceInspected: 3800, pieceDefects: 30 },
+      { key: 'iqc', label: '来料检', code: 'IQC', lotsDone: 60, lotsPassed: 59, lotsDue: 68, carryOver: 2, oldestHours: 6, pieceInspected: 5200, pieceDefects: 38 },
+      { key: 'ipqc', label: '过程检', code: 'IPQC', lotsDone: 70, lotsPassed: 67, lotsDue: 84, carryOver: 9, oldestHours: 36, backlogTop: { name: '电芯线', count: 15 }, failedTop: { name: '电芯线', count: 3 }, pieceInspected: 7800, pieceDefects: 190 },
+      { key: 'fqc', label: '成品检', code: 'FQC', lotsDone: 62, lotsPassed: 61, lotsDue: 70, carryOver: 3, oldestHours: 7, pieceInspected: 3800, pieceDefects: 30 },
     ],
     ncrs: [
       // 龄期最长 + 超期：电芯线当前工单（与产线屏 WO-1951 / LFP-280Ah 电芯同源）
       { n: 41, lineId: 'LN-BAT-1', defect: '极片对齐度超差', qty: 120, ageHours: 62, status: 'disposing', disposition: '返工', product: 'LFP-280Ah 电芯' },
       { n: 43, supplier: '宁华新材', iqcN: 2291, defect: '隔膜厚度偏差', qty: 2400, ageHours: 51, status: 'disposing', disposition: '退供' },
+      { n: 39, supplier: '东旭精密', iqcN: 2270, defect: '支架孔位偏移', qty: 460, ageHours: 44, status: 'disposing', disposition: '退供' },
+      { n: 40, lineId: 'LN-WELD-2', defect: '激光焊缝气孔', qty: 11, ageHours: 42, status: 'verify' },
       { n: 44, lineId: 'LN-WELD-3', defect: '螺柱焊漏焊', qty: 7, ageHours: 40, status: 'disposing', disposition: '返工' },
+      { n: 42, lineId: 'LN-PAINT-1', defect: '中涂流挂', qty: 5, ageHours: 38, status: 'disposing', disposition: '返工' },
       { n: 45, lineId: 'LN-STAMP-1', defect: '板料表面划伤', qty: 18, ageHours: 34, status: 'verify' },
       { n: 46, lineId: 'LN-ASSY-1', defect: '密封圈压伤', qty: 9, ageHours: 26, status: 'verify' },
       { n: 47, lineId: 'LN-WELD-1', defect: '焊点虚焊', qty: 14, ageHours: 21, status: 'disposing', disposition: '返工' },
       { n: 48, lineId: 'LN-ASSY-2', defect: '内饰面板色差', qty: 60, ageHours: 17, status: 'disposing', disposition: '让步接收' },
       { n: 49, supplier: '宁华新材', iqcN: 2307, defect: '电解液含水量超标', qty: 1, ageHours: 12, status: 'review' },
+      { n: 53, lineId: 'LN-STAMP-2', defect: '冲孔毛刺超差', qty: 26, ageHours: 8, status: 'review' },
+      { n: 54, supplier: '宁华新材', iqcN: 2311, defect: '正极粉料磁性异物', qty: 1, ageHours: 5, status: 'review' },
+      { n: 55, lineId: 'LN-ASSY-3', defect: '车门间隙面差 NG', qty: 12, ageHours: 4, status: 'review' },
       // 今晨卷绕机报警的直接回声：新开 NCR 仍在待评审
       { n: 50, lineId: 'LN-BAT-1', defect: '卷绕张力不良', qty: 86, ageHours: 3, status: 'review', product: 'LFP-280Ah 电芯' },
       { n: 51, lineId: 'LN-BAT-2', defect: '气密测试不合格', qty: 3, ageHours: 2, status: 'review' },

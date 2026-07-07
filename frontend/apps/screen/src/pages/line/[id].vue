@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { RingGauge, ScreenPanel, Sparkline, StatusTag, TrendChart } from '@nerv-iip/ui'
+import { RingGauge, ScreenPanel, ScreenScrollArea, Sparkline, StatusTag, TrendChart } from '@nerv-iip/ui'
 import { ChevronDown, CircleCheck, OctagonAlert, UserRound, Users } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
@@ -158,7 +158,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
             </div>
           </dl>
 
-          <div class="lb-devs">
+          <ScreenScrollArea class="lb-devs">
             <h5 class="lb-devs-t">线上设备 · {{ board.devices.length }} 台 <small>点击展开参数</small></h5>
             <div v-for="d in board.devices" :key="d.id" class="lb-dev-wrap">
               <button type="button" class="lb-dev" :class="d.state" @click="toggleDev(d.id)">
@@ -182,7 +182,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
                 </div>
               </Transition>
             </div>
-          </div>
+          </ScreenScrollArea>
 
           <!-- 安灯呼叫（并入线体域，与状态灯同侧；闭环 待 MAN-322） -->
           <div class="lb-andon-mini">
@@ -465,9 +465,6 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
   width: 100%;
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-gutter: stable;
 }
 /* 设备参数折叠：grid/max-height 高度过渡（展开无跳变、无滚动条闪烁） */
 .lb-dev-detail {

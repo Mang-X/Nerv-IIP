@@ -151,7 +151,7 @@ describe('buildQualityBoard（对照与 scope）', () => {
     expect(b.ncrs.length).toBeGreaterThanOrEqual(1)
     for (const r of b.ncrs) {
       expect(r.sourceType).toBe('line')
-      expect(['电芯线', 'PACK 线']).toContain(r.source)
+      expect(['电芯线', '电芯二线', '模组线', 'PACK 线', 'PACK 二线']).toContain(r.source)
     }
     expect(b.kpis.openNcr).toBe(b.ncrs.length)
     expect(b.kpis.overdueNcr).toBe(b.ncrs.filter((r) => r.overdue).length)

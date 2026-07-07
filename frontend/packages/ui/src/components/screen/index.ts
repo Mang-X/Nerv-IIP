@@ -8,6 +8,7 @@ import './tokens.css'
 
 // Containers / surfaces
 export { default as ScreenPanel } from './ScreenPanel.vue'
+export { default as ScreenScrollArea } from './ScreenScrollArea.vue'
 
 // Indicators & charts
 export { default as OeeHero } from './OeeHero.vue'

@@ -88,8 +88,8 @@ export interface OutboundProgress extends WhFlowProgress {
   latestShipment?: string
 }
 
-/** WCS 适配器语义（真实 WCS 无设备号，只有 AdapterType） */
-export type WcsAdapterKind = 'stacker' | 'agv' | 'conveyor' | 'hoist'
+/** WCS 适配器语义（真实 WCS 无设备号，只有 AdapterType）；六类自动化设备 */
+export type WcsAdapterKind = 'stacker' | 'agv' | 'shuttle' | 'conveyor' | 'sorter' | 'hoist'
 
 /** 按适配器聚合的指令口径 🟡（total = queued + running + completed + failed） */
 export interface WcsAdapterCell {

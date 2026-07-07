@@ -148,8 +148,8 @@ describe('buildWorkshopBoard（报警车间 · 与产线/设备屏同源）', ()
     expect(b.events).toHaveLength(0)
     expect(b.downtime.count).toBe(0)
     expect(b.downtime.totalMin).toBe(0)
-    // 质量屏有一条冲压一线 NCR（待验证尾声）—— 跨屏同一事实，不因空态美学隐藏
-    expect(b.quality.ncr.map((n) => n.code)).toEqual(['NCR-26-045'])
+    // 质量屏有两条冲压 NCR（待验证尾声 + 新开待评审）—— 跨屏同一事实，不因空态美学隐藏
+    expect(b.quality.ncr.map((n) => n.code).sort()).toEqual(['NCR-26-045', 'NCR-26-053'])
     expect(b.woAlerts).toHaveLength(0)
     // 健康车间 OEE 高位
     expect(b.oee.overall).toBeGreaterThanOrEqual(85)

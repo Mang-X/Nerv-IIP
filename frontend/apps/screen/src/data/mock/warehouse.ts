@@ -129,12 +129,13 @@ export const OVERDUE_MIN = 45
 const WAVE_MIN = 15
 
 // 龄期档位（分钟）：超时档 ≥ 46、正常档 ≤ 31（+14min 量化余量后仍 ≤45），
-// 保证任何时刻超时集合不漂移（拣货 2 / 上架 1 / 盘点 0，异常是例外）。
-// 档位按**显式波次分组**（组间距 ≥16min > 波次粒度）：WMS 波次放单本就同批同龄，
-// 但组间必须拉开 —— 否则相邻档被 15min 量化坍缩成一整列同龄期（看着像复制粘贴）。
-const PICK_AGE_SLOTS = [70, 55, 31, 31, 31, 31, 15, 15, 15, 15, 15, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
-const PUTAWAY_AGE_SLOTS = [58, 30, 30, 30, 30, 13, 13, 13, 13, 13, 4, 4, 4, 4, 4]
-const COUNT_AGE_SLOTS = [29, 29, 29, 12, 12, 12, 12, 12]
+// 保证任何时刻超时集合不漂移（拣货 3 / 上架 2 / 盘点 1 = 恒 6 条，繁忙日画像
+// 但仍是少数 —— 异常是例外）。档位按**显式波次分组**（组间距 ≥16min > 波次
+// 粒度）：WMS 波次放单本就同批同龄，但组间必须拉开 —— 否则相邻档被 15min
+// 量化坍缩成一整列同龄期（看着像复制粘贴）。
+const PICK_AGE_SLOTS = [70, 55, 48, 31, 31, 31, 31, 15, 15, 15, 15, 15, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+const PUTAWAY_AGE_SLOTS = [58, 50, 30, 30, 30, 13, 13, 13, 13, 13, 4, 4, 4, 4, 4]
+const COUNT_AGE_SLOTS = [47, 29, 29, 12, 12, 12, 12, 12]
 
 /** 龄期：任务创建时刻 = (now − 档位) 向下取整到 15min 波次 → 龄期 ∈ [档位, 档位+14]。 */
 function ageOf(now: Date, slot: number): number {
@@ -194,15 +195,18 @@ function taskRows(kind: WhTaskKind, n: number, s: number, now: Date): WhTaskRow[
   })
 }
 
-// —— WCS 适配器画像（AdapterType 语义；share 为指令量占比）——
+// —— WCS 适配器画像（AdapterType 语义；share 为指令量占比；六类自动化设备）——
 const ADAPTER_DEFS: { kind: WcsAdapterKind; label: string; share: number; run: number; queue: number }[] = [
-  { kind: 'stacker', label: '巷道堆垛机', share: 0.32, run: 4, queue: 6 },
-  { kind: 'agv', label: 'AGV 调度', share: 0.4, run: 6, queue: 8 },
-  { kind: 'conveyor', label: '输送线', share: 0.2, run: 5, queue: 4 },
-  { kind: 'hoist', label: '提升机', share: 0.08, run: 2, queue: 2 },
+  { kind: 'stacker', label: '巷道堆垛机', share: 0.26, run: 6, queue: 8 },
+  { kind: 'agv', label: 'AGV 调度', share: 0.3, run: 9, queue: 11 },
+  { kind: 'shuttle', label: '四向穿梭车', share: 0.16, run: 5, queue: 6 },
+  { kind: 'conveyor', label: '输送线', share: 0.14, run: 6, queue: 5 },
+  { kind: 'sorter', label: '分拣机', share: 0.09, run: 4, queue: 4 },
+  { kind: 'hoist', label: '提升机', share: 0.05, run: 2, queue: 3 },
 ]
 
-/** WCS 失败池：常驻 2 条（堆垛机取货超时 / AGV 路径阻挡），午后高峰多 1 条提升机。 */
+/** WCS 失败池：常驻 3 条（堆垛机取货超时 / AGV 路径阻挡 / 分拣格口满位），
+ *  午后高峰多 1 条提升机 —— 繁忙工厂日画像，仍是少数（异常是例外）。 */
 function buildFailures(now: Date, s: number): WcsFailureRow[] {
   const rows: WcsFailureRow[] = [
     {
@@ -222,6 +226,15 @@ function buildFailures(now: Date, s: number): WcsFailureRow[] {
       retries: 1,
       sinceMin: 6,
       firstAt: hhmmAgo(now, 6),
+    },
+    {
+      cmd: seq('WCS', 88400 + (s % 60), 5),
+      kind: 'sorter',
+      adapter: '分拣机 1#',
+      error: '格口满位 · 分拣暂停',
+      retries: 2,
+      sinceMin: 17,
+      firstAt: hhmmAgo(now, 17),
     },
   ]
   const h = now.getHours()
@@ -280,7 +293,7 @@ export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): Wareho
 
   // —— 作业任务（守恒：今日创建 = Open 积压 + 今日完成）——
   // 拣货完成 ⇔ SO 已拣配行（同一事实的两个视图，跨面板勾稽）
-  const pickRows = taskRows('pick', 15 + (s % 11), s, now)
+  const pickRows = taskRows('pick', 18 + (s % 8), s, now)
   const pick: WhTaskGroup = {
     kind: 'pick',
     backlog: pickRows.length,
@@ -290,7 +303,7 @@ export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): Wareho
     rows: pickRows,
   }
   // 上架完成 ≈ 收货行的 86%（部分收货直送线边，不产生上架任务）
-  const putawayRows = taskRows('putaway', 8 + (s % 8), s, now)
+  const putawayRows = taskRows('putaway', 10 + (s % 6), s, now)
   const putawayDone = Math.floor(inLinesDone * 0.86)
   const putaway: WhTaskGroup = {
     kind: 'putaway',
@@ -301,7 +314,7 @@ export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): Wareho
     rows: putawayRows,
   }
   // 盘点：库位数口径（planned = 已盘 + 未盘任务），差异 ≤ 已盘
-  const countRows = taskRows('count', 4 + (s % 5), s, now)
+  const countRows = taskRows('count', 5 + (s % 4), s, now)
   const counted = 8 + Math.floor(f * 8)
   const count: CycleCountBoard = {
     planned: counted + countRows.length,
@@ -313,7 +326,7 @@ export function buildWarehouseBoard(now = new Date(), factoryId = 'F01'): Wareho
 
   // —— WCS：失败榜为事实源，适配器聚合/状态分布由其推导（逐格勾稽）——
   const failures = buildFailures(now, s)
-  const dailyCap = 620 + (s % 90)
+  const dailyCap = 900 + (s % 120)
   const adapters: WcsAdapterCell[] = ADAPTER_DEFS.map((d) => {
     const completed = Math.floor(dailyCap * d.share * f)
     const running = f > 0 ? clamp(jitter(d.run, 3), 1, 12) : 0

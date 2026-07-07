@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Sparkline, StatusLight, StatusTag } from '@nerv-iip/ui'
+import { ScreenScrollArea, Sparkline, StatusLight, StatusTag } from '@nerv-iip/ui'
 import {
   Activity,
   BatteryCharging,
@@ -109,7 +109,8 @@ function leaveSpark() {
 
         <div v-if="!detail" class="ddm-loading">读取设备档案…</div>
 
-        <div v-else class="ddm-body">
+        <ScreenScrollArea v-else class="ddm-scroll">
+          <div class="ddm-body">
           <!-- 上：基础信息横排 -->
           <section class="ddm-sec">
             <dl class="ddm-info">
@@ -205,7 +206,8 @@ function leaveSpark() {
               </div>
             </div>
           </section>
-        </div>
+          </div>
+        </ScreenScrollArea>
       </section>
     </div>
   </Teleport>
@@ -300,15 +302,17 @@ function leaveSpark() {
   font-size: 15px;
 }
 
-.ddm-body {
+.ddm-scroll {
   flex: 1;
   min-height: 0;
+}
+/* 内层承载 flex/gap（ScreenScrollArea viewport 内容层为 display:table，
+   布局样式必须落在自己的包装 div 上） */
+.ddm-body {
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding-top: 14px;
-  overflow-y: auto;
-  overflow-x: hidden;
 }
 .ddm-st {
   margin: 0 0 10px;

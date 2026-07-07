@@ -99,7 +99,8 @@ const RESOLVED_POOL: Record<
     { lineName: '焊装二线', level: 'downtime', text: '输送滚床 2# 光电误触发短停 5 min', status: '已恢复', minsAgo: 118, durMin: 5 },
   ],
   'WS-ASSY': [
-    { lineName: '总装三线', level: 'warn', text: 'AGV 牵引车 02 低电量告警', status: '已恢复 · 已换电', minsAgo: 96 },
+    { lineName: '总装二线', level: 'warn', text: 'AGV 牵引车 02 低电量告警', status: '已恢复 · 已换电', minsAgo: 96 },
+    { lineName: '总装一线', level: 'downtime', text: '拧紧工作站 2# 枪头卡滞短停 4 min', status: '已恢复', minsAgo: 165, durMin: 4 },
   ],
   'WS-PAINT': [
     { lineName: '涂装一线', level: 'warn', text: '喷房送风压差预警', status: '已恢复 · 滤网已换', minsAgo: 178 },
@@ -108,8 +109,17 @@ const RESOLVED_POOL: Record<
 
 // 未恢复预警（与设备屏 ALARM_POOL 同一叙事：文本/线别/时距一致）
 const WARN_POOL: Record<string, { lineName: string; text: string; minsAgo: number; status: string }[]> = {
-  'WS-WELD': [{ lineName: '焊装一线', text: '焊接机器人 R02 伺服过载预警', minsAgo: 108, status: '已确认 · 待处理' }],
-  'WS-BATTERY': [{ lineName: '电芯线', text: '注液机 注液量偏差预警', minsAgo: 137, status: '观察中' }],
+  'WS-WELD': [
+    { lineName: '焊装一线', text: '焊接机器人 R02 伺服过载预警', minsAgo: 108, status: '已确认 · 待处理' },
+    { lineName: '焊装四线', text: '弧焊工作站 保护气流量偏低预警', minsAgo: 63, status: '观察中' },
+  ],
+  'WS-BATTERY': [
+    { lineName: '电芯线', text: '注液机 注液量偏差预警', minsAgo: 137, status: '观察中' },
+    { lineName: '模组线', text: 'EOL 测试柜 通讯超时重试', minsAgo: 58, status: '自动重试中' },
+  ],
+  'WS-ASSY': [
+    { lineName: '总装二线', text: '风挡涂胶机 胶温偏低预警', minsAgo: 74, status: '观察中' },
+  ],
   'WS-MACH': [{ lineName: '机加线', text: '加工中心 M01 刀具寿命预警', minsAgo: 240, status: '计划换刀' }],
 }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ScreenPanel, TrendChart } from '@nerv-iip/ui'
+import { ScreenPanel, ScreenScrollArea, TrendChart } from '@nerv-iip/ui'
 import { ClipboardList, FileCheck2, FileWarning, Scale } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -175,7 +175,7 @@ const trendPin = computed(() => {
           <template #extra>
             <span class="qb-cap">处置 SLA {{ NCR_SLA_HOURS }}h</span>
           </template>
-          <div class="qb-ncr-list sb-scroll">
+          <ScreenScrollArea class="qb-ncr-list">
             <div v-for="r in board.ncrs" :key="r.code" class="qn-row" :class="{ overdue: r.overdue }">
               <div class="qn-top">
                 <i v-if="r.overdue" class="qn-alert" aria-hidden="true" />
@@ -197,7 +197,7 @@ const trendPin = computed(() => {
                 </span>
               </div>
             </div>
-          </div>
+          </ScreenScrollArea>
           <div class="qn-summary">
             <span>待评审 <b class="amber">{{ statusCount.review }}</b></span>
             <span>处置中 <b class="cyan">{{ statusCount.disposing }}</b></span>
@@ -502,8 +502,6 @@ const trendPin = computed(() => {
 .qb-ncr-list {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
 }
 .qn-row {
   padding: 7px 2px 8px;

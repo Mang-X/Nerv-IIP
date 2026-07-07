@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { RingGauge, ScreenPanel, ScreenSegmented, ScreenTabs, StatusLight, StatusTag } from '@nerv-iip/ui'
+import { RingGauge, ScreenPanel, ScreenScrollArea, ScreenSegmented, ScreenTabs, StatusLight, StatusTag } from '@nerv-iip/ui'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
@@ -208,7 +208,7 @@ const relCells = computed(() => {
               </span>
             </template>
             <ScreenTabs v-model="evTab" :items="evTabs" class="ev-tabs" />
-            <div class="ev-list sb-scroll">
+            <ScreenScrollArea class="ev-list">
               <!-- 全部：合并流（严重度排序） -->
               <template v-if="evTab === 'all'">
                 <div v-for="e in events" :key="e.key" class="ev-row">
@@ -288,7 +288,7 @@ const relCells = computed(() => {
                   <span class="insp-res" :class="{ bad: i.result === '异常' }">{{ i.result }}</span>
                 </div>
               </template>
-            </div>
+            </ScreenScrollArea>
             <p class="ev-note">维修历史与参数趋势见设备详情 · 帕累托/备件联动 待 #570</p>
           </ScreenPanel>
         </div>
@@ -441,8 +441,6 @@ const relCells = computed(() => {
 .ev-list {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
 }
 
 /* 报警 tab：两行行式（产线·内容 / 工单·处置状态） */

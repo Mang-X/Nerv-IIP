@@ -7,11 +7,13 @@ import {
   ClipboardCheck,
   Container,
   Forklift,
+  GitFork,
   MoveHorizontal,
   MoveVertical,
   OctagonAlert,
   PackageSearch,
   Scale,
+  Shuffle,
 } from 'lucide-vue-next'
 import { type Component, computed, watch } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -210,7 +212,9 @@ const taskSummary = computed(() => {
 const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   stacker: Container,
   agv: Bot,
+  shuttle: Shuffle,
   conveyor: MoveHorizontal,
+  sorter: GitFork,
   hoist: MoveVertical,
 }
 </script>

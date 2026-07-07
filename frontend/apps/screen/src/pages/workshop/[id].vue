@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ScreenPanel, ScreenSegmented, StatusLight, StatusTag, TrendChart } from '@nerv-iip/ui'
+import { ScreenPanel, ScreenScrollArea, ScreenSegmented, StatusLight, StatusTag, TrendChart } from '@nerv-iip/ui'
 import {
   Boxes,
   CircleCheck,
@@ -217,9 +217,11 @@ const devSummary = computed(() => {
               · 点击进入单线屏
             </span>
           </div>
-          <div class="wb-lines-list">
-            <WorkshopLineCard v-for="l in board.lines" :key="l.id" :card="l" />
-          </div>
+          <ScreenScrollArea class="wb-lines-list">
+            <div class="wb-lines-in">
+              <WorkshopLineCard v-for="l in board.lines" :key="l.id" :card="l" />
+            </div>
+          </ScreenScrollArea>
           <div class="wb-woa">
             <h5 class="wb-sub-h">工单交付预警</h5>
             <div v-for="w in board.woAlerts" :key="w.code" class="wb-woa-row">
@@ -288,7 +290,7 @@ const devSummary = computed(() => {
             <template #extra>
               <span class="wb-dev-sum">{{ devSummary }}</span>
             </template>
-            <div class="wb-ev-list sb-scroll">
+            <ScreenScrollArea class="wb-ev-list">
               <div
                 v-for="e in board.events"
                 :key="e.id"
@@ -304,7 +306,7 @@ const devSummary = computed(() => {
               <div v-if="!board.events.length" class="wb-empty-row wb-ev-empty">
                 <i class="wb-ok-dot" />当班无停机 · 无设备报警
               </div>
-            </div>
+            </ScreenScrollArea>
           </ScreenPanel>
         </div>
 
@@ -328,7 +330,7 @@ const devSummary = computed(() => {
               </dl>
             </div>
             <h5 class="wb-sub-h">缺料 Top</h5>
-            <div class="wb-shorts sb-scroll">
+            <ScreenScrollArea class="wb-shorts">
               <div v-for="s in board.kitting.shortages" :key="s.code" class="wb-short">
                 <div class="wb-short-l">
                   <b class="wb-short-mat">{{ s.material }}</b>
@@ -344,7 +346,7 @@ const devSummary = computed(() => {
               <div v-if="!board.kitting.shortages.length" class="wb-empty-row">
                 <i class="wb-ok-dot" />线边物料齐套
               </div>
-            </div>
+            </ScreenScrollArea>
           </ScreenPanel>
 
           <ScreenPanel title="当班质量" class="wb-quality">
@@ -362,7 +364,7 @@ const devSummary = computed(() => {
                 <dd :class="{ warn: board.quality.rework > 0 }">{{ board.quality.rework }}<small> 件</small></dd>
               </div>
             </dl>
-            <div class="wb-ncr">
+            <ScreenScrollArea class="wb-ncr">
               <div v-for="n in board.quality.ncr" :key="n.code" class="wb-ncr-row">
                 <span class="wb-ncr-code">{{ n.code }}</span>
                 <span class="wb-ncr-txt">{{ n.lineName }} · {{ n.text }}</span>
@@ -371,7 +373,7 @@ const devSummary = computed(() => {
               <div v-if="!board.quality.ncr.length" class="wb-empty-row">
                 <i class="wb-ok-dot" />无待办 NCR
               </div>
-            </div>
+            </ScreenScrollArea>
           </ScreenPanel>
 
           <ScreenPanel title="当班班组" class="wb-crew">
@@ -635,19 +637,19 @@ const devSummary = computed(() => {
   min-width: 0;
 }
 /* 产线墙呈现策略：卡高固定（不随线数挤压变形），3 条内完整可见，
-   更多产线纵向滚动（挂墙轮巡场景配合页面轮播，不靠人手操作）。
+   更多产线纵向滚动（ScreenScrollArea 悬浮细滚条）。
    flex 0 1 auto：线少时自然高（交付预警紧随其后，不悬空贴底），
    线多时收缩为滚动容器。 */
 .wb-lines-list {
   flex: 0 1 auto;
   min-height: 0;
+}
+.wb-lines-in {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
 }
-.wb-lines-list :deep(.wlc-link) {
+.wb-lines-in :deep(.wlc-link) {
   flex: none;
   height: 178px;
 }
@@ -866,7 +868,6 @@ const devSummary = computed(() => {
 .wb-ev-list {
   min-height: 52px;
   max-height: 176px;
-  overflow-y: auto;
 }
 .wb-ev {
   display: flex;
@@ -1007,7 +1008,6 @@ const devSummary = computed(() => {
 }
 .wb-shorts {
   max-height: 236px;
-  overflow-y: auto;
 }
 .wb-short {
   display: flex;
@@ -1074,7 +1074,6 @@ const devSummary = computed(() => {
 .wb-quality .wb-ncr {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
 }
 .wb-q-nums {
   margin: 0;
