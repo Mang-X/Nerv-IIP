@@ -269,24 +269,7 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             .AddKnownExceptionValidationBehavior()
             .AddOpenBehavior(typeof(CreateStockCountTaskUniqueConflictBehavior<,>))
             .AddUnitOfWorkBehaviors());
-        if (interceptors.Length == 0)
-        {
-            services.AddInventoryPostgreSqlPersistence(connectionString);
-        }
-        else
-        {
-            services.AddDbContext<InventoryDbContext>(options =>
-            {
-                options.UseNpgsql(
-                    connectionString,
-                    npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", InventoryFacts.Schema));
-                options.AddInterceptors(interceptors);
-                options.EnableDetailedErrors();
-            });
-            services.AddRepositories(typeof(InventoryDbContext).Assembly);
-            services.AddUnitOfWork<InventoryDbContext>();
-        }
-
+        services.AddInventoryPostgreSqlPersistence(connectionString, interceptors: interceptors);
         services.AddInMemoryDistributedLock();
         services.AddScoped<ICommandLock<CreateStockCountTaskCommand>, CreateStockCountTaskCommandLock>();
         return services.BuildServiceProvider();
