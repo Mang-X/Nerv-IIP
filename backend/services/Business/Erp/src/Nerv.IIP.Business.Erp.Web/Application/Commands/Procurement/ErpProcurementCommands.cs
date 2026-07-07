@@ -554,6 +554,13 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
             return invoice.Id;
         }
 
+        await AccountingPeriodPostingGuard.EnsureOpenAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            invoice.InvoiceDate,
+            "supplier invoice GR/IR clearing voucher",
+            cancellationToken);
         var payableAllocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId,
@@ -664,6 +671,13 @@ public sealed class ReleaseSupplierInvoicePaymentHoldCommandHandler(ApplicationD
             && x.PurchaseReceiptNo == invoice.PurchaseReceiptNo,
             cancellationToken)
             ?? throw new KnownException($"Purchase receipt '{invoice.PurchaseReceiptNo}' was not found.");
+        await AccountingPeriodPostingGuard.EnsureOpenAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            invoice.InvoiceDate,
+            "supplier invoice payment hold release voucher",
+            cancellationToken);
         var payable = AccountPayable.Create(
             request.OrganizationId,
             request.EnvironmentId,

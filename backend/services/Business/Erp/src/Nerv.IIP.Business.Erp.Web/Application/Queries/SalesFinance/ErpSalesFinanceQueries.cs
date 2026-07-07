@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
+using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Infrastructure;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
@@ -636,6 +638,151 @@ public sealed class GetFinanceSummaryQueryHandler(ApplicationDbContext dbContext
         var receivables = receivablesByCurrency.Sum(x => x.OpenAmount);
         var costCandidates = costCandidatesByCurrency.Sum(x => x.OpenAmount);
         return new FinanceSummaryResponse(payables, receivables, costCandidates, vouchers, payablesByCurrency, receivablesByCurrency, costCandidatesByCurrency);
+    }
+}
+
+public sealed record GetTrialBalanceQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    DateOnly PeriodStartDate,
+    DateOnly PeriodEndDate) : IQuery<TrialBalanceResponse>;
+
+public sealed record TrialBalanceResponse(
+    DateOnly PeriodStartDate,
+    DateOnly PeriodEndDate,
+    decimal TotalLocalDebitAmount,
+    decimal TotalLocalCreditAmount,
+    bool IsBalanced,
+    IReadOnlyCollection<TrialBalanceLine> Lines);
+
+public sealed record TrialBalanceLine(
+    string AccountCode,
+    decimal DebitAmount,
+    decimal CreditAmount,
+    decimal LocalDebitAmount,
+    decimal LocalCreditAmount,
+    decimal LocalBalanceAmount);
+
+public sealed class GetTrialBalanceQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetTrialBalanceQuery, TrialBalanceResponse>
+{
+    public async Task<TrialBalanceResponse> Handle(GetTrialBalanceQuery request, CancellationToken cancellationToken)
+    {
+        var lineBalances = await dbContext.JournalVouchers
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PostingDate >= request.PeriodStartDate
+                && x.PostingDate <= request.PeriodEndDate)
+            .SelectMany(x => x.Lines)
+            .GroupBy(x => x.AccountCode)
+            .Select(x => new
+            {
+                AccountCode = x.Key,
+                DebitAmount = x.Sum(line => line.DebitAmount),
+                CreditAmount = x.Sum(line => line.CreditAmount),
+                LocalDebitAmount = x.Sum(line => line.LocalDebitAmount),
+                LocalCreditAmount = x.Sum(line => line.LocalCreditAmount),
+            })
+            .OrderBy(x => x.AccountCode)
+            .ToArrayAsync(cancellationToken);
+
+        var lines = lineBalances
+            .Select(x => new TrialBalanceLine(
+                x.AccountCode,
+                x.DebitAmount,
+                x.CreditAmount,
+                x.LocalDebitAmount,
+                x.LocalCreditAmount,
+                x.LocalDebitAmount - x.LocalCreditAmount))
+            .ToArray();
+
+        var totalDebit = lines.Sum(x => x.LocalDebitAmount);
+        var totalCredit = lines.Sum(x => x.LocalCreditAmount);
+        return new TrialBalanceResponse(
+            request.PeriodStartDate,
+            request.PeriodEndDate,
+            totalDebit,
+            totalCredit,
+            totalDebit == totalCredit,
+            lines);
+    }
+}
+
+public sealed record GetMonthEndChecklistQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    DateOnly PeriodStartDate,
+    DateOnly PeriodEndDate) : IQuery<MonthEndChecklistResponse>;
+
+public sealed record MonthEndChecklistResponse(
+    DateOnly PeriodStartDate,
+    DateOnly PeriodEndDate,
+    int UnpostedDocumentCount,
+    int UnmatchedSupplierInvoiceCount,
+    decimal GrIrLocalBalance,
+    int PostedVoucherCount);
+
+public sealed class GetMonthEndChecklistQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetMonthEndChecklistQuery, MonthEndChecklistResponse>
+{
+    public async Task<MonthEndChecklistResponse> Handle(GetMonthEndChecklistQuery request, CancellationToken cancellationToken)
+    {
+        var unexecutedPayments = await dbContext.PaymentExecutions
+            .AsNoTracking()
+            .CountAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PaymentDate >= request.PeriodStartDate
+                && x.PaymentDate <= request.PeriodEndDate
+                && x.Status != "executed",
+                cancellationToken);
+        var unmatchedCashReceipts = await dbContext.CashReceipts
+            .AsNoTracking()
+            .CountAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.ReceiptDate >= request.PeriodStartDate
+                && x.ReceiptDate <= request.PeriodEndDate
+                && x.Status != "matched",
+                cancellationToken);
+        var unmatchedSupplierInvoices = await dbContext.SupplierInvoices
+            .AsNoTracking()
+            .CountAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.InvoiceDate >= request.PeriodStartDate
+                && x.InvoiceDate <= request.PeriodEndDate
+                && x.MatchStatus != SupplierInvoiceMatchStatus.Matched
+                && x.MatchStatus != SupplierInvoiceMatchStatus.Voided,
+                cancellationToken);
+        var grIrBalance = await dbContext.JournalVouchers
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PostingDate >= request.PeriodStartDate
+                && x.PostingDate <= request.PeriodEndDate)
+            .SelectMany(x => x.Lines)
+            .Where(x => x.AccountCode == FinanceVoucherFactory.GoodsReceiptInvoiceReceiptAccountCode)
+            .SumAsync(x => x.LocalDebitAmount - x.LocalCreditAmount, cancellationToken);
+        var postedVoucherCount = await dbContext.JournalVouchers
+            .AsNoTracking()
+            .CountAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PostingDate >= request.PeriodStartDate
+                && x.PostingDate <= request.PeriodEndDate,
+                cancellationToken);
+
+        return new MonthEndChecklistResponse(
+            request.PeriodStartDate,
+            request.PeriodEndDate,
+            unexecutedPayments + unmatchedCashReceipts,
+            unmatchedSupplierInvoices,
+            Math.Abs(grIrBalance),
+            postedVoucherCount);
     }
 }
 

@@ -5,10 +5,13 @@ using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Erp.Domain;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CashReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CostCandidateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.OpportunityAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
@@ -62,6 +65,11 @@ public sealed class ErpSchemaConventionTests
             typeof(DeliveryOrder),
             typeof(AccountPayable),
             typeof(AccountReceivable),
+            typeof(AccountingPeriod),
+            typeof(PaymentExecution),
+            typeof(PaymentExecutionAllocation),
+            typeof(CashReceipt),
+            typeof(CashReceiptAllocation),
             typeof(JournalVoucher),
             typeof(CostCandidate),
             typeof(CodeCounter),

@@ -38,14 +38,21 @@ public sealed class ErpSalesFinanceEndpointContractTests
     {
         var contracts = ErpFinanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(14, contracts.Length);
+        Assert.Equal(21, contracts.Length);
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createErpAccountPayable");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables/payment" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "registerErpAccountPayablePayment");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payment-executions" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.OperationId == "executeErpPaymentExecution");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/receivables" && x.OperationId == "createErpAccountReceivable");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/receivables/collection" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "registerErpAccountReceivableCollection");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/cash-receipts" && x.PermissionCode == ErpPermissionCodes.FinanceManage && x.OperationId == "registerErpCashReceipt");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/accounting-periods" && x.OperationId == "openErpAccountingPeriod");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/accounting-periods/close" && x.OperationId == "closeErpAccountingPeriod");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/accounting-periods/reopen" && x.OperationId == "reopenErpAccountingPeriod");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/cost-candidates" && x.OperationId == "createErpCostCandidate");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/vouchers" && x.OperationId == "postErpJournalVoucher");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/vouchers" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "listErpJournalVouchers");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/trial-balance" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpTrialBalance");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/month-end-checklist" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpMonthEndChecklist");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/summary" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "getErpFinanceSummary");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/payables" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "listErpAccountPayables");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/finance/receivables" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.FinanceRead && x.OperationId == "listErpAccountReceivables");

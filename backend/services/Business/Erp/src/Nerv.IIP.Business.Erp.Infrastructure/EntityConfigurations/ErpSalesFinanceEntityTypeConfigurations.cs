@@ -1,9 +1,12 @@
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CashReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CostCandidateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.OpportunityAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 
@@ -211,6 +214,105 @@ public sealed class CostCandidateEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.LocalAmount).HasColumnName("local_amount").IsRequired().HasPrecision(18, 6).HasComment("Candidate amount in local currency.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.CandidateNo }).IsUnique();
+    }
+}
+
+public sealed class AccountingPeriodEntityTypeConfiguration : IEntityTypeConfiguration<AccountingPeriod>
+{
+    public void Configure(EntityTypeBuilder<AccountingPeriod> builder)
+    {
+        builder.ToTable("accounting_periods", table => table.HasComment("ERP accounting period open and close control."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Accounting period aggregate id.");
+        PurchaseRequisitionEntityTypeConfiguration.AddTenantColumns(builder);
+        builder.Property(x => x.PeriodCode).HasColumnName("period_code").IsRequired().HasMaxLength(50).HasComment("Accounting period code such as fiscal month.");
+        builder.Property(x => x.StartDate).HasColumnName("start_date").IsRequired().HasComment("Inclusive period start date.");
+        builder.Property(x => x.EndDate).HasColumnName("end_date").IsRequired().HasComment("Inclusive period end date.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Accounting period status.");
+        builder.Property(x => x.OpenedAtUtc).HasColumnName("opened_at_utc").IsRequired().HasComment("UTC time when period was opened.");
+        builder.Property(x => x.ClosedAtUtc).HasColumnName("closed_at_utc").HasComment("UTC time when period was closed.");
+        builder.Property(x => x.ClosedBy).HasColumnName("closed_by").HasMaxLength(100).HasComment("User or service that closed the period.");
+        builder.Property(x => x.CloseReason).HasColumnName("close_reason").HasMaxLength(500).HasComment("Auditable close reason.");
+        builder.Property(x => x.ReopenedAtUtc).HasColumnName("reopened_at_utc").HasComment("UTC time when period was reopened for exception handling.");
+        builder.Property(x => x.ReopenedBy).HasColumnName("reopened_by").HasMaxLength(100).HasComment("User or service that reopened the period.");
+        builder.Property(x => x.ReopenReason).HasColumnName("reopen_reason").HasMaxLength(500).HasComment("Auditable reopen or exception reason.");
+        builder.Ignore(x => x.CanPost);
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.PeriodCode }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.StartDate, x.EndDate });
+    }
+}
+
+public sealed class PaymentExecutionEntityTypeConfiguration : IEntityTypeConfiguration<PaymentExecution>
+{
+    public void Configure(EntityTypeBuilder<PaymentExecution> builder)
+    {
+        builder.ToTable("payment_executions", table => table.HasComment("ERP payment execution document for AP settlement."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Payment execution aggregate id.");
+        PurchaseRequisitionEntityTypeConfiguration.AddTenantColumns(builder);
+        builder.Property(x => x.PaymentExecutionNo).HasColumnName("payment_execution_no").IsRequired().HasMaxLength(100).HasComment("Payment execution document number.");
+        builder.Property(x => x.SupplierCode).HasColumnName("supplier_code").IsRequired().HasMaxLength(100).HasComment("MasterData supplier code.");
+        builder.Property(x => x.Amount).HasColumnName("amount").IsRequired().HasPrecision(18, 6).HasComment("Payment amount.");
+        builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Payment currency code.");
+        builder.Property(x => x.PaymentDate).HasColumnName("payment_date").IsRequired().HasComment("Payment execution date.");
+        builder.Property(x => x.CashAccountCode).HasColumnName("cash_account_code").IsRequired().HasMaxLength(100).HasComment("Cash or bank account code used by payment.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(50).HasComment("Payment execution status.");
+        builder.Property(x => x.ApprovedBy).HasColumnName("approved_by").IsRequired().HasMaxLength(100).HasComment("Approver user or service.");
+        builder.Property(x => x.ApprovedAtUtc).HasColumnName("approved_at_utc").IsRequired().HasComment("UTC approval time.");
+        builder.Property(x => x.ExecutedBy).HasColumnName("executed_by").HasMaxLength(100).HasComment("Executor user or service.");
+        builder.Property(x => x.ExecutedAtUtc).HasColumnName("executed_at_utc").HasComment("UTC execution time.");
+        builder.HasMany(x => x.Allocations).WithOne().HasForeignKey("PaymentExecutionId").OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(x => x.Allocations).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.PaymentExecutionNo }).IsUnique();
+    }
+}
+
+public sealed class PaymentExecutionAllocationEntityTypeConfiguration : IEntityTypeConfiguration<PaymentExecutionAllocation>
+{
+    public void Configure(EntityTypeBuilder<PaymentExecutionAllocation> builder)
+    {
+        builder.ToTable("payment_execution_allocations", table => table.HasComment("ERP payment execution allocation to AP documents."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Payment execution allocation id.");
+        builder.Property<PaymentExecutionId>("PaymentExecutionId").HasColumnName("payment_execution_id").IsRequired().HasComment("Owning payment execution id.");
+        builder.Property(x => x.PayableNo).HasColumnName("payable_no").IsRequired().HasMaxLength(100).HasComment("Allocated AP document number.");
+        builder.Property(x => x.Amount).HasColumnName("amount").IsRequired().HasPrecision(18, 6).HasComment("Allocated payment amount.");
+    }
+}
+
+public sealed class CashReceiptEntityTypeConfiguration : IEntityTypeConfiguration<CashReceipt>
+{
+    public void Configure(EntityTypeBuilder<CashReceipt> builder)
+    {
+        builder.ToTable("cash_receipts", table => table.HasComment("ERP cash receipt document for AR matching."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Cash receipt aggregate id.");
+        PurchaseRequisitionEntityTypeConfiguration.AddTenantColumns(builder);
+        builder.Property(x => x.CashReceiptNo).HasColumnName("cash_receipt_no").IsRequired().HasMaxLength(100).HasComment("Cash receipt document number.");
+        builder.Property(x => x.CustomerCode).HasColumnName("customer_code").IsRequired().HasMaxLength(100).HasComment("MasterData customer code.");
+        builder.Property(x => x.Amount).HasColumnName("amount").IsRequired().HasPrecision(18, 6).HasComment("Receipt amount.");
+        builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Receipt currency code.");
+        builder.Property(x => x.ReceiptDate).HasColumnName("receipt_date").IsRequired().HasComment("Cash receipt date.");
+        builder.Property(x => x.CashAccountCode).HasColumnName("cash_account_code").IsRequired().HasMaxLength(100).HasComment("Cash or bank account code used by receipt.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(50).HasComment("Cash receipt status.");
+        builder.Property(x => x.RegisteredAtUtc).HasColumnName("registered_at_utc").IsRequired().HasComment("UTC registration time.");
+        builder.Property(x => x.MatchedAtUtc).HasColumnName("matched_at_utc").HasComment("UTC matching time.");
+        builder.HasMany(x => x.Allocations).WithOne().HasForeignKey("CashReceiptId").OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(x => x.Allocations).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.CashReceiptNo }).IsUnique();
+    }
+}
+
+public sealed class CashReceiptAllocationEntityTypeConfiguration : IEntityTypeConfiguration<CashReceiptAllocation>
+{
+    public void Configure(EntityTypeBuilder<CashReceiptAllocation> builder)
+    {
+        builder.ToTable("cash_receipt_allocations", table => table.HasComment("ERP cash receipt allocation to AR documents."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Cash receipt allocation id.");
+        builder.Property<CashReceiptId>("CashReceiptId").HasColumnName("cash_receipt_id").IsRequired().HasComment("Owning cash receipt id.");
+        builder.Property(x => x.ReceivableNo).HasColumnName("receivable_no").IsRequired().HasMaxLength(100).HasComment("Allocated AR document number.");
+        builder.Property(x => x.Amount).HasColumnName("amount").IsRequired().HasPrecision(18, 6).HasComment("Allocated receipt amount.");
     }
 }
 

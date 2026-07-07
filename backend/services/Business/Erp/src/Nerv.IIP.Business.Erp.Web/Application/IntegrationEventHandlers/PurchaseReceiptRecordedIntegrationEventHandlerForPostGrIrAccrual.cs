@@ -120,6 +120,13 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
             return;
         }
 
+        await AccountingPeriodPostingGuard.EnsureOpenAsync(
+            dbContext,
+            receipt.OrganizationId,
+            receipt.EnvironmentId,
+            DateOnly.FromDateTime(receipt.RecordedAtUtc),
+            "late purchase receipt GR/IR accrual voucher",
+            cancellationToken);
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForGoodsReceiptIrAccrual(
             receipt,
             amount,

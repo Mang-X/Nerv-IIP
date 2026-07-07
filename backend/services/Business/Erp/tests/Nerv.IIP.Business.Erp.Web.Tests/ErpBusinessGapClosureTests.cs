@@ -654,6 +654,125 @@ public sealed class ErpBusinessGapClosureTests
     }
 
     [Fact]
+    public async Task Closed_accounting_period_blocks_vouchers_until_reopened()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+
+        await new OpenAccountingPeriodCommandHandler(dbContext).Handle(
+            new OpenAccountingPeriodCommand("org-001", "env-dev", "2026-06", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new CloseAccountingPeriodCommandHandler(dbContext).Handle(
+            new CloseAccountingPeriodCommand("org-001", "env-dev", "2026-06", "u-controller", "month-end complete"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var postCommand = new PostJournalVoucherCommand(
+            "org-001",
+            "env-dev",
+            "JV-CLOSED-001",
+            new DateOnly(2026, 6, 20),
+            [
+                new JournalVoucherCommandLine("1401", 100m, 0m, "inventory"),
+                new JournalVoucherCommandLine("2202", 0m, 100m, "payable"),
+            ],
+            IdempotencyKey: "idem-jv-closed-001");
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new PostJournalVoucherCommandHandler(dbContext).Handle(postCommand, CancellationToken.None));
+
+        Assert.Contains("closed accounting period", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(dbContext.JournalVouchers);
+
+        await new ReopenAccountingPeriodCommandHandler(dbContext).Handle(
+            new ReopenAccountingPeriodCommand("org-001", "env-dev", "2026-06", "u-controller", "late integration exception"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new PostJournalVoucherCommandHandler(dbContext).Handle(postCommand with { IdempotencyKey = "idem-jv-reopened-001" }, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Single(dbContext.JournalVouchers);
+        Assert.Equal("late integration exception", dbContext.AccountingPeriods.Single().ReopenReason);
+    }
+
+    [Fact]
+    public async Task Payment_execution_and_cash_receipt_persist_documents_and_update_aging()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await new CreateAccountPayableCommandHandler(dbContext).Handle(
+            new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "INV-001", "SUP-001", 100m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
+            CancellationToken.None);
+        await new CreateAccountReceivableCommandHandler(dbContext).Handle(
+            new CreateAccountReceivableCommand("org-001", "env-dev", "AR-001", "DO-001", "CUS-001", 80m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 15), "NET14"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new RegisterAccountPayablePaymentCommandHandler(dbContext).Handle(
+            new RegisterAccountPayablePaymentCommand("org-001", "env-dev", "AP-001", 40m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ap-payment-715"),
+            CancellationToken.None);
+        await new RegisterAccountReceivableCollectionCommandHandler(dbContext).Handle(
+            new RegisterAccountReceivableCollectionCommand("org-001", "env-dev", "AR-001", 35m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ar-collection-715"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var payment = Assert.Single(dbContext.PaymentExecutions);
+        var receipt = Assert.Single(dbContext.CashReceipts);
+        Assert.Equal("executed", payment.Status);
+        Assert.Equal("matched", receipt.Status);
+        Assert.Equal(40m, Assert.Single(payment.Allocations).Amount);
+        Assert.Equal(35m, Assert.Single(receipt.Allocations).Amount);
+        Assert.Equal(60m, dbContext.AccountPayables.Single().OpenAmount);
+        Assert.Equal(45m, dbContext.AccountReceivables.Single().OpenAmount);
+
+        var receivables = await new ListAccountReceivablesQueryHandler(dbContext).Handle(
+            new ListAccountReceivablesQuery("org-001", "env-dev", "open", null, 0, 10, new DateOnly(2026, 7, 1)),
+            CancellationToken.None);
+        Assert.Equal("1-30", Assert.Single(receivables.Items).AgingBucket);
+    }
+
+    [Fact]
+    public async Task Month_end_checklist_and_trial_balance_expose_minimum_close_read_model()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await new CreateAccountPayableCommandHandler(dbContext).Handle(
+            new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "INV-001", "SUP-001", 100m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
+            CancellationToken.None);
+        await new CreateAccountReceivableCommandHandler(dbContext).Handle(
+            new CreateAccountReceivableCommand("org-001", "env-dev", "AR-001", "DO-001", "CUS-001", 80m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
+            CancellationToken.None);
+        await new PostJournalVoucherCommandHandler(dbContext).Handle(
+            new PostJournalVoucherCommand(
+                "org-001",
+                "env-dev",
+                "JV-GRIR-OPEN",
+                new DateOnly(2026, 6, 15),
+                [
+                    new JournalVoucherCommandLine("1401", 25m, 0m, "inventory"),
+                    new JournalVoucherCommandLine(FinanceVoucherFactory.GoodsReceiptInvoiceReceiptAccountCode, 0m, 25m, "open GR/IR"),
+                ]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var trialBalance = await new GetTrialBalanceQueryHandler(dbContext).Handle(
+            new GetTrialBalanceQuery("org-001", "env-dev", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)),
+            CancellationToken.None);
+        var checklist = await new GetMonthEndChecklistQueryHandler(dbContext).Handle(
+            new GetMonthEndChecklistQuery("org-001", "env-dev", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)),
+            CancellationToken.None);
+
+        Assert.True(trialBalance.IsBalanced);
+        Assert.Contains(trialBalance.Lines, x => x.AccountCode == "1401" && x.LocalDebitAmount == 25m);
+        Assert.Equal(25m, checklist.GrIrLocalBalance);
+        Assert.Equal(3, checklist.PostedVoucherCount);
+        Assert.Equal(0, checklist.UnpostedDocumentCount);
+        Assert.Equal(0, checklist.UnmatchedSupplierInvoiceCount);
+    }
+
+    [Fact]
     public async Task Payable_payment_allocates_multiple_invoices_posts_on_account_and_realized_fx()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();

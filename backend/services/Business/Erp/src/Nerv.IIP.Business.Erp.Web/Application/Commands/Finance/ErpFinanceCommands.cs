@@ -1,14 +1,122 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CashReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CostCandidateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
+
+public sealed record OpenAccountingPeriodCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string PeriodCode,
+    DateOnly StartDate,
+    DateOnly EndDate) : ICommand<AccountingPeriodId>;
+
+public sealed class OpenAccountingPeriodCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<OpenAccountingPeriodCommand, AccountingPeriodId>
+{
+    public async Task<AccountingPeriodId> Handle(OpenAccountingPeriodCommand request, CancellationToken cancellationToken)
+    {
+        var existing = await dbContext.AccountingPeriods.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.PeriodCode == request.PeriodCode,
+            cancellationToken);
+        if (existing is not null)
+        {
+            return existing.Id;
+        }
+
+        var period = AccountingPeriod.Open(request.OrganizationId, request.EnvironmentId, request.PeriodCode, request.StartDate, request.EndDate);
+        dbContext.AccountingPeriods.Add(period);
+        return period.Id;
+    }
+}
+
+public sealed record CloseAccountingPeriodCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string PeriodCode,
+    string ClosedBy,
+    string Reason) : ICommand;
+
+public sealed class CloseAccountingPeriodCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CloseAccountingPeriodCommand>
+{
+    public async Task Handle(CloseAccountingPeriodCommand request, CancellationToken cancellationToken)
+    {
+        var period = await AccountingPeriodPostingGuard.FindPeriodAsync(dbContext, request.OrganizationId, request.EnvironmentId, request.PeriodCode, cancellationToken);
+        period.Close(request.ClosedBy, request.Reason);
+    }
+}
+
+public sealed record ReopenAccountingPeriodCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string PeriodCode,
+    string ReopenedBy,
+    string Reason) : ICommand;
+
+public sealed class ReopenAccountingPeriodCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<ReopenAccountingPeriodCommand>
+{
+    public async Task Handle(ReopenAccountingPeriodCommand request, CancellationToken cancellationToken)
+    {
+        var period = await AccountingPeriodPostingGuard.FindPeriodAsync(dbContext, request.OrganizationId, request.EnvironmentId, request.PeriodCode, cancellationToken);
+        period.Reopen(request.ReopenedBy, request.Reason);
+    }
+}
+
+internal static class AccountingPeriodPostingGuard
+{
+    public static async Task<AccountingPeriod> FindPeriodAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string periodCode,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.AccountingPeriods.SingleOrDefaultAsync(x =>
+            x.OrganizationId == organizationId
+            && x.EnvironmentId == environmentId
+            && x.PeriodCode == periodCode,
+            cancellationToken)
+            ?? throw new KnownException($"Accounting period '{periodCode}' was not found.");
+    }
+
+    public static async Task EnsureOpenAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        DateOnly postingDate,
+        string sourceDescription,
+        CancellationToken cancellationToken)
+    {
+        var period = await dbContext.AccountingPeriods
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.StartDate <= postingDate
+                && x.EndDate >= postingDate)
+            .OrderByDescending(x => x.StartDate)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (period is null || period.CanPost)
+        {
+            return;
+        }
+
+        throw new KnownException($"Cannot post {sourceDescription} into closed accounting period '{period.PeriodCode}'. Reopen the period with an auditable reason before posting late integration or manual voucher facts.");
+    }
+}
 
 public sealed record CreateAccountPayableCommand(
     string OrganizationId,
@@ -45,6 +153,13 @@ public sealed class CreateAccountPayableCommandHandler(ApplicationDbContext dbCo
 
     public async Task<AccountPayableId> Handle(CreateAccountPayableCommand request, CancellationToken cancellationToken)
     {
+        await AccountingPeriodPostingGuard.EnsureOpenAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.InvoiceDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
+            "account payable voucher",
+            cancellationToken);
         var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "account-payable", request.PayableNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.SourceDocumentNo, request.SupplierCode, request.Amount, request.CurrencyCode, request.InvoiceDate, request.DueDate, request.PaymentTermCode, request.ExchangeRate), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -93,6 +208,13 @@ public sealed class CreateAccountReceivableCommandHandler(ApplicationDbContext d
 
     public async Task<AccountReceivableId> Handle(CreateAccountReceivableCommand request, CancellationToken cancellationToken)
     {
+        await AccountingPeriodPostingGuard.EnsureOpenAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.InvoiceDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
+            "account receivable voucher",
+            cancellationToken);
         var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "account-receivable", request.ReceivableNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.SourceDocumentNo, request.CustomerCode, request.Amount, request.CurrencyCode, request.InvoiceDate, request.DueDate, request.PaymentTermCode, request.ExchangeRate), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -129,6 +251,13 @@ public sealed class CreateCostCandidateCommandHandler(ApplicationDbContext dbCon
 
     public async Task<CostCandidateId> Handle(CreateCostCandidateCommand request, CancellationToken cancellationToken)
     {
+        await AccountingPeriodPostingGuard.EnsureOpenAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            DateOnly.FromDateTime(DateTime.UtcNow),
+            "cost candidate voucher",
+            cancellationToken);
         var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "cost-candidate", request.CandidateNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.SourceType, request.SourceDocumentNo, request.Amount, request.CurrencyCode, request.ExchangeRate), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -187,6 +316,13 @@ public sealed class RegisterAccountPayablePaymentCommandHandler(ApplicationDbCon
 
     public async Task Handle(RegisterAccountPayablePaymentCommand request, CancellationToken cancellationToken)
     {
+        await AccountingPeriodPostingGuard.EnsureOpenAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.PaymentDate,
+            "payment execution voucher",
+            cancellationToken);
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId,
@@ -236,6 +372,22 @@ public sealed class RegisterAccountPayablePaymentCommandHandler(ApplicationDbCon
         var paymentCurrencyCode = string.IsNullOrWhiteSpace(request.PaymentCurrencyCode)
             ? voucherAllocations[0].Payable.CurrencyCode
             : request.PaymentCurrencyCode.Trim().ToUpperInvariant();
+        var paymentExecution = PaymentExecution.Approve(
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Code,
+            voucherAllocations.Select(x => x.Payable.SupplierCode).Distinct(StringComparer.Ordinal).Count() == 1
+                ? voucherAllocations[0].Payable.SupplierCode
+                : "multiple",
+            request.Amount,
+            paymentCurrencyCode,
+            request.PaymentDate,
+            request.CashAccountCode,
+            "system:business-erp");
+        paymentExecution.Execute(
+            allocationLines.Select(x => new PaymentExecutionAllocationDraft(x.PayableNo, x.Amount)).ToArray(),
+            "system:business-erp");
+        dbContext.PaymentExecutions.Add(paymentExecution);
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForPayablePayment(
             voucherAllocations,
             allocation.Code,
@@ -277,6 +429,13 @@ public sealed class RegisterAccountReceivableCollectionCommandHandler(Applicatio
 
     public async Task Handle(RegisterAccountReceivableCollectionCommand request, CancellationToken cancellationToken)
     {
+        await AccountingPeriodPostingGuard.EnsureOpenAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.CollectionDate,
+            "cash receipt voucher",
+            cancellationToken);
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId,
@@ -303,6 +462,17 @@ public sealed class RegisterAccountReceivableCollectionCommandHandler(Applicatio
             ?? throw new KnownException($"Account receivable '{request.ReceivableNo}' was not found.");
 
         receivable.RegisterCollection(request.Amount);
+        var cashReceipt = CashReceipt.Register(
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Code,
+            receivable.CustomerCode,
+            request.Amount,
+            receivable.CurrencyCode,
+            request.CollectionDate,
+            request.CashAccountCode);
+        cashReceipt.Match([new CashReceiptAllocationDraft(receivable.ReceivableNo, request.Amount)]);
+        dbContext.CashReceipts.Add(cashReceipt);
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForReceivableCollection(receivable, allocation.Code, request.Amount, request.CollectionDate, request.CashAccountCode));
     }
 }
@@ -352,6 +522,13 @@ public sealed class PostJournalVoucherCommandHandler(ApplicationDbContext dbCont
 
     public async Task<JournalVoucherId> Handle(PostJournalVoucherCommand request, CancellationToken cancellationToken)
     {
+        await AccountingPeriodPostingGuard.EnsureOpenAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.PostingDate,
+            "journal voucher",
+            cancellationToken);
         var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "journal-voucher", request.VoucherNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.PostingDate, request.Lines.Select(x => $"{x.AccountCode}:{x.DebitAmount}:{x.CreditAmount}:{x.Memo}:{x.CurrencyCode}:{x.ExchangeRate}:{x.LocalDebitAmount}:{x.LocalCreditAmount}")), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
