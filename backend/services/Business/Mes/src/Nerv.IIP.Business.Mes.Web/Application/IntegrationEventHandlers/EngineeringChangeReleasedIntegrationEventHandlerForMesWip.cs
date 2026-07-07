@@ -1,6 +1,7 @@
 using DotNetCore.CAP;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
@@ -94,11 +95,13 @@ public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
             return;
         }
 
-        await using var transaction = await unitOfWork.BeginTransactionAsync(cancellationToken);
-        unitOfWork.CurrentTransaction = transaction;
-        var currentTransaction = unitOfWork.CurrentTransaction;
+        var transaction = await unitOfWork.BeginTransactionAsync(cancellationToken);
+        IDbContextTransaction transactionToDispose = transaction;
         try
         {
+            unitOfWork.CurrentTransaction = transaction;
+            transactionToDispose = unitOfWork.CurrentTransaction ?? transaction;
+
             await HandleValidEventCoreAsync(integrationEvent, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             await unitOfWork.CommitAsync(cancellationToken);
@@ -110,10 +113,7 @@ public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
         }
         finally
         {
-            if (currentTransaction is not null)
-            {
-                await currentTransaction.DisposeAsync();
-            }
+            await transactionToDispose.DisposeAsync();
         }
     }
 
