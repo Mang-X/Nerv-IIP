@@ -302,6 +302,28 @@ public sealed class PostBusinessConsoleErpJournalVoucherEndpoint(
 
 [Tags("Business Console ERP")]
 [HttpPost("/api/business-console/v1/erp/finance/payment-executions")]
+[BusinessGatewayOperationId("approveBusinessConsoleErpPaymentExecution")]
+public sealed class ApproveBusinessConsoleErpPaymentExecutionEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleApproveErpPaymentExecutionRequest, string>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceManage)
+{
+    protected override string OrganizationId(BusinessConsoleApproveErpPaymentExecutionRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleApproveErpPaymentExecutionRequest request) => request.EnvironmentId;
+
+    protected override Task<string> ForwardAsync(
+        BusinessConsoleApproveErpPaymentExecutionRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ApprovePaymentExecutionAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpPost("/api/business-console/v1/erp/finance/payment-executions/{paymentExecutionNo}/execute")]
 [BusinessGatewayOperationId("executeBusinessConsoleErpPaymentExecution")]
 public sealed class ExecuteBusinessConsoleErpPaymentExecutionEndpoint(
     IBusinessGatewayAuthorizationClient auth,
@@ -318,8 +340,11 @@ public sealed class ExecuteBusinessConsoleErpPaymentExecutionEndpoint(
     protected override Task<string> ForwardAsync(
         BusinessConsoleExecuteErpPaymentExecutionRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        erp.ExecutePaymentExecutionAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var downstreamRequest = request with { PaymentExecutionNo = Route<string>("paymentExecutionNo") ?? request.PaymentExecutionNo };
+        return erp.ExecutePaymentExecutionAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
+    }
 }
 
 [Tags("Business Console ERP")]
@@ -342,6 +367,31 @@ public sealed class RegisterBusinessConsoleErpCashReceiptEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         erp.RegisterCashReceiptAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpPost("/api/business-console/v1/erp/finance/cash-receipts/{cashReceiptNo}/match")]
+[BusinessGatewayOperationId("matchBusinessConsoleErpCashReceipt")]
+public sealed class MatchBusinessConsoleErpCashReceiptEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMatchErpCashReceiptRequest, string>(
+        auth,
+        BusinessGatewayPermissions.ErpFinanceManage)
+{
+    protected override string OrganizationId(BusinessConsoleMatchErpCashReceiptRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMatchErpCashReceiptRequest request) => request.EnvironmentId;
+
+    protected override Task<string> ForwardAsync(
+        BusinessConsoleMatchErpCashReceiptRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var downstreamRequest = request with { CashReceiptNo = Route<string>("cashReceiptNo") ?? request.CashReceiptNo };
+        return erp.MatchCashReceiptAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
+    }
 }
 
 [Tags("Business Console ERP")]

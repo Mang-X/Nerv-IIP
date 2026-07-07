@@ -4358,7 +4358,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     memo?: string;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleExecuteErpPaymentExecutionRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApproveErpPaymentExecutionRequest = {
     organizationId?: string;
     environmentId?: string;
     payableNo?: string;
@@ -4376,6 +4376,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     amount?: number;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleExecuteErpPaymentExecutionRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    executedBy?: string;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterErpCashReceiptRequest = {
     organizationId?: string;
     environmentId?: string;
@@ -4384,6 +4390,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     collectionDate?: string;
     cashAccountCode?: string;
     idempotencyKey?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMatchErpCashReceiptRequest = {
+    organizationId?: string;
+    environmentId?: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleOpenErpAccountingPeriodResponse = NetCorePalExtensionsDtoResponseData & {
@@ -13142,11 +13153,40 @@ export type PostBusinessConsoleErpJournalVoucherResponses = {
 
 export type PostBusinessConsoleErpJournalVoucherResponse = PostBusinessConsoleErpJournalVoucherResponses[keyof PostBusinessConsoleErpJournalVoucherResponses];
 
-export type ExecuteBusinessConsoleErpPaymentExecutionData = {
-    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleExecuteErpPaymentExecutionRequest;
+export type ApproveBusinessConsoleErpPaymentExecutionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApproveErpPaymentExecutionRequest;
     path?: never;
     query?: never;
     url: '/api/business-console/v1/erp/finance/payment-executions';
+};
+
+export type ApproveBusinessConsoleErpPaymentExecutionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ApproveBusinessConsoleErpPaymentExecutionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfString;
+};
+
+export type ApproveBusinessConsoleErpPaymentExecutionResponse = ApproveBusinessConsoleErpPaymentExecutionResponses[keyof ApproveBusinessConsoleErpPaymentExecutionResponses];
+
+export type ExecuteBusinessConsoleErpPaymentExecutionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleExecuteErpPaymentExecutionRequest;
+    path: {
+        paymentExecutionNo: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/erp/finance/payment-executions/{paymentExecutionNo}/execute';
 };
 
 export type ExecuteBusinessConsoleErpPaymentExecutionErrors = {
@@ -13195,6 +13235,35 @@ export type RegisterBusinessConsoleErpCashReceiptResponses = {
 };
 
 export type RegisterBusinessConsoleErpCashReceiptResponse = RegisterBusinessConsoleErpCashReceiptResponses[keyof RegisterBusinessConsoleErpCashReceiptResponses];
+
+export type MatchBusinessConsoleErpCashReceiptData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMatchErpCashReceiptRequest;
+    path: {
+        cashReceiptNo: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/erp/finance/cash-receipts/{cashReceiptNo}/match';
+};
+
+export type MatchBusinessConsoleErpCashReceiptErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type MatchBusinessConsoleErpCashReceiptResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfString;
+};
+
+export type MatchBusinessConsoleErpCashReceiptResponse = MatchBusinessConsoleErpCashReceiptResponses[keyof MatchBusinessConsoleErpCashReceiptResponses];
 
 export type OpenBusinessConsoleErpAccountingPeriodData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOpenErpAccountingPeriodRequest;

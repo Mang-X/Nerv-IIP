@@ -341,32 +341,18 @@ public sealed class RegisterAccountPayablePaymentCommandHandler(ApplicationDbCon
             return;
         }
 
-        var allocationLines = request.Allocations is { Count: > 0 }
-            ? request.Allocations
-            : [new PayablePaymentAllocationCommandLine(request.PayableNo, request.Amount)];
-        var allocatedAmount = allocationLines.Sum(x => x.Amount);
-        if (allocatedAmount > request.Amount)
+        var allocationLines = PaymentExecutionCommandFacts.NormalizeAllocationLines(request.PayableNo, request.Amount, request.Allocations);
+        var voucherAllocations = await PaymentExecutionCommandFacts.LoadPayableVoucherAllocationsAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocationLines,
+            request.Amount,
+            cancellationToken);
+        var supplierCode = PaymentExecutionCommandFacts.ResolveSingleSupplierCode(voucherAllocations);
+        foreach (var voucherAllocation in voucherAllocations)
         {
-            throw new KnownException("Allocated payment amount cannot exceed cash payment amount.");
-        }
-
-        var payableNos = allocationLines.Select(x => x.PayableNo).Distinct(StringComparer.Ordinal).ToArray();
-        var payables = await dbContext.AccountPayables
-            .Where(x =>
-                x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && payableNos.Contains(x.PayableNo))
-            .ToDictionaryAsync(x => x.PayableNo, StringComparer.Ordinal, cancellationToken);
-        var voucherAllocations = new List<PayablePaymentVoucherAllocation>();
-        foreach (var line in allocationLines)
-        {
-            if (!payables.TryGetValue(line.PayableNo, out var payable))
-            {
-                throw new KnownException($"Account payable '{line.PayableNo}' was not found.");
-            }
-
-            payable.RegisterPayment(line.Amount);
-            voucherAllocations.Add(new PayablePaymentVoucherAllocation(payable, line.Amount));
+            voucherAllocation.Payable.RegisterPayment(voucherAllocation.Amount);
         }
 
         var paymentCurrencyCode = string.IsNullOrWhiteSpace(request.PaymentCurrencyCode)
@@ -376,17 +362,15 @@ public sealed class RegisterAccountPayablePaymentCommandHandler(ApplicationDbCon
             request.OrganizationId,
             request.EnvironmentId,
             allocation.Code,
-            voucherAllocations.Select(x => x.Payable.SupplierCode).Distinct(StringComparer.Ordinal).Count() == 1
-                ? voucherAllocations[0].Payable.SupplierCode
-                : "multiple",
+            supplierCode,
             request.Amount,
             paymentCurrencyCode,
+            request.PaymentExchangeRate,
             request.PaymentDate,
             request.CashAccountCode,
-            "system:business-erp");
-        paymentExecution.Execute(
-            allocationLines.Select(x => new PaymentExecutionAllocationDraft(x.PayableNo, x.Amount)).ToArray(),
-            "system:business-erp");
+            "system:business-erp",
+            allocationLines.Select(x => new PaymentExecutionAllocationDraft(x.PayableNo, x.Amount)).ToArray());
+        paymentExecution.Execute("system:business-erp");
         dbContext.PaymentExecutions.Add(paymentExecution);
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForPayablePayment(
             voucherAllocations,
@@ -396,6 +380,142 @@ public sealed class RegisterAccountPayablePaymentCommandHandler(ApplicationDbCon
             request.PaymentExchangeRate,
             request.PaymentDate,
             request.CashAccountCode));
+    }
+}
+
+public sealed record ApprovePaymentExecutionCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string PayableNo,
+    decimal Amount,
+    DateOnly PaymentDate,
+    string CashAccountCode,
+    string IdempotencyKey,
+    string? PaymentCurrencyCode = null,
+    decimal PaymentExchangeRate = 1m,
+    IReadOnlyCollection<PayablePaymentAllocationCommandLine>? Allocations = null) : ICommand<string>;
+
+public sealed class ApprovePaymentExecutionCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
+    : ICommandHandler<ApprovePaymentExecutionCommand, string>
+{
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
+
+    public async Task<string> Handle(ApprovePaymentExecutionCommand request, CancellationToken cancellationToken)
+    {
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "account-payable-payment",
+            null,
+            request.IdempotencyKey,
+            ErpCodingService.Fingerprint(request.PayableNo, request.Amount, request.PaymentDate, request.CashAccountCode, request.PaymentCurrencyCode, request.PaymentExchangeRate, request.Allocations?.Select(x => $"{x.PayableNo}:{x.Amount}")),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay
+            && await dbContext.PaymentExecutions.AnyAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.PaymentExecutionNo == allocation.Code,
+                cancellationToken))
+        {
+            return allocation.Code;
+        }
+
+        var allocationLines = PaymentExecutionCommandFacts.NormalizeAllocationLines(request.PayableNo, request.Amount, request.Allocations);
+        var voucherAllocations = await PaymentExecutionCommandFacts.LoadPayableVoucherAllocationsAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocationLines,
+            request.Amount,
+            cancellationToken);
+        var paymentCurrencyCode = string.IsNullOrWhiteSpace(request.PaymentCurrencyCode)
+            ? voucherAllocations[0].Payable.CurrencyCode
+            : request.PaymentCurrencyCode.Trim().ToUpperInvariant();
+
+        dbContext.PaymentExecutions.Add(PaymentExecution.Approve(
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Code,
+            PaymentExecutionCommandFacts.ResolveSingleSupplierCode(voucherAllocations),
+            request.Amount,
+            paymentCurrencyCode,
+            request.PaymentExchangeRate,
+            request.PaymentDate,
+            request.CashAccountCode,
+            "system:business-erp",
+            allocationLines.Select(x => new PaymentExecutionAllocationDraft(x.PayableNo, x.Amount)).ToArray()));
+        return allocation.Code;
+    }
+}
+
+public sealed record ExecutePaymentExecutionCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string PaymentExecutionNo,
+    string ExecutedBy = "system:business-erp") : ICommand;
+
+public sealed class ExecutePaymentExecutionCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<ExecutePaymentExecutionCommand>
+{
+    public async Task Handle(ExecutePaymentExecutionCommand request, CancellationToken cancellationToken)
+    {
+        var paymentExecution = await dbContext.PaymentExecutions
+            .Include(x => x.Allocations)
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PaymentExecutionNo == request.PaymentExecutionNo,
+                cancellationToken)
+            ?? throw new KnownException($"Payment execution '{request.PaymentExecutionNo}' was not found.");
+        if (paymentExecution.Status == PaymentExecutionStatus.Executed)
+        {
+            return;
+        }
+
+        await AccountingPeriodPostingGuard.EnsureOpenAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            paymentExecution.PaymentDate,
+            "payment execution voucher",
+            cancellationToken);
+        var allocationLines = paymentExecution.Allocations
+            .Select(x => new PayablePaymentAllocationCommandLine(x.PayableNo, x.Amount))
+            .ToArray();
+        var voucherAllocations = await PaymentExecutionCommandFacts.LoadPayableVoucherAllocationsAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocationLines,
+            paymentExecution.Amount,
+            cancellationToken);
+        var supplierCode = PaymentExecutionCommandFacts.ResolveSingleSupplierCode(voucherAllocations);
+        if (!string.Equals(supplierCode, paymentExecution.SupplierCode, StringComparison.Ordinal))
+        {
+            throw new KnownException($"Payment execution '{request.PaymentExecutionNo}' supplier does not match its payable allocations.");
+        }
+
+        foreach (var voucherAllocation in voucherAllocations)
+        {
+            voucherAllocation.Payable.RegisterPayment(voucherAllocation.Amount);
+        }
+
+        paymentExecution.Execute(request.ExecutedBy);
+        if (!await dbContext.JournalVouchers.AnyAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.VoucherNo == paymentExecution.PaymentExecutionNo,
+            cancellationToken))
+        {
+            dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForPayablePayment(
+                voucherAllocations,
+                paymentExecution.PaymentExecutionNo,
+                paymentExecution.Amount,
+                paymentExecution.CurrencyCode,
+                paymentExecution.PaymentExchangeRate,
+                paymentExecution.PaymentDate,
+                paymentExecution.CashAccountCode));
+        }
     }
 }
 
@@ -470,10 +590,127 @@ public sealed class RegisterAccountReceivableCollectionCommandHandler(Applicatio
             request.Amount,
             receivable.CurrencyCode,
             request.CollectionDate,
-            request.CashAccountCode);
-        cashReceipt.Match([new CashReceiptAllocationDraft(receivable.ReceivableNo, request.Amount)]);
+            request.CashAccountCode,
+            [new CashReceiptAllocationDraft(receivable.ReceivableNo, request.Amount)]);
+        cashReceipt.Match();
         dbContext.CashReceipts.Add(cashReceipt);
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForReceivableCollection(receivable, allocation.Code, request.Amount, request.CollectionDate, request.CashAccountCode));
+    }
+}
+
+public sealed record RegisterCashReceiptCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ReceivableNo,
+    decimal Amount,
+    DateOnly CollectionDate,
+    string CashAccountCode,
+    string IdempotencyKey) : ICommand<string>;
+
+public sealed class RegisterCashReceiptCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
+    : ICommandHandler<RegisterCashReceiptCommand, string>
+{
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
+
+    public async Task<string> Handle(RegisterCashReceiptCommand request, CancellationToken cancellationToken)
+    {
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "account-receivable-collection",
+            null,
+            request.IdempotencyKey,
+            ErpCodingService.Fingerprint(request.ReceivableNo, request.Amount, request.CollectionDate, request.CashAccountCode),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay
+            && await dbContext.CashReceipts.AnyAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.CashReceiptNo == allocation.Code,
+                cancellationToken))
+        {
+            return allocation.Code;
+        }
+
+        var receivable = await dbContext.AccountReceivables.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.ReceivableNo == request.ReceivableNo,
+            cancellationToken)
+            ?? throw new KnownException($"Account receivable '{request.ReceivableNo}' was not found.");
+
+        dbContext.CashReceipts.Add(CashReceipt.Register(
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Code,
+            receivable.CustomerCode,
+            request.Amount,
+            receivable.CurrencyCode,
+            request.CollectionDate,
+            request.CashAccountCode,
+            [new CashReceiptAllocationDraft(receivable.ReceivableNo, request.Amount)]));
+        return allocation.Code;
+    }
+}
+
+public sealed record MatchCashReceiptCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string CashReceiptNo) : ICommand;
+
+public sealed class MatchCashReceiptCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<MatchCashReceiptCommand>
+{
+    public async Task Handle(MatchCashReceiptCommand request, CancellationToken cancellationToken)
+    {
+        var cashReceipt = await dbContext.CashReceipts
+            .Include(x => x.Allocations)
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.CashReceiptNo == request.CashReceiptNo,
+                cancellationToken)
+            ?? throw new KnownException($"Cash receipt '{request.CashReceiptNo}' was not found.");
+        if (cashReceipt.Status == CashReceiptStatus.Matched)
+        {
+            return;
+        }
+
+        await AccountingPeriodPostingGuard.EnsureOpenAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            cashReceipt.ReceiptDate,
+            "cash receipt voucher",
+            cancellationToken);
+        if (cashReceipt.Allocations.Count != 1)
+        {
+            throw new KnownException($"Cash receipt '{request.CashReceiptNo}' must have exactly one receivable allocation before matching.");
+        }
+
+        var allocation = cashReceipt.Allocations.Single();
+        var receivable = await dbContext.AccountReceivables.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.ReceivableNo == allocation.ReceivableNo,
+            cancellationToken)
+            ?? throw new KnownException($"Account receivable '{allocation.ReceivableNo}' was not found.");
+
+        receivable.RegisterCollection(allocation.Amount);
+        cashReceipt.Match();
+        if (!await dbContext.JournalVouchers.AnyAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.VoucherNo == cashReceipt.CashReceiptNo,
+            cancellationToken))
+        {
+            dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForReceivableCollection(
+                receivable,
+                cashReceipt.CashReceiptNo,
+                allocation.Amount,
+                cashReceipt.ReceiptDate,
+                cashReceipt.CashAccountCode));
+        }
     }
 }
 
@@ -547,6 +784,68 @@ public sealed class PostJournalVoucherCommandHandler(ApplicationDbContext dbCont
 }
 
 public sealed record PayablePaymentVoucherAllocation(AccountPayable Payable, decimal Amount);
+
+internal static class PaymentExecutionCommandFacts
+{
+    public static IReadOnlyCollection<PayablePaymentAllocationCommandLine> NormalizeAllocationLines(
+        string payableNo,
+        decimal amount,
+        IReadOnlyCollection<PayablePaymentAllocationCommandLine>? allocations)
+    {
+        return allocations is { Count: > 0 }
+            ? allocations
+            : [new PayablePaymentAllocationCommandLine(payableNo, amount)];
+    }
+
+    public static async Task<List<PayablePaymentVoucherAllocation>> LoadPayableVoucherAllocationsAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<PayablePaymentAllocationCommandLine> allocationLines,
+        decimal paymentAmount,
+        CancellationToken cancellationToken)
+    {
+        var allocatedAmount = allocationLines.Sum(x => x.Amount);
+        if (allocatedAmount > paymentAmount)
+        {
+            throw new KnownException("Allocated payment amount cannot exceed cash payment amount.");
+        }
+
+        var payableNos = allocationLines.Select(x => x.PayableNo).Distinct(StringComparer.Ordinal).ToArray();
+        var payables = await dbContext.AccountPayables
+            .Where(x =>
+                x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && payableNos.Contains(x.PayableNo))
+            .ToDictionaryAsync(x => x.PayableNo, StringComparer.Ordinal, cancellationToken);
+        var voucherAllocations = new List<PayablePaymentVoucherAllocation>();
+        foreach (var line in allocationLines)
+        {
+            if (!payables.TryGetValue(line.PayableNo, out var payable))
+            {
+                throw new KnownException($"Account payable '{line.PayableNo}' was not found.");
+            }
+
+            voucherAllocations.Add(new PayablePaymentVoucherAllocation(payable, line.Amount));
+        }
+
+        return voucherAllocations;
+    }
+
+    public static string ResolveSingleSupplierCode(IReadOnlyCollection<PayablePaymentVoucherAllocation> voucherAllocations)
+    {
+        var supplierCodes = voucherAllocations
+            .Select(x => x.Payable.SupplierCode)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (supplierCodes.Length != 1)
+        {
+            throw new KnownException("A payment execution can only settle payables from one supplier. Split cross-supplier payments into separate executions.");
+        }
+
+        return supplierCodes[0];
+    }
+}
 
 public static class FinanceVoucherFactory
 {

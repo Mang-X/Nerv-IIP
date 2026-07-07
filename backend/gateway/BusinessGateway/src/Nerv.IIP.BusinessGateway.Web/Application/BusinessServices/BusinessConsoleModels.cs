@@ -2275,7 +2275,7 @@ public sealed record BusinessConsoleReopenErpAccountingPeriodRequest(
     string ReopenedBy,
     string Reason);
 
-public sealed record BusinessConsoleExecuteErpPaymentExecutionRequest(
+public sealed record BusinessConsoleApproveErpPaymentExecutionRequest(
     string OrganizationId,
     string EnvironmentId,
     string PayableNo,
@@ -2289,6 +2289,12 @@ public sealed record BusinessConsoleExecuteErpPaymentExecutionRequest(
 
 public sealed record BusinessConsoleErpPaymentAllocationLine(string PayableNo, decimal Amount);
 
+public sealed record BusinessConsoleExecuteErpPaymentExecutionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string PaymentExecutionNo,
+    string ExecutedBy = "system:business-gateway");
+
 public sealed record BusinessConsoleRegisterErpCashReceiptRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -2297,6 +2303,11 @@ public sealed record BusinessConsoleRegisterErpCashReceiptRequest(
     DateOnly CollectionDate,
     string CashAccountCode,
     string IdempotencyKey);
+
+public sealed record BusinessConsoleMatchErpCashReceiptRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string CashReceiptNo);
 
 public sealed record BusinessConsoleErpTrialBalanceResponse(
     DateOnly PeriodStartDate,

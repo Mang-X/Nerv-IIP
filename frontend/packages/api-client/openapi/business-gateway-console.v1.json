@@ -17199,7 +17199,62 @@
           "Business Console ERP",
           "Api"
         ],
+        "operationId": "approveBusinessConsoleErpPaymentExecution",
+        "requestBody": {
+          "x-name": "BusinessConsoleApproveErpPaymentExecutionRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApproveErpPaymentExecutionRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfString"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/erp/finance/payment-executions/{paymentExecutionNo}/execute": {
+      "post": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
         "operationId": "executeBusinessConsoleErpPaymentExecution",
+        "parameters": [
+          {
+            "name": "paymentExecutionNo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "x-name": "BusinessConsoleExecuteErpPaymentExecutionRequest",
           "description": "",
@@ -17252,6 +17307,61 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterErpCashReceiptRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfString"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/erp/finance/cash-receipts/{cashReceiptNo}/match": {
+      "post": {
+        "tags": [
+          "Business Console ERP",
+          "Api"
+        ],
+        "operationId": "matchBusinessConsoleErpCashReceipt",
+        "parameters": [
+          {
+            "name": "cashReceiptNo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleMatchErpCashReceiptRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMatchErpCashReceiptRequest"
               }
             }
           },
@@ -36158,7 +36268,7 @@
           }
         }
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleExecuteErpPaymentExecutionRequest": {
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApproveErpPaymentExecutionRequest": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
@@ -36215,6 +36325,21 @@
           }
         }
       },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleExecuteErpPaymentExecutionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "executedBy": {
+            "type": "string"
+          }
+        }
+      },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterErpCashReceiptRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -36240,6 +36365,18 @@
             "type": "string"
           },
           "idempotencyKey": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMatchErpCashReceiptRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
             "type": "string"
           }
         }

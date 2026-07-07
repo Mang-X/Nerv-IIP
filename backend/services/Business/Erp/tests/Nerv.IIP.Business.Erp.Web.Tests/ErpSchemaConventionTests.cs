@@ -22,6 +22,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing.EntityFramework;
@@ -86,6 +87,45 @@ public sealed class ErpSchemaConventionTests
         failures.AddRange(ProcessedIntegrationEventHasUniqueInboxIndex(fixture.DbContext.Model));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    [Fact]
+    public void Finance_close_read_model_queries_translate_on_PostgreSQL_provider()
+    {
+        using var fixture = CreateFixture();
+        var periodStart = new DateOnly(2026, 6, 1);
+        var periodEnd = new DateOnly(2026, 6, 30);
+
+        var trialBalanceSql = fixture.DbContext.JournalVouchers.AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == "org-001"
+                && x.EnvironmentId == "env-dev"
+                && x.PostingDate >= periodStart
+                && x.PostingDate <= periodEnd)
+            .SelectMany(x => x.Lines)
+            .GroupBy(x => x.AccountCode)
+            .Select(x => new
+            {
+                AccountCode = x.Key,
+                LocalDebitAmount = x.Sum(line => line.LocalDebitAmount),
+                LocalCreditAmount = x.Sum(line => line.LocalCreditAmount),
+            })
+            .OrderBy(x => x.AccountCode)
+            .ToQueryString();
+
+        var grIrBalanceSql = fixture.DbContext.JournalVouchers.AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == "org-001"
+                && x.EnvironmentId == "env-dev"
+                && x.PostingDate >= periodStart
+                && x.PostingDate <= periodEnd)
+            .SelectMany(x => x.Lines)
+            .Where(x => x.AccountCode == FinanceVoucherFactory.GoodsReceiptInvoiceReceiptAccountCode)
+            .Select(x => x.LocalDebitAmount - x.LocalCreditAmount)
+            .ToQueryString();
+
+        Assert.Contains("GROUP BY", trialBalanceSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("journal_voucher_lines", grIrBalanceSql, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

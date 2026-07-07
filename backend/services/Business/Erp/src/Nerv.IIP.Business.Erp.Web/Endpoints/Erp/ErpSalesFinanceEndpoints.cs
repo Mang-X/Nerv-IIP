@@ -83,6 +83,8 @@ public sealed record RegisterAccountPayablePaymentRequest(
     decimal PaymentExchangeRate = 1m,
     IReadOnlyCollection<PayablePaymentAllocationCommandLine>? Allocations = null);
 public sealed record RegisterAccountReceivableCollectionRequest(string OrganizationId, string EnvironmentId, string ReceivableNo, decimal Amount, DateOnly CollectionDate, string CashAccountCode, string IdempotencyKey);
+public sealed record ExecutePaymentExecutionRequest(string OrganizationId, string EnvironmentId, string PaymentExecutionNo, string ExecutedBy = "system:business-erp");
+public sealed record MatchCashReceiptRequest(string OrganizationId, string EnvironmentId, string CashReceiptNo);
 public sealed record OpenAccountingPeriodRequest(string OrganizationId, string EnvironmentId, string PeriodCode, DateOnly StartDate, DateOnly EndDate);
 public sealed record OpenAccountingPeriodResponse(AccountingPeriodId AccountingPeriodId);
 public sealed record CloseAccountingPeriodRequest(string OrganizationId, string EnvironmentId, string PeriodCode, string ClosedBy, string Reason);
@@ -266,13 +268,25 @@ public sealed class RegisterAccountPayablePaymentEndpoint(ISender sender) : ErpE
     }
 }
 
-public sealed class ExecutePaymentExecutionEndpoint(ISender sender) : ErpEndpoint<RegisterAccountPayablePaymentRequest, ResponseData<string>>
+public sealed class ApprovePaymentExecutionEndpoint(ISender sender) : ErpEndpoint<RegisterAccountPayablePaymentRequest, ResponseData<string>>
 {
-    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<ExecutePaymentExecutionEndpoint>());
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<ApprovePaymentExecutionEndpoint>());
 
     public override async Task HandleAsync(RegisterAccountPayablePaymentRequest req, CancellationToken ct)
     {
-        await sender.Send(new RegisterAccountPayablePaymentCommand(req.OrganizationId, req.EnvironmentId, req.PayableNo, req.Amount, req.PaymentDate, req.CashAccountCode, req.IdempotencyKey, req.PaymentCurrencyCode, req.PaymentExchangeRate, req.Allocations), ct);
+        var paymentExecutionNo = await sender.Send(new ApprovePaymentExecutionCommand(req.OrganizationId, req.EnvironmentId, req.PayableNo, req.Amount, req.PaymentDate, req.CashAccountCode, req.IdempotencyKey, req.PaymentCurrencyCode, req.PaymentExchangeRate, req.Allocations), ct);
+        await Send.OkAsync(paymentExecutionNo.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ExecutePaymentExecutionEndpoint(ISender sender) : ErpEndpoint<ExecutePaymentExecutionRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<ExecutePaymentExecutionEndpoint>());
+
+    public override async Task HandleAsync(ExecutePaymentExecutionRequest req, CancellationToken ct)
+    {
+        var paymentExecutionNo = Route<string>("paymentExecutionNo") ?? req.PaymentExecutionNo;
+        await sender.Send(new ExecutePaymentExecutionCommand(req.OrganizationId, req.EnvironmentId, paymentExecutionNo, req.ExecutedBy), ct);
         await Send.OkAsync("executed".AsResponseData(), cancellation: ct);
     }
 }
@@ -294,7 +308,19 @@ public sealed class RegisterCashReceiptEndpoint(ISender sender) : ErpEndpoint<Re
 
     public override async Task HandleAsync(RegisterAccountReceivableCollectionRequest req, CancellationToken ct)
     {
-        await sender.Send(new RegisterAccountReceivableCollectionCommand(req.OrganizationId, req.EnvironmentId, req.ReceivableNo, req.Amount, req.CollectionDate, req.CashAccountCode, req.IdempotencyKey), ct);
+        var cashReceiptNo = await sender.Send(new RegisterCashReceiptCommand(req.OrganizationId, req.EnvironmentId, req.ReceivableNo, req.Amount, req.CollectionDate, req.CashAccountCode, req.IdempotencyKey), ct);
+        await Send.OkAsync(cashReceiptNo.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class MatchCashReceiptEndpoint(ISender sender) : ErpEndpoint<MatchCashReceiptRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<MatchCashReceiptEndpoint>());
+
+    public override async Task HandleAsync(MatchCashReceiptRequest req, CancellationToken ct)
+    {
+        var cashReceiptNo = Route<string>("cashReceiptNo") ?? req.CashReceiptNo;
+        await sender.Send(new MatchCashReceiptCommand(req.OrganizationId, req.EnvironmentId, cashReceiptNo), ct);
         await Send.OkAsync("matched".AsResponseData(), cancellation: ct);
     }
 }
@@ -458,9 +484,11 @@ public static class ErpFinanceEndpointContracts
         new(typeof(CreateCostCandidateEndpoint), "POST", "/api/business/v1/erp/finance/cost-candidates", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpCostCandidate"),
         new(typeof(PostJournalVoucherEndpoint), "POST", "/api/business/v1/erp/finance/vouchers", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "postErpJournalVoucher"),
         new(typeof(RegisterAccountPayablePaymentEndpoint), "POST", "/api/business/v1/erp/finance/payables/payment", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "registerErpAccountPayablePayment"),
-        new(typeof(ExecutePaymentExecutionEndpoint), "POST", "/api/business/v1/erp/finance/payment-executions", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "executeErpPaymentExecution"),
+        new(typeof(ApprovePaymentExecutionEndpoint), "POST", "/api/business/v1/erp/finance/payment-executions", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "approveErpPaymentExecution"),
+        new(typeof(ExecutePaymentExecutionEndpoint), "POST", "/api/business/v1/erp/finance/payment-executions/{paymentExecutionNo}/execute", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "executeErpPaymentExecution"),
         new(typeof(RegisterAccountReceivableCollectionEndpoint), "POST", "/api/business/v1/erp/finance/receivables/collection", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "registerErpAccountReceivableCollection"),
         new(typeof(RegisterCashReceiptEndpoint), "POST", "/api/business/v1/erp/finance/cash-receipts", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "registerErpCashReceipt"),
+        new(typeof(MatchCashReceiptEndpoint), "POST", "/api/business/v1/erp/finance/cash-receipts/{cashReceiptNo}/match", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "matchErpCashReceipt"),
         new(typeof(OpenAccountingPeriodEndpoint), "POST", "/api/business/v1/erp/finance/accounting-periods", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "openErpAccountingPeriod"),
         new(typeof(CloseAccountingPeriodEndpoint), "POST", "/api/business/v1/erp/finance/accounting-periods/close", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "closeErpAccountingPeriod"),
         new(typeof(ReopenAccountingPeriodEndpoint), "POST", "/api/business/v1/erp/finance/accounting-periods/reopen", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "reopenErpAccountingPeriod"),

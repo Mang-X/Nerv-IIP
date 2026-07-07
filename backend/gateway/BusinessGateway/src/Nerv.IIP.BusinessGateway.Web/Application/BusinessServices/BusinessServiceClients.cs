@@ -761,6 +761,11 @@ public interface IBusinessErpClient
         BusinessConsolePostErpJournalVoucherRequest request,
         CancellationToken cancellationToken);
 
+    Task<string> ApprovePaymentExecutionAsync(
+        string internalBearerToken,
+        BusinessConsoleApproveErpPaymentExecutionRequest request,
+        CancellationToken cancellationToken);
+
     Task<string> ExecutePaymentExecutionAsync(
         string internalBearerToken,
         BusinessConsoleExecuteErpPaymentExecutionRequest request,
@@ -769,6 +774,11 @@ public interface IBusinessErpClient
     Task<string> RegisterCashReceiptAsync(
         string internalBearerToken,
         BusinessConsoleRegisterErpCashReceiptRequest request,
+        CancellationToken cancellationToken);
+
+    Task<string> MatchCashReceiptAsync(
+        string internalBearerToken,
+        BusinessConsoleMatchErpCashReceiptRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleOpenErpAccountingPeriodResponse> OpenAccountingPeriodAsync(
@@ -4879,6 +4889,17 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             request,
             cancellationToken);
 
+    public Task<string> ApprovePaymentExecutionAsync(
+        string internalBearerToken,
+        BusinessConsoleApproveErpPaymentExecutionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<string>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/erp/finance/payment-executions",
+            request,
+            cancellationToken);
+
     public Task<string> ExecutePaymentExecutionAsync(
         string internalBearerToken,
         BusinessConsoleExecuteErpPaymentExecutionRequest request,
@@ -4886,7 +4907,7 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
         SendAsync<string>(
             internalBearerToken,
             HttpMethod.Post,
-            "/api/business/v1/erp/finance/payment-executions",
+            $"/api/business/v1/erp/finance/payment-executions/{Uri.EscapeDataString(request.PaymentExecutionNo)}/execute",
             request,
             cancellationToken);
 
@@ -4898,6 +4919,17 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/erp/finance/cash-receipts",
+            request,
+            cancellationToken);
+
+    public Task<string> MatchCashReceiptAsync(
+        string internalBearerToken,
+        BusinessConsoleMatchErpCashReceiptRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<string>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/erp/finance/cash-receipts/{Uri.EscapeDataString(request.CashReceiptNo)}/match",
             request,
             cancellationToken);
 

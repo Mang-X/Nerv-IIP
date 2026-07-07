@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CashReceiptAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
@@ -736,7 +738,7 @@ public sealed class GetMonthEndChecklistQueryHandler(ApplicationDbContext dbCont
                 && x.EnvironmentId == request.EnvironmentId
                 && x.PaymentDate >= request.PeriodStartDate
                 && x.PaymentDate <= request.PeriodEndDate
-                && x.Status != "executed",
+                && x.Status != PaymentExecutionStatus.Executed,
                 cancellationToken);
         var unmatchedCashReceipts = await dbContext.CashReceipts
             .AsNoTracking()
@@ -745,7 +747,7 @@ public sealed class GetMonthEndChecklistQueryHandler(ApplicationDbContext dbCont
                 && x.EnvironmentId == request.EnvironmentId
                 && x.ReceiptDate >= request.PeriodStartDate
                 && x.ReceiptDate <= request.PeriodEndDate
-                && x.Status != "matched",
+                && x.Status != CashReceiptStatus.Matched,
                 cancellationToken);
         var unmatchedSupplierInvoices = await dbContext.SupplierInvoices
             .AsNoTracking()

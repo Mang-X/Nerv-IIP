@@ -254,9 +254,10 @@ public sealed class PaymentExecutionEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.SupplierCode).HasColumnName("supplier_code").IsRequired().HasMaxLength(100).HasComment("MasterData supplier code.");
         builder.Property(x => x.Amount).HasColumnName("amount").IsRequired().HasPrecision(18, 6).HasComment("Payment amount.");
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Payment currency code.");
+        builder.Property(x => x.PaymentExchangeRate).HasColumnName("payment_exchange_rate").IsRequired().HasPrecision(18, 8).HasComment("Payment currency exchange rate to local currency.");
         builder.Property(x => x.PaymentDate).HasColumnName("payment_date").IsRequired().HasComment("Payment execution date.");
         builder.Property(x => x.CashAccountCode).HasColumnName("cash_account_code").IsRequired().HasMaxLength(100).HasComment("Cash or bank account code used by payment.");
-        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(50).HasComment("Payment execution status.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Payment execution status.");
         builder.Property(x => x.ApprovedBy).HasColumnName("approved_by").IsRequired().HasMaxLength(100).HasComment("Approver user or service.");
         builder.Property(x => x.ApprovedAtUtc).HasColumnName("approved_at_utc").IsRequired().HasComment("UTC approval time.");
         builder.Property(x => x.ExecutedBy).HasColumnName("executed_by").HasMaxLength(100).HasComment("Executor user or service.");
@@ -294,7 +295,7 @@ public sealed class CashReceiptEntityTypeConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Receipt currency code.");
         builder.Property(x => x.ReceiptDate).HasColumnName("receipt_date").IsRequired().HasComment("Cash receipt date.");
         builder.Property(x => x.CashAccountCode).HasColumnName("cash_account_code").IsRequired().HasMaxLength(100).HasComment("Cash or bank account code used by receipt.");
-        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(50).HasComment("Cash receipt status.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Cash receipt status.");
         builder.Property(x => x.RegisteredAtUtc).HasColumnName("registered_at_utc").IsRequired().HasComment("UTC registration time.");
         builder.Property(x => x.MatchedAtUtc).HasColumnName("matched_at_utc").HasComment("UTC matching time.");
         builder.HasMany(x => x.Allocations).WithOne().HasForeignKey("CashReceiptId").OnDelete(DeleteBehavior.Cascade);

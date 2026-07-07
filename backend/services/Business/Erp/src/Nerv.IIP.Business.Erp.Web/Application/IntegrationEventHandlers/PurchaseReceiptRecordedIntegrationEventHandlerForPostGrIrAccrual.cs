@@ -105,6 +105,26 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
             return;
         }
 
+        try
+        {
+            await AccountingPeriodPostingGuard.EnsureOpenAsync(
+                dbContext,
+                receipt.OrganizationId,
+                receipt.EnvironmentId,
+                DateOnly.FromDateTime(receipt.RecordedAtUtc),
+                "late purchase receipt GR/IR accrual voucher",
+                cancellationToken);
+        }
+        catch (KnownException ex)
+        {
+            await DeadLetterAsync(
+                integrationEvent,
+                "closed-accounting-period",
+                ex.Message,
+                cancellationToken);
+            return;
+        }
+
         if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
         {
             return;
@@ -120,13 +140,6 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
             return;
         }
 
-        await AccountingPeriodPostingGuard.EnsureOpenAsync(
-            dbContext,
-            receipt.OrganizationId,
-            receipt.EnvironmentId,
-            DateOnly.FromDateTime(receipt.RecordedAtUtc),
-            "late purchase receipt GR/IR accrual voucher",
-            cancellationToken);
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForGoodsReceiptIrAccrual(
             receipt,
             amount,

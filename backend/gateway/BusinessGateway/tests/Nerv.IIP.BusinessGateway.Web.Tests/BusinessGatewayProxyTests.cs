@@ -1409,6 +1409,42 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Erp_finance_payment_and_receipt_lifecycle_writes_use_internal_service_token()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var approvePayment = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/payment-executions",
+            new BusinessConsoleApproveErpPaymentExecutionRequest("org-001", "env-dev", "AP-001", 40m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ap-approve-001"));
+        var executePayment = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/payment-executions/PE-001/execute",
+            new BusinessConsoleExecuteErpPaymentExecutionRequest("org-001", "env-dev", "BODY-PE", "u-finance"));
+        var registerReceipt = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/cash-receipts",
+            new BusinessConsoleRegisterErpCashReceiptRequest("org-001", "env-dev", "AR-001", 35m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ar-register-001"));
+        var matchReceipt = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/cash-receipts/CR-001/match",
+            new BusinessConsoleMatchErpCashReceiptRequest("org-001", "env-dev", "BODY-CR"));
+
+        Assert.Equal(HttpStatusCode.OK, approvePayment.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, executePayment.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, registerReceipt.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, matchReceipt.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal("PE-001", erp.LastExecutePaymentExecutionRequest?.PaymentExecutionNo);
+        Assert.Equal("CR-001", erp.LastMatchCashReceiptRequest?.CashReceiptNo);
+    }
+
+    [Fact]
     public async Task Erp_create_only_documents_now_have_list_facades_with_server_paging_filters()
     {
         var erp = new RecordingErpClient();
@@ -6320,6 +6356,10 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public BusinessConsoleErpSourceDocumentRequest? LastFinanceSourceDocumentRequest { get; private set; }
 
+    public BusinessConsoleExecuteErpPaymentExecutionRequest? LastExecutePaymentExecutionRequest { get; private set; }
+
+    public BusinessConsoleMatchErpCashReceiptRequest? LastMatchCashReceiptRequest { get; private set; }
+
     public Task<BusinessConsoleCreateErpPurchaseRequisitionResponse> CreatePurchaseRequisitionFromSuggestionAsync(
         string internalBearerToken,
         BusinessConsoleCreateErpPurchaseRequisitionRequest request,
@@ -6681,12 +6721,22 @@ internal sealed class RecordingErpClient : IBusinessErpClient
         return Task.FromResult(new BusinessConsolePostErpJournalVoucherResponse("jv-001"));
     }
 
+    public Task<string> ApprovePaymentExecutionAsync(
+        string internalBearerToken,
+        BusinessConsoleApproveErpPaymentExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult("PE-001");
+    }
+
     public Task<string> ExecutePaymentExecutionAsync(
         string internalBearerToken,
         BusinessConsoleExecuteErpPaymentExecutionRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        LastExecutePaymentExecutionRequest = request;
         return Task.FromResult("executed");
     }
 
@@ -6696,6 +6746,16 @@ internal sealed class RecordingErpClient : IBusinessErpClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        return Task.FromResult("CR-001");
+    }
+
+    public Task<string> MatchCashReceiptAsync(
+        string internalBearerToken,
+        BusinessConsoleMatchErpCashReceiptRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastMatchCashReceiptRequest = request;
         return Task.FromResult("matched");
     }
 
