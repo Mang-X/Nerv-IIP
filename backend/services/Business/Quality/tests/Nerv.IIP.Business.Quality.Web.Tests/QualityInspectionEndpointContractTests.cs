@@ -583,7 +583,8 @@ public sealed class QualityInspectionEndpointContractTests
         var approvalStatusClient = new FixedApprovalChainStatusClient(false);
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
-            approvalStatusClient);
+            approvalStatusClient,
+            new NoopCapaAutomationService());
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
@@ -621,7 +622,8 @@ public sealed class QualityInspectionEndpointContractTests
         var approvalStatusClient = new FixedApprovalChainStatusClient(true);
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
-            approvalStatusClient);
+            approvalStatusClient,
+            new NoopCapaAutomationService());
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
@@ -662,7 +664,8 @@ public sealed class QualityInspectionEndpointContractTests
             expectedNcrCode: "NCR-OTHER");
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
-            approvalStatusClient);
+            approvalStatusClient,
+            new NoopCapaAutomationService());
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
@@ -700,7 +703,8 @@ public sealed class QualityInspectionEndpointContractTests
         var approvalStatusClient = new FixedApprovalChainStatusClient(false);
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
-            approvalStatusClient);
+            approvalStatusClient,
+            new NoopCapaAutomationService());
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
@@ -859,6 +863,7 @@ public sealed class QualityInspectionEndpointContractTests
         var publisher = provider.GetRequiredService<RecordingIntegrationEventPublisher>();
         NonconformanceReportId ncrId;
         CorrectiveActionId capaId;
+        InspectionRecordId inspectionRecordId;
 
         using (var scope = provider.CreateScope())
         {
@@ -884,10 +889,13 @@ public sealed class QualityInspectionEndpointContractTests
             await dbContext.SaveChangesAsync(CancellationToken.None);
             ncr.RecordScrapDispositionMovement("SM-FULL-CAPA-UOW-001", -10m);
             var capa = NewCompletedOpenCapa(ncr, "CAPA-SCRAP-UOW-001");
+            var inspection = NewPassedInspectionRecord("RCV-SCRAP-CAPA-UOW-VERIFY-001");
             dbContext.CorrectiveActions.Add(capa);
+            dbContext.InspectionRecords.Add(inspection);
             await dbContext.SaveChangesAsync(CancellationToken.None);
             ncrId = ncr.Id;
             capaId = capa.Id;
+            inspectionRecordId = inspection.Id;
         }
 
         using (var scope = provider.CreateScope())
@@ -898,7 +906,8 @@ public sealed class QualityInspectionEndpointContractTests
                     capaId,
                     "qa-manager-001",
                     "No recurrence",
-                    DateTimeOffset.Parse("2026-07-10T00:00:00Z")),
+                    DateTimeOffset.Parse("2026-07-10T00:00:00Z"),
+                    inspectionRecordId),
                 CancellationToken.None);
         }
 
@@ -910,8 +919,37 @@ public sealed class QualityInspectionEndpointContractTests
             Assert.Equal("SM-FULL-CAPA-UOW-001", reloadedNcr.ScrapMovementId);
         }
 
-        Assert.IsType<NcrClosedIntegrationEvent>(Assert.Single(publisher.Published));
+        Assert.Single(publisher.Published.OfType<NcrClosedIntegrationEvent>());
+        Assert.Single(publisher.Published.OfType<CapaEffectivenessVerifiedIntegrationEvent>());
         Assert.DoesNotContain(publisher.Published, x => x is InventoryMovementRequestedIntegrationEvent);
+    }
+
+    [Fact]
+    public async Task Capa_open_command_publishes_opened_integration_event()
+    {
+        const string databaseName = "quality-capa-opened-event";
+        await using var provider = CreateInMemoryMediatorProvider(databaseName);
+        var publisher = provider.GetRequiredService<RecordingIntegrationEventPublisher>();
+
+        using (var scope = provider.CreateScope())
+        {
+            var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+            await sender.Send(
+                new OpenCorrectiveActionCommand(
+                    "org-001",
+                    "env-dev",
+                    "CAPA-OPENED-UOW-001",
+                    null,
+                    "Root cause confirmed",
+                    "Contain affected material",
+                    "qa-manager-001",
+                    DateTimeOffset.Parse("2026-07-21T00:00:00Z")),
+                CancellationToken.None);
+        }
+
+        var opened = Assert.Single(publisher.Published.OfType<CapaOpenedIntegrationEvent>());
+        Assert.Equal("CAPA-OPENED-UOW-001", opened.Payload.CapaCode);
+        Assert.Null(opened.Payload.SourceNcrId);
     }
 
     [Fact]
@@ -922,6 +960,7 @@ public sealed class QualityInspectionEndpointContractTests
         var publisher = provider.GetRequiredService<RecordingIntegrationEventPublisher>();
         NonconformanceReportId ncrId;
         CorrectiveActionId capaId;
+        InspectionRecordId inspectionRecordId;
 
         using (var scope = provider.CreateScope())
         {
@@ -947,10 +986,13 @@ public sealed class QualityInspectionEndpointContractTests
             await dbContext.SaveChangesAsync(CancellationToken.None);
             ncr.RecordScrapDispositionMovement("SM-FULL-CAPA-IDEMPOTENT-001", -10m);
             var capa = NewCompletedOpenCapa(ncr, "CAPA-SCRAP-IDEMPOTENT-001");
+            var inspection = NewPassedInspectionRecord("RCV-SCRAP-CAPA-IDEMPOTENT-VERIFY-001");
             dbContext.CorrectiveActions.Add(capa);
+            dbContext.InspectionRecords.Add(inspection);
             await dbContext.SaveChangesAsync(CancellationToken.None);
             ncrId = ncr.Id;
             capaId = capa.Id;
+            inspectionRecordId = inspection.Id;
         }
 
         using (var scope = provider.CreateScope())
@@ -961,14 +1003,16 @@ public sealed class QualityInspectionEndpointContractTests
                     capaId,
                     "qa-manager-001",
                     "No recurrence",
-                    DateTimeOffset.Parse("2026-07-10T00:00:00Z")),
+                    DateTimeOffset.Parse("2026-07-10T00:00:00Z"),
+                    inspectionRecordId),
                 CancellationToken.None);
             await sender.Send(
                 new VerifyCorrectiveActionEffectivenessCommand(
                     capaId,
                     "qa-manager-001",
                     "No recurrence",
-                    DateTimeOffset.Parse("2026-07-11T00:00:00Z")),
+                    DateTimeOffset.Parse("2026-07-11T00:00:00Z"),
+                    inspectionRecordId),
                 CancellationToken.None);
             await sender.Send(new CloseCorrectiveActionCommand(capaId, "qa-manager-001"), CancellationToken.None);
         }
@@ -982,6 +1026,7 @@ public sealed class QualityInspectionEndpointContractTests
         }
 
         Assert.Single(publisher.Published.OfType<NcrClosedIntegrationEvent>());
+        Assert.Single(publisher.Published.OfType<CapaClosedIntegrationEvent>());
         Assert.DoesNotContain(publisher.Published, x => x is InventoryMovementRequestedIntegrationEvent);
     }
 
@@ -1090,6 +1135,9 @@ public sealed class QualityInspectionEndpointContractTests
         services.AddUnitOfWork<ApplicationDbContext>();
         services.AddScoped<INonconformanceReportRepository, NonconformanceReportRepository>();
         services.AddScoped<ICorrectiveActionRepository, CorrectiveActionRepository>();
+        services.AddSingleton<IApprovalChainStatusClient>(new FixedApprovalChainStatusClient(true));
+        services.AddSingleton<Microsoft.Extensions.Options.IOptions<CapaCloseApprovalOptions>>(
+            Microsoft.Extensions.Options.Options.Create(new CapaCloseApprovalOptions()));
         services.AddIntegrationEvents(typeof(Program));
         services.AddSingleton<IQualityIntegrationEventContextAccessor, FixedQualityIntegrationEventContextAccessor>();
         services.AddSingleton<RecordingIntegrationEventPublisher>();
@@ -1121,7 +1169,12 @@ public sealed class QualityInspectionEndpointContractTests
     private static CorrectiveAction NewEffectiveCapa(NonconformanceReport ncr, string capaCode)
     {
         var capa = NewCompletedOpenCapa(ncr, capaCode);
-        capa.VerifyEffectiveness("qa-manager-001", "No recurrence", DateTimeOffset.Parse("2026-07-10T00:00:00Z"));
+        capa.VerifyEffectiveness(
+            "qa-manager-001",
+            "No recurrence",
+            DateTimeOffset.Parse("2026-07-10T00:00:00Z"),
+            new InspectionRecordId(Guid.CreateVersion7()),
+            "passed");
         return capa;
     }
 
@@ -1140,6 +1193,24 @@ public sealed class QualityInspectionEndpointContractTests
         var action = capa.Actions.Single();
         capa.CompleteAction(action.Id, action.OwnerUserId, DateTimeOffset.Parse("2026-06-21T00:00:00Z"));
         return capa;
+    }
+
+    private static InspectionRecord NewPassedInspectionRecord(string sourceDocumentId)
+    {
+        return InspectionRecord.Create(
+            "org-001",
+            "env-dev",
+            null,
+            "receiving",
+            "purchase-receipt",
+            sourceDocumentId,
+            "SKU-RM-1000",
+            10m,
+            null,
+            null,
+            [InspectionResultLineInput.Pass("appearance", "ok", null, [])],
+            null,
+            []);
     }
 
     private static WebApplicationFactory<Program> CreateFactory()
@@ -1176,6 +1247,15 @@ public sealed class QualityInspectionEndpointContractTests
         }
     }
 
+    private sealed class NoopCapaAutomationService : ICapaAutomationService
+    {
+        public Task OpenForDispositionIfRequiredAsync(NonconformanceReport ncr, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class FixedApprovalChainStatusClient(bool isApproved, string? expectedNcrCode = null) : IApprovalChainStatusClient
     {
         public string? LastChainId { get; private set; }
@@ -1192,6 +1272,17 @@ public sealed class QualityInspectionEndpointContractTests
             LastNcrCode = ncrCode;
             return Task.FromResult(isApproved
                 && (expectedNcrCode is null || string.Equals(expectedNcrCode, ncrCode, StringComparison.Ordinal)));
+        }
+
+        public Task<bool> IsApprovedForCapaClosureAsync(
+            string chainId,
+            string organizationId,
+            string environmentId,
+            string capaCode,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(isApproved);
         }
     }
 
