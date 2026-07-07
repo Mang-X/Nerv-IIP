@@ -48,6 +48,18 @@ vi.mock('@/composables/useBusinessMes', () => ({
     completeTask,
     actionPending: ref(false),
   }),
+  useMesCurrentOperationSops: () => ({
+    filters: {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      operationCode: '',
+      workCenterCode: '',
+    },
+    currentSops: ref([]),
+    pending: ref(false),
+    error: ref(null),
+    refresh: vi.fn(),
+  }),
 }))
 
 import OperationPage from './operation.vue'

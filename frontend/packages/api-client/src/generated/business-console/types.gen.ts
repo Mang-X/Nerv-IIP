@@ -90,9 +90,21 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     [key: string]: never;
 };
 
+/**
+ * the dto used to send an error response to the client
+ */
 export type FastEndpointsErrorResponse = {
+    /**
+     * the http status code sent to the client. default is 400.
+     */
     statusCode?: number;
+    /**
+     * the message for the error response
+     */
     message?: string;
+    /**
+     * the collection of errors for the current context
+     */
     errors?: {
         [key: string]: Array<string>;
     };
@@ -752,6 +764,7 @@ export type NervIipContractsSchedulingScheduleAssignmentContract = {
     endUtc?: string;
     isLocked?: boolean;
     explanationCode?: string;
+    standardOperationCode?: string | null;
 };
 
 export type NervIipContractsSchedulingScheduleResourceLoadContract = {
@@ -1135,6 +1148,48 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     itemCode?: string | null;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePublishSopDocumentRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    documentNumber?: string | null;
+    revision?: string;
+    operationCode?: string;
+    workCenterCode?: string | null;
+    routingCode?: string | null;
+    routingRevision?: string | null;
+    effectiveDate?: string;
+    fileId?: string;
+    fileName?: string;
+    contentType?: string;
+    idempotencyKey?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCurrentSopDocumentsResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCurrentSopDocumentsResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCurrentSopDocumentsResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCurrentSopDocumentItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCurrentSopDocumentItem = {
+    documentNumber?: string;
+    revision?: string;
+    operationCode?: string;
+    workCenterCode?: string | null;
+    routingCode?: string | null;
+    routingRevision?: string | null;
+    effectiveDate?: string;
+    fileId?: string;
+    fileName?: string;
+    contentType?: string;
+    status?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCurrentSopDocumentsRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringDocumentListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringDocumentListResponse | null;
 };
@@ -1153,6 +1208,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     contentType?: string;
     documentType?: string;
     registeredAtUtc?: string;
+    status?: string | null;
+    operationCode?: string | null;
+    workCenterCode?: string | null;
+    routingCode?: string | null;
+    routingRevision?: string | null;
+    effectiveDate?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListEngineeringDocumentsRequest = {
@@ -2275,6 +2336,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workCenterName?: string | null;
     deviceAssetCode?: string | null;
     deviceAssetName?: string | null;
+    operationCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference = {
@@ -2429,6 +2491,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workCenterName?: string | null;
     deviceAssetCode?: string | null;
     deviceAssetName?: string | null;
+    operationCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAssignDispatchTaskRequest = {
@@ -3896,6 +3959,24 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmStockCountAdjustmentRequest = {
     countedQuantity?: number;
     idempotencyKey: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileDownloadGrantResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFileDownloadGrantResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFileDownloadGrantResponse = {
+    fileId?: string;
+    expiresAtUtc?: string;
+    downloadUrl?: string;
+    downloadHeaders?: {
+        [key: string]: string;
+    };
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileDownloadGrantRequest = {
+    organizationId: string;
+    environmentId: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPurchaseOrderListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -6964,6 +7045,68 @@ export type RegisterBusinessConsoleEngineeringDocumentResponses = {
 
 export type RegisterBusinessConsoleEngineeringDocumentResponse = RegisterBusinessConsoleEngineeringDocumentResponses[keyof RegisterBusinessConsoleEngineeringDocumentResponses];
 
+export type PublishBusinessConsoleEngineeringSopDocumentData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePublishSopDocumentRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/engineering/sops/publish';
+};
+
+export type PublishBusinessConsoleEngineeringSopDocumentErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PublishBusinessConsoleEngineeringSopDocumentResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringEntityResponse;
+};
+
+export type PublishBusinessConsoleEngineeringSopDocumentResponse = PublishBusinessConsoleEngineeringSopDocumentResponses[keyof PublishBusinessConsoleEngineeringSopDocumentResponses];
+
+export type GetBusinessConsoleCurrentEngineeringSopDocumentsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        operationCode: string;
+        workCenterCode?: string | null;
+        routingCode?: string | null;
+        routingRevision?: string | null;
+        asOfDate?: string | null;
+    };
+    url: '/api/business-console/v1/engineering/sops/current';
+};
+
+export type GetBusinessConsoleCurrentEngineeringSopDocumentsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleCurrentEngineeringSopDocumentsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCurrentSopDocumentsResponse;
+};
+
+export type GetBusinessConsoleCurrentEngineeringSopDocumentsResponse = GetBusinessConsoleCurrentEngineeringSopDocumentsResponses[keyof GetBusinessConsoleCurrentEngineeringSopDocumentsResponses];
+
 export type GetBusinessConsoleEngineeringDocumentData = {
     body?: never;
     path: {
@@ -9419,6 +9562,41 @@ export type ListBusinessConsoleMesOperationTasksResponses = {
 };
 
 export type ListBusinessConsoleMesOperationTasksResponse = ListBusinessConsoleMesOperationTasksResponses[keyof ListBusinessConsoleMesOperationTasksResponses];
+
+export type GetBusinessConsoleMesCurrentOperationSopsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        operationCode: string;
+        workCenterCode?: string | null;
+        routingCode?: string | null;
+        routingRevision?: string | null;
+        asOfDate?: string | null;
+    };
+    url: '/api/business-console/v1/mes/operation-sops/current';
+};
+
+export type GetBusinessConsoleMesCurrentOperationSopsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleMesCurrentOperationSopsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCurrentSopDocumentsResponse;
+};
+
+export type GetBusinessConsoleMesCurrentOperationSopsResponse = GetBusinessConsoleMesCurrentOperationSopsResponses[keyof GetBusinessConsoleMesCurrentOperationSopsResponses];
 
 export type StartBusinessConsoleMesOperationTaskData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskActionRequest;
@@ -12326,6 +12504,41 @@ export type HealthEndpointResponses = {
 };
 
 export type HealthEndpointResponse = HealthEndpointResponses[keyof HealthEndpointResponses];
+
+export type CreateBusinessConsoleSopFileDownloadGrantData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileDownloadGrantRequest;
+    path: {
+        fileId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/{fileId}/download-grants';
+};
+
+export type CreateBusinessConsoleSopFileDownloadGrantErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleSopFileDownloadGrantError = CreateBusinessConsoleSopFileDownloadGrantErrors[keyof CreateBusinessConsoleSopFileDownloadGrantErrors];
+
+export type CreateBusinessConsoleSopFileDownloadGrantResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileDownloadGrantResponse;
+};
+
+export type CreateBusinessConsoleSopFileDownloadGrantResponse = CreateBusinessConsoleSopFileDownloadGrantResponses[keyof CreateBusinessConsoleSopFileDownloadGrantResponses];
 
 export type ListBusinessConsoleErpPurchaseOrdersData = {
     body?: never;

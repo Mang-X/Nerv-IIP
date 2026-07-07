@@ -3,6 +3,7 @@ import {
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
+  getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
@@ -12,6 +13,8 @@ import {
   recordBusinessConsoleMesProductionReportMutationOptions,
   resumeBusinessConsoleMesOperationTaskMutationOptions,
   startBusinessConsoleMesOperationTaskMutationOptions,
+  type BusinessConsoleCurrentSopDocumentItem,
+  type BusinessConsoleCurrentSopDocumentsEnvelope,
   type BusinessConsoleMesConfirmLineSideReceiptRequest,
   type BusinessConsoleMesCreateMaterialIssueRequest,
   type BusinessConsoleMesCreateReceiptRequest,
@@ -116,6 +119,15 @@ function envelopeTotal<TEnvelope extends { success?: boolean; data?: { total?: n
     return 0
   }
   return envelope.data?.total ?? 0
+}
+
+function envelopeData<TData, TEnvelope extends { success?: boolean; data?: TData | null }>(
+  envelope: TEnvelope | undefined,
+) {
+  if (!envelope?.success) {
+    return undefined
+  }
+  return envelope.data ?? undefined
 }
 
 function isBusinessQuery(id: string) {
@@ -241,6 +253,54 @@ export function useMesOperationTasks() {
       || resumeMutation.isLoading.value
       || completeMutation.isLoading.value,
     ),
+  }
+}
+
+export interface CurrentOperationSopFilters extends MesScope {
+  operationCode?: string
+  workCenterCode?: string | null
+  routingCode?: string | null
+  routingRevision?: string | null
+  asOfDate?: string | null
+}
+
+export function useMesCurrentOperationSops() {
+  const filters = bindAuthScope(reactive<CurrentOperationSopFilters>({
+    organizationId: '',
+    environmentId: '',
+    operationCode: '',
+    workCenterCode: '',
+    routingCode: '',
+    routingRevision: '',
+    asOfDate: '',
+  }))
+  const enabled = computed(() => hasScope(filters) && Boolean(filters.operationCode?.trim()))
+
+  const currentSopsQuery = useQuery(() => ({
+    ...getBusinessConsoleMesCurrentOperationSopsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        operationCode: filters.operationCode?.trim() ?? '',
+        ...optionalQuery('workCenterCode', filters.workCenterCode?.trim()),
+        ...optionalQuery('routingCode', filters.routingCode?.trim()),
+        ...optionalQuery('routingRevision', filters.routingRevision?.trim()),
+        ...optionalQuery('asOfDate', filters.asOfDate?.trim()),
+      },
+    }),
+    enabled: enabled.value,
+  }))
+
+  return {
+    filters,
+    currentSops: computed<BusinessConsoleCurrentSopDocumentItem[]>(
+      () => envelopeData<NonNullable<BusinessConsoleCurrentSopDocumentsEnvelope['data']>, BusinessConsoleCurrentSopDocumentsEnvelope>(
+        currentSopsQuery.data.value as BusinessConsoleCurrentSopDocumentsEnvelope | undefined,
+      )?.items ?? [],
+    ),
+    pending: currentSopsQuery.isLoading,
+    error: currentSopsQuery.error,
+    refresh: currentSopsQuery.refetch,
   }
 }
 

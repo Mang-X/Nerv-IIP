@@ -5,9 +5,10 @@ import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
-import { describeMesReadinessReason, useMesOperationTasks } from '@/composables/useBusinessMes'
+import { describeMesReadinessReason, useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { useAuthStore } from '@/stores/auth'
 import {
   ButtonPro,
   DataTablePro,
@@ -24,13 +25,14 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { watchDebounced } from '@vueuse/core'
-import { ClipboardCheckIcon, EyeIcon, RefreshCwIcon, ShieldCheckIcon, WrenchIcon } from 'lucide-vue-next'
+import { ClipboardCheckIcon, EyeIcon, FileTextIcon, RefreshCwIcon, ShieldCheckIcon, WrenchIcon } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '工序执行', requiredPermissions: ['business.mes.operations.read'] } })
 
 type Row = BusinessConsoleMesOperationTaskRow
+type CurrentSop = { fileId?: string | null; fileName?: string | null }
 
 const {
   filters,
@@ -47,6 +49,16 @@ const { resources: workCenterResources } = useBusinessMasterDataResources('work-
 const { resources: shiftResources } = useBusinessMasterDataResources('shift')
 
 const quickViewWorkOrderId = ref<string | null>(null)
+const selectedSopTask = ref<Row | null>(null)
+const openingSopFileId = ref<string | null>(null)
+const sopFileError = ref('')
+const {
+  filters: sopFilters,
+  currentSops,
+  currentSopsError,
+  currentSopsPending,
+  refreshCurrentSops,
+} = useMesCurrentOperationSops()
 
 // --- Filters (live) ---
 const keyword = ref('')
@@ -108,6 +120,7 @@ const columns: DataTableProColumn<Row>[] = [
   { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
   { key: 'plannedStartUtc', header: '计划开始', accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0) },
   { key: 'qualityStatus', header: '质量状态' },
+  { key: 'sop', header: 'SOP', align: 'end', width: 'w-20' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
 ]
 
@@ -126,6 +139,50 @@ function resetFilters() {
 
 function openWorkOrder(workOrderId?: string | null) {
   if (workOrderId) quickViewWorkOrderId.value = workOrderId
+}
+function openSops(task: Row) {
+  selectedSopTask.value = task
+  sopFileError.value = ''
+  sopFilters.operationCode = task.operationCode?.trim() ?? ''
+  sopFilters.workCenterCode = (task.workCenterCode ?? task.workCenterId)?.trim() ?? ''
+  sopFilters.routingCode = ''
+  sopFilters.routingRevision = ''
+  sopFilters.asOfDate = ''
+}
+async function openSopFile(sop: CurrentSop) {
+  const fileId = sop.fileId?.trim()
+  if (!fileId) {
+    sopFileError.value = '当前SOP未绑定可查看的文件。'
+    return
+  }
+  const auth = useAuthStore()
+  if (!auth.accessToken) {
+    sopFileError.value = '登录状态已失效，请重新登录后查看SOP。'
+    return
+  }
+  sopFileError.value = ''
+  openingSopFileId.value = fileId
+  try {
+    const response = await fetch('/api/business-console/v1/files/' + encodeURIComponent(fileId) + '/download-grants', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + auth.accessToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ organizationId: filters.organizationId, environmentId: filters.environmentId }),
+    })
+    const envelope = await response.json().catch(() => undefined) as { data?: { downloadUrl?: string }, message?: string } | undefined
+    if (!response.ok) {
+      throw new Error(envelope?.message || '无法获取SOP查看授权。')
+    }
+    const url = envelope?.data?.downloadUrl
+    if (!url) throw new Error('文件服务未返回可用的SOP查看链接。')
+    window.open(url, '_blank', 'noopener')
+  } catch (error) {
+    sopFileError.value = error instanceof Error ? error.message : '无法打开SOP。'
+  } finally {
+    openingSopFileId.value = null
+  }
 }
 function openRoute(path: string, task: Row) {
   void router.push({
@@ -153,6 +210,20 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
+function formatDate(value?: string | null) {
+  if (!value) return '无'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
+}
+function canOpenSops(task: Row) {
+  return Boolean(task.operationCode?.trim())
+}
+const selectedSopErrorMessage = computed(() => formatError(currentSopsError.value))
+const selectedSopTitle = computed(() => {
+  const task = selectedSopTask.value
+  if (!task) return ''
+  return `${task.operationTaskNo ?? task.operationTaskId ?? '工序任务'} · ${task.operationCode ?? '未绑定工序'}`
+})
 function readiness(value?: string | null) {
   return describeMesReadinessReason(value ?? '未检')
 }
@@ -260,6 +331,19 @@ function formatError(error: unknown) {
           </span>
         </div>
       </template>
+      <template #cell-sop="{ row }">
+        <ButtonPro
+          size="icon"
+          type="button"
+          variant="ghost"
+          :disabled="!canOpenSops(row)"
+          :title="canOpenSops(row) ? '查看当前SOP' : '当前任务未绑定标准工序'"
+          @click="openSops(row)"
+        >
+          <FileTextIcon aria-hidden="true" />
+          <span class="sr-only">查看当前SOP</span>
+        </ButtonPro>
+      </template>
       <template #cell-actions="{ row }">
         <div class="flex items-center justify-end gap-1">
           <ButtonPro
@@ -272,6 +356,11 @@ function formatError(error: unknown) {
             报工
           </ButtonPro>
           <RowActions :label="`工序任务操作 工序 ${row.operationSequence ?? ''}`">
+            <DropdownMenuProItem :disabled="!canOpenSops(row)" @click="openSops(row)">
+              <FileTextIcon aria-hidden="true" />
+              {{ canOpenSops(row) ? '查看当前SOP' : '未绑定标准工序' }}
+            </DropdownMenuProItem>
+            <DropdownMenuProSeparator />
             <DropdownMenuProItem
               v-if="!showReportButton(row)"
               :disabled="!canOpenReport(row)"
@@ -298,6 +387,50 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
+    <section
+      v-if="selectedSopTask"
+      class="grid gap-3 border-t border-border pt-4"
+      aria-live="polite"
+    >
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="min-w-0">
+          <h2 class="text-sm font-semibold text-foreground">{{ selectedSopTitle }}</h2>
+          <p class="text-xs text-muted-foreground">
+            当前生效 SOP · {{ selectedSopTask.workCenterName ?? resolveWorkCenter(selectedSopTask.workCenterCode ?? selectedSopTask.workCenterId) ?? selectedSopTask.workCenterId ?? '无工作中心' }}
+          </p>
+        </div>
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="currentSopsPending" @click="refreshCurrentSops">
+          <RefreshCwIcon aria-hidden="true" />
+          刷新SOP
+        </ButtonPro>
+      </div>
+      <p v-if="selectedSopErrorMessage || sopFileError" class="text-sm text-destructive" role="alert">{{ selectedSopErrorMessage || sopFileError }}</p>
+      <p v-else-if="currentSopsPending" class="text-sm text-muted-foreground">正在加载当前SOP...</p>
+      <ul v-else-if="currentSops.length" class="grid gap-2 md:grid-cols-2">
+        <li
+          v-for="sop in currentSops"
+          :key="`${sop.documentNumber}-${sop.revision}-${sop.fileId}`"
+          class="grid gap-1 rounded-md border border-border px-3 py-2 text-sm"
+        >
+          <span class="font-medium text-foreground">{{ sop.fileName || sop.documentNumber }}</span>
+          <span class="text-xs text-muted-foreground">
+            {{ sop.documentNumber }} · rev {{ sop.revision }} · 生效 {{ formatDate(sop.effectiveDate) }}
+          </span>
+          <ButtonPro
+            size="sm"
+            type="button"
+            variant="outline"
+            class="w-fit"
+            :disabled="openingSopFileId === sop.fileId"
+            @click="openSopFile(sop)"
+          >
+            <EyeIcon aria-hidden="true" />
+            查看SOP
+          </ButtonPro>
+        </li>
+      </ul>
+      <p v-else class="text-sm text-muted-foreground">当前工序没有已发布且已生效的SOP。</p>
+    </section>
 
     <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>

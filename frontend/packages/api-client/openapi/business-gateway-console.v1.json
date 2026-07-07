@@ -3804,6 +3804,142 @@
         ]
       }
     },
+    "/api/business-console/v1/engineering/sops/publish": {
+      "post": {
+        "tags": [
+          "Business Console Product Engineering",
+          "Api"
+        ],
+        "operationId": "publishBusinessConsoleEngineeringSopDocument",
+        "requestBody": {
+          "x-name": "BusinessConsolePublishSopDocumentRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsolePublishSopDocumentRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringEntityResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/engineering/sops/current": {
+      "get": {
+        "tags": [
+          "Business Console Product Engineering",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleCurrentEngineeringSopDocuments",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "operationCode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workCenterCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "routingCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "routingRevision",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "asOfDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCurrentSopDocumentsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/engineering/documents/{documentNumber}/{revision}": {
       "get": {
         "tags": [
@@ -4329,7 +4465,7 @@
             "schema": {
               "type": "number",
               "format": "decimal",
-              "default": 1.0,
+              "default": 1,
               "nullable": false
             }
           },
@@ -4761,7 +4897,7 @@
             "schema": {
               "type": "number",
               "format": "decimal",
-              "default": 1.0,
+              "default": 1,
               "nullable": false
             }
           },
@@ -9287,6 +9423,97 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesOperationTaskListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/mes/operation-sops/current": {
+      "get": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleMesCurrentOperationSops",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "operationCode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workCenterCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "routingCode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "routingRevision",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "asOfDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCurrentSopDocumentsResponse"
                 }
               }
             }
@@ -15507,6 +15734,71 @@
         }
       }
     },
+    "/api/business-console/v1/files/{fileId}/download-grants": {
+      "post": {
+        "tags": [
+          "Business Console Files",
+          "Api"
+        ],
+        "operationId": "createBusinessConsoleSopFileDownloadGrant",
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleCreateSopFileDownloadGrantRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileDownloadGrantRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileDownloadGrantResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/erp/procurement/purchase-orders": {
       "get": {
         "tags": [
@@ -20233,19 +20525,23 @@
       },
       "FastEndpointsErrorResponse": {
         "type": "object",
+        "description": "the dto used to send an error response to the client",
         "additionalProperties": false,
         "properties": {
           "statusCode": {
             "type": "integer",
+            "description": "the http status code sent to the client. default is 400.",
             "format": "int32",
             "default": 400
           },
           "message": {
             "type": "string",
+            "description": "the message for the error response",
             "default": "One or more errors occurred!"
           },
           "errors": {
             "type": "object",
+            "description": "the collection of errors for the current context",
             "additionalProperties": {
               "type": "array",
               "items": {
@@ -20638,7 +20934,7 @@
           "quantity": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "exclusiveMinimum": true
           }
         }
@@ -21017,7 +21313,7 @@
           "quantity": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "exclusiveMinimum": true
           }
         }
@@ -21245,7 +21541,7 @@
           "countedQuantity": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0
+            "minimum": 0
           },
           "idempotencyKey": {
             "type": "string",
@@ -21835,7 +22131,7 @@
           "sampleCount": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0,
+            "minimum": 0,
             "exclusiveMinimum": true
           },
           "minValue": {
@@ -22687,6 +22983,10 @@
           },
           "explanationCode": {
             "type": "string"
+          },
+          "standardOperationCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -24055,6 +24355,137 @@
           }
         }
       },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsolePublishSopDocumentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "documentNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "revision": {
+            "type": "string"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "workCenterCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "routingCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "routingRevision": {
+            "type": "string",
+            "nullable": true
+          },
+          "effectiveDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "fileId": {
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCurrentSopDocumentsResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCurrentSopDocumentsResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCurrentSopDocumentsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCurrentSopDocumentItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCurrentSopDocumentItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "documentNumber": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "workCenterCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "routingCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "routingRevision": {
+            "type": "string",
+            "nullable": true
+          },
+          "effectiveDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "fileId": {
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCurrentSopDocumentsRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringDocumentListResponse": {
         "allOf": [
           {
@@ -24121,6 +24552,31 @@
           "registeredAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "operationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "routingCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "routingRevision": {
+            "type": "string",
+            "nullable": true
+          },
+          "effectiveDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
           }
         }
       },
@@ -25603,12 +26059,12 @@
           "standardSetupMinutes": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0
+            "minimum": 0
           },
           "standardRunMinutes": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0
+            "minimum": 0
           },
           "controlKey": {
             "type": "string",
@@ -25675,12 +26131,12 @@
           "standardSetupMinutes": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0
+            "minimum": 0
           },
           "standardRunMinutes": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0
+            "minimum": 0
           },
           "controlKey": {
             "type": "string",
@@ -26318,19 +26774,19 @@
           "lotSizeMin": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "nullable": true
           },
           "lotSizeMax": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "nullable": true
           },
           "priority": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0
+            "minimum": 0
           },
           "isDefault": {
             "type": "boolean"
@@ -26369,19 +26825,19 @@
           "lotSizeMin": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "nullable": true
           },
           "lotSizeMax": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "nullable": true
           },
           "priority": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0
+            "minimum": 0
           },
           "isDefault": {
             "type": "boolean"
@@ -26616,7 +27072,7 @@
           "quantity": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "exclusiveMinimum": true
           }
         }
@@ -26669,7 +27125,7 @@
           "quantity": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "exclusiveMinimum": true
           }
         }
@@ -26851,7 +27307,7 @@
           "quantity": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "exclusiveMinimum": true
           },
           "dueDate": {
@@ -27028,18 +27484,18 @@
           "quantity": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "exclusiveMinimum": true
           },
           "backwardConsumptionDays": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0
+            "minimum": 0
           },
           "forwardConsumptionDays": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0
+            "minimum": 0
           }
         }
       },
@@ -28262,6 +28718,10 @@
           "deviceAssetName": {
             "type": "string",
             "nullable": true
+          },
+          "operationCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -28839,6 +29299,10 @@
             "nullable": true
           },
           "deviceAssetName": {
+            "type": "string",
+            "nullable": true
+          },
+          "operationCode": {
             "type": "string",
             "nullable": true
           }
@@ -30762,7 +31226,7 @@
           "validityMonths": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0,
+            "minimum": 0,
             "nullable": true,
             "exclusiveMinimum": true
           },
@@ -30806,7 +31270,7 @@
           "validityMonths": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0,
+            "minimum": 0,
             "nullable": true,
             "exclusiveMinimum": true
           },
@@ -31343,7 +31807,7 @@
           "paidMinutes": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0,
+            "minimum": 0,
             "nullable": true,
             "exclusiveMinimum": true
           },
@@ -31376,7 +31840,7 @@
           "capacityMinutesPerDay": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0,
+            "minimum": 0,
             "nullable": true,
             "exclusiveMinimum": true
           },
@@ -31449,7 +31913,7 @@
           "precision": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0,
+            "minimum": 0,
             "nullable": true
           },
           "roundingMode": {
@@ -31506,7 +31970,7 @@
           "creditLimit": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "nullable": true
           },
           "creditCurrencyCode": {
@@ -31612,7 +32076,7 @@
           "creditLimit": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "nullable": true
           },
           "creditCurrencyCode": {
@@ -31673,7 +32137,7 @@
           "precision": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0
+            "minimum": 0
           },
           "roundingMode": {
             "type": "string",
@@ -31727,7 +32191,7 @@
           "factor": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "exclusiveMinimum": true
           },
           "offset": {
@@ -31737,7 +32201,7 @@
           "precision": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0
+            "minimum": 0
           },
           "roundingMode": {
             "type": "string",
@@ -32034,7 +32498,7 @@
           "capacityMinutesPerDay": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0,
+            "minimum": 0,
             "exclusiveMinimum": true
           },
           "resourceType": {
@@ -32241,7 +32705,7 @@
           "paidMinutes": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0,
+            "minimum": 0,
             "exclusiveMinimum": true
           },
           "idempotencyKey": {
@@ -33246,7 +33710,7 @@
           "estimatedLaborMinutes": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0,
+            "minimum": 0,
             "nullable": true,
             "exclusiveMinimum": true
           }
@@ -33319,7 +33783,7 @@
           "downtimeMinutes": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0
+            "minimum": 0
           },
           "spareParts": {
             "type": "array",
@@ -33330,20 +33794,20 @@
           "actualLaborMinutes": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0,
+            "minimum": 0,
             "nullable": true,
             "exclusiveMinimum": true
           },
           "sparePartCostAmount": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "nullable": true
           },
           "externalServiceCostAmount": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "nullable": true
           },
           "costCurrencyCode": {
@@ -34198,7 +34662,7 @@
           "quantity": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "exclusiveMinimum": true
           },
           "uomCode": {
@@ -34691,12 +35155,77 @@
           "countedQuantity": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "exclusiveMinimum": true
           },
           "idempotencyKey": {
             "type": "string",
             "maxLength": 150,
+            "minLength": 0,
+            "nullable": false
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileDownloadGrantResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFileDownloadGrantResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFileDownloadGrantResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fileId": {
+            "type": "string"
+          },
+          "expiresAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "downloadUrl": {
+            "type": "string"
+          },
+          "downloadHeaders": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileDownloadGrantRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 100,
             "minLength": 0,
             "nullable": false
           }
@@ -35061,7 +35590,7 @@
           "quantity": {
             "type": "number",
             "format": "decimal",
-            "minimum": 0.0,
+            "minimum": 0,
             "exclusiveMinimum": true
           },
           "requiredDate": {

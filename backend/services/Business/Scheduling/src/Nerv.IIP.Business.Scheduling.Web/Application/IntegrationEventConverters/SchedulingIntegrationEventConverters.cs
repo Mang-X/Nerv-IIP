@@ -205,7 +205,8 @@ public sealed class SchedulePlanInvalidatedIntegrationEventConverter(
                     x.ResourceId,
                     x.WorkCenterId,
                     x.StartUtc,
-                    x.EndUtc)).ToArray()),
+                    x.EndUtc,
+                    x.StandardOperationCode)).ToArray()),
             timeProvider,
             context);
         return new SchedulePlanInvalidatedIntegrationEvent(
@@ -257,7 +258,8 @@ internal static class SchedulingIntegrationEventConverterHelpers
                         x.ResourceId,
                         x.WorkCenterId,
                         x.StartUtc,
-                        x.EndUtc))
+                        x.EndUtc,
+                        x.StandardOperationCode))
                     .ToArray()),
             timeProvider,
             context);

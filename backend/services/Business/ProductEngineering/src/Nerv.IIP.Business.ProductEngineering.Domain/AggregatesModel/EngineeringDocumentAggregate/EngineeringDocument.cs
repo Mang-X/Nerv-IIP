@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.DomainEvents;
 using static Nerv.IIP.Business.ProductEngineering.Domain.ProductEngineeringGuards;
 
@@ -20,7 +21,13 @@ public sealed class EngineeringDocument : Entity<EngineeringDocumentId>, IAggreg
         string fileId,
         string fileName,
         string contentType,
-        string documentType)
+        string documentType,
+        EngineeringVersionStatus status,
+        string? operationCode,
+        string? workCenterCode,
+        string? routingCode,
+        string? routingRevision,
+        DateOnly? effectiveDate)
     {
         OrganizationId = Required(organizationId);
         EnvironmentId = Required(environmentId);
@@ -31,6 +38,12 @@ public sealed class EngineeringDocument : Entity<EngineeringDocumentId>, IAggreg
         FileName = Required(fileName);
         ContentType = Required(contentType);
         DocumentType = Required(documentType);
+        Status = status;
+        OperationCode = Optional(operationCode);
+        WorkCenterCode = Optional(workCenterCode);
+        RoutingCode = Optional(routingCode);
+        RoutingRevision = Optional(routingRevision);
+        EffectiveDate = effectiveDate;
         RegisteredAtUtc = DateTime.UtcNow;
     }
 
@@ -43,6 +56,12 @@ public sealed class EngineeringDocument : Entity<EngineeringDocumentId>, IAggreg
     public string FileName { get; private set; } = string.Empty;
     public string ContentType { get; private set; } = string.Empty;
     public string DocumentType { get; private set; } = string.Empty;
+    public EngineeringVersionStatus Status { get; private set; } = EngineeringVersionStatus.Published;
+    public string? OperationCode { get; private set; }
+    public string? WorkCenterCode { get; private set; }
+    public string? RoutingCode { get; private set; }
+    public string? RoutingRevision { get; private set; }
+    public DateOnly? EffectiveDate { get; private set; }
     public DateTime RegisteredAtUtc { get; private set; }
 
     public static EngineeringDocument Register(
@@ -87,8 +106,64 @@ public sealed class EngineeringDocument : Entity<EngineeringDocumentId>, IAggreg
             fileId,
             fileName,
             contentType,
-            documentType);
+            documentType,
+            EngineeringVersionStatus.Published,
+            null,
+            null,
+            null,
+            null,
+            null);
         document.AddDomainEvent(new EngineeringDocumentRegisteredDomainEvent(document));
         return document;
+    }
+
+    public static EngineeringDocument PublishSop(
+        string organizationId,
+        string environmentId,
+        string documentNumber,
+        string revision,
+        string operationCode,
+        string? workCenterCode,
+        string? routingCode,
+        string? routingRevision,
+        DateOnly effectiveDate,
+        string fileId,
+        string fileName,
+        string contentType)
+    {
+        var document = new EngineeringDocument(
+            organizationId,
+            environmentId,
+            documentNumber,
+            revision,
+            null,
+            fileId,
+            fileName,
+            contentType,
+            "sop",
+            EngineeringVersionStatus.Published,
+            operationCode,
+            workCenterCode,
+            routingCode,
+            routingRevision,
+            effectiveDate);
+        document.AddDomainEvent(new EngineeringDocumentRegisteredDomainEvent(document));
+        return document;
+    }
+
+    public void Archive(string reason)
+    {
+        _ = Required(reason);
+        if (Status != EngineeringVersionStatus.Published)
+        {
+            throw new InvalidOperationException("Only published engineering document versions can be archived.");
+        }
+
+        Status = EngineeringVersionStatus.Archived;
+    }
+
+    private static string? Optional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 }

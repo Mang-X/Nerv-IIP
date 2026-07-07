@@ -16,6 +16,7 @@ public sealed class SchedulePlanAssignmentEntityTypeConfiguration : IEntityTypeC
         builder.Property(x => x.OperationSequence).HasColumnName("operation_sequence").HasComment("Operation sequence within the work order route.");
         builder.Property(x => x.ResourceId).HasColumnName("resource_id").HasMaxLength(96).IsRequired().HasComment("Assigned resource id.");
         builder.Property(x => x.WorkCenterId).HasColumnName("work_center_id").HasMaxLength(96).IsRequired().HasComment("Assigned work center id.");
+        builder.Property(x => x.StandardOperationCode).HasColumnName("standard_operation_code").HasMaxLength(100).HasComment("ProductEngineering standard operation code used by MES to resolve current SOP or electronic work instructions.");
         builder.Property(x => x.StartUtc).HasColumnName("start_utc").HasComment("Assignment start timestamp in UTC.");
         builder.Property(x => x.EndUtc).HasColumnName("end_utc").HasComment("Assignment end timestamp in UTC.");
         builder.Property(x => x.IsLocked).HasColumnName("is_locked").HasComment("Whether this assignment came from a locked input.");

@@ -94,6 +94,92 @@ public sealed class RegisterEngineeringDocumentCommandHandler(IEngineeringDocume
     }
 }
 
+public sealed record PublishSopDocumentCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DocumentNumber,
+    string Revision,
+    string OperationCode,
+    string? WorkCenterCode,
+    string? RoutingCode,
+    string? RoutingRevision,
+    DateOnly EffectiveDate,
+    string FileId,
+    string FileName,
+    string ContentType,
+    string? IdempotencyKey = null) : ICommand<EntityCommandResult>;
+
+public sealed class PublishSopDocumentCommandValidator : AbstractValidator<PublishSopDocumentCommand>
+{
+    public PublishSopDocumentCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DocumentNumber).MaximumLength(100);
+        RuleFor(x => x.Revision).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.OperationCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkCenterCode).MaximumLength(100);
+        RuleFor(x => x.RoutingCode).MaximumLength(100);
+        RuleFor(x => x.RoutingRevision).MaximumLength(50);
+        RuleFor(x => x.FileId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.FileName).NotEmpty().MaximumLength(255);
+        RuleFor(x => x.ContentType).NotEmpty().MaximumLength(120);
+    }
+}
+
+public sealed class PublishSopDocumentCommandHandler(IEngineeringDocumentRepository repository, ProductEngineeringCodingService? codingService = null)
+    : ICommandHandler<PublishSopDocumentCommand, EntityCommandResult>
+{
+    private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
+
+    public async Task<EntityCommandResult> Handle(PublishSopDocumentCommand request, CancellationToken cancellationToken)
+    {
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "engineering-document",
+            request.DocumentNumber,
+            request.IdempotencyKey,
+            ProductEngineeringCodingService.Fingerprint(
+                request.Revision,
+                request.OperationCode,
+                request.WorkCenterCode ?? string.Empty,
+                request.RoutingCode ?? string.Empty,
+                request.RoutingRevision ?? string.Empty,
+                request.EffectiveDate,
+                request.FileId,
+                request.FileName,
+                request.ContentType,
+                "sop"),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new EntityCommandResult(allocation.Code);
+        }
+
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
+        {
+            throw new KnownException($"SOP document '{allocation.Code}' revision '{request.Revision}' already exists.");
+        }
+
+        var document = EngineeringDocument.PublishSop(
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Code,
+            request.Revision,
+            request.OperationCode,
+            request.WorkCenterCode,
+            request.RoutingCode,
+            request.RoutingRevision,
+            request.EffectiveDate,
+            request.FileId,
+            request.FileName,
+            request.ContentType);
+        await repository.AddAsync(document, cancellationToken);
+        return new EntityCommandResult(document.DocumentNumber);
+    }
+}
+
 public sealed record CreateEngineeringItemRevisionCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -752,7 +838,8 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
     IProductionVersionRepository productionVersionRepository,
     IEngineeringApprovalVerifier? approvalVerifier = null,
     ProductEngineeringCodingService? codingService = null,
-    IProductEngineeringBusinessDateProvider? businessDateProvider = null)
+    IProductEngineeringBusinessDateProvider? businessDateProvider = null,
+    IEngineeringDocumentRepository? engineeringDocumentRepository = null)
     : ICommandHandler<ReleaseEngineeringChangeCommand, EntityCommandResult>
 {
     private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
@@ -835,6 +922,11 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
                 request.EnvironmentId,
                 affectedVersion.VersionId,
                 cancellationToken), affectedVersion.VersionId, await GetSuccessorProductionVersionAsync(request, affectedVersion, cancellationToken)),
+            "engineering-document" => ArchiveEngineeringDocument(await GetEngineeringDocumentRepository().GetByVersionIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.VersionId,
+                cancellationToken), affectedVersion.VersionId, await GetSuccessorEngineeringDocumentAsync(request, affectedVersion, cancellationToken)),
             _ => throw new KnownException($"Affected version kind '{affectedVersion.VersionKind}' is not supported.")
         };
     }
@@ -987,6 +1079,21 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
             ?? throw new KnownException($"Successor production version '{affectedVersion.SupersededByVersionId}' was not found.");
     }
 
+    private async Task<EngineeringDocument?> GetSuccessorEngineeringDocumentAsync(
+        ReleaseEngineeringChangeCommand request,
+        AffectedVersionCommand affectedVersion,
+        CancellationToken cancellationToken)
+    {
+        return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
+            ? null
+            : await GetEngineeringDocumentRepository().GetByVersionIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.SupersededByVersionId,
+                cancellationToken)
+            ?? throw new KnownException($"Successor engineering document version '{affectedVersion.SupersededByVersionId}' was not found.");
+    }
+
     private static Action<string, DateOnly> ArchiveEngineeringBom(EngineeringBom? bom, string versionId, EngineeringBom? successor)
     {
         if (bom is not null && successor is not null)
@@ -1035,6 +1142,24 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
             : successor is null
                 ? (reason, _) => ProductEngineeringReleaseValidation.AsKnownException(() => version.Archive(reason))
                 : (reason, effectiveDate) => ProductEngineeringReleaseValidation.AsKnownException(() => version.SupersedeWith(successor, effectiveDate, reason));
+    }
+
+    private static Action<string, DateOnly> ArchiveEngineeringDocument(EngineeringDocument? document, string versionId, EngineeringDocument? successor)
+    {
+        if (document is not null && successor is not null)
+        {
+            EnsurePublishedSuccessor(successor.Status, successor.DocumentNumber == document.DocumentNumber, "engineering document", successor.DocumentNumber, versionId);
+        }
+
+        return document is null
+            ? throw new KnownException($"Engineering document version '{versionId}' was not found.")
+            : (reason, _) => ProductEngineeringReleaseValidation.AsKnownException(() => document.Archive(reason));
+    }
+
+    private IEngineeringDocumentRepository GetEngineeringDocumentRepository()
+    {
+        return engineeringDocumentRepository
+            ?? throw new KnownException("Engineering document repository is required to release engineering-document affected versions.");
     }
 
     private static void EnsurePublishedSuccessor(EngineeringVersionStatus status, bool sameBusinessCode, string versionKind, string successorCode, string versionId)
@@ -1087,7 +1212,8 @@ public sealed class PromoteScheduledEngineeringChangeCommandHandler(
     IEngineeringBomRepository engineeringBomRepository,
     IManufacturingBomRepository manufacturingBomRepository,
     IRoutingRepository routingRepository,
-    IProductionVersionRepository productionVersionRepository)
+    IProductionVersionRepository productionVersionRepository,
+    IEngineeringDocumentRepository? engineeringDocumentRepository = null)
     : ICommandHandler<PromoteScheduledEngineeringChangeCommand, bool>
 {
     public async Task<bool> Handle(PromoteScheduledEngineeringChangeCommand request, CancellationToken cancellationToken)
@@ -1112,7 +1238,8 @@ public sealed class PromoteScheduledEngineeringChangeCommandHandler(
             engineeringBomRepository,
             manufacturingBomRepository,
             routingRepository,
-            productionVersionRepository);
+            productionVersionRepository,
+            engineeringDocumentRepository);
         var archiveActions = await resolver.ResolveArchiveActionsAsync(change, cancellationToken);
         foreach (var archive in archiveActions)
         {

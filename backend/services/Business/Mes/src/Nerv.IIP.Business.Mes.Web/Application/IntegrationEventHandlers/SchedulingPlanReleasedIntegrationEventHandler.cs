@@ -115,7 +115,8 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
                 operation.WorkCenterId,
                 [],
                 operation.StartUtc,
-                operation.EndUtc - operation.StartUtc);
+                operation.EndUtc - operation.StartUtc,
+                operationCode: operation.StandardOperationCode);
             dbContext.OperationTasks.Add(task);
         }
 
@@ -134,7 +135,8 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
             operation.ResourceId,
             operation.StartUtc,
             operation.EndUtc,
-            integrationEvent.OccurredAtUtc);
+            integrationEvent.OccurredAtUtc,
+            operation.StandardOperationCode);
         return null;
     }
 }

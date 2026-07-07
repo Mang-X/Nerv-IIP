@@ -638,7 +638,8 @@ file sealed class SchedulerState
             StartUtc: selected.StartUtc,
             EndUtc: selected.EndUtc,
             IsLocked: false,
-            ExplanationCode: "scheduled");
+            ExplanationCode: "scheduled",
+            StandardOperationCode: item.Operation.RequiredCapabilityCode);
     }
 
     private IEnumerable<SchedulingResourceContract> EligibleResources(OperationWorkItem item)

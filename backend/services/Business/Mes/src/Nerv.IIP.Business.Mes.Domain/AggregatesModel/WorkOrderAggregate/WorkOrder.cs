@@ -11,7 +11,8 @@ public sealed record RoutingStepSnapshot(
     string WorkCenterId,
     IReadOnlyCollection<string> AlternativeWorkCenterIds,
     TimeSpan Duration,
-    bool RequiresQualityInspection = false);
+    bool RequiresQualityInspection = false,
+    string? OperationCode = null);
 
 public sealed class SourcePlanReference
 {
@@ -157,7 +158,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
                 SkuId,
                 UomCode,
                 Quantity,
-                step.RequiresQualityInspection))
+                step.RequiresQualityInspection,
+                step.OperationCode))
             .ToList();
         Status = ReleasedStatus;
         AddDomainEvent(new WorkOrderReleasedDomainEvent(this, tasks));

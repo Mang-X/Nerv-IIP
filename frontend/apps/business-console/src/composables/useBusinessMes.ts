@@ -10,6 +10,7 @@ import {
   createBusinessConsoleMesShiftHandoverMutationOptions,
   getBusinessConsoleMesBatchTraceabilityQueryOptions,
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
+  getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   getBusinessConsoleMesFoundationReadinessQueryOptions,
   getBusinessConsoleMesMaterialReadinessQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
@@ -48,6 +49,8 @@ import {
   type BusinessConsoleMesMaterialIssueRequestListEnvelope,
   type BusinessConsoleMesMaterialIssueRequestRow,
   type BusinessConsoleMesMaterialReadinessEnvelope,
+  type BusinessConsoleCurrentSopDocumentItem,
+  type BusinessConsoleCurrentSopDocumentsEnvelope,
   type BusinessConsoleMesOperationTaskActionRequest,
   type BusinessConsoleMesOperationTaskListEnvelope,
   type BusinessConsoleMesOperationTaskRow,
@@ -651,6 +654,54 @@ export function useMesOperationTasks() {
       resumeMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
     startOperationTask: (operationTaskId: string, context: MesContextFilters, body: BusinessConsoleMesOperationTaskActionRequest) =>
       startMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
+  }
+}
+
+export interface MesCurrentOperationSopFilters extends BusinessContextFields {
+  operationCode?: string
+  workCenterCode?: string | null
+  routingCode?: string | null
+  routingRevision?: string | null
+  asOfDate?: string | null
+}
+
+export function useMesCurrentOperationSops() {
+  const filters = bindBusinessContext(reactive<MesCurrentOperationSopFilters>({
+    organizationId: '',
+    environmentId: '',
+    operationCode: '',
+    workCenterCode: '',
+    routingCode: '',
+    routingRevision: '',
+    asOfDate: '',
+  }))
+
+  const enabled = computed(() => hasBusinessContext(filters) && Boolean(filters.operationCode?.trim()))
+  const sopsQuery = useQuery(() => ({
+    ...getBusinessConsoleMesCurrentOperationSopsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        operationCode: filters.operationCode?.trim() ?? '',
+        ...optionalQuery('workCenterCode', filters.workCenterCode?.trim()),
+        ...optionalQuery('routingCode', filters.routingCode?.trim()),
+        ...optionalQuery('routingRevision', filters.routingRevision?.trim()),
+        ...optionalQuery('asOfDate', filters.asOfDate?.trim()),
+      },
+    }),
+    enabled: enabled.value,
+  }))
+
+  return {
+    filters,
+    currentSops: computed<BusinessConsoleCurrentSopDocumentItem[]>(() =>
+      envelopeItems<BusinessConsoleCurrentSopDocumentItem, BusinessConsoleCurrentSopDocumentsEnvelope>(
+        sopsQuery.data.value as BusinessConsoleCurrentSopDocumentsEnvelope | undefined,
+      ),
+    ),
+    currentSopsError: sopsQuery.error,
+    currentSopsPending: sopsQuery.isLoading,
+    refreshCurrentSops: () => enabled.value ? sopsQuery.refetch() : Promise.resolve(),
   }
 }
 

@@ -140,7 +140,8 @@ public sealed record ScheduleAssignmentContract(
     DateTimeOffset StartUtc,
     DateTimeOffset EndUtc,
     bool IsLocked,
-    string ExplanationCode);
+    string ExplanationCode,
+    string? StandardOperationCode = null);
 
 public sealed record ScheduleResourceLoadContract(
     string ResourceId,
@@ -313,7 +314,8 @@ public sealed record SchedulePlanAffectedOperationPayload(
     string ResourceId,
     string WorkCenterId,
     DateTimeOffset StartUtc,
-    DateTimeOffset EndUtc);
+    DateTimeOffset EndUtc,
+    string? StandardOperationCode = null);
 
 public enum ScheduleSplitPolicyContract
 {

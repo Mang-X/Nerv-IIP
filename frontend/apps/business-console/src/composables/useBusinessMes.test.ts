@@ -6,6 +6,7 @@ import {
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
   getBusinessConsoleMesBatchTraceabilityQueryOptions,
+  getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   getBusinessConsoleMesFoundationReadinessQueryOptions,
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
@@ -31,6 +32,7 @@ import {
   useMesDowntimeEvents,
   useMesFoundationReadiness,
   useMesFinishedGoodsReceipts,
+  useMesCurrentOperationSops,
   useMesMaterialIssueRequests,
   useMesOperationTasks,
   useMesOverview,
@@ -109,6 +111,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   getBusinessConsoleMesBatchTraceabilityQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesBatchTraceability' }],
+    query: vi.fn(),
+  })),
+  getBusinessConsoleMesCurrentOperationSopsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesCurrentOperationSops' }],
     query: vi.fn(),
   })),
   getBusinessConsoleMesCapacityImpactsQueryOptions: vi.fn(() => ({
@@ -382,6 +388,9 @@ describe('business MES composables', () => {
     expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesOverview')?.()).toMatchObject({ enabled: false })
     expect(coladaState.queryFactoriesById.get('listBusinessConsoleMesProductionPlans')?.()).toMatchObject({ enabled: false })
     expect(coladaState.queryFactoriesById.get('listBusinessConsoleMesOperationTasks')?.()).toMatchObject({ enabled: false })
+    const sops = useMesCurrentOperationSops()
+    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesCurrentOperationSops')?.()).toMatchObject({ enabled: false })
+    expect(sops.currentSops.value).toEqual([])
     expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesWipSummary')?.()).toMatchObject({ enabled: false })
     expect(coladaState.queryFactoriesById.get('listBusinessConsoleMesCapacityImpacts')?.()).toMatchObject({ enabled: false })
   })
@@ -503,6 +512,31 @@ describe('business MES composables', () => {
     expect(tasks.operationTasksTotal.value).toBe(77)
     expect(wip.wipRows.value).toHaveLength(1)
     expect(wip.wipTotal.value).toBe(23)
+  })
+
+  it('queries current SOP documents by operation and work center context', () => {
+    coladaState.queryDataById.set('getBusinessConsoleMesCurrentOperationSops', {
+      success: true,
+      data: {
+        items: [{ documentNumber: 'SOP-ASSY', revision: 'B', operationCode: 'OP-ASSY', fileId: 'file-sop-b' }],
+      },
+    })
+    const sops = useMesCurrentOperationSops()
+    sops.filters.operationCode = ' OP-ASSY '
+    sops.filters.workCenterCode = ' WC-A '
+
+    coladaState.queryFactoriesById.get('getBusinessConsoleMesCurrentOperationSops')?.()
+
+    expect(getBusinessConsoleMesCurrentOperationSopsQueryOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        operationCode: 'OP-ASSY',
+        workCenterCode: 'WC-A',
+      },
+    })
+    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesCurrentOperationSops')?.()).toMatchObject({ enabled: true })
+    expect(sops.currentSops.value[0]).toMatchObject({ revision: 'B', fileId: 'file-sop-b' })
   })
 
   it('exposes secondary MES list totals from response envelopes', () => {

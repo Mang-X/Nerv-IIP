@@ -7,6 +7,7 @@ import {
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
+  getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   recordBusinessConsoleMesProductionReportMutationOptions,
@@ -15,6 +16,7 @@ import {
 
 import {
   useMesMaterialIssue,
+  useMesCurrentOperationSops,
   useMesOperationTasks,
   useMesProductionReports,
   useMesReceipts,
@@ -24,6 +26,7 @@ import {
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
+  queryFactoriesById: new Map<string, () => { enabled?: boolean }>(),
   mutateById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
@@ -47,6 +50,7 @@ function mockMutationOptions(id: string) {
 
 vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleMesWorkOrdersQueryOptions: mockQueryOptions('listBusinessConsoleMesWorkOrders'),
+  getBusinessConsoleMesCurrentOperationSopsQueryOptions: mockQueryOptions('getBusinessConsoleMesCurrentOperationSops'),
   listBusinessConsoleMesOperationTasksQueryOptions: mockQueryOptions('listBusinessConsoleMesOperationTasks'),
   listBusinessConsoleMesProductionReportsQueryOptions: mockQueryOptions('listBusinessConsoleMesProductionReports'),
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions: mockQueryOptions('listBusinessConsoleMesMaterialIssueRequests'),
@@ -67,6 +71,7 @@ vi.mock('@pinia/colada', () => ({
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
     coladaState.queryOptionsById.set(id, options)
+    coladaState.queryFactoriesById.set(id, optionsFactory)
 
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
@@ -106,6 +111,7 @@ describe('pda useBusinessMes composables', () => {
     vi.clearAllMocks()
     coladaState.queryDataById.clear()
     coladaState.queryOptionsById.clear()
+    coladaState.queryFactoriesById.clear()
     coladaState.mutateById.clear()
     authState.principal = { organizationId: 'org-001', environmentId: 'env-dev' }
   })
@@ -115,12 +121,14 @@ describe('pda useBusinessMes composables', () => {
 
     useMesWorkOrders()
     useMesOperationTasks()
+    useMesCurrentOperationSops()
 
     expect(listBusinessConsoleMesWorkOrdersQueryOptions).toHaveBeenCalledWith({
       query: expect.objectContaining({ organizationId: '', environmentId: '' }),
     })
     expect(coladaState.queryOptionsById.get('listBusinessConsoleMesWorkOrders')?.enabled).toBe(false)
     expect(coladaState.queryOptionsById.get('listBusinessConsoleMesOperationTasks')?.enabled).toBe(false)
+    expect(coladaState.queryOptionsById.get('getBusinessConsoleMesCurrentOperationSops')?.enabled).toBe(false)
   })
 
   it('enables list queries once a principal scope is present', () => {
@@ -130,6 +138,33 @@ describe('pda useBusinessMes composables', () => {
       query: expect.objectContaining({ organizationId: 'org-001', environmentId: 'env-dev' }),
     })
     expect(coladaState.queryOptionsById.get('listBusinessConsoleMesWorkOrders')?.enabled).toBe(true)
+  })
+
+  it('queries current operation SOPs only after operation code is selected', () => {
+    coladaState.queryDataById.set('getBusinessConsoleMesCurrentOperationSops', {
+      success: true,
+      data: {
+        items: [{ documentNumber: 'SOP-10', revision: 'A', operationCode: 'OP-10', fileId: 'file-10' }],
+      },
+    })
+    const sops = useMesCurrentOperationSops()
+
+    expect(coladaState.queryOptionsById.get('getBusinessConsoleMesCurrentOperationSops')?.enabled).toBe(false)
+
+    sops.filters.operationCode = ' OP-10 '
+    sops.filters.workCenterCode = ' WC-10 '
+    const options = coladaState.queryFactoriesById.get('getBusinessConsoleMesCurrentOperationSops')?.()
+
+    expect(getBusinessConsoleMesCurrentOperationSopsQueryOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        operationCode: 'OP-10',
+        workCenterCode: 'WC-10',
+      },
+    })
+    expect(options).toMatchObject({ enabled: true })
+    expect(sops.currentSops.value[0]).toMatchObject({ fileId: 'file-10' })
   })
 
   it('records a production report forwarding the caller-supplied idempotency key + business fields', async () => {
