@@ -848,6 +848,40 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
+    public async Task Create_count_task_command_uses_namespaced_fallback_idempotency_key()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CreateStockCountTaskCommandHandler(dbContext).Handle(
+            NewCreateCountTaskCommand("COUNT-FALLBACK-001", idempotencyKey: null),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var task = Assert.Single(dbContext.StockCountTasks);
+        Assert.Equal("count-code:COUNT-FALLBACK-001", task.IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task Create_count_task_command_lock_uses_idempotency_key_namespace()
+    {
+        var explicitSettings = await new CreateStockCountTaskCommandLock().GetLockKeysAsync(
+            NewCreateCountTaskCommand("COUNT-LOCK-001", idempotencyKey: "wms-count-freeze:abc"),
+            CancellationToken.None);
+        var fallbackSettings = await new CreateStockCountTaskCommandLock().GetLockKeysAsync(
+            NewCreateCountTaskCommand("COUNT-LOCK-001", idempotencyKey: null),
+            CancellationToken.None);
+
+        Assert.Equal("business-inventory:stock-count-task:org-001:env-dev:wms-count-freeze%3Aabc", explicitSettings.LockKey);
+        Assert.Equal("business-inventory:stock-count-task:org-001:env-dev:count-code%3ACOUNT-LOCK-001", fallbackSettings.LockKey);
+    }
+
+    [Fact]
     public async Task Cancel_count_task_command_releases_ledger_freeze()
     {
         await using var provider = CreateInMemoryProvider();
@@ -1357,5 +1391,23 @@ public sealed class InventoryEndpointContractTests
             "company",
             "owner-001",
             quantity);
+    }
+
+    private static CreateStockCountTaskCommand NewCreateCountTaskCommand(string countTaskCode, string? idempotencyKey)
+    {
+        return new CreateStockCountTaskCommand(
+            "org-001",
+            "env-dev",
+            countTaskCode,
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001",
+            idempotencyKey);
     }
 }

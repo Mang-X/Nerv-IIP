@@ -21,7 +21,7 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
 
             migrationBuilder.Sql("""
                 update inventory.stock_count_tasks
-                set idempotency_key = count_task_code
+                set idempotency_key = 'count-code:' || count_task_code
                 where idempotency_key is null;
                 """);
 

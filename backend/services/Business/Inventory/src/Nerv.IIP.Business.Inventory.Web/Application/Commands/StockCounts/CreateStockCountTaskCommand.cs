@@ -21,6 +21,27 @@ public sealed record CreateStockCountTaskCommand(
 
 public sealed record CreateStockCountTaskResult(StockCountTaskId CountTaskId, long ExpectedLedgerVersion);
 
+public sealed class CreateStockCountTaskCommandLock : ICommandLock<CreateStockCountTaskCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(CreateStockCountTaskCommand command, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        var lockKey = string.Join(
+            ':',
+            "business-inventory",
+            "stock-count-task",
+            Normalize(command.OrganizationId),
+            Normalize(command.EnvironmentId),
+            Normalize(CreateStockCountTaskIdempotency.Resolve(command)));
+        return Task.FromResult(new CommandLockSettings(lockKey, 30));
+    }
+
+    private static string Normalize(string value)
+    {
+        return Uri.EscapeDataString(value.Trim());
+    }
+}
+
 public sealed class CreateStockCountTaskCommandValidator : AbstractValidator<CreateStockCountTaskCommand>
 {
     public CreateStockCountTaskCommandValidator()
@@ -48,9 +69,7 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
     {
         var qualityStatus = StockQualityStatus.Normalize(request.QualityStatus);
         var ownerType = StockOwnerType.Normalize(request.OwnerType);
-        var idempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey)
-            ? request.CountTaskCode.Trim()
-            : request.IdempotencyKey.Trim();
+        var idempotencyKey = CreateStockCountTaskIdempotency.Resolve(request);
         var existing = await dbContext.StockCountTasks.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
@@ -120,6 +139,63 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
             ledger.LedgerVersion);
         ledger.FreezeForCount(task.CountTaskCode);
         dbContext.StockCountTasks.Add(task);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            dbContext.Entry(task).State = EntityState.Detached;
+            dbContext.Entry(ledger).State = EntityState.Detached;
+
+            var recovered = await dbContext.StockCountTasks.AsNoTracking().SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+            if (recovered is not null)
+            {
+                if (!recovered.HasSameCreationScope(
+                        request.CountTaskCode,
+                        request.SkuCode,
+                        request.UomCode,
+                        request.SiteCode,
+                        request.LocationCode,
+                        request.LotNo,
+                        request.SerialNo,
+                        request.QualityStatus,
+                        request.OwnerType,
+                        request.OwnerId))
+                {
+                    throw new KnownException("Stock count task idempotency key conflicts with an existing count scope.");
+                }
+
+                return new CreateStockCountTaskResult(recovered.Id, recovered.ExpectedLedgerVersion);
+            }
+
+            var recoveredCountCode = await dbContext.StockCountTasks.AsNoTracking().SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.CountTaskCode == request.CountTaskCode,
+                cancellationToken);
+            if (recoveredCountCode is not null)
+            {
+                throw new KnownException("Stock count task code conflicts with an existing idempotency key.");
+            }
+
+            throw;
+        }
+
         return new CreateStockCountTaskResult(task.Id, task.ExpectedLedgerVersion);
+    }
+}
+
+internal static class CreateStockCountTaskIdempotency
+{
+    public static string Resolve(CreateStockCountTaskCommand request)
+    {
+        return string.IsNullOrWhiteSpace(request.IdempotencyKey)
+            ? $"count-code:{request.CountTaskCode.Trim()}"
+            : request.IdempotencyKey.Trim();
     }
 }

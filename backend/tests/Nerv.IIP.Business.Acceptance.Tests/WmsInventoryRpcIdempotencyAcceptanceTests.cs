@@ -1,12 +1,21 @@
 using Microsoft.EntityFrameworkCore;
 using MediatR;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Npgsql;
+using Nerv.IIP.Business.Inventory.Domain;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
+using Nerv.IIP.Business.Inventory.Infrastructure;
+using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
+using NetCorePal.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DistributedLocks;
+using NetCorePal.Extensions.Primitives;
 using InventoryDbContext = Nerv.IIP.Business.Inventory.Infrastructure.ApplicationDbContext;
 using WmsDbContext = Nerv.IIP.Business.Wms.Infrastructure.ApplicationDbContext;
 
@@ -77,6 +86,63 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
         Assert.True(inventoryDb.StockLedgers.Single().IsFrozenForCount);
     }
 
+    [RealPostgresFact]
+    public async Task Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms()
+    {
+        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await using var wmsDatabase = await TemporaryPostgresDatabase.CreateAsync(postgresConnectionString, "wms_rpc");
+        await using var inventoryDatabase = await TemporaryPostgresDatabase.CreateAsync(postgresConnectionString, "inv_rpc");
+        await using var inventoryProvider = CreateInventoryPostgresProvider(inventoryDatabase.ConnectionString);
+        await using var wmsDb = CreatePostgresWmsContext(wmsDatabase.ConnectionString);
+        await wmsDb.Database.MigrateAsync();
+        await using (var scope = inventoryProvider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+            await db.Database.MigrateAsync();
+        }
+
+        await SeedInventoryPostgresAsync(inventoryProvider, "SKU-FG-1000", "LOC-A-01", null, 10m, "seed-count-postgres-001", ownerId: null);
+        var client = new InventoryMediatRTimeoutClient(inventoryProvider)
+        {
+            ThrowOnNextCountTask = true,
+        };
+        var command = new CreateCountExecutionCommand("org-001", "env-dev", "COUNT-RPC-PG-001", "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 10m);
+
+        await Assert.ThrowsAsync<TimeoutException>(() =>
+            new CreateCountExecutionCommandHandler(wmsDb, client).Handle(command, CancellationToken.None));
+
+        Assert.Empty(wmsDb.CountExecutions);
+        var inventoryRequest = new WmsInventoryCountTaskRequest(
+            "org-001",
+            "env-dev",
+            "COUNT-RPC-PG-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            null,
+            null,
+            "qualified",
+            "company",
+            null,
+            "wms-count-freeze:postgres-concurrent");
+        var concurrentResults = await Task.WhenAll(
+            client.CreateCountTaskAsync(inventoryRequest, CancellationToken.None),
+            client.CreateCountTaskAsync(inventoryRequest, CancellationToken.None));
+
+        Assert.Equal(concurrentResults[0].CountTaskId, concurrentResults[1].CountTaskId);
+        var recoveredCountId = await new CreateCountExecutionCommandHandler(wmsDb, client).Handle(command, CancellationToken.None);
+        await wmsDb.SaveChangesAsync(CancellationToken.None);
+
+        await using var inventoryAssertScope = inventoryProvider.CreateAsyncScope();
+        var inventoryDb = inventoryAssertScope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+        Assert.Single(await inventoryDb.StockCountTasks.ToListAsync());
+        Assert.True((await inventoryDb.StockLedgers.SingleAsync()).IsFrozenForCount);
+        var count = Assert.Single(wmsDb.CountExecutions);
+        Assert.Equal(recoveredCountId, count.Id);
+        Assert.Equal(concurrentResults[0].CountTaskId, count.InventoryCountTaskId);
+    }
+
     private static async Task SeedInventoryAsync(
         InventoryDbContext inventoryDb,
         string skuCode,
@@ -123,6 +189,62 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             .UseInMemoryDatabase($"inventory-rpc-idempotency-{Guid.NewGuid():N}")
             .Options;
         return new InventoryDbContext(options, new NoopMediator());
+    }
+
+    private static WmsDbContext CreatePostgresWmsContext(string connectionString)
+    {
+        var options = new DbContextOptionsBuilder<WmsDbContext>()
+            .UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", WmsFacts.Schema))
+            .Options;
+        return new WmsDbContext(options, new NoopMediator());
+    }
+
+    private static ServiceProvider CreateInventoryPostgresProvider(string connectionString)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddConsole());
+        services.AddMediatR(configuration => configuration
+            .RegisterServicesFromAssembly(typeof(CreateStockCountTaskCommand).Assembly)
+            .AddCommandLockBehavior()
+            .AddKnownExceptionValidationBehavior()
+            .AddUnitOfWorkBehaviors());
+        services.AddInventoryPostgreSqlPersistence(connectionString);
+        services.AddInMemoryDistributedLock();
+        services.AddScoped<ICommandLock<CreateStockCountTaskCommand>, CreateStockCountTaskCommandLock>();
+        return services.BuildServiceProvider();
+    }
+
+    private static async Task SeedInventoryPostgresAsync(
+        IServiceProvider inventoryProvider,
+        string skuCode,
+        string locationCode,
+        string? lotNo,
+        decimal quantity,
+        string idempotencyKey,
+        string? ownerId = "owner-001")
+    {
+        await using var scope = inventoryProvider.CreateAsyncScope();
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+        await sender.Send(
+            new PostStockMovementCommand(
+                "org-001",
+                "env-dev",
+                "inbound",
+                "wms",
+                "SEED",
+                idempotencyKey,
+                idempotencyKey,
+                skuCode,
+                "kg",
+                "SITE-01",
+                locationCode,
+                lotNo,
+                null,
+                "qualified",
+                "company",
+                ownerId,
+                quantity),
+            CancellationToken.None);
     }
 
     private sealed class TimeoutAfterInventoryCommitClient(InventoryDbContext inventoryDb) : IWmsInventoryReservationClient
@@ -220,6 +342,167 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             CancellationToken cancellationToken)
         {
             throw new NotSupportedException("This test does not confirm count adjustments.");
+        }
+    }
+
+    private sealed class InventoryMediatRTimeoutClient(IServiceProvider inventoryProvider) : IWmsInventoryReservationClient
+    {
+        private int throwOnNextReservation;
+        private int throwOnNextCountTask;
+
+        public bool ThrowOnNextReservation
+        {
+            get => Volatile.Read(ref throwOnNextReservation) == 1;
+            set => Volatile.Write(ref throwOnNextReservation, value ? 1 : 0);
+        }
+
+        public bool ThrowOnNextCountTask
+        {
+            get => Volatile.Read(ref throwOnNextCountTask) == 1;
+            set => Volatile.Write(ref throwOnNextCountTask, value ? 1 : 0);
+        }
+
+        public async Task<WmsInventoryReservationResult> ReserveAsync(
+            WmsInventoryReservationRequest request,
+            CancellationToken cancellationToken)
+        {
+            await using var scope = inventoryProvider.CreateAsyncScope();
+            var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+            var result = await sender.Send(
+                new ReserveStockCommand(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    request.SourceService,
+                    request.SourceDocumentId,
+                    request.SourceDocumentLineId,
+                    request.IdempotencyKey,
+                    request.SkuCode,
+                    request.UomCode,
+                    request.SiteCode,
+                    request.LocationCode,
+                    request.LotNo,
+                    request.SerialNo,
+                    request.QualityStatus,
+                    request.OwnerType,
+                    request.OwnerId,
+                    request.Quantity,
+                    request.ProductionDate,
+                    request.ExpiryDate),
+                cancellationToken);
+            if (Interlocked.Exchange(ref throwOnNextReservation, 0) == 1)
+            {
+                throw new TimeoutException("Simulated timeout after Inventory committed the reservation.");
+            }
+
+            return new WmsInventoryReservationResult(
+                result.ReservationId.ToString(),
+                result.ReservedQuantity,
+                result.AvailableQuantity,
+                result.LotNo,
+                result.ProductionDate,
+                result.ExpiryDate);
+        }
+
+        public Task<WmsInventoryFefoReservationResult> ReserveFefoAsync(
+            WmsInventoryFefoReservationRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException("This test uses explicit lot reservations.");
+        }
+
+        public Task<WmsInventoryReservationReleaseResult> ReleaseAsync(
+            WmsInventoryReservationReleaseRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException("This test does not release reservations.");
+        }
+
+        public async Task<WmsInventoryCountTaskResult> CreateCountTaskAsync(
+            WmsInventoryCountTaskRequest request,
+            CancellationToken cancellationToken)
+        {
+            await using var scope = inventoryProvider.CreateAsyncScope();
+            var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+            var result = await sender.Send(
+                new CreateStockCountTaskCommand(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    request.CountTaskCode,
+                    request.SkuCode,
+                    request.UomCode,
+                    request.SiteCode,
+                    request.LocationCode,
+                    request.LotNo,
+                    request.SerialNo,
+                    request.QualityStatus,
+                    request.OwnerType,
+                    request.OwnerId,
+                    request.IdempotencyKey),
+                cancellationToken);
+            if (Interlocked.Exchange(ref throwOnNextCountTask, 0) == 1)
+            {
+                throw new TimeoutException("Simulated timeout after Inventory committed the count freeze.");
+            }
+
+            return new WmsInventoryCountTaskResult(result.CountTaskId.ToString(), result.ExpectedLedgerVersion);
+        }
+
+        public Task<WmsInventoryCountAdjustmentResult> ConfirmCountAdjustmentAsync(
+            WmsInventoryCountAdjustmentRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException("This test does not confirm count adjustments.");
+        }
+    }
+
+    private sealed class TemporaryPostgresDatabase : IAsyncDisposable
+    {
+        private readonly string adminConnectionString;
+        private readonly string databaseName;
+
+        private TemporaryPostgresDatabase(string adminConnectionString, string connectionString, string databaseName)
+        {
+            this.adminConnectionString = adminConnectionString;
+            ConnectionString = connectionString;
+            this.databaseName = databaseName;
+        }
+
+        public string ConnectionString { get; }
+
+        public static async Task<TemporaryPostgresDatabase> CreateAsync(string baseConnectionString, string prefix)
+        {
+            var baseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString);
+            var adminBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
+            {
+                Database = string.IsNullOrWhiteSpace(baseBuilder.Database) ? "postgres" : baseBuilder.Database,
+            };
+            var databaseName = $"nerv_iip_{prefix}_{Guid.NewGuid():N}";
+            var databaseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
+            {
+                Database = databaseName,
+            };
+
+            await using var connection = new NpgsqlConnection(adminBuilder.ConnectionString);
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand($"""CREATE DATABASE "{databaseName}";""", connection);
+            await command.ExecuteNonQueryAsync();
+            return new TemporaryPostgresDatabase(adminBuilder.ConnectionString, databaseBuilder.ConnectionString, databaseName);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await using var connection = new NpgsqlConnection(adminConnectionString);
+            await connection.OpenAsync();
+            await using (var terminate = new NpgsqlCommand(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = @databaseName AND pid <> pg_backend_pid();",
+                connection))
+            {
+                terminate.Parameters.AddWithValue("databaseName", databaseName);
+                await terminate.ExecuteNonQueryAsync();
+            }
+
+            await using var drop = new NpgsqlCommand($"""DROP DATABASE IF EXISTS "{databaseName}";""", connection);
+            await drop.ExecuteNonQueryAsync();
         }
     }
 
