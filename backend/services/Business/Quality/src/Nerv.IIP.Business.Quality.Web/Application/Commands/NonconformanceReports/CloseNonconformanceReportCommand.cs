@@ -30,7 +30,11 @@ public sealed class CloseNonconformanceReportCommandHandler(
         var ncr = await repository.GetAsync(request.NcrId, cancellationToken)
             ?? throw new KnownException($"NCR '{request.NcrId}' was not found.");
         if (NonconformanceReport.RequiresEffectiveCapa(ncr.SourceType, ncr.DispositionType)
-            && !await correctiveActionRepository.HasEffectiveCapaForNcrAsync(ncr.Id.ToString(), cancellationToken))
+            && !await correctiveActionRepository.HasEffectiveCapaForNcrAsync(
+                ncr.OrganizationId,
+                ncr.EnvironmentId,
+                ncr.Id.ToString(),
+                cancellationToken))
         {
             throw new KnownException("NCR requires a linked effective CAPA before closure.");
         }

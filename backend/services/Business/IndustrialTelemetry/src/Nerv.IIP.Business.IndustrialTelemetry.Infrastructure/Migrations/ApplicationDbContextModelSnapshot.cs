@@ -548,6 +548,24 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasComment("Telemetry tag identifier.");
 
+                    b.Property<string>("ControlAllowedValuesJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("control_allowed_values_json")
+                        .HasComment("JSON array of optional allowed literal values for device control writes; produced by IndustrialTelemetry tag metadata and consumed by device control validation, additive values are compatible.");
+
+                    b.Property<decimal?>("ControlMaxValue")
+                        .HasColumnType("numeric")
+                        .HasColumnName("control_max_value")
+                        .HasComment("Optional maximum allowed control value for numeric device control writes.");
+
+                    b.Property<decimal?>("ControlMinValue")
+                        .HasColumnType("numeric")
+                        .HasColumnName("control_min_value")
+                        .HasComment("Optional minimum allowed control value for numeric device control writes.");
+
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc")
@@ -566,6 +584,11 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Owning environment identifier.");
+
+                    b.Property<bool>("IsWritable")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_writable")
+                        .HasComment("Whether this telemetry tag may be used as a validated device control write target.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()

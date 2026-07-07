@@ -4,6 +4,8 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggr
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
+using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Sdk.Ops;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 
@@ -14,7 +16,11 @@ public sealed record CreateTelemetryTagCommand(
     string TagKey,
     string ValueType,
     string UnitCode,
-    string SamplingPolicy) : ICommand<TelemetryTagId>;
+    string SamplingPolicy,
+    bool IsWritable = false,
+    decimal? ControlMinValue = null,
+    decimal? ControlMaxValue = null,
+    IReadOnlyCollection<string>? ControlAllowedValues = null) : ICommand<TelemetryTagId>;
 
 public sealed class CreateTelemetryTagCommandValidator : AbstractValidator<CreateTelemetryTagCommand>
 {
@@ -27,6 +33,10 @@ public sealed class CreateTelemetryTagCommandValidator : AbstractValidator<Creat
         RuleFor(x => x.ValueType).NotEmpty().MaximumLength(50);
         RuleFor(x => x.UnitCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.SamplingPolicy).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ControlMinValue)
+            .LessThanOrEqualTo(x => x.ControlMaxValue)
+            .When(x => x.ControlMinValue.HasValue && x.ControlMaxValue.HasValue);
+        RuleForEach(x => x.ControlAllowedValues).MaximumLength(100);
     }
 }
 
@@ -45,13 +55,213 @@ public sealed class CreateTelemetryTagCommandHandler(ApplicationDbContext dbCont
         if (existing is not null)
         {
             existing.UpdateDefinition(request.ValueType, request.UnitCode, request.SamplingPolicy);
+            existing.ConfigureControl(request.IsWritable, request.ControlMinValue, request.ControlMaxValue, request.ControlAllowedValues ?? []);
             return existing.Id;
         }
 
         var tag = TelemetryTag.Create(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, request.TagKey, request.ValueType, request.UnitCode, request.SamplingPolicy);
+        tag.ConfigureControl(request.IsWritable, request.ControlMinValue, request.ControlMaxValue, request.ControlAllowedValues ?? []);
         dbContext.TelemetryTags.Add(tag);
         return tag.Id;
     }
+}
+
+public interface IDeviceControlOpsClient
+{
+    Task<OperationTaskResponse> CreateDeviceControlTaskAsync(CreateOperationTaskRequest request, CancellationToken cancellationToken);
+}
+
+public sealed class DeviceControlOpsClient(IOpsClient opsClient) : IDeviceControlOpsClient
+{
+    public Task<OperationTaskResponse> CreateDeviceControlTaskAsync(CreateOperationTaskRequest request, CancellationToken cancellationToken)
+    {
+        return opsClient.CreateOperationTaskAsync(request, cancellationToken);
+    }
+}
+
+public sealed record CreateDeviceControlCommandCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ConnectorHostId,
+    string InstanceKey,
+    string DeviceAssetId,
+    string CommandType,
+    string? TagKey,
+    string? Value,
+    IReadOnlyDictionary<string, string>? Parameters,
+    string RequestedBy,
+    string Reason,
+    string IdempotencyKey,
+    string CorrelationId) : ICommand<OperationTaskResponse>;
+
+internal static class DeviceControlCommandValidation
+{
+    public static bool IsSupportedCommandType(string commandType)
+    {
+        return IsSingleTagCommand(commandType) || IsParameterSetCommand(commandType);
+    }
+
+    public static bool IsSingleTagCommand(string commandType)
+    {
+        if (string.IsNullOrWhiteSpace(commandType))
+        {
+            return false;
+        }
+
+        var normalized = commandType.Trim().ToLowerInvariant();
+        return normalized is "write-tag" or "start-stop";
+    }
+
+    public static bool IsParameterSetCommand(string commandType)
+    {
+        if (string.IsNullOrWhiteSpace(commandType))
+        {
+            return false;
+        }
+
+        return string.Equals(commandType.Trim(), "parameter-set", StringComparison.OrdinalIgnoreCase);
+    }
+}
+
+public sealed class CreateDeviceControlCommandCommandValidator : AbstractValidator<CreateDeviceControlCommandCommand>
+{
+    public CreateDeviceControlCommandCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ConnectorHostId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.InstanceKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.CommandType)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(DeviceControlCommandValidation.IsSupportedCommandType)
+            .WithMessage("Device control command type must be write-tag, start-stop or parameter-set.");
+        When(x => DeviceControlCommandValidation.IsSingleTagCommand(x.CommandType), () =>
+        {
+            RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
+            RuleFor(x => x.Value).NotEmpty().MaximumLength(256);
+        });
+        When(x => DeviceControlCommandValidation.IsParameterSetCommand(x.CommandType), () =>
+        {
+            RuleFor(x => x.Parameters).NotEmpty();
+            RuleForEach(x => x.Parameters!.Keys).NotEmpty().MaximumLength(150);
+            RuleForEach(x => x.Parameters!.Values).NotEmpty().MaximumLength(256);
+        });
+        RuleFor(x => x.RequestedBy).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.CorrelationId).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class CreateDeviceControlCommandCommandHandler(
+    ApplicationDbContext dbContext,
+    IDeviceControlOpsClient opsClient)
+    : ICommandHandler<CreateDeviceControlCommandCommand, OperationTaskResponse>
+{
+    public async Task<OperationTaskResponse> Handle(CreateDeviceControlCommandCommand request, CancellationToken cancellationToken)
+    {
+        var commandType = IndustrialTelemetryText.RequiredLower(request.CommandType, nameof(request.CommandType));
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["connectorHostId"] = request.ConnectorHostId.Trim(),
+            ["commandType"] = commandType,
+            ["deviceAssetId"] = request.DeviceAssetId.Trim()
+        };
+
+        switch (commandType)
+        {
+            case "write-tag":
+            case "start-stop":
+                var tagKey = IndustrialTelemetryText.RequiredLower(request.TagKey ?? string.Empty, nameof(request.TagKey));
+                var value = IndustrialTelemetryText.Required(request.Value ?? string.Empty, nameof(request.Value));
+                await ValidateWritableTagAsync(request, tagKey, value, cancellationToken);
+                parameters["tagKey"] = tagKey;
+                parameters["value"] = value;
+                break;
+            case "parameter-set":
+                await AddParameterSetAsync(request, parameters, cancellationToken);
+                break;
+            default:
+                throw new KnownException($"Unsupported device control command type: {request.CommandType}");
+        }
+
+        var taskRequest = new CreateOperationTaskRequest(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.InstanceKey,
+            "device.control.command",
+            request.IdempotencyKey,
+            request.RequestedBy,
+            request.Reason,
+            request.CorrelationId,
+            parameters);
+        return await opsClient.CreateDeviceControlTaskAsync(taskRequest, cancellationToken);
+    }
+
+    private async Task AddParameterSetAsync(
+        CreateDeviceControlCommandCommand request,
+        IDictionary<string, string> parameters,
+        CancellationToken cancellationToken)
+    {
+        if (request.Parameters is null || request.Parameters.Count == 0)
+        {
+            throw new KnownException("Parameter-set device control command requires parameters.");
+        }
+
+        foreach (var item in request.Parameters.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var tagKey = IndustrialTelemetryText.RequiredLower(item.Key, nameof(request.Parameters));
+            var value = IndustrialTelemetryText.Required(item.Value, nameof(request.Parameters));
+            await ValidateWritableTagAsync(request, tagKey, value, cancellationToken);
+            parameters[$"parameter.{tagKey}"] = value;
+        }
+    }
+
+    private async Task ValidateWritableTagAsync(
+        CreateDeviceControlCommandCommand request,
+        string tagKey,
+        string value,
+        CancellationToken cancellationToken)
+    {
+        var tag = await dbContext.TelemetryTags.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId
+                && x.TagKey == tagKey,
+            cancellationToken)
+            ?? throw new KnownException($"Telemetry tag was not found for device control: {tagKey}");
+        if (!tag.IsWritable)
+        {
+            throw new KnownException($"Telemetry tag is not writable: {tagKey}");
+        }
+
+        var allowedValues = tag.ControlAllowedValues;
+        if (allowedValues.Count > 0 && !allowedValues.Contains(value, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new KnownException($"Device control value is not allowed for tag {tagKey}.");
+        }
+
+        if (string.Equals(tag.ValueType, "number", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!decimal.TryParse(value, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var numericValue))
+            {
+                throw new KnownException($"Device control value must be numeric for tag {tagKey}.");
+            }
+
+            if (tag.ControlMinValue.HasValue && numericValue < tag.ControlMinValue.Value)
+            {
+                throw new KnownException($"Device control value is below the allowed minimum for tag {tagKey}.");
+            }
+
+            if (tag.ControlMaxValue.HasValue && numericValue > tag.ControlMaxValue.Value)
+            {
+                throw new KnownException($"Device control value is above the allowed maximum for tag {tagKey}.");
+            }
+        }
+    }
+
 }
 
 public sealed record CreateOrUpdateAlarmRuleCommand(

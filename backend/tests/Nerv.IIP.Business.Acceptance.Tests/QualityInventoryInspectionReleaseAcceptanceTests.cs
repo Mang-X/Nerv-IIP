@@ -380,7 +380,12 @@ public sealed class QualityInventoryInspectionReleaseAcceptanceTests
         capa.AddAction("corrective", "Supplier updates process control", "supplier-quality-001", DateTimeOffset.Parse("2026-06-20T00:00:00Z"));
         var action = capa.Actions.Single();
         capa.CompleteAction(action.Id, action.OwnerUserId, DateTimeOffset.Parse("2026-06-21T00:00:00Z"));
-        capa.VerifyEffectiveness("qa-manager-001", "No recurrence in follow-up lot", DateTimeOffset.Parse("2026-07-10T00:00:00Z"));
+        capa.VerifyEffectiveness(
+            "qa-manager-001",
+            "No recurrence in follow-up lot",
+            DateTimeOffset.Parse("2026-07-10T00:00:00Z"),
+            new InspectionRecordId(Guid.CreateVersion7()),
+            "passed");
         return capa;
     }
 

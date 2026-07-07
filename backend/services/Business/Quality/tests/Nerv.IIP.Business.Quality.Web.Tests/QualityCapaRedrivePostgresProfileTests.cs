@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Quality.Domain;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
@@ -35,6 +36,7 @@ public sealed class QualityCapaRedrivePostgresProfileTests
         var publisher = provider.GetRequiredService<RecordingIntegrationEventPublisher>();
         NonconformanceReportId ncrId;
         CorrectiveActionId capaId;
+        InspectionRecordId inspectionRecordId;
 
         using (var scope = provider.CreateScope())
         {
@@ -44,11 +46,14 @@ public sealed class QualityCapaRedrivePostgresProfileTests
 
             var ncr = NewRecordedScrapNcr("NCR-SCRAP-CAPA-PG-001", "RCV-SCRAP-CAPA-PG-001");
             var capa = NewCompletedOpenCapa(ncr, "CAPA-SCRAP-PG-001");
+            var inspection = NewPassedInspectionRecord("RCV-SCRAP-CAPA-PG-VERIFY-001");
             db.NonconformanceReports.Add(ncr);
             db.CorrectiveActions.Add(capa);
+            db.InspectionRecords.Add(inspection);
             await db.SaveChangesAsync();
             ncrId = ncr.Id;
             capaId = capa.Id;
+            inspectionRecordId = inspection.Id;
         }
 
         using (var scope = provider.CreateScope())
@@ -59,7 +64,8 @@ public sealed class QualityCapaRedrivePostgresProfileTests
                     capaId,
                     "qa-manager-001",
                     "No recurrence",
-                    DateTimeOffset.Parse("2026-07-10T00:00:00Z")),
+                    DateTimeOffset.Parse("2026-07-10T00:00:00Z"),
+                    inspectionRecordId),
                 CancellationToken.None);
         }
 
@@ -113,6 +119,24 @@ public sealed class QualityCapaRedrivePostgresProfileTests
         var action = capa.Actions.Single();
         capa.CompleteAction(action.Id, action.OwnerUserId, DateTimeOffset.Parse("2026-06-21T00:00:00Z"));
         return capa;
+    }
+
+    private static InspectionRecord NewPassedInspectionRecord(string sourceDocumentId)
+    {
+        return InspectionRecord.Create(
+            "org-001",
+            "env-dev",
+            null,
+            "receiving",
+            "purchase-receipt",
+            sourceDocumentId,
+            "SKU-RM-1000",
+            10m,
+            null,
+            null,
+            [InspectionResultLineInput.Pass("appearance", "ok", null, [])],
+            null,
+            []);
     }
 
     private static async Task DropQualitySchemaAsync(ApplicationDbContext db)

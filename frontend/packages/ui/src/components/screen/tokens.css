@@ -6,11 +6,12 @@
  * Prefixed `--sb-*` so they never clash with the shared `--*` tokens.
  */
 :root {
-  /* surfaces — near-black blue; panels barely lift off the base */
+  /* surfaces — near-black blue; panels are translucent so the board's ambient
+     backdrop shows through (2026-07 生产走查：实心面板缺通透感，降不透明度) */
   --sb-bg: #03050b;
   --sb-bg-accent: #081020;
-  --sb-panel-a: rgba(22, 33, 56, 0.72);
-  --sb-panel-b: rgba(11, 17, 30, 0.66);
+  --sb-panel-a: rgba(22, 34, 60, 0.5);
+  --sb-panel-b: rgba(10, 16, 30, 0.38);
   --sb-line: rgba(255, 255, 255, 0.06);
   --sb-line-2: rgba(255, 255, 255, 0.1);
   --sb-divider: rgba(255, 255, 255, 0.055);
@@ -29,24 +30,24 @@
   --sb-amber: #f2c14e;
   --sb-red: #ef5a63;
 
-  /* text — WHITE values; secondary text near-white, labels a soft blue-grey so
-     they read at a distance without the dull "muted grey" look. */
-  --sb-text: #eef2f8;
-  --sb-text-2: #d4dde8;
-  --sb-muted: #aeb9c8;
-  --sb-faint: #828c9c;
+  /* text — WHITE values; secondary tiers deliberately close to white
+     (2026-07 生产走查：大屏远距阅读，灰字太灰，整体向白收拢). */
+  --sb-text: #f2f5fa;
+  --sb-text-2: #e2e9f2;
+  --sb-muted: #c3cdda;
+  --sb-faint: #98a3b3;
 
-  /* effects — restrained: a white highlight carries structure, glow is a whisper */
-  --sb-highlight: rgba(255, 255, 255, 0.32); /* top white edge highlight */
-  /* panel edge — a VISIBLE blue-cyan hairline that brightens down the two sides;
-     white is reserved for the top highlight (--sb-highlight), not the edge body. */
-  /* left side brighter than right (light comes from the upper-left) */
+  /* effects — restrained: hairlines carry structure, glow is a whisper.
+     2026-07 评审收敛：顶部高光压到只比底边亮一丝（大屏实机上原 0.32 白线存在感过强），
+     边缘渐变整体调暗 —— 面板边框整圈近暗，不再有亮边打架。 */
+  --sb-highlight: rgba(255, 255, 255, 0.09); /* top white edge highlight — a whisper */
+  /* panel edge — a quiet blue hairline, marginally brighter down the two sides */
   --sb-edge-gradient: linear-gradient(
     90deg,
-    rgba(135, 208, 255, 0.82),
-    rgba(135, 208, 255, 0.12) 16%,
-    rgba(135, 208, 255, 0.12) 84%,
-    rgba(135, 208, 255, 0.5)
+    rgba(135, 208, 255, 0.28),
+    rgba(135, 208, 255, 0.08) 16%,
+    rgba(135, 208, 255, 0.08) 84%,
+    rgba(135, 208, 255, 0.18)
   );
   --sb-value-glow: 0 0 12px rgba(150, 190, 235, 0.18); /* faint white-blue on big numbers */
   --sb-edge-glow: rgba(95, 170, 230, 0.3); /* tiny corner-only glow */

@@ -285,7 +285,8 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
                     leasedUntilUtc,
                     attemptNo,
                     maxAttempts,
-                    null));
+                    null,
+                    new Dictionary<string, string>()));
 
                 ReplaceTask(task with { Status = "dispatched" });
                 AddAudit(task.OperationTaskId, "operation.claimed", request.ConnectorHostId, now, task.CorrelationId);

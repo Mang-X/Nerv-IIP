@@ -200,6 +200,13 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasColumnName("expected_ledger_version")
                         .HasComment("Ledger version captured when the count task was created.");
 
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Caller-provided stable idempotency key used to recover Inventory count freezes after RPC timeout.");
+
                     b.Property<string>("LedgerEnvironmentId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -303,6 +310,10 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "CountTaskCode")
                         .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_stock_count_tasks_idempotency_key");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "Status", "SiteCode", "LocationCode");
 

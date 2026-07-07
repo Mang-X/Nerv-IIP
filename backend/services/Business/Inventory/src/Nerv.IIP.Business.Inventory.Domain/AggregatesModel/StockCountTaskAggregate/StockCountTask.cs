@@ -16,6 +16,7 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         string organizationId,
         string environmentId,
         string countTaskCode,
+        string idempotencyKey,
         string ledgerOrganizationId,
         string ledgerEnvironmentId,
         string skuCode,
@@ -32,6 +33,7 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         OrganizationId = InventoryText.Required(organizationId);
         EnvironmentId = InventoryText.Required(environmentId);
         CountTaskCode = InventoryText.Required(countTaskCode);
+        IdempotencyKey = InventoryText.Required(idempotencyKey);
         LedgerOrganizationId = InventoryText.Required(ledgerOrganizationId);
         LedgerEnvironmentId = InventoryText.Required(ledgerEnvironmentId);
         SkuCode = InventoryText.Required(skuCode);
@@ -52,6 +54,7 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
     public string CountTaskCode { get; private set; } = string.Empty;
+    public string IdempotencyKey { get; private set; } = string.Empty;
     public string LedgerOrganizationId { get; private set; } = string.Empty;
     public string LedgerEnvironmentId { get; private set; } = string.Empty;
     public string SkuCode { get; private set; } = string.Empty;
@@ -74,6 +77,7 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         string organizationId,
         string environmentId,
         string countTaskCode,
+        string idempotencyKey,
         string ledgerOrganizationId,
         string ledgerEnvironmentId,
         string skuCode,
@@ -91,6 +95,7 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
             organizationId,
             environmentId,
             countTaskCode,
+            idempotencyKey,
             ledgerOrganizationId,
             ledgerEnvironmentId,
             skuCode,
@@ -103,6 +108,30 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
             ownerType,
             ownerId,
             expectedLedgerVersion);
+    }
+
+    public bool HasSameCreationScope(
+        string countTaskCode,
+        string skuCode,
+        string uomCode,
+        string siteCode,
+        string locationCode,
+        string? lotNo,
+        string? serialNo,
+        string qualityStatus,
+        string ownerType,
+        string? ownerId)
+    {
+        return CountTaskCode == InventoryText.Required(countTaskCode)
+            && SkuCode == InventoryText.Required(skuCode)
+            && UomCode == InventoryText.Required(uomCode)
+            && SiteCode == InventoryText.Required(siteCode)
+            && LocationCode == InventoryText.Required(locationCode)
+            && LotNo == InventoryText.Optional(lotNo)
+            && SerialNo == InventoryText.Optional(serialNo)
+            && QualityStatus == StockQualityStatus.Normalize(qualityStatus)
+            && OwnerType == StockOwnerType.Normalize(ownerType)
+            && OwnerId == InventoryText.Optional(ownerId);
     }
 
     public StockMovement ConfirmAdjustment(StockLedger ledger, decimal countedQuantity, string idempotencyKey)

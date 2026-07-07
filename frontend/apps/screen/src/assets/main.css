@@ -32,3 +32,27 @@ body {
     'Microsoft YaHei',
     sans-serif;
 }
+
+/* 原生滚动容器的大屏细滚条（虚拟滚动容器无法换 ScreenScrollArea —— 它们必须
+   绑定原生滚动元素；此样式与 ScreenScrollArea 的 thumb 视觉完全一致） */
+.sb-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.13) transparent;
+}
+.sb-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.sb-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sb-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.13);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+.sb-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(135, 208, 255, 0.34);
+  background-clip: padding-box;
+}

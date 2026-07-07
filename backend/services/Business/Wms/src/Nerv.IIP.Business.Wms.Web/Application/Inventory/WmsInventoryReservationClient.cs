@@ -78,7 +78,8 @@ public sealed record WmsInventoryCountTaskRequest(
     string? SerialNo,
     string QualityStatus,
     string OwnerType,
-    string? OwnerId);
+    string? OwnerId,
+    string IdempotencyKey);
 
 public sealed record WmsInventoryCountTaskResult(string CountTaskId, long ExpectedLedgerVersion);
 
