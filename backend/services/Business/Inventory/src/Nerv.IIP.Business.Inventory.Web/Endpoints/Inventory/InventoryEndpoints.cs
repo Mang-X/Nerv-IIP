@@ -121,7 +121,8 @@ public sealed record CreateStockCountTaskRequest(
     string? SerialNo,
     string QualityStatus,
     string OwnerType,
-    string? OwnerId);
+    string? OwnerId,
+    string? IdempotencyKey = null);
 
 public sealed record CreateStockCountTaskResponse(StockCountTaskId CountTaskId, long ExpectedLedgerVersion);
 
@@ -485,7 +486,8 @@ public sealed class CreateStockCountTaskEndpoint(ISender sender)
             req.SerialNo,
             req.QualityStatus,
             req.OwnerType,
-            req.OwnerId), ct);
+            req.OwnerId,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(new CreateStockCountTaskResponse(result.CountTaskId, result.ExpectedLedgerVersion).AsResponseData(), cancellation: ct);
     }
 }

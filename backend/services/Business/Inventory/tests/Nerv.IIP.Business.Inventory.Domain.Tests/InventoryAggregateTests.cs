@@ -473,6 +473,7 @@ public sealed class InventoryAggregateTests
             "org-001",
             "env-dev",
             "COUNT-001",
+            "COUNT-001",
             ledger.OrganizationId,
             ledger.EnvironmentId,
             ledger.SkuCode,

@@ -16,7 +16,8 @@ public sealed record CreateStockCountTaskCommand(
     string? SerialNo,
     string QualityStatus,
     string OwnerType,
-    string? OwnerId) : ICommand<CreateStockCountTaskResult>;
+    string? OwnerId,
+    string? IdempotencyKey = null) : ICommand<CreateStockCountTaskResult>;
 
 public sealed record CreateStockCountTaskResult(StockCountTaskId CountTaskId, long ExpectedLedgerVersion);
 
@@ -36,6 +37,7 @@ public sealed class CreateStockCountTaskCommandValidator : AbstractValidator<Cre
         RuleFor(x => x.QualityStatus).RequiredInventoryCode(50);
         RuleFor(x => x.OwnerType).RequiredInventoryCode(50);
         RuleFor(x => x.OwnerId).OptionalInventoryCode(100);
+        RuleFor(x => x.IdempotencyKey).OptionalInventoryCode(InventoryValidationRules.IdempotencyKeyMaxLength);
     }
 }
 
@@ -46,14 +48,42 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
     {
         var qualityStatus = StockQualityStatus.Normalize(request.QualityStatus);
         var ownerType = StockOwnerType.Normalize(request.OwnerType);
+        var idempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey)
+            ? request.CountTaskCode.Trim()
+            : request.IdempotencyKey.Trim();
         var existing = await dbContext.StockCountTasks.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.IdempotencyKey == idempotencyKey,
+            cancellationToken);
+        if (existing is not null)
+        {
+            if (!existing.HasSameCreationScope(
+                    request.CountTaskCode,
+                    request.SkuCode,
+                    request.UomCode,
+                    request.SiteCode,
+                    request.LocationCode,
+                    request.LotNo,
+                    request.SerialNo,
+                    request.QualityStatus,
+                    request.OwnerType,
+                    request.OwnerId))
+            {
+                throw new KnownException("Stock count task idempotency key conflicts with an existing count scope.");
+            }
+
+            return new CreateStockCountTaskResult(existing.Id, existing.ExpectedLedgerVersion);
+        }
+
+        var existingCountCode = await dbContext.StockCountTasks.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
                 && x.CountTaskCode == request.CountTaskCode,
             cancellationToken);
-        if (existing is not null)
+        if (existingCountCode is not null)
         {
-            return new CreateStockCountTaskResult(existing.Id, existing.ExpectedLedgerVersion);
+            throw new KnownException("Stock count task code conflicts with an existing idempotency key.");
         }
 
         var ledger = await dbContext.StockLedgers.SingleOrDefaultAsync(
@@ -75,6 +105,7 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
             request.OrganizationId,
             request.EnvironmentId,
             request.CountTaskCode,
+            idempotencyKey,
             ledger.OrganizationId,
             ledger.EnvironmentId,
             ledger.SkuCode,

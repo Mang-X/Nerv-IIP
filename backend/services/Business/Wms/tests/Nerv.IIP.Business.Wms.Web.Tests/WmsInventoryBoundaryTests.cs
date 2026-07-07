@@ -682,6 +682,7 @@ public sealed class WmsInventoryBoundaryTests
         {
             Assert.Equal("COUNT-FREEZE-001", request.CountTaskCode);
             Assert.Equal("LOC-A-01", request.LocationCode);
+            Assert.StartsWith("wms-count-freeze:", request.IdempotencyKey, StringComparison.Ordinal);
         });
         Assert.Collection(inventory.CountAdjustmentRequests, request =>
         {

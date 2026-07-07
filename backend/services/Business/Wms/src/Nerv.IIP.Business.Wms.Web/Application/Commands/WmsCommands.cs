@@ -562,7 +562,8 @@ public sealed class CreateCountExecutionCommandHandler(
             null,
             "qualified",
             "company",
-            null);
+            null,
+            WmsInventoryReservationIdempotencyKeys.ForCountExecution(count));
     }
 }
 
@@ -730,6 +731,12 @@ internal static class WmsInventoryReservationIdempotencyKeys
     {
         var raw = $"{outbound.OrganizationId}:{outbound.EnvironmentId}:{outbound.OutboundOrderNo}:{lineNo}:{retryIdempotencyKey}";
         return $"wms-retry-res:{StableHash(raw)}";
+    }
+
+    public static string ForCountExecution(CountExecution count)
+    {
+        var raw = $"{count.OrganizationId}:{count.EnvironmentId}:{count.CountNo}";
+        return $"wms-count-freeze:{StableHash(raw)}";
     }
 
     private static string StableHash(string raw)

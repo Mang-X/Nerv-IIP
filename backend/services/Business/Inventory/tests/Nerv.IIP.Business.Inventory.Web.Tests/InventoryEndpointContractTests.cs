@@ -786,6 +786,68 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
+    public async Task Create_count_task_command_rejects_same_count_code_with_conflicting_scope()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var firstLedger = DomainLedgerFactory.NewLedger();
+        firstLedger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        var secondLedger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-B-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001");
+        secondLedger.ApplyMovement(DomainMovementFactory.InboundForLocation("LOC-B-01", "LOT-001", 8m));
+        dbContext.StockLedgers.AddRange(firstLedger, secondLedger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CreateStockCountTaskCommandHandler(dbContext);
+        await handler.Handle(
+            new CreateStockCountTaskCommand(
+                "org-001",
+                "env-dev",
+                "COUNT-CONFLICT-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "qualified",
+                "company",
+                "owner-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(
+                new CreateStockCountTaskCommand(
+                    "org-001",
+                    "env-dev",
+                    "COUNT-CONFLICT-001",
+                    "SKU-FG-1000",
+                    "kg",
+                    "SITE-01",
+                    "LOC-B-01",
+                    "LOT-001",
+                    null,
+                    "qualified",
+                    "company",
+                    "owner-001"),
+                CancellationToken.None));
+
+        Assert.Contains("conflicts", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(dbContext.StockCountTasks);
+    }
+
+    [Fact]
     public async Task Cancel_count_task_command_releases_ledger_freeze()
     {
         await using var provider = CreateInMemoryProvider();
