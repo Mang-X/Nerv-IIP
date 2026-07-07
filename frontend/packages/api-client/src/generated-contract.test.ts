@@ -5,24 +5,38 @@ import type { ListConsoleInstancesData } from './generated/types.gen'
 import type {
   BusinessConsoleApprovalChainResponse,
   BusinessConsoleBarcodePrintBatchResponse,
+  BusinessConsoleForecastInputItem,
+  BusinessConsoleForecastInputListEnvelope,
   BusinessConsoleMaintenanceAssetReliabilityEnvelope,
+  BusinessConsoleOpenNcrFromInspectionResponse,
   BusinessConsoleSchedulingPlanSummaryResponse,
   BusinessConsoleSearchResponse,
   BusinessConsoleTelemetryOeeEnvelope,
   BusinessConsoleWorkbenchSummaryResponse,
   CancelBusinessConsolePlanningDemandData,
+  CancelScheduledBusinessConsoleEngineeringChangeData,
+  CreateOrUpdateBusinessConsolePlanningForecastData,
   GetBusinessConsoleEngineeringStandardOperationData,
   GetBusinessConsoleEngineeringDocumentData,
   GetBusinessConsoleEngineeringItemData,
   GetBusinessConsoleEngineeringChangeData,
+  ListBusinessConsolePlanningForecastsData,
+  ListBusinessConsoleQualityInspectionRecordsData,
+  RescheduleBusinessConsoleEngineeringChangeData,
   ResolveBusinessConsoleEngineeringProductionVersionData,
   SearchBusinessConsoleObjectsData,
 } from './business-console'
 import {
+  getConsoleNotificationDeadLetterMetricsQueryOptions,
+  getConsoleNotificationDeadLetterQueryOptions,
+  ignoreConsoleNotificationDeadLetterMutationOptions,
+  listConsoleNotificationDeadLettersQueryOptions,
   listConsoleNotificationMessagesQueryOptions,
   listConsoleNotificationTasksQueryOptions,
   markConsoleNotificationMessageReadMutationOptions,
   markConsoleNotificationMessagesReadMutationOptions,
+  replayConsoleNotificationDeadLetterMutationOptions,
+  replayConsoleNotificationDeadLettersMutationOptions,
   submitConsoleNotificationIntentMutationOptions,
 } from './console'
 import {
@@ -71,6 +85,7 @@ import {
   createConsoleIamRoleMutationOptions,
   createConsoleIamUserMutationOptions,
   disableConsoleIamUserMutationOptions,
+  enableConsoleIamUserMutationOptions,
   listConsoleIamPermissionsQueryOptions,
   listConsoleIamRolesQueryOptions,
   listConsoleIamSessionsQueryOptions,
@@ -108,6 +123,7 @@ describe('generated API client contract', () => {
     expect(createConsoleIamUserMutationOptions).toBeTypeOf('function')
     expect(updateConsoleIamUserMutationOptions).toBeTypeOf('function')
     expect(disableConsoleIamUserMutationOptions).toBeTypeOf('function')
+    expect(enableConsoleIamUserMutationOptions).toBeTypeOf('function')
     expect(resetConsoleIamUserPasswordMutationOptions).toBeTypeOf('function')
     expect(listConsoleIamRolesQueryOptions).toBeTypeOf('function')
     expect(createConsoleIamRoleMutationOptions).toBeTypeOf('function')
@@ -123,6 +139,12 @@ describe('generated API client contract', () => {
     expect(submitConsoleNotificationIntentMutationOptions).toBeTypeOf('function')
     expect(markConsoleNotificationMessageReadMutationOptions).toBeTypeOf('function')
     expect(markConsoleNotificationMessagesReadMutationOptions).toBeTypeOf('function')
+    expect(listConsoleNotificationDeadLettersQueryOptions).toBeTypeOf('function')
+    expect(getConsoleNotificationDeadLetterQueryOptions).toBeTypeOf('function')
+    expect(getConsoleNotificationDeadLetterMetricsQueryOptions).toBeTypeOf('function')
+    expect(replayConsoleNotificationDeadLetterMutationOptions).toBeTypeOf('function')
+    expect(replayConsoleNotificationDeadLettersMutationOptions).toBeTypeOf('function')
+    expect(ignoreConsoleNotificationDeadLetterMutationOptions).toBeTypeOf('function')
   })
 
   it('exports Business Console generated operations through stable api-client entry points', () => {
@@ -271,6 +293,58 @@ describe('generated API client contract', () => {
     for (const functionName of expectedFunctions) {
       expect(businessConsoleClient[functionName], functionName).toBeTypeOf('function')
     }
+  })
+
+  it('exports wave2 refreshed Business Console operations through stable api-client entry points', () => {
+    const expectedFunctions = [
+      'cancelScheduledBusinessConsoleEngineeringChangeMutationOptions',
+      'rescheduleBusinessConsoleEngineeringChangeMutationOptions',
+      'publishBusinessConsoleEngineeringSopDocumentMutationOptions',
+      'getBusinessConsoleCurrentEngineeringSopDocumentsQueryOptions',
+      'downloadBusinessConsoleSopFileContentQueryOptions',
+      'createOrUpdateBusinessConsolePlanningForecastMutationOptions',
+      'listBusinessConsolePlanningForecastsQueryOptions',
+      'listBusinessConsoleQualityInspectionRecordsQueryOptions',
+      'openBusinessConsoleQualityNcrFromInspectionMutationOptions',
+      'listBusinessConsoleDeviceAssetsQueryOptions',
+      'getBusinessConsoleCodeRuleQueryOptions',
+      'previewBusinessConsoleCodeRuleMutationOptions',
+      'createBusinessConsoleErpPurchaseRequisitionFromSuggestionMutationOptions',
+      'getBusinessConsoleErpCostCandidateBySourceDocumentQueryOptions',
+      'getBusinessConsoleErpPayableBySourceDocumentQueryOptions',
+      'getBusinessConsoleErpReceivableBySourceDocumentQueryOptions',
+      'cancelScheduledBusinessConsoleEngineeringChange',
+      'rescheduleBusinessConsoleEngineeringChange',
+      'publishBusinessConsoleEngineeringSopDocument',
+      'getBusinessConsoleCurrentEngineeringSopDocuments',
+      'downloadBusinessConsoleSopFileContent',
+      'createOrUpdateBusinessConsolePlanningForecast',
+      'listBusinessConsolePlanningForecasts',
+      'listBusinessConsoleQualityInspectionRecords',
+      'openBusinessConsoleQualityNcrFromInspection',
+      'listBusinessConsoleDeviceAssets',
+      'getBusinessConsoleCodeRule',
+      'previewBusinessConsoleCodeRule',
+      'createBusinessConsoleErpPurchaseRequisitionFromSuggestion',
+      'getBusinessConsoleErpCostCandidateBySourceDocument',
+      'getBusinessConsoleErpPayableBySourceDocument',
+      'getBusinessConsoleErpReceivableBySourceDocument',
+    ] as const
+
+    for (const functionName of expectedFunctions) {
+      expect(businessConsoleClient[functionName], functionName).toBeTypeOf('function')
+    }
+  })
+
+  it('exports wave2 refreshed Business Console capability types', () => {
+    expectTypeOf<CancelScheduledBusinessConsoleEngineeringChangeData>().toBeObject()
+    expectTypeOf<RescheduleBusinessConsoleEngineeringChangeData>().toBeObject()
+    expectTypeOf<CreateOrUpdateBusinessConsolePlanningForecastData>().toBeObject()
+    expectTypeOf<ListBusinessConsolePlanningForecastsData>().toBeObject()
+    expectTypeOf<ListBusinessConsoleQualityInspectionRecordsData>().toBeObject()
+    expectTypeOf<BusinessConsoleForecastInputItem>().toBeObject()
+    expectTypeOf<BusinessConsoleForecastInputListEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleOpenNcrFromInspectionResponse>().toBeObject()
   })
 
   it('exports stable Business Console deep capability types', () => {
