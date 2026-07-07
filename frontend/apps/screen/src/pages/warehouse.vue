@@ -220,7 +220,7 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
 </script>
 
 <template>
-  <ScreenLayout title="Nerv-IIP 仓储物流大屏" :line="factoryName" screen="指挥中心大屏 04">
+  <ScreenLayout title="Nerv-IIP 仓储物流大屏" :line="factoryName" screen="指挥中心大屏 05">
     <div v-if="board" class="wb">
       <!-- 顶部 KPI 带：出库进度 hero + 五格，语义色渐隐强调线 -->
       <ScreenPanel class="wb-band">
