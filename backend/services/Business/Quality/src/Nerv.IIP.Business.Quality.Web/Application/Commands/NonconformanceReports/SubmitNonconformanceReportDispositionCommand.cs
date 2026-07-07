@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.Approvals;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 
@@ -25,7 +26,8 @@ public sealed class SubmitNonconformanceReportDispositionCommandValidator : Abst
 
 public sealed class SubmitNonconformanceReportDispositionCommandHandler(
     INonconformanceReportRepository repository,
-    IApprovalChainStatusClient approvalChainStatusClient)
+    IApprovalChainStatusClient approvalChainStatusClient,
+    ICapaAutomationService capaAutomationService)
     : ICommandHandler<SubmitNonconformanceReportDispositionCommand>
 {
     public async Task Handle(SubmitNonconformanceReportDispositionCommand request, CancellationToken cancellationToken)
@@ -56,6 +58,7 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(
             request.DispositionApprovalChainId,
             request.AttachmentFileIds,
             request.MrbReviews);
+        await capaAutomationService.OpenForDispositionIfRequiredAsync(ncr, cancellationToken);
     }
 }
 
@@ -96,7 +99,11 @@ public sealed class CompleteNonconformanceReportInventoryDispositionCommandHandl
             if (IsPostedScrapAdjustment(request) && IsFullDispositionQuantity(ncr, request.Quantity))
             {
                 if (NonconformanceReport.RequiresEffectiveCapa(ncr.SourceType, ncr.DispositionType)
-                    && !await correctiveActionRepository.HasEffectiveCapaForNcrAsync(ncr.Id.ToString(), cancellationToken))
+                    && !await correctiveActionRepository.HasEffectiveCapaForNcrAsync(
+                        ncr.OrganizationId,
+                        ncr.EnvironmentId,
+                        ncr.Id.ToString(),
+                        cancellationToken))
                 {
                     ncr.RecordScrapDispositionMovement(request.InventoryMovementId, request.Quantity);
                     return;

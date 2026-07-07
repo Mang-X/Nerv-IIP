@@ -21,7 +21,9 @@ public sealed class CorrectiveActionEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(50).HasComment("CAPA lifecycle status.");
         builder.Property(x => x.EffectivenessVerifiedByUserId).HasColumnName("effectiveness_verified_by_user_id").HasMaxLength(150).HasComment("User id that verified CAPA effectiveness.");
         builder.Property(x => x.EffectivenessResult).HasColumnName("effectiveness_result").HasMaxLength(1000).HasComment("Effectiveness verification result.");
+        builder.Property(x => x.EffectivenessInspectionRecordId).HasColumnName("effectiveness_inspection_record_id").HasComment("Passed Quality inspection record that verifies CAPA effectiveness.");
         builder.Property(x => x.EffectivenessVerifiedAtUtc).HasColumnName("effectiveness_verified_at_utc").HasComment("UTC time when effectiveness was verified.");
+        builder.Property(x => x.CloseApprovalChainId).HasColumnName("close_approval_chain_id").HasMaxLength(150).HasComment("Optional BusinessApproval chain id that approved CAPA closure.");
         builder.Property(x => x.ClosedByUserId).HasColumnName("closed_by_user_id").HasMaxLength(150).HasComment("User id that closed the CAPA.");
         builder.Property(x => x.ClosedAtUtc).HasColumnName("closed_at_utc").HasComment("UTC time when CAPA was closed.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when CAPA was opened.");
@@ -29,6 +31,10 @@ public sealed class CorrectiveActionEntityTypeConfiguration : IEntityTypeConfigu
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.CapaCode }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceNcrId });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.EffectivenessInspectionRecordId })
+            .HasDatabaseName("ix_corrective_actions_effectiveness_inspection");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.CloseApprovalChainId })
+            .HasDatabaseName("ix_corrective_actions_close_approval_chain");
         builder.HasMany(x => x.Actions)
             .WithOne()
             .HasForeignKey(x => x.CorrectiveActionId)

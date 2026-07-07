@@ -47,6 +47,25 @@ public sealed class QualityStartupGovernanceTests
     }
 
     [Fact]
+    public async Task Capa_automation_minimum_severity_configuration_is_validated_at_startup()
+    {
+        await using var factory = CreateFactory(new Dictionary<string, string?>
+        {
+            ["Quality:CapaAutomation:MinimumSeverity"] = "high",
+        });
+
+        var exception = await Record.ExceptionAsync(async () =>
+        {
+            using var client = factory.CreateClient();
+            await client.GetAsync("/health");
+        });
+
+        Assert.Contains(exception.Flatten(), x =>
+            x is OptionsValidationException
+            && x.Message.Contains("Quality:CapaAutomation:MinimumSeverity", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Code_analysis_endpoint_accepts_internal_service_token()
     {
         await using var factory = CreateFactory();
