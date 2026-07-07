@@ -41,7 +41,7 @@ const alarms = [
 ```vue
 <template>
   <div style="height: 150px">
-    <ScrollBoard :items="alarms" :row-key="(r) => r.id" :speed="22">
+    <ScrollBoard :items="alarms" :row-key="(r) => r.time + r.text" :speed="22">
       <template #row="{ item }">
         <div class="row">{{ item.time }} · {{ item.text }}</div>
       </template>
