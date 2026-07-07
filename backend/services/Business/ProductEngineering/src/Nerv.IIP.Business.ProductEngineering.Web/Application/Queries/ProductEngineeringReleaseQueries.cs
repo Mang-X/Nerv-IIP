@@ -660,7 +660,7 @@ public sealed class GetCurrentSopDocumentsQueryHandler(ApplicationDbContext dbCo
             .ToArrayAsync(cancellationToken);
 
         var items = candidates
-            .GroupBy(x => new SopDispatchScope(x.OperationCode, x.WorkCenterCode, x.RoutingCode, x.RoutingRevision))
+            .GroupBy(x => new SopDispatchScope(x.OperationCode, x.RoutingCode, x.RoutingRevision))
             .Select(group => group
                 .OrderByDescending(x => workCenterCode is not null && x.WorkCenterCode == workCenterCode ? 1 : 0)
                 .ThenByDescending(x => routingCode is not null && x.RoutingCode == routingCode ? 1 : 0)
@@ -688,7 +688,6 @@ public sealed class GetCurrentSopDocumentsQueryHandler(ApplicationDbContext dbCo
 
     private sealed record SopDispatchScope(
         string OperationCode,
-        string? WorkCenterCode,
         string? RoutingCode,
         string? RoutingRevision);
 

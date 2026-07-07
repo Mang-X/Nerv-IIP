@@ -7,6 +7,7 @@ import {
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
+  createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
@@ -63,6 +64,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   createBusinessConsoleMesMaterialIssueRequestMutationOptions: mockMutationOptions('createBusinessConsoleMesMaterialIssueRequest'),
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions: mockMutationOptions('confirmBusinessConsoleMesLineSideMaterialReceipt'),
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions: mockMutationOptions('createBusinessConsoleMesFinishedGoodsReceiptRequest'),
+  createBusinessConsoleSopFileDownloadGrantMutationOptions: mockMutationOptions('createBusinessConsoleSopFileDownloadGrant'),
 }))
 
 vi.mock('@pinia/colada', () => ({
@@ -165,6 +167,12 @@ describe('pda useBusinessMes composables', () => {
     })
     expect(options).toMatchObject({ enabled: true })
     expect(sops.currentSops.value[0]).toMatchObject({ fileId: 'file-10' })
+  })
+
+  it('exposes a generated SDK mutation path for SOP file download grants', () => {
+    useMesCurrentOperationSops()
+
+    expect(createBusinessConsoleSopFileDownloadGrantMutationOptions).toHaveBeenCalled()
   })
 
   it('records a production report forwarding the caller-supplied idempotency key + business fields', async () => {

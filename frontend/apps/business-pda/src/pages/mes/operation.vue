@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
-import { operationTaskStatusLabel } from '@nerv-iip/business-core'
+import { openDownloadGrantBlob, operationTaskStatusLabel } from '@nerv-iip/business-core'
 import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
-import { useAuthStore } from '@/stores/auth'
 import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -35,6 +34,7 @@ const {
   currentSops,
   pending: sopsPending,
   error: sopsError,
+  createSopFileDownloadGrant,
 } = useMesCurrentOperationSops()
 
 const router = useRouter()
@@ -149,29 +149,12 @@ async function openSopFile(sop: CurrentSop) {
     sopFileError.value = '当前SOP未绑定可查看的文件。'
     return
   }
-  const auth = useAuthStore()
-  if (!auth.accessToken) {
-    sopFileError.value = '登录状态已失效，请重新登录后查看SOP。'
-    return
-  }
   sopFileError.value = ''
   openingSopFileId.value = fileId
   try {
-    const response = await fetch('/api/business-console/v1/files/' + encodeURIComponent(fileId) + '/download-grants', {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + auth.accessToken,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ organizationId: filters.organizationId, environmentId: filters.environmentId }),
-    })
-    const envelope = await response.json().catch(() => undefined) as { data?: { downloadUrl?: string }, message?: string } | undefined
-    if (!response.ok) {
-      throw new Error(envelope?.message || '无法获取SOP查看授权。')
-    }
-    const url = envelope?.data?.downloadUrl
-    if (!url) throw new Error('文件服务未返回可用的SOP查看链接。')
-    window.open(url, '_blank', 'noopener')
+    const grant = await createSopFileDownloadGrant(fileId)
+    if (!grant) throw new Error('无法获取SOP查看授权。')
+    await openDownloadGrantBlob(grant)
   } catch (error) {
     sopFileError.value = error instanceof Error ? error.message : '无法打开SOP。'
   } finally {

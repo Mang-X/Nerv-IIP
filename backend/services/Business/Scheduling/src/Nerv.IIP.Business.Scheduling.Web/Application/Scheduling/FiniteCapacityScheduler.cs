@@ -639,6 +639,7 @@ file sealed class SchedulerState
             EndUtc: selected.EndUtc,
             IsLocked: false,
             ExplanationCode: "scheduled",
+            // SchedulingProblemProducer maps ProductEngineering routing operation code into RequiredCapabilityCode.
             StandardOperationCode: item.Operation.RequiredCapabilityCode);
     }
 

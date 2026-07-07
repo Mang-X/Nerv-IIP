@@ -2499,6 +2499,49 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
+    public async Task Current_sop_query_prefers_work_center_scope_over_global_operation_scope()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX-GLOBAL",
+            "A",
+            "STD-MIX",
+            null,
+            null,
+            null,
+            new DateOnly(2026, 7, 6),
+            "file-global-newer",
+            "mixing-global.pdf",
+            "application/pdf"));
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX-WC",
+            "A",
+            "STD-MIX",
+            "WC-MIX-01",
+            null,
+            null,
+            new DateOnly(2026, 7, 1),
+            "file-work-center",
+            "mixing-work-center.pdf",
+            "application/pdf"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetCurrentSopDocumentsQueryHandler(dbContext).Handle(
+            new GetCurrentSopDocumentsQuery("org-001", "env-dev", "STD-MIX", "WC-MIX-01", null, null, new DateOnly(2026, 7, 7)),
+            CancellationToken.None);
+
+        var sop = Assert.Single(response.Items);
+        Assert.Equal("SOP-MIX-WC", sop.DocumentNumber);
+        Assert.Equal("file-work-center", sop.FileId);
+    }
+
+    [Fact]
     public async Task Release_engineering_change_archives_sop_document_so_current_query_hides_old_version()
     {
         await using var provider = CreateInMemoryProvider();

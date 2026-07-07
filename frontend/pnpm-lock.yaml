@@ -75,6 +75,9 @@ importers:
       '@nerv-iip/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@nerv-iip/business-core':
+        specifier: workspace:*
+        version: link:../../packages/business-core
       '@nerv-iip/ui':
         specifier: workspace:*
         version: link:../../packages/ui

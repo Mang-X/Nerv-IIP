@@ -14,6 +14,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Scheduling;
@@ -927,8 +928,78 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("engineering-sop-file", auth.LastRequirement.ResourceType);
         Assert.Equal("file-sop-v2", auth.LastRequirement.ResourceId);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal("/api/files/v1/download-grants/grant-sop-v2/content", document.RootElement.GetProperty("data").GetProperty("downloadUrl").GetString());
+        Assert.Equal("/api/business-console/v1/files/download-grants/grant-sop-v2/content", document.RootElement.GetProperty("data").GetProperty("downloadUrl").GetString());
     }
+
+    [Fact]
+    public async Task Sop_file_download_content_facade_streams_file_storage_content_with_grant_headers()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var files = new RecordingBusinessFileStorageClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessFileStorageClient>();
+            services.AddSingleton<IBusinessFileStorageClient>(files);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/business-console/v1/files/download-grants/grant-sop-v2/content");
+        request.Headers.Add("X-Organization-Id", "org-001");
+        request.Headers.Add("X-Environment-Id", "env-dev");
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/pdf", response.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("SOP PDF bytes", await response.Content.ReadAsStringAsync());
+        Assert.Equal("internal-test-token", files.LastContentInternalToken);
+        Assert.Equal("grant-sop-v2", files.LastDownloadGrantId);
+        Assert.Equal("org-001", files.LastDownloadHeaders["X-Organization-Id"]);
+        Assert.Equal("env-dev", files.LastDownloadHeaders["X-Environment-Id"]);
+        Assert.Equal(BusinessGatewayPermissions.EngineeringDocumentsRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("engineering-sop-download-grant", auth.LastRequirement.ResourceType);
+        Assert.Equal("grant-sop-v2", auth.LastRequirement.ResourceId);
+    }
+
+    [Fact]
+    public async Task Http_file_storage_client_rewrites_internal_download_content_url_to_business_gateway_route()
+    {
+        var handler = new RecordingHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Equal("/api/files/v1/files/file-sop-v2/download-grants", request.RequestUri!.PathAndQuery);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new DownloadGrantResponse(
+                    "file-sop-v2",
+                    DateTimeOffset.Parse("2026-07-07T08:00:00Z"),
+                    new TransferInstructions(
+                        "/api/files/v1/download-grants/grant-sop-v2/content",
+                        new Dictionary<string, string>
+                        {
+                            ["X-Organization-Id"] = "org-001",
+                            ["X-Environment-Id"] = "env-dev",
+                        }))),
+            };
+        });
+        var client = new HttpBusinessFileStorageClient(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://file-storage.local"),
+        });
+
+        var response = await client.CreateSopFileDownloadGrantAsync(
+            "internal-test-token",
+            "file-sop-v2",
+            new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal("/api/business-console/v1/files/download-grants/grant-sop-v2/content", response.DownloadUrl);
+        Assert.Equal("org-001", response.DownloadHeaders["X-Organization-Id"]);
+        Assert.Equal("env-dev", response.DownloadHeaders["X-Environment-Id"]);
+    }
+
     [Fact]
     public async Task Mes_current_operation_sops_facade_uses_product_engineering_current_sop_query()
     {
@@ -5621,6 +5692,12 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
 
     public BusinessConsoleCreateSopFileDownloadGrantRequest? LastRequest { get; private set; }
 
+    public string? LastContentInternalToken { get; private set; }
+
+    public string? LastDownloadGrantId { get; private set; }
+
+    public IReadOnlyDictionary<string, string> LastDownloadHeaders { get; private set; } = new Dictionary<string, string>();
+
     public Task<BusinessConsoleSopFileDownloadGrantResponse> CreateSopFileDownloadGrantAsync(
         string internalBearerToken,
         string fileId,
@@ -5633,8 +5710,23 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
         return Task.FromResult(new BusinessConsoleSopFileDownloadGrantResponse(
             fileId,
             DateTimeOffset.Parse("2026-07-07T08:00:00Z"),
-            "/api/files/v1/download-grants/grant-sop-v2/content",
+            "/api/business-console/v1/files/download-grants/grant-sop-v2/content",
             new Dictionary<string, string>()));
+    }
+
+    public Task<BusinessConsoleSopFileContentResponse> DownloadSopFileContentAsync(
+        string internalBearerToken,
+        string downloadGrantId,
+        IReadOnlyDictionary<string, string> downloadHeaders,
+        CancellationToken cancellationToken)
+    {
+        LastContentInternalToken = internalBearerToken;
+        LastDownloadGrantId = downloadGrantId;
+        LastDownloadHeaders = downloadHeaders;
+        return Task.FromResult(new BusinessConsoleSopFileContentResponse(
+            "application/pdf",
+            "SOP PDF bytes".Length,
+            "SOP PDF bytes"u8.ToArray()));
     }
 }
 internal sealed class RecordingProductEngineeringClient : IBusinessProductEngineeringClient

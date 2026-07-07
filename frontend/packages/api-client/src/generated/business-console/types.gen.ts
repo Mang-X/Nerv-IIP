@@ -90,21 +90,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     [key: string]: never;
 };
 
-/**
- * the dto used to send an error response to the client
- */
 export type FastEndpointsErrorResponse = {
-    /**
-     * the http status code sent to the client. default is 400.
-     */
     statusCode?: number;
-    /**
-     * the message for the error response
-     */
     message?: string;
-    /**
-     * the collection of errors for the current context
-     */
     errors?: {
         [key: string]: Array<string>;
     };
@@ -12539,6 +12527,35 @@ export type CreateBusinessConsoleSopFileDownloadGrantResponses = {
 };
 
 export type CreateBusinessConsoleSopFileDownloadGrantResponse = CreateBusinessConsoleSopFileDownloadGrantResponses[keyof CreateBusinessConsoleSopFileDownloadGrantResponses];
+
+export type DownloadBusinessConsoleSopFileContentData = {
+    body?: never;
+    path: {
+        downloadGrantId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/download-grants/{downloadGrantId}/content';
+};
+
+export type DownloadBusinessConsoleSopFileContentErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type DownloadBusinessConsoleSopFileContentResponses = {
+    /**
+     * Success
+     */
+    200: Blob | File;
+};
+
+export type DownloadBusinessConsoleSopFileContentResponse = DownloadBusinessConsoleSopFileContentResponses[keyof DownloadBusinessConsoleSopFileContentResponses];
 
 export type ListBusinessConsoleErpPurchaseOrdersData = {
     body?: never;

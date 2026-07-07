@@ -8,6 +8,7 @@ import {
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
   createBusinessConsoleMesShiftHandoverMutationOptions,
+  createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsoleMesBatchTraceabilityQueryOptions,
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
@@ -51,6 +52,8 @@ import {
   type BusinessConsoleMesMaterialReadinessEnvelope,
   type BusinessConsoleCurrentSopDocumentItem,
   type BusinessConsoleCurrentSopDocumentsEnvelope,
+  type BusinessConsoleSopFileDownloadGrantEnvelope,
+  type BusinessConsoleSopFileDownloadGrantResponse,
   type BusinessConsoleMesOperationTaskActionRequest,
   type BusinessConsoleMesOperationTaskListEnvelope,
   type BusinessConsoleMesOperationTaskRow,
@@ -691,6 +694,20 @@ export function useMesCurrentOperationSops() {
     }),
     enabled: enabled.value,
   }))
+  const downloadGrantMutation = useMutation(createBusinessConsoleSopFileDownloadGrantMutationOptions())
+
+  async function createSopFileDownloadGrant(fileId: string): Promise<BusinessConsoleSopFileDownloadGrantResponse | null> {
+    const envelope = await downloadGrantMutation.mutateAsync({
+      path: { fileId },
+      body: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+      },
+    })
+    return unwrapData<BusinessConsoleSopFileDownloadGrantResponse, BusinessConsoleSopFileDownloadGrantEnvelope>(
+      envelope as BusinessConsoleSopFileDownloadGrantEnvelope,
+    ) ?? null
+  }
 
   return {
     filters,
@@ -702,6 +719,7 @@ export function useMesCurrentOperationSops() {
     currentSopsError: sopsQuery.error,
     currentSopsPending: sopsQuery.isLoading,
     refreshCurrentSops: () => enabled.value ? sopsQuery.refetch() : Promise.resolve(),
+    createSopFileDownloadGrant,
   }
 }
 

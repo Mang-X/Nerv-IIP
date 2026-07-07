@@ -1088,6 +1088,11 @@ public sealed record BusinessConsoleSopFileDownloadGrantResponse(
     string DownloadUrl,
     IReadOnlyDictionary<string, string> DownloadHeaders);
 
+public sealed record BusinessConsoleSopFileContentResponse(
+    string ContentType,
+    long? ContentLength,
+    byte[] Content);
+
 public sealed record BusinessConsoleListEngineeringBomsRequest(
     string OrganizationId,
     string EnvironmentId,
