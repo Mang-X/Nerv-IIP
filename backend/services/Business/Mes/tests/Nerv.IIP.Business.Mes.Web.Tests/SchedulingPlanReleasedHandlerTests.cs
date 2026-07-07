@@ -53,6 +53,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
         Assert.Equal(DateTimeOffset.Parse("2026-06-01T12:00:00Z"), task.EarliestStartUtc);
         Assert.Equal(TimeSpan.FromMinutes(90), task.Duration);
         Assert.Equal(DateTimeOffset.Parse("2026-06-01T07:30:00Z"), task.AssignedAtUtc);
+        Assert.Equal("STD-OIL", task.OperationCode);
     }
 
     [Theory]
@@ -178,7 +179,8 @@ public sealed class SchedulingPlanReleasedHandlerTests
                     "DEV-OIL-01",
                     "WC-OIL",
                     DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
-                    DateTimeOffset.Parse("2026-06-01T13:30:00Z")),
+                    DateTimeOffset.Parse("2026-06-01T13:30:00Z"),
+                    "STD-OIL"),
                 new SchedulePlanAffectedOperationPayload(
                     "WO-APS-001",
                     "OP-20",
@@ -541,7 +543,8 @@ public sealed class SchedulingPlanReleasedHandlerTests
                     "DEV-OIL-01",
                     "WC-OIL",
                     DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
-                    DateTimeOffset.Parse("2026-06-01T13:30:00Z"))
+                    DateTimeOffset.Parse("2026-06-01T13:30:00Z"),
+                    "STD-OIL")
             ];
         }
 

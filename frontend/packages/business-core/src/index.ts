@@ -40,3 +40,5 @@ export {
 export { sanitizeRedirectPath } from './routing/sanitizeRedirectPath'
 export { PDA_TASK_KINDS, getPdaTaskKind } from './tasks/pdaTaskKinds'
 export type { PdaTaskKind } from './tasks/pdaTaskKinds'
+export { openDownloadGrantBlob } from './files/downloadGrant'
+export type { DownloadGrantLike } from './files/downloadGrant'

@@ -36,7 +36,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         string? skuCode,
         string? uomCode,
         decimal plannedQuantity,
-        bool requiresQualityInspection)
+        bool requiresQualityInspection,
+        string? operationCode)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -56,6 +57,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         UomCode = NormalizeOptional(uomCode) ?? "pcs";
         PlannedQuantity = plannedQuantity > 0m ? plannedQuantity : 1m;
         RequiresQualityInspection = requiresQualityInspection;
+        OperationCode = NormalizeOptional(operationCode);
         CreatedAtUtc = DateTimeOffset.UtcNow;
     }
 
@@ -84,6 +86,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public string UomCode { get; private set; } = "pcs";
     public decimal PlannedQuantity { get; private set; }
     public bool RequiresQualityInspection { get; private set; }
+    public string? OperationCode { get; private set; }
 
     public string OperationTaskId => OperationTaskIdValue;
 
@@ -113,7 +116,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         string? skuCode = null,
         string? uomCode = null,
         decimal plannedQuantity = 0m,
-        bool requiresQualityInspection = false)
+        bool requiresQualityInspection = false,
+        string? operationCode = null)
     {
         return Create(
             organizationId,
@@ -131,7 +135,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             skuCode,
             uomCode,
             plannedQuantity,
-            requiresQualityInspection);
+            requiresQualityInspection,
+            operationCode);
     }
 
     public static OperationTask Create(
@@ -150,7 +155,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         string? skuCode = null,
         string? uomCode = null,
         decimal plannedQuantity = 0m,
-        bool requiresQualityInspection = false)
+        bool requiresQualityInspection = false,
+        string? operationCode = null)
     {
         return new OperationTask(
             organizationId,
@@ -168,7 +174,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             skuCode,
             uomCode,
             plannedQuantity,
-            requiresQualityInspection);
+            requiresQualityInspection,
+            operationCode);
     }
 
     public void Start(DateTimeOffset startedAtUtc)
@@ -287,7 +294,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         string? deviceAssetId,
         DateTimeOffset plannedStartUtc,
         DateTimeOffset plannedEndUtc,
-        DateTimeOffset assignedAtUtc)
+        DateTimeOffset assignedAtUtc,
+        string? operationCode = null)
     {
         if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
         {
@@ -308,6 +316,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         EarliestStartUtc = plannedStartUtc;
         DurationTicks = (plannedEndUtc - plannedStartUtc).Ticks;
         DeviceAssetId = NormalizeOptional(deviceAssetId);
+        OperationCode = NormalizeOptional(operationCode) ?? OperationCode;
         AssignedAtUtc = assignedAtUtc;
         if (Status == OperationTaskLifecycleStatus.ScheduleInvalidated)
         {

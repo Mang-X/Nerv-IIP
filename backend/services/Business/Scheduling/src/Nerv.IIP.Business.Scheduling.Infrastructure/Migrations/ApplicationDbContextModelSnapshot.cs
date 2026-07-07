@@ -207,6 +207,12 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasColumnName("start_utc")
                         .HasComment("Assignment start timestamp in UTC.");
 
+                    b.Property<string>("StandardOperationCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("standard_operation_code")
+                        .HasComment("ProductEngineering standard operation code used by MES to resolve current SOP or electronic work instructions.");
+
                     b.Property<string>("WorkCenterId")
                         .IsRequired()
                         .HasMaxLength(96)

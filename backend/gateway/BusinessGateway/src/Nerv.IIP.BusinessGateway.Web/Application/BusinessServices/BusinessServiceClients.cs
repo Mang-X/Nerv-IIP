@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Scheduling;
@@ -309,11 +310,36 @@ public interface IBusinessQualityClient
         CancellationToken cancellationToken);
 }
 
+public interface IBusinessFileStorageClient
+{
+    Task<BusinessConsoleSopFileDownloadGrantResponse> CreateSopFileDownloadGrantAsync(
+        string internalBearerToken,
+        string fileId,
+        BusinessConsoleCreateSopFileDownloadGrantRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleSopFileContentResponse> DownloadSopFileContentAsync(
+        string internalBearerToken,
+        string downloadGrantId,
+        IReadOnlyDictionary<string, string> downloadHeaders,
+        CancellationToken cancellationToken);
+}
+
 public interface IBusinessProductEngineeringClient
 {
     Task<BusinessConsoleEngineeringEntityResponse> RegisterEngineeringDocumentAsync(
         string internalBearerToken,
         BusinessConsoleRegisterEngineeringDocumentRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleEngineeringEntityResponse> PublishSopDocumentAsync(
+        string internalBearerToken,
+        BusinessConsolePublishSopDocumentRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCurrentSopDocumentsResponse> GetCurrentSopDocumentsAsync(
+        string internalBearerToken,
+        BusinessConsoleCurrentSopDocumentsRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleEngineeringDocumentListResponse> ListEngineeringDocumentsAsync(
@@ -2703,6 +2729,74 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
     };
 }
 
+public sealed class HttpBusinessFileStorageClient(HttpClient httpClient) : IBusinessFileStorageClient
+{
+    public async Task<BusinessConsoleSopFileDownloadGrantResponse> CreateSopFileDownloadGrantAsync(
+        string internalBearerToken,
+        string fileId,
+        BusinessConsoleCreateSopFileDownloadGrantRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var message = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/files/v1/files/{Uri.EscapeDataString(fileId)}/download-grants");
+        message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
+        message.Content = JsonContent.Create(new CreateDownloadGrantRequest(request.OrganizationId, request.EnvironmentId));
+        using var response = await httpClient.SendAsync(message, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(response.StatusCode, "filestorage-download-grant-failed");
+        }
+
+        var grant = await response.Content.ReadFromJsonAsync<DownloadGrantResponse>(cancellationToken: cancellationToken)
+            ?? throw BusinessServiceProxyException.FromSafeDownstreamMessage(HttpStatusCode.BadGateway, "filestorage-empty-response");
+        return new BusinessConsoleSopFileDownloadGrantResponse(
+            grant.FileId,
+            grant.ExpiresAtUtc,
+            RewriteDownloadGrantContentUrl(grant.Download.Url),
+            grant.Download.Headers);
+    }
+
+    public async Task<BusinessConsoleSopFileContentResponse> DownloadSopFileContentAsync(
+        string internalBearerToken,
+        string downloadGrantId,
+        IReadOnlyDictionary<string, string> downloadHeaders,
+        CancellationToken cancellationToken)
+    {
+        using var message = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/files/v1/download-grants/{Uri.EscapeDataString(downloadGrantId)}/content");
+        message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
+        foreach (var (key, value) in downloadHeaders)
+        {
+            if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(value))
+            {
+                message.Headers.TryAddWithoutValidation(key, value);
+            }
+        }
+
+        using var response = await httpClient.SendAsync(message, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(response.StatusCode, "filestorage-download-content-failed");
+        }
+
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        return new BusinessConsoleSopFileContentResponse(
+            response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream",
+            response.Content.Headers.ContentLength,
+            bytes);
+    }
+
+    private static string RewriteDownloadGrantContentUrl(string downloadUrl)
+    {
+        const string fileStoragePrefix = "/api/files/v1/download-grants/";
+        const string businessConsolePrefix = "/api/business-console/v1/files/download-grants/";
+        return downloadUrl.StartsWith(fileStoragePrefix, StringComparison.Ordinal)
+            ? businessConsolePrefix + downloadUrl[fileStoragePrefix.Length..]
+            : downloadUrl;
+    }
+}
 public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessProductEngineeringClient
 {
@@ -2715,6 +2809,35 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             HttpMethod.Post,
             "/api/business/v1/engineering/documents",
             request,
+            cancellationToken);
+
+    public Task<BusinessConsoleEngineeringEntityResponse> PublishSopDocumentAsync(
+        string internalBearerToken,
+        BusinessConsolePublishSopDocumentRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringEntityResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/engineering/sops/publish",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleCurrentSopDocumentsResponse> GetCurrentSopDocumentsAsync(
+        string internalBearerToken,
+        BusinessConsoleCurrentSopDocumentsRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleCurrentSopDocumentsResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/engineering/sops/current?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("operationCode", request.OperationCode),
+                ("workCenterCode", request.WorkCenterCode),
+                ("routingCode", request.RoutingCode),
+                ("routingRevision", request.RoutingRevision),
+                ("asOfDate", request.AsOfDate)),
+            null,
             cancellationToken);
 
     public Task<BusinessConsoleEngineeringDocumentListResponse> ListEngineeringDocumentsAsync(

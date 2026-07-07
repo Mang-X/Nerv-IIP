@@ -88,7 +88,8 @@ public sealed record GeneratedScheduleAssignmentSnapshot(
     DateTimeOffset StartUtc,
     DateTimeOffset EndUtc,
     bool IsLocked,
-    string ExplanationCode);
+    string ExplanationCode,
+    string? StandardOperationCode = null);
 
 public sealed record GeneratedScheduleResourceLoadSnapshot(
     string ResourceId,
@@ -148,7 +149,8 @@ public sealed record SchedulePlanInvalidatedSnapshot(
                     x.ResourceId,
                     x.WorkCenterId,
                     x.StartUtc,
-                    x.EndUtc))
+                    x.EndUtc,
+                    x.StandardOperationCode))
                 .ToArray());
     }
 }
@@ -160,7 +162,8 @@ public sealed record SchedulePlanInvalidatedOperationSnapshot(
     string ResourceId,
     string WorkCenterId,
     DateTimeOffset StartUtc,
-    DateTimeOffset EndUtc);
+    DateTimeOffset EndUtc,
+    string? StandardOperationCode = null);
 
 public sealed class ScheduleProblemSnapshot : Entity<ScheduleProblemSnapshotId>
 {
@@ -196,6 +199,11 @@ public sealed class ScheduleProblemSnapshot : Entity<ScheduleProblemSnapshotId>
     public DateTimeOffset HorizonStartUtc { get; private set; }
     public DateTimeOffset HorizonEndUtc { get; private set; }
     public DateTimeOffset CapturedAtUtc { get; private set; }
+
+    private static string? Optional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
 
     private static string Required(string value, string? parameterName = null)
     {
@@ -530,6 +538,7 @@ public sealed class SchedulePlanAssignment : Entity<SchedulePlanAssignmentId>
         EndUtc = contract.EndUtc;
         IsLocked = contract.IsLocked;
         ExplanationCode = Required(contract.ExplanationCode, nameof(contract.ExplanationCode));
+        StandardOperationCode = Optional(contract.StandardOperationCode);
     }
 
     public SchedulePlanId SchedulePlanId { get; private set; } = null!;
@@ -539,6 +548,7 @@ public sealed class SchedulePlanAssignment : Entity<SchedulePlanAssignmentId>
     public int OperationSequence { get; private set; }
     public string ResourceId { get; private set; } = string.Empty;
     public string WorkCenterId { get; private set; } = string.Empty;
+    public string? StandardOperationCode { get; private set; }
     public DateTimeOffset StartUtc { get; private set; }
     public DateTimeOffset EndUtc { get; private set; }
     public bool IsLocked { get; private set; }
@@ -547,6 +557,11 @@ public sealed class SchedulePlanAssignment : Entity<SchedulePlanAssignmentId>
     public static SchedulePlanAssignment FromPlanSnapshot(GeneratedScheduleAssignmentSnapshot contract)
     {
         return new SchedulePlanAssignment(contract);
+    }
+
+    private static string? Optional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static string Required(string value, string? parameterName = null)

@@ -44,8 +44,10 @@ public sealed class ProductEngineeringReleaseApiContractTests
     {
         var contracts = ProductEngineeringEndpointContracts.All;
 
-        Assert.Equal(26, contracts.Count);
+        Assert.Equal(28, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/documents" && x.PermissionCode == EngineeringPermissionCodes.DocumentsManage);
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/sops/publish" && x.PermissionCode == EngineeringPermissionCodes.DocumentsManage);
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/sops/current" && x.PermissionCode == EngineeringPermissionCodes.DocumentsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/documents" && x.PermissionCode == EngineeringPermissionCodes.DocumentsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/documents/{documentNumber}/{revision}" && x.PermissionCode == EngineeringPermissionCodes.DocumentsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/items" && x.PermissionCode == EngineeringPermissionCodes.ItemsManage);
@@ -106,6 +108,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
     [Theory]
     [InlineData(typeof(RegisterEngineeringDocumentEndpoint))]
+    [InlineData(typeof(PublishSopDocumentEndpoint))]
+    [InlineData(typeof(GetCurrentSopDocumentsEndpoint))]
     [InlineData(typeof(ListEngineeringDocumentsEndpoint))]
     [InlineData(typeof(GetEngineeringDocumentEndpoint))]
     [InlineData(typeof(CreateEngineeringItemRevisionEndpoint))]
@@ -2382,6 +2386,223 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
         Assert.Matches("^EDOC-[0-9]{8}-[0-9]{6}$", replay.Id);
         Assert.Single(dbContext.EngineeringDocuments);
+    }
+
+    [Fact]
+    public async Task Publish_sop_document_records_operation_scope_file_reference_and_effective_version()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new PublishSopDocumentCommandHandler(new EngineeringDocumentRepository(dbContext), new ProductEngineeringCodingService());
+
+        var result = await handler.Handle(
+            new PublishSopDocumentCommand(
+                "org-001",
+                "env-dev",
+                null,
+                "A",
+                "STD-MIX",
+                "WC-MIX-01",
+                "ROUTE-1000",
+                "A",
+                new DateOnly(2026, 7, 1),
+                "file-sop-v1",
+                "mixing-work-instruction-v1.pdf",
+                "application/pdf",
+                "sop-publish-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetCurrentSopDocumentsQueryHandler(dbContext).Handle(
+            new GetCurrentSopDocumentsQuery("org-001", "env-dev", "STD-MIX", "WC-MIX-01", "ROUTE-1000", "A", new DateOnly(2026, 7, 2)),
+            CancellationToken.None);
+
+        var sop = Assert.Single(response.Items);
+        Assert.Equal(result.Id, sop.DocumentNumber);
+        Assert.Equal("A", sop.Revision);
+        Assert.Equal("STD-MIX", sop.OperationCode);
+        Assert.Equal("WC-MIX-01", sop.WorkCenterCode);
+        Assert.Equal("ROUTE-1000", sop.RoutingCode);
+        Assert.Equal("file-sop-v1", sop.FileId);
+        Assert.Equal("Published", sop.Status);
+    }
+
+    [Fact]
+    public async Task Current_sop_query_returns_new_effective_scope_version_instead_of_old_version()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX",
+            "A",
+            "STD-MIX",
+            "WC-MIX-01",
+            null,
+            null,
+            new DateOnly(2026, 7, 1),
+            "file-old",
+            "mixing-v1.pdf",
+            "application/pdf"));
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX",
+            "B",
+            "STD-MIX",
+            "WC-MIX-01",
+            null,
+            null,
+            new DateOnly(2026, 7, 5),
+            "file-new",
+            "mixing-v2.pdf",
+            "application/pdf"));
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX-NEW-NUMBER",
+            "A",
+            "STD-MIX",
+            "WC-MIX-01",
+            null,
+            null,
+            new DateOnly(2026, 7, 6),
+            "file-new-number",
+            "mixing-v3.pdf",
+            "application/pdf"));
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX-ROUTE",
+            "A",
+            "STD-MIX",
+            "WC-MIX-01",
+            "ROUTE-1000",
+            null,
+            new DateOnly(2026, 7, 7),
+            "file-route",
+            "mixing-route.pdf",
+            "application/pdf"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetCurrentSopDocumentsQueryHandler(dbContext).Handle(
+            new GetCurrentSopDocumentsQuery("org-001", "env-dev", "STD-MIX", "WC-MIX-01", null, null, new DateOnly(2026, 7, 7)),
+            CancellationToken.None);
+
+        var sop = Assert.Single(response.Items);
+        Assert.Equal("SOP-MIX-NEW-NUMBER", sop.DocumentNumber);
+        Assert.Equal("A", sop.Revision);
+        Assert.Equal("file-new-number", sop.FileId);
+    }
+
+    [Fact]
+    public async Task Current_sop_query_prefers_work_center_scope_over_global_operation_scope()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX-GLOBAL",
+            "A",
+            "STD-MIX",
+            null,
+            null,
+            null,
+            new DateOnly(2026, 7, 6),
+            "file-global-newer",
+            "mixing-global.pdf",
+            "application/pdf"));
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX-WC",
+            "A",
+            "STD-MIX",
+            "WC-MIX-01",
+            null,
+            null,
+            new DateOnly(2026, 7, 1),
+            "file-work-center",
+            "mixing-work-center.pdf",
+            "application/pdf"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetCurrentSopDocumentsQueryHandler(dbContext).Handle(
+            new GetCurrentSopDocumentsQuery("org-001", "env-dev", "STD-MIX", "WC-MIX-01", null, null, new DateOnly(2026, 7, 7)),
+            CancellationToken.None);
+
+        var sop = Assert.Single(response.Items);
+        Assert.Equal("SOP-MIX-WC", sop.DocumentNumber);
+        Assert.Equal("file-work-center", sop.FileId);
+    }
+
+    [Fact]
+    public async Task Release_engineering_change_archives_sop_document_so_current_query_hides_old_version()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX",
+            "A",
+            "STD-MIX",
+            "WC-MIX-01",
+            null,
+            null,
+            new DateOnly(2026, 7, 1),
+            "file-old",
+            "mixing-v1.pdf",
+            "application/pdf"));
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX",
+            "B",
+            "STD-MIX",
+            "WC-MIX-01",
+            null,
+            null,
+            new DateOnly(2026, 7, 5),
+            "file-new",
+            "mixing-v2.pdf",
+            "application/pdf"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new RecordingApprovalVerifier(),
+            businessDateProvider: new FixedBusinessDateProvider(new DateOnly(2026, 7, 5)),
+            engineeringDocumentRepository: new EngineeringDocumentRepository(dbContext));
+
+        await handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-SOP-MIX",
+                "Publish new work instruction",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 7, 5),
+                [new AffectedVersionCommand("engineering-document", "SOP-MIX:A", "SOP-MIX:B")]),
+            CancellationToken.None);
+
+        var response = await new GetCurrentSopDocumentsQueryHandler(dbContext).Handle(
+            new GetCurrentSopDocumentsQuery("org-001", "env-dev", "STD-MIX", "WC-MIX-01", null, null, new DateOnly(2026, 7, 5)),
+            CancellationToken.None);
+
+        var sop = Assert.Single(response.Items);
+        Assert.Equal("B", sop.Revision);
+        Assert.Equal("file-new", sop.FileId);
+        Assert.Equal("Archived", dbContext.EngineeringDocuments.Single(x => x.Revision == "A").Status.ToString());
     }
 
     private static ServiceProvider CreateInMemoryProvider()

@@ -609,6 +609,28 @@ public sealed class ListBusinessConsoleMesOperationTasksEndpoint(
         mes.ListOperationTasksAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+[Tags("Business Console MES")]
+[HttpGet("/api/business-console/v1/mes/operation-sops/current")]
+[BusinessGatewayOperationId("getBusinessConsoleMesCurrentOperationSops")]
+public sealed class GetBusinessConsoleMesCurrentOperationSopsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCurrentSopDocumentsRequest, BusinessConsoleCurrentSopDocumentsResponse>(
+        auth,
+        BusinessGatewayPermissions.MesOperationsRead)
+{
+    protected override string OrganizationId(BusinessConsoleCurrentSopDocumentsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCurrentSopDocumentsRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleCurrentSopDocumentsResponse> ForwardAsync(
+        BusinessConsoleCurrentSopDocumentsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.GetCurrentSopDocumentsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
 public abstract class BusinessConsoleMesOperationTaskActionEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IInternalServiceTokenProvider tokenProvider)

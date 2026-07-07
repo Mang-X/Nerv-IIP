@@ -30,6 +30,50 @@ public sealed class RegisterBusinessConsoleEngineeringDocumentEndpoint(
 }
 
 [Tags("Business Console Product Engineering")]
+[HttpPost("/api/business-console/v1/engineering/sops/publish")]
+[BusinessGatewayOperationId("publishBusinessConsoleEngineeringSopDocument")]
+public sealed class PublishBusinessConsoleEngineeringSopDocumentEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsolePublishSopDocumentRequest, BusinessConsoleEngineeringEntityResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringDocumentsManage)
+{
+    protected override string OrganizationId(BusinessConsolePublishSopDocumentRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsolePublishSopDocumentRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleEngineeringEntityResponse> ForwardAsync(
+        BusinessConsolePublishSopDocumentRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.PublishSopDocumentAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/sops/current")]
+[BusinessGatewayOperationId("getBusinessConsoleCurrentEngineeringSopDocuments")]
+public sealed class GetBusinessConsoleCurrentEngineeringSopDocumentsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCurrentSopDocumentsRequest, BusinessConsoleCurrentSopDocumentsResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringDocumentsRead)
+{
+    protected override string OrganizationId(BusinessConsoleCurrentSopDocumentsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCurrentSopDocumentsRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleCurrentSopDocumentsResponse> ForwardAsync(
+        BusinessConsoleCurrentSopDocumentsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.GetCurrentSopDocumentsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
 [HttpGet("/api/business-console/v1/engineering/documents")]
 [BusinessGatewayOperationId("listBusinessConsoleEngineeringDocuments")]
 public sealed class ListBusinessConsoleEngineeringDocumentsEndpoint(

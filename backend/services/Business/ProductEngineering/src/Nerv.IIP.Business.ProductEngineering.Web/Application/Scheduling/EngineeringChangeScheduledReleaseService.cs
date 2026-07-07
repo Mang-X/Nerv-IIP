@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MediatR;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringChangeAggregate;
+using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringDocumentAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
@@ -221,7 +222,8 @@ internal sealed class ScheduledEngineeringChangeArchiveResolver(
     IEngineeringBomRepository engineeringBomRepository,
     IManufacturingBomRepository manufacturingBomRepository,
     IRoutingRepository routingRepository,
-    IProductionVersionRepository productionVersionRepository)
+    IProductionVersionRepository productionVersionRepository,
+    IEngineeringDocumentRepository? engineeringDocumentRepository = null)
 {
     public async Task<IReadOnlyCollection<Action<string, DateOnly>>> ResolveArchiveActionsAsync(
         EngineeringChange change,
@@ -264,6 +266,11 @@ internal sealed class ScheduledEngineeringChangeArchiveResolver(
                 environmentId,
                 affectedVersion.VersionId,
                 cancellationToken), affectedVersion.VersionId, await GetSuccessorProductionVersionAsync(organizationId, environmentId, affectedVersion, cancellationToken)),
+            "engineering-document" => ArchiveEngineeringDocument(await GetEngineeringDocumentRepository().GetByVersionIdAsync(
+                organizationId,
+                environmentId,
+                affectedVersion.VersionId,
+                cancellationToken), affectedVersion.VersionId, await GetSuccessorEngineeringDocumentAsync(organizationId, environmentId, affectedVersion, cancellationToken)),
             _ => throw new KnownException($"Affected version kind '{affectedVersion.VersionKind}' is not supported.")
         };
     }
@@ -332,6 +339,22 @@ internal sealed class ScheduledEngineeringChangeArchiveResolver(
             ?? throw new KnownException($"Successor production version '{affectedVersion.SupersededByVersionId}' was not found.");
     }
 
+    private async Task<EngineeringDocument?> GetSuccessorEngineeringDocumentAsync(
+        string organizationId,
+        string environmentId,
+        EngineeringChangeAffectedVersion affectedVersion,
+        CancellationToken cancellationToken)
+    {
+        return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
+            ? null
+            : await GetEngineeringDocumentRepository().GetByVersionIdAsync(
+                organizationId,
+                environmentId,
+                affectedVersion.SupersededByVersionId,
+                cancellationToken)
+            ?? throw new KnownException($"Successor engineering document version '{affectedVersion.SupersededByVersionId}' was not found.");
+    }
+
     private static Action<string, DateOnly> ArchiveEngineeringBom(EngineeringBom? bom, string versionId, EngineeringBom? successor)
     {
         if (bom is not null && successor is not null)
@@ -380,6 +403,24 @@ internal sealed class ScheduledEngineeringChangeArchiveResolver(
             : successor is null
                 ? (reason, _) => ProductEngineeringReleaseValidation.AsKnownException(() => version.Archive(reason))
                 : (reason, effectiveDate) => ProductEngineeringReleaseValidation.AsKnownException(() => version.SupersedeWith(successor, effectiveDate, reason));
+    }
+
+    private static Action<string, DateOnly> ArchiveEngineeringDocument(EngineeringDocument? document, string versionId, EngineeringDocument? successor)
+    {
+        if (document is not null && successor is not null)
+        {
+            EnsurePublishedSuccessor(successor.Status, successor.DocumentNumber == document.DocumentNumber, "engineering document", successor.DocumentNumber, versionId);
+        }
+
+        return document is null
+            ? throw new KnownException($"Engineering document version '{versionId}' was not found.")
+            : (reason, _) => ProductEngineeringReleaseValidation.AsKnownException(() => document.Archive(reason));
+    }
+
+    private IEngineeringDocumentRepository GetEngineeringDocumentRepository()
+    {
+        return engineeringDocumentRepository
+            ?? throw new KnownException("Engineering document repository is required to release engineering-document affected versions.");
     }
 
     private static void EnsurePublishedSuccessor(EngineeringVersionStatus status, bool sameBusinessCode, string versionKind, string successorCode, string versionId)

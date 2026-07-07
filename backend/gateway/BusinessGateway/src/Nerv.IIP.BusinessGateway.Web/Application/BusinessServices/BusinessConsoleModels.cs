@@ -1018,6 +1018,30 @@ public sealed record BusinessConsoleListEngineeringDocumentsRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record BusinessConsolePublishSopDocumentRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DocumentNumber,
+    string Revision,
+    string OperationCode,
+    string? WorkCenterCode,
+    string? RoutingCode,
+    string? RoutingRevision,
+    DateOnly EffectiveDate,
+    string FileId,
+    string FileName,
+    string ContentType,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleCurrentSopDocumentsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string OperationCode,
+    string? WorkCenterCode = null,
+    string? RoutingCode = null,
+    string? RoutingRevision = null,
+    DateOnly? AsOfDate = null);
+
 public sealed record BusinessConsoleEngineeringDocumentListResponse(
     IReadOnlyCollection<BusinessConsoleEngineeringDocumentItem> Items,
     int Total);
@@ -1030,7 +1054,44 @@ public sealed record BusinessConsoleEngineeringDocumentItem(
     string FileName,
     string ContentType,
     string DocumentType,
-    DateTime RegisteredAtUtc);
+    DateTime RegisteredAtUtc,
+    string? Status = null,
+    string? OperationCode = null,
+    string? WorkCenterCode = null,
+    string? RoutingCode = null,
+    string? RoutingRevision = null,
+    DateOnly? EffectiveDate = null);
+
+public sealed record BusinessConsoleCurrentSopDocumentsResponse(
+    IReadOnlyCollection<BusinessConsoleCurrentSopDocumentItem> Items);
+
+public sealed record BusinessConsoleCurrentSopDocumentItem(
+    string DocumentNumber,
+    string Revision,
+    string OperationCode,
+    string? WorkCenterCode,
+    string? RoutingCode,
+    string? RoutingRevision,
+    DateOnly EffectiveDate,
+    string FileId,
+    string FileName,
+    string ContentType,
+    string Status);
+
+public sealed record BusinessConsoleCreateSopFileDownloadGrantRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record BusinessConsoleSopFileDownloadGrantResponse(
+    string FileId,
+    DateTimeOffset ExpiresAtUtc,
+    string DownloadUrl,
+    IReadOnlyDictionary<string, string> DownloadHeaders);
+
+public sealed record BusinessConsoleSopFileContentResponse(
+    string ContentType,
+    long? ContentLength,
+    byte[] Content);
 
 public sealed record BusinessConsoleListEngineeringBomsRequest(
     string OrganizationId,
@@ -3108,7 +3169,8 @@ public sealed record BusinessConsoleMesDispatchTaskRow(
     string? WorkCenterCode = null,
     string? WorkCenterName = null,
     string? DeviceAssetCode = null,
-    string? DeviceAssetName = null);
+    string? DeviceAssetName = null,
+    string? OperationCode = null);
 
 public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     [property: RouteParam] string OperationTaskId,
@@ -3140,7 +3202,8 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     string? WorkCenterCode = null,
     string? WorkCenterName = null,
     string? DeviceAssetCode = null,
-    string? DeviceAssetName = null);
+    string? DeviceAssetName = null,
+    string? OperationCode = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: RouteParam] string OperationTaskId,

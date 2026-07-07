@@ -78,6 +78,18 @@ vi.mock('@/composables/useBusinessMes', () => ({
     operationTasksTotal: ref(1),
     refreshOperationTasks: vi.fn(),
   }),
+  useMesCurrentOperationSops: () => ({
+    filters: {
+      environmentId: 'dev',
+      organizationId: 'org',
+      operationCode: '',
+      workCenterCode: '',
+    },
+    currentSops: ref([]),
+    currentSopsError: ref(undefined),
+    currentSopsPending: ref(false),
+    refreshCurrentSops: vi.fn(),
+  }),
   useMesProductionPlans: () => ({
     convertPlanToWorkOrder: vi.fn(),
     convertPlanToWorkOrderError: ref(undefined),

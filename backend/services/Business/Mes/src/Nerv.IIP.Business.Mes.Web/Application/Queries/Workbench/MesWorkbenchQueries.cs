@@ -441,7 +441,8 @@ public sealed record MesOperationTaskRow(
     string? WorkCenterCode = null,
     string? WorkCenterName = null,
     string? DeviceAssetCode = null,
-    string? DeviceAssetName = null);
+    string? DeviceAssetName = null,
+    string? OperationCode = null);
 
 public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetMesWorkOrderDetailQuery, MesWorkOrderDetailResponse>
@@ -534,7 +535,8 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
                 x.WorkCenterId,
                 null,
                 x.DeviceAssetId,
-                null));
+                null,
+                x.OperationCode));
     }
 
     internal static IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask> QueryOperationTaskEntities(

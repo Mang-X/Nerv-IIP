@@ -417,7 +417,8 @@ public sealed class MesEndpointContractTests
                     10,
                     "WC-MIX-01",
                     [],
-                    TimeSpan.FromMinutes(30)),
+                    TimeSpan.FromMinutes(30),
+                    OperationCode: "OP-MIX"),
             ]);
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.AddRange(tasks);
@@ -444,8 +445,12 @@ public sealed class MesEndpointContractTests
         Assert.Equal("WO-001", detail.WorkOrderId);
         Assert.Equal("Ready", detail.ReadinessStatus);
         Assert.Empty(detail.BlockingReasons);
-        Assert.Equal("OP-10", Assert.Single(detail.OperationTasks).OperationTaskId);
-        Assert.Equal("OP-10", Assert.Single(operations.Items).OperationTaskId);
+        var detailOperation = Assert.Single(detail.OperationTasks);
+        Assert.Equal("OP-10", detailOperation.OperationTaskId);
+        Assert.Equal("OP-MIX", detailOperation.OperationCode);
+        var operation = Assert.Single(operations.Items);
+        Assert.Equal("OP-10", operation.OperationTaskId);
+        Assert.Equal("OP-MIX", operation.OperationCode);
         var wipRow = Assert.Single(wip.Items);
         Assert.Equal(10m, wipRow.PlannedQuantity);
         Assert.Equal(8m, wipRow.GoodQuantity);

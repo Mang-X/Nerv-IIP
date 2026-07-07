@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
-import { operationTaskStatusLabel } from '@nerv-iip/business-core'
-import { useMesOperationTasks } from '@/composables/useBusinessMes'
+import { openDownloadGrantBlob, operationTaskStatusLabel } from '@nerv-iip/business-core'
+import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
@@ -15,6 +15,7 @@ definePage({
 })
 
 type Task = BusinessConsoleMesOperationTaskRow
+type CurrentSop = { fileId?: string | null; fileName?: string | null }
 
 const {
   filters,
@@ -28,6 +29,13 @@ const {
   completeTask,
   actionPending,
 } = useMesOperationTasks()
+const {
+  filters: sopFilters,
+  currentSops,
+  pending: sopsPending,
+  error: sopsError,
+  createSopFileDownloadGrant,
+} = useMesCurrentOperationSops()
 
 const router = useRouter()
 
@@ -93,6 +101,8 @@ const confirmingComplete = ref(false)
 // --- 结果反馈 ---
 type ResultState = { status: 'success' | 'error'; title: string; description?: string; action: ActionKind; taskId: string }
 const result = ref<ResultState | null>(null)
+const openingSopFileId = ref<string | null>(null)
+const sopFileError = ref('')
 
 const availableActions = computed(() => actionsFor(selected.value?.status))
 
@@ -106,6 +116,7 @@ function rowTitle(task: Task) {
 function rowSubtitle(task: Task) {
   const parts = [statusLabel(task.status)]
   if (task.workCenterId) parts.push(`工作中心 ${task.workCenterId}`)
+  if (task.operationCode) parts.push(`工序 ${task.operationCode}`)
   return parts.join(' · ')
 }
 
@@ -117,14 +128,38 @@ const errorMessage = computed(() => {
 
 function openSheet(task: Task) {
   result.value = null
+  sopFileError.value = ''
   confirmingComplete.value = false
   // 重新打开面板 → 新一轮操作，作废上一个幂等键
   operationKey.value = ''
   selected.value = task
+  sopFilters.operationCode = task.operationCode?.trim() ?? ''
+  sopFilters.workCenterCode = (task.workCenterCode ?? task.workCenterId)?.trim() ?? ''
+  sopFilters.routingCode = ''
+  sopFilters.routingRevision = ''
+  sopFilters.asOfDate = ''
 }
 function closeSheet() {
   selected.value = null
   confirmingComplete.value = false
+}
+async function openSopFile(sop: CurrentSop) {
+  const fileId = sop.fileId?.trim()
+  if (!fileId) {
+    sopFileError.value = '当前SOP未绑定可查看的文件。'
+    return
+  }
+  sopFileError.value = ''
+  openingSopFileId.value = fileId
+  try {
+    const grant = await createSopFileDownloadGrant(fileId)
+    if (!grant) throw new Error('无法获取SOP查看授权。')
+    await openDownloadGrantBlob(grant)
+  } catch (error) {
+    sopFileError.value = error instanceof Error ? error.message : '无法打开SOP。'
+  } finally {
+    openingSopFileId.value = null
+  }
 }
 
 async function runAction(action: ActionKind) {
@@ -191,6 +226,16 @@ function backToList() {
 
 function onScan(value: string) {
   filters.keyword = value
+}
+const sopsErrorMessage = computed(() => {
+  const e = sopsError.value
+  if (!e) return ''
+  return e instanceof Error ? e.message : '加载SOP失败，请稍后重试。'
+})
+function formatDate(value?: string | null) {
+  if (!value) return '无'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
 }
 </script>
 
@@ -280,6 +325,35 @@ function onScan(value: string) {
         <p class="text-sm text-muted-foreground">
           当前状态：{{ statusLabel(selected.status) }}
         </p>
+
+        <section class="space-y-2 rounded-lg border border-border px-3 py-3">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="text-sm font-semibold text-foreground">当前SOP</h2>
+            <span v-if="selected.operationCode" class="font-mono text-xs text-muted-foreground">{{ selected.operationCode }}</span>
+          </div>
+          <p v-if="!selected.operationCode" class="text-sm text-muted-foreground">当前任务未绑定标准工序。</p>
+          <p v-else-if="sopsErrorMessage || sopFileError" class="text-sm text-destructive" role="alert">{{ sopsErrorMessage || sopFileError }}</p>
+          <p v-else-if="sopsPending" class="text-sm text-muted-foreground">正在加载SOP...</p>
+          <div v-else-if="currentSops.length" class="space-y-2">
+            <div
+              v-for="sop in currentSops"
+              :key="`${sop.documentNumber}-${sop.revision}-${sop.fileId}`"
+              class="rounded-md bg-muted px-3 py-2 text-sm"
+            >
+              <p class="font-medium text-foreground">{{ sop.fileName || sop.documentNumber }}</p>
+              <p class="text-xs text-muted-foreground">{{ sop.documentNumber }} · rev {{ sop.revision }} · 生效 {{ formatDate(sop.effectiveDate) }}</p>
+              <button
+                type="button"
+                class="mt-2 min-h-touch rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground disabled:opacity-60"
+                :disabled="openingSopFileId === sop.fileId"
+                @click="openSopFile(sop)"
+              >
+                查看SOP
+              </button>
+            </div>
+          </div>
+          <p v-else class="text-sm text-muted-foreground">当前没有已生效SOP。</p>
+        </section>
 
         <!-- 完成的二次确认 -->
         <div v-if="confirmingComplete" class="space-y-3">
