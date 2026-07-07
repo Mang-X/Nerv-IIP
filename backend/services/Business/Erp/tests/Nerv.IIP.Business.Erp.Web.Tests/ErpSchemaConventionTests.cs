@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Erp.Domain;
@@ -124,8 +127,48 @@ public sealed class ErpSchemaConventionTests
             .Select(x => x.LocalDebitAmount - x.LocalCreditAmount)
             .ToQueryString();
 
+        var unexecutedPaymentsSql = fixture.DbContext.PaymentExecutions.AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == "org-001"
+                && x.EnvironmentId == "env-dev"
+                && x.PaymentDate >= periodStart
+                && x.PaymentDate <= periodEnd
+                && x.Status != PaymentExecutionStatus.Executed)
+            .Select(x => x.PaymentExecutionNo)
+            .ToQueryString();
+
+        var unmatchedCashReceiptsSql = fixture.DbContext.CashReceipts.AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == "org-001"
+                && x.EnvironmentId == "env-dev"
+                && x.ReceiptDate >= periodStart
+                && x.ReceiptDate <= periodEnd
+                && x.Status != CashReceiptStatus.Matched)
+            .Select(x => x.CashReceiptNo)
+            .ToQueryString();
+
         Assert.Contains("GROUP BY", trialBalanceSql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("journal_voucher_lines", grIrBalanceSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("payment_executions", unexecutedPaymentsSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(nameof(PaymentExecutionStatus.Executed), unexecutedPaymentsSql, StringComparison.Ordinal);
+        Assert.Contains("cash_receipts", unmatchedCashReceiptsSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(nameof(CashReceiptStatus.Matched), unmatchedCashReceiptsSql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Payment_execution_exchange_rate_migration_default_matches_domain_invariant()
+    {
+        using var fixture = CreateFixture();
+        var migrations = fixture.DbContext.GetService<IMigrationsAssembly>();
+        var migrationType = migrations.Migrations["20260707034335_AddErpPaymentExecutionExchangeRate"];
+        var migration = migrations.CreateMigration(migrationType, fixture.DbContext.Database.ProviderName!);
+        var addColumn = Assert.IsType<AddColumnOperation>(Assert.Single(migration.UpOperations, operation =>
+            operation is AddColumnOperation add
+            && add.Schema == ErpFacts.Schema
+            && add.Table == "payment_executions"
+            && add.Name == "payment_exchange_rate"));
+
+        Assert.Equal(1m, addColumn.DefaultValue);
     }
 
     [Fact]

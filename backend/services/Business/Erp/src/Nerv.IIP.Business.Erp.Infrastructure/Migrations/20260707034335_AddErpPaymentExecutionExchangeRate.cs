@@ -18,7 +18,7 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                 precision: 18,
                 scale: 8,
                 nullable: false,
-                defaultValue: 0m,
+                defaultValue: 1m,
                 comment: "Payment currency exchange rate to local currency.");
         }
 
