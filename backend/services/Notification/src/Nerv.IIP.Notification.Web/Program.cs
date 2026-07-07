@@ -131,6 +131,7 @@ builder.Services.AddScoped<AlarmEscalatedIntegrationEventHandlerForNotification>
 builder.Services.AddScoped<ConnectorHostUnreachableIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<ConnectorHostRestoredIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<InspectionTaskOverdueIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<SpcAlertRaisedIntegrationEventHandlerForNotification>();
 
 var app = builder.Build();
 if (usePostgreSql && autoMigrate)
