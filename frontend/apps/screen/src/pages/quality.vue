@@ -67,6 +67,8 @@ const TREND_RANGES = [
   { label: '今日 12h', value: '12h' },
   { label: '近 30 天', value: '30d' },
 ]
+// 分层曲线用字面量色 —— --sb-indigo 在本页被局部重映射成红线色，变量会被污染
+const LAYER_COLORS: Record<string, string> = { iqc: '#5fbf7a', ipqc: '#f0ad4e', fqc: '#8b9be6' }
 const trendData = computed(() => {
   const b = board.value
   if (!b) return null
@@ -78,6 +80,12 @@ const trendData = computed(() => {
       // 悬停带当日判定批次 —— 周日检验量低谷在这里读得到
       hoverLabels: b.trend30.labels.map((l, i) => `${l} · 判 ${nf.format(b.trend30.lots[i])} 批`),
       xLabels: b.trend30.labels.filter((_, i) => i % 5 === 0),
+      // 分层对比：全厂一条总曲线掩盖结构 —— 30 天视图叠加来料/过程/成品三层
+      series: b.layers.map((l) => ({
+        label: l.code,
+        color: LAYER_COLORS[l.key] ?? '#8b9be6',
+        data: l.trend30,
+      })),
     }
   }
   return {
@@ -85,13 +93,15 @@ const trendData = computed(() => {
     plan: b.trend12h.ratePct.map(() => red),
     hoverLabels: b.trend12h.labels,
     xLabels: b.trend12h.labels.filter((_, i) => i % 2 === 0),
+    // 12h 无分层时序读面（诚实缺口，不造假分层小时数据）
+    series: undefined,
   }
 })
-// y 轴刻度：与 TrendChart 内部量程算法同式（数据向上取整），标签才不说谎
+// y 轴刻度：与 TrendChart 内部量程算法同式（数据向上取整，含分层序列），标签才不说谎
 const trendY = computed(() => {
   const t = trendData.value
   if (!t) return []
-  const peak = Math.max(1, ...t.actual, ...t.plan)
+  const peak = Math.max(1, ...t.actual, ...t.plan, ...(t.series ?? []).flatMap((s) => s.data))
   const mag = 10 ** Math.floor(Math.log10(peak))
   const top = Math.ceil(peak / mag) * mag
   return Array.from({ length: 6 }, (_, i) => ((top * (5 - i)) / 5).toFixed(1))
@@ -222,8 +232,9 @@ const trendPin = computed(() => {
             :x-labels="trendData.xLabels"
             :y-labels="trendY"
             :tooltip="trendPin"
-            actual-label="不良率（%）"
-            plan-label="红线阈值"
+            :series="trendData.series"
+            actual-label="全厂不良率"
+            plan-label="红线"
             :ranges="TREND_RANGES"
           />
 

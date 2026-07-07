@@ -34,6 +34,9 @@ const props = withDefaults(
     tabs?: boolean
     /** 真实时间范围切换（提供即渲染可点 tabs，经 v-model:range 切换；覆盖 tabs 装饰） */
     ranges?: { label: string; value: string | number }[]
+    /** 附加对比序列（如质量分层 IQC/IPQC/FQC）：细线 + 图例色点 + 悬停逐条读数。
+     *  与 actual 等长；color 建议传字面量色（CSS 变量可能被调用方局部重映射） */
+    series?: { label: string; color: string; data: number[] }[]
   }>(),
   {
     title: '产量趋势（件）',
@@ -63,7 +66,12 @@ const left = PAD_L
 const right = VB_W
 
 const max = computed(() => {
-  const peak = Math.max(1, ...props.actual, ...props.plan)
+  const peak = Math.max(
+    1,
+    ...props.actual,
+    ...props.plan,
+    ...(props.series ?? []).flatMap((s) => s.data),
+  )
   const mag = 10 ** Math.floor(Math.log10(peak))
   return Math.ceil(peak / mag) * mag
 })
@@ -85,6 +93,9 @@ function fmt(v: number) {
 
 const actualPath = computed(() => linePath(props.actual))
 const planPath = computed(() => linePath(props.plan))
+const seriesPaths = computed(() =>
+  (props.series ?? []).map((s) => ({ label: s.label, color: s.color, d: linePath(s.data) })),
+)
 const areaPath = computed(() =>
   props.actual.length
     ? `${actualPath.value} L${right} ${bottom} L${left} ${bottom} Z`
@@ -137,13 +148,21 @@ const cross = computed(() => {
     pVal = props.tooltip.plan
   }
   if (i == null) return null
+  // 附加序列逐条读数（分层对比的悬停真值）
+  const sVals = (props.series ?? []).map((s) => ({
+    label: s.label,
+    color: s.color,
+    val: s.data[i] != null ? fmt(s.data[i]) : '—',
+  }))
   const cx = xAt(i, len)
   const cy = yAt(props.actual[i] ?? 0)
   // 信息卡为 HTML overlay（% 锚定）：SVG 用 preserveAspectRatio="none" 非均匀拉伸，
-  // rect/text 放 SVG 内会随容器宽高比被拉变形。右半区翻转到标线左侧、纵向钳制在画布内。
+  // rect/text 放 SVG 内会随容器宽高比被拉变形。右半区翻转到标线左侧、纵向钳制在画布内
+  // （钳制半径随序列行数增高，多行卡不顶出画布）。
   const flip = cx > (left + right) / 2
-  const cyClamped = Math.min(Math.max(cy, top + 36), bottom - 36)
-  return { cx, cy, cyClamped, flip, label, aVal, pVal }
+  const half = 36 + sVals.length * 9
+  const cyClamped = Math.min(Math.max(cy, top + half), bottom - half)
+  return { cx, cy, cyClamped, flip, label, aVal, pVal, sVals }
 })
 
 const uid = Math.random().toString(36).slice(2, 8)
@@ -152,7 +171,12 @@ const uid = Math.random().toString(36).slice(2, 8)
 <template>
   <ScreenPanel :title="title" class="sb-tc">
     <template #title-extra>
-      <em class="sb-tc-key">— {{ actualLabel }}　--- {{ planLabel }}</em>
+      <em class="sb-tc-key">
+        — {{ actualLabel }}　--- {{ planLabel }}
+        <span v-for="s in series ?? []" :key="s.label" class="sb-tc-key-s">
+          <i :style="{ background: s.color }" aria-hidden="true" />{{ s.label }}
+        </span>
+      </em>
     </template>
     <template v-if="ranges?.length" #extra>
       <div class="sb-tc-tabs">
@@ -201,6 +225,17 @@ const uid = Math.random().toString(36).slice(2, 8)
              轮询同点数更新时曲线平滑变形（切换范围点数不同则直接切换） -->
         <path class="sb-tc-area" :d="areaPath" :style="{ d: `path('${areaPath}')` }" :fill="`url(#sbTc-${uid})`" />
         <path class="sb-tc-plan" :d="planPath" :style="{ d: `path('${planPath}')` }" fill="none" stroke-width="1.5" stroke-dasharray="5 5" />
+        <!-- 附加对比序列：细线（主曲线之下，颜色由调用方定义） -->
+        <path
+          v-for="s in seriesPaths"
+          :key="s.label"
+          class="sb-tc-ser"
+          :d="s.d"
+          :style="{ d: `path('${s.d}')`, stroke: s.color }"
+          fill="none"
+          stroke-width="1.3"
+          vector-effect="non-scaling-stroke"
+        />
         <path class="sb-tc-act" :d="actualPath" :style="{ d: `path('${actualPath}')` }" fill="none" stroke-width="2" vector-effect="non-scaling-stroke" />
 
         <!-- transparent capture layer so hover fires over empty plot area too -->
@@ -234,6 +269,9 @@ const uid = Math.random().toString(36).slice(2, 8)
           <span class="sb-tc-c-t">{{ cross.label }}</span>
           <span class="sb-tc-c-a">● {{ actualLabel }}<b>{{ cross.aVal }}</b></span>
           <span class="sb-tc-c-p">┄ {{ planLabel }}<b>{{ cross.pVal }}</b></span>
+          <span v-for="sv in cross.sVals" :key="sv.label" class="sb-tc-c-s">
+            <i :style="{ background: sv.color }" aria-hidden="true" />{{ sv.label }}<b>{{ sv.val }}</b>
+          </span>
         </div>
       </template>
     </div>
@@ -250,15 +288,22 @@ const uid = Math.random().toString(36).slice(2, 8)
   flex-direction: column;
   font-variant-numeric: tabular-nums;
 }
+/* 图例可收缩（多序列时不许把右侧 tabs 挤出面板头）：单行截断，真值在悬停卡 */
 .sb-tc-key {
   font-size: 12px;
   color: var(--sb-muted);
   font-style: normal;
   font-weight: 400;
   margin-left: 12px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+/* tabs 永不收缩折行（图例才是可收缩方） */
 .sb-tc-tabs {
   display: flex;
+  flex: none;
   border: 1px solid var(--sb-line-2);
   border-radius: 6px;
   overflow: hidden;
@@ -268,6 +313,7 @@ const uid = Math.random().toString(36).slice(2, 8)
 .sb-tc-tab {
   padding: 5px 14px;
   color: var(--sb-muted);
+  white-space: nowrap;
 }
 /* 真实可切换 tab（button 语义） */
 .sb-tc-tab {
@@ -333,16 +379,22 @@ const uid = Math.random().toString(36).slice(2, 8)
   stroke: var(--sb-cyan);
   filter: drop-shadow(0 0 3px var(--sb-cyan-dim));
 }
-/* 数据增长动效：轮询更新时三条路径平滑变形（emphasized 减速，无回弹） */
+/* 附加对比序列：细线不发光（主曲线才是主角），透明度略降层次分明 */
+.sb-tc-ser {
+  opacity: 0.85;
+}
+/* 数据增长动效：轮询更新时各路径平滑变形（emphasized 减速，无回弹） */
 .sb-tc-act,
 .sb-tc-plan,
-.sb-tc-area {
+.sb-tc-area,
+.sb-tc-ser {
   transition: d 0.6s var(--sb-ease-emphasized);
 }
 @media (prefers-reduced-motion: reduce) {
   .sb-tc-act,
   .sb-tc-plan,
   .sb-tc-area,
+  .sb-tc-ser,
   .sb-tc-tab {
     transition: none;
   }
@@ -399,6 +451,37 @@ const uid = Math.random().toString(36).slice(2, 8)
   margin-left: 9px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+/* 附加序列：悬停行（色短线 + 名 + 值）与图例色点 */
+.sb-tc-c-s {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--sb-text-2);
+}
+.sb-tc-c-s i {
+  width: 9px;
+  height: 2px;
+  border-radius: 1px;
+  flex: none;
+}
+.sb-tc-c-s b {
+  margin-left: auto;
+  padding-left: 9px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.sb-tc-key-s {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 12px;
+}
+.sb-tc-key-s i {
+  width: 9px;
+  height: 2px;
+  border-radius: 1px;
 }
 .sb-tc-x {
   display: flex;

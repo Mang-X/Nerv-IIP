@@ -120,6 +120,11 @@ defineProps<{
   align-items: center;
   gap: 6px;
   white-space: nowrap;
+  /* title-extra（如趋势图图例）可收缩截断，绝不把右侧 extra（tabs）挤出面板头；
+     标题文本是匿名 flex 项（min-content 保护），永远完整 */
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
 }
 /* 标题与右侧工具之间的渐隐引导线 */
 .sb-panel-rule {
