@@ -1062,8 +1062,8 @@ public static class FinanceVoucherFactory
             voucherNo,
             collectionDate,
             [
-                new JournalVoucherLineDraft(cashAccountCode, amount, 0m, $"Cash collection for {receivable.ReceivableNo}"),
-                new JournalVoucherLineDraft("1122", 0m, amount, $"Collect AR {receivable.ReceivableNo}"),
+                LocalDebit(cashAccountCode, amount, receivable.CurrencyCode, receivable.ExchangeRate, $"Cash collection for {receivable.ReceivableNo}"),
+                LocalCredit("1122", amount, receivable.CurrencyCode, receivable.ExchangeRate, $"Collect AR {receivable.ReceivableNo}"),
             ]);
     }
 

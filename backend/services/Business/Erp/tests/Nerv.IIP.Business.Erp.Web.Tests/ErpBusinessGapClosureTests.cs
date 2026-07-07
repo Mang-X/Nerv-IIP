@@ -779,6 +779,33 @@ public sealed class ErpBusinessGapClosureTests
     }
 
     [Fact]
+    public async Task Cash_receipt_match_posts_foreign_currency_voucher_with_receivable_exchange_rate()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await new CreateAccountReceivableCommandHandler(dbContext).Handle(
+            new CreateAccountReceivableCommand("org-001", "env-dev", "AR-USD-COLLECT-001", "DO-USD-COLLECT-001", "CUS-001", 80m, "USD", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30", ExchangeRate: 7.1m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var cashReceiptNo = await new RegisterCashReceiptCommandHandler(dbContext).Handle(
+            new RegisterCashReceiptCommand("org-001", "env-dev", "AR-USD-COLLECT-001", 35m, new DateOnly(2026, 6, 20), "BANK-USD", "idem-ar-usd-register-715"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new MatchCashReceiptCommandHandler(dbContext).Handle(
+            new MatchCashReceiptCommand("org-001", "env-dev", cashReceiptNo),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var voucher = dbContext.JournalVouchers.Single(x => x.VoucherNo == cashReceiptNo);
+        Assert.Contains(voucher.Lines, x => x.AccountCode == "BANK-USD" && x.CurrencyCode == "USD" && x.ExchangeRate == 7.1m && x.LocalDebitAmount == 248.5m);
+        Assert.Contains(voucher.Lines, x => x.AccountCode == "1122" && x.CurrencyCode == "USD" && x.ExchangeRate == 7.1m && x.LocalCreditAmount == 248.5m);
+        Assert.Equal(248.5m, dbContext.AccountReceivables.Single().LocalCollectedAmount);
+    }
+
+    [Fact]
     public async Task Month_end_checklist_and_trial_balance_expose_minimum_close_read_model()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
