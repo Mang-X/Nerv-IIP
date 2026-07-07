@@ -368,3 +368,10 @@ At minimum:
 - Use `gh` CLI directly for PR creation. Do not use the GitHub connector — it has
   repeatedly returned 404 in this repo while `gh` is already authenticated and works.
 - If a PR operation fails via `gh`, report the command and error clearly.
+- PR descriptions answer a lightweight docs-impact checklist (convention, not a hard
+  gate): state whether the change affects product docs (`frontend/apps/docs`) — new
+  pages, changed business flows, or user-visible behavior changes count as "yes". If
+  yes, update the docs in the same PR or reference a follow-up docs issue; if no,
+  write "文档：无影响". Docs gaps recorded in the docs-site role path maps and
+  `internal/gaps` are recycled into GitHub issues quarterly. Rationale and IA rules:
+  `docs/adr/0020-product-docs-information-architecture.md`.

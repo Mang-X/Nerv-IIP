@@ -24,6 +24,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-C", "frontend/apps/screen", "run", "dev"],
       "port": 5128
+    },
+    {
+      "name": "docs",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "frontend/apps/docs", "run", "dev"],
+      "port": 5181
     }
   ]
 }
