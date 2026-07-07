@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ScreenScrollArea, Sparkline, StatusLight, StatusTag } from '@nerv-iip/ui'
+import { ScreenScrollArea, Sparkline, StatusLight, StatusTag, useScreenData } from '@nerv-iip/ui'
 import {
   Activity,
   BatteryCharging,
@@ -16,7 +16,6 @@ import {
 import { type Component, computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { DeviceDetail, DeviceParamSeries, ParamKind } from '@/data/contracts/equipment'
 import { fetchDeviceDetail } from '@/data/fetchers/equipment'
-import { useScreenData } from '@/screen-kit'
 import { paramColor } from './paramColors'
 
 /**

@@ -10,6 +10,13 @@ import './tokens.css'
 export { default as ScreenPanel } from './ScreenPanel.vue'
 export { default as ScreenScrollArea } from './ScreenScrollArea.vue'
 
+// Big-board infrastructure（原 apps/screen screen-kit 上提，MAN-321）：
+// 舞台缩放 / 无缝自动滚动 / 大屏取数（轮询 + 隐藏暂停 + 失败保活）
+export { default as ScreenScaler } from './ScreenScaler.vue'
+export { default as ScrollBoard } from './ScrollBoard.vue'
+export * from './scale'
+export * from './useScreenData'
+
 // Indicators & charts
 export { default as OeeHero } from './OeeHero.vue'
 export { default as RingGauge } from './RingGauge.vue'

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ScreenPanel, ScreenScrollArea, ScreenSegmented, StatusLight, StatusTag, TrendChart } from '@nerv-iip/ui'
+import { ScreenPanel, ScreenScrollArea, ScreenSegmented, StatusLight, StatusTag, TrendChart, useScreenData } from '@nerv-iip/ui'
 import {
   Boxes,
   CircleCheck,
@@ -17,7 +17,6 @@ import { useBackLink } from '@/composables/useBackLink'
 import type { WorkshopBoard } from '@/data/contracts/workshop'
 import { fetchWorkshopBoard } from '@/data/fetchers/workshop'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
-import { useScreenData } from '@/screen-kit'
 
 // 车间总览大屏（MAN-315，spec §三）：车间主任「当班作战室」——
 // 顶带定调（达成/产量/质量/停机/齐套/交接），左墙看线，中栏看趋势与求救，

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import * as icons from 'lucide-vue-next'
-import { GlowDivider, KpiBar, ScreenSegmented, StatusLight, StatusTag } from '@nerv-iip/ui'
+import { GlowDivider, KpiBar, ScreenScaler, ScreenSegmented, StatusLight, StatusTag, useScreenData } from '@nerv-iip/ui'
 import { useNow } from '@vueuse/core'
 import { Activity, AlertTriangle, Cpu, PackageCheck } from 'lucide-vue-next'
 import { type Component, computed, watch } from 'vue'
@@ -10,7 +10,6 @@ import LauncherCard from '@/components/launcher/LauncherCard.vue'
 import type { LauncherSummary } from '@/data/contracts/launcher'
 import { fetchLauncherSummary } from '@/data/fetchers/launcher'
 import { SCREENS } from '@/data/screens'
-import { ScreenScaler, useScreenData } from '@/screen-kit'
 
 const scope = useAccessScope()
 const cards = computed(() => SCREENS.filter((s) => scope.canSeeScreen(s.key)))

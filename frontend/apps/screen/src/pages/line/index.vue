@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { KpiBar, Sparkline, StatusLight } from '@nerv-iip/ui'
+import { KpiBar, Sparkline, StatusLight, useScreenData } from '@nerv-iip/ui'
 import { useVirtualList } from '@vueuse/core'
 import { Activity, AlertTriangle, Factory, PackageCheck, Workflow } from 'lucide-vue-next'
 import { type Component, computed, ref, watch } from 'vue'
@@ -9,7 +9,6 @@ import { useBackLink } from '@/composables/useBackLink'
 import type { LineSummaryCard } from '@/data/contracts/line'
 import { fetchLineCards } from '@/data/fetchers/line'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
-import { useScreenData } from '@/screen-kit'
 
 // 产线选择器 = 迷你监控板（spec §四）：红线置顶（数据层排序）、scope 收窄、
 // 点卡进入单线大屏。行虚拟滚动 + 视野外停止请求趋势序列。4s 轮询。
