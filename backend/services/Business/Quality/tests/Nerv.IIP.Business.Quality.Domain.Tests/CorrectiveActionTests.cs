@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 
 namespace Nerv.IIP.Business.Quality.Domain.Tests;
@@ -49,7 +50,12 @@ public sealed class CorrectiveActionTests
             Assert.Equal(DateTimeOffset.Parse("2026-07-01T00:00:00Z"), action.CompletedAtUtc);
         }
 
-        capa.VerifyEffectiveness("qa-manager-001", "No recurrence in three lots", DateTimeOffset.Parse("2026-07-10T00:00:00Z"));
+        capa.VerifyEffectiveness(
+            "qa-manager-001",
+            "No recurrence in three lots",
+            DateTimeOffset.Parse("2026-07-10T00:00:00Z"),
+            new InspectionRecordId(Guid.CreateVersion7()),
+            "passed");
         capa.Close("qa-manager-001");
 
         Assert.Equal("closed", capa.Status);
@@ -76,6 +82,46 @@ public sealed class CorrectiveActionTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             capa.VerifyEffectiveness("qa-manager-001", "No recurrence", DateTimeOffset.Parse("2026-07-10T00:00:00Z")));
         Assert.Contains("complete", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Capa_close_requires_passed_effectiveness_inspection_reference()
+    {
+        var capa = CorrectiveAction.OpenStandalone(
+            "org-001",
+            "env-dev",
+            "CAPA-20260707-0001",
+            "Recurring coating defects",
+            "Hold suspect coating batches",
+            ownerUserId: "qa-engineer-001",
+            dueAtUtc: DateTimeOffset.Parse("2026-07-20T00:00:00Z"));
+        capa.AddAction("corrective", "Adjust coating viscosity control", "process-owner-001", DateTimeOffset.Parse("2026-07-12T00:00:00Z"));
+        var action = capa.Actions.Single();
+        capa.CompleteAction(action.Id, action.OwnerUserId, DateTimeOffset.Parse("2026-07-13T00:00:00Z"));
+
+        var failedInspectionId = new InspectionRecordId(Guid.CreateVersion7());
+        var passedInspectionId = new InspectionRecordId(Guid.CreateVersion7());
+
+        var failedException = Assert.Throws<InvalidOperationException>(() =>
+            capa.VerifyEffectiveness(
+                "qa-manager-001",
+                "Verification inspection rejected",
+                DateTimeOffset.Parse("2026-07-14T00:00:00Z"),
+                failedInspectionId,
+                "rejected"));
+        Assert.Contains("passed", failedException.Message, StringComparison.OrdinalIgnoreCase);
+
+        capa.VerifyEffectiveness(
+            "qa-manager-001",
+            "Verification inspection passed",
+            DateTimeOffset.Parse("2026-07-15T00:00:00Z"),
+            passedInspectionId,
+            "passed");
+        capa.Close("qa-manager-001", "approval-chain-approved");
+
+        Assert.Equal(passedInspectionId, capa.EffectivenessInspectionRecordId);
+        Assert.Equal("approval-chain-approved", capa.CloseApprovalChainId);
+        Assert.Equal("closed", capa.Status);
     }
 
     [Fact]

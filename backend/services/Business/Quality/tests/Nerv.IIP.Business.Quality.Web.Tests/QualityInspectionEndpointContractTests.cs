@@ -859,6 +859,7 @@ public sealed class QualityInspectionEndpointContractTests
         var publisher = provider.GetRequiredService<RecordingIntegrationEventPublisher>();
         NonconformanceReportId ncrId;
         CorrectiveActionId capaId;
+        InspectionRecordId inspectionRecordId;
 
         using (var scope = provider.CreateScope())
         {
@@ -884,10 +885,13 @@ public sealed class QualityInspectionEndpointContractTests
             await dbContext.SaveChangesAsync(CancellationToken.None);
             ncr.RecordScrapDispositionMovement("SM-FULL-CAPA-UOW-001", -10m);
             var capa = NewCompletedOpenCapa(ncr, "CAPA-SCRAP-UOW-001");
+            var inspection = NewPassedInspectionRecord("RCV-SCRAP-CAPA-UOW-VERIFY-001");
             dbContext.CorrectiveActions.Add(capa);
+            dbContext.InspectionRecords.Add(inspection);
             await dbContext.SaveChangesAsync(CancellationToken.None);
             ncrId = ncr.Id;
             capaId = capa.Id;
+            inspectionRecordId = inspection.Id;
         }
 
         using (var scope = provider.CreateScope())
@@ -898,7 +902,8 @@ public sealed class QualityInspectionEndpointContractTests
                     capaId,
                     "qa-manager-001",
                     "No recurrence",
-                    DateTimeOffset.Parse("2026-07-10T00:00:00Z")),
+                    DateTimeOffset.Parse("2026-07-10T00:00:00Z"),
+                    inspectionRecordId),
                 CancellationToken.None);
         }
 
@@ -910,7 +915,8 @@ public sealed class QualityInspectionEndpointContractTests
             Assert.Equal("SM-FULL-CAPA-UOW-001", reloadedNcr.ScrapMovementId);
         }
 
-        Assert.IsType<NcrClosedIntegrationEvent>(Assert.Single(publisher.Published));
+        Assert.Single(publisher.Published.OfType<NcrClosedIntegrationEvent>());
+        Assert.Single(publisher.Published.OfType<CapaEffectivenessVerifiedIntegrationEvent>());
         Assert.DoesNotContain(publisher.Published, x => x is InventoryMovementRequestedIntegrationEvent);
     }
 
@@ -922,6 +928,7 @@ public sealed class QualityInspectionEndpointContractTests
         var publisher = provider.GetRequiredService<RecordingIntegrationEventPublisher>();
         NonconformanceReportId ncrId;
         CorrectiveActionId capaId;
+        InspectionRecordId inspectionRecordId;
 
         using (var scope = provider.CreateScope())
         {
@@ -947,10 +954,13 @@ public sealed class QualityInspectionEndpointContractTests
             await dbContext.SaveChangesAsync(CancellationToken.None);
             ncr.RecordScrapDispositionMovement("SM-FULL-CAPA-IDEMPOTENT-001", -10m);
             var capa = NewCompletedOpenCapa(ncr, "CAPA-SCRAP-IDEMPOTENT-001");
+            var inspection = NewPassedInspectionRecord("RCV-SCRAP-CAPA-IDEMPOTENT-VERIFY-001");
             dbContext.CorrectiveActions.Add(capa);
+            dbContext.InspectionRecords.Add(inspection);
             await dbContext.SaveChangesAsync(CancellationToken.None);
             ncrId = ncr.Id;
             capaId = capa.Id;
+            inspectionRecordId = inspection.Id;
         }
 
         using (var scope = provider.CreateScope())
@@ -961,14 +971,16 @@ public sealed class QualityInspectionEndpointContractTests
                     capaId,
                     "qa-manager-001",
                     "No recurrence",
-                    DateTimeOffset.Parse("2026-07-10T00:00:00Z")),
+                    DateTimeOffset.Parse("2026-07-10T00:00:00Z"),
+                    inspectionRecordId),
                 CancellationToken.None);
             await sender.Send(
                 new VerifyCorrectiveActionEffectivenessCommand(
                     capaId,
                     "qa-manager-001",
                     "No recurrence",
-                    DateTimeOffset.Parse("2026-07-11T00:00:00Z")),
+                    DateTimeOffset.Parse("2026-07-11T00:00:00Z"),
+                    inspectionRecordId),
                 CancellationToken.None);
             await sender.Send(new CloseCorrectiveActionCommand(capaId, "qa-manager-001"), CancellationToken.None);
         }
@@ -1121,7 +1133,12 @@ public sealed class QualityInspectionEndpointContractTests
     private static CorrectiveAction NewEffectiveCapa(NonconformanceReport ncr, string capaCode)
     {
         var capa = NewCompletedOpenCapa(ncr, capaCode);
-        capa.VerifyEffectiveness("qa-manager-001", "No recurrence", DateTimeOffset.Parse("2026-07-10T00:00:00Z"));
+        capa.VerifyEffectiveness(
+            "qa-manager-001",
+            "No recurrence",
+            DateTimeOffset.Parse("2026-07-10T00:00:00Z"),
+            new InspectionRecordId(Guid.CreateVersion7()),
+            "passed");
         return capa;
     }
 
@@ -1140,6 +1157,24 @@ public sealed class QualityInspectionEndpointContractTests
         var action = capa.Actions.Single();
         capa.CompleteAction(action.Id, action.OwnerUserId, DateTimeOffset.Parse("2026-06-21T00:00:00Z"));
         return capa;
+    }
+
+    private static InspectionRecord NewPassedInspectionRecord(string sourceDocumentId)
+    {
+        return InspectionRecord.Create(
+            "org-001",
+            "env-dev",
+            null,
+            "receiving",
+            "purchase-receipt",
+            sourceDocumentId,
+            "SKU-RM-1000",
+            10m,
+            null,
+            null,
+            [InspectionResultLineInput.Pass("appearance", "ok", null, [])],
+            null,
+            []);
     }
 
     private static WebApplicationFactory<Program> CreateFactory()
@@ -1192,6 +1227,17 @@ public sealed class QualityInspectionEndpointContractTests
             LastNcrCode = ncrCode;
             return Task.FromResult(isApproved
                 && (expectedNcrCode is null || string.Equals(expectedNcrCode, ncrCode, StringComparison.Ordinal)));
+        }
+
+        public Task<bool> IsApprovedForCapaClosureAsync(
+            string chainId,
+            string organizationId,
+            string environmentId,
+            string capaCode,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(isApproved);
         }
     }
 

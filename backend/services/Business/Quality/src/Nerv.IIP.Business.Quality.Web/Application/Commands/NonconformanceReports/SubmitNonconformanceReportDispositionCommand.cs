@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.Approvals;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 
@@ -25,7 +26,8 @@ public sealed class SubmitNonconformanceReportDispositionCommandValidator : Abst
 
 public sealed class SubmitNonconformanceReportDispositionCommandHandler(
     INonconformanceReportRepository repository,
-    IApprovalChainStatusClient approvalChainStatusClient)
+    IApprovalChainStatusClient approvalChainStatusClient,
+    ICapaAutomationService? capaAutomationService = null)
     : ICommandHandler<SubmitNonconformanceReportDispositionCommand>
 {
     public async Task Handle(SubmitNonconformanceReportDispositionCommand request, CancellationToken cancellationToken)
@@ -56,6 +58,10 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(
             request.DispositionApprovalChainId,
             request.AttachmentFileIds,
             request.MrbReviews);
+        if (capaAutomationService is not null)
+        {
+            await capaAutomationService.OpenForDispositionIfRequiredAsync(ncr, cancellationToken);
+        }
     }
 }
 

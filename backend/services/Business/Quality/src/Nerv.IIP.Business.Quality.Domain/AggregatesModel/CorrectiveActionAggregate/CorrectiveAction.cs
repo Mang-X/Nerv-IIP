@@ -1,4 +1,6 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
+using Nerv.IIP.Business.Quality.Domain.DomainEvents;
 
 namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
 
@@ -34,6 +36,7 @@ public sealed class CorrectiveAction : Entity<CorrectiveActionId>, IAggregateRoo
         Status = "open";
         CreatedAtUtc = DateTimeOffset.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
+        this.AddDomainEvent(new CorrectiveActionOpenedDomainEvent(this));
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -47,7 +50,9 @@ public sealed class CorrectiveAction : Entity<CorrectiveActionId>, IAggregateRoo
     public string Status { get; private set; } = string.Empty;
     public string? EffectivenessVerifiedByUserId { get; private set; }
     public string? EffectivenessResult { get; private set; }
+    public InspectionRecordId? EffectivenessInspectionRecordId { get; private set; }
     public DateTimeOffset? EffectivenessVerifiedAtUtc { get; private set; }
+    public string? CloseApprovalChainId { get; private set; }
     public string? ClosedByUserId { get; private set; }
     public DateTimeOffset? ClosedAtUtc { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
@@ -117,7 +122,12 @@ public sealed class CorrectiveAction : Entity<CorrectiveActionId>, IAggregateRoo
         Touch();
     }
 
-    public void VerifyEffectiveness(string verifiedByUserId, string result, DateTimeOffset verifiedAtUtc)
+    public void VerifyEffectiveness(
+        string verifiedByUserId,
+        string result,
+        DateTimeOffset verifiedAtUtc,
+        InspectionRecordId? effectivenessInspectionRecordId = null,
+        string? effectivenessInspectionResult = null)
     {
         EnsureOpen();
         if (!Actions.Any(x => x.ActionType is "corrective" or "preventive"))
@@ -130,26 +140,45 @@ public sealed class CorrectiveAction : Entity<CorrectiveActionId>, IAggregateRoo
             throw new InvalidOperationException("CAPA effectiveness cannot be verified until all action items are completed.");
         }
 
+        if (effectivenessInspectionRecordId is null)
+        {
+            throw new InvalidOperationException("CAPA effectiveness verification requires a passed verification inspection.");
+        }
+
+        if (!string.Equals(effectivenessInspectionResult, "passed", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("CAPA effectiveness verification inspection must be passed.");
+        }
+
         EffectivenessVerifiedByUserId = Required(verifiedByUserId);
         EffectivenessResult = Required(result);
+        EffectivenessInspectionRecordId = effectivenessInspectionRecordId;
         EffectivenessVerifiedAtUtc = verifiedAtUtc == default
             ? throw new ArgumentException("Effectiveness verification time is required.", nameof(verifiedAtUtc))
             : verifiedAtUtc;
         Status = "effectiveness-verified";
         Touch();
+        this.AddDomainEvent(new CorrectiveActionEffectivenessVerifiedDomainEvent(this));
     }
 
-    public void Close(string closedByUserId)
+    public void Close(string closedByUserId, string? closeApprovalChainId = null)
     {
         if (Status != "effectiveness-verified")
         {
             throw new InvalidOperationException("CAPA cannot close before effectiveness is verified.");
         }
 
+        if (EffectivenessInspectionRecordId is null)
+        {
+            throw new InvalidOperationException("CAPA cannot close before a passed verification inspection is linked.");
+        }
+
+        CloseApprovalChainId = Optional(closeApprovalChainId);
         ClosedByUserId = Required(closedByUserId);
         ClosedAtUtc = DateTimeOffset.UtcNow;
         Status = "closed";
         Touch();
+        this.AddDomainEvent(new CorrectiveActionClosedDomainEvent(this));
     }
 
     private void EnsureOpen()
