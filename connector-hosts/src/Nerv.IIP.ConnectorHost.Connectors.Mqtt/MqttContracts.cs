@@ -25,7 +25,8 @@ public sealed record MqttTopicMapping(
     string TagKey,
     string TopicFilter,
     string ValueJsonPath,
-    int BucketSeconds);
+    int BucketSeconds,
+    string? SamplingPolicy = null);
 
 public sealed record MqttInboundMessage(
     string Topic,
@@ -76,6 +77,8 @@ internal sealed class MqttTelemetryBucket(MqttTopicMapping mapping, DateTimeOffs
     public int SampleCount { get; private set; }
     public decimal MinValue { get; private set; }
     public decimal MaxValue { get; private set; }
+    public decimal FirstValue { get; private set; }
+    public decimal LastValue { get; private set; }
     public decimal AverageValue => SampleCount == 0 ? 0 : _sum / SampleCount;
 
     public void Add(decimal value)
@@ -84,6 +87,7 @@ internal sealed class MqttTelemetryBucket(MqttTopicMapping mapping, DateTimeOffs
         {
             MinValue = value;
             MaxValue = value;
+            FirstValue = value;
         }
         else
         {
@@ -91,6 +95,7 @@ internal sealed class MqttTelemetryBucket(MqttTopicMapping mapping, DateTimeOffs
             MaxValue = Math.Max(MaxValue, value);
         }
 
+        LastValue = value;
         _sum += value;
         SampleCount++;
     }

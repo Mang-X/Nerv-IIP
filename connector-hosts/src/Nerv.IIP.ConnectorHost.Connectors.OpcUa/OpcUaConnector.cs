@@ -295,7 +295,9 @@ public sealed class OpcUaConnector(
             bucket.AverageValue,
             $"opcua:{options.ConnectorId}:{normalizedTagKey}:{bucketStartUnixMilliseconds}",
             "opcua",
-            $"{options.ConnectorHostId}/{options.ConnectorId}");
+            $"{options.ConnectorHostId}/{options.ConnectorId}",
+            FirstValue: bucket.FirstValue,
+            LastValue: bucket.LastValue);
     }
 
     private async Task MarkRunningAsync(CancellationToken cancellationToken)

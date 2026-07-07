@@ -310,7 +310,9 @@ public sealed class MqttConnector(
             bucket.AverageValue,
             $"mqtt:{options.ConnectorId}:{normalizedTagKey}:{bucketStartUnixMilliseconds}",
             "mqtt",
-            $"{options.ConnectorHostId}/{options.ConnectorId}");
+            $"{options.ConnectorHostId}/{options.ConnectorId}",
+            FirstValue: bucket.FirstValue,
+            LastValue: bucket.LastValue);
     }
 
     private async Task MarkRunningAsync(CancellationToken cancellationToken)

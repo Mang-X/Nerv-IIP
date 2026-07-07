@@ -111,7 +111,8 @@ static OpcUaConnectorOptions CreateOpcUaOptions(IConfiguration configuration)
             Required(section, "TagKey"),
             Required(section, "NodeId"),
             section.GetValue("SamplingIntervalMilliseconds", 1000),
-            section.GetValue("BucketSeconds", 60)))
+            ResolveTelemetryBucketSeconds(section),
+            section["SamplingPolicy"]))
         .ToList();
 
     return new OpcUaConnectorOptions(
@@ -141,9 +142,10 @@ static ModbusConnectorOptions CreateModbusOptions(IConfiguration configuration)
             section.GetValue<ushort>("RegisterCount", 1),
             section.GetValue("Scale", 1m),
             section.GetValue("Offset", 0m),
-            section.GetValue("BucketSeconds", 60),
+            ResolveTelemetryBucketSeconds(section),
             Enum.Parse<ModbusRegisterDataType>(section["DataType"] ?? "UInt16", ignoreCase: true),
-            Enum.Parse<ModbusWordOrder>(section["WordOrder"] ?? "BigEndian", ignoreCase: true)))
+            Enum.Parse<ModbusWordOrder>(section["WordOrder"] ?? "BigEndian", ignoreCase: true),
+            section["SamplingPolicy"]))
         .ToList();
 
     return new ModbusConnectorOptions(
@@ -165,7 +167,8 @@ static MqttConnectorOptions CreateMqttOptions(IConfiguration configuration)
             Required(section, "TagKey"),
             Required(section, "TopicFilter"),
             Required(section, "ValueJsonPath"),
-            section.GetValue("BucketSeconds", 60)))
+            ResolveTelemetryBucketSeconds(section),
+            section["SamplingPolicy"]))
         .ToList();
 
     return new MqttConnectorOptions(
@@ -183,4 +186,12 @@ static MqttConnectorOptions CreateMqttOptions(IConfiguration configuration)
 static string Required(IConfiguration configuration, string key)
 {
     return configuration[key] ?? throw new InvalidOperationException($"Configuration value '{key}' is required.");
+}
+
+static int ResolveTelemetryBucketSeconds(IConfigurationSection section)
+{
+    var samplingPolicy = section["SamplingPolicy"];
+    return string.IsNullOrWhiteSpace(samplingPolicy)
+        ? section.GetValue("BucketSeconds", 60)
+        : TelemetrySamplingPolicy.Parse(samplingPolicy).BucketSeconds;
 }

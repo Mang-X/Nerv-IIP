@@ -37,7 +37,7 @@ function routeQuery(key: string) {
   return Array.isArray(value) ? value[0] ?? '' : value?.toString() ?? ''
 }
 function itemTypeLabel(value?: string | null) {
-  const labels: Record<string, string> = { alarm: '报警', sample: '采样', state: '状态' }
+  const labels: Record<string, string> = { alarm: '报警', daily: '日汇总', hourly: '小时汇总', sample: '采样', state: '状态' }
   return value ? labels[value.toLowerCase()] ?? value : '未知'
 }
 function rowKey(row: BusinessConsoleTelemetryHistoryItem) {
