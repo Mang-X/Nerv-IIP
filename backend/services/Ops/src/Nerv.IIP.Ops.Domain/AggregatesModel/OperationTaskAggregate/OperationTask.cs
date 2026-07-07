@@ -230,7 +230,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         var status = completed ? "completed" : "failed";
         var auditAction = completed ? "operation.completed" : "operation.failed";
 
-        attempt.Record(status, result.FinishedAtUtc, result.Failure);
+        attempt.Record(status, result.FinishedAtUtc, result.Failure, result.Output);
         Status = status;
         var auditRecord = AddAudit(auditRecordId, auditAction, result.Context.ConnectorHostId, result.FinishedAtUtc, result.Context.CorrelationId);
         this.AddDomainEvent(new OperationResultRecordedDomainEvent(this, attempt));
@@ -564,6 +564,7 @@ public sealed class OperationAttempt : Entity<OperationAttemptId>
     public DateTimeOffset StartedAtUtc { get; private set; }
     public DateTimeOffset? FinishedAtUtc { get; private set; }
     public string? FailureJson { get; private set; }
+    public string? OutputJson { get; private set; }
     public string? LeaseId { get; private set; }
     public DateTimeOffset? LeasedAtUtc { get; private set; }
     public DateTimeOffset? LeasedUntilUtc { get; private set; }
@@ -571,11 +572,12 @@ public sealed class OperationAttempt : Entity<OperationAttemptId>
     public int? MaxAttempts { get; private set; }
     public string? AbandonReason { get; private set; }
 
-    internal void Record(string status, DateTimeOffset finishedAtUtc, OperationFailureFact? failure)
+    internal void Record(string status, DateTimeOffset finishedAtUtc, OperationFailureFact? failure, IReadOnlyDictionary<string, string> output)
     {
         Status = status;
         FinishedAtUtc = finishedAtUtc;
         FailureJson = failure is null ? null : JsonSerializer.Serialize(failure, JsonOptions);
+        OutputJson = output.Count == 0 ? null : JsonSerializer.Serialize(output, JsonOptions);
     }
 
     internal void Abandon(DateTimeOffset abandonedAtUtc, string abandonReason)
@@ -614,7 +616,8 @@ public sealed class OperationAttempt : Entity<OperationAttemptId>
             LeasedUntilUtc ?? StartedAtUtc,
             AttemptNo ?? 0,
             MaxAttempts ?? 0,
-            AbandonReason);
+            AbandonReason,
+            OutputJson is null ? new Dictionary<string, string>() : JsonSerializer.Deserialize<Dictionary<string, string>>(OutputJson, JsonOptions) ?? []);
     }
 }
 

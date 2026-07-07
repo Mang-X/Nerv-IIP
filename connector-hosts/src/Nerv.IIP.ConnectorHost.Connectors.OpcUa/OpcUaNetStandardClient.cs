@@ -133,6 +133,28 @@ public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialRe
         }
     }
 
+    public async Task<OpcUaWriteReceipt> WriteAsync(OpcUaWriteRequest request, CancellationToken cancellationToken)
+    {
+        var session = RequireSession();
+        var value = new WriteValue
+        {
+            NodeId = NodeId.Parse(request.NodeId),
+            AttributeId = Attributes.Value,
+            Value = new DataValue(new Variant(request.Value))
+        };
+        var values = new WriteValueCollection { value };
+        var response = await session.WriteAsync(
+            null,
+            values,
+            cancellationToken);
+        var status = response.Results.Count == 0 ? StatusCodes.BadUnexpectedError : response.Results[0];
+        var statusText = StatusCode.IsGood(status) ? "Good" : status.ToString();
+        return new OpcUaWriteReceipt(
+            statusText,
+            StatusCode.IsGood(status) ? "opcua.write.accepted" : "opcua.write.rejected",
+            statusText);
+    }
+
     public Task DisconnectAsync(CancellationToken cancellationToken)
     {
         _subscription?.Delete(true);
