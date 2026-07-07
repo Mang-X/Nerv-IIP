@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { RingGauge, ScreenPanel, ScreenScrollArea, Sparkline, StatusTag, TrendChart } from '@nerv-iip/ui'
+import { RingGauge, ScreenPanel, ScreenScrollArea, Sparkline, StatusTag, TrendChart, useScreenData } from '@nerv-iip/ui'
 import { ChevronDown, CircleCheck, OctagonAlert, UserRound, Users } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
@@ -10,7 +10,6 @@ import LineAndonHero from '@/components/line/LineAndonHero.vue'
 import type { LineBoard } from '@/data/contracts/line'
 import { fetchLineBoard } from '@/data/fetchers/line'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
-import { useScreenData } from '@/screen-kit'
 
 // 单线监控大屏（spec §四）：现场远距可读；横幅只在报警/停机时出现；
 // 安灯呼叫-响应闭环 待 MAN-322（诚实标注）。4s 轮询。

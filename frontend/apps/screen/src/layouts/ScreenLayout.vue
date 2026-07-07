@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { ScreenHeader } from '@nerv-iip/ui'
+import { ScreenHeader, ScreenScaler } from '@nerv-iip/ui'
 import { useNow } from '@vueuse/core'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { ScreenScaler } from '@/screen-kit'
 
 // —— 舱底生成算法：种子 = 路由（每页不同、同页刷新稳定，确定性伪随机）——
 // 曲线：5 锚点正弦缓变 → Catmull-Rom 转三次贝塞尔（C1 连续，线条平滑有美感）

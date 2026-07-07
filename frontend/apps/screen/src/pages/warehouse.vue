@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ScreenBarChart, ScreenDonut, ScreenPanel, ScreenScrollArea, StatusLight, StatusTag } from '@nerv-iip/ui'
+import { ScreenBarChart, ScreenDonut, ScreenPanel, ScreenScrollArea, ScrollBoard, StatusLight, StatusTag, useScreenData } from '@nerv-iip/ui'
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -22,7 +22,6 @@ import { useBackLink } from '@/composables/useBackLink'
 import type { WarehouseBoard, WarehouseOpsTick, WcsAdapterKind, WhTaskRow } from '@/data/contracts/warehouse'
 import { fetchWarehouseBoard, fetchWarehouseOpsTick } from '@/data/fetchers/warehouse'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
-import { ScrollBoard, useScreenData } from '@/screen-kit'
 
 // 仓储物流大屏（MAN-318）：WMS 作业指挥屏 —— 一眼掌握当日出入库进度、
 // 上架/拣货/盘点积压与流速、WCS 失败告警，调度人力补到积压环节。

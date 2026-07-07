@@ -96,6 +96,9 @@ export function useScreenData<T>(
 
   function start() {
     if (active) return
+    // SSR / 构建进程不启动轮询：挂起的 setTimeout 会让 node 进程永不退出
+    // （vitepress build 等 SSG 场景实测卡死）；客户端 hydration 后照常启动。
+    if (typeof window === 'undefined') return
     active = true
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', handleVisibility)

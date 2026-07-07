@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { RingGauge, ScreenPanel, StatusTag } from '@nerv-iip/ui'
+import { RingGauge, ScreenPanel, ScrollBoard, StatusTag, useScreenData } from '@nerv-iip/ui'
 import {
   AlertTriangle,
   CalendarClock,
@@ -17,7 +17,6 @@ import WorkshopHealthCard from '@/components/factory/WorkshopHealthCard.vue'
 import type { FactoryOverview } from '@/data/contracts/factory'
 import { fetchFactoryOverview } from '@/data/fetchers/factory'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
-import { ScrollBoard, useScreenData } from '@/screen-kit'
 
 const scope = useAccessScope()
 const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))

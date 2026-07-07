@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ScreenPanel, ScreenPareto, ScreenScrollArea, Sparkline, TrendChart } from '@nerv-iip/ui'
+import { ScreenPanel, ScreenPareto, ScreenScrollArea, Sparkline, TrendChart, useScreenData } from '@nerv-iip/ui'
 import { ClipboardList, FileCheck2, FileWarning, Scale } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -8,7 +8,6 @@ import { useBackLink } from '@/composables/useBackLink'
 import { NCR_SLA_HOURS, type QualityBoard } from '@/data/contracts/quality'
 import { fetchQualityBoard } from '@/data/fetchers/quality'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
-import { useScreenData } from '@/screen-kit'
 
 // 质量看板（spec §六）：质量健康度 + 待办闭环 —— 一眼看清不良率是否越红线、
 // 该催哪张 NCR、缺陷集中在哪条线。与产线屏同一个故事：电芯线卷绕机报警 ⇔

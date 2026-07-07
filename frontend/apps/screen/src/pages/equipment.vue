@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { RingGauge, ScreenPanel, ScreenScrollArea, ScreenSegmented, ScreenTabs, StatusLight, StatusTag } from '@nerv-iip/ui'
+import { RingGauge, ScreenPanel, ScreenScrollArea, ScreenSegmented, ScreenTabs, StatusLight, StatusTag, useScreenData } from '@nerv-iip/ui'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
@@ -10,7 +10,6 @@ import type { DeviceCell, DeviceParamsTick, EquipmentOverview, RepairOrder } fro
 import { REPAIR_STAGES } from '@/data/contracts/equipment'
 import { fetchDeviceParamsTick, fetchEquipmentOverview } from '@/data/fetchers/equipment'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
-import { useScreenData } from '@/screen-kit'
 
 // 刷新频率分层：格上参数 2s 快刷（仅视野内设备）· 全景/计数/流 5s ·
 // 详情弹窗 3s（弹窗内部）；页面隐藏时 useScreenData 统一暂停轮询。

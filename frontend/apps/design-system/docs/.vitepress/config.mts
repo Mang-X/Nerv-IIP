@@ -252,6 +252,14 @@ export default defineConfig({
           items: [{ text: '概览', link: '/components/screen/' }],
         },
         {
+          text: '基础设施',
+          items: [
+            { text: 'ScreenScaler 舞台缩放', link: '/components/screen/screen-scaler' },
+            { text: 'ScrollBoard 无缝滚动板', link: '/components/screen/scroll-board' },
+            { text: 'useScreenData 大屏取数', link: '/components/screen/use-screen-data' },
+          ],
+        },
+        {
           text: '容器 / 外壳',
           items: [
             { text: 'ScreenPanel 面板', link: '/components/screen/screen-panel' },
