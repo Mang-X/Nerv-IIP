@@ -19,7 +19,7 @@ public sealed class AuthorizationCheckEndpoint(IIamAuthService auth) : Endpoint<
             return;
         }
 
-        var allowed = await auth.PrincipalHasPermissionAsync(
+        var authorization = await auth.PrincipalHasPermissionAsync(
             principal,
             req.OrganizationId,
             req.EnvironmentId,
@@ -28,14 +28,14 @@ public sealed class AuthorizationCheckEndpoint(IIamAuthService auth) : Endpoint<
             req.ResourceId,
             ct);
 
-        if (!allowed)
+        if (!authorization.Allowed)
         {
             await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status403Forbidden, "forbidden", ct);
             return;
         }
 
         await Send.OkAsync(
-            new AuthorizationCheckResponse(true, principal.UserId, principal.PrincipalType, principal.LoginName, null).AsResponseData(),
+            new AuthorizationCheckResponse(true, principal.UserId, principal.PrincipalType, principal.LoginName, null, authorization.DataScope).AsResponseData(),
             ct);
     }
 }

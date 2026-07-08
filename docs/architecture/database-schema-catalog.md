@@ -636,8 +636,10 @@ Source:
 | `user_password_history` | business | 用户历史密码摘要，支撑密码策略中的历史密码禁复用。 | `UserId` 指向 `users`；`UserId + CreatedAtUtc` 支持按用户读取和裁剪最近历史记录。 |
 | `roles` | business | IAM 角色事实，用于把权限码分组后授予 membership。 | `RoleName` 唯一；拥有 `role_permissions`。 |
 | `role_permissions` | business | 角色拥有的权限码集合。 | `RoleId` 指向 `roles`；`RoleId + PermissionCode` 唯一。 |
+| `role_data_scopes` | business | 角色拥有的行级数据范围集合，用于声明 site/workshop/production-line 可见范围。 | `RoleId` 指向 `roles`；`RoleId + ScopeType + ScopeCode` 唯一；`ScopeCode` 引用 MasterData 组织层级代码，不建立跨服务外键。 |
 | `memberships` | business | 用户在 organization/environment scope 内的成员身份。 | `UserId + OrganizationId + EnvironmentId` 唯一；拥有 `membership_roles`。 |
 | `membership_roles` | business | membership 绑定的角色集合。 | `MembershipId` 指向 `memberships`；`MembershipId + RoleId` 唯一。 |
+| `membership_data_scopes` | business | 用户 membership 拥有的行级数据范围集合，用于声明某用户在特定 organization/environment 下的 site/workshop/production-line 可见范围。 | `MembershipId` 指向 `memberships`；`MembershipId + ScopeType + ScopeCode` 唯一；和角色范围在授权检查时取并集。 |
 | `user_sessions` | business | 用户 refresh session，保存 refresh token hash、token family/previous session lineage、issue/expiry/revoke 时间、permission version、client info、IP、认证方式、外部 provider/subject 和 MFA 验证时间。 | `RefreshTokenHash` 支持 refresh lookup；`TokenFamilyId` 支持 refresh token reuse/replay 后整族级联撤销；`PreviousSessionId` 支持轮换 lineage 追溯；`UserId + RevokedAtUtc` 支持按用户扫描活动/撤销会话；`ExternalProvider + ExternalSubject` 支持 SSO session binding 查询。 |
 | `connector_host_credentials` | business | Connector Host 机器身份凭据，记录 connector host id、organization/environment、secret hash 和有效期。 | `ConnectorHostId` 唯一；拥有 `connector_host_credential_capabilities`。 |
 | `connector_host_credential_capabilities` | business | Connector Host credential 被授予的能力码集合。 | `ConnectorHostCredentialId` 指向 `connector_host_credentials`；`ConnectorHostCredentialId + CapabilityCode` 唯一。 |

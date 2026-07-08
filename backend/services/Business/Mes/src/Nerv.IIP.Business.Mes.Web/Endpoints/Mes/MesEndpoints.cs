@@ -45,7 +45,9 @@ public sealed record ListMesWorkOrdersRequest(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? WorkCenterIds = null,
+    string? DeviceAssetIds = null);
 
 public sealed record ListProductionPlansRequest(
     string OrganizationId,
@@ -587,7 +589,9 @@ public sealed class ListMesWorkOrdersEndpoint(ISender sender)
                 req.Keyword,
                 req.WorkCenterId,
                 req.ShiftId,
-                req.DeviceAssetId),
+                req.DeviceAssetId,
+                req.WorkCenterIds,
+                req.DeviceAssetIds),
             ct);
         await Send.OkAsync(response, ct);
     }

@@ -68,7 +68,12 @@ public sealed record StartMaintenanceRepairRequest(
     MaintenanceWorkOrderId WorkOrderId,
     DateTimeOffset RepairStartedAtUtc);
 
-public sealed record ListMaintenanceWorkOrdersRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100);
+public sealed record ListMaintenanceWorkOrdersRequest(
+    string? OrganizationId,
+    string? EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? DeviceAssetIds = null);
 
 public sealed record CreateMaintenancePlanRequest(
     string OrganizationId,
@@ -224,7 +229,12 @@ public sealed class ListMaintenanceWorkOrdersEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListMaintenanceWorkOrdersRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListMaintenanceWorkOrdersQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take), ct);
+        var result = await sender.Send(new ListMaintenanceWorkOrdersQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Skip,
+            req.Take,
+            req.DeviceAssetIds), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
