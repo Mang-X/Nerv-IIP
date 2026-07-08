@@ -1,12 +1,12 @@
 ---
-title: TitleBar 标题栏
+title: NvTitleBar 标题栏
 ---
 
 <script setup>
 import { NvTitleBar } from '@nerv-iip/ui'
 </script>
 
-# TitleBar 标题栏
+# NvTitleBar 标题栏
 
 区块级标题栏:居中标题(可带一行副题),左右各一条渐隐发丝线,内端各收于一颗青色菱形节点。不用面板就给一个分区抬头以分量 —— 菱形是唯一的青色点缀。用来在大屏里切分「产线综合监控」「设备健康」这类版块。
 

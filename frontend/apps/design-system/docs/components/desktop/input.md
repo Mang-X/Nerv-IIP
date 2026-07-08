@@ -1,5 +1,5 @@
 ---
-title: Input 输入框
+title: NvInput 输入框
 ---
 
 <script setup>
@@ -11,7 +11,7 @@ const searchValue = ref('')
 const codeValue = ref('WO-2406-0413')
 </script>
 
-# Input 输入框
+# NvInput 输入框
 
 接收单行文本输入。`NvInput` 在原版基础上叠加前后缀插槽、品牌聚焦环与一致的禁用 / 错误态。
 

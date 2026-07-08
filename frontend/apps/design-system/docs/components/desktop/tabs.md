@@ -1,5 +1,5 @@
 ---
-title: Tabs 标签页
+title: NvTabs 标签页
 ---
 
 <script setup>
@@ -12,7 +12,7 @@ import {
 } from '@nerv-iip/ui'
 </script>
 
-# Tabs 标签页
+# NvTabs 标签页
 
 在同一区域内切换平级视图。`NvTabs` 家族由 `NvTabs`（根）、`NvTabsList`、`NvTabsTrigger`、`NvTabsContent` 组成，触发器与列表为复制重建样式，根与内容复用底层原语。
 

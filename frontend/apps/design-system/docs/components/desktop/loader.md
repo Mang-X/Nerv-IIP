@@ -1,5 +1,5 @@
 ---
-title: Loader 加载
+title: NvLoader 加载
 ---
 
 <script setup>
@@ -13,7 +13,7 @@ const loaderVariants = [
 ]
 </script>
 
-# Loader 加载
+# NvLoader 加载
 
 克制、品牌着色的加载指示。`NvLoader` 提供四种形态用于即时反馈，`Skeleton` 用于内容占位；减弱动效下均降级为静态。
 
@@ -77,7 +77,7 @@ const loaderVariants = [
 
 ## 属性
 
-### Loader
+### NvLoader
 
 | 属性      | 说明       | 类型                            | 默认      |
 | --------- | ---------- | ------------------------------- | --------- |

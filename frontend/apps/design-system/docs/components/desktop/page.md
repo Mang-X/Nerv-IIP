@@ -1,12 +1,12 @@
 ---
-title: Page 页面布局
+title: NvPage 页面布局
 ---
 
 <script setup>
 import { NvPage, NvPageAside } from '@nerv-iip/ui'
 </script>
 
-# Page 页面布局
+# NvPage 页面布局
 
 带可选左右栏的页面网格（参考 Nuxt UI）。大屏下为 10 栏网格——左栏 2 / 中间 6–8 / 右栏 2；不传侧栏时为居中单列。侧栏内容用 `NvPageAside` 包裹可获得吸顶独立滚动。
 

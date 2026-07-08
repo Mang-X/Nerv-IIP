@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Input 输入框
+title: NvMobileInput 输入框
 ---
 
 <script setup>
@@ -28,7 +28,7 @@ const code = ref('WO-2406-0413')
   </section>
 </template>
 
-# Input 输入框
+# NvMobileInput 输入框
 
 移动端单行文本输入。44px 触摸高度、15px 字号（避免 iOS 聚焦缩放），支持前后缀插槽与品牌聚焦环。右侧手机模拟器为实时组件，随页面滚动吸顶。
 

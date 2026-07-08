@@ -1,5 +1,5 @@
 ---
-title: Command 命令面板
+title: NvCommand 命令面板
 ---
 
 <script setup>
@@ -38,7 +38,7 @@ function onCommandSelect(item) {
 }
 </script>
 
-# Command 命令面板
+# NvCommand 命令面板
 
 ⌘K 唤起的全局命令面板，可搜索导航与快捷操作，支持完整键盘导航（↑ ↓ 移动、↵ 执行、esc 关闭）。命令按分组传入，匹配 `label` 与 `keywords`。
 

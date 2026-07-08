@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Tag 标签
+title: NvMobileTag 标签
 ---
 
 <script setup>
@@ -38,9 +38,9 @@ import { NvMobileTag } from '@nerv-iip/ui-mobile'
   </section>
 </template>
 
-# Tag 标签
+# NvMobileTag 标签
 
-带文字的小标签，用于状态、分类或筛选条件。区别于 Badge 角标（固定在角落的计数 / 红点），Tag 是排在内容流里的独立色块：柔和的色底配同色系深色文字。右侧手机模拟器为实时组件，随页面滚动吸顶。
+带文字的小标签，用于状态、分类或筛选条件。区别于 NvMobileBadge 角标（固定在角落的计数 / 红点），NvMobileTag 是排在内容流里的独立色块：柔和的色底配同色系深色文字。右侧手机模拟器为实时组件，随页面滚动吸顶。
 
 ## 变体
 

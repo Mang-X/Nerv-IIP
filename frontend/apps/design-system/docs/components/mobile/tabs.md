@@ -1,6 +1,6 @@
 ---
 layout: page
-title: MobileTabs 顶部标签
+title: NvMobileTabs 顶部标签
 ---
 
 <script setup>

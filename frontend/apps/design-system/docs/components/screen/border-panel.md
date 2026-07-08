@@ -1,12 +1,12 @@
 ---
-title: BorderPanel 描边面板
+title: NvBorderPanel 描边面板
 ---
 
 <script setup>
 import { NvBorderPanel } from '@nerv-iip/ui'
 </script>
 
-# BorderPanel 描边面板
+# NvBorderPanel 描边面板
 
 带装饰描边的容器:四角各一道发光短角线,顶边正中一个亮色缺口。克制胜于霓虹 —— 角标都是单层短线。给一块内容一点「仪表盘外壳」的分量,又不喧宾夺主。可选 `title` 与顶边缺口同处一行。
 

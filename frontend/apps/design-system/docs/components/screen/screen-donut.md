@@ -1,5 +1,5 @@
 ---
-title: ScreenDonut 环形占比
+title: NvScreenDonut 环形占比
 ---
 
 <script setup>
@@ -18,7 +18,7 @@ const states = [
 ]
 </script>
 
-# ScreenDonut 环形占比
+# NvScreenDonut 环形占比
 
 环形占比图——**状态构成 / 分布**类数据的正确形态:发丝底环 + 语义色弧段(段间留缝),中心 slot 放主数字,右侧内置图例(色点 + 名 + 值)。弧段 `dashoffset` 缓动(轮询更新平滑再分配),静态不发光。基于独立的 `--sb-*` 令牌。
 

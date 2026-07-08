@@ -1,6 +1,6 @@
 ---
 layout: page
-title: ListRow 列表行
+title: NvListRow 列表行
 ---
 
 <script setup>
@@ -27,7 +27,7 @@ import { NvListRow } from '@nerv-iip/ui-mobile'
   </section>
 </template>
 
-# ListRow 列表行
+# NvListRow 列表行
 
 可点击的列表行：主标题 + 可选副标题，尾部箭头表示可进入。适合工单、物料等列表场景。右侧手机模拟器为实时组件，随页面滚动吸顶。
 

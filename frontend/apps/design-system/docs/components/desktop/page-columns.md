@@ -1,12 +1,12 @@
 ---
-title: PageColumns 瀑布分栏
+title: NvPageColumns 瀑布分栏
 ---
 
 <script setup>
 import { NvPageColumns } from '@nerv-iip/ui'
 </script>
 
-# PageColumns 瀑布分栏
+# NvPageColumns 瀑布分栏
 
 基于 CSS columns 的瀑布流多列布局（参考 Nuxt UI），适合高度不一的卡片；子项不会跨列断开。
 

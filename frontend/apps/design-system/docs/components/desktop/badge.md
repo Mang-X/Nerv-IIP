@@ -1,12 +1,12 @@
 ---
-title: Badge 徽标
+title: NvBadge 徽标
 ---
 
 <script setup>
 import { NvBadge } from '@nerv-iip/ui'
 </script>
 
-# Badge 徽标
+# NvBadge 徽标
 
 用克制的语义色块标注状态、分类或数量。`NvBadge` 采用柔色填充 + 同色描边，高度与 `NvButton` 协调。
 

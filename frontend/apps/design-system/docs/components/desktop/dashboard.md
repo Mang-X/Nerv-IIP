@@ -1,5 +1,5 @@
 ---
-title: AppShellInset 应用外壳
+title: NvAppShellInset 应用外壳
 ---
 
 <script setup>
@@ -12,7 +12,7 @@ import {
 import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, SettingsIcon } from 'lucide-vue-next'
 </script>
 
-# AppShellInset 应用外壳
+# NvAppShellInset 应用外壳
 
 控制台页面的标准外壳 **block**:组合 `@nerv-iip/ui` 稳定导出的 Sidebar 系统(可折叠 / Rail / 移动抽屉)+ inset 内容区 + 顶部栏。搭一个控制台页面从它起步,而不是手拼分区件。侧栏导航用 `SidebarGroup` / `SidebarMenu` / `SidebarMenuButton` 组织。
 

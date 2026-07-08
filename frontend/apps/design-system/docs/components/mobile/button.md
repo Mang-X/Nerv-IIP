@@ -1,6 +1,6 @@
 ---
 layout: page
-title: MobileButton 移动按钮
+title: NvMobileButton 移动按钮
 ---
 
 <script setup>
@@ -35,7 +35,7 @@ import { NvMobileButton } from '@nerv-iip/ui-mobile'
   </section>
 </template>
 
-# MobileButton 移动按钮
+# NvMobileButton 移动按钮
 
 紧凑、贴近原生的触控按钮，按压时整体变暗反馈。区别于工位大屏的超大 TouchButton。右侧手机模拟器为实时组件，随页面滚动吸顶。
 

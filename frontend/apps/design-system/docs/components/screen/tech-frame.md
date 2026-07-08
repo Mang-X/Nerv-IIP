@@ -1,12 +1,12 @@
 ---
-title: TechFrame 科技边框
+title: NvTechFrame 科技边框
 ---
 
 <script setup>
 import { NvTechFrame } from '@nerv-iip/ui'
 </script>
 
-# TechFrame 科技边框
+# NvTechFrame 科技边框
 
 全包围的科技边框:一圈微微发光的细边,四角各一个极简 L 形折角。「现代感 vs 廉价感」的分界就在这里 —— 短折角、不堆叠霓虹。`accent` 给边与折角定色,默认是实时数据的青色。它把内容整块框起来,折角画在内容之上。
 

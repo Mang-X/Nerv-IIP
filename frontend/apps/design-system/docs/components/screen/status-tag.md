@@ -1,12 +1,12 @@
 ---
-title: StatusTag 状态标签
+title: NvScreenStatusTag 状态标签
 ---
 
 <script setup>
 import { NvScreenStatusTag } from '@nerv-iip/ui'
 </script>
 
-# StatusTag 状态标签
+# NvScreenStatusTag 状态标签
 
 小号语义标签:彩色圆点 + 文字,外包一圈着色发丝边、底为极淡的色晕(不用实色填充块 —— 保持大屏底色为暗)。运行别名(`run` / `idle` / `alarm`)折叠到调色板。圆点配文字共同传达状态,不依赖颜色单独识别。
 

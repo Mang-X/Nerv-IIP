@@ -1,5 +1,5 @@
 ---
-title: TimePicker 时间选择器
+title: NvTimePicker 时间选择器
 ---
 
 <script setup>
@@ -10,7 +10,7 @@ const planTime = ref('08:30')
 const stepTime = ref()
 </script>
 
-# TimePicker 时间选择器
+# NvTimePicker 时间选择器
 
 通过浮层选择小时与分钟。`NvTimePicker` 支持 `minute-step` 控制分钟粒度，触发器与日期选择器一致。
 

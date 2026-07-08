@@ -1,6 +1,6 @@
 ---
 layout: page
-title: MobileToast 居中提示
+title: NvMobileToast 居中提示
 ---
 
 <script setup>

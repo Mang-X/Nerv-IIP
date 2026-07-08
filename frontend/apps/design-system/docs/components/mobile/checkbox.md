@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Checkbox 复选框
+title: NvMobileCheckbox 复选框
 ---
 
 <script setup>
@@ -27,7 +27,7 @@ const checkC = ref(false)
   </section>
 </template>
 
-# Checkbox 复选框
+# NvMobileCheckbox 复选框
 
 可点击的整行复选项（盒子 + 标签），≥44px 触摸行高。选中时品牌色填充并显示勾选，`v-model` 为布尔值。右侧手机模拟器为实时组件，随页面滚动吸顶。
 

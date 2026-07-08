@@ -1,6 +1,6 @@
 ---
 layout: page
-title: NumberKeyboard 数字键盘
+title: NvNumberKeyboard 数字键盘
 ---
 
 <script setup>
@@ -53,7 +53,7 @@ const workerShow = ref(false)
   </section>
 </template>
 
-# NumberKeyboard 数字键盘
+# NvNumberKeyboard 数字键盘
 
 PDA 屏幕数字键盘（Arco 表单形态）。底部固定面板由 `v-model:show` 控制升降，大触控键适配戴手套操作。编辑字符串 `v-model`，每次按键同时触发 `press` 事件。用于录入数量、工号、称重等场景。右侧手机模拟器为实时组件，点击输入区域唤起键盘。
 

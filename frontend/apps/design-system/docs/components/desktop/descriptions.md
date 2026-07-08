@@ -1,5 +1,5 @@
 ---
-title: Descriptions 描述列表
+title: NvDescriptions 描述列表
 pageClass: ds-wide
 aside: false
 ---
@@ -28,7 +28,7 @@ const clampItems = [
 ]
 </script>
 
-# Descriptions 描述列表
+# NvDescriptions 描述列表
 
 工单 / 设备等实体详情页的键值列表。`NvDescriptions` 支持多列网格、单元格跨列、`#<key>` 自定义值插槽，以及带边框的正式记录样式。
 

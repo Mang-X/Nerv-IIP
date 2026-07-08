@@ -1,8 +1,8 @@
 ---
-title: ScreenScaler 舞台缩放
+title: NvScreenScaler 舞台缩放
 ---
 
-# ScreenScaler 舞台缩放
+# NvScreenScaler 舞台缩放
 
 大屏**舞台缩放容器**:内容按设计基准(默认 1920×1080)绝对布局,组件把整个舞台等比缩放到实际视口——挂墙电视 / 投影 / 拼接屏无论分辨率如何,画面构图恒定不跑版。`position: fixed` 占满视口、居中 letterbox,监听 resize 实时重算。
 
@@ -50,5 +50,5 @@ title: ScreenScaler 舞台缩放
 | 默认插槽       | —                               | —       | 舞台内容(按设计稿布局) |
 
 ::: tip SVG 文本与缩放
-舞台整体 `transform: scale()` 下,SVG `preserveAspectRatio="none"` 图表内的文字层要用 HTML overlay 而非 SVG text(见 [TrendChart](./trend-chart) 的悬停卡实现),否则非等比场景下文字变形。
+舞台整体 `transform: scale()` 下,SVG `preserveAspectRatio="none"` 图表内的文字层要用 HTML overlay 而非 SVG text(见 [NvScreenTrendChart](./trend-chart) 的悬停卡实现),否则非等比场景下文字变形。
 :::

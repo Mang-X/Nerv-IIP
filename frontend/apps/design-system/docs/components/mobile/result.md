@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Result 结果页
+title: NvMobileResult 结果页
 ---
 
 <script setup>
@@ -37,7 +37,7 @@ import { NvMobileButton, NvMobileResult } from '@nerv-iip/ui-mobile'
   </section>
 </template>
 
-# Result 结果页
+# NvMobileResult 结果页
 
 操作完成后的反馈页，居中呈现成功/失败图标、标题与说明，可在 `actions` 插槽放置后续操作。
 

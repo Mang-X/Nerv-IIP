@@ -1,5 +1,5 @@
 ---
-title: Button 按钮
+title: NvButton 按钮
 ---
 
 <script setup>
@@ -7,7 +7,7 @@ import { NvButton } from '@nerv-iip/ui'
 import { PlusIcon } from 'lucide-vue-next'
 </script>
 
-# Button 按钮
+# NvButton 按钮
 
 触发操作或导航。`NvButton` 在原版基础上叠加品牌色、图标插槽与一致的交互态。
 

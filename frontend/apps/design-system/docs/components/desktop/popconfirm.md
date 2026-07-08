@@ -1,12 +1,12 @@
 ---
-title: Popconfirm 气泡确认
+title: NvPopconfirm 气泡确认
 ---
 
 <script setup>
 import { NvPopconfirm, NvButton, messagePro } from '@nerv-iip/ui'
 </script>
 
-# Popconfirm 气泡确认
+# NvPopconfirm 气泡确认
 
 行内危险操作或主操作的二次确认，气泡锚定在触发元素旁，比整页对话框更轻量。
 

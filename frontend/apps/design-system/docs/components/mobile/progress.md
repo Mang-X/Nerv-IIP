@@ -1,6 +1,6 @@
 ---
 layout: page
-title: MobileProgress 进度条
+title: NvMobileProgress 进度条
 ---
 
 <script setup>
@@ -43,7 +43,7 @@ import { NvMobileProgress } from '@nerv-iip/ui-mobile'
   </section>
 </template>
 
-# MobileProgress 进度条
+# NvMobileProgress 进度条
 
 线性进度条。圆角轨道承载语义色填充，数值变化时填充宽度平滑过渡（已适配 `prefers-reduced-motion`）。用于报工进度、上传进度等 PDA 场景。右侧手机模拟器为实时组件。
 

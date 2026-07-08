@@ -1,12 +1,12 @@
 ---
-title: PageGrid 卡片网格
+title: NvPageGrid 卡片网格
 ---
 
 <script setup>
 import { NvPageGrid } from '@nerv-iip/ui'
 </script>
 
-# PageGrid 卡片网格
+# NvPageGrid 卡片网格
 
 等高卡片的响应式网格（参考 Nuxt UI）。移动端 1 列、`sm` 2 列，`cols` 控制大屏列数。
 

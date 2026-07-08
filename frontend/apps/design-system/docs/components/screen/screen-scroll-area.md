@@ -1,5 +1,5 @@
 ---
-title: ScreenScrollArea 滚动区
+title: NvScreenScrollArea 滚动区
 ---
 
 <script setup>
@@ -12,7 +12,7 @@ const rows = Array.from({ length: 14 }, (_, i) => ({
 }))
 </script>
 
-# ScreenScrollArea 滚动区
+# NvScreenScrollArea 滚动区
 
 shadcn / reka-ui ScrollArea 的**大屏重制版**(shadcn 原版零改动,按定制规矩复制重建):悬浮细滚动条——无轨道底色、发丝级圆角 thumb、hover / 滚动时才浮现;上下缘**渐隐遮罩 + 微呼吸箭头**提示还有内容可滑(挂墙远视距也能一眼看出列表未到底)。基于独立的 `--sb-*` 令牌。
 

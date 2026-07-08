@@ -52,7 +52,7 @@ const statusMix = [
 
 基于 unovis 的一组工厂场景图表：面积、折线、柱状、环形。颜色取自设计令牌，随运行时品牌色重新着色。
 
-## 面积图 AreaChartPro
+## 面积图 NvAreaChart
 
 单系列累计趋势，适合当班产出等时间序列。
 
@@ -77,7 +77,7 @@ const outputSeries = [
 </template>
 ```
 
-## 折线图 LineChartPro
+## 折线图 NvLineChart
 
 多系列对比，例如计划 vs 实际产量。
 
@@ -110,7 +110,7 @@ const planActualSeries = [
 </template>
 ```
 
-## 柱状图 BarChartPro
+## 柱状图 NvBarChart
 
 分类（可分组）对比，例如各工作中心的良品 / 废品。
 
@@ -137,7 +137,7 @@ const outputByCenterSeries = [
 </template>
 ```
 
-## 环形图 DonutChartPro
+## 环形图 NvDonutChart
 
 占比构成，例如工单状态分布，支持中心标签。
 
@@ -164,7 +164,7 @@ const statusMix = [
 
 ## 属性
 
-### AreaChartPro
+### NvAreaChart
 
 | 属性          | 说明                           | 类型                                 | 默认    |
 | ------------- | ------------------------------ | ------------------------------------ | ------- |
@@ -173,7 +173,7 @@ const statusMix = [
 | `valueSuffix` | 数值后缀                       | `string`                             | `''`    |
 | `minimal`     | 迷你模式（无轴，适合卡内趋势） | `boolean`                            | `false` |
 
-### LineChartPro / BarChartPro
+### NvLineChart / NvBarChart
 
 | 属性          | 说明       | 类型                                       | 默认  |
 | ------------- | ---------- | ------------------------------------------ | ----- |
@@ -183,7 +183,7 @@ const statusMix = [
 | `height`      | 高度（px） | `number`                                   | `260` |
 | `valueSuffix` | 数值后缀   | `string`                                   | `''`  |
 
-### DonutChartPro
+### NvDonutChart
 
 | 属性              | 说明       | 类型                                         | 默认  |
 | ----------------- | ---------- | -------------------------------------------- | ----- |

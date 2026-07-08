@@ -1,5 +1,5 @@
 ---
-title: KpiBar 指标横条
+title: NvKpiBar 指标横条
 ---
 
 <script setup>

@@ -1,6 +1,6 @@
 ---
 layout: page
-title: MobileSkeleton 骨架屏
+title: NvMobileSkeleton 骨架屏
 ---
 
 <script setup>
@@ -32,7 +32,7 @@ import { NvMobileSkeleton } from '@nerv-iip/ui-mobile'
   </section>
 </template>
 
-# MobileSkeleton 骨架屏
+# NvMobileSkeleton 骨架屏
 
 内容加载时的占位块，带一道从左向右扫过的微弱微光（shimmer）。`variant` 决定基础形状，尺寸通过 `class`（如 `class="w-3/5"`）传入。在系统开启「减少动态效果」时自动停掉动画。右侧手机模拟器为实时组件，随页面滚动吸顶。
 

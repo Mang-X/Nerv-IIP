@@ -1,5 +1,5 @@
 ---
-title: Sparkline 迷你趋势
+title: NvSparkline 迷你趋势
 ---
 
 <script setup>
@@ -10,7 +10,7 @@ const yieldSeries = ref([8, 11, 9, 14, 12, 17, 15, 21, 19, 24, 22, 28])
 const tempSeries = ref([62, 64, 63, 67, 71, 69, 73, 70, 68, 66, 64, 63])
 </script>
 
-# Sparkline 迷你趋势
+# NvSparkline 迷你趋势
 
 极简迷你趋势线:一道辉光青色折线,按自身 min/max 归一化,可选线下渐变面积。`preserveAspectRatio="none"` 使其拉伸填满容器,任意量纲的序列都能塞进任意格子。基于独立的 `--sb-*` 工业蓝令牌。至少需要两个点。
 

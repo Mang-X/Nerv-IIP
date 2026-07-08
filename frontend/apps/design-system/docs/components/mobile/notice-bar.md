@@ -1,6 +1,6 @@
 ---
 layout: page
-title: NoticeBar 通知条
+title: NvNoticeBar 通知条
 ---
 
 <script setup>
@@ -21,7 +21,7 @@ import { NvNoticeBar } from '@nerv-iip/ui-mobile'
   </section>
 </template>
 
-# NoticeBar 通知条
+# NvNoticeBar 通知条
 
 单行通知条，带前置语义图标与色调，文本溢出截断，适合页面顶部的提示与预警。
 

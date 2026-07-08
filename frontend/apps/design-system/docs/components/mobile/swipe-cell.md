@@ -1,6 +1,6 @@
 ---
 layout: page
-title: SwipeCell 侧滑操作
+title: NvSwipeCell 侧滑操作
 ---
 
 <script setup>

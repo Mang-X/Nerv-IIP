@@ -1,6 +1,6 @@
 ---
 layout: page
-title: BottomSheet 底部抽屉
+title: NvBottomSheet 底部抽屉
 ---
 
 <script setup>

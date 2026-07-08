@@ -1,12 +1,12 @@
 ---
-title: ScreenHeader 大屏页头
+title: NvScreenHeader 大屏页头
 ---
 
 <script setup>
 import { NvScreenHeader } from '@nerv-iip/ui'
 </script>
 
-# ScreenHeader 大屏页头
+# NvScreenHeader 大屏页头
 
 大屏顶部的页头横条:左侧标题,右侧一组工具(时钟 / 星期 / 产线筛选 / 大屏名,各为一枚 lucide 图标加短标签,末尾收一个菜单图标),坐在一条底部发丝线上。纯属性驱动 —— 任一工具值缺省即自动隐去,留一个标题也成立。
 

@@ -1,12 +1,12 @@
 ---
-title: GlowDivider 辉光分割
+title: NvGlowDivider 辉光分割
 ---
 
 <script setup>
 import { NvGlowDivider } from '@nerv-iip/ui'
 </script>
 
-# GlowDivider 辉光分割
+# NvGlowDivider 辉光分割
 
 流动分割线:一条横向渐变发丝线,正中一颗亮青色光点;可选一道流光沿线滑过(系统开启「减弱动态效果」时自动停)。版块之间的安静分隔 —— 克制的辉光、单层。零必填属性。
 

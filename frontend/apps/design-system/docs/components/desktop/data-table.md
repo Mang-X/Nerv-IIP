@@ -1,5 +1,5 @@
 ---
-title: DataTable 数据表格
+title: NvDataTable 数据表格
 pageClass: ds-wide
 aside: false
 ---
@@ -72,7 +72,7 @@ const page = ref(8)
 const pageSize = ref(10)
 </script>
 
-# DataTable 数据表格
+# NvDataTable 数据表格
 
 完整的高级数据表体验。`NvDataTable` 内置工具栏（搜索 · 字段筛选 · 列显隐 · 密度）、可排序表头、行选择与可点击页码分页；默认在客户端处理筛选/排序/分页。工具栏 `NvDataTableToolbar` 与分页 `NvDataTablePagination` 也可独立使用。
 
@@ -133,7 +133,7 @@ const pageSize = ref(10)
 </NvDataTable>
 ```
 
-## 操作栏 Toolbar
+## 操作栏 NvToolbar
 
 <Demo block>
   <NvDataTableToolbar
@@ -206,7 +206,7 @@ const pageSize = ref(10)
 
 ## 属性
 
-### DataTablePro
+### NvDataTable
 
 | 属性              | 说明                                                  | 类型                                  | 默认    |
 | ----------------- | ----------------------------------------------------- | ------------------------------------- | ------- |
@@ -219,7 +219,7 @@ const pageSize = ref(10)
 | `pageSize`        | 初始每页条数                                          | `number`                              | —       |
 | `selected`        | 选中行主键（`v-model:selected`）                      | `(string \| number)[]`                | —       |
 
-### DataTablePaginationPro
+### NvDataTablePagination
 
 | 属性         | 说明                            | 类型      | 默认    |
 | ------------ | ------------------------------- | --------- | ------- |

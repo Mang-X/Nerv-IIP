@@ -1,6 +1,6 @@
 ---
 layout: page
-title: MobileAvatar 头像
+title: NvMobileAvatar 头像
 ---
 
 <script setup>
@@ -36,7 +36,7 @@ import { NvMobileAvatar } from '@nerv-iip/ui-mobile'
   </section>
 </template>
 
-# MobileAvatar 头像
+# NvMobileAvatar 头像
 
 展示用户或设备的图像头像。`src` 加载失败或缺省时，自动回退为姓名首字（中文取前两字）；无姓名则显示通用人形图标，底色为柔和的 `bg-muted`。右侧手机模拟器为实时组件，随页面滚动吸顶。
 

@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Empty 空状态
+title: NvMobileEmpty 空状态
 ---
 
 <script setup>
@@ -21,7 +21,7 @@ import { NvMobileEmpty, NvMobileButton } from '@nerv-iip/ui-mobile'
   </section>
 </template>
 
-# Empty 空状态
+# NvMobileEmpty 空状态
 
 无数据时的占位提示，弱化的图标配说明文字，可在默认插槽放置引导操作。
 

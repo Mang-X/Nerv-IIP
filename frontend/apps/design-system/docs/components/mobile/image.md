@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Image 图片
+title: NvMobileImage 图片
 ---
 
 <script setup>
@@ -41,7 +41,7 @@ const broken = 'https://invalid.nerv-iip.local/not-found.jpg'
   </section>
 </template>
 
-# Image 图片
+# NvMobileImage 图片
 
 懒加载图片。加载中显示静默的微光占位（shimmer），加载失败回退为破图图标与「加载失败」文案。支持 `object-fit`、圆角与固定纵横比（提前占位，避免布局抖动）。
 

@@ -1,5 +1,5 @@
 ---
-title: TrendChart 趋势图
+title: NvScreenTrendChart 趋势图
 ---
 
 <script setup>
@@ -19,7 +19,7 @@ const wsSeries = ref([
 ])
 </script>
 
-# TrendChart 趋势图
+# NvScreenTrendChart 趋势图
 
 产量趋势图:辉光青色实际线压在柔和面积填充之上,叠一条虚线靛色计划线和极淡的虚线网格。可选十字光标 —— 一道虚线竖标、实际点上的辉光圆点、以及读出双序列的暗色信息卡。所有路径由 `actual` / `plan` 计算,y 轴刻度从数据向上取整,调用方传原始数值即可。基于独立的 `--sb-*` 工业蓝令牌。
 
@@ -118,4 +118,4 @@ const plan = [140, 420, 700, 900, 1010, 1080, 1150, 1180, 1220, 1260, 1320, 1380
 | `tooltip`                   | 十字光标 + 信息卡,`x` 是钉住的数据下标       | `{ x: number; label: string; actual: string; plan: string }` | 钉在下标 6(10:00)                                                 |
 | `title`                     | 面板标题                                     | `string`                                                     | `'产量趋势（件）'`                                                |
 
-悬停信息卡与十字点为 **HTML overlay**(百分比锚定 + 右半区翻转 + 纵向钳制)——SVG `preserveAspectRatio="none"` 非均匀拉伸下文字零变形,任何容器宽高比 / ScreenScaler 缩放都成立。
+悬停信息卡与十字点为 **HTML overlay**(百分比锚定 + 右半区翻转 + 纵向钳制)——SVG `preserveAspectRatio="none"` 非均匀拉伸下文字零变形,任何容器宽高比 / NvScreenScaler 缩放都成立。

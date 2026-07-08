@@ -1,5 +1,5 @@
 ---
-title: Timeline 时间线
+title: NvTimeline 时间线
 ---
 
 <script setup>
@@ -47,7 +47,7 @@ const items = [
 ]
 </script>
 
-# Timeline 时间线
+# NvTimeline 时间线
 
 工序流转 / 操作日志的垂直时间线。`NvTimeline` 用不透明语义色节点串接在连接轨上，每个事件含标题、元信息标签与描述，并可在末尾追加脉动的“进行中”节点。
 

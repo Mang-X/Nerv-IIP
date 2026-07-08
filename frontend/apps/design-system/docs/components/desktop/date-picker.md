@@ -1,5 +1,5 @@
 ---
-title: DatePicker 日期选择器
+title: NvDatePicker 日期选择器
 ---
 
 <script setup>
@@ -11,7 +11,7 @@ const emptyDate = ref()
 const range = ref({ start: '2026-06-10', end: '2026-06-18' })
 </script>
 
-# DatePicker 日期选择器
+# NvDatePicker 日期选择器
 
 通过日历浮层选择单个日期。`NvDatePicker` 以 `outline` 触发器配合品牌着色的日历单元。
 
@@ -66,7 +66,7 @@ const range = ref({ start: '2026-06-10', end: '2026-06-18' })
 
 ## 属性
 
-### DatePicker
+### NvDatePicker
 
 | 属性          | 说明                            | 类型             | 默认       |
 | ------------- | ------------------------------- | ---------------- | ---------- |
@@ -74,7 +74,7 @@ const range = ref({ start: '2026-06-10', end: '2026-06-18' })
 | `placeholder` | 未选中占位文本                  | `string`         | `选择日期` |
 | `disabled`    | 是否禁用                        | `boolean`        | `false`    |
 
-### DateRangePicker
+### NvDateRangePicker
 
 | 属性          | 说明           | 类型                                                     | 默认           |
 | ------------- | -------------- | -------------------------------------------------------- | -------------- |

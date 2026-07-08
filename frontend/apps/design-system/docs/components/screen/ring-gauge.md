@@ -1,12 +1,12 @@
 ---
-title: RingGauge 环形仪表
+title: NvRingGauge 环形仪表
 ---
 
 <script setup>
 import { NvRingGauge, NvScreenPanel } from '@nerv-iip/ui'
 </script>
 
-# RingGauge 环形仪表
+# NvRingGauge 环形仪表
 
 细弧环形进度:浅色轨道上一道青色辉光弧,从 12 点钟方向顺时针铺开,中心是数值与标题。弧长由 `value`(0–100)推导。整数原样显示,小数保留一位。基于独立的 `--sb-*` 工业蓝令牌。
 

@@ -1,5 +1,5 @@
 ---
-title: Field 表单字段
+title: NvField 表单字段
 ---
 
 <script setup>
@@ -17,7 +17,7 @@ const orderNo = ref('WO-2406-0431')
 const planQty = ref('')
 </script>
 
-# Field 表单字段
+# NvField 表单字段
 
 为表单控件提供语义与布局骨架。`NvField` 串联标签、描述与错误提示，`NvFieldGroup` 在纵向上把多个字段对齐成统一的表单节奏。
 

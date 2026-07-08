@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Picker 滚轮选择
+title: NvPicker 滚轮选择
 ---
 
 <script setup>
@@ -39,7 +39,7 @@ const pickerLabel = computed(
   </section>
 </template>
 
-# Picker 滚轮选择
+# NvPicker 滚轮选择
 
 单列滚轮选择器（Vant / tdesign-mobile 风格），承载于底部抽屉。带中央高亮带的滚动吸附；取消 / 确定提交。`v-model:open` 控制显隐，`v-model` 绑定选中值，需配合触发器与 open ref 使用。右侧手机模拟器为实时组件，随页面滚动吸顶。
 

@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Stepper 步进器
+title: NvStepper 步进器
 ---
 
 <script setup>
@@ -32,7 +32,7 @@ const batch = ref(50)
   </section>
 </template>
 
-# Stepper 步进器
+# NvStepper 步进器
 
 紧凑的原生风数字步进器，中间为可编辑输入框，约 32px 高。输入与失焦时自动钳制到 `[min, max]` 范围。右侧手机模拟器为实时组件，随页面滚动吸顶。
 

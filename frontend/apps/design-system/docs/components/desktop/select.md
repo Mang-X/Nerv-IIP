@@ -1,5 +1,5 @@
 ---
-title: Select 选择器
+title: NvSelect 选择器
 ---
 
 <script setup>
@@ -16,7 +16,7 @@ const lineValue = ref('line-a')
 const statusValue = ref()
 </script>
 
-# Select 选择器
+# NvSelect 选择器
 
 从预设选项中单选。`NvSelect` 由触发器、值占位与下拉内容组合而成，保持品牌聚焦与一致的浮层质感。
 

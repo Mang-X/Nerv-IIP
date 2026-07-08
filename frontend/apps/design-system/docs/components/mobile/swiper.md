@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Swiper 轮播图
+title: NvSwiper 轮播图
 ---
 
 <script setup>
@@ -59,7 +59,7 @@ const current = ref(0)
   </section>
 </template>
 
-# Swiper 轮播图
+# NvSwiper 轮播图
 
 横向轮播。指针驱动（触摸与鼠标皆可），轨道随手指 1:1 移动，松手后吸附到最近一屏；非循环时滑到两端会有橡皮筋回弹。幻灯片可由默认插槽直接书写，或通过 `:items` 数据驱动。自包含实现，不依赖外部轮播库。
 

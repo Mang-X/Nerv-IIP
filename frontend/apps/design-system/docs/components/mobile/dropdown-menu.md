@@ -1,6 +1,6 @@
 ---
 layout: page
-title: DropdownMenu 下拉筛选
+title: NvMobileDropdownMenu 下拉筛选
 ---
 
 <script setup>
@@ -89,7 +89,7 @@ const statusOptions = [
 </template>
 ```
 
-## DropdownMenuItem 属性
+## NvMobileDropdownMenuItem 属性
 
 | 属性      | 说明               | 类型               | 默认 |
 | --------- | ------------------ | ------------------ | ---- |

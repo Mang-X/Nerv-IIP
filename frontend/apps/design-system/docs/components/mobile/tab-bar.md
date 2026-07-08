@@ -1,6 +1,6 @@
 ---
 layout: page
-title: TabBar 标签栏
+title: NvTabBar 标签栏
 ---
 
 <script setup>

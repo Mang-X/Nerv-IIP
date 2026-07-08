@@ -1,5 +1,5 @@
 ---
-title: Radio 单选框
+title: NvRadioGroup 单选框
 ---
 
 <script setup>
@@ -10,7 +10,7 @@ const radioValue = ref('std')
 const priority = ref('normal')
 </script>
 
-# Radio 单选框
+# NvRadioGroup 单选框
 
 在一组互斥选项中单选。`NvRadioGroup` 承载选中值，`NvRadioGroupItem` 为每个选项。
 

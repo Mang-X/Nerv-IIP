@@ -1,12 +1,12 @@
 ---
-title: Container 容器
+title: NvContainer 容器
 ---
 
 <script setup>
 import { NvContainer } from '@nerv-iip/ui'
 </script>
 
-# Container 容器
+# NvContainer 容器
 
 居中并约束内容宽度，带响应式留白（参考 Nuxt UI）。`size` 控制最大宽度，从 `sm` 到 `full`。
 

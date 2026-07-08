@@ -1,5 +1,5 @@
 ---
-title: Slider 滑块
+title: NvSlider 滑块
 ---
 
 <script setup>
@@ -11,7 +11,7 @@ const taktRange = ref([45, 75])
 const step = ref([60])
 </script>
 
-# Slider 滑块
+# NvSlider 滑块
 
 数值滑动选择。`NvSlider` 基于 reka 原语重建，品牌色填充已选区间，拖动手柄带聚焦环与抓取放大反馈（无回弹，遵循动效哲学）。`modelValue` 传数组——多个值即多手柄（区间选择）。
 

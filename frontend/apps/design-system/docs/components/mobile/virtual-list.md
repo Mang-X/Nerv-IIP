@@ -1,6 +1,6 @@
 ---
 layout: page
-title: VirtualList 虚拟列表
+title: NvVirtualList 虚拟列表
 ---
 
 <script setup>
@@ -52,7 +52,7 @@ const equipment = Array.from({ length: 6000 }, (_, i) => {
   </section>
 </template>
 
-# VirtualList 虚拟列表
+# NvVirtualList 虚拟列表
 
 定高虚拟滚动。无论数据有多少行，都只渲染**可视窗口 + 缓冲区**的少量节点，滚动时回收复用，因此一万行以上也能保持顺滑——适合 PDA 上设备台账、批次流水、物料明细这类超长列表。自包含实现，不依赖外部虚拟滚动库。
 
@@ -73,9 +73,9 @@ const equipment = Array.from({ length: 6000 }, (_, i) => {
 
 ## 何时使用
 
-- **用 VirtualList**：行高一致、数据量大（数百行以上）、需要流畅滚动。
-- **用 [InfiniteList](/components/mobile/infinite-list)**：数据分页从后端逐批拉取、行高不固定、总量未知。
-- 两者可叠加：用 InfiniteList 拉数据、把已加载部分交给 VirtualList 渲染。
+- **用 NvVirtualList**：行高一致、数据量大（数百行以上）、需要流畅滚动。
+- **用 [NvInfiniteList](/components/mobile/infinite-list)**：数据分页从后端逐批拉取、行高不固定、总量未知。
+- 两者可叠加：用 NvInfiniteList 拉数据、把已加载部分交给 NvVirtualList 渲染。
 
 ## 属性
 
@@ -93,7 +93,7 @@ const equipment = Array.from({ length: 6000 }, (_, i) => {
 | `default` | 渲染单行 | `{ item: T, index: number }` |
 
 ::: tip 提示
-`itemHeight` 必须与每行真实渲染高度一致。若行高会随内容变化，请改用 [InfiniteList](/components/mobile/infinite-list) 或固定行内排版（截断、单行省略）。
+`itemHeight` 必须与每行真实渲染高度一致。若行高会随内容变化，请改用 [NvInfiniteList](/components/mobile/infinite-list) 或固定行内排版（截断、单行省略）。
 :::
 
 </MobileDoc>

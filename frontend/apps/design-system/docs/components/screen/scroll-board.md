@@ -1,5 +1,5 @@
 ---
-title: ScrollBoard 无缝滚动板
+title: NvScrollBoard 无缝滚动板
 ---
 
 <script setup>
@@ -15,7 +15,7 @@ const alarms = [
 ]
 </script>
 
-# ScrollBoard 无缝滚动板
+# NvScrollBoard 无缝滚动板
 
 告警流 / 停机事件这类**挂墙轮巡列表**的载体:列表渲染两遍、按帧位移,滚过一半即无缝回到起点(观众看不到"跳回")。悬停暂停 + 滚轮自由查看(双向同样按半高取模无缝);内容未溢出时静止不动。基于 `useRafFn` 按帧驱动,`speed` 为像素/秒。
 
@@ -66,6 +66,6 @@ const alarms = [
 | `rowKey`       | `(item, index) => string \| number` | 下标   | 行 key(轮询更新时保持 DOM 复用) |
 | `#row` 插槽    | `{ item, index }`                   | —      | 行渲染                          |
 
-::: tip 与 ScreenScrollArea 的分工
-`NvScrollBoard` 是**自动轮巡**(无人操作的挂墙场景);[ScreenScrollArea](./screen-scroll-area) 是**手动滚动**(运维交互场景,悬浮细滚条 + 可滑提示)。按场景选择,不要混用。
+::: tip 与 NvScreenScrollArea 的分工
+`NvScrollBoard` 是**自动轮巡**(无人操作的挂墙场景);[NvScreenScrollArea](./screen-scroll-area) 是**手动滚动**(运维交互场景,悬浮细滚条 + 可滑提示)。按场景选择,不要混用。
 :::

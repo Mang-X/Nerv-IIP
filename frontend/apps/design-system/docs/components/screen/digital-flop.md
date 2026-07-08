@@ -1,12 +1,12 @@
 ---
-title: DigitalFlop 数字翻牌
+title: NvDigitalFlop 数字翻牌
 ---
 
 <script setup>
 import { NvDigitalFlop, NvScreenPanel } from '@nerv-iip/ui'
 </script>
 
-# DigitalFlop 数字翻牌
+# NvDigitalFlop 数字翻牌
 
 数字翻牌计数器:每位数字独占一格暗色格子,带顶部高光与青色辉光字。传入数字会自动按千位分组,逗号 / 小数点 / 空格渲染成无框的细分隔格。也可直接传预格式化字符串。基于独立的 `--sb-*` 工业蓝令牌。
 

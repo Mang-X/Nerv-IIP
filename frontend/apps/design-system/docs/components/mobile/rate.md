@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Rate 评分
+title: NvMobileRate 评分
 ---
 
 <script setup>
@@ -45,7 +45,7 @@ const quality = ref(0)
   </section>
 </template>
 
-# Rate 评分
+# NvMobileRate 评分
 
 星级评分。每颗星 ≥44px 可点，激活态为琥珀色填充，点选时被点中的星有轻微弹动（已适配 `prefers-reduced-motion`）。用于满意度、质检评级等录入。右侧手机模拟器为实时组件。
 

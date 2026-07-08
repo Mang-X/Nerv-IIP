@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Divider 分割线
+title: NvMobileDivider 分割线
 ---
 
 <script setup>
@@ -33,7 +33,7 @@ import { NvMobileDivider } from '@nerv-iip/ui-mobile'
   </section>
 </template>
 
-# Divider 分割线
+# NvMobileDivider 分割线
 
 一根细发丝线（`var(--border)`），用于在内容块之间做轻量分隔。横向可在中间嵌入说明文字；纵向用于分隔同一行内的若干指标或操作。右侧手机模拟器为实时组件，随页面滚动吸顶。
 

@@ -1,5 +1,5 @@
 ---
-title: CapsuleBar 胶囊进度
+title: NvCapsuleBar 胶囊进度
 ---
 
 <script setup>
@@ -21,7 +21,7 @@ const oee = ref([
 ])
 </script>
 
-# CapsuleBar 胶囊进度
+# NvCapsuleBar 胶囊进度
 
 横向胶囊进度条:每行是标题、圆角轨道与一段按色调辉光的渐变填充,百分比读在右端。填充从钳制在 0–100 的值生长。`tone` 承载语义(青/靛/绿/琥珀/红),但数值始终并列显示。基于独立的 `--sb-*` 工业蓝令牌。
 

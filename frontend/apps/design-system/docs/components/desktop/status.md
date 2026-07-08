@@ -10,7 +10,7 @@ import { NvStatusDot, NvStatusBadge } from '@nerv-iip/ui'
 
 表达实体的实时状态。`NvStatusDot` 是一个带可选脉冲环的状态点；`NvStatusBadge` 在其前置色点基础上叠加色调胶囊与本地化文案，并复用共享状态映射，原始值（如 `running`）会自动解析为标签与色调。
 
-## 状态点 StatusDot
+## 状态点 NvStatusDot
 
 <Demo>
   <span class="flex items-center gap-4">
@@ -28,7 +28,7 @@ import { NvStatusDot, NvStatusBadge } from '@nerv-iip/ui'
 <NvStatusDot tone="danger" />
 ```
 
-## 状态徽标 StatusBadgePro
+## 状态徽标 NvStatusBadge
 
 按原始状态值自动解析文案与色调，`pulse` 标记进行中状态。
 
@@ -51,7 +51,7 @@ import { NvStatusDot, NvStatusBadge } from '@nerv-iip/ui'
 
 ## 属性
 
-### StatusDot
+### NvStatusDot
 
 | 属性    | 说明                      | 类型                                              | 默认      |
 | ------- | ------------------------- | ------------------------------------------------- | --------- |
@@ -59,7 +59,7 @@ import { NvStatusDot, NvStatusBadge } from '@nerv-iip/ui'
 | `pulse` | 显示脉冲环（活跃/在线态） | `boolean`                                         | `false`   |
 | `size`  | 尺寸                      | `sm \| default`                                   | `default` |
 
-### StatusBadgePro
+### NvStatusBadge
 
 | 属性    | 说明                              | 类型                                              | 默认    |
 | ------- | --------------------------------- | ------------------------------------------------- | ------- |

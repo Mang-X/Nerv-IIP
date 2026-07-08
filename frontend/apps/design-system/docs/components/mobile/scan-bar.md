@@ -1,6 +1,6 @@
 ---
 layout: page
-title: ScanBar 扫码栏
+title: NvScanBar 扫码栏
 ---
 
 <script setup>
@@ -28,7 +28,7 @@ function onScan(value) {
   </section>
 </template>
 
-# ScanBar 扫码栏
+# NvScanBar 扫码栏
 
 适配键盘楔入式扫码枪的输入栏：输入框常驻焦点，扫码枪以回车结束后触发 `scan` 事件。当上层打开浮层（抽屉 / 对话框）时传 `active=false`，让其停止自动抢焦点。右侧手机模拟器为实时组件，随页面滚动吸顶。
 

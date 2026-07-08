@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Switch 开关
+title: NvMobileSwitch 开关
 ---
 
 <script setup>
@@ -40,7 +40,7 @@ const locked = ref(true)
   </section>
 </template>
 
-# Switch 开关
+# NvMobileSwitch 开关
 
 iOS 比例（51×31）的开关，拨动带弹性滑动，触摸端读起来如原生控件。右侧手机模拟器为实时组件，随页面滚动吸顶。
 

@@ -1,5 +1,5 @@
 ---
-title: StatusCard 产线状态卡
+title: NvScreenStatusCard 产线状态卡
 ---
 
 <script setup>
@@ -21,7 +21,7 @@ const lines = [
 ]
 </script>
 
-# StatusCard 产线状态卡
+# NvScreenStatusCard 产线状态卡
 
 单条产线的状态卡:顶部彩色描边 + 呼吸状态灯,大号当前状态(按语义色着色),计划 / 实际 / 达成率三联值,底部一条停机时长。`tone` 同时驱动描边、状态灯与大字配色。组件自带 `NvScreenPanel` 容器,直接使用即可。
 

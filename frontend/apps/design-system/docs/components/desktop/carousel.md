@@ -1,5 +1,5 @@
 ---
-title: Carousel 轮播图
+title: NvCarousel 轮播图
 ---
 
 <script setup>
@@ -17,7 +17,7 @@ const orders = [
 ]
 </script>
 
-# Carousel 轮播图
+# NvCarousel 轮播图
 
 横向轮播——移动端 [Swiper](/components/mobile/swiper) 的桌面版。指针可拖拽、吸附到最近一屏，并补充 PC 专属的**左右箭头**（hover 浮现）与**悬停暂停**的自动播放。幻灯片由默认插槽直接书写，或 `:items` 数据驱动。自包含，不依赖外部轮播库。
 

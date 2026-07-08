@@ -1,12 +1,12 @@
 ---
-title: ScreenButton 按钮
+title: NvScreenButton 按钮
 ---
 
 <script setup>
 import { NvScreenButton } from '@nerv-iip/ui'
 </script>
 
-# ScreenButton 按钮
+# NvScreenButton 按钮
 
 大屏操作按钮,深底上的三种权重:`primary` 青色渐变带外辉光与顶部内高光,`secondary` 靛蓝细描边压在淡底上,`ghost` 仅一道细线。聚焦落高对比青色环,按下面板下沉一丝(无回弹)。基于独立的 `--sb-*` 工业蓝令牌。
 

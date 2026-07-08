@@ -1,12 +1,12 @@
 ---
-title: OeeHero 核心指标
+title: NvOeeHero 核心指标
 ---
 
 <script setup>
 import { NvOeeHero, NvScreenPanel } from '@nerv-iip/ui'
 </script>
 
-# OeeHero 核心指标
+# NvOeeHero 核心指标
 
 大屏头部的核心 KPI 块:青色辉光大数字 + 单位 + 同比变化(升绿降红),底部自带一条归一化 sparkline 面积。数据驱动 —— sparkline 按自身 min/max 归一,任意量纲的序列都能填满。基于独立的 `--sb-*` 工业蓝令牌。
 

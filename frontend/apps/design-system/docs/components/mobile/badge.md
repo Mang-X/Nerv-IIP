@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Badge 角标
+title: NvMobileBadge 角标
 ---
 
 <script setup>
@@ -33,7 +33,7 @@ import { BellIcon, ClipboardListIcon, UserIcon } from 'lucide-vue-next'
   </section>
 </template>
 
-# Badge 角标
+# NvMobileBadge 角标
 
 包裹图标或头像，在右上角钉一个红色计数或圆点（Vant / tdesign-mobile 风格）。右侧手机模拟器为实时组件，随页面滚动吸顶。
 

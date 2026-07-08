@@ -1,6 +1,6 @@
 ---
 layout: page
-title: MobileGrid 宫格
+title: NvMobileGrid 宫格
 ---
 
 <script setup>

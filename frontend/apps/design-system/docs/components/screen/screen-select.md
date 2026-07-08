@@ -1,5 +1,5 @@
 ---
-title: ScreenSelect 下拉选择
+title: NvScreenSelect 下拉选择
 ---
 
 <script setup>
@@ -22,7 +22,7 @@ const shifts = [
 ]
 </script>
 
-# ScreenSelect 下拉选择
+# NvScreenSelect 下拉选择
 
 大屏下拉:暗色触发器落下一块发光选项面板,选中行显青色并带勾,面板浮在青色阴影上。键盘可驱动(↑ / ↓ / Enter / Esc),具备 listbox 语义,点击外部即收起。通过 `v-model` 绑定选项 `value`,基于独立的 `--sb-*` 令牌。
 

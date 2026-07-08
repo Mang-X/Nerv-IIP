@@ -1,6 +1,6 @@
 ---
 layout: page
-title: NavBar 顶部栏
+title: NvNavBar 顶部栏
 ---
 
 <script setup>
@@ -32,7 +32,7 @@ import { EllipsisIcon } from 'lucide-vue-next'
   </section>
 </template>
 
-# NavBar 顶部栏
+# NvNavBar 顶部栏
 
 顶部应用栏（tdesign-mobile 风格）：标题居中，左侧可选返回，右侧自由放置操作。
 

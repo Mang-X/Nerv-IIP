@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Steps 步骤条
+title: NvMobileSteps 步骤条
 ---
 
 <script setup>
@@ -32,7 +32,7 @@ const procSteps = [
   </section>
 </template>
 
-# Steps 步骤条
+# NvMobileSteps 步骤条
 
 横向流程指示器（Vant / tdesign-mobile 风格）：连接线随进度推进填充品牌色，已完成节点显示对勾。
 

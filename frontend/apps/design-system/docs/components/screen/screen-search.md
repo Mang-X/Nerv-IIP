@@ -1,5 +1,5 @@
 ---
-title: ScreenSearch 搜索框
+title: NvScreenSearch 搜索框
 ---
 
 <script setup>
@@ -10,7 +10,7 @@ const kw = ref('WO-2406-0312')
 const empty = ref('')
 </script>
 
-# ScreenSearch 搜索框
+# NvScreenSearch 搜索框
 
 大屏搜索框:lucide 放大镜锚定左侧,聚焦时井口点亮青色环;一旦有文本,右侧浮出清除按钮(×)一键抹除。通过 `v-model`(字符串)绑定,基于独立的 `--sb-*` 令牌。
 

@@ -1,5 +1,5 @@
 ---
-title: ScreenTable 数据表格
+title: NvScreenTable 数据表格
 ---
 
 <script setup>
@@ -40,7 +40,7 @@ const fullColumns = [
 ]
 </script>
 
-# ScreenTable 数据表格
+# NvScreenTable 数据表格
 
 大屏数据表:微微发光的表头行压在细线正文行上(无竖向分隔),行随悬停点亮。列各自设对齐方式;任意单元格可被 `#cell-<key>` 插槽接管,用于状态点、等宽编码等。纯数据驱动 —— `columns` + `rows` 即可渲染。基于独立的 `--sb-*` 令牌。
 
@@ -83,7 +83,7 @@ const rows = [
 
 ## 完整数据表格（筛选 · 操作 · 分页）
 
-配合 `NvScreenSearch` / `NvScreenSelect` 组成筛选栏,`#cell-action` 插槽放 `ScreenButton size="sm"` 行内操作,底部接 `NvScreenPagination`。下拉浮层 `Teleport` 到 `<body>`,不会被面板 `overflow` 裁切。
+配合 `NvScreenSearch` / `NvScreenSelect` 组成筛选栏,`#cell-action` 插槽放 `NvScreenButton size="sm"` 行内操作,底部接 `NvScreenPagination`。下拉浮层 `Teleport` 到 `<body>`,不会被面板 `overflow` 裁切。
 
 <ScreenDemo wide>
   <NvScreenPanel>

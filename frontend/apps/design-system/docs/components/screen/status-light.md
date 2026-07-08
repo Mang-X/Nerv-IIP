@@ -1,12 +1,12 @@
 ---
-title: StatusLight 状态灯
+title: NvScreenStatusLight 状态灯
 ---
 
 <script setup>
 import { NvScreenStatusLight } from '@nerv-iip/ui'
 </script>
 
-# StatusLight 状态灯
+# NvScreenStatusLight 状态灯
 
 一枚语义色呼吸辉光圆点,可选配文字。运行别名(`run` / `idle` / `alarm`)映射到调色板(绿 / 琥珀 / 红),也直接接受原始颜色名。状态不依赖颜色单独传达 —— 务必搭配 `label`。`prefers-reduced-motion` 下停止呼吸。
 

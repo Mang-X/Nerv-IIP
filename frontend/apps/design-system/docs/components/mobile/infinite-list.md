@@ -1,6 +1,6 @@
 ---
 layout: page
-title: InfiniteList 无限滚动
+title: NvInfiniteList 无限滚动
 ---
 
 <script setup>
@@ -70,7 +70,7 @@ function onLoad() {
   </section>
 </template>
 
-# InfiniteList 无限滚动
+# NvInfiniteList 无限滚动
 
 滚动到接近底部时自动触发加载下一页（Vant List 风格）。底部会显示「加载中…」「上拉加载更多」或加载完毕的「没有更多了」文案。`v-model` 绑定加载中状态，加载逻辑由你在 `load` 事件里实现。
 
@@ -103,8 +103,8 @@ function onLoad() {
 
 ## 何时使用
 
-- **用 InfiniteList**：数据从后端分页拉取、总量未知、行高不固定。
-- **用 [VirtualList](/components/mobile/virtual-list)**：数据已在本地、行高一致、需要极致滚动性能。
+- **用 NvInfiniteList**：数据从后端分页拉取、总量未知、行高不固定。
+- **用 [NvVirtualList](/components/mobile/virtual-list)**：数据已在本地、行高一致、需要极致滚动性能。
 
 ## 属性
 

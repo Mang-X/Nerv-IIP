@@ -1,5 +1,5 @@
 ---
-title: Sheet 抽屉
+title: NvSheet 抽屉
 ---
 
 <script setup>
@@ -20,7 +20,7 @@ import { ref } from 'vue'
 const sheetOpen = ref(false)
 </script>
 
-# Sheet 抽屉
+# NvSheet 抽屉
 
 从屏幕边缘滑入的侧边面板，承载详情查看、高级筛选等不打断主流程的次级操作。`NvSheet` 默认从右侧滑入，由 Header / Title / Description / Footer 组合内容。
 

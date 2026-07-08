@@ -1,5 +1,5 @@
 ---
-title: ScreenSwitch 开关
+title: NvScreenSwitch 开关
 ---
 
 <script setup>
@@ -10,7 +10,7 @@ const auto = ref(true)
 const alarm = ref(false)
 </script>
 
-# ScreenSwitch 开关
+# NvScreenSwitch 开关
 
 大屏开关:关态是一口下沉的细线轨道,开态填青色带柔光并把手柄滑到另一端。按下手柄微微压扁(无回弹)。状态同时由填充与手柄位置承载 —— 绝不只靠颜色,`aria-checked` 对辅助技术保持诚实。通过 `v-model`(布尔)绑定,基于独立的 `--sb-*` 令牌。
 

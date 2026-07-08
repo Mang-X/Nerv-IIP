@@ -1,6 +1,6 @@
 ---
 layout: page
-title: PullRefresh 下拉刷新
+title: NvPullRefresh 下拉刷新
 ---
 
 <script setup>

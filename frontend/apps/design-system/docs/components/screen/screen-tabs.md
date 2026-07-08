@@ -1,5 +1,5 @@
 ---
-title: ScreenTabs 标签页
+title: NvScreenTabs 标签页
 ---
 
 <script setup>
@@ -15,7 +15,7 @@ const items = [
 ]
 </script>
 
-# ScreenTabs 标签页
+# NvScreenTabs 标签页
 
 大屏标签页:一排标签压在细基线上,激活项发青光,底部一道下划线随之平滑滑动(按索引驱动)。方向键在标签间移动。通过 `v-model` 绑定当前项 `value`,基于独立的 `--sb-*` 令牌。
 

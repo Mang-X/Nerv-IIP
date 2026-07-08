@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Fab 悬浮按钮
+title: NvFab 悬浮按钮
 ---
 
 <script setup>
@@ -58,7 +58,7 @@ function onFabSelect(action) {
 </script>
 
 <template>
-  <!-- 放入相对定位容器，例如 AppShellMobile -->
+  <!-- 放入相对定位容器，例如 NvAppShellMobile -->
   <div class="relative h-64 overflow-hidden">
     <NvFab :actions="fabActions" @select="onFabSelect" />
   </div>

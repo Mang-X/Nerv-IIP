@@ -31,7 +31,7 @@ const todo = ref('待派工单')
 
 # Sidebar 侧栏
 
-可折叠的控制台侧栏**原子件**：`SidebarProvider` 提供上下文，`Sidebar` 承载分组导航，配合 `SidebarRail` / `SidebarTrigger` 折叠。需要开箱即用的整页外壳时用 [AppShellInset](/components/desktop/dashboard)，需要自定义结构时用这些原子件自行拼装。
+可折叠的控制台侧栏**原子件**：`SidebarProvider` 提供上下文，`Sidebar` 承载分组导航，配合 `SidebarRail` / `SidebarTrigger` 折叠。需要开箱即用的整页外壳时用 [NvAppShellInset](/components/desktop/dashboard)，需要自定义结构时用这些原子件自行拼装。
 
 ## 完整控制台侧栏
 
@@ -218,7 +218,7 @@ const todo = ref('待派工单')
     <FactoryIcon /><span>冲压车间</span>
     <ChevronRightIcon class="ml-auto transition-transform" :class="open && 'rotate-90'" />
   </SidebarMenuButton>
-  <!-- SidebarProSub 内置 grid-rows 0fr→1fr 高度动画 + 缩进导引线，无需手写 CSS -->
+  <!-- NvSidebarSub 内置 grid-rows 0fr→1fr 高度动画 + 缩进导引线，无需手写 CSS -->
   <NvSidebarSub :open="open">
     <SidebarMenuSub>
       <SidebarMenuSubItem>
@@ -341,8 +341,8 @@ const todo = ref('待派工单')
 }
 
 /* Brand lockup / status dots / footer user / animated submenu now live in the
-   SidebarPro* components — SidebarProBrand / SidebarProDot / SidebarProUser /
-   SidebarProSub — so this demo composes them instead of re-styling locally. */
+   SidebarPro* components — NvSidebarBrand / NvSidebarDot / NvSidebarUser /
+   NvSidebarSub — so this demo composes them instead of re-styling locally. */
 
 /* ── inset canvas (top bar + KPI tiles) ────────────────────────────────── */
 .ds-sb-inset { display: flex; min-width: 0; flex: 1; flex-direction: column; }

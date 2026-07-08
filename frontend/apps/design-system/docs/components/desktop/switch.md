@@ -1,5 +1,5 @@
 ---
-title: Switch 开关
+title: NvSwitch 开关
 ---
 
 <script setup>
@@ -10,7 +10,7 @@ const switchOn = ref(true)
 const autoDispatch = ref(false)
 </script>
 
-# Switch 开关
+# NvSwitch 开关
 
 切换单个布尔状态，即时生效。`NvSwitch` 选中态走品牌色，含平滑滑块过渡。
 

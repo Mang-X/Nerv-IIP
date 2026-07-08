@@ -1,5 +1,5 @@
 ---
-title: DropdownMenu 动作菜单
+title: NvDropdownMenu 动作菜单
 ---
 
 <script setup>
@@ -21,7 +21,7 @@ import {
 } from 'lucide-vue-next'
 </script>
 
-# DropdownMenu 动作菜单
+# NvDropdownMenu 动作菜单
 
 为表格行、卡片等收纳「更多操作」。`NvDropdownMenu` 提供模糊浮层与缩放入场，由 Label / Item / Separator 组合操作项，破坏性操作以 `variant="destructive"` 标红。
 

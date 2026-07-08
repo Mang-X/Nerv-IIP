@@ -1,5 +1,5 @@
 ---
-title: ScreenPagination 分页
+title: NvScreenPagination 分页
 ---
 
 <script setup>
@@ -10,7 +10,7 @@ const page = ref(1)
 const page2 = ref(6)
 </script>
 
-# ScreenPagination 分页
+# NvScreenPagination 分页
 
 大屏数据表格的分页器:总数 + 当前区间读数、上一页 / 下一页、带省略号的页码窗口(`1 … p-1 p p+1 … N`)。当前页青色填充,控件按下纯缩放、无位移。`v-model:page` 驱动当前页,`total` + `pageSize` 推算页数。
 

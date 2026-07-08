@@ -1,5 +1,5 @@
 ---
-title: Checkbox 复选框
+title: NvCheckbox 复选框
 ---
 
 <script setup>
@@ -11,7 +11,7 @@ const lockMaterial = ref(false)
 const genPicking = ref(true)
 </script>
 
-# Checkbox 复选框
+# NvCheckbox 复选框
 
 在一组选项中多选，或表示单个开关式确认。`NvCheckbox` 复用品牌选中色与聚焦环。
 

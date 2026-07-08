@@ -1,5 +1,5 @@
 ---
-title: ScreenSegmented 分段控制
+title: NvScreenSegmented 分段控制
 ---
 
 <script setup>
@@ -15,7 +15,7 @@ const shifts = [
 ]
 </script>
 
-# ScreenSegmented 分段控制
+# NvScreenSegmented 分段控制
 
 大屏分段控制(今日 / 近7天 / 近30天):细线框出的轨道,激活项填青色带淡辉光,段间骑一道内嵌分隔线。选择由键盘驱动(← / →),并以 radio 组语义暴露。通过 `v-model` 绑定,基于独立的 `--sb-*` 令牌。
 

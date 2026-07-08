@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Collapse 折叠面板
+title: NvMobileCollapse 折叠面板
 ---
 
 <script setup>
@@ -35,7 +35,7 @@ import { NvMobileCollapse } from '@nerv-iip/ui-mobile'
   </section>
 </template>
 
-# Collapse 折叠面板
+# NvMobileCollapse 折叠面板
 
 可折叠面板（Vant / tdesign-mobile 风格）：高度平滑展开，箭头旋转。`v-model:open` 可选，亦可非受控使用。
 

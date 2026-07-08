@@ -1,5 +1,5 @@
 ---
-title: Tooltip 文字提示
+title: NvTooltip 文字提示
 ---
 
 <script setup>
@@ -13,7 +13,7 @@ import {
 import { ActivityIcon } from 'lucide-vue-next'
 </script>
 
-# Tooltip 文字提示
+# NvTooltip 文字提示
 
 悬停或聚焦时浮出的简短说明，用于解释图标、缩写或被截断的内容。高对比反色气泡，带箭头与指数淡入。
 

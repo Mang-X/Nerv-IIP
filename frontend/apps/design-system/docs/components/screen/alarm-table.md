@@ -1,5 +1,5 @@
 ---
-title: AlarmTable 告警列表
+title: NvAlarmTable 告警列表
 ---
 
 <script setup>
@@ -14,7 +14,7 @@ const rows = [
 ]
 </script>
 
-# AlarmTable 告警列表
+# NvAlarmTable 告警列表
 
 大屏告警清单:极简表格(无竖线、发丝行线),以严重度圆点起首 —— 红点为「严重」,琥珀点为「一般」;工单号以等宽字体呈现,状态为「已恢复」时转绿。纯数据驱动,组件自带 `NvScreenPanel` 容器(含标题与「查看全部」入口),直接使用即可。横向铺满,放进 `<ScreenDemo wide>`。
 

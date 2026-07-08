@@ -1,5 +1,5 @@
 ---
-title: AlertDialog 警告对话框
+title: NvAlertDialog 警告对话框
 ---
 
 <script setup>
@@ -21,7 +21,7 @@ import { ref } from 'vue'
 const alertOpen = ref(false)
 </script>
 
-# AlertDialog 警告对话框
+# NvAlertDialog 警告对话框
 
 拦截不可逆的破坏性操作，强制用户在继续前作出明确选择。`NvAlertDialog` 没有右上角关闭按钮，只能经 Cancel / Action 退出，确保确认动作不被误触跳过。Action 内部即 `NvButton`，可通过 `variant="destructive"` 渲染为危险色。
 
@@ -108,9 +108,9 @@ const alertOpen = ref(false)
 
 ## 属性
 
-| 属性       | 所属                                          | 说明                                 | 类型                   | 默认                  |
-| ---------- | --------------------------------------------- | ------------------------------------ | ---------------------- | --------------------- |
-| `open`     | `NvAlertDialog`                               | 受控开关状态（`v-model:open`）       | `boolean`              | `false`               |
-| `as-child` | `NvAlertDialogTrigger`                        | 将渲染合并到子元素                   | `boolean`              | `false`               |
-| `variant`  | `NvAlertDialogAction` / `NvAlertDialogCancel` | 按钮样式，破坏性操作用 `destructive` | `ButtonPro['variant']` | `default` / `outline` |
-| `size`     | `NvAlertDialogAction` / `NvAlertDialogCancel` | 按钮尺寸                             | `ButtonPro['size']`    | `default`             |
+| 属性       | 所属                                          | 说明                                 | 类型                  | 默认                  |
+| ---------- | --------------------------------------------- | ------------------------------------ | --------------------- | --------------------- |
+| `open`     | `NvAlertDialog`                               | 受控开关状态（`v-model:open`）       | `boolean`             | `false`               |
+| `as-child` | `NvAlertDialogTrigger`                        | 将渲染合并到子元素                   | `boolean`             | `false`               |
+| `variant`  | `NvAlertDialogAction` / `NvAlertDialogCancel` | 按钮样式，破坏性操作用 `destructive` | `NvButton['variant']` | `default` / `outline` |
+| `size`     | `NvAlertDialogAction` / `NvAlertDialogCancel` | 按钮尺寸                             | `NvButton['size']`    | `default`             |

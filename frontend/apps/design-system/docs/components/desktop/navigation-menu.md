@@ -1,5 +1,5 @@
 ---
-title: NavigationMenu 导航菜单
+title: NvNavigationMenu 导航菜单
 ---
 
 <script setup>
@@ -25,7 +25,7 @@ import {
 } from 'lucide-vue-next'
 </script>
 
-# NavigationMenu 导航菜单
+# NvNavigationMenu 导航菜单
 
 横向控制台导航条：触发器展开下方的大型菜单面板（mega-menu），视口随面板内容动画改变大小与位置，指示器滑向当前激活项。简单入口用纯链接。`NvNavigationMenu` 家族在 reka 原语之上复制重建，仅采用我们的设计令牌，从不修改原版。
 

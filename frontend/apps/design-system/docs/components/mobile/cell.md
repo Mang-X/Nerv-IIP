@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Cell 单元格
+title: NvCell 单元格
 ---
 
 <script setup>
@@ -38,7 +38,7 @@ const lockMaterial = ref(true)
   </section>
 </template>
 
-# Cell 单元格
+# NvCell 单元格
 
 信息 / 表单行（tdesign-mobile 风格）：标题 + 可选备注 + 尾部值，可选箭头。`NvCellGroup` 把多个单元格组合成带细分割线的圆角卡片。右侧手机模拟器为实时组件，随页面滚动吸顶。
 
@@ -70,7 +70,7 @@ const lockMaterial = ref(true)
 
 ## 属性
 
-### Cell
+### NvCell
 
 | 属性    | 说明                           | 类型               | 默认    |
 | ------- | ------------------------------ | ------------------ | ------- |
@@ -81,7 +81,7 @@ const lockMaterial = ref(true)
 
 事件：`@click`（仅在 `arrow` 为真时触发）。插槽：`#icon` 前置图标、`#value` 自定义尾部内容。
 
-### CellGroup
+### NvCellGroup
 
 | 属性    | 说明     | 类型     | 默认 |
 | ------- | -------- | -------- | ---- |

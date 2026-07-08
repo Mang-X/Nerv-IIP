@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Radio 单选框
+title: NvMobileRadioGroup 单选框
 ---
 
 <script setup>
@@ -34,7 +34,7 @@ const priority = ref('normal')
   </section>
 </template>
 
-# Radio 单选框
+# NvMobileRadioGroup 单选框
 
 在一组互斥选项中单选，呈 iOS 设置项样式：标签居左，选中项右侧显示品牌勾选。`NvMobileRadioGroup` 承载选中值，`NvMobileRadioItem` 为每个选项。右侧手机模拟器为实时组件，随页面滚动吸顶。
 

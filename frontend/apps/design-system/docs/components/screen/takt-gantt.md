@@ -1,5 +1,5 @@
 ---
-title: TaktGantt 节拍甘特
+title: NvTaktGantt 节拍甘特
 ---
 
 <script setup>
@@ -15,7 +15,7 @@ const rows = ref([
 const axis = ref(['09:30', '09:40', '09:50', '10:00', '10:10', '10:20', '10:30'])
 </script>
 
-# TaktGantt 节拍甘特
+# NvTaktGantt 节拍甘特
 
 节拍(Takt)甘特图:每条产线一行 —— 右对齐的线名加一根分成多段色块的横条(运行青 / 待机琥珀 / 停机灰 / 报警红)。横条上方是共享时间轴,下方图例标注四种色调。完全由 `rows` + `axis` 驱动,每行的段宽之和约为 100。基于独立的 `--sb-*` 工业蓝令牌。
 

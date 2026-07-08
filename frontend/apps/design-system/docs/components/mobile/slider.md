@@ -1,6 +1,6 @@
 ---
 layout: page
-title: MobileSlider 滑块
+title: NvMobileSlider 滑块
 ---
 
 <script setup>
@@ -42,7 +42,7 @@ const threshold = ref(85)
   </section>
 </template>
 
-# MobileSlider 滑块
+# NvMobileSlider 滑块
 
 单滑块范围选择。品牌色填充轨道，滑块 ≥44px 触控热区，指针拖动（与底部抽屉、滑动单元格等使用同一套指针手势）。用于数量、阈值等连续调节。右侧手机模拟器为实时组件。
 

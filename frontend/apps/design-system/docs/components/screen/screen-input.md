@@ -1,5 +1,5 @@
 ---
-title: ScreenInput 输入框
+title: NvScreenInput 输入框
 ---
 
 <script setup>
@@ -11,7 +11,7 @@ const qty = ref('1240')
 const bad = ref('')
 </script>
 
-# ScreenInput 输入框
+# NvScreenInput 输入框
 
 大屏文本输入:一口下沉的暗井,聚焦点亮青色环;`error` 态把细线与环换成红色(并标记 `aria-invalid`),状态不只靠颜色传达。可选 `suffix` 在右侧钉一个单位(件 / kWh / %)。通过 `v-model`(字符串)绑定,基于独立的 `--sb-*` 令牌。
 

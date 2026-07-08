@@ -1,6 +1,6 @@
 ---
 layout: page
-title: MobileDialog 对话框
+title: NvMobileDialog 对话框
 ---
 
 <script setup>

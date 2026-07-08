@@ -1,6 +1,6 @@
 ---
 layout: page
-title: SearchBar 搜索栏
+title: NvSearchBar 搜索栏
 ---
 
 <script setup>
@@ -25,7 +25,7 @@ const keyword2 = ref('')
   </section>
 </template>
 
-# SearchBar 搜索栏
+# NvSearchBar 搜索栏
 
 圆角胶囊搜索框（Vant / tdesign-mobile 风格）。聚焦时「取消」按钮滑入、输入框平滑收缩；有文本时淡入清除按钮。右侧手机模拟器为实时组件，随页面滚动吸顶。
 

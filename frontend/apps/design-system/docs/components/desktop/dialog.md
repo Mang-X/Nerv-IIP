@@ -1,5 +1,5 @@
 ---
-title: Dialog 对话框
+title: NvDialog 对话框
 ---
 
 <script setup>
@@ -20,7 +20,7 @@ import { ref } from 'vue'
 const dialogOpen = ref(false)
 </script>
 
-# Dialog 对话框
+# NvDialog 对话框
 
 承载需要用户聚焦确认的关键操作。`NvDialog` 提供模糊遮罩与缩放入场，由 Header / Title / Description / Footer 组合内容。
 
