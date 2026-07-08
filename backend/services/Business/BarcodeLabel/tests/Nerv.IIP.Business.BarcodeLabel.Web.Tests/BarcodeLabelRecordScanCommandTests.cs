@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.Scans;
 
@@ -221,6 +222,31 @@ public sealed class BarcodeLabelRecordScanCommandTests
         Assert.Contains("NOT NULL", exception.InnerException?.Message ?? exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task Epcis_event_unique_index_is_enforced_by_relational_store()
+    {
+        await using var database = await BarcodeLabelSqliteDatabase.CreateAsync();
+
+        await using (var dbContext = database.CreateDbContext())
+        {
+            var epcisEvent = NewEpcisObjectEvent("idem-epcis-001");
+            dbContext.EpcisEvents.Add(epcisEvent);
+            dbContext.Entry(epcisEvent).Property(nameof(EpcisEvent.ScanRecordId)).CurrentValue = null;
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using (var dbContext = database.CreateDbContext())
+        {
+            var epcisEvent = NewEpcisObjectEvent("idem-epcis-002");
+            dbContext.EpcisEvents.Add(epcisEvent);
+            dbContext.Entry(epcisEvent).Property(nameof(EpcisEvent.ScanRecordId)).CurrentValue = null;
+
+            var exception = await Assert.ThrowsAsync<KnownException>(() => dbContext.SaveChangesAsync());
+
+            Assert.Contains("Duplicate BarcodeLabel EPCIS event", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
     private static RecordScanCommand NewInventoryScanCommand(string idempotencyKey, string sourceDocumentId = "ASN-001")
     {
         return new RecordScanCommand(
@@ -285,6 +311,11 @@ public sealed class BarcodeLabelRecordScanCommandTests
             "owned",
             null,
             2);
+    }
+
+    private static EpcisEvent NewEpcisObjectEvent(string idempotencyKey)
+    {
+        return EpcisEvent.ObjectEvent("org-001", "env-dev", NewInventoryScan(idempotencyKey));
     }
 
     private sealed class BarcodeLabelSqliteDatabase : IAsyncDisposable
