@@ -2573,7 +2573,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesForceReleaseQualityHoldRequest = {
     reason?: string;
-    actor?: string;
     sourceService?: string | null;
     releasedAtUtc?: string | null;
 };

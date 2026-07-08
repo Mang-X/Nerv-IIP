@@ -1234,6 +1234,7 @@ public interface IBusinessMesClient
         string internalBearerToken,
         string sourceDocumentId,
         BusinessConsoleMesForceReleaseQualityHoldRequest request,
+        string actor,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(
@@ -5777,12 +5778,19 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string internalBearerToken,
         string sourceDocumentId,
         BusinessConsoleMesForceReleaseQualityHoldRequest request,
+        string actor,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleAcceptedResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/mes/quality-holds/{Uri.EscapeDataString(sourceDocumentId)}/force-release",
-            request,
+            new DownstreamForceReleaseQualityHoldRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.Reason,
+                actor,
+                request.SourceService,
+                request.ReleasedAtUtc),
             cancellationToken);
 
     public Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(
@@ -6246,6 +6254,16 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                 Assignments,
                 AffectedWorkOrderIds);
     }
+
+    // Downstream force-release body carries the actor injected by the gateway from the
+    // authenticated principal; the request DTO no longer exposes a caller-supplied actor.
+    private sealed record DownstreamForceReleaseQualityHoldRequest(
+        string OrganizationId,
+        string EnvironmentId,
+        string Reason,
+        string Actor,
+        string? SourceService,
+        DateTimeOffset? ReleasedAtUtc);
 
     private static string FormatTrigger(JsonElement trigger) => trigger.ValueKind switch
     {

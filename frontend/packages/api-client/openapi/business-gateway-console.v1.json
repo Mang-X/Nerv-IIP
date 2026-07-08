@@ -30791,9 +30791,6 @@
           "reason": {
             "type": "string"
           },
-          "actor": {
-            "type": "string"
-          },
           "sourceService": {
             "type": "string",
             "nullable": true

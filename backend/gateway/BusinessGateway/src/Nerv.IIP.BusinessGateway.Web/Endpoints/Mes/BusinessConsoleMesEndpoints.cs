@@ -509,8 +509,18 @@ public sealed class ForceReleaseBusinessConsoleMesQualityHoldEndpoint(
     protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
         BusinessConsoleMesForceReleaseQualityHoldRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.ForceReleaseQualityHoldAsync(tokenProvider.BearerToken, request.SourceDocumentId, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        // Bind the force-release audit actor to the authenticated principal so a caller holding
+        // MesQualityWrite cannot forge the releaser identity via a request-body field.
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
+        return mes.ForceReleaseQualityHoldAsync(
+            tokenProvider.BearerToken,
+            request.SourceDocumentId,
+            request,
+            actorRef,
+            cancellationToken);
+    }
 }
 
 [Tags("Business Console MES")]

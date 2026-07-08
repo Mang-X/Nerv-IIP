@@ -3296,12 +3296,13 @@ public sealed record BusinessConsoleMesWorkOrderReasonRequest(
     string Reason,
     DateTimeOffset? ChangedAtUtc);
 
+// Actor is intentionally omitted: the gateway injects the authenticated principal as the
+// force-release audit actor so a caller cannot forge the releaser identity via the request body.
 public sealed record BusinessConsoleMesForceReleaseQualityHoldRequest(
     [property: RouteParam] string SourceDocumentId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     string Reason,
-    string Actor,
     string? SourceService,
     DateTimeOffset? ReleasedAtUtc);
 

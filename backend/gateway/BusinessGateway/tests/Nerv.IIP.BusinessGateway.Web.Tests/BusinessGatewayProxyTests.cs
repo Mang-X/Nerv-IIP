@@ -1098,7 +1098,7 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Mes_quality_hold_force_release_forwards_context_and_internal_service_token()
+    public async Task Mes_quality_hold_force_release_injects_principal_actor_and_uses_internal_service_token()
     {
         var mes = new RecordingMesClient();
         await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
@@ -1113,9 +1113,11 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.PostAsJsonAsync(
             "/api/business-console/v1/mes/quality-holds/QH-001/force-release?organizationId=org-001&environmentId=env-dev",
+            // A caller-supplied actor must never be trusted; the gateway overrides it with the principal.
             new { reason = "quality-override", actor = "supervisor-1", sourceService = "BusinessMes", releasedAtUtc = (DateTimeOffset?)null });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // Facade forwards the internal service token, never the caller bearer.
         Assert.Equal("internal-test-token", mes.LastInternalToken);
         Assert.Equal(1, mes.ForceReleaseQualityHoldCallCount);
         Assert.NotNull(mes.LastForceReleaseQualityHoldRequest);
@@ -1123,7 +1125,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("org-001", mes.LastForceReleaseQualityHoldRequest.OrganizationId);
         Assert.Equal("env-dev", mes.LastForceReleaseQualityHoldRequest.EnvironmentId);
         Assert.Equal("quality-override", mes.LastForceReleaseQualityHoldRequest.Reason);
-        Assert.Equal("supervisor-1", mes.LastForceReleaseQualityHoldRequest.Actor);
+        // The releaser identity is bound to the authenticated principal; the request-body actor is ignored.
+        Assert.Equal("user-admin", mes.LastForceReleaseQualityHoldActor);
+        Assert.NotEqual("supervisor-1", mes.LastForceReleaseQualityHoldActor);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.True(document.RootElement.GetProperty("data").GetProperty("accepted").GetBoolean());
     }
@@ -8571,6 +8575,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public BusinessConsoleMesForceReleaseQualityHoldRequest? LastForceReleaseQualityHoldRequest { get; private set; }
 
+    public string? LastForceReleaseQualityHoldActor { get; private set; }
+
     public int ReverseProductionReportCallCount { get; private set; }
 
     public BusinessConsoleMesReverseProductionReportRequest? LastReverseProductionReportRequest { get; private set; }
@@ -8724,11 +8730,13 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         string internalBearerToken,
         string sourceDocumentId,
         BusinessConsoleMesForceReleaseQualityHoldRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         ForceReleaseQualityHoldCallCount++;
         LastForceReleaseQualityHoldRequest = request;
+        LastForceReleaseQualityHoldActor = actor;
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 
