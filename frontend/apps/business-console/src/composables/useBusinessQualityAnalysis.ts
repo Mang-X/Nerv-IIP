@@ -1,4 +1,23 @@
-import type { BusinessConsoleQualityItem } from '@nerv-iip/api-client'
+import {
+  queryBusinessConsoleQualityProcessCapabilityQueryOptions,
+  queryBusinessConsoleQualitySpcControlChartQueryOptions,
+  type BusinessConsoleQualityItem,
+  type BusinessConsoleQualityProcessCapabilityEnvelope,
+  type BusinessConsoleQualityProcessCapabilityResponse,
+  type BusinessConsoleQualitySpcControlChartEnvelope,
+  type BusinessConsoleQualitySpcControlChartResponse,
+  type BusinessConsoleQualitySpcRuleViolation,
+} from '@nerv-iip/api-client'
+import { useQuery } from '@pinia/colada'
+import { computed, reactive } from 'vue'
+import {
+  bindBusinessContext,
+  hasBusinessContext,
+  type BusinessContextFields,
+} from './businessContextBinding'
+
+// Keep aligned with SpcCalculation.NoCompleteSubgroupMessage in the Quality service.
+const SPC_WARMUP_MESSAGE = 'SPC control chart requires at least one complete subgroup.'
 
 export interface QualityAnalysisBucket {
   label: string
@@ -20,26 +39,43 @@ export interface QualityAnalysisSummary {
   bySourceType: QualityAnalysisBucket[]
 }
 
-export const QUALITY_ANALYSIS_FACADE_AUDIT = [
-  {
-    capability: '质量趋势 / 缺陷统计聚合',
-    qualityService: '缺口',
-    businessConsoleFacade: '缺口',
-    frontendHandling: '仅展示当前 NCR 返回窗口的真实派生摘要，不宣称全量趋势。',
-  },
-  {
-    capability: 'CAPA 列表 / 详情 / 状态追踪',
-    qualityService: '写入口已存在，缺少列表与详情读面',
-    businessConsoleFacade: '缺口',
-    frontendHandling: '不手写 CAPA 状态；在 NCR 处置中保留审批和关闭路径。',
-  },
-  {
-    capability: 'NCR 处置与关闭',
-    qualityService: '已接入',
-    businessConsoleFacade: '已接入',
-    frontendHandling: 'NCR 页面可提交处置审批链并记录返工、报废、退货关闭引用。',
-  },
-] as const
+export interface QualitySpcFilters extends BusinessContextFields {
+  skuCode: string
+  characteristicCode: string
+  workCenterId: string
+  subgroupSize: number
+  take: number
+}
+
+export function useQualitySpcAnalysis(initialFilters: Partial<QualitySpcFilters> = {}) {
+  const filters = defaultSpcFilters(initialFilters)
+
+  const controlChartQuery = useQuery(() => ({
+    ...queryBusinessConsoleQualitySpcControlChartQueryOptions({
+      query: toSpcQuery(filters),
+    }),
+    enabled: hasSpcScope(filters),
+  }))
+  const capabilityQuery = useQuery(() => ({
+    ...queryBusinessConsoleQualityProcessCapabilityQueryOptions({
+      query: toCapabilityQuery(filters),
+    }),
+    enabled: hasSpcScope(filters),
+  }))
+  const spcWarmup = computed(() => isSpcWarmupEnvelope(controlChartQuery.data.value))
+
+  return {
+    capability: computed(() => unwrapCapability(capabilityQuery.data.value)),
+    filters,
+    refreshSpc: () => refreshSpcQueries(filters, controlChartQuery, capabilityQuery),
+    spcChart: computed(() => unwrapControlChart(controlChartQuery.data.value)),
+    spcError: computed(() => spcWarmup.value ? capabilityQuery.error.value : controlChartQuery.error.value ?? capabilityQuery.error.value),
+    spcPending: computed(() => controlChartQuery.isLoading.value || capabilityQuery.isLoading.value),
+    spcReady: computed(() => hasSpcScope(filters)),
+    spcViolations: computed(() => unwrapControlChart(controlChartQuery.data.value)?.ruleViolations ?? []),
+    spcWarmup,
+  }
+}
 
 export function buildQualityAnalysisSummary(
   ncrs: ReadonlyArray<BusinessConsoleQualityItem>,
@@ -133,4 +169,81 @@ function buildSampleNotice(sampledNcrCount: number, totalNcrCount: number) {
   }
 
   return `当前后端返回窗口覆盖 ${sampledNcrCount} / ${totalNcrCount} 条 NCR。`
+}
+
+function defaultSpcFilters(initial: Partial<QualitySpcFilters> = {}): QualitySpcFilters {
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
+    skuCode: '',
+    characteristicCode: '',
+    workCenterId: '',
+    subgroupSize: 5,
+    take: 50,
+    ...initial,
+  }))
+}
+
+function hasSpcScope(filters: QualitySpcFilters) {
+  return hasBusinessContext(filters) &&
+    filters.skuCode.trim().length > 0 &&
+    filters.characteristicCode.trim().length > 0 &&
+    filters.workCenterId.trim().length > 0
+}
+
+function toSpcQuery(filters: QualitySpcFilters) {
+  return {
+    organizationId: filters.organizationId,
+    environmentId: filters.environmentId,
+    skuCode: filters.skuCode.trim(),
+    characteristicCode: filters.characteristicCode.trim(),
+    workCenterId: filters.workCenterId.trim(),
+    subgroupSize: toPositiveInteger(filters.subgroupSize, 5),
+    take: toPositiveInteger(filters.take, 50),
+  }
+}
+
+function toCapabilityQuery(filters: QualitySpcFilters) {
+  return {
+    organizationId: filters.organizationId,
+    environmentId: filters.environmentId,
+    skuCode: filters.skuCode.trim(),
+    characteristicCode: filters.characteristicCode.trim(),
+    workCenterId: filters.workCenterId.trim(),
+    subgroupSize: toPositiveInteger(filters.subgroupSize, 5),
+    take: toPositiveInteger(filters.take, 50),
+  }
+}
+
+function unwrapControlChart(
+  envelope: BusinessConsoleQualitySpcControlChartEnvelope | undefined,
+): BusinessConsoleQualitySpcControlChartResponse | null {
+  return envelope?.success ? envelope.data ?? null : null
+}
+
+function unwrapCapability(
+  envelope: BusinessConsoleQualityProcessCapabilityEnvelope | undefined,
+): BusinessConsoleQualityProcessCapabilityResponse | null {
+  return envelope?.success ? envelope.data ?? null : null
+}
+
+function refreshSpcQueries(
+  filters: QualitySpcFilters,
+  controlChartQuery: { refetch: () => Promise<unknown> },
+  capabilityQuery: { refetch: () => Promise<unknown> },
+) {
+  return hasSpcScope(filters)
+    ? Promise.all([controlChartQuery.refetch(), capabilityQuery.refetch()])
+    : Promise.resolve(undefined)
+}
+
+export type QualitySpcViolation = BusinessConsoleQualitySpcRuleViolation
+
+function toPositiveInteger(value: number | string, fallback: number) {
+  const parsed = typeof value === 'number' ? value : Number.parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function isSpcWarmupEnvelope(envelope: BusinessConsoleQualitySpcControlChartEnvelope | undefined) {
+  return envelope?.success === false && (envelope.message ?? '').includes(SPC_WARMUP_MESSAGE)
 }

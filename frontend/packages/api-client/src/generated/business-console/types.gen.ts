@@ -1042,6 +1042,84 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleO
     attachmentFileIds?: Array<string> | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualitySpcControlChartResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcControlChartResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcControlChartResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    skuCode?: string;
+    characteristicCode?: string;
+    workCenterId?: string;
+    subgroupSize?: number;
+    dataPoints?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcMeasurementPoint>;
+    subgroups?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcSubgroup>;
+    controlLimits?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcControlLimits;
+    ruleViolations?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcRuleViolation>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcMeasurementPoint = {
+    inspectionRecordId?: string;
+    sourceDocumentId?: string;
+    measuredAtUtc?: string;
+    measuredValue?: number;
+    unitCode?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcSubgroup = {
+    index?: number;
+    startUtc?: string;
+    endUtc?: string;
+    xbar?: number;
+    range?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcControlLimits = {
+    centerLine?: number;
+    averageRange?: number;
+    xbarUpperControlLimit?: number;
+    xbarLowerControlLimit?: number;
+    rangeUpperControlLimit?: number;
+    rangeLowerControlLimit?: number;
+    locked?: boolean;
+    calculatedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcRuleViolation = {
+    rule?: string;
+    startSubgroupIndex?: number;
+    endSubgroupIndex?: number;
+    message?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityProcessCapabilityResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityProcessCapabilityResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityProcessCapabilityResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    skuCode?: string;
+    characteristicCode?: string;
+    workCenterId?: string;
+    sampleCount?: number;
+    mean?: number;
+    standardDeviation?: number;
+    lowerSpecLimit?: number | null;
+    upperSpecLimit?: number | null;
+    cp?: number | null;
+    cpk?: number | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityProcessCapabilityRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityReasonListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityReasonListResponse | null;
 };
@@ -6773,6 +6851,88 @@ export type ListBusinessConsoleQualityNcrsResponses = {
 };
 
 export type ListBusinessConsoleQualityNcrsResponse = ListBusinessConsoleQualityNcrsResponses[keyof ListBusinessConsoleQualityNcrsResponses];
+
+export type QueryBusinessConsoleQualitySpcControlChartData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        skuCode: string;
+        characteristicCode: string;
+        workCenterId: string;
+        subgroupSize?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/quality/spc/control-chart';
+};
+
+export type QueryBusinessConsoleQualitySpcControlChartErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type QueryBusinessConsoleQualitySpcControlChartError = QueryBusinessConsoleQualitySpcControlChartErrors[keyof QueryBusinessConsoleQualitySpcControlChartErrors];
+
+export type QueryBusinessConsoleQualitySpcControlChartResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualitySpcControlChartResponse;
+};
+
+export type QueryBusinessConsoleQualitySpcControlChartResponse = QueryBusinessConsoleQualitySpcControlChartResponses[keyof QueryBusinessConsoleQualitySpcControlChartResponses];
+
+export type QueryBusinessConsoleQualityProcessCapabilityData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        skuCode: string;
+        characteristicCode: string;
+        workCenterId: string;
+        take?: number;
+        subgroupSize?: number;
+    };
+    url: '/api/business-console/v1/quality/spc/process-capability';
+};
+
+export type QueryBusinessConsoleQualityProcessCapabilityErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type QueryBusinessConsoleQualityProcessCapabilityError = QueryBusinessConsoleQualityProcessCapabilityErrors[keyof QueryBusinessConsoleQualityProcessCapabilityErrors];
+
+export type QueryBusinessConsoleQualityProcessCapabilityResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityProcessCapabilityResponse;
+};
+
+export type QueryBusinessConsoleQualityProcessCapabilityResponse = QueryBusinessConsoleQualityProcessCapabilityResponses[keyof QueryBusinessConsoleQualityProcessCapabilityResponses];
 
 export type ListBusinessConsoleQualityReasonCodesData = {
     body?: never;

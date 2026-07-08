@@ -121,6 +121,10 @@ public static class QualityInspectionEndpointContracts
         new(typeof(InspectionRecords.ListInspectionRecordsEndpoint), "GET", "/api/business/v1/quality/inspection-records", BusinessPermissionCodes.QualityInspectionRecordsRead, "listBusinessQualityInspectionRecords"),
         new(typeof(InspectionTasks.ListInspectionTasksEndpoint), "GET", "/api/business/v1/quality/inspection-tasks", BusinessPermissionCodes.QualityInspectionRecordsRead, "listBusinessQualityInspectionTasks"),
         new(typeof(InspectionTasks.CreateInspectionRecordFromTaskEndpoint), "POST", "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", BusinessPermissionCodes.QualityInspectionRecordsCreate, "createBusinessQualityInspectionRecordFromTask"),
+        new(typeof(Nerv.IIP.Business.Quality.Web.Endpoints.Spc.QuerySpcControlChartEndpoint), "GET", "/api/business/v1/quality/spc/control-chart", BusinessPermissionCodes.QualityInspectionRecordsRead, "queryBusinessQualitySpcControlChart"),
+        new(typeof(Nerv.IIP.Business.Quality.Web.Endpoints.Spc.QueryProcessCapabilityEndpoint), "GET", "/api/business/v1/quality/spc/process-capability", BusinessPermissionCodes.QualityInspectionRecordsRead, "queryBusinessQualityProcessCapability"),
+        new(typeof(Nerv.IIP.Business.Quality.Web.Endpoints.Spc.EvaluateSpcControlChartEndpoint), "POST", "/api/business/v1/quality/spc/control-chart/evaluate", BusinessPermissionCodes.QualitySpcManage, "evaluateBusinessQualitySpcControlChart"),
+        new(typeof(Nerv.IIP.Business.Quality.Web.Endpoints.Spc.LockSpcControlChartEndpoint), "POST", "/api/business/v1/quality/spc/control-chart/lock", BusinessPermissionCodes.QualitySpcManage, "lockBusinessQualitySpcControlChart"),
     ];
 
     public static QualityEndpointContract Get<TEndpoint>()

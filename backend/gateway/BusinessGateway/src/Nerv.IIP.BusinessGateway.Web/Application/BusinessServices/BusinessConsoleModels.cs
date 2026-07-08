@@ -881,6 +881,80 @@ public sealed record BusinessConsoleQualityListResponse(
     IReadOnlyCollection<BusinessConsoleQualityItem> Items,
     int Total);
 
+public sealed record BusinessConsoleQualitySpcRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string CharacteristicCode,
+    string WorkCenterId,
+    int SubgroupSize = 5,
+    int Take = 125);
+
+public sealed record BusinessConsoleQualityProcessCapabilityRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string CharacteristicCode,
+    string WorkCenterId,
+    int Take = 125,
+    int SubgroupSize = 5);
+
+public sealed record BusinessConsoleQualitySpcControlChartResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string CharacteristicCode,
+    string WorkCenterId,
+    int SubgroupSize,
+    IReadOnlyCollection<BusinessConsoleQualitySpcMeasurementPoint> DataPoints,
+    IReadOnlyCollection<BusinessConsoleQualitySpcSubgroup> Subgroups,
+    BusinessConsoleQualitySpcControlLimits ControlLimits,
+    IReadOnlyCollection<BusinessConsoleQualitySpcRuleViolation> RuleViolations);
+
+public sealed record BusinessConsoleQualitySpcMeasurementPoint(
+    string InspectionRecordId,
+    string SourceDocumentId,
+    DateTimeOffset MeasuredAtUtc,
+    decimal MeasuredValue,
+    string? UnitCode);
+
+public sealed record BusinessConsoleQualitySpcSubgroup(
+    int Index,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    decimal Xbar,
+    decimal Range);
+
+public sealed record BusinessConsoleQualitySpcControlLimits(
+    decimal CenterLine,
+    decimal AverageRange,
+    decimal XbarUpperControlLimit,
+    decimal XbarLowerControlLimit,
+    decimal RangeUpperControlLimit,
+    decimal RangeLowerControlLimit,
+    bool Locked,
+    DateTimeOffset CalculatedAtUtc);
+
+public sealed record BusinessConsoleQualitySpcRuleViolation(
+    string Rule,
+    int StartSubgroupIndex,
+    int EndSubgroupIndex,
+    string Message);
+
+public sealed record BusinessConsoleQualityProcessCapabilityResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string CharacteristicCode,
+    string WorkCenterId,
+    int SampleCount,
+    decimal Mean,
+    decimal StandardDeviation,
+    decimal? LowerSpecLimit,
+    decimal? UpperSpecLimit,
+    decimal? Cp,
+    decimal? Cpk);
+
 public sealed record BusinessConsoleQualityReasonListRequest(
     string OrganizationId,
     string EnvironmentId,

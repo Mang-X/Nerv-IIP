@@ -594,6 +594,36 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_spc_analysis_facades_use_internal_service_token_for_downstream_business_service()
+    {
+        var quality = new RecordingQualityClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var chart = await client.GetAsync("/api/business-console/v1/quality/spc/control-chart?organizationId=org-001&environmentId=env-dev&skuCode=SKU-RM-1000&characteristicCode=length&workCenterId=WC-MIX-01&subgroupSize=2&take=50");
+        var capability = await client.GetAsync("/api/business-console/v1/quality/spc/process-capability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-RM-1000&characteristicCode=length&workCenterId=WC-MIX-01&take=50");
+
+        Assert.Equal(HttpStatusCode.OK, chart.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, capability.StatusCode);
+        Assert.Equal("internal-test-token", quality.LastInternalToken);
+        Assert.Equal(new BusinessConsoleQualitySpcRequest("org-001", "env-dev", "SKU-RM-1000", "length", "WC-MIX-01", 2, 50), quality.LastSpcControlChartRequest);
+        Assert.Equal(new BusinessConsoleQualityProcessCapabilityRequest("org-001", "env-dev", "SKU-RM-1000", "length", "WC-MIX-01", 50), quality.LastProcessCapabilityRequest);
+
+        using var chartDocument = JsonDocument.Parse(await chart.Content.ReadAsStringAsync());
+        Assert.Equal("trend-increasing", chartDocument.RootElement.GetProperty("data").GetProperty("ruleViolations")[0].GetProperty("rule").GetString());
+
+        using var capabilityDocument = JsonDocument.Parse(await capability.Content.ReadAsStringAsync());
+        Assert.Equal(0.67m, capabilityDocument.RootElement.GetProperty("data").GetProperty("cp").GetDecimal());
+    }
+
+    [Fact]
     public async Task Quality_reason_catalog_facade_uses_internal_service_token_for_downstream_business_service()
     {
         var quality = new RecordingQualityClient();
@@ -5621,6 +5651,10 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public BusinessConsoleQualityListRequest? LastInspectionRecordListRequest { get; private set; }
 
+    public BusinessConsoleQualitySpcRequest? LastSpcControlChartRequest { get; private set; }
+
+    public BusinessConsoleQualityProcessCapabilityRequest? LastProcessCapabilityRequest { get; private set; }
+
     public string? LastOpenNcrInspectionRecordId { get; private set; }
 
     public BusinessConsoleOpenNcrFromInspectionRequest? LastOpenNcrFromInspectionRequest { get; private set; }
@@ -5718,6 +5752,54 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
                     null),
             ],
             NcrTotal ?? 1));
+    }
+
+    public Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(
+        string internalBearerToken,
+        BusinessConsoleQualitySpcRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastSpcControlChartRequest = request;
+        return Task.FromResult(new BusinessConsoleQualitySpcControlChartResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SkuCode,
+            request.CharacteristicCode,
+            request.WorkCenterId,
+            request.SubgroupSize,
+            [
+                new BusinessConsoleQualitySpcMeasurementPoint("inspection-001", "WO-001", DateTimeOffset.Parse("2026-07-07T08:00:00Z"), 10.1m, "mm"),
+            ],
+            [
+                new BusinessConsoleQualitySpcSubgroup(1, DateTimeOffset.Parse("2026-07-07T08:00:00Z"), DateTimeOffset.Parse("2026-07-07T08:01:00Z"), 10.2m, 0.2m),
+            ],
+            new BusinessConsoleQualitySpcControlLimits(10m, 0.2m, 10.4m, 9.6m, 0.6m, 0m, false, DateTimeOffset.Parse("2026-07-07T08:02:00Z")),
+            [
+                new BusinessConsoleQualitySpcRuleViolation("trend-increasing", 1, 6, "Six consecutive subgroup means are increasing."),
+            ]));
+    }
+
+    public Task<BusinessConsoleQualityProcessCapabilityResponse> QueryProcessCapabilityAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityProcessCapabilityRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastProcessCapabilityRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityProcessCapabilityResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SkuCode,
+            request.CharacteristicCode,
+            request.WorkCenterId,
+            3,
+            10m,
+            1m,
+            8m,
+            12m,
+            0.67m,
+            0.67m));
     }
 
     public Task<BusinessConsoleQualityReasonListResponse> ListQualityReasonsAsync(

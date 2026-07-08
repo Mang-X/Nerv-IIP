@@ -15,6 +15,7 @@ public static class QualityIntegrationEventTypes
     public const string CapaOpened = "quality.CapaOpened";
     public const string CapaEffectivenessVerified = "quality.CapaEffectivenessVerified";
     public const string CapaClosed = "quality.CapaClosed";
+    public const string SpcAlertRaised = "quality.SpcAlertRaised";
 }
 
 public static class QualityIntegrationEventVersions
@@ -42,6 +43,15 @@ public static class QualityNcrDispositionTypes
     public const string ReturnToSupplier = "return-to-supplier";
     public const string ConditionalRelease = "conditional-release";
     public const string SortAndScreen = "sort-and-screen";
+}
+
+public static class QualitySpcRuleCodes
+{
+    public const string BeyondControlLimit = "beyond-control-limit";
+    public const string ConsecutiveShiftAboveCenter = "consecutive-shift-above-center";
+    public const string ConsecutiveShiftBelowCenter = "consecutive-shift-below-center";
+    public const string TrendIncreasing = "trend-increasing";
+    public const string TrendDecreasing = "trend-decreasing";
 }
 
 public sealed record DefectRaisedIntegrationEvent(
@@ -205,6 +215,23 @@ public sealed record InspectionTaskOverdueIntegrationEvent(
     object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }
 
+public sealed record SpcAlertRaisedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    SpcAlertRaisedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
 public sealed record InspectionTaskOverduePayload(
     string InspectionTaskId,
     string SourceType,
@@ -214,6 +241,17 @@ public sealed record InspectionTaskOverduePayload(
     string SkuCode,
     DateTimeOffset DueAtUtc,
     DateTimeOffset RemindedAtUtc);
+
+public sealed record SpcAlertRaisedPayload(
+    string AlertKey,
+    string ResourceType,
+    string SkuCode,
+    string CharacteristicCode,
+    string WorkCenterId,
+    IReadOnlyCollection<string> RuleCodes,
+    string Severity,
+    DateTimeOffset LatestMeasuredAtUtc,
+    string Summary);
 
 public sealed record InspectionResultPayload(
     string InspectionRecordId,

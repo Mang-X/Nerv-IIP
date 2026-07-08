@@ -269,6 +269,16 @@ public interface IBusinessQualityClient
         BusinessConsoleQualityListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(
+        string internalBearerToken,
+        BusinessConsoleQualitySpcRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityProcessCapabilityResponse> QueryProcessCapabilityAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityProcessCapabilityRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleQualityReasonListResponse> ListQualityReasonsAsync(
         string internalBearerToken,
         BusinessConsoleQualityReasonListRequest request,
@@ -2431,6 +2441,42 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             response.Items.Select(ToQualityItem).ToArray(),
             response.Total);
     }
+
+    public Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(
+        string internalBearerToken,
+        BusinessConsoleQualitySpcRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualitySpcControlChartResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/quality/spc/control-chart?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", request.SkuCode),
+                ("characteristicCode", request.CharacteristicCode),
+                ("workCenterId", request.WorkCenterId),
+                ("subgroupSize", request.SubgroupSize),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleQualityProcessCapabilityResponse> QueryProcessCapabilityAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityProcessCapabilityRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualityProcessCapabilityResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/quality/spc/process-capability?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", request.SkuCode),
+                ("characteristicCode", request.CharacteristicCode),
+                ("workCenterId", request.WorkCenterId),
+                ("subgroupSize", request.SubgroupSize),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
 
     public Task<BusinessConsoleQualityReasonListResponse> ListQualityReasonsAsync(
         string internalBearerToken,
