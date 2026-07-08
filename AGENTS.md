@@ -143,9 +143,57 @@ native Capacitor artifacts are affected.
 7. Do NOT call `dotnet`, `docker`, `pnpm`, `pwsh` directly in scripts. Use `scripts/lib/ScriptAutomation.ps1` helpers.
 8. Do NOT write Minimal API route mappings in startup files. Use FastEndpoints exclusively.
 9. Do NOT hand-edit OpenAPI snapshots or generated client code.
-10. Do NOT deep-import shadcn components. Always use `@nerv-iip/ui` stable export boundary.
+10. Do NOT deep-import shadcn components, and do NOT use shadcn 原版 names in app
+    code. Always use the `@nerv-iip/ui` stable export boundary and the `Nv*` brand
+    names (see "NvUI Component Library" below).
 11. Do NOT reference provider-specific APIs or write raw SQL in Domain/Application/Endpoint/SDK layers.
 12. Do NOT store credentials, secrets, or customer keys in `infra/` or repo.
+
+## NvUI Component Library — naming & import boundary (frontend)
+
+NvUI is the Nerv-IIP brand component layer inside `@nerv-iip/ui` /
+`@nerv-iip/ui-mobile`. Authoritative ADR:
+`docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md`
+(**Appendix A = the full old→new component map**). These rules exist for one
+concrete reason: agents kept using shadcn 原版 primitives as if they were the
+brand kit. The `Nv*` prefix removes that ambiguity — treat it as a hard rule.
+
+1. **App/business code uses `Nv*` brand components only** — from `pro/`,
+   `blocks/`, `layout/`, `screen/`, `touch/` (in `@nerv-iip/ui`) and
+   `@nerv-iip/ui-mobile`. Every ready-to-use branded component is `Nv`-prefixed
+   (`NvButton`, `NvDataTable`, `NvPageHeader`, `NvOeeHero`, `NvMobileBadge`).
+2. **A name WITHOUT the `Nv` prefix is off-limits in app code.** It is either a
+   shadcn 原版 base primitive (`Button`, `Badge`, `Table`, `Dialog`, …) or a
+   `@deprecated` old name (`ButtonPro`, `ScreenButton`, `MobileBadge`, …). 原版
+   primitives exist only so the library can compose `Nv*` on top of them; they are
+   referenced ONLY inside `@nerv-iip/ui` itself, never from an app.
+3. **Import through the stable boundary only:** the bare `@nerv-iip/ui` and
+   `@nerv-iip/ui-mobile` specifiers (the sole allowed sub-entry is
+   `@nerv-iip/ui/file-preview`). No `@nerv-iip/ui/<deep>` paths, no direct
+   `reka-ui`, no direct `shadcn-vue` — all contract-test-banned per app.
+4. **Package names do not change** (ADR Decision 2): NvUI is a component-layer
+   brand carried by the `Nv*` prefix, docs site and DESIGN docs — not a package
+   rename. Never rename `@nerv-iip/ui` / `@nerv-iip/ui-mobile` in passing.
+5. **Old names are `@deprecated` during the transition.** `Nv*` was added in
+   #787; the per-app codemod is #789; token/CSS-layer isolation is #790. Old
+   names still compile (zero-breakage) but show IDE strike-through — write NEW
+   code with `Nv*`. Guards (`nvui-imports.contract.test.ts` per app,
+   `nvui-naming.contract.test.ts` per package) enforce the boundary and report
+   lingering old-name usage; ADR 0006 keeps this on Vite+ contract tests, not ESLint.
+
+**Four-surface component map** (which layer owns which surface; examples only —
+the frozen per-component table is ADR 0020 Appendix A):
+
+| Surface | Package · layer | Naming rule | Examples |
+|---|---|---|---|
+| PC (console / business-console) | `@nerv-iip/ui` · `pro/` `blocks/` `layout/` | 素名优先 → `Nv` + plain name | `NvButton` `NvDataTable` `NvPageHeader` `NvPage` |
+| Mobile (business-pda) | `@nerv-iip/ui-mobile` | clash with 原版/PC → `NvMobile*`; mobile-native专名 → `Nv*` | `NvMobileBadge` `NvMobileDialog` · `NvScanBar` `NvCell` `NvBottomSheet` |
+| Touch (工位看板 / 车间一体机) | `@nerv-iip/ui` · `touch/` | clash → `NvTouch*`, else `Nv*` | `NvTouchButton` `NvQtyStepper` `NvStationBar` |
+| Screen (大屏 / 挂墙) | `@nerv-iip/ui` · `screen/` | generic word → `NvScreen*`; industrial专名 → `Nv*` | `NvScreenButton` `NvScreenTrendChart` · `NvOeeHero` `NvTaktGantt` `NvKpiBar` |
+
+A component that spans two surfaces is built twice (one per layer) — never "one
+component, two modes". New component names follow ADR 0020 §1.2 (R1–R5), and the
+shadcn 原版 in `components/ui/` stay byte-for-byte unchanged (no `Nv`, no `--nv-`).
 
 ## Common Mistakes
 
