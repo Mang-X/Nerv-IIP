@@ -15,8 +15,8 @@ public sealed class TelemetryHistorianScheduler(
     private static readonly TimeSpan DefaultRawRetention = TimeSpan.FromDays(7);
     private static readonly TimeSpan DefaultHourlyRetention = TimeSpan.FromDays(90);
     private static readonly TimeSpan DefaultDailyRetention = TimeSpan.FromDays(730);
-    private const int DefaultMaxRawSamples = 50000;
-    private const int DefaultMaxHourlyRollups = 50000;
+    private const int DefaultMaxPendingHourlyWindows = 50000;
+    private const int DefaultMaxPendingDailyWindows = 50000;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -90,8 +90,8 @@ public sealed class TelemetryHistorianScheduler(
                 scope.EnvironmentId,
                 asOfUtc,
                 cancellationToken,
-                scope.MaxRawSamples,
-                scope.MaxHourlyRollups);
+                scope.MaxPendingHourlyWindows,
+                scope.MaxPendingDailyWindows);
             await dbContext.SaveChangesAsync(cancellationToken);
 
             var cleanup = await historian.ApplyRetentionAsync(
@@ -209,8 +209,8 @@ public sealed class TelemetryHistorianScheduler(
             return null;
         }
 
-        var maxRawSamples = ReadPositiveInt(section, "MaxRawSamples", DefaultMaxRawSamples, logger);
-        var maxHourlyRollups = ReadPositiveInt(section, "MaxHourlyRollups", DefaultMaxHourlyRollups, logger);
+        var maxPendingHourlyWindows = ReadPositiveInt(section, "MaxPendingHourlyWindows", "MaxRawSamples", DefaultMaxPendingHourlyWindows, logger);
+        var maxPendingDailyWindows = ReadPositiveInt(section, "MaxPendingDailyWindows", "MaxHourlyRollups", DefaultMaxPendingDailyWindows, logger);
 
         return new TelemetryHistorianScope(
             organizationId.Trim(),
@@ -218,13 +218,25 @@ public sealed class TelemetryHistorianScheduler(
             ReadRetention(section, "RawRetention", DefaultRawRetention, logger),
             ReadRetention(section, "HourlyRetention", DefaultHourlyRetention, logger),
             ReadRetention(section, "DailyRetention", DefaultDailyRetention, logger),
-            Math.Min(maxRawSamples, 250000),
-            Math.Min(maxHourlyRollups, 250000));
+            Math.Min(maxPendingHourlyWindows, 250000),
+            Math.Min(maxPendingDailyWindows, 250000));
     }
 
-    private static int ReadPositiveInt(IConfiguration section, string key, int defaultValue, ILogger? logger)
+    private static int ReadPositiveInt(IConfiguration section, string key, string? legacyKey, int defaultValue, ILogger? logger)
     {
         var configured = section[key];
+        if (string.IsNullOrWhiteSpace(configured) && legacyKey is not null)
+        {
+            configured = section[legacyKey];
+            if (!string.IsNullOrWhiteSpace(configured))
+            {
+                logger?.LogWarning(
+                    "IndustrialTelemetry historian {LegacyKey} is deprecated; use {Key}. The value still limits pending windows, not raw rows.",
+                    legacyKey,
+                    key);
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(configured))
         {
             return defaultValue;
@@ -263,8 +275,8 @@ public sealed record TelemetryHistorianScope(
     TimeSpan RawRetention,
     TimeSpan HourlyRetention,
     TimeSpan DailyRetention,
-    int MaxRawSamples,
-    int MaxHourlyRollups)
+    int MaxPendingHourlyWindows,
+    int MaxPendingDailyWindows)
 {
     public TelemetryHistorianRetentionPolicy RetentionPolicy => new(RawRetention, HourlyRetention, DailyRetention);
 }

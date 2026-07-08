@@ -31,7 +31,7 @@ public sealed class TelemetryRawSampleEntityTypeConfiguration : IEntityTypeConfi
             .IsUnique()
             .AreNullsDistinct(false);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.BucketStartUtc });
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.HourlyWindowStartUtc })
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.HourlyWindowStartUtc, x.DeviceAssetId, x.TagKey })
             .HasDatabaseName("IX_telemetry_raw_samples_hourly_window");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.BucketEndUnixTimeMilliseconds });
     }

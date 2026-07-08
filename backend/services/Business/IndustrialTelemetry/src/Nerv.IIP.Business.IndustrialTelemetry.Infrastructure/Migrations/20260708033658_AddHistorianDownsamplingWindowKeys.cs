@@ -41,13 +41,13 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                 name: "IX_telemetry_rollups_daily_window",
                 schema: "industrial_telemetry",
                 table: "telemetry_rollups",
-                columns: new[] { "organization_id", "environment_id", "device_asset_id", "tag_key", "grain", "daily_window_start_utc" });
+                columns: new[] { "organization_id", "environment_id", "grain", "daily_window_start_utc", "device_asset_id", "tag_key" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_telemetry_raw_samples_hourly_window",
                 schema: "industrial_telemetry",
                 table: "telemetry_raw_samples",
-                columns: new[] { "organization_id", "environment_id", "device_asset_id", "tag_key", "hourly_window_start_utc" });
+                columns: new[] { "organization_id", "environment_id", "hourly_window_start_utc", "device_asset_id", "tag_key" });
         }
 
         /// <inheritdoc />

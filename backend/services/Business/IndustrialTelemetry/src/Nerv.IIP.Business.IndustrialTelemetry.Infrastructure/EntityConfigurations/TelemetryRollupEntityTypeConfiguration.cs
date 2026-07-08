@@ -27,7 +27,7 @@ public sealed class TelemetryRollupEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.SourceSequence).IsRequired().HasMaxLength(200).HasColumnName("source_sequence").HasComment("Deterministic historian rollup source sequence for idempotent downsampling.");
         builder.Property(x => x.RolledUpAtUtc).HasColumnName("rolled_up_at_utc").HasComment("UTC time when the historian rollup was created.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.Grain, x.WindowStartUtc }).IsUnique();
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.Grain, x.DailyWindowStartUtc })
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Grain, x.DailyWindowStartUtc, x.DeviceAssetId, x.TagKey })
             .HasDatabaseName("IX_telemetry_rollups_daily_window");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.Grain, x.WindowEndUnixTimeMilliseconds });
     }

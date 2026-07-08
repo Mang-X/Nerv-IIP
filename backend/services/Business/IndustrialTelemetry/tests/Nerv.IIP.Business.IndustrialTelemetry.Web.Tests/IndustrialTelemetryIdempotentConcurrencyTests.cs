@@ -558,7 +558,7 @@ internal sealed class RealPostgresFactAttribute : FactAttribute
     {
         if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
         {
-            Skip = "Set NERV_IIP_TEST_POSTGRES to run this real PostgreSQL concurrency regression.";
+            Skip = "Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL IndustrialTelemetry regressions.";
         }
     }
 }

@@ -552,7 +552,7 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "BucketStartUtc")
                         .HasDatabaseName("IX_telemetry_raw_samples_organization_id_environment_id_devic~1");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "HourlyWindowStartUtc")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "HourlyWindowStartUtc", "DeviceAssetId", "TagKey")
                         .HasDatabaseName("IX_telemetry_raw_samples_hourly_window");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceSystem", "SourceConnector", "DeviceAssetId", "TagKey", "SourceSequence")
@@ -676,7 +676,7 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "Grain", "DailyWindowStartUtc")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Grain", "DailyWindowStartUtc", "DeviceAssetId", "TagKey")
                         .HasDatabaseName("IX_telemetry_rollups_daily_window");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "Grain", "WindowEndUnixTimeMilliseconds");

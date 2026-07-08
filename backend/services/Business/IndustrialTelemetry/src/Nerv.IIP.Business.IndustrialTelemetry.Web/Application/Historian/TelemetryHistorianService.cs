@@ -20,14 +20,14 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
         string environmentId,
         DateTimeOffset asOfUtc,
         CancellationToken cancellationToken,
-        int maxRawSamples = 50000,
-        int maxHourlyRollups = 50000)
+        int maxPendingHourlyWindows = 50000,
+        int maxPendingDailyWindows = 50000)
     {
         var rawSamples = await LoadRawSamplesForPendingHourlyWindowsAsync(
             organizationId,
             environmentId,
             asOfUtc,
-            maxRawSamples,
+            maxPendingHourlyWindows,
             cancellationToken);
 
         var hourlyRollupsCreated = 0;
@@ -70,7 +70,7 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
             organizationId,
             environmentId,
             asOfUtc,
-            maxHourlyRollups,
+            maxPendingDailyWindows,
             cancellationToken);
         var hourlyRollups = persistedHourlyRollups.Concat(createdHourlyRollups).ToArray();
 
@@ -229,7 +229,7 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
         string organizationId,
         string environmentId,
         DateTimeOffset asOfUtc,
-        int maxRawSamples,
+        int maxPendingHourlyWindows,
         CancellationToken cancellationToken)
     {
         var pendingKeys = await dbContext.TelemetryRawSamples
@@ -254,7 +254,7 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
             .OrderBy(group => group.Key.WindowStartUtc)
             .ThenBy(group => group.Key.DeviceAssetId)
             .ThenBy(group => group.Key.TagKey)
-            .Take(maxRawSamples)
+            .Take(maxPendingHourlyWindows)
             .Select(group => new
             {
                 group.Key.OrganizationId,
@@ -299,7 +299,7 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
         string organizationId,
         string environmentId,
         DateTimeOffset asOfUtc,
-        int maxHourlyRollups,
+        int maxPendingDailyWindows,
         CancellationToken cancellationToken)
     {
         var pendingKeys = await dbContext.TelemetryRollups
@@ -325,7 +325,7 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
             .OrderBy(group => group.Key.WindowStartUtc)
             .ThenBy(group => group.Key.DeviceAssetId)
             .ThenBy(group => group.Key.TagKey)
-            .Take(maxHourlyRollups)
+            .Take(maxPendingDailyWindows)
             .Select(group => new
             {
                 group.Key.OrganizationId,

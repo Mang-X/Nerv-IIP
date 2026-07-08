@@ -13,10 +13,10 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
             migrationBuilder.Sql(
                 """
                 WITH duplicate_external_alarms AS (
-                    SELECT id,
+                    SELECT "Id" AS alarm_id,
                         ROW_NUMBER() OVER (
                             PARTITION BY organization_id, environment_id, device_asset_id, alarm_code, external_alarm_id
-                            ORDER BY raised_at_utc, recorded_at_utc, id) AS duplicate_rank
+                            ORDER BY raised_at_utc, recorded_at_utc, "Id") AS duplicate_rank
                     FROM industrial_telemetry.alarm_events
                     WHERE status = 'raised'
                 )
@@ -26,17 +26,17 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                     cleared_by = 'system:industrial-telemetry',
                     clear_reason = 'duplicate-active-alarm-suppressed-by-migration'
                 FROM duplicate_external_alarms duplicate
-                WHERE alarm.id = duplicate.id
+                WHERE alarm."Id" = duplicate.alarm_id
                     AND duplicate.duplicate_rank > 1;
                 """);
 
             migrationBuilder.Sql(
                 """
                 WITH duplicate_rule_alarms AS (
-                    SELECT id,
+                    SELECT "Id" AS alarm_id,
                         ROW_NUMBER() OVER (
                             PARTITION BY organization_id, environment_id, device_asset_id, tag_key, external_alarm_id
-                            ORDER BY raised_at_utc, recorded_at_utc, id) AS duplicate_rank
+                            ORDER BY raised_at_utc, recorded_at_utc, "Id") AS duplicate_rank
                     FROM industrial_telemetry.alarm_events
                     WHERE status = 'raised'
                         AND tag_key IS NOT NULL
@@ -47,7 +47,7 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                     cleared_by = 'system:industrial-telemetry',
                     clear_reason = 'duplicate-rule-alarm-suppressed-by-migration'
                 FROM duplicate_rule_alarms duplicate
-                WHERE alarm.id = duplicate.id
+                WHERE alarm."Id" = duplicate.alarm_id
                     AND duplicate.duplicate_rank > 1;
                 """);
 

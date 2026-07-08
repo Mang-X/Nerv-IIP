@@ -94,6 +94,109 @@ public sealed class IndustrialTelemetryHistorianTests
     }
 
     [Fact]
+    public void Historian_scope_reads_pending_window_limits_and_legacy_batch_keys()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["IndustrialTelemetry:Historian:Scopes:0:OrganizationId"] = "org-001",
+                ["IndustrialTelemetry:Historian:Scopes:0:EnvironmentId"] = "env-dev",
+                ["IndustrialTelemetry:Historian:Scopes:0:MaxPendingHourlyWindows"] = "12",
+                ["IndustrialTelemetry:Historian:Scopes:0:MaxPendingDailyWindows"] = "34",
+                ["IndustrialTelemetry:Historian:Scopes:1:OrganizationId"] = "org-001",
+                ["IndustrialTelemetry:Historian:Scopes:1:EnvironmentId"] = "env-legacy",
+                ["IndustrialTelemetry:Historian:Scopes:1:MaxRawSamples"] = "56",
+                ["IndustrialTelemetry:Historian:Scopes:1:MaxHourlyRollups"] = "78",
+            })
+            .Build();
+
+        var scopes = TelemetryHistorianScheduler.GetConfiguredScopes(configuration).ToArray();
+
+        var current = Assert.Single(scopes, x => x.EnvironmentId == "env-dev");
+        Assert.Equal(12, current.MaxPendingHourlyWindows);
+        Assert.Equal(34, current.MaxPendingDailyWindows);
+        var legacy = Assert.Single(scopes, x => x.EnvironmentId == "env-legacy");
+        Assert.Equal(56, legacy.MaxPendingHourlyWindows);
+        Assert.Equal(78, legacy.MaxPendingDailyWindows);
+    }
+
+    [RealPostgresFact]
+    public async Task Postgres_downsampling_executes_pending_window_antijoin_queries()
+    {
+        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+
+        await using var database = await IndustrialTelemetryPostgresTestDatabase.CreateAsync(postgresConnectionString);
+        await using var dbContext = database.CreateContext();
+        dbContext.TelemetryRawSamples.AddRange(
+            Raw("DEV-CNC-01", "temperature", "2026-07-01T08:00:00Z", "2026-07-01T08:01:00Z", 1, 10m, 10m, 10m, 10m, 10m, "pg-old-raw-001"),
+            Raw("DEV-CNC-01", "temperature", "2026-07-02T08:00:00Z", "2026-07-02T08:01:00Z", 1, 40m, 40m, 40m, 40m, 40m, "pg-new-raw-001"));
+        dbContext.TelemetryRollups.AddRange(
+            Rollup(TelemetryRollupGrain.Hourly, "2026-07-01T08:00:00Z", "2026-07-01T09:00:00Z", "historian:hourly:DEV-CNC-01:temperature:1782720000000"),
+            Rollup(TelemetryRollupGrain.Daily, "2026-07-01T00:00:00Z", "2026-07-02T00:00:00Z", "historian:daily:DEV-CNC-01:temperature:1782691200000"));
+        await dbContext.SaveChangesAsync();
+
+        var indexes = await database.LoadIndustrialTelemetryIndexNamesAsync();
+        Assert.Contains("IX_telemetry_raw_samples_hourly_window", indexes);
+        Assert.Contains("IX_telemetry_rollups_daily_window", indexes);
+        var rawPendingWindowPlan = await database.ExplainWithSeqScanDisabledAsync("""
+            SELECT raw.organization_id, raw.environment_id, raw.device_asset_id, raw.tag_key, raw.hourly_window_start_utc
+            FROM industrial_telemetry.telemetry_raw_samples AS raw
+            WHERE raw.organization_id = 'org-001'
+                AND raw.environment_id = 'env-dev'
+                AND raw.bucket_end_utc <= TIMESTAMPTZ '2026-07-03 00:00:00+00'
+            GROUP BY raw.organization_id, raw.environment_id, raw.device_asset_id, raw.tag_key, raw.hourly_window_start_utc
+            HAVING NOT EXISTS (
+                SELECT 1
+                FROM industrial_telemetry.telemetry_rollups AS rollup
+                WHERE rollup.organization_id = raw.organization_id
+                    AND rollup.environment_id = raw.environment_id
+                    AND rollup.device_asset_id = raw.device_asset_id
+                    AND rollup.tag_key = raw.tag_key
+                    AND rollup.grain = 'Hourly'
+                    AND rollup.window_start_utc = raw.hourly_window_start_utc)
+            ORDER BY raw.hourly_window_start_utc, raw.device_asset_id, raw.tag_key
+            LIMIT 1
+            """);
+        Assert.Contains(rawPendingWindowPlan, line => line.Contains("IX_telemetry_raw_samples_hourly_window", StringComparison.Ordinal));
+        var dailyPendingWindowPlan = await database.ExplainWithSeqScanDisabledAsync("""
+            SELECT hourly.organization_id, hourly.environment_id, hourly.device_asset_id, hourly.tag_key, hourly.daily_window_start_utc
+            FROM industrial_telemetry.telemetry_rollups AS hourly
+            WHERE hourly.organization_id = 'org-001'
+                AND hourly.environment_id = 'env-dev'
+                AND hourly.grain = 'Hourly'
+                AND hourly.window_end_utc <= TIMESTAMPTZ '2026-07-03 00:00:00+00'
+            GROUP BY hourly.organization_id, hourly.environment_id, hourly.device_asset_id, hourly.tag_key, hourly.daily_window_start_utc
+            HAVING NOT EXISTS (
+                SELECT 1
+                FROM industrial_telemetry.telemetry_rollups AS rollup
+                WHERE rollup.organization_id = hourly.organization_id
+                    AND rollup.environment_id = hourly.environment_id
+                    AND rollup.device_asset_id = hourly.device_asset_id
+                    AND rollup.tag_key = hourly.tag_key
+                    AND rollup.grain = 'Daily'
+                    AND rollup.window_start_utc = hourly.daily_window_start_utc)
+            ORDER BY hourly.daily_window_start_utc, hourly.device_asset_id, hourly.tag_key
+            LIMIT 1
+            """);
+        Assert.Contains(dailyPendingWindowPlan, line => line.Contains("IX_telemetry_rollups_daily_window", StringComparison.Ordinal));
+
+        var service = new TelemetryHistorianService(dbContext);
+        var result = await service.RunDownsamplingAsync(
+            "org-001",
+            "env-dev",
+            new DateTimeOffset(2026, 7, 3, 0, 0, 0, TimeSpan.Zero),
+            CancellationToken.None,
+            maxPendingHourlyWindows: 1,
+            maxPendingDailyWindows: 1);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(1, result.HourlyRollupsCreated);
+        Assert.Equal(1, result.DailyRollupsCreated);
+        Assert.Contains(dbContext.TelemetryRollups, x => x.Grain == TelemetryRollupGrain.Hourly && x.WindowStartUtc == DateTimeOffset.Parse("2026-07-02T08:00:00Z"));
+        Assert.Contains(dbContext.TelemetryRollups, x => x.Grain == TelemetryRollupGrain.Daily && x.WindowStartUtc == DateTimeOffset.Parse("2026-07-02T00:00:00Z"));
+    }
+
+    [Fact]
     public async Task Record_sample_persists_raw_historian_detail_and_keeps_summary_compatibility()
     {
         await using var dbContext = CreateDbContext(nameof(Record_sample_persists_raw_historian_detail_and_keeps_summary_compatibility));
@@ -215,7 +318,7 @@ public sealed class IndustrialTelemetryHistorianTests
             "env-dev",
             new DateTimeOffset(2026, 7, 2, 0, 0, 0, TimeSpan.Zero),
             CancellationToken.None,
-            maxRawSamples: 2);
+            maxPendingHourlyWindows: 2);
         await dbContext.SaveChangesAsync();
 
         Assert.Equal(1, result.HourlyRollupsCreated);
@@ -240,7 +343,7 @@ public sealed class IndustrialTelemetryHistorianTests
             "env-dev",
             new DateTimeOffset(2026, 7, 2, 0, 0, 0, TimeSpan.Zero),
             CancellationToken.None,
-            maxHourlyRollups: 2);
+            maxPendingDailyWindows: 2);
         await dbContext.SaveChangesAsync();
 
         Assert.Equal(1, result.DailyRollupsCreated);
@@ -266,7 +369,7 @@ public sealed class IndustrialTelemetryHistorianTests
             "env-dev",
             new DateTimeOffset(2026, 7, 2, 0, 0, 0, TimeSpan.Zero),
             CancellationToken.None,
-            maxRawSamples: 2);
+            maxPendingHourlyWindows: 2);
         await dbContext.SaveChangesAsync();
 
         Assert.Equal(1, result.HourlyRollupsCreated);
@@ -291,7 +394,7 @@ public sealed class IndustrialTelemetryHistorianTests
             "env-dev",
             new DateTimeOffset(2026, 7, 3, 0, 0, 0, TimeSpan.Zero),
             CancellationToken.None,
-            maxHourlyRollups: 2);
+            maxPendingDailyWindows: 2);
         await dbContext.SaveChangesAsync();
 
         Assert.Equal(1, result.DailyRollupsCreated);
