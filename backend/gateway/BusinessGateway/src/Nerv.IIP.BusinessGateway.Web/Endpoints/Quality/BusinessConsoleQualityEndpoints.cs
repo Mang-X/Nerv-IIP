@@ -131,6 +131,35 @@ public sealed class BusinessConsoleOpenNcrFromInspectionRequestValidator
     }
 }
 
+public sealed class BusinessConsoleQualitySpcRequestValidator : Validator<BusinessConsoleQualitySpcRequest>
+{
+    public BusinessConsoleQualitySpcRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CharacteristicCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkCenterId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SubgroupSize).InclusiveBetween(2, 10);
+        RuleFor(x => x.Take).InclusiveBetween(2, 500);
+    }
+}
+
+public sealed class BusinessConsoleQualityProcessCapabilityRequestValidator
+    : Validator<BusinessConsoleQualityProcessCapabilityRequest>
+{
+    public BusinessConsoleQualityProcessCapabilityRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CharacteristicCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkCenterId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SubgroupSize).InclusiveBetween(2, 10);
+        RuleFor(x => x.Take).InclusiveBetween(2, 500);
+    }
+}
+
 [Tags("Business Console Quality")]
 [HttpGet("/api/business-console/v1/quality/inspection-plans")]
 [BusinessGatewayOperationId("listBusinessConsoleQualityInspectionPlans")]
@@ -251,6 +280,50 @@ public sealed class ListBusinessConsoleQualityNcrsEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         quality.ListNcrsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Quality")]
+[HttpGet("/api/business-console/v1/quality/spc/control-chart")]
+[BusinessGatewayOperationId("queryBusinessConsoleQualitySpcControlChart")]
+public sealed class QueryBusinessConsoleQualitySpcControlChartEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualitySpcRequest, BusinessConsoleQualitySpcControlChartResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionRecordsRead)
+{
+    protected override string OrganizationId(BusinessConsoleQualitySpcRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleQualitySpcRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleQualitySpcControlChartResponse> ForwardAsync(
+        BusinessConsoleQualitySpcRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.QuerySpcControlChartAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Quality")]
+[HttpGet("/api/business-console/v1/quality/spc/process-capability")]
+[BusinessGatewayOperationId("queryBusinessConsoleQualityProcessCapability")]
+public sealed class QueryBusinessConsoleQualityProcessCapabilityEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityProcessCapabilityRequest, BusinessConsoleQualityProcessCapabilityResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionRecordsRead)
+{
+    protected override string OrganizationId(BusinessConsoleQualityProcessCapabilityRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleQualityProcessCapabilityRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleQualityProcessCapabilityResponse> ForwardAsync(
+        BusinessConsoleQualityProcessCapabilityRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.QueryProcessCapabilityAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console Quality")]

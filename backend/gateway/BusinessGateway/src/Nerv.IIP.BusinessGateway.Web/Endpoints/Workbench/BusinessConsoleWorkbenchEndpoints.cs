@@ -351,7 +351,7 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         {
             var response = await mes.ListWorkOrdersAsync(
                 tokenProvider.BearerToken,
-                new BusinessConsoleMesListRequest(request.OrganizationId, request.EnvironmentId, "released", Take: take),
+                new BusinessConsoleMesWorkOrderListRequest(request.OrganizationId, request.EnvironmentId, "released", Take: take),
                 cancellationToken);
             kpis.Add(new("releasedWorkOrders", "Released work orders", response.Total, "BusinessMES", "available"));
             sourceStatuses["BusinessMES"] = SourceAvailable("BusinessMES", BusinessGatewayPermissions.MesWorkOrdersRead);

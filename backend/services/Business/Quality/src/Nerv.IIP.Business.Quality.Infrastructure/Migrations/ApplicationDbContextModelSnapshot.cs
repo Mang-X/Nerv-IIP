@@ -1145,6 +1145,125 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.SpcControlChartAggregate.SpcControlChart", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("SPC control chart aggregate id.");
+
+                    b.Property<decimal>("AverageRange")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("average_range")
+                        .HasComment("Locked average subgroup range.");
+
+                    b.Property<decimal>("CenterLine")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("center_line")
+                        .HasComment("Locked Xbar center line.");
+
+                    b.Property<string>("CharacteristicCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("characteristic_code")
+                        .HasComment("Variable inspection characteristic code used for SPC.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the SPC chart lock record was created.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the SPC chart applies.");
+
+                    b.Property<DateTime?>("LimitsCalculatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("limits_calculated_at_utc")
+                        .HasComment("UTC time when the locked control limits were calculated.");
+
+                    b.Property<bool>("Locked")
+                        .HasColumnType("boolean")
+                        .HasColumnName("locked")
+                        .HasComment("Whether the current control limits are locked for operational judgment.");
+
+                    b.Property<DateTime?>("LockedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("locked_at_utc")
+                        .HasComment("UTC time when the limits were locked.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the SPC chart.");
+
+                    b.Property<decimal>("RangeLowerControlLimit")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("range_lower_control_limit")
+                        .HasComment("Locked R chart lower control limit.");
+
+                    b.Property<decimal>("RangeUpperControlLimit")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("range_upper_control_limit")
+                        .HasComment("Locked R chart upper control limit.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
+                        .HasComment("SKU code for the measured SPC sequence.");
+
+                    b.Property<int>("SubgroupSize")
+                        .HasColumnType("integer")
+                        .HasColumnName("subgroup_size")
+                        .HasComment("Xbar-R subgroup size used to calculate locked limits.");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the SPC chart lock record was last changed.");
+
+                    b.Property<string>("WorkCenterId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("Work center scope for the SPC sequence.");
+
+                    b.Property<decimal>("XbarLowerControlLimit")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("xbar_lower_control_limit")
+                        .HasComment("Locked Xbar lower control limit.");
+
+                    b.Property<decimal>("XbarUpperControlLimit")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("xbar_upper_control_limit")
+                        .HasComment("Locked Xbar upper control limit.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SkuCode", "CharacteristicCode", "WorkCenterId", "SubgroupSize")
+                        .IsUnique();
+
+                    b.ToTable("spc_control_charts", "quality", t =>
+                        {
+                            t.HasComment("Quality SPC control chart limit locks by SKU, characteristic and work center.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Coding.CodeCounter", b =>
                 {
                     b.Property<long>("Id")

@@ -61,6 +61,25 @@ public sealed record CreateRequestForQuotationRequest(
 
 public sealed record CreateRequestForQuotationResponse(RequestForQuotationId RequestForQuotationId);
 
+public sealed record ConvertPurchaseRequisitionsToPurchaseOrderRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<string> PurchaseRequisitionNos,
+    string? PurchaseOrderNo = null,
+    string? SupplierCode = null,
+    IReadOnlyCollection<string>? RfqSupplierCodes = null,
+    string? RfqNo = null,
+    string? IdempotencyKey = null,
+    string CurrencyCode = "CNY");
+
+public sealed record ConvertPurchaseRequisitionsToPurchaseOrderResponse(
+    string Status,
+    PurchaseOrderId? PurchaseOrderId = null,
+    string? PurchaseOrderNo = null,
+    string? RfqNo = null,
+    string? SupplierCode = null,
+    IReadOnlyCollection<ConvertedPurchaseOrderLineResult>? Lines = null);
+
 public sealed record ReceiveSupplierQuotationRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -196,6 +215,36 @@ public sealed class CreateRequestForQuotationEndpoint(ISender sender)
     {
         var id = await sender.Send(new CreateRequestForQuotationCommand(req.OrganizationId, req.EnvironmentId, req.RfqNo, req.SupplierCodes, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new CreateRequestForQuotationResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ConvertPurchaseRequisitionsToPurchaseOrderEndpoint(ISender sender)
+    : ErpEndpoint<ConvertPurchaseRequisitionsToPurchaseOrderRequest, ResponseData<ConvertPurchaseRequisitionsToPurchaseOrderResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureErpContract(ErpProcurementEndpointContracts.Get<ConvertPurchaseRequisitionsToPurchaseOrderEndpoint>());
+    }
+
+    public override async Task HandleAsync(ConvertPurchaseRequisitionsToPurchaseOrderRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ConvertPurchaseRequisitionsToPurchaseOrderCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.PurchaseRequisitionNos,
+            req.PurchaseOrderNo,
+            req.SupplierCode,
+            req.RfqSupplierCodes,
+            req.RfqNo,
+            req.IdempotencyKey,
+            req.CurrencyCode), ct);
+        await Send.OkAsync(new ConvertPurchaseRequisitionsToPurchaseOrderResponse(
+            result.Status.ToString(),
+            result.PurchaseOrderId,
+            result.PurchaseOrderNo,
+            result.RfqNo,
+            result.SupplierCode,
+            result.Lines).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -391,6 +440,7 @@ public static class ErpProcurementEndpointContracts
     [
         new(typeof(CreatePurchaseRequisitionFromSuggestionEndpoint), "POST", "/api/business/v1/erp/purchase-requisitions/from-suggestion", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "createErpPurchaseRequisitionFromSuggestion"),
         new(typeof(ListPurchaseRequisitionsEndpoint), "GET", "/api/business/v1/erp/purchase-requisitions", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "listErpPurchaseRequisitions"),
+        new(typeof(ConvertPurchaseRequisitionsToPurchaseOrderEndpoint), "POST", "/api/business/v1/erp/purchase-requisitions/convert-to-purchase-order", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "convertErpPurchaseRequisitionsToPurchaseOrder"),
         new(typeof(CreateRequestForQuotationEndpoint), "POST", "/api/business/v1/erp/rfqs", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "createErpRequestForQuotation"),
         new(typeof(ReceiveSupplierQuotationEndpoint), "POST", "/api/business/v1/erp/supplier-quotations", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "receiveErpSupplierQuotation"),
         new(typeof(ListRequestsForQuotationEndpoint), "GET", "/api/business/v1/erp/rfqs", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "listErpRequestsForQuotation"),

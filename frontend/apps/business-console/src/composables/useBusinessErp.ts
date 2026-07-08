@@ -7,6 +7,7 @@ import {
   createBusinessConsoleErpCostCandidateMutationOptions,
   createBusinessConsoleErpPurchaseOrderMutationOptions,
   createBusinessConsoleErpRequestForQuotationMutationOptions,
+  convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions,
   getBusinessConsoleErpFinanceSummaryQueryOptions,
   listBusinessConsoleErpCostCandidatesQueryOptions,
   listBusinessConsoleErpDeliveryOrdersQueryOptions,
@@ -80,6 +81,10 @@ interface ErpListQuery {
   keyword?: string
   skip: number
   take: number
+}
+
+interface ConvertPurchaseRequisitionOptions {
+  rfqSupplierCodes?: string[]
 }
 
 function unwrapItems<T>(envelope: { success?: boolean, data?: { items?: T[] } | null } | undefined): T[] {
@@ -192,10 +197,33 @@ export function useBusinessErp() {
 }
 
 export function useErpPurchaseRequisitions(initialFilters: Partial<BusinessErpListFilters> = {}) {
-  return useErpDocumentList<BusinessConsoleErpPurchaseRequisitionItem, BusinessConsoleErpPurchaseRequisitionListEnvelope>(
+  const list = useErpDocumentList<BusinessConsoleErpPurchaseRequisitionItem, BusinessConsoleErpPurchaseRequisitionListEnvelope>(
     (query) => listBusinessConsoleErpPurchaseRequisitionsQueryOptions({ query }),
     initialFilters,
   )
+  const convertMutation = useMutation({
+    ...convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions(),
+    onSuccess() {
+      void list.refresh()
+    },
+  })
+
+  return {
+    ...list,
+    convertToPurchaseOrder: (purchaseRequisitionNos: string[], options: ConvertPurchaseRequisitionOptions = {}) =>
+      convertMutation.mutateAsync({
+        body: {
+          organizationId: list.organizationId.value,
+          environmentId: list.environmentId.value,
+          purchaseRequisitionNos,
+          rfqSupplierCodes: options.rfqSupplierCodes ?? [],
+          currencyCode: 'CNY',
+          idempotencyKey: makeIdempotencyKey(),
+        },
+      }),
+    convertToPurchaseOrderPending: convertMutation.isLoading,
+    convertToPurchaseOrderError: convertMutation.error,
+  }
 }
 
 export function useErpRequestsForQuotation(initialFilters: Partial<BusinessErpListFilters> = {}) {

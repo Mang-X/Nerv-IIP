@@ -182,6 +182,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/rfqs", "get", "listBusinessConsoleErpRequestsForQuotation");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-requisitions", "get", "listBusinessConsoleErpPurchaseRequisitions");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-requisitions/from-suggestion", "post", "createBusinessConsoleErpPurchaseRequisitionFromSuggestion");
+        AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order", "post", "convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrder");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/rfqs", "post", "createBusinessConsoleErpRequestForQuotation");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/supplier-quotations", "post", "receiveBusinessConsoleErpSupplierQuotation");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-orders", "post", "createBusinessConsoleErpPurchaseOrder");

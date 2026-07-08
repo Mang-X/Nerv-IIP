@@ -23,6 +23,7 @@ public sealed record ScanRecordSummary(
     string SourceDocumentId,
     string Result,
     string? RejectionReason,
+    string DownstreamProcessingStatus,
     DateTimeOffset ScannedAtUtc);
 
 public sealed class ListScansQueryValidator : AbstractValidator<ListScansQuery>
@@ -72,7 +73,7 @@ public sealed class ListScansQueryHandler(ApplicationDbContext dbContext)
             .ThenByDescending(x => x.Id)
             .Skip(request.Skip)
             .Take(request.Take)
-            .Select(x => new ScanRecordSummary(x.Id, x.DeviceCode, x.ScannedValue, x.SourceWorkflow, x.SourceDocumentId, x.Result, x.RejectionReason, x.ScannedAtUtc))
+            .Select(x => new ScanRecordSummary(x.Id, x.DeviceCode, x.ScannedValue, x.SourceWorkflow, x.SourceDocumentId, x.Result, x.RejectionReason, x.DownstreamProcessingStatus, x.ScannedAtUtc))
             .ToArrayAsync(cancellationToken);
         return new ScanRecordListResult(items, total);
     }

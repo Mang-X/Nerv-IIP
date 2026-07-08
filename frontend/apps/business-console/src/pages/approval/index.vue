@@ -63,7 +63,7 @@ definePage({
   meta: {
     requiresAuth: true,
     title: '审批中心',
-    requiredPermissions: [P.approvalsRead, P.approvalsManage],
+    requiredPermissions: ['business.approvals.read', 'business.approvals.manage'],
   },
 })
 

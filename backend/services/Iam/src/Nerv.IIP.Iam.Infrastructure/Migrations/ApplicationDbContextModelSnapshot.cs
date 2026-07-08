@@ -279,6 +279,42 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate.MembershipDataScope", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasComment("Membership data scope identifier.");
+
+                    b.Property<string>("MembershipId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Owning membership identifier.");
+
+                    b.Property<string>("ScopeCode")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasComment("MasterData code for the data scope.");
+
+                    b.Property<string>("ScopeType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasComment("Data scope type: site, workshop or production-line.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MembershipId", "ScopeType", "ScopeCode")
+                        .IsUnique();
+
+                    b.ToTable("membership_data_scopes", "iam", t =>
+                        {
+                            t.HasComment("IAM data scope bindings owned by user memberships.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate.MembershipRole", b =>
                 {
                     b.Property<string>("Id")
@@ -426,6 +462,42 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                     b.ToTable("roles", "iam", t =>
                         {
                             t.HasComment("IAM roles that group permission codes for assignment.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate.RoleDataScope", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasComment("Role data scope identifier.");
+
+                    b.Property<string>("RoleId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Owning role identifier.");
+
+                    b.Property<string>("ScopeCode")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasComment("MasterData code for the data scope.");
+
+                    b.Property<string>("ScopeType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasComment("Data scope type: site, workshop or production-line.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RoleId", "ScopeType", "ScopeCode")
+                        .IsUnique();
+
+                    b.ToTable("role_data_scopes", "iam", t =>
+                        {
+                            t.HasComment("IAM data scope bindings owned by roles.");
                         });
                 });
 
@@ -821,11 +893,29 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate.MembershipDataScope", b =>
+                {
+                    b.HasOne("Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate.Membership", null)
+                        .WithMany("DataScopes")
+                        .HasForeignKey("MembershipId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate.MembershipRole", b =>
                 {
                     b.HasOne("Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate.Membership", null)
                         .WithMany("Roles")
                         .HasForeignKey("MembershipId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate.RoleDataScope", b =>
+                {
+                    b.HasOne("Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate.Role", null)
+                        .WithMany("DataScopes")
+                        .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -855,11 +945,15 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
 
             modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate.Membership", b =>
                 {
+                    b.Navigation("DataScopes");
+
                     b.Navigation("Roles");
                 });
 
             modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate.Role", b =>
                 {
+                    b.Navigation("DataScopes");
+
                     b.Navigation("Permissions");
                 });
 

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
+using Nerv.IIP.Iam.Web.Application.DataScopes;
 using Nerv.IIP.Iam.Infrastructure;
 
 namespace Nerv.IIP.Iam.Web.Tests;
@@ -316,6 +317,39 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
 
         Assert.Equal(created.RoleId, updated!.RoleId);
         Assert.Equal(["iam.users.read"], updated.PermissionCodes);
+
+        var roleScopesPatch = await _client.PatchAsJsonAsync(
+            $"/api/iam/v1/roles/{created.RoleId}/data-scopes",
+            new
+            {
+                dataScopes = new[]
+                {
+                    new { scopeType = " Workshop ", scopeCode = " WS-A " },
+                    new { scopeType = "production-line", scopeCode = "LINE-A" },
+                },
+            });
+        roleScopesPatch.EnsureSuccessStatusCode();
+        var roleScopes = await ReadResponseDataAsync<DataScopeListResponse>(roleScopesPatch);
+        Assert.Equal(
+            [new DataScopeResponse("production-line", "LINE-A"), new DataScopeResponse("workshop", "WS-A")],
+            roleScopes!.DataScopes);
+
+        var membershipScopesPatch = await _client.PatchAsJsonAsync(
+            "/api/iam/v1/users/user-admin/membership-data-scopes",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                dataScopes = new[] { new { scopeType = "site", scopeCode = "SITE-A" } },
+            });
+        membershipScopesPatch.EnsureSuccessStatusCode();
+        var membershipScopes = await ReadResponseDataAsync<DataScopeListResponse>(membershipScopesPatch);
+        Assert.Equal([new DataScopeResponse("site", "SITE-A")], membershipScopes!.DataScopes);
+
+        var unknownScope = await _client.PatchAsJsonAsync(
+            $"/api/iam/v1/roles/{created.RoleId}/data-scopes",
+            new { dataScopes = new[] { new { scopeType = "cell", scopeCode = "CELL-A" } } });
+        Assert.Equal(HttpStatusCode.BadRequest, unknownScope.StatusCode);
     }
 
     [Fact]

@@ -100,7 +100,14 @@ public sealed class ListAlarmRulesQueryHandler(ApplicationDbContext dbContext)
     }
 }
 
-public sealed record ListAlarmEventsQuery(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, string? Status, int Skip = 0, int Take = 100) : IQuery<PagedListResponse<AlarmEventListItem>>;
+public sealed record ListAlarmEventsQuery(
+    string? OrganizationId,
+    string? EnvironmentId,
+    string? DeviceAssetId,
+    string? Status,
+    int Skip = 0,
+    int Take = 100,
+    string? DeviceAssetIds = null) : IQuery<PagedListResponse<AlarmEventListItem>>;
 
 public sealed record AlarmEventListItem(
     AlarmEventId AlarmEventId,
@@ -134,11 +141,13 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
     public async Task<PagedListResponse<AlarmEventListItem>> Handle(ListAlarmEventsQuery request, CancellationToken cancellationToken)
     {
         var status = NormalizeStatus(request.Status);
+        var deviceAssetIds = SplitCsv(request.DeviceAssetIds);
         var query = dbContext.AlarmEvents
             .AsNoTracking()
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
-            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId);
+            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => deviceAssetIds.Count == 0 || deviceAssetIds.Contains(x.DeviceAssetId));
         query = status switch
         {
             null => query,
@@ -185,6 +194,16 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
     {
         var normalized = status?.Trim().ToLowerInvariant();
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static IReadOnlyCollection<string> SplitCsv(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? []
+            : value
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
     }
 }
 

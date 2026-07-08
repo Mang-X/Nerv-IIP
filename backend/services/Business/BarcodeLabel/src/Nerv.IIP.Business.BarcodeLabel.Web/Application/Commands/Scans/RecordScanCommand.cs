@@ -125,6 +125,31 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
 
         if (string.Equals(candidate.Result, "accepted", StringComparison.Ordinal))
         {
+            var existingNaturalKeyScan = await dbContext.ScanRecords.SingleOrDefaultAsync(x =>
+                x.OrganizationId == candidate.OrganizationId
+                && x.EnvironmentId == candidate.EnvironmentId
+                && x.ScannedValue == candidate.ScannedValue
+                && x.SourceWorkflow == candidate.SourceWorkflow
+                && x.SourceDocumentId == candidate.SourceDocumentId
+                && x.Result == candidate.Result,
+                cancellationToken);
+            if (existingNaturalKeyScan is not null)
+            {
+                try
+                {
+                    existingNaturalKeyScan.EnsureSameNaturalKeyPayload(candidate);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    throw new KnownException(ex.Message, ex);
+                }
+
+                return existingNaturalKeyScan.Id;
+            }
+        }
+
+        if (string.Equals(candidate.Result, "accepted", StringComparison.Ordinal))
+        {
             var duplicateSerializedScan = await dbContext.ScanRecords.AnyAsync(x =>
                 x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId

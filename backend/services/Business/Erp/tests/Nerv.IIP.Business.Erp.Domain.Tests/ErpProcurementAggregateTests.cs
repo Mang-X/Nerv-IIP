@@ -31,6 +31,30 @@ public sealed class ErpProcurementAggregateTests
     }
 
     [Fact]
+    public void Purchase_requisition_conversion_records_purchase_order_once()
+    {
+        var requisition = PurchaseRequisition.CreateFromSuggestion(
+            "org-001",
+            "env-dev",
+            "REQ-001",
+            "MPS-SUG-001",
+            "SKU-RM-1000",
+            "kg",
+            "SITE-01",
+            120m,
+            new DateOnly(2026, 6, 1));
+
+        requisition.MarkConverted("PO-001");
+        requisition.MarkConverted("PO-001");
+
+        Assert.Equal(PurchaseRequisitionStatus.Converted, requisition.Status);
+        Assert.Equal("PO-001", requisition.ConvertedPurchaseOrderNo);
+        Assert.NotNull(requisition.ConvertedAtUtc);
+        Assert.Single(requisition.GetDomainEvents().OfType<PurchaseRequisitionConvertedDomainEvent>());
+        Assert.Throws<InvalidOperationException>(() => requisition.MarkConverted("PO-002"));
+    }
+
+    [Fact]
     public void Request_for_quotation_requires_supplier_and_item()
     {
         Assert.Throws<ArgumentException>(() => RequestForQuotation.Create(
@@ -72,6 +96,36 @@ public sealed class ErpProcurementAggregateTests
             "SUP-001",
             "SITE-01",
             []));
+    }
+
+    [Fact]
+    public void Purchase_order_line_keeps_source_requisition_pegging()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-001",
+            "SUP-001",
+            "SITE-01",
+            [
+                new PurchaseOrderLineDraft(
+                    "LINE-001",
+                    "SKU-RM-1000",
+                    "kg",
+                    10m,
+                    12.5m,
+                    new DateOnly(2026, 6, 3),
+                    Sources:
+                    [
+                        new PurchaseOrderLineSourceDraft("PR-001", "10", 4m),
+                        new PurchaseOrderLineSourceDraft("PR-002", "10", 6m),
+                    ]),
+            ]);
+
+        var line = Assert.Single(order.Lines);
+        Assert.Equal(10m, line.SourceLinks.Sum(x => x.Quantity));
+        Assert.Contains(line.SourceLinks, x => x.PurchaseRequisitionNo == "PR-001" && x.PurchaseRequisitionLineNo == "10" && x.Quantity == 4m);
+        Assert.Contains(line.SourceLinks, x => x.PurchaseRequisitionNo == "PR-002" && x.PurchaseRequisitionLineNo == "10" && x.Quantity == 6m);
     }
 
     [Fact]

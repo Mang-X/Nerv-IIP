@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.QualityReasonAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.SpcControlChartAggregate;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
@@ -21,6 +22,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<InspectionRecord> InspectionRecords => Set<InspectionRecord>();
     public DbSet<InspectionTask> InspectionTasks => Set<InspectionTask>();
     public DbSet<QualityReason> QualityReasons => Set<QualityReason>();
+    public DbSet<SpcControlChart> SpcControlCharts => Set<SpcControlChart>();
     public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
     public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
 
