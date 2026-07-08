@@ -19,7 +19,8 @@ public sealed record QueryProcessCapabilityRequest(
     string SkuCode,
     string CharacteristicCode,
     string WorkCenterId,
-    int Take = 125);
+    int Take = 125,
+    int SubgroupSize = 5);
 
 public sealed record EvaluateSpcControlChartRequest(
     string OrganizationId,
@@ -46,8 +47,8 @@ public sealed class QuerySpcControlChartEndpoint(ISender sender)
             req.SkuCode,
             req.CharacteristicCode,
             req.WorkCenterId,
-            req.SubgroupSize,
-            req.Take), ct);
+            req.Take,
+            req.SubgroupSize), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -68,6 +69,7 @@ public sealed class QueryProcessCapabilityEndpoint(ISender sender)
             req.SkuCode,
             req.CharacteristicCode,
             req.WorkCenterId,
+            req.SubgroupSize,
             req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }

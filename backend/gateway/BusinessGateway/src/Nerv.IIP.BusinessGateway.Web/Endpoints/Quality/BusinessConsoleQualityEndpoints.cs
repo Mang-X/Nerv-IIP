@@ -155,6 +155,7 @@ public sealed class BusinessConsoleQualityProcessCapabilityRequestValidator
         RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.CharacteristicCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WorkCenterId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SubgroupSize).InclusiveBetween(2, 10);
         RuleFor(x => x.Take).InclusiveBetween(2, 500);
     }
 }

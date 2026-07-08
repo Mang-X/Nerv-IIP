@@ -87,11 +87,11 @@ public sealed class QualityInspectionEndpointContractTests
             && x.OperationId == "queryBusinessQualityProcessCapability");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/quality/spc/control-chart/evaluate"
-            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
+            && x.PermissionCode == BusinessPermissionCodes.QualitySpcManage
             && x.OperationId == "evaluateBusinessQualitySpcControlChart");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/quality/spc/control-chart/lock"
-            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
+            && x.PermissionCode == BusinessPermissionCodes.QualitySpcManage
             && x.OperationId == "lockBusinessQualitySpcControlChart");
     }
 

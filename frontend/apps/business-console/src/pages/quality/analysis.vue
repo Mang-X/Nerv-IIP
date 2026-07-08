@@ -3,7 +3,6 @@ import type { DataTableProColumn } from '@nerv-iip/ui'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
 import {
-  QUALITY_ANALYSIS_FACADE_AUDIT,
   buildQualityAnalysisSummary,
   useQualitySpcAnalysis,
   type QualityAnalysisBucket,
@@ -16,7 +15,6 @@ import {
   PageHeader,
   SectionCard,
   SectionCards,
-  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import {
@@ -70,14 +68,6 @@ const spcViolationColumns: DataTableProColumn<QualitySpcViolation>[] = [
   { key: 'endSubgroupIndex', header: '结束子组', align: 'end', width: 'w-24' },
   { key: 'message', header: '说明' },
 ]
-type AuditRow = (typeof QUALITY_ANALYSIS_FACADE_AUDIT)[number]
-const auditRows = computed<AuditRow[]>(() => [...QUALITY_ANALYSIS_FACADE_AUDIT])
-const auditColumns: DataTableProColumn<AuditRow>[] = [
-  { key: 'capability', header: '能力', cellClass: 'font-medium' },
-  { key: 'qualityService', header: '质量后台' },
-  { key: 'businessConsoleFacade', header: '控制台入口', width: 'w-28' },
-  { key: 'frontendHandling', header: '当前处理' },
-]
 
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
@@ -88,8 +78,8 @@ function formatQuantity(value: number) {
 function formatMetric(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '-'
 }
-function statusTone(value: string) {
-  return value === '已接入' ? 'success' : 'warning'
+function spcViolationKey(row: QualitySpcViolation) {
+  return `${row.rule}:${row.startSubgroupIndex}:${row.endSubgroupIndex}`
 }
 </script>
 
@@ -169,7 +159,7 @@ function statusTone(value: string) {
       <DataTablePro
         :columns="spcViolationColumns"
         :rows="spc.spcViolations.value"
-        row-key="rule"
+        :row-key="spcViolationKey"
         :loading="spc.spcPending.value"
         :searchable="false"
         :column-settings="false"
@@ -230,19 +220,6 @@ function statusTone(value: string) {
           <RouterLink to="/engineering/documents"><FileTextIcon aria-hidden="true" />工程文档</RouterLink>
         </ButtonPro>
       </div>
-
-      <DataTablePro
-        :columns="auditColumns"
-        :rows="auditRows"
-        row-key="capability"
-        :searchable="false"
-        :column-settings="false"
-        empty-message="暂无能力对照。"
-      >
-        <template #cell-businessConsoleFacade="{ row }">
-          <StatusBadgePro :label="row.businessConsoleFacade" :tone="statusTone(row.businessConsoleFacade)" />
-        </template>
-      </DataTablePro>
     </div>
   </BusinessLayout>
 </template>

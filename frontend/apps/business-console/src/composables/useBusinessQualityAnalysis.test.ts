@@ -7,7 +7,6 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
 import {
-  QUALITY_ANALYSIS_FACADE_AUDIT,
   buildQualityAnalysisSummary,
   useQualitySpcAnalysis,
 } from './useBusinessQualityAnalysis'
@@ -119,14 +118,6 @@ describe('business quality analysis summary', () => {
     expect(summary.bySourceType[0]).toMatchObject({ label: 'operation', count: 2, defectQuantity: 5 })
   })
 
-  it('documents the current facade gap instead of exposing static CAPA state', () => {
-    expect(QUALITY_ANALYSIS_FACADE_AUDIT).toEqual([
-      expect.objectContaining({ capability: 'SPC Xbar-R / 过程能力', businessConsoleFacade: '已接入' }),
-      expect.objectContaining({ capability: 'CAPA 列表 / 详情 / 状态追踪', businessConsoleFacade: '缺口' }),
-      expect.objectContaining({ capability: 'NCR 处置与关闭', businessConsoleFacade: '已接入' }),
-    ])
-  })
-
   it('queries SPC chart and capability only with the required business scope', () => {
     coladaState.queryDataById.set('queryBusinessConsoleQualitySpcControlChart', {
       success: true,
@@ -179,6 +170,7 @@ describe('business quality analysis summary', () => {
         skuCode: 'SKU-A',
         characteristicCode: 'DIAMETER',
         workCenterId: 'WC-01',
+        subgroupSize: 5,
         take: 40,
       },
     })

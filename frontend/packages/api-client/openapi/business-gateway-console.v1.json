@@ -3312,6 +3312,16 @@
               "default": 125,
               "nullable": false
             }
+          },
+          {
+            "name": "subgroupSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 5,
+              "nullable": false
+            }
           }
         ],
         "responses": {

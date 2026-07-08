@@ -44,27 +44,6 @@ export interface QualitySpcFilters extends BusinessContextFields {
   take: number
 }
 
-export const QUALITY_ANALYSIS_FACADE_AUDIT = [
-  {
-    capability: 'SPC Xbar-R / 过程能力',
-    qualityService: '已接入',
-    businessConsoleFacade: '已接入',
-    frontendHandling: '按 SKU、特性和工作中心查询 SPC 控制图、判异和 Cp/Cpk。',
-  },
-  {
-    capability: 'CAPA 列表 / 详情 / 状态追踪',
-    qualityService: '写入口已存在，缺少列表与详情读面',
-    businessConsoleFacade: '缺口',
-    frontendHandling: '不手写 CAPA 状态；在 NCR 处置中保留审批和关闭路径。',
-  },
-  {
-    capability: 'NCR 处置与关闭',
-    qualityService: '已接入',
-    businessConsoleFacade: '已接入',
-    frontendHandling: 'NCR 页面可提交处置审批链并记录返工、报废、退货关闭引用。',
-  },
-] as const
-
 export function useQualitySpcAnalysis(initialFilters: Partial<QualitySpcFilters> = {}) {
   const filters = defaultSpcFilters(initialFilters)
 
@@ -226,6 +205,7 @@ function toCapabilityQuery(filters: QualitySpcFilters) {
     skuCode: filters.skuCode.trim(),
     characteristicCode: filters.characteristicCode.trim(),
     workCenterId: filters.workCenterId.trim(),
+    subgroupSize: toPositiveInteger(filters.subgroupSize, 5),
     take: toPositiveInteger(filters.take, 50),
   }
 }

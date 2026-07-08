@@ -6843,6 +6843,7 @@ export type QueryBusinessConsoleQualityProcessCapabilityData = {
         characteristicCode: string;
         workCenterId: string;
         take?: number;
+        subgroupSize?: number;
     };
     url: '/api/business-console/v1/quality/spc/process-capability';
 };

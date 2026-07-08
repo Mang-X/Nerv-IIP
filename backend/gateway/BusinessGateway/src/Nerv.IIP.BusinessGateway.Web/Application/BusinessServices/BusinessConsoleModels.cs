@@ -896,7 +896,8 @@ public sealed record BusinessConsoleQualityProcessCapabilityRequest(
     string SkuCode,
     string CharacteristicCode,
     string WorkCenterId,
-    int Take = 125);
+    int Take = 125,
+    int SubgroupSize = 5);
 
 public sealed record BusinessConsoleQualitySpcControlChartResponse(
     string OrganizationId,

@@ -2468,6 +2468,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ("skuCode", request.SkuCode),
                 ("characteristicCode", request.CharacteristicCode),
                 ("workCenterId", request.WorkCenterId),
+                ("subgroupSize", request.SubgroupSize),
                 ("take", request.Take)),
             null,
             cancellationToken);

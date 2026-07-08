@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.SpcControlChartAggregate;
@@ -22,7 +23,8 @@ public sealed record QueryProcessCapabilityQuery(
     string SkuCode,
     string CharacteristicCode,
     string WorkCenterId,
-    int Take = 125) : IQuery<ProcessCapabilityResponse>;
+    int Take = 125,
+    int SubgroupSize = 5) : IQuery<ProcessCapabilityResponse>;
 
 public sealed record EvaluateSpcControlChartCommand(
     string OrganizationId,
@@ -125,6 +127,7 @@ public sealed class QueryProcessCapabilityQueryValidator : AbstractValidator<Que
         RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.CharacteristicCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WorkCenterId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SubgroupSize).InclusiveBetween(2, 10);
         RuleFor(x => x.Take).InclusiveBetween(2, 500);
     }
 }
@@ -148,7 +151,7 @@ public sealed class QuerySpcControlChartQueryHandler(ApplicationDbContext dbCont
             x.OrganizationId == request.OrganizationId
             && x.EnvironmentId == request.EnvironmentId
             && x.SkuCode == request.SkuCode
-            && x.CharacteristicCode == request.CharacteristicCode.ToLower()
+            && x.CharacteristicCode == request.CharacteristicCode.Trim().ToLowerInvariant()
             && x.WorkCenterId == request.WorkCenterId
             && x.SubgroupSize == request.SubgroupSize
             && x.Locked,
@@ -196,7 +199,8 @@ public sealed class QueryProcessCapabilityQueryHandler(ApplicationDbContext dbCo
             cancellationToken);
         var values = points.Select(x => x.MeasuredValue).ToArray();
         var mean = SpcCalculation.Mean(values);
-        var standardDeviation = SpcCalculation.SampleStandardDeviation(values, mean);
+        var subgroups = SpcCalculation.BuildSubgroups(points, request.SubgroupSize);
+        var standardDeviation = SpcCalculation.EstimateWithinSubgroupStandardDeviation(subgroups, request.SubgroupSize);
         var cp = spec.LowerSpecLimit.HasValue && spec.UpperSpecLimit.HasValue && standardDeviation > 0
             ? (spec.UpperSpecLimit.Value - spec.LowerSpecLimit.Value) / (6m * standardDeviation)
             : (decimal?)null;
@@ -272,7 +276,7 @@ public sealed class LockSpcControlChartCommandHandler(ApplicationDbContext dbCon
             x.OrganizationId == request.OrganizationId
             && x.EnvironmentId == request.EnvironmentId
             && x.SkuCode == request.SkuCode
-            && x.CharacteristicCode == request.CharacteristicCode.ToLower()
+            && x.CharacteristicCode == request.CharacteristicCode.Trim().ToLowerInvariant()
             && x.WorkCenterId == request.WorkCenterId
             && x.SubgroupSize == request.SubgroupSize,
             cancellationToken);
@@ -315,7 +319,7 @@ internal static class SpcDataProjection
         CancellationToken cancellationToken)
     {
         var normalizedCharacteristic = characteristicCode.Trim().ToLowerInvariant();
-        return await (from record in dbContext.InspectionRecords.AsNoTracking()
+        var rows = await (from record in dbContext.InspectionRecords.AsNoTracking()
                 join plan in dbContext.InspectionPlans.AsNoTracking() on record.InspectionPlanId equals plan.Id
                 from line in record.ResultLines
                 where record.OrganizationId == organizationId
@@ -325,15 +329,24 @@ internal static class SpcDataProjection
                     && line.CharacteristicCode == normalizedCharacteristic
                     && line.MeasuredValue.HasValue
                 orderby record.CreatedAtUtc descending
-                select new SpcMeasurementPointResponse(
+                select new SpcMeasurementPointProjection(
                     record.Id.ToString(),
                     record.SourceDocumentId,
-                    new DateTimeOffset(DateTime.SpecifyKind(record.CreatedAtUtc, DateTimeKind.Utc)),
+                    record.CreatedAtUtc,
                     line.MeasuredValue!.Value,
                     line.UnitCode))
             .Take(Math.Clamp(take, 2, 500))
-            .OrderBy(x => x.MeasuredAtUtc)
             .ToListAsync(cancellationToken);
+
+        return rows
+            .OrderBy(x => x.CreatedAtUtc)
+            .Select(x => new SpcMeasurementPointResponse(
+                x.InspectionRecordId,
+                x.SourceDocumentId,
+                new DateTimeOffset(DateTime.SpecifyKind(x.CreatedAtUtc, DateTimeKind.Utc)),
+                x.MeasuredValue,
+                x.UnitCode))
+            .ToArray();
     }
 
     public static async Task<SpcSpecification> LoadSpecificationAsync(
@@ -366,19 +379,26 @@ internal static class SpcDataProjection
 
 internal sealed record SpcSpecification(decimal? LowerSpecLimit, decimal? UpperSpecLimit);
 
+internal sealed record SpcMeasurementPointProjection(
+    string InspectionRecordId,
+    string SourceDocumentId,
+    DateTime CreatedAtUtc,
+    decimal MeasuredValue,
+    string? UnitCode);
+
 internal static class SpcCalculation
 {
     private static readonly IReadOnlyDictionary<int, XbarRConstants> Constants = new Dictionary<int, XbarRConstants>
     {
-        [2] = new(1.880m, 0m, 3.267m),
-        [3] = new(1.023m, 0m, 2.574m),
-        [4] = new(0.729m, 0m, 2.282m),
-        [5] = new(0.577m, 0m, 2.114m),
-        [6] = new(0.483m, 0m, 2.004m),
-        [7] = new(0.419m, 0.076m, 1.924m),
-        [8] = new(0.373m, 0.136m, 1.864m),
-        [9] = new(0.337m, 0.184m, 1.816m),
-        [10] = new(0.308m, 0.223m, 1.777m),
+        [2] = new(1.880m, 0m, 3.267m, 1.128m),
+        [3] = new(1.023m, 0m, 2.574m, 1.693m),
+        [4] = new(0.729m, 0m, 2.282m, 2.059m),
+        [5] = new(0.577m, 0m, 2.114m, 2.326m),
+        [6] = new(0.483m, 0m, 2.004m, 2.534m),
+        [7] = new(0.419m, 0.076m, 1.924m, 2.704m),
+        [8] = new(0.373m, 0.136m, 1.864m, 2.847m),
+        [9] = new(0.337m, 0.184m, 1.816m, 2.970m),
+        [10] = new(0.308m, 0.223m, 1.777m, 3.078m),
     };
 
     public static IReadOnlyCollection<SpcSubgroupResponse> BuildSubgroups(
@@ -475,7 +495,7 @@ internal static class SpcCalculation
             .ToArray();
     }
 
-    public static decimal CalculateCpk(decimal mean, decimal standardDeviation, decimal? lowerSpecLimit, decimal? upperSpecLimit)
+    public static decimal? CalculateCpk(decimal mean, decimal standardDeviation, decimal? lowerSpecLimit, decimal? upperSpecLimit)
     {
         var candidates = new List<decimal>();
         if (upperSpecLimit.HasValue)
@@ -488,7 +508,7 @@ internal static class SpcCalculation
             candidates.Add((mean - lowerSpecLimit.Value) / (3m * standardDeviation));
         }
 
-        return candidates.Count == 0 ? 0m : candidates.Min();
+        return candidates.Count == 0 ? null : candidates.Min();
     }
 
     public static decimal Mean(IReadOnlyCollection<decimal> values)
@@ -507,6 +527,24 @@ internal static class SpcCalculation
         return (decimal)Math.Sqrt(variance);
     }
 
+    public static decimal EstimateWithinSubgroupStandardDeviation(
+        IReadOnlyCollection<SpcSubgroupResponse> subgroups,
+        int subgroupSize)
+    {
+        if (subgroups.Count == 0)
+        {
+            return 0m;
+        }
+
+        if (!Constants.TryGetValue(subgroupSize, out var constants))
+        {
+            throw new KnownException($"SPC Xbar-R constants are not configured for subgroup size {subgroupSize}.");
+        }
+
+        var averageRange = Mean(subgroups.Select(x => x.Range).ToArray());
+        return constants.D2 <= 0 ? 0m : averageRange / constants.D2;
+    }
+
     public static decimal Round(decimal value)
     {
         return Math.Round(value, 6, MidpointRounding.AwayFromZero);
@@ -517,64 +555,111 @@ internal static class SpcCalculation
         decimal centerLine,
         List<SpcRuleViolationResponse> violations)
     {
-        foreach (var window in Windows(subgroups, 7))
-        {
-            if (window.All(x => x.Xbar > centerLine))
-            {
-                violations.Add(new SpcRuleViolationResponse(
-                    QualitySpcRuleCodes.ConsecutiveShiftAboveCenter,
-                    window[0].Index,
-                    window[^1].Index,
-                    "Seven consecutive subgroup means are above the center line."));
-            }
-
-            if (window.All(x => x.Xbar < centerLine))
-            {
-                violations.Add(new SpcRuleViolationResponse(
-                    QualitySpcRuleCodes.ConsecutiveShiftBelowCenter,
-                    window[0].Index,
-                    window[^1].Index,
-                    "Seven consecutive subgroup means are below the center line."));
-            }
-        }
+        AddPredicateRunViolation(
+            subgroups,
+            x => x.Xbar > centerLine,
+            7,
+            QualitySpcRuleCodes.ConsecutiveShiftAboveCenter,
+            "Seven consecutive subgroup means are above the center line.",
+            violations);
+        AddPredicateRunViolation(
+            subgroups,
+            x => x.Xbar < centerLine,
+            7,
+            QualitySpcRuleCodes.ConsecutiveShiftBelowCenter,
+            "Seven consecutive subgroup means are below the center line.",
+            violations);
     }
 
     private static void AddTrendViolations(
         IReadOnlyCollection<SpcSubgroupResponse> subgroups,
         List<SpcRuleViolationResponse> violations)
     {
-        foreach (var window in Windows(subgroups, 6))
-        {
-            if (window.Zip(window.Skip(1)).All(pair => pair.Second.Xbar > pair.First.Xbar))
-            {
-                violations.Add(new SpcRuleViolationResponse(
-                    QualitySpcRuleCodes.TrendIncreasing,
-                    window[0].Index,
-                    window[^1].Index,
-                    "Six consecutive subgroup means are increasing."));
-            }
-
-            if (window.Zip(window.Skip(1)).All(pair => pair.Second.Xbar < pair.First.Xbar))
-            {
-                violations.Add(new SpcRuleViolationResponse(
-                    QualitySpcRuleCodes.TrendDecreasing,
-                    window[0].Index,
-                    window[^1].Index,
-                    "Six consecutive subgroup means are decreasing."));
-            }
-        }
+        AddTrendRunViolation(
+            subgroups,
+            (previous, current) => current.Xbar > previous.Xbar,
+            QualitySpcRuleCodes.TrendIncreasing,
+            "Six consecutive subgroup means are increasing.",
+            violations);
+        AddTrendRunViolation(
+            subgroups,
+            (previous, current) => current.Xbar < previous.Xbar,
+            QualitySpcRuleCodes.TrendDecreasing,
+            "Six consecutive subgroup means are decreasing.",
+            violations);
     }
 
-    private static IEnumerable<SpcSubgroupResponse[]> Windows(IReadOnlyCollection<SpcSubgroupResponse> subgroups, int size)
+    private static void AddPredicateRunViolation(
+        IReadOnlyCollection<SpcSubgroupResponse> subgroups,
+        Func<SpcSubgroupResponse, bool> predicate,
+        int minimumLength,
+        string rule,
+        string message,
+        List<SpcRuleViolationResponse> violations)
     {
         var array = subgroups.OrderBy(x => x.Index).ToArray();
-        for (var index = 0; index <= array.Length - size; index++)
+        var start = -1;
+        for (var index = 0; index <= array.Length; index++)
         {
-            yield return array[index..(index + size)];
+            var matches = index < array.Length && predicate(array[index]);
+            if (matches && start < 0)
+            {
+                start = index;
+            }
+
+            if ((matches || start < 0) && index < array.Length)
+            {
+                continue;
+            }
+
+            if (start < 0)
+            {
+                continue;
+            }
+
+            var length = index - start;
+            if (length >= minimumLength)
+            {
+                violations.Add(new SpcRuleViolationResponse(rule, array[start].Index, array[index - 1].Index, message));
+            }
+
+            start = -1;
         }
     }
 
-    private sealed record XbarRConstants(decimal A2, decimal D3, decimal D4);
+    private static void AddTrendRunViolation(
+        IReadOnlyCollection<SpcSubgroupResponse> subgroups,
+        Func<SpcSubgroupResponse, SpcSubgroupResponse, bool> isTrendStep,
+        string rule,
+        string message,
+        List<SpcRuleViolationResponse> violations)
+    {
+        var array = subgroups.OrderBy(x => x.Index).ToArray();
+        if (array.Length < 2)
+        {
+            return;
+        }
+
+        var start = 0;
+        for (var index = 1; index <= array.Length; index++)
+        {
+            var continues = index < array.Length && isTrendStep(array[index - 1], array[index]);
+            if (continues)
+            {
+                continue;
+            }
+
+            var length = index - start;
+            if (length >= 6)
+            {
+                violations.Add(new SpcRuleViolationResponse(rule, array[start].Index, array[index - 1].Index, message));
+            }
+
+            start = index;
+        }
+    }
+
+    private sealed record XbarRConstants(decimal A2, decimal D3, decimal D4, decimal D2);
 }
 
 internal static class SpcAlertIntegrationEvents
@@ -598,7 +683,10 @@ internal static class SpcAlertIntegrationEvents
             chart.OrganizationId,
             chart.EnvironmentId,
             context.Actor,
-            EventIds.Idempotency(alertKey, string.Join(",", ruleCodes.Order(StringComparer.Ordinal))),
+            EventIds.Idempotency(
+                alertKey,
+                latestMeasuredAtUtc.ToString("O", CultureInfo.InvariantCulture),
+                string.Join(",", ruleCodes.Order(StringComparer.Ordinal))),
             new SpcAlertRaisedPayload(
                 alertKey,
                 "quality-spc-alert",
