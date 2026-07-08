@@ -232,14 +232,23 @@ public sealed class EvaluateSpcControlChartCommandHandler(
 {
     public async Task<SpcEvaluationResponse> Handle(EvaluateSpcControlChartCommand request, CancellationToken cancellationToken)
     {
-        var chart = await sender.Send(new QuerySpcControlChartQuery(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.SkuCode,
-            request.CharacteristicCode,
-            request.WorkCenterId,
-            request.SubgroupSize,
-            request.Take), cancellationToken);
+        SpcControlChartResponse chart;
+        try
+        {
+            chart = await sender.Send(new QuerySpcControlChartQuery(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.SkuCode,
+                request.CharacteristicCode,
+                request.WorkCenterId,
+                request.SubgroupSize,
+                request.Take), cancellationToken);
+        }
+        catch (KnownException exception) when (string.Equals(exception.Message, SpcCalculation.NoCompleteSubgroupMessage, StringComparison.Ordinal))
+        {
+            return new SpcEvaluationResponse(false, []);
+        }
+
         if (chart.RuleViolations.Count == 0 || chart.DataPoints.Count == 0)
         {
             return new SpcEvaluationResponse(false, chart.RuleViolations);
@@ -388,6 +397,8 @@ internal sealed record SpcMeasurementPointProjection(
 
 internal static class SpcCalculation
 {
+    public const string NoCompleteSubgroupMessage = "SPC control chart requires at least one complete subgroup.";
+
     private static readonly IReadOnlyDictionary<int, XbarRConstants> Constants = new Dictionary<int, XbarRConstants>
     {
         [2] = new(1.880m, 0m, 3.267m, 1.128m),
@@ -434,7 +445,7 @@ internal static class SpcCalculation
 
         if (subgroups.Count == 0)
         {
-            throw new KnownException("SPC control chart requires at least one complete subgroup.");
+            throw new KnownException(NoCompleteSubgroupMessage);
         }
 
         var centerLine = Mean(subgroups.Select(x => x.Xbar).ToArray());
@@ -514,17 +525,6 @@ internal static class SpcCalculation
     public static decimal Mean(IReadOnlyCollection<decimal> values)
     {
         return values.Count == 0 ? 0m : values.Sum() / values.Count;
-    }
-
-    public static decimal SampleStandardDeviation(IReadOnlyCollection<decimal> values, decimal mean)
-    {
-        if (values.Count < 2)
-        {
-            return 0m;
-        }
-
-        var variance = values.Sum(value => (double)((value - mean) * (value - mean))) / (values.Count - 1);
-        return (decimal)Math.Sqrt(variance);
     }
 
     public static decimal EstimateWithinSubgroupStandardDeviation(

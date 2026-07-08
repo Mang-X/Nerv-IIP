@@ -195,6 +195,34 @@ public sealed class QualitySpcAnalysisTests
     }
 
     [Fact]
+    public async Task Inspection_result_event_ignores_spc_warmup_before_complete_subgroup()
+    {
+        await using var provider = CreateInMemoryMediatorProvider();
+        InspectionPlan plan;
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            plan = NewVariablePlan("IQP-SPC-WARMUP-001", lowerSpecLimit: 9m, upperSpecLimit: 12m);
+            dbContext.InspectionPlans.Add(plan);
+            AddMeasurements(dbContext, plan, [10.0m]);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        using (var scope = provider.CreateScope())
+        {
+            var handler = new InspectionResultIntegrationEventHandlerForEvaluateSpc(
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                scope.ServiceProvider.GetRequiredService<ISender>(),
+                deadLetters);
+            await handler.HandleAsync(NewInspectionResultEvent(plan), CancellationToken.None);
+        }
+
+        Assert.Empty(provider.GetRequiredService<RecordingIntegrationEventPublisher>().Published.OfType<SpcAlertRaisedIntegrationEvent>());
+        Assert.Empty(deadLetters.Messages);
+    }
+
+    [Fact]
     public async Task Spc_rule_detection_reports_maximal_trend_run()
     {
         await using var provider = CreateInMemoryProvider();

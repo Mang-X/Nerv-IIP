@@ -42,13 +42,13 @@ public sealed class QuerySpcControlChartEndpoint(ISender sender)
     public override async Task HandleAsync(QuerySpcControlChartRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new QuerySpcControlChartQuery(
-            req.OrganizationId,
-            req.EnvironmentId,
-            req.SkuCode,
-            req.CharacteristicCode,
-            req.WorkCenterId,
-            req.Take,
-            req.SubgroupSize), ct);
+            OrganizationId: req.OrganizationId,
+            EnvironmentId: req.EnvironmentId,
+            SkuCode: req.SkuCode,
+            CharacteristicCode: req.CharacteristicCode,
+            WorkCenterId: req.WorkCenterId,
+            SubgroupSize: req.SubgroupSize,
+            Take: req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -64,13 +64,13 @@ public sealed class QueryProcessCapabilityEndpoint(ISender sender)
     public override async Task HandleAsync(QueryProcessCapabilityRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new QueryProcessCapabilityQuery(
-            req.OrganizationId,
-            req.EnvironmentId,
-            req.SkuCode,
-            req.CharacteristicCode,
-            req.WorkCenterId,
-            req.SubgroupSize,
-            req.Take), ct);
+            OrganizationId: req.OrganizationId,
+            EnvironmentId: req.EnvironmentId,
+            SkuCode: req.SkuCode,
+            CharacteristicCode: req.CharacteristicCode,
+            WorkCenterId: req.WorkCenterId,
+            Take: req.Take,
+            SubgroupSize: req.SubgroupSize), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
