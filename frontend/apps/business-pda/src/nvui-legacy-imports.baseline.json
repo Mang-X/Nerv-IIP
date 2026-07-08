@@ -1,0 +1,22 @@
+{
+  "pages/design-system/gallery.vue": [
+    "AppShellMobile",
+    "BottomSheet",
+    "ListRow",
+    "Result",
+    "ScanBar"
+  ],
+  "pages/equipment/alarms.vue": ["AppShellMobile", "ListRow", "ScanBar"],
+  "pages/equipment/inspect.vue": ["AppShellMobile", "ListRow", "Result", "ScanBar"],
+  "pages/equipment/repair.vue": ["AppShellMobile", "ListRow", "Result", "ScanBar"],
+  "pages/index.vue": ["AppShellMobile", "ScanBar"],
+  "pages/mes/issue.vue": ["AppShellMobile", "BottomSheet", "ListRow", "Result", "ScanBar"],
+  "pages/mes/operation.vue": ["AppShellMobile", "BottomSheet", "ListRow", "Result", "ScanBar"],
+  "pages/mes/receipt.vue": ["AppShellMobile", "BottomSheet", "ListRow", "Result", "ScanBar"],
+  "pages/mes/report.vue": ["AppShellMobile", "BottomSheet", "ListRow", "Result", "ScanBar"],
+  "pages/wms/count.vue": ["AppShellMobile", "BottomSheet", "ListRow", "Result", "ScanBar"],
+  "pages/wms/inbound.vue": ["AppShellMobile", "BottomSheet", "ListRow", "Result", "ScanBar"],
+  "pages/wms/pick.vue": ["AppShellMobile", "ListRow", "ScanBar"],
+  "pages/wms/putaway.vue": ["AppShellMobile", "ListRow", "ScanBar"],
+  "pages/wms/review.vue": ["AppShellMobile", "BottomSheet", "ListRow", "Result", "ScanBar"]
+}

@@ -1,16 +1,16 @@
 ---
-title: DataTable 数据表格
+title: NvDataTable 数据表格
 pageClass: ds-wide
 aside: false
 ---
 
 <script setup>
 import {
-  DataTablePro,
-  DataTableToolbarPro,
-  DataTablePaginationPro,
-  ButtonPro,
-  StatusBadgePro,
+  NvDataTable,
+  NvDataTableToolbar,
+  NvDataTablePagination,
+  NvButton,
+  NvStatusBadge,
   messagePro,
 } from '@nerv-iip/ui'
 import { PlusIcon, ListFilterIcon } from 'lucide-vue-next'
@@ -72,14 +72,14 @@ const page = ref(8)
 const pageSize = ref(10)
 </script>
 
-# DataTable 数据表格
+# NvDataTable 数据表格
 
-完整的高级数据表体验。`DataTablePro` 内置工具栏（搜索 · 字段筛选 · 列显隐 · 密度）、可排序表头、行选择与可点击页码分页；默认在客户端处理筛选/排序/分页。工具栏 `DataTableToolbarPro` 与分页 `DataTablePaginationPro` 也可独立使用。
+完整的高级数据表体验。`NvDataTable` 内置工具栏（搜索 · 字段筛选 · 列显隐 · 密度）、可排序表头、行选择与可点击页码分页；默认在客户端处理筛选/排序/分页。工具栏 `NvDataTableToolbar` 与分页 `NvDataTablePagination` 也可独立使用。
 
 ## 完整表格
 
 <Demo block>
-  <DataTablePro
+  <NvDataTable
     :columns="columns"
     :rows="rows"
     row-key="code"
@@ -95,23 +95,23 @@ const pageSize = ref(10)
     @refresh="messagePro.success('已刷新工单列表')"
   >
     <template #cell-status="{ value }">
-      <StatusBadgePro :value="String(value)" :pulse="value === 'running'" />
+      <NvStatusBadge :value="String(value)" :pulse="value === 'running'" />
     </template>
     <template #bulk-actions>
-      <ButtonPro variant="outline" size="sm">导出所选</ButtonPro>
-      <ButtonPro variant="brand" size="sm">下发排产</ButtonPro>
+      <NvButton variant="outline" size="sm">导出所选</NvButton>
+      <NvButton variant="brand" size="sm">下发排产</NvButton>
     </template>
     <template #actions>
-      <ButtonPro variant="brand" size="sm">
+      <NvButton variant="brand" size="sm">
         <template #leading><PlusIcon /></template>
         新建工单
-      </ButtonPro>
+      </NvButton>
     </template>
-  </DataTablePro>
+  </NvDataTable>
 </Demo>
 
 ```vue
-<DataTablePro
+<NvDataTable
   :columns="columns"
   :rows="rows"
   row-key="code"
@@ -125,18 +125,18 @@ const pageSize = ref(10)
   @refresh="onRefresh"
 >
   <template #cell-status="{ value }">
-    <StatusBadgePro :value="String(value)" :pulse="value === 'running'" />
+    <NvStatusBadge :value="String(value)" :pulse="value === 'running'" />
   </template>
   <template #actions>
-    <ButtonPro variant="brand" size="sm">新建工单</ButtonPro>
+    <NvButton variant="brand" size="sm">新建工单</NvButton>
   </template>
-</DataTablePro>
+</NvDataTable>
 ```
 
-## 操作栏 Toolbar
+## 操作栏 NvToolbar
 
 <Demo block>
-  <DataTableToolbarPro
+  <NvDataTableToolbar
     v-model:search="tbSearch"
     v-model:tab="tbTab"
     v-model:density="tbDensity"
@@ -152,22 +152,22 @@ const pageSize = ref(10)
     @export="messagePro.success('已导出 CSV')"
   >
     <template #filters>
-      <ButtonPro variant="outline" size="sm">
+      <NvButton variant="outline" size="sm">
         <template #leading><ListFilterIcon /></template>
         筛选
-      </ButtonPro>
+      </NvButton>
     </template>
     <template #actions>
-      <ButtonPro variant="brand" size="sm">
+      <NvButton variant="brand" size="sm">
         <template #leading><PlusIcon /></template>
         新建工单
-      </ButtonPro>
+      </NvButton>
     </template>
-  </DataTableToolbarPro>
+  </NvDataTableToolbar>
 </Demo>
 
 ```vue
-<DataTableToolbarPro
+<NvDataTableToolbar
   v-model:search="search"
   v-model:tab="tab"
   v-model:density="density"
@@ -183,7 +183,7 @@ const pageSize = ref(10)
 ## 分页 Pagination
 
 <Demo block>
-  <DataTablePaginationPro
+  <NvDataTablePagination
     :page="page"
     :page-size="pageSize"
     :total-items="528"
@@ -194,7 +194,7 @@ const pageSize = ref(10)
 </Demo>
 
 ```vue
-<DataTablePaginationPro
+<NvDataTablePagination
   :page="page"
   :page-size="pageSize"
   :total-items="528"
@@ -206,24 +206,24 @@ const pageSize = ref(10)
 
 ## 属性
 
-### DataTablePro
+### NvDataTable
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `columns` | 列定义（`key` / `header` / `sortable` / `filter` 等） | `DataTableProColumn[]` | — |
-| `rows` | 行数据 | `T[]` | — |
-| `rowKey` | 行主键字段名或取值函数 | `string \| (row) => string \| number` | — |
-| `selectable` | 行选择 + 批量操作栏 | `boolean` | `false` |
-| `refreshable` | 显示刷新按钮（触发 `refresh`） | `boolean` | `false` |
-| `tabs` / `tabKey` | 快捷筛选分段标签及其作用列 | `{ label, value }[]` / `string` | — |
-| `pageSize` | 初始每页条数 | `number` | — |
-| `selected` | 选中行主键（`v-model:selected`） | `(string \| number)[]` | — |
+| 属性              | 说明                                                  | 类型                                  | 默认    |
+| ----------------- | ----------------------------------------------------- | ------------------------------------- | ------- |
+| `columns`         | 列定义（`key` / `header` / `sortable` / `filter` 等） | `NvDataTableColumn[]`                 | —       |
+| `rows`            | 行数据                                                | `T[]`                                 | —       |
+| `rowKey`          | 行主键字段名或取值函数                                | `string \| (row) => string \| number` | —       |
+| `selectable`      | 行选择 + 批量操作栏                                   | `boolean`                             | `false` |
+| `refreshable`     | 显示刷新按钮（触发 `refresh`）                        | `boolean`                             | `false` |
+| `tabs` / `tabKey` | 快捷筛选分段标签及其作用列                            | `{ label, value }[]` / `string`       | —       |
+| `pageSize`        | 初始每页条数                                          | `number`                              | —       |
+| `selected`        | 选中行主键（`v-model:selected`）                      | `(string \| number)[]`                | —       |
 
-### DataTablePaginationPro
+### NvDataTablePagination
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `page` | 当前页（`v-model:page`） | `number` | — |
-| `pageSize` | 每页条数（`v-model:page-size`） | `number` | — |
-| `totalItems` | 总条数 | `number` | — |
-| `showJump` | 显示跳页输入 | `boolean` | `false` |
+| 属性         | 说明                            | 类型      | 默认    |
+| ------------ | ------------------------------- | --------- | ------- |
+| `page`       | 当前页（`v-model:page`）        | `number`  | —       |
+| `pageSize`   | 每页条数（`v-model:page-size`） | `number`  | —       |
+| `totalItems` | 总条数                          | `number`  | —       |
+| `showJump`   | 显示跳页输入                    | `boolean` | `false` |

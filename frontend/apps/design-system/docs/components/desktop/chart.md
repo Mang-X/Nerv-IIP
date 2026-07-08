@@ -3,7 +3,7 @@ title: Chart 图表
 ---
 
 <script setup>
-import { AreaChartPro, LineChartPro, BarChartPro, DonutChartPro } from '@nerv-iip/ui'
+import { NvAreaChart, NvLineChart, NvBarChart, NvDonutChart } from '@nerv-iip/ui'
 
 const outputSeries = [
   { label: '08:00', value: 420 },
@@ -52,13 +52,13 @@ const statusMix = [
 
 基于 unovis 的一组工厂场景图表：面积、折线、柱状、环形。颜色取自设计令牌，随运行时品牌色重新着色。
 
-## 面积图 AreaChartPro
+## 面积图 NvAreaChart
 
 单系列累计趋势，适合当班产出等时间序列。
 
 <Demo>
   <div class="w-full">
-    <AreaChartPro :data="outputSeries" :height="220" value-suffix=" 件" />
+    <NvAreaChart :data="outputSeries" :height="220" value-suffix=" 件" />
   </div>
 </Demo>
 
@@ -73,17 +73,17 @@ const outputSeries = [
 </script>
 
 <template>
-  <AreaChartPro :data="outputSeries" :height="220" value-suffix=" 件" />
+  <NvAreaChart :data="outputSeries" :height="220" value-suffix=" 件" />
 </template>
 ```
 
-## 折线图 LineChartPro
+## 折线图 NvLineChart
 
 多系列对比，例如计划 vs 实际产量。
 
 <Demo>
   <div class="w-full">
-    <LineChartPro :data="planActual" x-key="day" :series="planActualSeries" :height="220" value-suffix=" 件" />
+    <NvLineChart :data="planActual" x-key="day" :series="planActualSeries" :height="220" value-suffix=" 件" />
   </div>
 </Demo>
 
@@ -100,17 +100,23 @@ const planActualSeries = [
 </script>
 
 <template>
-  <LineChartPro :data="planActual" x-key="day" :series="planActualSeries" :height="220" value-suffix=" 件" />
+  <NvLineChart
+    :data="planActual"
+    x-key="day"
+    :series="planActualSeries"
+    :height="220"
+    value-suffix=" 件"
+  />
 </template>
 ```
 
-## 柱状图 BarChartPro
+## 柱状图 NvBarChart
 
 分类（可分组）对比，例如各工作中心的良品 / 废品。
 
 <Demo>
   <div class="w-full">
-    <BarChartPro :data="outputByCenter" x-key="center" :series="outputByCenterSeries" :height="220" />
+    <NvBarChart :data="outputByCenter" x-key="center" :series="outputByCenterSeries" :height="220" />
   </div>
 </Demo>
 
@@ -127,17 +133,17 @@ const outputByCenterSeries = [
 </script>
 
 <template>
-  <BarChartPro :data="outputByCenter" x-key="center" :series="outputByCenterSeries" :height="220" />
+  <NvBarChart :data="outputByCenter" x-key="center" :series="outputByCenterSeries" :height="220" />
 </template>
 ```
 
-## 环形图 DonutChartPro
+## 环形图 NvDonutChart
 
 占比构成，例如工单状态分布，支持中心标签。
 
 <Demo>
   <div class="w-full max-w-sm">
-    <DonutChartPro :data="statusMix" :height="180" central-label="118" central-sub-label="工单" />
+    <NvDonutChart :data="statusMix" :height="180" central-label="118" central-sub-label="工单" />
   </div>
 </Demo>
 
@@ -152,36 +158,36 @@ const statusMix = [
 </script>
 
 <template>
-  <DonutChartPro :data="statusMix" :height="180" central-label="118" central-sub-label="工单" />
+  <NvDonutChart :data="statusMix" :height="180" central-label="118" central-sub-label="工单" />
 </template>
 ```
 
 ## 属性
 
-### AreaChartPro
+### NvAreaChart
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `data` | 数据点数组 | `{ label: string; value: number }[]` | — |
-| `height` | 高度（px） | `number` | `240` |
-| `valueSuffix` | 数值后缀 | `string` | `''` |
-| `minimal` | 迷你模式（无轴，适合卡内趋势） | `boolean` | `false` |
+| 属性          | 说明                           | 类型                                 | 默认    |
+| ------------- | ------------------------------ | ------------------------------------ | ------- |
+| `data`        | 数据点数组                     | `{ label: string; value: number }[]` | —       |
+| `height`      | 高度（px）                     | `number`                             | `240`   |
+| `valueSuffix` | 数值后缀                       | `string`                             | `''`    |
+| `minimal`     | 迷你模式（无轴，适合卡内趋势） | `boolean`                            | `false` |
 
-### LineChartPro / BarChartPro
+### NvLineChart / NvBarChart
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `data` | 行数据数组 | `Record<string, number \| string>[]` | — |
-| `xKey` | X 轴字段名 | `string` | — |
-| `series` | 系列定义 | `{ key: string; label: string; color? }[]` | — |
-| `height` | 高度（px） | `number` | `260` |
-| `valueSuffix` | 数值后缀 | `string` | `''` |
+| 属性          | 说明       | 类型                                       | 默认  |
+| ------------- | ---------- | ------------------------------------------ | ----- |
+| `data`        | 行数据数组 | `Record<string, number \| string>[]`       | —     |
+| `xKey`        | X 轴字段名 | `string`                                   | —     |
+| `series`      | 系列定义   | `{ key: string; label: string; color? }[]` | —     |
+| `height`      | 高度（px） | `number`                                   | `260` |
+| `valueSuffix` | 数值后缀   | `string`                                   | `''`  |
 
-### DonutChartPro
+### NvDonutChart
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `data` | 分片数组 | `{ label: string; value: number; color? }[]` | — |
-| `height` | 高度（px） | `number` | `200` |
-| `centralLabel` | 中心主标签 | `string` | — |
-| `centralSubLabel` | 中心副标签 | `string` | — |
+| 属性              | 说明       | 类型                                         | 默认  |
+| ----------------- | ---------- | -------------------------------------------- | ----- |
+| `data`            | 分片数组   | `{ label: string; value: number; color? }[]` | —     |
+| `height`          | 高度（px） | `number`                                     | `200` |
+| `centralLabel`    | 中心主标签 | `string`                                     | —     |
+| `centralSubLabel` | 中心副标签 | `string`                                     | —     |
