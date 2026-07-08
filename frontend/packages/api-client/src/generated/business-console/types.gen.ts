@@ -3615,7 +3615,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     costCurrencyCode?: string | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderListRequest = {
     [key: string]: never;
 };
 
@@ -3665,6 +3665,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     planCode?: string;
     interval?: string;
     startsOn?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleGenerateDueMaintenanceWorkOrdersResponse = NetCorePalExtensionsDtoResponseData & {
@@ -11956,7 +11960,6 @@ export type ListBusinessConsoleMaintenancePlansData = {
         environmentId: string;
         skip?: number;
         take?: number;
-        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/maintenance/plans';
 };
@@ -12061,7 +12064,6 @@ export type ListBusinessConsoleMaintenanceInspectionsData = {
         environmentId: string;
         skip?: number;
         take?: number;
-        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/maintenance/inspections';
 };
@@ -12173,7 +12175,6 @@ export type ListBusinessConsoleMaintenanceSparePartsData = {
         environmentId: string;
         skip?: number;
         take?: number;
-        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/maintenance/spare-parts';
 };

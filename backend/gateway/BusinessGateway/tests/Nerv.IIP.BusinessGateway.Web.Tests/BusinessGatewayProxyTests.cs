@@ -2490,7 +2490,7 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListWorkOrdersAsync(
             "internal-token-001",
-            new BusinessConsoleMaintenanceListRequest("org-001", "env-dev"),
+            new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev"),
             CancellationToken.None);
 
         var item = Assert.Single(response.Items);
@@ -7621,7 +7621,7 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
 
     public Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMaintenanceListRequest request,
+        BusinessConsoleMaintenanceWorkOrderListRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;

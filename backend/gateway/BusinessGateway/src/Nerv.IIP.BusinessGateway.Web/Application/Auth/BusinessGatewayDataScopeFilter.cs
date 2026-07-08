@@ -58,8 +58,8 @@ public sealed class BusinessGatewayDataScopeFilter(
         return request with { DeviceAssetIds = NarrowSingle(request.DeviceAssetId, resolved.DeviceAssetIds) };
     }
 
-    public async Task<BusinessConsoleMaintenanceListRequest> ApplyToMaintenanceWorkOrdersAsync(
-        BusinessConsoleMaintenanceListRequest request,
+    public async Task<BusinessConsoleMaintenanceWorkOrderListRequest> ApplyToMaintenanceWorkOrdersAsync(
+        BusinessConsoleMaintenanceWorkOrderListRequest request,
         AuthorizationDataScope? dataScope,
         CancellationToken cancellationToken)
     {

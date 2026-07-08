@@ -82,7 +82,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(BusinessGatewayPermissions.MaintenanceWorkOrdersRead, auth.LastRequirement!.PermissionCode);
         Assert.Equal("internal-test-token", maintenance.LastInternalToken);
-        Assert.Equal(new BusinessConsoleMaintenanceListRequest("org-001", "env-dev", 5, 10), maintenance.LastWorkOrderListRequest);
+        Assert.Equal(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", 5, 10), maintenance.LastWorkOrderListRequest);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var item = document.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.Equal("wo-maint-001", item.GetProperty("workOrderId").GetString());
@@ -544,7 +544,7 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public string? LastInternalToken { get; private set; }
 
-    public BusinessConsoleMaintenanceListRequest? LastWorkOrderListRequest { get; private set; }
+    public BusinessConsoleMaintenanceWorkOrderListRequest? LastWorkOrderListRequest { get; private set; }
 
     public BusinessConsoleMaintenanceListRequest? LastInspectionListRequest { get; private set; }
 
@@ -600,7 +600,7 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMaintenanceListRequest request,
+        BusinessConsoleMaintenanceWorkOrderListRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;

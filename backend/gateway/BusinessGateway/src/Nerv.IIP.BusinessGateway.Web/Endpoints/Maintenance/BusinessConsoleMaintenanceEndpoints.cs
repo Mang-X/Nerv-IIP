@@ -78,16 +78,16 @@ public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
     IBusinessMaintenanceClient maintenance,
     BusinessGatewayDataScopeFilter dataScopeFilter,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMaintenanceListRequest, BusinessConsoleMaintenanceWorkOrderListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMaintenanceWorkOrderListRequest, BusinessConsoleMaintenanceWorkOrderListResponse>(
         auth,
         BusinessGatewayPermissions.MaintenanceWorkOrdersRead)
 {
-    protected override string OrganizationId(BusinessConsoleMaintenanceListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleMaintenanceWorkOrderListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMaintenanceListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleMaintenanceWorkOrderListRequest request) => request.EnvironmentId;
 
     protected override async Task<BusinessConsoleMaintenanceWorkOrderListResponse> ForwardAsync(
-        BusinessConsoleMaintenanceListRequest request,
+        BusinessConsoleMaintenanceWorkOrderListRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
     {
@@ -407,6 +407,17 @@ public sealed class BusinessConsoleMaintenanceContextRequestValidator : Validato
 public sealed class BusinessConsoleMaintenanceListRequestValidator : Validator<BusinessConsoleMaintenanceListRequest>
 {
     public BusinessConsoleMaintenanceListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 200);
+    }
+}
+
+public sealed class BusinessConsoleMaintenanceWorkOrderListRequestValidator : Validator<BusinessConsoleMaintenanceWorkOrderListRequest>
+{
+    public BusinessConsoleMaintenanceWorkOrderListRequestValidator()
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);

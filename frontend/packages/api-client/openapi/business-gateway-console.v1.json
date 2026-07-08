@@ -14734,14 +14734,6 @@
               "default": 100,
               "nullable": false
             }
-          },
-          {
-            "name": "deviceAssetIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
           }
         ],
         "responses": {
@@ -14930,14 +14922,6 @@
               "default": 100,
               "nullable": false
             }
-          },
-          {
-            "name": "deviceAssetIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
           }
         ],
         "responses": {
@@ -15111,14 +15095,6 @@
               "format": "int32",
               "default": 100,
               "nullable": false
-            }
-          },
-          {
-            "name": "deviceAssetIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
             }
           }
         ],
@@ -34045,7 +34021,7 @@
           }
         }
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest": {
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderListRequest": {
         "type": "object",
         "additionalProperties": false
       },
@@ -34239,6 +34215,10 @@
             "format": "date"
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleGenerateDueMaintenanceWorkOrdersResponse": {
         "allOf": [
