@@ -186,7 +186,27 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
             return false;
         }
 
-        return columnNames.All(columnName => exception.Message.Contains(columnName, StringComparison.OrdinalIgnoreCase));
+        return IsSqliteUniqueConflictMessageForColumns(exception.Message, columnNames);
+    }
+
+    private static bool IsSqliteUniqueConflictMessageForColumns(string message, IReadOnlyCollection<string> columnNames)
+    {
+        const string marker = "UNIQUE constraint failed:";
+        var markerIndex = message.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (markerIndex < 0)
+        {
+            return false;
+        }
+
+        var columnList = message[(markerIndex + marker.Length)..]
+            .Trim()
+            .Trim('\'', '.');
+
+        var actualColumnNames = columnList
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+        return actualColumnNames.Length == columnNames.Count &&
+            columnNames.All(columnName => actualColumnNames.Contains(columnName, StringComparer.OrdinalIgnoreCase));
     }
 
     private static int? GetIntProperty(Exception exception, string propertyName)
