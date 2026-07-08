@@ -36,6 +36,7 @@ public static class IamPermissionCatalog
         ["notifications.messages.read"] = "Read notification messages.",
         ["notifications.messages.mark-read"] = "Mark notification messages as read.",
         ["notifications.tasks.read"] = "Read notification tasks.",
+        ["notifications.delivery.manage"] = "Manage notification delivery preferences, subscriptions and recipient channel bindings.",
         ["business.quality.inspection-plans.manage"] = "Create, activate and supersede quality inspection plans.",
         ["business.quality.inspection-records.create"] = "Create quality inspection records.",
         ["business.quality.inspection-records.read"] = "Read quality inspection plans and records.",

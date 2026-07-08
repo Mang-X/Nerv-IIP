@@ -1051,4 +1051,17 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
         LastAlarmLifecycleRequest = request;
         return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
     }
+
+    public Task<BusinessConsoleTelemetryDeviceControlCommandResponse> CreateDeviceControlCommandAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryDeviceControlCommandRequest request,
+        string requestedBy,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryDeviceControlCommandResponse(
+            "op-task-001",
+            "pending-approval",
+            Approval: null));
+    }
 }

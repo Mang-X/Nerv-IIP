@@ -104,6 +104,7 @@ public static class BusinessGatewayPermissions
     public const string IiotAlarmsRead = "business.iiot.alarms.read";
     public const string IiotAlarmsWrite = "business.iiot.alarms.write";
     public const string IiotAlarmRulesManage = "business.iiot.alarm-rules.manage";
+    public const string IiotDeviceControlWrite = "business.iiot.device-control.write";
     public const string MaintenanceWorkOrdersRead = "business.maintenance.work-orders.read";
     public const string MaintenanceWorkOrdersManage = "business.maintenance.work-orders.manage";
     public const string MaintenancePlansRead = "business.maintenance.plans.read";

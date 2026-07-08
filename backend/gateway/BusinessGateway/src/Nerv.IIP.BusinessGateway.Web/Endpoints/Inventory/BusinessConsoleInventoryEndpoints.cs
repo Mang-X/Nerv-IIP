@@ -30,6 +30,28 @@ public sealed class GetBusinessConsoleInventoryAvailabilityEndpoint(
 }
 
 [Tags("Business Console Inventory")]
+[HttpGet("/api/business-console/v1/inventory/expiry-alerts")]
+[BusinessGatewayOperationId("listBusinessConsoleInventoryExpiryAlerts")]
+public sealed class ListBusinessConsoleInventoryExpiryAlertsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessInventoryClient inventory,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleInventoryExpiryAlertsRequest, BusinessConsoleInventoryExpiryAlertsResponse>(
+        auth,
+        BusinessGatewayPermissions.InventoryLedgerRead)
+{
+    protected override string OrganizationId(BusinessConsoleInventoryExpiryAlertsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleInventoryExpiryAlertsRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleInventoryExpiryAlertsResponse> ForwardAsync(
+        BusinessConsoleInventoryExpiryAlertsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        inventory.ListExpiryAlertsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Inventory")]
 [HttpPost("/api/business-console/v1/inventory/movements")]
 [BusinessGatewayOperationId("postBusinessConsoleInventoryMovement")]
 public sealed class PostBusinessConsoleInventoryMovementEndpoint(

@@ -94,6 +94,16 @@ public interface IBusinessWmsClient
         string internalBearerToken,
         BusinessConsoleWmsWcsTaskListRequest request,
         CancellationToken cancellationToken);
+
+    Task<BusinessConsoleWmsReceivingQualityGateListResponse> ListReceivingQualityGatesAsync(
+        string internalBearerToken,
+        BusinessConsoleWmsReceivingQualityGateListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleWmsSupplierReturnListResponse> ListSupplierReturnRequestsAsync(
+        string internalBearerToken,
+        BusinessConsoleWmsListRequest request,
+        CancellationToken cancellationToken);
 }
 
 public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServiceHttpClient(httpClient), IBusinessWmsClient
@@ -310,6 +320,34 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
                 ("status", request.Status),
                 ("failed", request.Failed),
                 ("keyword", request.Keyword)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleWmsReceivingQualityGateListResponse> ListReceivingQualityGatesAsync(
+        string internalBearerToken,
+        BusinessConsoleWmsReceivingQualityGateListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleWmsReceivingQualityGateListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/wms/receiving-quality-gates?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skip", request.Skip),
+                ("take", request.Take),
+                ("gateStatus", request.GateStatus),
+                ("keyword", request.Keyword)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleWmsSupplierReturnListResponse> ListSupplierReturnRequestsAsync(
+        string internalBearerToken,
+        BusinessConsoleWmsListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleWmsSupplierReturnListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/wms/supplier-return-requests?" + WmsListQuery(request),
             null,
             cancellationToken);
 

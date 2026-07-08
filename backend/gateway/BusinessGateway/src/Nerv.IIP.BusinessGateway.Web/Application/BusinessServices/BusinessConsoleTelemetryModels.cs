@@ -64,6 +64,37 @@ public sealed record BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest(
 public sealed record BusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse(
     string AlarmRuleId);
 
+// RequestedBy is intentionally omitted: the gateway injects the authenticated principal
+// as the command requester so callers cannot forge the device-control audit actor.
+public sealed record BusinessConsoleTelemetryDeviceControlCommandRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ConnectorHostId,
+    string InstanceKey,
+    string DeviceAssetId,
+    string CommandType,
+    string? TagKey,
+    string? Value,
+    IReadOnlyDictionary<string, string>? Parameters,
+    string Reason,
+    string IdempotencyKey,
+    string CorrelationId);
+
+public sealed record BusinessConsoleTelemetryDeviceControlCommandResponse(
+    string OperationTaskId,
+    string Status,
+    BusinessConsoleTelemetryOperationApprovalSummary? Approval);
+
+// Mirrors Nerv.IIP.Contracts.Ops.OperationApprovalSummary; the gateway does not
+// reference Contracts.Ops, so the shape is duplicated here as a passthrough DTO.
+public sealed record BusinessConsoleTelemetryOperationApprovalSummary(
+    string Status,
+    string RequestedBy,
+    DateTimeOffset RequestedAtUtc,
+    string? DecidedBy,
+    DateTimeOffset? DecidedAtUtc,
+    string? DecisionReason);
+
 public sealed record BusinessConsoleTelemetryAlarmListRequest(
     string OrganizationId,
     string EnvironmentId,

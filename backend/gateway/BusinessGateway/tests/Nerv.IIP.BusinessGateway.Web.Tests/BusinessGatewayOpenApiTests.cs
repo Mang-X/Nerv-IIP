@@ -72,6 +72,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/master-data/code-rules/{ruleKey}/versions", "post", "createBusinessConsoleCodeRuleVersion");
         AssertOperationId(paths, "/api/business-console/v1/master-data/code-rules/{ruleKey}/preview", "post", "previewBusinessConsoleCodeRule");
         AssertOperationId(paths, "/api/business-console/v1/inventory/availability", "get", "getBusinessConsoleInventoryAvailability");
+        AssertOperationId(paths, "/api/business-console/v1/inventory/expiry-alerts", "get", "listBusinessConsoleInventoryExpiryAlerts");
         AssertOperationId(paths, "/api/business-console/v1/inventory/movements", "post", "postBusinessConsoleInventoryMovement");
         AssertOperationId(paths, "/api/business-console/v1/inventory/count-tasks", "post", "createBusinessConsoleInventoryCountTask");
         AssertOperationId(paths, "/api/business-console/v1/inventory/count-tasks/{countTaskId}/adjustments", "post", "confirmBusinessConsoleInventoryCountAdjustment");
@@ -79,6 +80,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records", "get", "listBusinessConsoleQualityInspectionRecords");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records", "post", "createBusinessConsoleQualityInspectionRecord");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr", "post", "openBusinessConsoleQualityNcrFromInspection");
+        AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks", "get", "listBusinessConsoleQualityInspectionTasks");
+        AssertOperationId(paths, "/api/business-console/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", "post", "createBusinessConsoleQualityInspectionRecordFromTask");
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs", "get", "listBusinessConsoleQualityNcrs");
         AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes", "get", "listBusinessConsoleQualityReasonCodes");
         AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes/{reasonCode}", "get", "getBusinessConsoleQualityReasonCode");
@@ -149,6 +152,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/telemetry/tags", "get", "listBusinessConsoleTelemetryTags");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "get", "listBusinessConsoleTelemetryAlarmRules");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "post", "createOrUpdateBusinessConsoleTelemetryAlarmRule");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/device-control-commands", "post", "createBusinessConsoleTelemetryDeviceControlCommand");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/samples", "post", "recordBusinessConsoleTelemetrySample");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarms", "post", "postBusinessConsoleTelemetryAlarm");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarms", "get", "listBusinessConsoleTelemetryAlarms");
@@ -356,6 +360,8 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch", "post", "dispatchBusinessConsoleWmsWcsTask");
         AssertOperationId(paths, "/api/business-console/v1/wms/wcs-tasks/{externalTaskId}/fail", "post", "failBusinessConsoleWmsWcsTask");
         AssertOperationId(paths, "/api/business-console/v1/wms/wcs-tasks/{externalTaskId}/complete", "post", "completeBusinessConsoleWmsWcsTask");
+        AssertOperationId(paths, "/api/business-console/v1/wms/receiving-quality-gates", "get", "listBusinessConsoleWmsReceivingQualityGates");
+        AssertOperationId(paths, "/api/business-console/v1/wms/supplier-return-requests", "get", "listBusinessConsoleWmsSupplierReturnRequests");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders", "get", "listBusinessConsoleMesWorkOrders");
         AssertOperationId(paths, "/api/business-console/v1/mes/foundation-readiness", "get", "getBusinessConsoleMesFoundationReadiness");
         AssertOperationId(paths, "/api/business-console/v1/mes/foundation-readiness/master-data", "get", "getBusinessConsoleMesMasterDataReadiness");
@@ -370,6 +376,11 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/production-plans/{productionPlanId}/work-orders", "post", "convertBusinessConsoleMesPlanToWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}", "get", "getBusinessConsoleMesWorkOrderDetail");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/release", "post", "releaseBusinessConsoleMesWorkOrder");
+        AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/hold", "post", "holdBusinessConsoleMesWorkOrder");
+        AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/cancel", "post", "cancelBusinessConsoleMesWorkOrder");
+        AssertOperationId(paths, "/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/force-release", "post", "forceReleaseBusinessConsoleMesQualityHold");
+        AssertOperationId(paths, "/api/business-console/v1/mes/production-reports/{reportNo}/reverse", "post", "reverseBusinessConsoleMesProductionReport");
+        AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-posting/retry", "post", "retryBusinessConsoleMesFinishedGoodsReceiptInventoryPosting");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/rush", "post", "createBusinessConsoleMesRushWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/material-readiness", "get", "getBusinessConsoleMesMaterialReadiness");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/material-issue-requests", "post", "createBusinessConsoleMesMaterialIssueRequest");

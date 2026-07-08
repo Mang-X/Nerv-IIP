@@ -266,6 +266,63 @@ export type NervIipContractsNotificationMarkNotificationMessagesReadRequest = {
     messageIds?: Array<string>;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfNotificationPreferenceResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationPreferenceResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationPreferenceResponse = {
+    recipientRef?: string;
+    notificationType?: string;
+    channel?: string;
+    enabled?: boolean;
+    updatedAtUtc?: string;
+};
+
+export type NervIipContractsNotificationUpsertNotificationPreferenceRequest = {
+    recipientRef?: string;
+    notificationType?: string;
+    channel?: string;
+    enabled?: boolean;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationSubscriptionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationSubscriptionResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationSubscriptionResponse = {
+    recipientRef?: string;
+    notificationType?: string;
+    channel?: string;
+    enabled?: boolean;
+    updatedAtUtc?: string;
+};
+
+export type NervIipContractsNotificationUpsertNotificationSubscriptionRequest = {
+    recipientRef?: string;
+    notificationType?: string;
+    channel?: string;
+    enabled?: boolean;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationRecipientChannelBindingResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationRecipientChannelBindingResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationRecipientChannelBindingResponse = {
+    recipientRef?: string;
+    channel?: string;
+    recipientAddress?: string;
+    enabled?: boolean;
+    updatedAtUtc?: string;
+};
+
+export type NervIipContractsNotificationUpsertNotificationRecipientChannelBindingRequest = {
+    recipientRef?: string;
+    channel?: string;
+    recipientAddress?: string;
+    enabled?: boolean;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfConsoleLogQueryResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipPlatformGatewayWebApplicationLogsConsoleLogQueryResponse | null;
 };
@@ -1007,6 +1064,87 @@ export type MarkConsoleNotificationMessagesReadResponses = {
 };
 
 export type MarkConsoleNotificationMessagesReadResponse = MarkConsoleNotificationMessagesReadResponses[keyof MarkConsoleNotificationMessagesReadResponses];
+
+export type UpsertConsoleNotificationPreferenceData = {
+    body: NervIipContractsNotificationUpsertNotificationPreferenceRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/notifications/delivery/preferences';
+};
+
+export type UpsertConsoleNotificationPreferenceErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type UpsertConsoleNotificationPreferenceResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationPreferenceResponse;
+};
+
+export type UpsertConsoleNotificationPreferenceResponse = UpsertConsoleNotificationPreferenceResponses[keyof UpsertConsoleNotificationPreferenceResponses];
+
+export type UpsertConsoleNotificationSubscriptionData = {
+    body: NervIipContractsNotificationUpsertNotificationSubscriptionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/notifications/delivery/subscriptions';
+};
+
+export type UpsertConsoleNotificationSubscriptionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type UpsertConsoleNotificationSubscriptionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationSubscriptionResponse;
+};
+
+export type UpsertConsoleNotificationSubscriptionResponse = UpsertConsoleNotificationSubscriptionResponses[keyof UpsertConsoleNotificationSubscriptionResponses];
+
+export type UpsertConsoleNotificationRecipientChannelBindingData = {
+    body: NervIipContractsNotificationUpsertNotificationRecipientChannelBindingRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/notifications/delivery/recipient-channel-bindings';
+};
+
+export type UpsertConsoleNotificationRecipientChannelBindingErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type UpsertConsoleNotificationRecipientChannelBindingResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationRecipientChannelBindingResponse;
+};
+
+export type UpsertConsoleNotificationRecipientChannelBindingResponse = UpsertConsoleNotificationRecipientChannelBindingResponses[keyof UpsertConsoleNotificationRecipientChannelBindingResponses];
 
 export type QueryConsoleLogsData = {
     body: NervIipPlatformGatewayWebApplicationLogsConsoleLogQueryRequest;

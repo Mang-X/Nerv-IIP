@@ -97,6 +97,37 @@ public sealed class CreateOrUpdateBusinessConsoleTelemetryAlarmRuleEndpoint(
 }
 
 [Tags("Business Console Telemetry")]
+[HttpPost("/api/business-console/v1/telemetry/device-control-commands")]
+[BusinessGatewayOperationId("createBusinessConsoleTelemetryDeviceControlCommand")]
+public sealed class CreateBusinessConsoleTelemetryDeviceControlCommandEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient telemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleTelemetryDeviceControlCommandRequest, BusinessConsoleTelemetryDeviceControlCommandResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotDeviceControlWrite)
+{
+    protected override string OrganizationId(BusinessConsoleTelemetryDeviceControlCommandRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleTelemetryDeviceControlCommandRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleTelemetryDeviceControlCommandRequest request) => "device-asset";
+
+    protected override string ResourceId(BusinessConsoleTelemetryDeviceControlCommandRequest request) => request.DeviceAssetId;
+
+    protected override Task<BusinessConsoleTelemetryDeviceControlCommandResponse> ForwardAsync(
+        BusinessConsoleTelemetryDeviceControlCommandRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        // Inject the authenticated principal as the command requester so the audit actor
+        // is bound to the caller identity rather than an attacker-supplied field.
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
+        return telemetry.CreateDeviceControlCommandAsync(tokenProvider.BearerToken, request, actorRef, cancellationToken);
+    }
+}
+
+[Tags("Business Console Telemetry")]
 [HttpPost("/api/business-console/v1/telemetry/samples")]
 [BusinessGatewayOperationId("recordBusinessConsoleTelemetrySample")]
 public sealed class RecordBusinessConsoleTelemetrySampleEndpoint(
@@ -326,6 +357,59 @@ public sealed class BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequestValida
     {
         return SupportedOperators.Contains(comparisonOperator);
     }
+}
+
+public sealed class BusinessConsoleTelemetryDeviceControlCommandRequestValidator
+    : Validator<BusinessConsoleTelemetryDeviceControlCommandRequest>
+{
+    // Gateway mirrors the IndustrialTelemetry device-control command-type contract without
+    // referencing service internals. RequestedBy is not validated here: the gateway injects
+    // the authenticated principal as the requester before forwarding downstream.
+    public BusinessConsoleTelemetryDeviceControlCommandRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ConnectorHostId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.InstanceKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.CommandType)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(IsSupportedCommandType)
+            .WithMessage("Device control command type must be write-tag, start-stop or parameter-set.");
+        When(x => IsSingleTagCommand(x.CommandType), () =>
+        {
+            RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
+            RuleFor(x => x.Value).NotEmpty().MaximumLength(256);
+        });
+        When(x => IsParameterSetCommand(x.CommandType), () =>
+        {
+            RuleFor(x => x.Parameters).NotEmpty();
+            RuleForEach(x => x.Parameters!.Keys).NotEmpty().MaximumLength(150);
+            RuleForEach(x => x.Parameters!.Values).NotEmpty().MaximumLength(256);
+        });
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.CorrelationId).NotEmpty().MaximumLength(150);
+    }
+
+    private static bool IsSingleTagCommand(string commandType)
+    {
+        if (string.IsNullOrWhiteSpace(commandType))
+        {
+            return false;
+        }
+
+        var normalized = commandType.Trim().ToLowerInvariant();
+        return normalized is "write-tag" or "start-stop";
+    }
+
+    private static bool IsParameterSetCommand(string commandType) =>
+        !string.IsNullOrWhiteSpace(commandType) &&
+        string.Equals(commandType.Trim(), "parameter-set", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSupportedCommandType(string commandType) =>
+        IsSingleTagCommand(commandType) || IsParameterSetCommand(commandType);
 }
 
 public sealed class BusinessConsoleTelemetryHistoryRequestValidator : Validator<BusinessConsoleTelemetryHistoryRequest>

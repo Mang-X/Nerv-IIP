@@ -607,6 +607,50 @@ public sealed class ListBusinessConsoleWmsWcsTasksEndpoint(
         wms.ListWcsTasksAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+[Tags("Business Console WMS")]
+[HttpGet("/api/business-console/v1/wms/receiving-quality-gates")]
+[BusinessGatewayOperationId("listBusinessConsoleWmsReceivingQualityGates")]
+public sealed class ListBusinessConsoleWmsReceivingQualityGatesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsReceivingQualityGateListRequest, BusinessConsoleWmsReceivingQualityGateListResponse>(
+        auth,
+        BusinessGatewayPermissions.WmsReceiptsRead)
+{
+    protected override string OrganizationId(BusinessConsoleWmsReceivingQualityGateListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleWmsReceivingQualityGateListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleWmsReceivingQualityGateListResponse> ForwardAsync(
+        BusinessConsoleWmsReceivingQualityGateListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        wms.ListReceivingQualityGatesAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console WMS")]
+[HttpGet("/api/business-console/v1/wms/supplier-return-requests")]
+[BusinessGatewayOperationId("listBusinessConsoleWmsSupplierReturnRequests")]
+public sealed class ListBusinessConsoleWmsSupplierReturnRequestsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessWmsClient wms,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleWmsListRequest, BusinessConsoleWmsSupplierReturnListResponse>(
+        auth,
+        BusinessGatewayPermissions.WmsReceiptsRead)
+{
+    protected override string OrganizationId(BusinessConsoleWmsListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleWmsListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleWmsSupplierReturnListResponse> ForwardAsync(
+        BusinessConsoleWmsListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        wms.ListSupplierReturnRequestsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
 public sealed class BusinessConsoleWmsInboundOrderListRequestValidator
     : Validator<BusinessConsoleWmsInboundOrderListRequest>
 {
@@ -837,6 +881,19 @@ public sealed class BusinessConsoleWmsWcsTaskListRequestValidator : Validator<Bu
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 500);
         RuleFor(x => x.Status).MaximumLength(50);
+        RuleFor(x => x.Keyword).MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsoleWmsReceivingQualityGateListRequestValidator : Validator<BusinessConsoleWmsReceivingQualityGateListRequest>
+{
+    public BusinessConsoleWmsReceivingQualityGateListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        RuleFor(x => x.GateStatus).MaximumLength(50);
         RuleFor(x => x.Keyword).MaximumLength(150);
     }
 }

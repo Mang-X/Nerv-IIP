@@ -274,6 +274,17 @@ export {
   getBusinessConsoleErpCostCandidateBySourceDocumentQueryOptions,
   getBusinessConsoleErpPayableBySourceDocumentQueryOptions,
   getBusinessConsoleErpReceivableBySourceDocumentQueryOptions,
+  holdBusinessConsoleMesWorkOrderMutationOptions,
+  cancelBusinessConsoleMesWorkOrderMutationOptions,
+  forceReleaseBusinessConsoleMesQualityHoldMutationOptions,
+  reverseBusinessConsoleMesProductionReportMutationOptions,
+  retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
+  listBusinessConsoleInventoryExpiryAlertsQueryOptions,
+  listBusinessConsoleQualityInspectionTasksQueryOptions,
+  createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions,
+  listBusinessConsoleWmsReceivingQualityGatesQueryOptions,
+  listBusinessConsoleWmsSupplierReturnRequestsQueryOptions,
+  createBusinessConsoleTelemetryDeviceControlCommandMutationOptions,
 } from './generated/business-console/@pinia/colada.gen'
 
 export {
@@ -491,6 +502,17 @@ export {
   openBusinessConsoleQualityNcrFromInspection,
   listBusinessConsoleDeviceAssets,
   createBusinessConsoleErpPurchaseRequisitionFromSuggestion,
+  holdBusinessConsoleMesWorkOrder,
+  cancelBusinessConsoleMesWorkOrder,
+  forceReleaseBusinessConsoleMesQualityHold,
+  reverseBusinessConsoleMesProductionReport,
+  retryBusinessConsoleMesFinishedGoodsReceiptInventoryPosting,
+  listBusinessConsoleInventoryExpiryAlerts,
+  listBusinessConsoleQualityInspectionTasks,
+  createBusinessConsoleQualityInspectionRecordFromTask,
+  listBusinessConsoleWmsReceivingQualityGates,
+  listBusinessConsoleWmsSupplierReturnRequests,
+  createBusinessConsoleTelemetryDeviceControlCommand,
 } from './generated/business-console/sdk.gen'
 
 import type {
@@ -1783,10 +1805,8 @@ export type EquipmentRuntimeAvailabilityWindow =
   NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityWindowContract
 export type EquipmentRuntimeCurrentStateResponse =
   NervIipContractsEquipmentRuntimeEquipmentRuntimeCurrentStateResponse
-export type EquipmentRuntimeSeverity =
-  NervIipContractsEquipmentRuntimeEquipmentRuntimeSeverity
-export type EquipmentRuntimeSourceType =
-  NervIipContractsEquipmentRuntimeEquipmentRuntimeSourceType
+export type EquipmentRuntimeSeverity = NervIipContractsEquipmentRuntimeEquipmentRuntimeSeverity
+export type EquipmentRuntimeSourceType = NervIipContractsEquipmentRuntimeEquipmentRuntimeSourceType
 
 export type BusinessConsoleAcceptedEnvelope =
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse

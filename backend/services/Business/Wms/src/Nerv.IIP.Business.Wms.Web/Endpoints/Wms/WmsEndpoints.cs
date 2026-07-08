@@ -87,6 +87,8 @@ public sealed record ListWcsTasksRequest(
     string? Status = null,
     bool? Failed = null,
     string? Keyword = null);
+public sealed record ListReceivingQualityGatesRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? GateStatus = null, string? Keyword = null);
+public sealed record ListSupplierReturnRequestsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
 
 public sealed class CreateInboundOrderEndpoint(ISender sender) : WmsEndpoint<CreateInboundOrderRequest, ResponseData<CreateInboundOrderResponse>>
 {
@@ -308,6 +310,26 @@ public sealed class ListWcsTasksEndpoint(ISender sender) : WmsEndpoint<ListWcsTa
     }
 }
 
+public sealed class ListReceivingQualityGatesEndpoint(ISender sender) : WmsEndpoint<ListReceivingQualityGatesRequest, ResponseData<ListReceivingQualityGatesResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListReceivingQualityGatesEndpoint>());
+    public override async Task HandleAsync(ListReceivingQualityGatesRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListReceivingQualityGatesQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take, req.GateStatus, req.Keyword), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListSupplierReturnRequestsEndpoint(ISender sender) : WmsEndpoint<ListSupplierReturnRequestsRequest, ResponseData<ListSupplierReturnRequestsResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListSupplierReturnRequestsEndpoint>());
+    public override async Task HandleAsync(ListSupplierReturnRequestsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListSupplierReturnRequestsQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take, req.Status, req.Keyword), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed record WmsEndpointContract(Type EndpointType, string HttpMethod, string Route, string PermissionCode, string AuthorizationPolicy, string OperationId);
 
 public static class WmsEndpointContracts
@@ -336,6 +358,8 @@ public static class WmsEndpointContracts
         new(typeof(CompleteWcsTaskEndpoint), "POST", "/api/business/v1/wms/wcs-tasks/{externalTaskId}/complete", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "completeWmsWcsTask"),
         new(typeof(FailWcsTaskEndpoint), "POST", "/api/business/v1/wms/wcs-tasks/{externalTaskId}/fail", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "failWmsWcsTask"),
         new(typeof(ListWcsTasksEndpoint), "GET", "/api/business/v1/wms/wcs-tasks", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "listWmsWcsTasks"),
+        new(typeof(ListReceivingQualityGatesEndpoint), "GET", "/api/business/v1/wms/receiving-quality-gates", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsReceivingQualityGates"),
+        new(typeof(ListSupplierReturnRequestsEndpoint), "GET", "/api/business/v1/wms/supplier-return-requests", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsSupplierReturnRequests"),
     ];
 
     public static WmsEndpointContract Get<TEndpoint>() => All.Single(x => x.EndpointType == typeof(TEndpoint));

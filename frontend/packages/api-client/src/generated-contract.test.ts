@@ -65,6 +65,9 @@ import {
   replayConsoleNotificationDeadLetterMutationOptions,
   replayConsoleNotificationDeadLettersMutationOptions,
   submitConsoleNotificationIntentMutationOptions,
+  upsertConsoleNotificationPreferenceMutationOptions,
+  upsertConsoleNotificationSubscriptionMutationOptions,
+  upsertConsoleNotificationRecipientChannelBindingMutationOptions,
 } from './console'
 import {
   acceptBusinessConsoleMesShiftHandoverMutationOptions,
@@ -172,6 +175,9 @@ describe('generated API client contract', () => {
     expect(replayConsoleNotificationDeadLetterMutationOptions).toBeTypeOf('function')
     expect(replayConsoleNotificationDeadLettersMutationOptions).toBeTypeOf('function')
     expect(ignoreConsoleNotificationDeadLetterMutationOptions).toBeTypeOf('function')
+    expect(upsertConsoleNotificationPreferenceMutationOptions).toBeTypeOf('function')
+    expect(upsertConsoleNotificationSubscriptionMutationOptions).toBeTypeOf('function')
+    expect(upsertConsoleNotificationRecipientChannelBindingMutationOptions).toBeTypeOf('function')
   })
 
   it('exports Business Console generated operations through stable api-client entry points', () => {
@@ -202,7 +208,9 @@ describe('generated API client contract', () => {
     expect(recordBusinessConsoleMesDefectMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesRelatedQualityItemsQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions).toBeTypeOf('function')
-    expect(createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions).toBeTypeOf('function')
+    expect(createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions).toBeTypeOf(
+      'function',
+    )
     expect(listBusinessConsoleMesDowntimeEventsQueryOptions).toBeTypeOf('function')
     expect(recordBusinessConsoleMesDowntimeEventMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesShiftHandoversQueryOptions).toBeTypeOf('function')
@@ -356,6 +364,37 @@ describe('generated API client contract', () => {
       'getBusinessConsoleErpCostCandidateBySourceDocument',
       'getBusinessConsoleErpPayableBySourceDocument',
       'getBusinessConsoleErpReceivableBySourceDocument',
+    ] as const
+
+    for (const functionName of expectedFunctions) {
+      expect(businessConsoleClient[functionName], functionName).toBeTypeOf('function')
+    }
+  })
+
+  it('exports gateway facade backfill (#833-#838) Business Console operations through stable api-client entry points', () => {
+    const expectedFunctions = [
+      'holdBusinessConsoleMesWorkOrderMutationOptions',
+      'cancelBusinessConsoleMesWorkOrderMutationOptions',
+      'forceReleaseBusinessConsoleMesQualityHoldMutationOptions',
+      'reverseBusinessConsoleMesProductionReportMutationOptions',
+      'retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions',
+      'listBusinessConsoleInventoryExpiryAlertsQueryOptions',
+      'listBusinessConsoleQualityInspectionTasksQueryOptions',
+      'createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions',
+      'listBusinessConsoleWmsReceivingQualityGatesQueryOptions',
+      'listBusinessConsoleWmsSupplierReturnRequestsQueryOptions',
+      'createBusinessConsoleTelemetryDeviceControlCommandMutationOptions',
+      'holdBusinessConsoleMesWorkOrder',
+      'cancelBusinessConsoleMesWorkOrder',
+      'forceReleaseBusinessConsoleMesQualityHold',
+      'reverseBusinessConsoleMesProductionReport',
+      'retryBusinessConsoleMesFinishedGoodsReceiptInventoryPosting',
+      'listBusinessConsoleInventoryExpiryAlerts',
+      'listBusinessConsoleQualityInspectionTasks',
+      'createBusinessConsoleQualityInspectionRecordFromTask',
+      'listBusinessConsoleWmsReceivingQualityGates',
+      'listBusinessConsoleWmsSupplierReturnRequests',
+      'createBusinessConsoleTelemetryDeviceControlCommand',
     ] as const
 
     for (const functionName of expectedFunctions) {

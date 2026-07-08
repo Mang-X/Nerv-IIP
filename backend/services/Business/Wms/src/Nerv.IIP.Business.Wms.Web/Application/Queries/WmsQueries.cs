@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 
@@ -394,6 +395,196 @@ public sealed class ListWcsTasksQueryHandler(ApplicationDbContext dbContext)
                 x.CompletedAtUtc))
             .ToArrayAsync(cancellationToken);
         return new ListWcsTasksResponse(items, total);
+    }
+}
+
+public sealed record ListReceivingQualityGatesQuery(
+    string? OrganizationId,
+    string? EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? GateStatus = null,
+    string? Keyword = null) : IQuery<ListReceivingQualityGatesResponse>;
+
+public sealed record ListReceivingQualityGatesResponse(IReadOnlyCollection<ReceivingQualityGateFact> Items, int Total);
+
+public sealed record ReceivingQualityGateFact(
+    InboundOrderId InboundOrderId,
+    InboundOrderLineId InboundOrderLineId,
+    string OrganizationId,
+    string EnvironmentId,
+    string InboundOrderNo,
+    string InboundOrderStatus,
+    string SiteCode,
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal ReceivedQuantity,
+    string StagingLocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string QualityGateStatus,
+    string? InspectionRecordId,
+    string? QualityDispositionReason,
+    string OwnerType,
+    string? OwnerId,
+    DateTime CreatedAtUtc);
+
+public sealed class ListReceivingQualityGatesQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListReceivingQualityGatesQuery, ListReceivingQualityGatesResponse>
+{
+    public async Task<ListReceivingQualityGatesResponse> Handle(ListReceivingQualityGatesQuery request, CancellationToken cancellationToken)
+    {
+        var skip = Math.Max(0, request.Skip);
+        var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
+        var query = dbContext.InboundOrders
+            .AsNoTracking()
+            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .SelectMany(order => order.Lines, (order, line) => new { order, line })
+            .Where(x => x.line.QualityGateStatus != InboundQualityGateStatuses.NotRequired);
+
+        if (!string.IsNullOrWhiteSpace(request.GateStatus))
+        {
+            var gateStatus = request.GateStatus.Trim().ToLowerInvariant();
+            query = query.Where(x => x.line.QualityGateStatus == gateStatus);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
+            query = query.Where(x =>
+                x.order.InboundOrderNo.ToUpper().Contains(keyword)
+                || x.line.SkuCode.ToUpper().Contains(keyword)
+                || (x.line.InspectionRecordId != null && x.line.InspectionRecordId.ToUpper().Contains(keyword)));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(x => x.order.CreatedAtUtc)
+            .ThenByDescending(x => x.order.InboundOrderNo)
+            .ThenBy(x => x.line.LineNo)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => new ReceivingQualityGateFact(
+                x.order.Id,
+                x.line.Id,
+                x.order.OrganizationId,
+                x.order.EnvironmentId,
+                x.order.InboundOrderNo,
+                x.order.Status.ToString(),
+                x.order.SiteCode,
+                x.line.LineNo,
+                x.line.SkuCode,
+                x.line.UomCode,
+                x.line.ReceivedQuantity,
+                x.line.StagingLocationCode,
+                x.line.LotNo,
+                x.line.SerialNo,
+                x.line.QualityStatus,
+                x.line.QualityGateStatus,
+                x.line.InspectionRecordId,
+                x.line.QualityDispositionReason,
+                x.line.OwnerType,
+                x.line.OwnerId,
+                x.order.CreatedAtUtc))
+            .ToArrayAsync(cancellationToken);
+        return new ListReceivingQualityGatesResponse(items, total);
+    }
+}
+
+public sealed record ListSupplierReturnRequestsQuery(
+    string? OrganizationId,
+    string? EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? Keyword = null) : IQuery<ListSupplierReturnRequestsResponse>;
+
+public sealed record ListSupplierReturnRequestsResponse(IReadOnlyCollection<SupplierReturnRequestFact> Items, int Total);
+
+public sealed record SupplierReturnRequestFact(
+    SupplierReturnRequestId SupplierReturnRequestId,
+    string OrganizationId,
+    string EnvironmentId,
+    string SupplierReturnNo,
+    string InboundOrderNo,
+    string InboundOrderLineNo,
+    string InspectionRecordId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string OwnerType,
+    string? OwnerId,
+    decimal Quantity,
+    string DispositionType,
+    string? DispositionReason,
+    string Status,
+    DateTime CreatedAtUtc);
+
+public sealed class ListSupplierReturnRequestsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListSupplierReturnRequestsQuery, ListSupplierReturnRequestsResponse>
+{
+    public async Task<ListSupplierReturnRequestsResponse> Handle(ListSupplierReturnRequestsQuery request, CancellationToken cancellationToken)
+    {
+        var skip = Math.Max(0, request.Skip);
+        var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
+        var query = dbContext.SupplierReturnRequests
+            .AsNoTracking()
+            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+        if (WmsListQueryFilters.TryParseStatus<SupplierReturnRequestStatus>(request.Status, out var status))
+        {
+            query = query.Where(x => x.Status == status);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            return new ListSupplierReturnRequestsResponse([], 0);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
+            query = query.Where(x =>
+                x.SupplierReturnNo.ToUpper().Contains(keyword)
+                || x.InboundOrderNo.ToUpper().Contains(keyword)
+                || x.InspectionRecordId.ToUpper().Contains(keyword)
+                || x.SkuCode.ToUpper().Contains(keyword));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenByDescending(x => x.SupplierReturnNo)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => new SupplierReturnRequestFact(
+                x.Id,
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.SupplierReturnNo,
+                x.InboundOrderNo,
+                x.InboundOrderLineNo,
+                x.InspectionRecordId,
+                x.SkuCode,
+                x.UomCode,
+                x.SiteCode,
+                x.LocationCode,
+                x.LotNo,
+                x.SerialNo,
+                x.OwnerType,
+                x.OwnerId,
+                x.Quantity,
+                x.DispositionType,
+                x.DispositionReason,
+                x.Status.ToString(),
+                x.CreatedAtUtc))
+            .ToArrayAsync(cancellationToken);
+        return new ListSupplierReturnRequestsResponse(items, total);
     }
 }
 
