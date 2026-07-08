@@ -4,10 +4,12 @@ namespace Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 
 public partial record RoleId : IStringStronglyTypedId;
 public partial record RolePermissionId : IStringStronglyTypedId;
+public partial record RoleDataScopeId : IStringStronglyTypedId;
 
 public class Role : Entity<RoleId>, IAggregateRoot
 {
     private readonly List<RolePermission> permissions = [];
+    private readonly List<RoleDataScope> dataScopes = [];
 
     private Role()
     {
@@ -26,6 +28,7 @@ public class Role : Entity<RoleId>, IAggregateRoot
     public string RoleName { get; private set; } = string.Empty;
     public string NormalizedRoleName { get; private set; } = string.Empty;
     public IReadOnlyCollection<RolePermission> Permissions => permissions;
+    public IReadOnlyCollection<RoleDataScope> DataScopes => dataScopes;
     public Deleted Deleted { get; private set; } = new(false);
     public RowVersion RowVersion { get; private set; } = new(0);
 
@@ -48,6 +51,24 @@ public class Role : Entity<RoleId>, IAggregateRoot
             }
         }
     }
+
+    public void ReplaceDataScopes(IEnumerable<DataScopeBinding> scopes)
+    {
+        var desired = scopes
+            .Select(DataScopeBinding.Normalize)
+            .Distinct()
+            .ToHashSet();
+        dataScopes.RemoveAll(x => !desired.Contains(new DataScopeBinding(x.ScopeType, x.ScopeCode)));
+
+        var existing = dataScopes.Select(x => new DataScopeBinding(x.ScopeType, x.ScopeCode)).ToHashSet();
+        foreach (var scope in desired.OrderBy(x => x.ScopeType, StringComparer.Ordinal).ThenBy(x => x.ScopeCode, StringComparer.Ordinal))
+        {
+            if (!existing.Contains(scope))
+            {
+                dataScopes.Add(new RoleDataScope(new RoleDataScopeId($"{Id.Id}:{scope.ScopeType}:{scope.ScopeCode}"), Id, scope.ScopeType, scope.ScopeCode));
+            }
+        }
+    }
 }
 
 public class RolePermission : Entity<RolePermissionId>
@@ -67,4 +88,63 @@ public class RolePermission : Entity<RolePermissionId>
 
     public RoleId RoleId { get; private set; }
     public string PermissionCode { get; private set; } = string.Empty;
+}
+
+public class RoleDataScope : Entity<RoleDataScopeId>
+{
+    private RoleDataScope()
+    {
+        Id = new RoleDataScopeId(string.Empty);
+        RoleId = new RoleId(string.Empty);
+    }
+
+    internal RoleDataScope(RoleDataScopeId id, RoleId roleId, string scopeType, string scopeCode)
+    {
+        Id = id;
+        RoleId = roleId;
+        ScopeType = scopeType;
+        ScopeCode = scopeCode;
+    }
+
+    public RoleId RoleId { get; private set; }
+    public string ScopeType { get; private set; } = string.Empty;
+    public string ScopeCode { get; private set; } = string.Empty;
+}
+
+public sealed record DataScopeBinding(string ScopeType, string ScopeCode)
+{
+    public const string Site = "site";
+    public const string Workshop = "workshop";
+    public const string ProductionLine = "production-line";
+
+    public static readonly string[] KnownScopeTypes = [Site, Workshop, ProductionLine];
+
+    public static DataScopeBinding Normalize(DataScopeBinding binding) =>
+        new(NormalizeScopeType(binding.ScopeType), NormalizeScopeCode(binding.ScopeCode));
+
+    public static string NormalizeScopeType(string scopeType)
+    {
+        if (string.IsNullOrWhiteSpace(scopeType))
+        {
+            throw new ArgumentException("Data scope type is required.", nameof(scopeType));
+        }
+
+        var normalized = scopeType.Trim().ToLowerInvariant();
+        if (!KnownScopeTypes.Contains(normalized, StringComparer.Ordinal))
+        {
+            throw new ArgumentException($"Unknown data scope type '{scopeType}'.", nameof(scopeType));
+        }
+
+        return normalized;
+    }
+
+    public static string NormalizeScopeCode(string scopeCode)
+    {
+        if (string.IsNullOrWhiteSpace(scopeCode))
+        {
+            throw new ArgumentException("Data scope code is required.", nameof(scopeCode));
+        }
+
+        return scopeCode.Trim();
+    }
 }

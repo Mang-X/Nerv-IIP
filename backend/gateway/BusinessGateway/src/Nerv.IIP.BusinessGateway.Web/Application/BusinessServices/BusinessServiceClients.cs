@@ -672,6 +672,11 @@ public interface IBusinessErpClient
         BusinessConsoleCreateErpRequestForQuotationRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleConvertErpPurchaseRequisitionsResponse> ConvertPurchaseRequisitionsToPurchaseOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleConvertErpPurchaseRequisitionsRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleReceiveErpSupplierQuotationResponse> ReceiveSupplierQuotationAsync(
         string internalBearerToken,
         BusinessConsoleReceiveErpSupplierQuotationRequest request,
@@ -1000,7 +1005,7 @@ public interface IBusinessMaintenanceClient
 
     Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMaintenanceListRequest request,
+        BusinessConsoleMaintenanceWorkOrderListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMaintenanceWorkOrderItem> GetWorkOrderAsync(
@@ -1176,7 +1181,7 @@ public interface IBusinessMesClient
 
     Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesWorkOrderListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesWorkOrderDetailResponse> GetWorkOrderDetailAsync(
@@ -4061,6 +4066,7 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("deviceAssetId", request.DeviceAssetId),
+                ("deviceAssetIds", request.DeviceAssetIds),
                 ("status", request.Status),
                 ("skip", request.Skip),
                 ("take", request.Take)),
@@ -4175,7 +4181,8 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 request.DeviceAssetId,
                 request.Status ?? "active",
                 request.Skip,
-                request.Take),
+                request.Take,
+                request.DeviceAssetIds),
             cancellationToken);
         return new BusinessConsoleEquipmentAlarmListPageResponse(
             alarms.Items,
@@ -4360,13 +4367,18 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
 
     public async Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMaintenanceListRequest request,
+        BusinessConsoleMaintenanceWorkOrderListRequest request,
         CancellationToken cancellationToken)
     {
         var workOrders = await SendAsync<DownstreamMaintenancePagedResponse<DownstreamMaintenanceWorkOrderListItem>>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/maintenance/work-orders?" + ListQuery(request.OrganizationId, request.EnvironmentId, request.Skip, request.Take),
+            "/api/business/v1/maintenance/work-orders?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skip", request.Skip),
+                ("take", request.Take),
+                ("deviceAssetIds", request.DeviceAssetIds)),
             null,
             cancellationToken);
         return new BusinessConsoleMaintenanceWorkOrderListResponse(workOrders.Items.Select(workOrder =>
@@ -4395,7 +4407,7 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         BusinessConsoleMaintenanceContextRequest request,
         CancellationToken cancellationToken)
     {
-        var workOrders = await ListWorkOrdersAsync(internalBearerToken, new BusinessConsoleMaintenanceListRequest(request.OrganizationId, request.EnvironmentId), cancellationToken);
+        var workOrders = await ListWorkOrdersAsync(internalBearerToken, new BusinessConsoleMaintenanceWorkOrderListRequest(request.OrganizationId, request.EnvironmentId), cancellationToken);
         return workOrders.Items.SingleOrDefault(x => string.Equals(x.WorkOrderId, workOrderId, StringComparison.Ordinal))
             ?? throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                 HttpStatusCode.NotFound,
@@ -4785,6 +4797,17 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/erp/rfqs",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleConvertErpPurchaseRequisitionsResponse> ConvertPurchaseRequisitionsToPurchaseOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleConvertErpPurchaseRequisitionsRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleConvertErpPurchaseRequisitionsResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/erp/purchase-requisitions/convert-to-purchase-order",
             request,
             cancellationToken);
 
@@ -5469,12 +5492,12 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
     public Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesWorkOrderListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMesWorkOrderListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/mes/work-orders?" + ListQuery(request),
+            "/api/business/v1/mes/work-orders?" + WorkOrderListQuery(request),
             null,
             cancellationToken);
 
@@ -5865,6 +5888,20 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("workCenterId", request.WorkCenterId),
             ("shiftId", request.ShiftId),
             ("deviceAssetId", request.DeviceAssetId),
+            ("skip", request.Skip),
+            ("take", request.Take));
+
+    private static string WorkOrderListQuery(BusinessConsoleMesWorkOrderListRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("status", request.Status),
+            ("keyword", request.Keyword),
+            ("workCenterId", request.WorkCenterId),
+            ("workCenterIds", request.WorkCenterIds),
+            ("shiftId", request.ShiftId),
+            ("deviceAssetId", request.DeviceAssetId),
+            ("deviceAssetIds", request.DeviceAssetIds),
             ("skip", request.Skip),
             ("take", request.Take));
 

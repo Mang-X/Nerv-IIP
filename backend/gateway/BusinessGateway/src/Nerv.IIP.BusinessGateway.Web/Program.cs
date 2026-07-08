@@ -50,6 +50,7 @@ builder.Services.AddSingleton<BusinessGatewayDownstreamHealthState>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<AcceptLanguageForwardingHandler>();
 builder.Services.AddScoped<BusinessConsoleSearchService>();
+builder.Services.AddScoped<BusinessGatewayDataScopeFilter>();
 var iamBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
 var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
 var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");

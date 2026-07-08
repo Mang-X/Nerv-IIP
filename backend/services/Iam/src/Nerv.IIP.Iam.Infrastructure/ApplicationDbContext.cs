@@ -21,8 +21,10 @@ public sealed partial class ApplicationDbContext(DbContextOptions<ApplicationDbC
     public DbSet<User> Users => Set<User>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
+    public DbSet<RoleDataScope> RoleDataScopes => Set<RoleDataScope>();
     public DbSet<Membership> Memberships => Set<Membership>();
     public DbSet<MembershipRole> MembershipRoles => Set<MembershipRole>();
+    public DbSet<MembershipDataScope> MembershipDataScopes => Set<MembershipDataScope>();
     public DbSet<UserSession> UserSessions => Set<UserSession>();
     public DbSet<ConnectorHostCredential> ConnectorHostCredentials => Set<ConnectorHostCredential>();
     public DbSet<ConnectorHostCredentialCapability> ConnectorHostCredentialCapabilities => Set<ConnectorHostCredentialCapability>();

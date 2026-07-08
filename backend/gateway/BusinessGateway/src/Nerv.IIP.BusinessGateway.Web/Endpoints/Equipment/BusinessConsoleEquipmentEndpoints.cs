@@ -202,6 +202,7 @@ public sealed class GetBusinessConsoleEquipmentAvailabilityEndpoint(
 public sealed class ListBusinessConsoleEquipmentAlarmsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessIndustrialTelemetryClient industrialTelemetry,
+    BusinessGatewayDataScopeFilter dataScopeFilter,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessEquipmentProxyEndpoint<BusinessConsoleEquipmentAlarmListRequest, BusinessConsoleEquipmentAlarmListPageResponse>(
         auth,
@@ -215,11 +216,17 @@ public sealed class ListBusinessConsoleEquipmentAlarmsEndpoint(
 
     protected override string? ResourceId(BusinessConsoleEquipmentAlarmListRequest request) => request.DeviceAssetId;
 
-    protected override Task<BusinessConsoleEquipmentAlarmListPageResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleEquipmentAlarmListPageResponse> ForwardAsync(
         BusinessConsoleEquipmentAlarmListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        industrialTelemetry.ListActiveAlarmsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var scopedRequest = await dataScopeFilter.ApplyToEquipmentAlarmsAsync(
+            request,
+            AuthorizationResult?.DataScope,
+            cancellationToken);
+        return await industrialTelemetry.ListActiveAlarmsAsync(tokenProvider.BearerToken, scopedRequest, cancellationToken);
+    }
 }
 
 [Tags("Business Console Equipment")]

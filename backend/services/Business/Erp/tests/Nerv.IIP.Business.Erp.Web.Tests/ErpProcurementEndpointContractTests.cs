@@ -1,8 +1,10 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
+using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Procurement;
@@ -18,7 +20,7 @@ public sealed class ErpProcurementEndpointContractTests
     {
         var contracts = ErpProcurementEndpointContracts.All.ToArray();
 
-        Assert.Equal(12, contracts.Length);
+        Assert.Equal(13, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/purchase-requisitions/from-suggestion"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
@@ -29,6 +31,11 @@ public sealed class ErpProcurementEndpointContractTests
             && x.PermissionCode == ErpPermissionCodes.ProcurementRead
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "listErpPurchaseRequisitions");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/erp/purchase-requisitions/convert-to-purchase-order"
+            && x.PermissionCode == ErpPermissionCodes.ProcurementManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "convertErpPurchaseRequisitionsToPurchaseOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/rfqs"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
@@ -84,6 +91,7 @@ public sealed class ErpProcurementEndpointContractTests
     [Theory]
     [InlineData(typeof(CreatePurchaseRequisitionFromSuggestionEndpoint))]
     [InlineData(typeof(ListPurchaseRequisitionsEndpoint))]
+    [InlineData(typeof(ConvertPurchaseRequisitionsToPurchaseOrderEndpoint))]
     [InlineData(typeof(CreateRequestForQuotationEndpoint))]
     [InlineData(typeof(ReceiveSupplierQuotationEndpoint))]
     [InlineData(typeof(ListRequestsForQuotationEndpoint))]
@@ -458,6 +466,177 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.Matches("^PO-[0-9]{8}-[0-9]{6}$", order.PurchaseOrderNo);
     }
 
+    [Fact]
+    public async Task Convert_purchase_requisitions_uses_supplier_quotation_merges_lines_and_marks_sources_converted()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var approvalClient = new CapturingPurchaseOrderApprovalClient();
+        await SeedPurchaseRequisitionAsync(dbContext, "PR-001", "suggestion-001", "SKU-RM-1000", 3m);
+        await SeedPurchaseRequisitionAsync(dbContext, "PR-002", "suggestion-002", "SKU-RM-1000", 4m);
+        await new ReceiveSupplierQuotationCommandHandler(dbContext).Handle(
+            new ReceiveSupplierQuotationCommand(
+                "org-001",
+                "env-dev",
+                "SQ-001",
+                "RFQ-001",
+                "SUP-001",
+                [new SupplierQuotationCommandLine("LINE-001", "SKU-RM-1000", "kg", 10m, 12m, new DateOnly(2026, 6, 7))]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(dbContext, approvalClient: approvalClient).Handle(
+            new ConvertPurchaseRequisitionsToPurchaseOrderCommand(
+                "org-001",
+                "env-dev",
+                ["PR-001", "PR-002"],
+                PurchaseOrderNo: "PO-REQ-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(PurchaseRequisitionConversionStatus.PurchaseOrderCreated, result.Status);
+        Assert.Equal("PO-REQ-001", result.PurchaseOrderNo);
+        Assert.Equal("SUP-001", result.SupplierCode);
+        Assert.NotNull(approvalClient.LastRequest);
+        var order = Assert.Single(dbContext.PurchaseOrders.Include(x => x.Lines).ThenInclude(x => x.SourceLinks));
+        var line = Assert.Single(order.Lines);
+        Assert.Equal(7m, line.OrderedQuantity);
+        Assert.Equal("kg", line.UomCode);
+        Assert.Equal(12m, line.UnitPrice);
+        Assert.Equal("PR-001", line.SourceLinks.OrderBy(x => x.PurchaseRequisitionNo, StringComparer.Ordinal).First().PurchaseRequisitionNo);
+        Assert.Equal(7m, line.SourceLinks.Sum(x => x.Quantity));
+        Assert.All(dbContext.PurchaseRequisitions, requisition =>
+        {
+            Assert.Equal(PurchaseRequisitionStatus.Converted, requisition.Status);
+            Assert.Equal("PO-REQ-001", requisition.ConvertedPurchaseOrderNo);
+        });
+    }
+
+    [Fact]
+    public async Task Convert_purchase_requisitions_is_idempotent_after_sources_are_converted()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await SeedPurchaseRequisitionAsync(dbContext, "PR-001", "suggestion-001", "SKU-RM-1000", 3m);
+        await new ReceiveSupplierQuotationCommandHandler(dbContext).Handle(
+            new ReceiveSupplierQuotationCommand(
+                "org-001",
+                "env-dev",
+                "SQ-001",
+                "RFQ-001",
+                "SUP-001",
+                [new SupplierQuotationCommandLine("LINE-001", "SKU-RM-1000", "kg", 10m, 12m, new DateOnly(2026, 6, 7))]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(dbContext);
+        var command = new ConvertPurchaseRequisitionsToPurchaseOrderCommand("org-001", "env-dev", ["PR-001"], PurchaseOrderNo: "PO-REQ-001");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var second = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(first.PurchaseOrderNo, second.PurchaseOrderNo);
+        Assert.Equal(PurchaseRequisitionConversionStatus.AlreadyConverted, second.Status);
+        Assert.Single(dbContext.PurchaseOrders);
+    }
+
+    [Fact]
+    public async Task Convert_purchase_requisitions_uses_stable_business_idempotency_when_random_request_keys_differ()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await using var seedScope = provider.CreateAsyncScope();
+        var seedContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await SeedPurchaseRequisitionAsync(seedContext, "PR-001", "suggestion-001", "SKU-RM-1000", 3m);
+        await new ReceiveSupplierQuotationCommandHandler(seedContext).Handle(
+            new ReceiveSupplierQuotationCommand(
+                "org-001",
+                "env-dev",
+                "SQ-001",
+                "RFQ-001",
+                "SUP-001",
+                [new SupplierQuotationCommandLine("LINE-001", "SKU-RM-1000", "kg", 10m, 12m, new DateOnly(2026, 6, 7))]),
+            CancellationToken.None);
+        await seedContext.SaveChangesAsync(CancellationToken.None);
+        var coding = new ErpCodingService();
+        await using var firstScope = provider.CreateAsyncScope();
+        await using var secondScope = provider.CreateAsyncScope();
+        var firstHandler = new ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
+            firstScope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            coding);
+        var secondHandler = new ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
+            secondScope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            coding);
+
+        var first = await firstHandler.Handle(
+            new ConvertPurchaseRequisitionsToPurchaseOrderCommand("org-001", "env-dev", ["PR-001"], IdempotencyKey: "browser-random-1"),
+            CancellationToken.None);
+        var second = await secondHandler.Handle(
+            new ConvertPurchaseRequisitionsToPurchaseOrderCommand("org-001", "env-dev", ["PR-001"], IdempotencyKey: "browser-random-2"),
+            CancellationToken.None);
+
+        Assert.Equal(PurchaseRequisitionConversionStatus.PurchaseOrderCreated, first.Status);
+        Assert.Equal(PurchaseRequisitionConversionStatus.PurchaseOrderCreated, second.Status);
+        Assert.Equal(first.PurchaseOrderNo, second.PurchaseOrderNo);
+    }
+
+    [Fact]
+    public async Task Convert_purchase_requisitions_clamps_historical_purchase_order_promised_date_to_required_date()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await SeedPurchaseRequisitionAsync(dbContext, "PR-001", "suggestion-001", "SKU-RM-1000", 3m);
+        await new CreatePurchaseOrderCommandHandler(dbContext).Handle(
+            new CreatePurchaseOrderCommand(
+                "org-001",
+                "env-dev",
+                "PO-HISTORY-001",
+                "SUP-001",
+                "SITE-01",
+                [new PurchaseOrderCommandLine("LINE-001", "SKU-RM-1000", "kg", 5m, 9m, new DateOnly(2026, 5, 1))]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(dbContext).Handle(
+            new ConvertPurchaseRequisitionsToPurchaseOrderCommand("org-001", "env-dev", ["PR-001"], PurchaseOrderNo: "PO-REQ-001"),
+            CancellationToken.None);
+
+        var line = Assert.Single(result.Lines!);
+        Assert.Equal(new DateOnly(2026, 6, 5), line.PromisedDate);
+    }
+
+    [Fact]
+    public async Task Convert_purchase_requisitions_without_price_source_creates_rfq_and_keeps_requisitions_open()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await SeedPurchaseRequisitionAsync(dbContext, "PR-001", "suggestion-001", "SKU-RM-1000", 3m);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(dbContext).Handle(
+            new ConvertPurchaseRequisitionsToPurchaseOrderCommand(
+                "org-001",
+                "env-dev",
+                ["PR-001"],
+                RfqNo: "RFQ-FOLLOW-001",
+                RfqSupplierCodes: ["SUP-001", "SUP-002"]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(PurchaseRequisitionConversionStatus.RfqCreated, result.Status);
+        Assert.Equal("RFQ-FOLLOW-001", result.RfqNo);
+        Assert.Empty(dbContext.PurchaseOrders);
+        Assert.Equal(PurchaseRequisitionStatus.Open, Assert.Single(dbContext.PurchaseRequisitions).Status);
+        var rfq = Assert.Single(dbContext.RequestForQuotations.Include(x => x.Lines).Include(x => x.Suppliers));
+        Assert.Equal("RFQ-FOLLOW-001", rfq.RfqNo);
+        Assert.Contains(rfq.Suppliers, supplier => supplier.SupplierCode == "SUP-002");
+        Assert.Equal("SKU-RM-1000", Assert.Single(rfq.Lines).SkuCode);
+    }
+
     private static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();
@@ -465,6 +644,38 @@ public sealed class ErpProcurementEndpointContractTests
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
         return services.BuildServiceProvider();
+    }
+
+    private static async Task SeedPurchaseRequisitionAsync(
+        ApplicationDbContext dbContext,
+        string requisitionNo,
+        string suggestionId,
+        string skuCode,
+        decimal quantity)
+    {
+        await new CreatePurchaseRequisitionFromSuggestionCommandHandler(dbContext).Handle(
+            new CreatePurchaseRequisitionFromSuggestionCommand(
+                "org-001",
+                "env-dev",
+                requisitionNo,
+                suggestionId,
+                skuCode,
+                "kg",
+                "SITE-01",
+                quantity,
+                new DateOnly(2026, 6, 5)),
+            CancellationToken.None);
+    }
+
+    private sealed class CapturingPurchaseOrderApprovalClient : IPurchaseOrderApprovalClient
+    {
+        public PurchaseOrderApprovalRequest? LastRequest { get; private set; }
+
+        public Task<PurchaseOrderApprovalResult> StartApprovalAsync(PurchaseOrderApprovalRequest request, CancellationToken cancellationToken)
+        {
+            LastRequest = request;
+            return Task.FromResult(new PurchaseOrderApprovalResult(request.ChainId));
+        }
     }
 
     private static void SetRfqCreatedAt(ApplicationDbContext dbContext, string rfqNo, DateTime createdAtUtc)

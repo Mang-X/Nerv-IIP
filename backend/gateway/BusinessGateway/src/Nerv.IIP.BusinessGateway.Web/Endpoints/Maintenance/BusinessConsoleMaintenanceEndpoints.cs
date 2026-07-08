@@ -76,20 +76,27 @@ public sealed class CompleteBusinessConsoleMaintenanceWorkOrderEndpoint(
 public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMaintenanceClient maintenance,
+    BusinessGatewayDataScopeFilter dataScopeFilter,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMaintenanceListRequest, BusinessConsoleMaintenanceWorkOrderListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMaintenanceWorkOrderListRequest, BusinessConsoleMaintenanceWorkOrderListResponse>(
         auth,
         BusinessGatewayPermissions.MaintenanceWorkOrdersRead)
 {
-    protected override string OrganizationId(BusinessConsoleMaintenanceListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleMaintenanceWorkOrderListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMaintenanceListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleMaintenanceWorkOrderListRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMaintenanceWorkOrderListResponse> ForwardAsync(
-        BusinessConsoleMaintenanceListRequest request,
+    protected override async Task<BusinessConsoleMaintenanceWorkOrderListResponse> ForwardAsync(
+        BusinessConsoleMaintenanceWorkOrderListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        maintenance.ListWorkOrdersAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var scopedRequest = await dataScopeFilter.ApplyToMaintenanceWorkOrdersAsync(
+            request,
+            AuthorizationResult?.DataScope,
+            cancellationToken);
+        return await maintenance.ListWorkOrdersAsync(tokenProvider.BearerToken, scopedRequest, cancellationToken);
+    }
 }
 
 [Tags("Business Console Maintenance")]
@@ -400,6 +407,17 @@ public sealed class BusinessConsoleMaintenanceContextRequestValidator : Validato
 public sealed class BusinessConsoleMaintenanceListRequestValidator : Validator<BusinessConsoleMaintenanceListRequest>
 {
     public BusinessConsoleMaintenanceListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 200);
+    }
+}
+
+public sealed class BusinessConsoleMaintenanceWorkOrderListRequestValidator : Validator<BusinessConsoleMaintenanceWorkOrderListRequest>
+{
+    public BusinessConsoleMaintenanceWorkOrderListRequestValidator()
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);

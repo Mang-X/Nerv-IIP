@@ -3,6 +3,24 @@
 # Three layers: Primitive → Semantic → Component
 ---
 
+## Scene Namespaces (ADR 0020)
+
+Token 名称按场景命名空间隔离（[ADR 0020](../../docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md) §3，
+落地批 MAN-433，`--sb-*` → `--nv-scr-*` 全表映射见 ADR 附录 B）：
+
+| 命名空间 | 场景 | 说明 |
+|---|---|---|
+| 契约层（无前缀，冻结） | shadcn 原版依赖 | `--background` `--primary` `--border` `--chart-*` `--sidebar-*` `--radius` 等官方主题名——改名等于改原版，永不加前缀 |
+| `--nv-*` | PC / 共享语义 | 项目自有扩展：`--nv-brand` `--nv-success` `--nv-warning` `--nv-*-strong` `--nv-ease-*` `--nv-duration-*` `--nv-shadow-*`（现 `--brand`/`--success`/… 迁移目标，ADR 附录 C） |
+| `--nv-scr-*` | screen 大屏 | 现 `--sb-*` 30 项全表迁移（ADR 附录 B） |
+| `--nv-m-*` | mobile | 当前空集，规范先行（mobile token 现全部来自共享层） |
+| `--nv-t-*` | touch 工位 | 当前空集，规范先行 |
+
+规则：primitive 值全库共享；**允许跨场景取值相同，但名称必须隔离**——同值用 var 引用
+链表达（`--nv-scr-ease: var(--nv-ease-out-quart)`），禁止复制字面量；场景组件只允许
+引用本场景前缀 + 契约层 token（contract test 拦截跨场景直引）。动效统一 motion-v 封装：
+JS 预设唯一来源 `packages/ui/src/lib/motion.ts`，数值与 CSS token 同表，引用名分场景。
+
 ## Layer 1: Primitives
 
 Raw OKLCH values defined ONCE in the shared `@nerv-iip/ui` theme file —
@@ -122,12 +140,16 @@ These are migration targets. When those components are rewritten, remove both th
 
 ## Adding New Tokens
 
-All token edits happen in the shared `packages/ui/src/styles/theme.css` — never in
-an app `main.css` (those only `@import` the shared file).
+All token edits happen in the shared `packages/ui/src/styles/theme.css` or the owning
+scene sheet (screen: `components/screen/tokens.css`) — never in an app `main.css`
+(those only `@import` the shared files).
 
-1. Define the CSS custom property in the `:root` block of `theme.css`.
-2. Add the dark-mode override in the `.dark {}` block.
-3. Add a Tailwind mapping in `@theme inline {}` (e.g. `--color-foo: var(--foo)`).
-4. Update this file.
-5. If the token is design-critical (primary, brand, success/warning, elevation),
+1. 先按 Scene Namespaces 表定前缀（契约层冻结 / `--nv-*` / `--nv-scr-*` / `--nv-m-*` /
+   `--nv-t-*`）；跨场景同值用 var 引用链，不复制字面量。
+2. Define the CSS custom property in the `:root` block of the owning sheet.
+3. Add the dark-mode override in the `.dark {}` block（场景表如无亮色态则不适用）.
+4. Add a Tailwind mapping in `@theme inline {}` (e.g. `--color-foo: var(--nv-foo)` —
+   桥接名保持 utility 契约，右值指向命名空间新名).
+5. Update this file.
+6. If the token is design-critical (primary, brand, success/warning, elevation),
    add a contract assertion in `packages/ui/src/design-system.contract.test.ts`.

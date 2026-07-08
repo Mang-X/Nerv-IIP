@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.Scans;
 
@@ -30,7 +31,44 @@ public sealed class BarcodeLabelRecordScanCommandTests
     }
 
     [Fact]
-    public async Task Record_scan_rejects_duplicate_serialized_epc_across_idempotency_keys()
+    public async Task Record_scan_natural_key_replay_with_new_idempotency_key_returns_existing_scan_without_duplicate_fact()
+    {
+        await using var dbContext = CreateDbContext();
+        var handler = new RecordScanCommandHandler(dbContext);
+
+        var firstId = await handler.Handle(NewInventoryScanCommand("idem-scan-gs1-001"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var secondId = await handler.Handle(NewInventoryScanCommand("idem-scan-gs1-002"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(firstId, secondId);
+        Assert.Equal(1, await dbContext.ScanRecords.CountAsync());
+        Assert.Equal(1, await dbContext.EpcisEvents.CountAsync());
+    }
+
+    [Fact]
+    public void Scan_record_marks_inventory_scan_as_downstream_requested_and_observation_scan_as_observed()
+    {
+        var inventoryScan = NewInventoryScan("idem-scan-gs1-001");
+        var receivingScan = ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "BC001",
+            "wms.receiving",
+            "ASN-001",
+            "idem-observed-001",
+            "accepted",
+            null);
+
+        Assert.Equal("requested", inventoryScan.DownstreamProcessingStatus);
+        Assert.Equal("observed", receivingScan.DownstreamProcessingStatus);
+    }
+
+    [Fact]
+    public async Task Record_scan_rejects_duplicate_serialized_epc_across_source_documents()
     {
         await using var dbContext = CreateDbContext();
         var handler = new RecordScanCommandHandler(dbContext);
@@ -40,7 +78,7 @@ public sealed class BarcodeLabelRecordScanCommandTests
         dbContext.ChangeTracker.Clear();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            handler.Handle(NewInventoryScanCommand("idem-scan-gs1-002"), CancellationToken.None));
+            handler.Handle(NewInventoryScanCommand("idem-scan-gs1-002", sourceDocumentId: "ASN-002"), CancellationToken.None));
 
         Assert.Contains("serialized barcode", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -99,6 +137,59 @@ public sealed class BarcodeLabelRecordScanCommandTests
     }
 
     [Fact]
+    public async Task Scan_record_natural_key_unique_index_rejects_same_accepted_scan_with_business_message()
+    {
+        await using var database = await BarcodeLabelSqliteDatabase.CreateAsync();
+
+        await using (var dbContext = database.CreateDbContext())
+        {
+            dbContext.ScanRecords.Add(NewPlainInventoryScan("idem-natural-001"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using (var dbContext = database.CreateDbContext())
+        {
+            dbContext.ScanRecords.Add(NewPlainInventoryScan("idem-natural-002"));
+
+            var exception = await Assert.ThrowsAsync<KnownException>(() => dbContext.SaveChangesAsync());
+
+            Assert.Contains("accepted barcode scan natural key", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public async Task Scan_record_natural_key_partial_index_allows_same_rejected_scan()
+    {
+        await using var database = await BarcodeLabelSqliteDatabase.CreateAsync();
+        await using var dbContext = database.CreateDbContext();
+
+        dbContext.ScanRecords.Add(ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "BAD-NATURAL",
+            "wms.receiving",
+            "ASN-NATURAL",
+            "idem-reject-natural-001",
+            "rejected",
+            "unknown"));
+        dbContext.ScanRecords.Add(ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-02",
+            "BAD-NATURAL",
+            "wms.receiving",
+            "ASN-NATURAL",
+            "idem-reject-natural-002",
+            "rejected",
+            "unknown"));
+
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(2, await dbContext.ScanRecords.CountAsync());
+    }
+
+    [Fact]
     public async Task Scan_record_unique_index_rejects_same_gtin_serial_without_lot_across_barcode_forms()
     {
         await using var database = await BarcodeLabelSqliteDatabase.CreateAsync();
@@ -131,7 +222,32 @@ public sealed class BarcodeLabelRecordScanCommandTests
         Assert.Contains("NOT NULL", exception.InnerException?.Message ?? exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static RecordScanCommand NewInventoryScanCommand(string idempotencyKey)
+    [Fact]
+    public async Task Epcis_event_unique_index_is_enforced_by_relational_store()
+    {
+        await using var database = await BarcodeLabelSqliteDatabase.CreateAsync();
+
+        await using (var dbContext = database.CreateDbContext())
+        {
+            var epcisEvent = NewEpcisObjectEvent("idem-epcis-001");
+            dbContext.EpcisEvents.Add(epcisEvent);
+            dbContext.Entry(epcisEvent).Property(nameof(EpcisEvent.ScanRecordId)).CurrentValue = null;
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using (var dbContext = database.CreateDbContext())
+        {
+            var epcisEvent = NewEpcisObjectEvent("idem-epcis-002");
+            dbContext.EpcisEvents.Add(epcisEvent);
+            dbContext.Entry(epcisEvent).Property(nameof(EpcisEvent.ScanRecordId)).CurrentValue = null;
+
+            var exception = await Assert.ThrowsAsync<KnownException>(() => dbContext.SaveChangesAsync());
+
+            Assert.Contains("Duplicate BarcodeLabel EPCIS event", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static RecordScanCommand NewInventoryScanCommand(string idempotencyKey, string sourceDocumentId = "ASN-001")
     {
         return new RecordScanCommand(
             "org-001",
@@ -139,7 +255,7 @@ public sealed class BarcodeLabelRecordScanCommandTests
             "PDA-01",
             "(01)09506000134352(10)LOT-A(21)SN-0001(30)2",
             "inventory.receipt",
-            "ASN-001",
+            sourceDocumentId,
             idempotencyKey,
             "accepted",
             null,
@@ -173,6 +289,33 @@ public sealed class BarcodeLabelRecordScanCommandTests
             "owned",
             null,
             2);
+    }
+
+    private static ScanRecord NewPlainInventoryScan(string idempotencyKey)
+    {
+        return ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "PLAIN-NATURAL-001",
+            "inventory.receipt",
+            "ASN-NATURAL",
+            idempotencyKey,
+            "accepted",
+            null,
+            "SKU-FG-1000",
+            "EA",
+            "SITE-01",
+            "STAGE-01",
+            "qualified",
+            "owned",
+            null,
+            2);
+    }
+
+    private static EpcisEvent NewEpcisObjectEvent(string idempotencyKey)
+    {
+        return EpcisEvent.ObjectEvent("org-001", "env-dev", NewInventoryScan(idempotencyKey));
     }
 
     private sealed class BarcodeLabelSqliteDatabase : IAsyncDisposable
