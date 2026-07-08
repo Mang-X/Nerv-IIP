@@ -9,8 +9,8 @@
 import { provide } from 'vue'
 import { MOBILE_OVERLAY_TARGET } from '@nerv-iip/ui-mobile'
 
-// Keep mobile overlays (BottomSheet, Picker, DatePicker, ActionSheet, Dialog,
-// NumberKeyboard, Toast) inside the phone frame instead of covering the page.
+// Keep mobile overlays (NvBottomSheet, NvPicker, DatePicker, NvActionSheet, Dialog,
+// NvNumberKeyboard, Toast) inside the phone frame instead of covering the page.
 // `.ds-mdoc-screen` is given a containing block (transform) below so their
 // `position: fixed` anchors to the phone, not the viewport.
 provide(MOBILE_OVERLAY_TARGET, '.ds-mdoc-screen')

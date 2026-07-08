@@ -14,7 +14,7 @@ defineProps<{
   center?: boolean
   mobile?: boolean
   popout?: boolean
-  /** Full-width column layout so wide components (DataTable, Descriptions) fill
+  /** Full-width column layout so wide components (NvDataTable, NvDescriptions) fill
    *  the preview instead of shrinking to content inside the default flex row. */
   block?: boolean
 }>()
@@ -26,7 +26,15 @@ defineProps<{
       <div v-if="title" class="ds-demo-title">
         {{ title }}
       </div>
-      <div class="ds-demo-preview" :class="{ 'ds-demo-center': center, 'ds-demo-mobile': mobile, 'ds-demo-popout': popout, 'ds-demo-block': block }">
+      <div
+        class="ds-demo-preview"
+        :class="{
+          'ds-demo-center': center,
+          'ds-demo-mobile': mobile,
+          'ds-demo-popout': popout,
+          'ds-demo-block': block,
+        }"
+      >
         <div v-if="mobile" class="ds-demo-phone"><slot /></div>
         <slot v-else />
       </div>
@@ -60,7 +68,7 @@ defineProps<{
   margin: 1.25rem 0;
   border: 1px solid var(--border);
   border-radius: 12px;
-  /* page-surface background so surface components (Card, Descriptions, …) sit on
+  /* page-surface background so surface components (Card, NvDescriptions, …) sit on
      the same base they do in the app and pop with their ring/shadow, instead of
      blending into a same-coloured --card panel. */
   background: var(--background);
@@ -82,7 +90,7 @@ defineProps<{
   gap: 0.75rem;
   padding: 1.75rem 1.5rem;
 }
-/* `block` — full-width column for wide components (DataTable, Descriptions) so
+/* `block` — full-width column for wide components (NvDataTable, NvDescriptions) so
    they fill the preview instead of shrinking to content in the flex row. */
 .ds-demo-block {
   display: block;
@@ -105,12 +113,11 @@ defineProps<{
 }
 .ds-demo-mobile {
   justify-content: center;
-  background:
-    repeating-linear-gradient(
-      45deg,
-      color-mix(in oklch, var(--muted) 50%, transparent) 0 1px,
-      transparent 1px 10px
-    );
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in oklch, var(--muted) 50%, transparent) 0 1px,
+    transparent 1px 10px
+  );
 }
 .ds-demo-phone {
   width: 100%;

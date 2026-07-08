@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import {
-  AreaChartPro,
-  CardPro,
+  NvAreaChart,
+  NvCard,
   messagePro,
   notificationPro,
-  NotifierHost,
+  NvNotifierHost,
   Progress,
-  QtyStepper,
-  StationBar,
-  StatTile,
-  ThemeToggle,
-  TouchButton,
-  TouchSegmented,
+  NvQtyStepper,
+  NvStationBar,
+  NvStatTile,
+  NvThemeToggle,
+  NvTouchButton,
+  NvTouchSegmented,
 } from '@nerv-iip/ui'
 import { BellRingIcon, CheckCircleIcon, CircleStopIcon, PauseIcon } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -86,7 +86,7 @@ const takt = [
 <template>
   <div class="ds-board min-h-screen bg-background p-5 text-foreground">
     <div class="mx-auto flex max-w-[1400px] flex-col gap-5">
-      <StationBar
+      <NvStationBar
         station="WC-CNC-07 · 精密加工"
         :status-label="running ? '运行中' : '已暂停'"
         :tone="running ? 'success' : 'warning'"
@@ -95,13 +95,13 @@ const takt = [
         <template #right>
           <div class="text-sm text-muted-foreground">早班 · 张伟</div>
           <div class="font-mono text-2xl font-semibold tabular-nums">{{ now }}</div>
-          <ThemeToggle />
+          <NvThemeToggle />
         </template>
-      </StationBar>
+      </NvStationBar>
 
       <div class="grid gap-5 lg:grid-cols-3">
         <!-- 当前工单 -->
-        <CardPro class="lg:col-span-2 p-6">
+        <NvCard class="lg:col-span-2 p-6">
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="text-sm text-muted-foreground">当前工单</p>
@@ -120,44 +120,44 @@ const takt = [
           <div class="mt-6 flex flex-wrap items-center gap-4">
             <div>
               <p class="mb-1.5 text-sm text-muted-foreground">报工数量</p>
-              <QtyStepper v-model="reportQty" :min="1" :max="qty - done" :step="1" />
+              <NvQtyStepper v-model="reportQty" :min="1" :max="qty - done" :step="1" />
             </div>
             <div class="flex flex-1 flex-wrap items-end gap-3">
-              <TouchButton variant="success" size="xl" class="flex-1" @click="report">
+              <NvTouchButton variant="success" size="xl" class="flex-1" @click="report">
                 <template #leading><CheckCircleIcon aria-hidden="true" /></template>
                 报工
-              </TouchButton>
-              <TouchButton variant="warning" size="xl" @click="pause">
+              </NvTouchButton>
+              <NvTouchButton variant="warning" size="xl" @click="pause">
                 <template #leading><PauseIcon aria-hidden="true" /></template>
                 {{ running ? '暂停' : '恢复' }}
-              </TouchButton>
-              <TouchButton variant="outline" size="xl" @click="call">
+              </NvTouchButton>
+              <NvTouchButton variant="outline" size="xl" @click="call">
                 <template #leading><BellRingIcon aria-hidden="true" /></template>
                 呼叫
-              </TouchButton>
-              <TouchButton variant="brand" size="xl" @click="finish">
+              </NvTouchButton>
+              <NvTouchButton variant="brand" size="xl" @click="finish">
                 <template #leading><CircleStopIcon aria-hidden="true" /></template>
                 完工
-              </TouchButton>
+              </NvTouchButton>
             </div>
           </div>
-        </CardPro>
+        </NvCard>
 
         <!-- 实时指标 -->
         <div class="grid grid-cols-2 gap-4">
-          <StatTile label="今日已完成" :value="done" unit="件" tone="brand" />
-          <StatTile label="当前节拍" value="45" unit="s/件" tone="neutral" />
-          <StatTile label="在线良率" value="99.2" unit="%" tone="success" />
-          <StatTile label="设备 OEE" value="78.6" unit="%" tone="warning" />
+          <NvStatTile label="今日已完成" :value="done" unit="件" tone="brand" />
+          <NvStatTile label="当前节拍" value="45" unit="s/件" tone="neutral" />
+          <NvStatTile label="在线良率" value="99.2" unit="%" tone="success" />
+          <NvStatTile label="设备 OEE" value="78.6" unit="%" tone="warning" />
         </div>
       </div>
 
       <div class="grid gap-5 lg:grid-cols-3">
         <!-- 队列 -->
-        <CardPro class="lg:col-span-2 p-6">
+        <NvCard class="lg:col-span-2 p-6">
           <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold">工单队列</h2>
-            <TouchSegmented v-model="view" :options="viewOptions" />
+            <NvTouchSegmented v-model="view" :options="viewOptions" />
           </div>
           <ul class="mt-4 divide-y divide-border">
             <li v-for="item in list" :key="item.code" class="flex min-h-16 items-center gap-4 py-3">
@@ -166,17 +166,17 @@ const takt = [
               <span class="text-lg tabular-nums text-muted-foreground">{{ item.qty }} 件</span>
             </li>
           </ul>
-        </CardPro>
+        </NvCard>
 
         <!-- 节拍趋势 -->
-        <CardPro class="p-6">
+        <NvCard class="p-6">
           <h2 class="text-lg font-semibold">节拍趋势</h2>
           <p class="mt-0.5 text-sm text-muted-foreground">秒 / 件 · 近 6 件</p>
-          <AreaChartPro class="mt-4" :data="takt" :height="160" value-suffix=" s" />
-        </CardPro>
+          <NvAreaChart class="mt-4" :data="takt" :height="160" value-suffix=" s" />
+        </NvCard>
       </div>
     </div>
 
-    <NotifierHost />
+    <NvNotifierHost />
   </div>
 </template>
