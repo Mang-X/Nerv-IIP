@@ -122,6 +122,8 @@ public sealed record PurchaseRequisitionResponse(
     decimal Quantity,
     DateOnly RequiredDate,
     string Status,
+    string? ConvertedPurchaseOrderNo,
+    DateTime? ConvertedAtUtc,
     DateTime CreatedAtUtc);
 
 public sealed class ListPurchaseRequisitionsQueryHandler(ApplicationDbContext dbContext)
@@ -170,6 +172,8 @@ public sealed class ListPurchaseRequisitionsQueryHandler(ApplicationDbContext db
                 x.Quantity,
                 x.RequiredDate,
                 x.Status.ToString(),
+                x.ConvertedPurchaseOrderNo,
+                x.ConvertedAtUtc,
                 x.CreatedAtUtc))
             .ToArrayAsync(cancellationToken);
 
@@ -202,7 +206,13 @@ public sealed record PurchaseOrderLineResponse(
     decimal OrderedQuantity,
     decimal ReceivedQuantity,
     decimal UnitPrice,
-    DateOnly PromisedDate);
+    DateOnly PromisedDate,
+    IReadOnlyCollection<PurchaseOrderLineSourceResponse> Sources);
+
+public sealed record PurchaseOrderLineSourceResponse(
+    string PurchaseRequisitionNo,
+    string PurchaseRequisitionLineNo,
+    decimal Quantity);
 
 public sealed class ListPurchaseOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListPurchaseOrdersQuery, ListPurchaseOrdersResponse>
@@ -255,7 +265,14 @@ public sealed class ListPurchaseOrdersQueryHandler(ApplicationDbContext dbContex
                         line.OrderedQuantity,
                         line.ReceivedQuantity,
                         line.UnitPrice,
-                        line.PromisedDate))
+                        line.PromisedDate,
+                        line.SourceLinks
+                            .OrderBy(source => source.PurchaseRequisitionNo)
+                            .Select(source => new PurchaseOrderLineSourceResponse(
+                                source.PurchaseRequisitionNo,
+                                source.PurchaseRequisitionLineNo,
+                                source.Quantity))
+                            .ToArray()))
                     .ToArray()))
             .ToArrayAsync(cancellationToken);
 

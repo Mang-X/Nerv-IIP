@@ -1184,6 +1184,52 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderLineSourceLink", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id")
+                        .HasComment("Purchase order line source row id.");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<Guid>("PurchaseOrderLineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("purchase_order_line_id")
+                        .HasComment("Owning purchase order line id.");
+
+                    b.Property<string>("PurchaseRequisitionLineNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("purchase_requisition_line_no")
+                        .HasComment("Source purchase requisition line number.");
+
+                    b.Property<string>("PurchaseRequisitionNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("purchase_requisition_no")
+                        .HasComment("Source purchase requisition number.");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("quantity")
+                        .HasComment("Quantity pegged from the source requisition line.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PurchaseOrderLineId", "PurchaseRequisitionNo", "PurchaseRequisitionLineNo")
+                        .IsUnique();
+
+                    b.ToTable("purchase_order_line_sources", "erp", t =>
+                        {
+                            t.HasComment("ERP purchase order line source purchase requisition references.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate.PurchaseReceipt", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1351,6 +1397,17 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasComment("Purchase requisition aggregate id.");
+
+                    b.Property<DateTime?>("ConvertedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("converted_at_utc")
+                        .HasComment("UTC time when this requisition was converted to a purchase order.");
+
+                    b.Property<string>("ConvertedPurchaseOrderNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("converted_purchase_order_no")
+                        .HasComment("Purchase order number generated from this requisition.");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -2584,6 +2641,15 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderLineSourceLink", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderLine", null)
+                        .WithMany("SourceLinks")
+                        .HasForeignKey("PurchaseOrderLineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate.PurchaseReceiptLine", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate.PurchaseReceipt", null)
@@ -2670,6 +2736,11 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrder", b =>
                 {
                     b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderLine", b =>
+                {
+                    b.Navigation("SourceLinks");
                 });
 
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate.PurchaseReceipt", b =>

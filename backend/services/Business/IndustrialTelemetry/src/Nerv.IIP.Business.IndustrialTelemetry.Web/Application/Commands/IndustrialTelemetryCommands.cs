@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
 using Nerv.IIP.Contracts.Ops;
@@ -32,11 +34,28 @@ public sealed class CreateTelemetryTagCommandValidator : AbstractValidator<Creat
         RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.ValueType).NotEmpty().MaximumLength(50);
         RuleFor(x => x.UnitCode).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.SamplingPolicy).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SamplingPolicy)
+            .NotEmpty()
+            .MaximumLength(100)
+            .Must(BeValidSamplingPolicy)
+            .WithMessage("SamplingPolicy is invalid.");
         RuleFor(x => x.ControlMinValue)
             .LessThanOrEqualTo(x => x.ControlMaxValue)
             .When(x => x.ControlMinValue.HasValue && x.ControlMaxValue.HasValue);
         RuleForEach(x => x.ControlAllowedValues).MaximumLength(100);
+    }
+
+    private static bool BeValidSamplingPolicy(string samplingPolicy)
+    {
+        try
+        {
+            _ = TelemetrySamplingPolicy.Parse(samplingPolicy);
+            return true;
+        }
+        catch (KnownException)
+        {
+            return false;
+        }
     }
 }
 
@@ -373,6 +392,8 @@ public sealed record RecordTelemetrySampleCommand(
     string SourceSequence,
     string? SourceSystem = null,
     string? SourceConnector = null,
+    decimal? FirstValue = null,
+    decimal? LastValue = null,
     string? DeviceState = null,
     DateTimeOffset? StateOccurredAtUtc = null) : ICommand<RecordTelemetrySampleResult>;
 
@@ -409,6 +430,8 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         var normalizedSourceSequence = IndustrialTelemetryText.Required(request.SourceSequence, nameof(request.SourceSequence));
         var normalizedSourceSystem = IndustrialTelemetryText.Optional(request.SourceSystem);
         var normalizedSourceConnector = IndustrialTelemetryText.Optional(request.SourceConnector);
+        await ValidateSamplingPolicyAsync(request, normalizedTagKey, cancellationToken);
+        await RecordRawSampleAsync(request, normalizedTagKey, normalizedSourceSequence, normalizedSourceSystem, normalizedSourceConnector, cancellationToken);
         var existingSummary = await dbContext.TelemetrySummaries.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
@@ -448,6 +471,78 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         await EvaluateAlarmRulesAsync(request, normalizedTagKey, cancellationToken);
 
         return new RecordTelemetrySampleResult(incoming.Id, stateId);
+    }
+
+    private async Task ValidateSamplingPolicyAsync(
+        RecordTelemetrySampleCommand request,
+        string normalizedTagKey,
+        CancellationToken cancellationToken)
+    {
+        var tagPolicy = await dbContext.TelemetryTags
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId
+                && x.TagKey == normalizedTagKey)
+            .Select(x => x.SamplingPolicy)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (tagPolicy is null)
+        {
+            return;
+        }
+
+        var bucketSeconds = TelemetrySamplingPolicy.Parse(tagPolicy).BucketSeconds;
+        var actualSeconds = (int)(request.BucketEndUtc - request.BucketStartUtc).TotalSeconds;
+        if (actualSeconds != bucketSeconds)
+        {
+            throw new KnownException($"Telemetry bucket duration does not match sampling policy '{tagPolicy}'.");
+        }
+    }
+
+    private async Task<TelemetryRawSampleId> RecordRawSampleAsync(
+        RecordTelemetrySampleCommand request,
+        string normalizedTagKey,
+        string normalizedSourceSequence,
+        string? normalizedSourceSystem,
+        string? normalizedSourceConnector,
+        CancellationToken cancellationToken)
+    {
+        var incoming = TelemetryRawSample.Record(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            normalizedTagKey,
+            request.BucketStartUtc,
+            request.BucketEndUtc,
+            request.SampleCount,
+            request.MinValue,
+            request.MaxValue,
+            request.AverageValue,
+            request.FirstValue ?? request.AverageValue,
+            request.LastValue ?? request.AverageValue,
+            normalizedSourceSequence,
+            normalizedSourceSystem,
+            normalizedSourceConnector);
+        var existing = await dbContext.TelemetryRawSamples.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.SourceSystem == normalizedSourceSystem
+                && x.SourceConnector == normalizedSourceConnector
+                && x.DeviceAssetId == request.DeviceAssetId
+                && x.TagKey == normalizedTagKey
+                && x.SourceSequence == normalizedSourceSequence,
+            cancellationToken);
+        if (existing is not null)
+        {
+            if (!existing.HasSamePayload(incoming))
+            {
+                throw new KnownException("Telemetry raw sample source sequence has conflicting payload.");
+            }
+
+            return existing.Id;
+        }
+
+        dbContext.TelemetryRawSamples.Add(incoming);
+        return incoming.Id;
     }
 
     private async Task<DeviceStateSnapshotId> RecordDeviceStateAsync(RecordTelemetrySampleCommand request, CancellationToken cancellationToken)
@@ -799,7 +894,7 @@ public sealed class IndustrialTelemetryIdempotentIngestionBehavior<TRequest, TRe
     private static bool IsIdempotentIngestionUniqueConflict(DbUpdateException exception, ApplicationDbContext context)
     {
         // Keep detection entity-scoped so provider-specific index names do not leak into the application layer.
-        return exception.Entries.Any(entry => entry.Entity is TelemetrySummary or DeviceStateSnapshot or AlarmEvent) &&
+        return exception.Entries.Any(entry => entry.Entity is TelemetryRawSample or TelemetrySummary or DeviceStateSnapshot or AlarmEvent) &&
             EnumerateExceptions(exception).Any(inner =>
                 IsPostgreSqlUniqueConflict(inner) ||
                 IsSqliteUniqueConflict(context, inner) ||

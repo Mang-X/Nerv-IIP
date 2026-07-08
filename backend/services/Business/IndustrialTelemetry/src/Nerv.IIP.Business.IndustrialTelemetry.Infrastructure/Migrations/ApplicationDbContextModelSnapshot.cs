@@ -429,6 +429,265 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate.TelemetryRawSample", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Raw historian sample identifier.");
+
+                    b.Property<decimal>("AverageValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("average_value")
+                        .HasComment("Weighted average input value for historian downsampling.");
+
+                    b.Property<long>("BucketEndUnixTimeMilliseconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("bucket_end_unix_time_milliseconds")
+                        .HasComment("Exclusive UTC bucket end represented as Unix time milliseconds for provider-neutral retention scans.");
+
+                    b.Property<DateTimeOffset>("BucketEndUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("bucket_end_utc")
+                        .HasComment("Exclusive UTC end of the raw historian bucket.");
+
+                    b.Property<DateTimeOffset>("BucketStartUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("bucket_start_utc")
+                        .HasComment("Inclusive UTC start of the raw historian bucket.");
+
+                    b.Property<string>("DeviceAssetId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("device_asset_id")
+                        .HasComment("Referenced MasterData device asset identifier.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Owning environment identifier.");
+
+                    b.Property<decimal>("FirstValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("first_value")
+                        .HasComment("First observed numeric value in the raw historian bucket.");
+
+                    b.Property<DateTimeOffset>("HourlyWindowStartUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("hourly_window_start_utc")
+                        .HasComment("UTC hour window start used for indexed raw-to-hourly downsampling anti-joins.");
+
+                    b.Property<decimal>("LastValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("last_value")
+                        .HasComment("Last observed numeric value in the raw historian bucket.");
+
+                    b.Property<decimal>("MaxValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("max_value")
+                        .HasComment("Maximum numeric value in the raw historian bucket.");
+
+                    b.Property<decimal>("MinValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("min_value")
+                        .HasComment("Minimum numeric value in the raw historian bucket.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Owning organization identifier.");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recorded_at_utc")
+                        .HasComment("UTC time when the raw historian bucket was recorded.");
+
+                    b.Property<int>("SampleCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("sample_count")
+                        .HasComment("Number of collector samples represented by the raw historian bucket.");
+
+                    b.Property<string>("SourceConnector")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("source_connector")
+                        .HasComment("Connector instance or adapter that delivered the raw historian bucket.");
+
+                    b.Property<string>("SourceSequence")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("source_sequence")
+                        .HasComment("Source sequence used for idempotent raw historian ingestion.");
+
+                    b.Property<string>("SourceSystem")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_system")
+                        .HasComment("External source system that produced the raw historian bucket.");
+
+                    b.Property<string>("TagKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("tag_key")
+                        .HasComment("Telemetry tag key represented by this raw historian bucket.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "BucketEndUnixTimeMilliseconds");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "BucketStartUtc")
+                        .HasDatabaseName("IX_telemetry_raw_samples_organization_id_environment_id_devic~1");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "HourlyWindowStartUtc", "DeviceAssetId", "TagKey")
+                        .HasDatabaseName("IX_telemetry_raw_samples_hourly_window");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceSystem", "SourceConnector", "DeviceAssetId", "TagKey", "SourceSequence")
+                        .IsUnique();
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("OrganizationId", "EnvironmentId", "SourceSystem", "SourceConnector", "DeviceAssetId", "TagKey", "SourceSequence"), false);
+
+                    b.ToTable("telemetry_raw_samples", "industrial_telemetry", t =>
+                        {
+                            t.HasComment("BusinessIndustrialTelemetry raw historian ingest bucket details.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate.TelemetryRollup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Telemetry historian rollup identifier.");
+
+                    b.Property<decimal>("AverageValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("average_value")
+                        .HasComment("Weighted average value in the historian rollup.");
+
+                    b.Property<DateTimeOffset>("DailyWindowStartUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("daily_window_start_utc")
+                        .HasComment("UTC day window start used for indexed hourly-to-daily downsampling anti-joins.");
+
+                    b.Property<string>("DeviceAssetId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("device_asset_id")
+                        .HasComment("Referenced MasterData device asset identifier.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Owning environment identifier.");
+
+                    b.Property<decimal>("FirstValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("first_value")
+                        .HasComment("First observed numeric value in the historian rollup.");
+
+                    b.Property<string>("Grain")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("grain")
+                        .HasComment("Historian rollup grain: Hourly or Daily.");
+
+                    b.Property<decimal>("LastValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("last_value")
+                        .HasComment("Last observed numeric value in the historian rollup.");
+
+                    b.Property<decimal>("MaxValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("max_value")
+                        .HasComment("Maximum numeric value in the historian rollup.");
+
+                    b.Property<decimal>("MinValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("min_value")
+                        .HasComment("Minimum numeric value in the historian rollup.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Owning organization identifier.");
+
+                    b.Property<DateTimeOffset>("RolledUpAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("rolled_up_at_utc")
+                        .HasComment("UTC time when the historian rollup was created.");
+
+                    b.Property<int>("SampleCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("sample_count")
+                        .HasComment("Number of raw samples represented by the historian rollup.");
+
+                    b.Property<string>("SourceSequence")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("source_sequence")
+                        .HasComment("Deterministic historian rollup source sequence for idempotent downsampling.");
+
+                    b.Property<string>("TagKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("tag_key")
+                        .HasComment("Telemetry tag key represented by this historian rollup.");
+
+                    b.Property<long>("WindowEndUnixTimeMilliseconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("window_end_unix_time_milliseconds")
+                        .HasComment("Exclusive UTC rollup end represented as Unix time milliseconds for provider-neutral retention scans.");
+
+                    b.Property<DateTimeOffset>("WindowEndUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("window_end_utc")
+                        .HasComment("Exclusive UTC end of the historian rollup window.");
+
+                    b.Property<DateTimeOffset>("WindowStartUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("window_start_utc")
+                        .HasComment("Inclusive UTC start of the historian rollup window.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Grain", "DailyWindowStartUtc", "DeviceAssetId", "TagKey")
+                        .HasDatabaseName("IX_telemetry_rollups_daily_window");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "Grain", "WindowEndUnixTimeMilliseconds");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "Grain", "WindowStartUtc")
+                        .IsUnique()
+                        .HasDatabaseName("IX_telemetry_rollups_organization_id_environment_id_device_as~1");
+
+                    b.ToTable("telemetry_rollups", "industrial_telemetry", t =>
+                        {
+                            t.HasComment("BusinessIndustrialTelemetry historian hourly and daily rollups.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate.TelemetrySummary", b =>
                 {
                     b.Property<Guid>("Id")

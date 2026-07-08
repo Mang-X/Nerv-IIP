@@ -12,7 +12,9 @@ public sealed record ListMesWorkOrdersQuery(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null) : IQuery<ListMesWorkOrdersResponse>;
+    string? DeviceAssetId = null,
+    string? WorkCenterIds = null,
+    string? DeviceAssetIds = null) : IQuery<ListMesWorkOrdersResponse>;
 
 public sealed record ListMesWorkOrdersResponse(
     IReadOnlyCollection<MesWorkOrderExecutionFact> Items,
@@ -73,19 +75,25 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
         }
 
         if (!string.IsNullOrWhiteSpace(request.WorkCenterId) ||
+            !string.IsNullOrWhiteSpace(request.WorkCenterIds) ||
             !string.IsNullOrWhiteSpace(request.ShiftId) ||
-            !string.IsNullOrWhiteSpace(request.DeviceAssetId))
+            !string.IsNullOrWhiteSpace(request.DeviceAssetId) ||
+            !string.IsNullOrWhiteSpace(request.DeviceAssetIds))
         {
             var workCenterId = request.WorkCenterId?.Trim();
+            var workCenterIds = SplitCsv(request.WorkCenterIds);
             var shiftId = request.ShiftId?.Trim();
             var deviceAssetId = request.DeviceAssetId?.Trim();
+            var deviceAssetIds = SplitCsv(request.DeviceAssetIds);
             workOrdersQuery = workOrdersQuery.Where(x => dbContext.OperationTasks.Any(task =>
                 task.OrganizationId == request.OrganizationId &&
                 task.EnvironmentId == request.EnvironmentId &&
                 task.WorkOrderId == x.WorkOrderIdValue &&
                 (workCenterId == null || task.WorkCenterId == workCenterId) &&
+                (workCenterIds.Count == 0 || workCenterIds.Contains(task.WorkCenterId)) &&
                 (shiftId == null || task.ShiftId == shiftId) &&
-                (deviceAssetId == null || task.DeviceAssetId == deviceAssetId)));
+                (deviceAssetId == null || task.DeviceAssetId == deviceAssetId) &&
+                (deviceAssetIds.Count == 0 || deviceAssetIds.Contains(task.DeviceAssetId))));
         }
 
         var total = await workOrdersQuery.CountAsync(cancellationToken);
@@ -174,5 +182,15 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
         return string.IsNullOrWhiteSpace(value)
             ? []
             : value.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    private static IReadOnlyCollection<string> SplitCsv(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? []
+            : value
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
     }
 }

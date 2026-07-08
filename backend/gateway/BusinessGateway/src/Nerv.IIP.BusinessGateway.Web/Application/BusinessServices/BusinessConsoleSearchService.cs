@@ -184,7 +184,7 @@ public sealed class BusinessConsoleSearchService(
             var response = await WithSourceTimeoutAsync(
                 token => mes.ListWorkOrdersAsync(
                     tokenProvider.BearerToken,
-                    new BusinessConsoleMesListRequest(organizationId, environmentId, null, Take: take),
+                    new BusinessConsoleMesWorkOrderListRequest(organizationId, environmentId, null, Take: take),
                     token),
                 cancellationToken);
             results.AddRange(response.Items

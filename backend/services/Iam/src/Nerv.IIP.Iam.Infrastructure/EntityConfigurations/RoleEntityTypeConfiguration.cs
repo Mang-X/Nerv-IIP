@@ -30,6 +30,33 @@ public sealed class RoleEntityTypeConfiguration : IEntityTypeConfiguration<Role>
             .HasForeignKey(x => x.RoleId)
             .OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Permissions).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.HasMany(x => x.DataScopes)
+            .WithOne()
+            .HasForeignKey(x => x.RoleId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(x => x.DataScopes).UsePropertyAccessMode(PropertyAccessMode.Field);
+    }
+}
+
+public sealed class RoleDataScopeEntityTypeConfiguration : IEntityTypeConfiguration<RoleDataScope>
+{
+    public void Configure(EntityTypeBuilder<RoleDataScope> builder)
+    {
+        builder.ToTable("role_data_scopes", table => table.HasComment("IAM data scope bindings owned by roles."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id)
+            .HasConversion(x => x.Id, x => new RoleDataScopeId(x))
+            .ValueGeneratedNever()
+            .HasMaxLength(256)
+            .HasComment("Role data scope identifier.");
+        builder.Property(x => x.RoleId)
+            .HasConversion(x => x.Id, x => new RoleId(x))
+            .IsRequired()
+            .HasMaxLength(64)
+            .HasComment("Owning role identifier.");
+        builder.Property(x => x.ScopeType).IsRequired().HasMaxLength(32).HasComment("Data scope type: site, workshop or production-line.");
+        builder.Property(x => x.ScopeCode).IsRequired().HasMaxLength(128).HasComment("MasterData code for the data scope.");
+        builder.HasIndex(x => new { x.RoleId, x.ScopeType, x.ScopeCode }).IsUnique();
     }
 }
 

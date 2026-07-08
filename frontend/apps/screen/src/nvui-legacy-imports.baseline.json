@@ -1,0 +1,64 @@
+{
+  "components/equipment/DeviceDetailModal.vue": [
+    "ScreenScrollArea",
+    "Sparkline",
+    "StatusLight",
+    "StatusTag"
+  ],
+  "components/equipment/DeviceStatusWall.vue": ["Sparkline"],
+  "components/factory/WorkshopHealthCard.vue": ["ScreenPanel", "StatusLight"],
+  "components/launcher/LauncherCard.vue": ["StatusLight"],
+  "components/workshop/WorkshopLineCard.vue": ["Sparkline", "StatusLight"],
+  "layouts/ScreenLayout.vue": ["ScreenHeader", "ScreenScaler"],
+  "pages/equipment.vue": [
+    "RingGauge",
+    "ScreenPanel",
+    "ScreenScrollArea",
+    "ScreenSegmented",
+    "ScreenTabs",
+    "StatusLight",
+    "StatusTag"
+  ],
+  "pages/factory.vue": ["RingGauge", "ScreenPanel", "ScrollBoard", "StatusTag"],
+  "pages/index.vue": [
+    "GlowDivider",
+    "KpiBar",
+    "ScreenScaler",
+    "ScreenSegmented",
+    "StatusLight",
+    "StatusTag"
+  ],
+  "pages/line/[id].vue": [
+    "RingGauge",
+    "ScreenPanel",
+    "ScreenScrollArea",
+    "Sparkline",
+    "StatusTag",
+    "TrendChart"
+  ],
+  "pages/line/index.vue": ["KpiBar", "Sparkline", "StatusLight"],
+  "pages/quality.vue": [
+    "ScreenPanel",
+    "ScreenPareto",
+    "ScreenScrollArea",
+    "Sparkline",
+    "TrendChart"
+  ],
+  "pages/warehouse.vue": [
+    "ScreenBarChart",
+    "ScreenDonut",
+    "ScreenPanel",
+    "ScreenScrollArea",
+    "ScrollBoard",
+    "StatusLight",
+    "StatusTag"
+  ],
+  "pages/workshop/[id].vue": [
+    "ScreenPanel",
+    "ScreenScrollArea",
+    "ScreenSegmented",
+    "StatusLight",
+    "StatusTag",
+    "TrendChart"
+  ]
+}

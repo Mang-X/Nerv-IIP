@@ -3,6 +3,8 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
@@ -16,6 +18,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<TelemetryTag> TelemetryTags => Set<TelemetryTag>();
     public DbSet<DeviceStateSnapshot> DeviceStateSnapshots => Set<DeviceStateSnapshot>();
     public DbSet<AlarmEvent> AlarmEvents => Set<AlarmEvent>();
+    public DbSet<TelemetryRawSample> TelemetryRawSamples => Set<TelemetryRawSample>();
+    public DbSet<TelemetryRollup> TelemetryRollups => Set<TelemetryRollup>();
     public DbSet<TelemetrySummary> TelemetrySummaries => Set<TelemetrySummary>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

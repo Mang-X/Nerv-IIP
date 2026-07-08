@@ -38,6 +38,7 @@ public sealed class IamAuthorizationCheckEndpointTests
         Assert.True(body!.Allowed);
         Assert.Equal("user", body.PrincipalType);
         Assert.Equal("admin", body.LoginName);
+        Assert.Null(body.DataScope);
     }
 
     [Fact]

@@ -43,6 +43,8 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
             "race-sample-001",
             "SCADA-A",
             "opc-ua-cell-race",
+            null,
+            null,
             "running",
             new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
         var winningResult = await new RecordTelemetrySampleCommandHandler(winningContext).Handle(command, CancellationToken.None);
@@ -556,7 +558,7 @@ internal sealed class RealPostgresFactAttribute : FactAttribute
     {
         if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
         {
-            Skip = "Set NERV_IIP_TEST_POSTGRES to run this real PostgreSQL concurrency regression.";
+            Skip = "Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL IndustrialTelemetry regressions.";
         }
     }
 }

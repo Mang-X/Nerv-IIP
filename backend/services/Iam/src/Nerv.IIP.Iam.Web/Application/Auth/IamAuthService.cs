@@ -1,8 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Iam.Domain.AggregatesModel.ConnectorHostCredentialAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
 using Nerv.IIP.Iam.Infrastructure;
@@ -352,7 +354,7 @@ public sealed class PostgreSqlIamAuthService(
             string.Join(' ', orderedScope));
     }
 
-    public async Task<bool> PrincipalHasPermissionAsync(
+    public async Task<IamAuthorizationCheckResult> PrincipalHasPermissionAsync(
         CurrentPrincipalResponse principal,
         string organizationId,
         string environmentId,
@@ -363,7 +365,7 @@ public sealed class PostgreSqlIamAuthService(
     {
         if (!string.Equals(principal.PrincipalType, "user", StringComparison.Ordinal))
         {
-            return await externalClientRepository.HasActiveGrantAsync(
+            var externalAllowed = await externalClientRepository.HasActiveGrantAsync(
                     principal.UserId,
                     new OrganizationId(organizationId),
                     new IamEnvironmentId(environmentId),
@@ -372,14 +374,86 @@ public sealed class PostgreSqlIamAuthService(
                     resourceId,
                     DateTimeOffset.UtcNow,
                     cancellationToken);
+            return new IamAuthorizationCheckResult(externalAllowed);
         }
 
-        return await UserHasPermissionAsync(
+        var allowed = await UserHasPermissionAsync(
             principal.UserId,
             organizationId,
             environmentId,
             permissionCode,
             cancellationToken);
+        if (!allowed)
+        {
+            return new IamAuthorizationCheckResult(false);
+        }
+
+        var scopes = await membershipRepository.ListEffectiveDataScopesAsync(
+            new UserId(principal.UserId),
+            new OrganizationId(organizationId),
+            new IamEnvironmentId(environmentId),
+            cancellationToken);
+        var dataScope = ToAuthorizationDataScope(scopes);
+        if (dataScope is { HasRestrictions: true })
+        {
+            await securityAudit.RecordAsync(
+                new SecurityAuditContext(
+                    $"user:{principal.UserId}",
+                    Guid.CreateVersion7().ToString("N"),
+                    null,
+                    organizationId,
+                    environmentId),
+                "iam.authorization.data-scope.matched",
+                resourceType ?? "permission",
+                resourceId ?? permissionCode,
+                "success",
+                new
+                {
+                    permissionCode,
+                    resourceType,
+                    resourceId,
+                    dataScope,
+                },
+                DateTimeOffset.UtcNow,
+                cancellationToken);
+        }
+
+        return new IamAuthorizationCheckResult(true, dataScope);
+    }
+
+    private static AuthorizationDataScope? ToAuthorizationDataScope(IReadOnlyCollection<DataScopeBinding> scopes)
+    {
+        if (scopes.Count == 0)
+        {
+            return null;
+        }
+
+        var unknownTypes = scopes
+            .Select(x => x.ScopeType.Trim().ToLowerInvariant())
+            .Where(x => !DataScopeBinding.KnownScopeTypes.Contains(x, StringComparer.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (unknownTypes.Length > 0)
+        {
+            return new AuthorizationDataScope([], [], [], DenyAll: true);
+        }
+
+        return new AuthorizationDataScope(
+            scopes.Where(x => string.Equals(x.ScopeType.Trim(), DataScopeBinding.Site, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeCode.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+            scopes.Where(x => string.Equals(x.ScopeType.Trim(), DataScopeBinding.Workshop, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeCode.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+            scopes.Where(x => string.Equals(x.ScopeType.Trim(), DataScopeBinding.ProductionLine, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeCode.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray());
     }
 
     public async Task<EnterpriseAuthResponse> HandleOidcCallbackAsync(

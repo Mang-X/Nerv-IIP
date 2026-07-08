@@ -881,6 +881,80 @@ public sealed record BusinessConsoleQualityListResponse(
     IReadOnlyCollection<BusinessConsoleQualityItem> Items,
     int Total);
 
+public sealed record BusinessConsoleQualitySpcRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string CharacteristicCode,
+    string WorkCenterId,
+    int SubgroupSize = 5,
+    int Take = 125);
+
+public sealed record BusinessConsoleQualityProcessCapabilityRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string CharacteristicCode,
+    string WorkCenterId,
+    int Take = 125,
+    int SubgroupSize = 5);
+
+public sealed record BusinessConsoleQualitySpcControlChartResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string CharacteristicCode,
+    string WorkCenterId,
+    int SubgroupSize,
+    IReadOnlyCollection<BusinessConsoleQualitySpcMeasurementPoint> DataPoints,
+    IReadOnlyCollection<BusinessConsoleQualitySpcSubgroup> Subgroups,
+    BusinessConsoleQualitySpcControlLimits ControlLimits,
+    IReadOnlyCollection<BusinessConsoleQualitySpcRuleViolation> RuleViolations);
+
+public sealed record BusinessConsoleQualitySpcMeasurementPoint(
+    string InspectionRecordId,
+    string SourceDocumentId,
+    DateTimeOffset MeasuredAtUtc,
+    decimal MeasuredValue,
+    string? UnitCode);
+
+public sealed record BusinessConsoleQualitySpcSubgroup(
+    int Index,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    decimal Xbar,
+    decimal Range);
+
+public sealed record BusinessConsoleQualitySpcControlLimits(
+    decimal CenterLine,
+    decimal AverageRange,
+    decimal XbarUpperControlLimit,
+    decimal XbarLowerControlLimit,
+    decimal RangeUpperControlLimit,
+    decimal RangeLowerControlLimit,
+    bool Locked,
+    DateTimeOffset CalculatedAtUtc);
+
+public sealed record BusinessConsoleQualitySpcRuleViolation(
+    string Rule,
+    int StartSubgroupIndex,
+    int EndSubgroupIndex,
+    string Message);
+
+public sealed record BusinessConsoleQualityProcessCapabilityResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string CharacteristicCode,
+    string WorkCenterId,
+    int SampleCount,
+    decimal Mean,
+    decimal StandardDeviation,
+    decimal? LowerSpecLimit,
+    decimal? UpperSpecLimit,
+    decimal? Cp,
+    decimal? Cpk);
+
 public sealed record BusinessConsoleQualityReasonListRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1935,7 +2009,9 @@ public sealed record BusinessConsoleRecordTelemetrySampleRequest(
     string SourceSystem,
     string SourceConnector,
     string? DeviceState = null,
-    DateTimeOffset? StateOccurredAtUtc = null);
+    DateTimeOffset? StateOccurredAtUtc = null,
+    decimal? FirstValue = null,
+    decimal? LastValue = null);
 
 public sealed record BusinessConsoleRecordTelemetrySampleResponse(
     string? TelemetrySummaryId,
@@ -2005,6 +2081,39 @@ public sealed record BusinessConsoleErpRfqLine(
     DateOnly RequiredDate);
 
 public sealed record BusinessConsoleCreateErpRequestForQuotationResponse(string RequestForQuotationId);
+
+public sealed record BusinessConsoleConvertErpPurchaseRequisitionsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<string> PurchaseRequisitionNos,
+    string? PurchaseOrderNo = null,
+    string? SupplierCode = null,
+    IReadOnlyCollection<string>? RfqSupplierCodes = null,
+    string? RfqNo = null,
+    string? IdempotencyKey = null,
+    string CurrencyCode = "CNY");
+
+public sealed record BusinessConsoleConvertErpPurchaseRequisitionsResponse(
+    string Status,
+    string? PurchaseOrderId = null,
+    string? PurchaseOrderNo = null,
+    string? RfqNo = null,
+    string? SupplierCode = null,
+    IReadOnlyCollection<BusinessConsoleConvertedErpPurchaseOrderLine>? Lines = null);
+
+public sealed record BusinessConsoleConvertedErpPurchaseOrderLine(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal Quantity,
+    decimal UnitPrice,
+    DateOnly PromisedDate,
+    IReadOnlyCollection<BusinessConsoleConvertedErpPurchaseOrderLineSource> Sources);
+
+public sealed record BusinessConsoleConvertedErpPurchaseOrderLineSource(
+    string PurchaseRequisitionNo,
+    string PurchaseRequisitionLineNo,
+    decimal Quantity);
 
 public sealed record BusinessConsoleReceiveErpSupplierQuotationRequest(
     string OrganizationId,
@@ -2091,7 +2200,9 @@ public sealed record BusinessConsoleErpPurchaseRequisitionItem(
     decimal Quantity,
     DateOnly RequiredDate,
     string Status,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    string? ConvertedPurchaseOrderNo = null,
+    DateTime? ConvertedAtUtc = null);
 
 public sealed record BusinessConsoleErpPurchaseOrderListResponse(
     IReadOnlyCollection<BusinessConsoleErpPurchaseOrderItem> Items,
@@ -2113,7 +2224,13 @@ public sealed record BusinessConsoleErpPurchaseOrderLineItem(
     decimal OrderedQuantity,
     decimal ReceivedQuantity,
     decimal UnitPrice,
-    DateOnly PromisedDate);
+    DateOnly PromisedDate,
+    IReadOnlyCollection<BusinessConsoleErpPurchaseOrderLineSourceItem>? Sources = null);
+
+public sealed record BusinessConsoleErpPurchaseOrderLineSourceItem(
+    string PurchaseRequisitionNo,
+    string PurchaseRequisitionLineNo,
+    decimal Quantity);
 
 public sealed record BusinessConsoleErpSalesOrderListResponse(
     IReadOnlyCollection<BusinessConsoleErpSalesOrderItem> Items,
@@ -2838,6 +2955,7 @@ public sealed record BusinessConsoleBarcodeScanRecordItem(
     string SourceDocumentId,
     string Result,
     string? RejectionReason,
+    string DownstreamProcessingStatus,
     DateTimeOffset ScannedAtUtc);
 
 public sealed record BusinessConsoleMesListRequest(
@@ -2850,6 +2968,19 @@ public sealed record BusinessConsoleMesListRequest(
     string? DeviceAssetId = null,
     int Skip = 0,
     int Take = 100);
+
+public sealed record BusinessConsoleMesWorkOrderListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    int Skip = 0,
+    int Take = 100,
+    string? WorkCenterIds = null,
+    string? DeviceAssetIds = null);
 
 public sealed record BusinessConsoleMesListWithoutStatusRequest(
     string OrganizationId,

@@ -15,7 +15,12 @@ namespace Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 
 public sealed record PagedMaintenanceListResponse<T>(IReadOnlyCollection<T> Items, int Skip, int Take, int Total);
 
-public sealed record ListMaintenanceWorkOrdersQuery(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100) : IQuery<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>;
+public sealed record ListMaintenanceWorkOrdersQuery(
+    string? OrganizationId,
+    string? EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? DeviceAssetIds = null) : IQuery<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>;
 
 public sealed record MaintenanceWorkOrderListItem(
     MaintenanceWorkOrderId WorkOrderId,
@@ -38,9 +43,11 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
     {
         var skip = NormalizeSkip(request.Skip);
         var take = NormalizeTake(request.Take);
+        var deviceAssetIds = SplitCsv(request.DeviceAssetIds);
         var query = dbContext.MaintenanceWorkOrders
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => deviceAssetIds.Count == 0 || deviceAssetIds.Contains(x.DeviceAssetId));
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.OpenedAtUtc)
@@ -66,6 +73,16 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
     internal static int NormalizeSkip(int skip) => Math.Max(0, skip);
 
     internal static int NormalizeTake(int take) => Math.Clamp(take, 1, 200);
+
+    private static IReadOnlyCollection<string> SplitCsv(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? []
+            : value
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+    }
 }
 
 public sealed record ListMaintenancePlansQuery(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100) : IQuery<PagedMaintenanceListResponse<MaintenancePlanListItem>>;

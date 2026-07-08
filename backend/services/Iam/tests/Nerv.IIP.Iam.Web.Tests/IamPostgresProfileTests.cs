@@ -7,11 +7,13 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
+using Nerv.IIP.Iam.Web.Application.DataScopes;
 using Nerv.IIP.Iam.Web.Application.Seed;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
@@ -548,6 +550,35 @@ public sealed class IamPostgresProfileTests
                 $"/api/iam/v1/roles/{role!.RoleId}/permissions",
                 new { permissionCodes = new[] { "iam.users.read", "ops.tasks.read" } });
             patchRole.EnsureSuccessStatusCode();
+
+            var patchAdminRoleScopes = await client.PatchAsJsonAsync(
+                "/api/iam/v1/roles/role-platform-admin/data-scopes",
+                new { dataScopes = new[] { new { scopeType = "workshop", scopeCode = "WS-PG" } } });
+            patchAdminRoleScopes.EnsureSuccessStatusCode();
+            var adminRoleScopes = await ReadResponseDataAsync<DataScopeListResponse>(patchAdminRoleScopes);
+            Assert.Equal([new DataScopeResponse("workshop", "WS-PG")], adminRoleScopes!.DataScopes);
+
+            var patchAdminMembershipScopes = await client.PatchAsJsonAsync(
+                "/api/iam/v1/users/user-admin/membership-data-scopes",
+                new
+                {
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    dataScopes = new[] { new { scopeType = "site", scopeCode = "SITE-PG" } },
+                });
+            patchAdminMembershipScopes.EnsureSuccessStatusCode();
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var effectiveScopes = await new MembershipRepository(db).ListEffectiveDataScopesAsync(
+                    new UserId("user-admin"),
+                    new OrganizationId("org-001"),
+                    new IamEnvironmentId("env-dev"),
+                    CancellationToken.None);
+                Assert.Contains(effectiveScopes, x => x.ScopeType == "site" && x.ScopeCode == "SITE-PG");
+                Assert.Contains(effectiveScopes, x => x.ScopeType == "workshop" && x.ScopeCode == "WS-PG");
+            }
 
             var createUser = await client.PostAsJsonAsync(
                 "/api/iam/v1/users",

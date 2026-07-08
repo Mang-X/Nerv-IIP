@@ -1,19 +1,19 @@
 ---
-title: PageColumns 瀑布分栏
+title: NvPageColumns 瀑布分栏
 ---
 
 <script setup>
-import { PageColumns } from '@nerv-iip/ui'
+import { NvPageColumns } from '@nerv-iip/ui'
 </script>
 
-# PageColumns 瀑布分栏
+# NvPageColumns 瀑布分栏
 
 基于 CSS columns 的瀑布流多列布局（参考 Nuxt UI），适合高度不一的卡片；子项不会跨列断开。
 
 ## 瀑布流
 
 <Demo>
-  <PageColumns class="w-full">
+  <NvPageColumns class="w-full">
     <div class="rounded-xl border border-border bg-card p-4">
       <p class="font-medium">短卡片</p>
       <p class="mt-1 text-sm text-muted-foreground">一行描述。</p>
@@ -30,13 +30,13 @@ import { PageColumns } from '@nerv-iip/ui'
       <p class="font-medium">又一张</p>
       <p class="mt-1 text-sm text-muted-foreground">瀑布流。</p>
     </div>
-  </PageColumns>
+  </NvPageColumns>
 </Demo>
 
 ```vue
-<PageColumns>
+<NvPageColumns>
   <div v-for="note in notes" :key="note.id">…</div>
-</PageColumns>
+</NvPageColumns>
 ```
 
 > 默认 `sm` 2 列、`lg` 3 列。需要其他列数时用 `class` 覆盖 `columns-*`。

@@ -27,6 +27,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Queries.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionTasks;
+using Nerv.IIP.Business.Quality.Web.Endpoints.Spc;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.ServiceAuth;
@@ -43,7 +44,7 @@ public sealed class QualityInspectionEndpointContractTests
     {
         var contracts = QualityInspectionEndpointContracts.All;
 
-        Assert.Equal(8, contracts.Count);
+        Assert.Equal(12, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/quality/inspection-plans"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionPlansManage
@@ -76,6 +77,22 @@ public sealed class QualityInspectionEndpointContractTests
             && x.Route == "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsCreate
             && x.OperationId == "createBusinessQualityInspectionRecordFromTask");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/spc/control-chart"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
+            && x.OperationId == "queryBusinessQualitySpcControlChart");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/spc/process-capability"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
+            && x.OperationId == "queryBusinessQualityProcessCapability");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/quality/spc/control-chart/evaluate"
+            && x.PermissionCode == BusinessPermissionCodes.QualitySpcManage
+            && x.OperationId == "evaluateBusinessQualitySpcControlChart");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/quality/spc/control-chart/lock"
+            && x.PermissionCode == BusinessPermissionCodes.QualitySpcManage
+            && x.OperationId == "lockBusinessQualitySpcControlChart");
     }
 
     [Fact]
@@ -105,6 +122,10 @@ public sealed class QualityInspectionEndpointContractTests
     [InlineData(typeof(ListInspectionRecordsEndpoint))]
     [InlineData(typeof(ListInspectionTasksEndpoint))]
     [InlineData(typeof(CreateInspectionRecordFromTaskEndpoint))]
+    [InlineData(typeof(QuerySpcControlChartEndpoint))]
+    [InlineData(typeof(QueryProcessCapabilityEndpoint))]
+    [InlineData(typeof(EvaluateSpcControlChartEndpoint))]
+    [InlineData(typeof(LockSpcControlChartEndpoint))]
     public void Inspection_endpoints_route_through_mediator(Type endpointType)
     {
         var parameterTypes = endpointType
