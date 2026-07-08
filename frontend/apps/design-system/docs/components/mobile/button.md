@@ -37,7 +37,7 @@ import { NvMobileButton } from '@nerv-iip/ui-mobile'
 
 # NvMobileButton 移动按钮
 
-紧凑、贴近原生的触控按钮，按压时整体变暗反馈。区别于工位大屏的超大 TouchButton。右侧手机模拟器为实时组件，随页面滚动吸顶。
+紧凑、贴近原生的触控按钮，按压时整体变暗反馈。区别于工位大屏的超大 NvTouchButton。右侧手机模拟器为实时组件，随页面滚动吸顶。
 
 ## 变体
 

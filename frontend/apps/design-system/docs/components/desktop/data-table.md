@@ -210,7 +210,7 @@ const pageSize = ref(10)
 
 | 属性              | 说明                                                  | 类型                                  | 默认    |
 | ----------------- | ----------------------------------------------------- | ------------------------------------- | ------- |
-| `columns`         | 列定义（`key` / `header` / `sortable` / `filter` 等） | `DataTableProColumn[]`                | —       |
+| `columns`         | 列定义（`key` / `header` / `sortable` / `filter` 等） | `NvDataTableColumn[]`                 | —       |
 | `rows`            | 行数据                                                | `T[]`                                 | —       |
 | `rowKey`          | 行主键字段名或取值函数                                | `string \| (row) => string \| number` | —       |
 | `selectable`      | 行选择 + 批量操作栏                                   | `boolean`                             | `false` |
