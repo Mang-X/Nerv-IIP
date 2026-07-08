@@ -17,7 +17,8 @@ Use the existing IndustrialTelemetry PostgreSQL schema with native tables and pr
 2. `telemetry_rollups` stores `Hourly` and `Daily` rollups with min, max, weighted average, first and last. The rollup key is organization, environment, device, tag, grain and window start.
 3. `telemetry_summaries` remains as a compatibility write path for alarm rule evaluation and existing clients, but `/equipment/telemetry/history` reads the historian tables.
 4. `TelemetryTag.SamplingPolicy` is parsed by both Connector Host and IndustrialTelemetry storage. The collector can derive bucket seconds from `sample-10s`, `sample-1m`, or `bucket=30s;raw=7d;hourly=90d;daily=730d`; storage rejects writes whose bucket width does not match the configured tag policy.
-5. Retention cleanup is layer-specific: raw, hourly and daily windows are deleted independently after their configured duration.
+5. Retention cleanup is layer-specific: raw, hourly and daily windows are deleted independently after their configured duration. The service consumes `raw=`, `hourly=` and `daily=` values from `TelemetryTag.SamplingPolicy`, falling back to the scope defaults configured for `IndustrialTelemetry:Historian`.
+6. `TelemetryHistorianScheduler` is the production run path. It is opt-in per deployment through `IndustrialTelemetry:Historian:Enabled`, requires explicit organization/environment scopes, runs UTC rollup windows, down-samples before cleanup, and isolates failures per scope.
 
 TimescaleDB remains an optional future optimization, not the baseline dependency for this slice. If later benchmark evidence shows native PostgreSQL is insufficient for a target customer profile, the migration path should keep the same domain/application contract and move only the infrastructure storage strategy.
 
@@ -33,7 +34,7 @@ Historical reads can choose raw, hourly or daily rows from the same service-owne
 
 Downsampling must be idempotent. Re-running a rollup window must not create a second hourly or daily row, and a deterministic historian source sequence is recorded for operator diagnostics.
 
-Retention jobs must run after downsampling has completed for the affected windows. Operators should use a raw retention window long enough to cover late connector delivery.
+Retention jobs must run after downsampling has completed for the affected windows. Operators should use a raw retention window long enough to cover late connector delivery. PostgreSQL retention cleanup uses set-based deletes against the indexed Unix-time columns; non-relational test providers retain an entity-removal fallback.
 
 ## Performance Note
 
@@ -43,4 +44,4 @@ The reproducible local check for this slice is:
 dotnet test backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj --filter IndustrialTelemetryHistorianTests -v:minimal
 ```
 
-That test covers raw writes, policy enforcement, hourly/daily weighted aggregation and retention cleanup. For higher-volume customer sizing, run the same command against a PostgreSQL-backed benchmark fixture before enabling shorter raw retention; the first production schema already has the idempotency and range indexes that benchmark should exercise.
+That test covers raw writes, policy enforcement, opt-in scheduler execution, hourly/daily weighted aggregation and retention cleanup. Downsampling reads bounded raw/hourly batches per scheduler pass, and the next tick continues remaining windows. For higher-volume customer sizing, run the same command against a PostgreSQL-backed benchmark fixture before enabling shorter raw retention; the first production schema already has the idempotency and range indexes that benchmark should exercise.

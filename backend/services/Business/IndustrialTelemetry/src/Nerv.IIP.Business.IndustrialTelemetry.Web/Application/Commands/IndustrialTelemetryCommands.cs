@@ -34,11 +34,28 @@ public sealed class CreateTelemetryTagCommandValidator : AbstractValidator<Creat
         RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.ValueType).NotEmpty().MaximumLength(50);
         RuleFor(x => x.UnitCode).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.SamplingPolicy).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SamplingPolicy)
+            .NotEmpty()
+            .MaximumLength(100)
+            .Must(BeValidSamplingPolicy)
+            .WithMessage("SamplingPolicy is invalid.");
         RuleFor(x => x.ControlMinValue)
             .LessThanOrEqualTo(x => x.ControlMaxValue)
             .When(x => x.ControlMinValue.HasValue && x.ControlMaxValue.HasValue);
         RuleForEach(x => x.ControlAllowedValues).MaximumLength(100);
+    }
+
+    private static bool BeValidSamplingPolicy(string samplingPolicy)
+    {
+        try
+        {
+            _ = TelemetrySamplingPolicy.Parse(samplingPolicy);
+            return true;
+        }
+        catch (KnownException)
+        {
+            return false;
+        }
     }
 }
 

@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Historian;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Localization;
@@ -54,7 +55,10 @@ try
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
+    builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddScoped<TelemetryHistorianService>();
     builder.Services.AddHostedService<AlarmEscalationScheduler>();
+    builder.Services.AddHostedService<TelemetryHistorianScheduler>();
     builder.Services.AddScoped<IDeviceControlOpsClient, DeviceControlOpsClient>();
     var opsBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Ops:BaseUrl", "http://localhost:5103");
     builder.Services.AddHttpClient<IOpsClient, HttpOpsClient>((services, client) =>

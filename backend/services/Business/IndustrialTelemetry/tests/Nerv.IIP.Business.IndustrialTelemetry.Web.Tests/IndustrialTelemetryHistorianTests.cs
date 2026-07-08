@@ -1,17 +1,98 @@
 using MediatR;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Historian;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
 public sealed class IndustrialTelemetryHistorianTests
 {
+    [Fact]
+    public void Sampling_policy_parser_reads_bucket_and_retention_windows()
+    {
+        var policy = TelemetrySamplingPolicy.Parse("bucket=30s;raw=7d;hourly=90d;daily=730d");
+
+        Assert.Equal(30, policy.BucketSeconds);
+        Assert.Equal(TimeSpan.FromDays(7), policy.RawRetention);
+        Assert.Equal(TimeSpan.FromDays(90), policy.HourlyRetention);
+        Assert.Equal(TimeSpan.FromDays(730), policy.DailyRetention);
+    }
+
+    [Fact]
+    public void Sampling_policy_parser_rejects_invalid_policy_as_known_exception()
+    {
+        var ex = Assert.Throws<KnownException>(() => TelemetrySamplingPolicy.Parse("5min"));
+
+        Assert.Contains("sampling policy", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Create_telemetry_tag_validator_rejects_invalid_sampling_policy()
+    {
+        var result = new CreateTelemetryTagCommandValidator().Validate(new CreateTelemetryTagCommand(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "temperature",
+            "number",
+            "celsius",
+            "5min"));
+
+        Assert.Contains(result.Errors, x => x.ErrorMessage == "SamplingPolicy is invalid.");
+    }
+
+    [Fact]
+    public async Task Historian_scheduler_runs_downsampling_then_retention_for_configured_scope()
+    {
+        var databaseName = nameof(Historian_scheduler_runs_downsampling_then_retention_for_configured_scope);
+        await using var setupContext = CreateDbContext(databaseName);
+        setupContext.TelemetryTags.Add(TelemetryTag.Create("org-001", "env-dev", "DEV-CNC-01", "temperature", "number", "celsius", "sample-60s;raw=1d;hourly=30d;daily=365d"));
+        setupContext.TelemetryRawSamples.AddRange(
+            Raw("DEV-CNC-01", "temperature", "2026-06-29T08:00:00Z", "2026-06-29T08:01:00Z", 1, 10m, 10m, 10m, 10m, 10m, "raw-old"),
+            Raw("DEV-CNC-01", "temperature", "2026-07-01T08:00:00Z", "2026-07-01T08:01:00Z", 1, 20m, 20m, 20m, 20m, 20m, "raw-new"));
+        await setupContext.SaveChangesAsync();
+
+        await using var services = new ServiceCollection()
+            .AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName))
+            .AddSingleton<IMediator, NoopMediator>()
+            .AddScoped<TelemetryHistorianService>()
+            .BuildServiceProvider();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["IndustrialTelemetry:Historian:Enabled"] = "true",
+                ["IndustrialTelemetry:Historian:Interval"] = "01:00:00",
+                ["IndustrialTelemetry:Historian:Scopes:0:OrganizationId"] = "org-001",
+                ["IndustrialTelemetry:Historian:Scopes:0:EnvironmentId"] = "env-dev",
+            })
+            .Build();
+        var scheduler = new TelemetryHistorianScheduler(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            configuration,
+            NullLogger<TelemetryHistorianScheduler>.Instance,
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 2, 0, 0, 0, TimeSpan.Zero)));
+
+        await scheduler.StartAsync(CancellationToken.None);
+        await WaitUntilAsync(async () =>
+        {
+            await using var assertionContext = CreateDbContext(databaseName);
+            return await assertionContext.TelemetryRollups.AnyAsync(x => x.SourceSequence == "historian:hourly:DEV-CNC-01:temperature:1782720000000")
+                && !await assertionContext.TelemetryRawSamples.AnyAsync(x => x.SourceSequence == "raw-old");
+        });
+
+        await scheduler.StopAsync(CancellationToken.None);
+    }
+
     [Fact]
     public async Task Record_sample_persists_raw_historian_detail_and_keeps_summary_compatibility()
     {
@@ -204,6 +285,24 @@ public sealed class IndustrialTelemetryHistorianTests
             .UseInMemoryDatabase(databaseName)
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static async Task WaitUntilAsync(Func<Task<bool>> predicate)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        while (!await predicate())
+        {
+            timeout.Token.ThrowIfCancellationRequested();
+            await Task.Delay(10, timeout.Token);
+        }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow()
+        {
+            return utcNow;
+        }
     }
 
     private sealed class NoopMediator : IMediator

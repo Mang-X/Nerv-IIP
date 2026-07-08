@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Historian;
@@ -17,15 +19,22 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
         string organizationId,
         string environmentId,
         DateTimeOffset asOfUtc,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int maxRawSamples = 50000,
+        int maxHourlyRollups = 50000)
     {
-        var rawSamples = await dbContext.TelemetryRawSamples
+        var rawSampleBatch = await dbContext.TelemetryRawSamples
             .Where(x => x.OrganizationId == organizationId)
             .Where(x => x.EnvironmentId == environmentId)
             .Where(x => x.BucketEndUtc <= asOfUtc)
             .OrderBy(x => x.BucketStartUtc)
             .ThenBy(x => x.SourceSequence)
+            .Take(maxRawSamples + 1)
             .ToArrayAsync(cancellationToken);
+        var rawSamples = rawSampleBatch.Take(maxRawSamples).ToArray();
+        var lastRawBatchKey = rawSampleBatch.Length > maxRawSamples
+            ? new RawWindowKey(rawSamples[^1].OrganizationId, rawSamples[^1].EnvironmentId, rawSamples[^1].DeviceAssetId, rawSamples[^1].TagKey, TruncateToHour(rawSamples[^1].BucketStartUtc))
+            : null;
 
         var hourlyRollupsCreated = 0;
         var createdHourlyRollups = new List<TelemetryRollup>();
@@ -38,6 +47,11 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
             WindowStartUtc = TruncateToHour(x.BucketStartUtc)
         }))
         {
+            if (lastRawBatchKey == new RawWindowKey(group.Key.OrganizationId, group.Key.EnvironmentId, group.Key.DeviceAssetId, group.Key.TagKey, group.Key.WindowStartUtc))
+            {
+                continue;
+            }
+
             var windowEndUtc = group.Key.WindowStartUtc.AddHours(1);
             if (windowEndUtc > asOfUtc)
             {
@@ -63,15 +77,20 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
             hourlyRollupsCreated++;
         }
 
-        var hourlyRollups = await dbContext.TelemetryRollups
+        var hourlyRollupBatch = await dbContext.TelemetryRollups
             .Where(x => x.OrganizationId == organizationId)
             .Where(x => x.EnvironmentId == environmentId)
             .Where(x => x.Grain == TelemetryRollupGrain.Hourly)
             .Where(x => x.WindowEndUtc <= asOfUtc)
             .OrderBy(x => x.WindowStartUtc)
             .ThenBy(x => x.SourceSequence)
+            .Take(maxHourlyRollups + 1)
             .ToArrayAsync(cancellationToken);
+        var hourlyRollups = hourlyRollupBatch.Take(maxHourlyRollups).ToArray();
         hourlyRollups = hourlyRollups.Concat(createdHourlyRollups).ToArray();
+        var lastHourlyBatchKey = hourlyRollupBatch.Length > maxHourlyRollups
+            ? new RollupWindowKey(hourlyRollupBatch[maxHourlyRollups - 1].OrganizationId, hourlyRollupBatch[maxHourlyRollups - 1].EnvironmentId, hourlyRollupBatch[maxHourlyRollups - 1].DeviceAssetId, hourlyRollupBatch[maxHourlyRollups - 1].TagKey, hourlyRollupBatch[maxHourlyRollups - 1].WindowStartUtc.Date)
+            : null;
 
         var dailyRollupsCreated = 0;
         foreach (var group in hourlyRollups.GroupBy(x => new
@@ -83,6 +102,11 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
             WindowStartUtc = x.WindowStartUtc.Date
         }))
         {
+            if (lastHourlyBatchKey == new RollupWindowKey(group.Key.OrganizationId, group.Key.EnvironmentId, group.Key.DeviceAssetId, group.Key.TagKey, group.Key.WindowStartUtc))
+            {
+                continue;
+            }
+
             var windowStartUtc = new DateTimeOffset(group.Key.WindowStartUtc, TimeSpan.Zero);
             var windowEndUtc = windowStartUtc.AddDays(1);
             if (windowEndUtc > asOfUtc)
@@ -115,27 +139,39 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
         DateTimeOffset asOfUtc,
         CancellationToken cancellationToken)
     {
-        var rawCutoffUtc = asOfUtc.Subtract(policy.RawRetention);
-        var hourlyCutoffUtc = asOfUtc.Subtract(policy.HourlyRetention);
-        var dailyCutoffUtc = asOfUtc.Subtract(policy.DailyRetention);
+        return await ApplyRetentionAsync(null, null, null, null, policy, asOfUtc, cancellationToken);
+    }
 
-        var expiredRawSamples = await dbContext.TelemetryRawSamples
-            .Where(x => x.BucketEndUtc < rawCutoffUtc)
+    public async Task<TelemetryRetentionCleanupResult> ApplyRetentionAsync(
+        string organizationId,
+        string environmentId,
+        DateTimeOffset asOfUtc,
+        TelemetryHistorianRetentionPolicy defaultPolicy,
+        CancellationToken cancellationToken)
+    {
+        var tags = await dbContext.TelemetryTags
+            .Where(x => x.OrganizationId == organizationId)
+            .Where(x => x.EnvironmentId == environmentId)
+            .OrderBy(x => x.DeviceAssetId)
+            .ThenBy(x => x.TagKey)
             .ToArrayAsync(cancellationToken);
-        var expiredHourlyRollups = await dbContext.TelemetryRollups
-            .Where(x => x.Grain == TelemetryRollupGrain.Hourly)
-            .Where(x => x.WindowEndUtc < hourlyCutoffUtc)
-            .ToArrayAsync(cancellationToken);
-        var expiredDailyRollups = await dbContext.TelemetryRollups
-            .Where(x => x.Grain == TelemetryRollupGrain.Daily)
-            .Where(x => x.WindowEndUtc < dailyCutoffUtc)
-            .ToArrayAsync(cancellationToken);
+        if (tags.Length == 0)
+        {
+            return await ApplyRetentionAsync(organizationId, environmentId, null, null, defaultPolicy, asOfUtc, cancellationToken);
+        }
 
-        dbContext.TelemetryRawSamples.RemoveRange(expiredRawSamples);
-        dbContext.TelemetryRollups.RemoveRange(expiredHourlyRollups);
-        dbContext.TelemetryRollups.RemoveRange(expiredDailyRollups);
+        var result = new TelemetryRetentionCleanupResult(0, 0, 0);
+        foreach (var tag in tags)
+        {
+            var tagPolicy = ToRetentionPolicy(tag, defaultPolicy);
+            var tagResult = await ApplyRetentionAsync(organizationId, environmentId, tag.DeviceAssetId, tag.TagKey, tagPolicy, asOfUtc, cancellationToken);
+            result = new TelemetryRetentionCleanupResult(
+                result.RawSamplesDeleted + tagResult.RawSamplesDeleted,
+                result.HourlyRollupsDeleted + tagResult.HourlyRollupsDeleted,
+                result.DailyRollupsDeleted + tagResult.DailyRollupsDeleted);
+        }
 
-        return new TelemetryRetentionCleanupResult(expiredRawSamples.Length, expiredHourlyRollups.Length, expiredDailyRollups.Length);
+        return result;
     }
 
     private static TelemetryRollup CreateHourlyRollup(
@@ -211,4 +247,129 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
 
         return weightedSum / totalCount;
     }
+
+    private async Task<TelemetryRetentionCleanupResult> ApplyRetentionAsync(
+        string? organizationId,
+        string? environmentId,
+        string? deviceAssetId,
+        string? tagKey,
+        TelemetryHistorianRetentionPolicy policy,
+        DateTimeOffset asOfUtc,
+        CancellationToken cancellationToken)
+    {
+        var rawCutoffUnixTimeMilliseconds = asOfUtc.Subtract(policy.RawRetention).ToUnixTimeMilliseconds();
+        var hourlyCutoffUnixTimeMilliseconds = asOfUtc.Subtract(policy.HourlyRetention).ToUnixTimeMilliseconds();
+        var dailyCutoffUnixTimeMilliseconds = asOfUtc.Subtract(policy.DailyRetention).ToUnixTimeMilliseconds();
+
+        var rawQuery = Filter(dbContext.TelemetryRawSamples.AsQueryable(), organizationId, environmentId, deviceAssetId, tagKey)
+            .Where(x => x.BucketEndUnixTimeMilliseconds < rawCutoffUnixTimeMilliseconds);
+        var hourlyQuery = Filter(dbContext.TelemetryRollups.AsQueryable(), organizationId, environmentId, deviceAssetId, tagKey)
+            .Where(x => x.Grain == TelemetryRollupGrain.Hourly)
+            .Where(x => x.WindowEndUnixTimeMilliseconds < hourlyCutoffUnixTimeMilliseconds);
+        var dailyQuery = Filter(dbContext.TelemetryRollups.AsQueryable(), organizationId, environmentId, deviceAssetId, tagKey)
+            .Where(x => x.Grain == TelemetryRollupGrain.Daily)
+            .Where(x => x.WindowEndUnixTimeMilliseconds < dailyCutoffUnixTimeMilliseconds);
+
+        var rawDeleted = await DeleteRawSamplesAsync(rawQuery, cancellationToken);
+        var hourlyDeleted = await DeleteRollupsAsync(hourlyQuery, cancellationToken);
+        var dailyDeleted = await DeleteRollupsAsync(dailyQuery, cancellationToken);
+        return new TelemetryRetentionCleanupResult(rawDeleted, hourlyDeleted, dailyDeleted);
+    }
+
+    private async Task<int> DeleteRawSamplesAsync(IQueryable<TelemetryRawSample> query, CancellationToken cancellationToken)
+    {
+        if (dbContext.Database.IsRelational())
+        {
+            return await query.ExecuteDeleteAsync(cancellationToken);
+        }
+
+        var expiredRawSamples = await query.ToArrayAsync(cancellationToken);
+        dbContext.TelemetryRawSamples.RemoveRange(expiredRawSamples);
+        return expiredRawSamples.Length;
+    }
+
+    private async Task<int> DeleteRollupsAsync(IQueryable<TelemetryRollup> query, CancellationToken cancellationToken)
+    {
+        if (dbContext.Database.IsRelational())
+        {
+            return await query.ExecuteDeleteAsync(cancellationToken);
+        }
+
+        var expiredRollups = await query.ToArrayAsync(cancellationToken);
+        dbContext.TelemetryRollups.RemoveRange(expiredRollups);
+        return expiredRollups.Length;
+    }
+
+    private static TelemetryHistorianRetentionPolicy ToRetentionPolicy(TelemetryTag tag, TelemetryHistorianRetentionPolicy defaultPolicy)
+    {
+        var samplingPolicy = TelemetrySamplingPolicy.Parse(tag.SamplingPolicy);
+        return new TelemetryHistorianRetentionPolicy(
+            samplingPolicy.RawRetention ?? defaultPolicy.RawRetention,
+            samplingPolicy.HourlyRetention ?? defaultPolicy.HourlyRetention,
+            samplingPolicy.DailyRetention ?? defaultPolicy.DailyRetention);
+    }
+
+    private static IQueryable<TelemetryRawSample> Filter(
+        IQueryable<TelemetryRawSample> query,
+        string? organizationId,
+        string? environmentId,
+        string? deviceAssetId,
+        string? tagKey)
+    {
+        if (organizationId is not null)
+        {
+            query = query.Where(x => x.OrganizationId == organizationId);
+        }
+
+        if (environmentId is not null)
+        {
+            query = query.Where(x => x.EnvironmentId == environmentId);
+        }
+
+        if (deviceAssetId is not null)
+        {
+            query = query.Where(x => x.DeviceAssetId == deviceAssetId);
+        }
+
+        if (tagKey is not null)
+        {
+            query = query.Where(x => x.TagKey == tagKey);
+        }
+
+        return query;
+    }
+
+    private static IQueryable<TelemetryRollup> Filter(
+        IQueryable<TelemetryRollup> query,
+        string? organizationId,
+        string? environmentId,
+        string? deviceAssetId,
+        string? tagKey)
+    {
+        if (organizationId is not null)
+        {
+            query = query.Where(x => x.OrganizationId == organizationId);
+        }
+
+        if (environmentId is not null)
+        {
+            query = query.Where(x => x.EnvironmentId == environmentId);
+        }
+
+        if (deviceAssetId is not null)
+        {
+            query = query.Where(x => x.DeviceAssetId == deviceAssetId);
+        }
+
+        if (tagKey is not null)
+        {
+            query = query.Where(x => x.TagKey == tagKey);
+        }
+
+        return query;
+    }
+
+    private sealed record RawWindowKey(string OrganizationId, string EnvironmentId, string DeviceAssetId, string TagKey, DateTimeOffset WindowStartUtc);
+
+    private sealed record RollupWindowKey(string OrganizationId, string EnvironmentId, string DeviceAssetId, string TagKey, DateTime WindowStartUtc);
 }
