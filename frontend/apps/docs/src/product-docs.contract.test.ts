@@ -20,21 +20,35 @@ const requiredGuideSections = [
   '当前限制',
 ]
 
-const requiredGapSections = [
-  '能力缺失',
-  '操作不连贯',
-  '手填 ID',
-  '术语不清',
-  '反馈不足',
+const requiredGapSections = ['能力缺失', '操作不连贯', '手填 ID', '术语不清', '反馈不足']
+
+const developmentOnlyWordingPatterns = [/\bdemo\w*\b/i, /\bseed\w*\b/i, /\bmock\w*\b/i]
+
+const docsAppRoutePrefixes = [
+  '/getting-started',
+  '/internal',
+  '/processes',
+  '/roles',
+  '/how-to',
+  '/explanation',
+  '/reference',
 ]
 
-const developmentOnlyWordingPatterns = [
-  /\bdemo\w*\b/i,
-  /\bseed\w*\b/i,
-  /\bmock\w*\b/i,
+const roleMapSlugs = [
+  'planner',
+  'team-leader',
+  'warehouse',
+  'quality-inspector',
+  'equipment-engineer',
+  'procurement-finance',
 ]
 
-const docsAppRoutePrefixes = ['/getting-started', '/internal', '/processes']
+const quadrantIndexPages = [
+  'roles/index.md',
+  'how-to/index.md',
+  'explanation/index.md',
+  'reference/index.md',
+]
 const nonBusinessConsoleRoutePrefixes = ['/api']
 
 function readDocsFile(relativePath: string) {
@@ -93,7 +107,11 @@ function shouldValidateBusinessConsoleRoute(route: string) {
     return false
   }
 
-  if (nonBusinessConsoleRoutePrefixes.some((prefix) => route === prefix || route.startsWith(`${prefix}/`))) {
+  if (
+    nonBusinessConsoleRoutePrefixes.some(
+      (prefix) => route === prefix || route.startsWith(`${prefix}/`),
+    )
+  ) {
     return false
   }
 
@@ -101,8 +119,9 @@ function shouldValidateBusinessConsoleRoute(route: string) {
 }
 
 function extractBusinessConsoleRouteTokens(content: string) {
-  return Array.from(content.matchAll(/`(\/[^`\s]*)`/g), (match) => match[1])
-    .filter(shouldValidateBusinessConsoleRoute)
+  return Array.from(content.matchAll(/`(\/[^`\s]*)`/g), (match) => match[1]).filter(
+    shouldValidateBusinessConsoleRoute,
+  )
 }
 
 const businessConsoleRoutes = listBusinessConsoleRoutes()
@@ -170,6 +189,46 @@ describe('product docs app contract', () => {
     expect(processContent).toContain('当前缺口')
   })
 
+  test('publishes the role-oriented first-week path map with availability markers', () => {
+    for (const slug of roleMapSlugs) {
+      const content = readDocsFile(join('roles', `${slug}.md`))
+
+      expect(content, `roles/${slug}.md should list first-week paths`).toContain('## 第一周路径')
+      expect(content, `roles/${slug}.md should mark path availability`).toMatch(
+        /✅ 可用|🟡 部分可用|⛔ 缺口/,
+      )
+    }
+  })
+
+  // Guards LINK FORMAT only: every 🟡/⛔ gap row must carry a tracking issue link.
+  // It intentionally does NOT assert the issue still exists or is open. The
+  // "references a real open issue" guarantee in ADR 0021 is maintained by that
+  // ADR's quarterly gap recycle (a process), not by this test. Asserting open-state
+  // here would need a network call (non-hermetic, rate-limited CI); a static
+  // allowlist would re-encode the same numbers without proving liveness either.
+  test('gap rows in role path maps carry a tracking issue link (format only, not open-state)', () => {
+    for (const slug of roleMapSlugs) {
+      const content = readDocsFile(join('roles', `${slug}.md`))
+
+      const gapRows = content
+        .split('\n')
+        .filter((line) => line.startsWith('|') && /🟡|⛔/.test(line))
+
+      for (const row of gapRows) {
+        expect(
+          row,
+          `roles/${slug}.md gap rows should link a tracking GitHub issue by URL format`,
+        ).toMatch(/https:\/\/github\.com\/Mang-X\/Nerv-IIP\/issues\/\d+/)
+      }
+    }
+  })
+
+  test('keeps the four-quadrant navigation index pages in place', () => {
+    for (const page of quadrantIndexPages) {
+      expect(existsSync(join(docsRoot, page)), `${page} should exist`).toBe(true)
+    }
+  })
+
   test('keeps internal gap evidence out of public guide copy', () => {
     expect(existsSync(internalGapRoot)).toBe(true)
 
@@ -188,21 +247,28 @@ describe('product docs app contract', () => {
       }
     }
 
-    const publicFiles = listMarkdownFiles('.').filter((file) => !file.includes(`${join('internal', 'gaps')}`))
+    const publicFiles = listMarkdownFiles('.').filter(
+      (file) => !file.includes(`${join('internal', 'gaps')}`),
+    )
 
     for (const file of publicFiles) {
       const content = readFileSync(file, 'utf8')
 
-      expect(content, `${file} should not expose internal gap wording`).not.toContain('建议 issue 标题')
+      expect(content, `${file} should not expose internal gap wording`).not.toContain(
+        '建议 issue 标题',
+      )
 
       for (const pattern of developmentOnlyWordingPatterns) {
-        expect(content, `${file} should avoid development-only wording ${pattern}`).not.toMatch(pattern)
+        expect(content, `${file} should avoid development-only wording ${pattern}`).not.toMatch(
+          pattern,
+        )
       }
     }
   })
 
   test('validates future business-console route prefixes without manual whitelist updates', () => {
-    const publicRouteTokens = '`/planning` `/future-domain/workbench` `/getting-started/example` `/api/mobile/v1/**`'
+    const publicRouteTokens =
+      '`/planning` `/future-domain/workbench` `/getting-started/example` `/api/mobile/v1/**`'
     const routes = extractBusinessConsoleRouteTokens(publicRouteTokens)
 
     expect(routes).toContain('/future-domain/workbench')
@@ -230,12 +296,17 @@ describe('product docs app contract', () => {
         extractBusinessConsoleRouteTokens(`\`${route}\``),
         `${route} should be treated as a business-console route token`,
       ).toContain(route)
-      expect(businessConsoleRoutes.has(route), `${route} should exist in business-console pages`).toBe(true)
+      expect(
+        businessConsoleRoutes.has(route),
+        `${route} should exist in business-console pages`,
+      ).toBe(true)
     }
   })
 
   test('references only real business-console routes in public guide copy', () => {
-    const publicFiles = listMarkdownFiles('.').filter((file) => !file.includes(`${join('internal', 'gaps')}`))
+    const publicFiles = listMarkdownFiles('.').filter(
+      (file) => !file.includes(`${join('internal', 'gaps')}`),
+    )
 
     for (const file of publicFiles) {
       const content = readFileSync(file, 'utf8')
