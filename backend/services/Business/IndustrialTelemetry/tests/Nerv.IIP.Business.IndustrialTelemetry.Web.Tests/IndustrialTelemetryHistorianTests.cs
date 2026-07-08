@@ -249,6 +249,56 @@ public sealed class IndustrialTelemetryHistorianTests
     }
 
     [Fact]
+    public async Task Downsampling_advances_past_raw_windows_that_already_have_hourly_rollups()
+    {
+        await using var dbContext = CreateDbContext(nameof(Downsampling_advances_past_raw_windows_that_already_have_hourly_rollups));
+        dbContext.TelemetryRawSamples.AddRange(
+            Raw("DEV-CNC-01", "temperature", "2026-07-01T08:00:00Z", "2026-07-01T08:01:00Z", 1, 10m, 10m, 10m, 10m, 10m, "old-001"),
+            Raw("DEV-CNC-01", "temperature", "2026-07-01T08:01:00Z", "2026-07-01T08:02:00Z", 1, 20m, 20m, 20m, 20m, 20m, "old-002"),
+            Raw("DEV-CNC-01", "temperature", "2026-07-01T08:02:00Z", "2026-07-01T08:03:00Z", 1, 30m, 30m, 30m, 30m, 30m, "old-003"),
+            Raw("DEV-CNC-01", "temperature", "2026-07-01T09:00:00Z", "2026-07-01T09:01:00Z", 1, 40m, 40m, 40m, 40m, 40m, "new-001"));
+        dbContext.TelemetryRollups.Add(Rollup(TelemetryRollupGrain.Hourly, "2026-07-01T08:00:00Z", "2026-07-01T09:00:00Z", "historian:hourly:DEV-CNC-01:temperature:1782720000000"));
+        await dbContext.SaveChangesAsync();
+
+        var service = new TelemetryHistorianService(dbContext);
+        var result = await service.RunDownsamplingAsync(
+            "org-001",
+            "env-dev",
+            new DateTimeOffset(2026, 7, 2, 0, 0, 0, TimeSpan.Zero),
+            CancellationToken.None,
+            maxRawSamples: 2);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(1, result.HourlyRollupsCreated);
+        Assert.Contains(dbContext.TelemetryRollups, x => x.Grain == TelemetryRollupGrain.Hourly && x.WindowStartUtc == DateTimeOffset.Parse("2026-07-01T09:00:00Z"));
+    }
+
+    [Fact]
+    public async Task Downsampling_advances_past_hourly_windows_that_already_have_daily_rollups()
+    {
+        await using var dbContext = CreateDbContext(nameof(Downsampling_advances_past_hourly_windows_that_already_have_daily_rollups));
+        dbContext.TelemetryRollups.AddRange(
+            Rollup(TelemetryRollupGrain.Hourly, "2026-07-01T08:00:00Z", "2026-07-01T09:00:00Z", "old-hour-001"),
+            Rollup(TelemetryRollupGrain.Hourly, "2026-07-01T09:00:00Z", "2026-07-01T10:00:00Z", "old-hour-002"),
+            Rollup(TelemetryRollupGrain.Hourly, "2026-07-01T10:00:00Z", "2026-07-01T11:00:00Z", "old-hour-003"),
+            Rollup(TelemetryRollupGrain.Daily, "2026-07-01T00:00:00Z", "2026-07-02T00:00:00Z", "historian:daily:DEV-CNC-01:temperature:1782691200000"),
+            Rollup(TelemetryRollupGrain.Hourly, "2026-07-02T08:00:00Z", "2026-07-02T09:00:00Z", "new-hour-001"));
+        await dbContext.SaveChangesAsync();
+
+        var service = new TelemetryHistorianService(dbContext);
+        var result = await service.RunDownsamplingAsync(
+            "org-001",
+            "env-dev",
+            new DateTimeOffset(2026, 7, 3, 0, 0, 0, TimeSpan.Zero),
+            CancellationToken.None,
+            maxHourlyRollups: 2);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(1, result.DailyRollupsCreated);
+        Assert.Contains(dbContext.TelemetryRollups, x => x.Grain == TelemetryRollupGrain.Daily && x.WindowStartUtc == DateTimeOffset.Parse("2026-07-02T00:00:00Z"));
+    }
+
+    [Fact]
     public async Task Retention_cleanup_removes_only_expired_layers()
     {
         await using var dbContext = CreateDbContext(nameof(Retention_cleanup_removes_only_expired_layers));
