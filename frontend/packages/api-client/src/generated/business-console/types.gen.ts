@@ -2286,7 +2286,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workCenterName?: string | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderListRequest = {
     [key: string]: never;
 };
 
@@ -2445,6 +2445,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderNo?: string | null;
     operationTaskNo?: string | null;
     materialCode?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+    [key: string]: never;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest = {
@@ -3611,7 +3615,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     costCurrencyCode?: string | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderListRequest = {
     [key: string]: never;
 };
 
@@ -3661,6 +3665,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     planCode?: string;
     interval?: string;
     startsOn?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleGenerateDueMaintenanceWorkOrdersResponse = NetCorePalExtensionsDtoResponseData & {
@@ -5025,6 +5033,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleB
     sourceDocumentId?: string;
     result?: string;
     rejectionReason?: string | null;
+    downstreamProcessingStatus?: string;
     scannedAtUtc?: string;
 };
 
@@ -6160,6 +6169,7 @@ export type ListBusinessConsoleTelemetryAlarmsData = {
         status?: string | null;
         skip?: number;
         take?: number;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/telemetry/alarms';
 };
@@ -9247,6 +9257,8 @@ export type ListBusinessConsoleMesWorkOrdersData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
+        workCenterIds?: string | null;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/work-orders';
 };
@@ -11854,6 +11866,7 @@ export type ListBusinessConsoleMaintenanceWorkOrdersData = {
         environmentId: string;
         skip?: number;
         take?: number;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/maintenance/work-orders';
 };
@@ -13980,6 +13993,7 @@ export type ListBusinessConsoleEquipmentAlarmsData = {
         status?: string | null;
         skip?: number;
         take?: number;
+        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/equipment/alarms';
 };

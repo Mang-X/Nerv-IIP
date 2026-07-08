@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
@@ -1080,7 +1081,9 @@ public sealed class BusinessGatewayAuthorizationTests
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 }
 
-internal sealed class FakeBusinessGatewayAuthorizationClient(Func<BusinessGatewayPermissionRequirement, bool> isAllowed)
+internal sealed class FakeBusinessGatewayAuthorizationClient(
+    Func<BusinessGatewayPermissionRequirement, bool> isAllowed,
+    AuthorizationDataScope? dataScope = null)
     : IBusinessGatewayAuthorizationClient
 {
     public int CallCount { get; private set; }
@@ -1089,7 +1092,7 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(Func<BusinessGatewa
 
     public List<BusinessGatewayPermissionRequirement> Requirements { get; } = [];
 
-    public static FakeBusinessGatewayAuthorizationClient Allowed() => new(_ => true);
+    public static FakeBusinessGatewayAuthorizationClient Allowed(AuthorizationDataScope? dataScope = null) => new(_ => true, dataScope);
 
     public static FakeBusinessGatewayAuthorizationClient Forbidden() => new(_ => false);
 
@@ -1108,7 +1111,7 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(Func<BusinessGatewa
         LastRequirement = requirement;
         Requirements.Add(requirement);
         return Task.FromResult(isAllowed(requirement)
-            ? BusinessGatewayAuthorizationResult.Allowed("user-admin", "user", "admin")
+            ? BusinessGatewayAuthorizationResult.Allowed("user-admin", "user", "admin", dataScope)
             : BusinessGatewayAuthorizationResult.Forbidden("forbidden"));
     }
 }

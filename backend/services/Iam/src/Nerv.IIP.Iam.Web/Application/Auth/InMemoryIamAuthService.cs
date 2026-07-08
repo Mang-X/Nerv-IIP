@@ -141,7 +141,7 @@ public sealed class InMemoryIamAuthService(
             string.Join(' ', principal.Scope)));
     }
 
-    public Task<bool> PrincipalHasPermissionAsync(
+    public Task<IamAuthorizationCheckResult> PrincipalHasPermissionAsync(
         CurrentPrincipalResponse principal,
         string organizationId,
         string environmentId,
@@ -152,16 +152,17 @@ public sealed class InMemoryIamAuthService(
     {
         if (principal.PrincipalType == "external-client")
         {
-            return Task.FromResult(store.ExternalClientHasPermission(
+            return Task.FromResult(new IamAuthorizationCheckResult(store.ExternalClientHasPermission(
                 principal.UserId,
                 organizationId,
                 environmentId,
                 permissionCode,
                 resourceType,
-                resourceId));
+                resourceId)));
         }
 
-        return UserHasPermissionAsync(principal.UserId, organizationId, environmentId, permissionCode, cancellationToken);
+        return Task.FromResult(new IamAuthorizationCheckResult(
+            store.UserHasPermission(principal.UserId, organizationId, environmentId, permissionCode)));
     }
 
     public Task<EnterpriseAuthResponse> HandleOidcCallbackAsync(

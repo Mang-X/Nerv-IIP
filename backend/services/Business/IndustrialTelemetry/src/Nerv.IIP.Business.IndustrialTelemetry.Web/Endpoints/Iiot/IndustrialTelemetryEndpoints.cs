@@ -131,7 +131,14 @@ public sealed record RunAlarmEscalationsRequest(
     int MaxAlarms = 500);
 public sealed record AlarmLifecycleResponse(AlarmEventId AlarmEventId);
 public sealed record RunAlarmEscalationsResponse(int EscalatedCount, IReadOnlyCollection<AlarmEventId> AlarmEventIds);
-public sealed record ListAlarmEventsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, string? Status, int Skip = 0, int Take = 100);
+public sealed record ListAlarmEventsRequest(
+    string? OrganizationId,
+    string? EnvironmentId,
+    string? DeviceAssetId,
+    string? Status,
+    int Skip = 0,
+    int Take = 100,
+    string? DeviceAssetIds = null);
 public sealed record QueryDeviceTimelineRequest(string DeviceAssetId, string? OrganizationId, string? EnvironmentId, DateTimeOffset? FromUtc, DateTimeOffset? ToUtc);
 public sealed record QueryOeeRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
 public sealed record QueryRuntimeHoursRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
@@ -336,7 +343,14 @@ public sealed class ListAlarmEventsEndpoint(ISender sender) : IndustrialTelemetr
 
     public override async Task HandleAsync(ListAlarmEventsRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListAlarmEventsQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Status, req.Skip, req.Take), ct);
+        var result = await sender.Send(new ListAlarmEventsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.DeviceAssetId,
+            req.Status,
+            req.Skip,
+            req.Take,
+            req.DeviceAssetIds), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }

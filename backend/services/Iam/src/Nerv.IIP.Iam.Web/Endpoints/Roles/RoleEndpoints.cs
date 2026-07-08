@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Iam.Web.Application;
 using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.Commands.Roles;
+using Nerv.IIP.Iam.Web.Application.DataScopes;
 using Nerv.IIP.Iam.Web.Application.Permissions;
 using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 using Nerv.IIP.Iam.Web.Endpoints;
@@ -83,6 +84,33 @@ public sealed class PatchRolePermissionsEndpoint(
             new PatchRolePermissionsCommand(
                 Route<string>("roleId")!,
                 req.PermissionCodes,
+                IamSecurityAuditEndpointContext.Create(HttpContext, principal)),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
+[HttpPatch("/api/iam/v1/roles/{roleId}/data-scopes")]
+[AllowAnonymous]
+public sealed class PatchRoleDataScopesEndpoint(
+    IIamPermissionAuthorizer authorizer,
+    IIamAuthService auth,
+    IMediator mediator) : EndpointWithoutRequest<ResponseData<DataScopeListResponse>>
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.roles.manage", ct))
+        {
+            return;
+        }
+
+        var req = await HttpContext.Request.ReadFromJsonAsync<PatchDataScopesRequest>(ct)
+            ?? throw new BadHttpRequestException("Request body is required.");
+        var principal = await auth.GetCurrentPrincipalAsync(HttpContext, ct);
+        var response = await mediator.Send(
+            new PatchRoleDataScopesCommand(
+                Route<string>("roleId")!,
+                req.DataScopes,
                 IamSecurityAuditEndpointContext.Create(HttpContext, principal)),
             ct);
         await Send.OkAsync(response.AsResponseData(), ct);

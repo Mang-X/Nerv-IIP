@@ -365,20 +365,27 @@ public sealed class ConvertBusinessConsoleMesPlanToWorkOrderEndpoint(
 public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    BusinessGatewayDataScopeFilter dataScopeFilter,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListRequest, BusinessConsoleMesWorkOrderListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesWorkOrderListRequest, BusinessConsoleMesWorkOrderListResponse>(
         auth,
         BusinessGatewayPermissions.MesWorkOrdersRead)
 {
-    protected override string OrganizationId(BusinessConsoleMesListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleMesWorkOrderListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMesListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleMesWorkOrderListRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesWorkOrderListResponse> ForwardAsync(
-        BusinessConsoleMesListRequest request,
+    protected override async Task<BusinessConsoleMesWorkOrderListResponse> ForwardAsync(
+        BusinessConsoleMesWorkOrderListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.ListWorkOrdersAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var scopedRequest = await dataScopeFilter.ApplyToMesWorkOrdersAsync(
+            request,
+            AuthorizationResult?.DataScope,
+            cancellationToken);
+        return await mes.ListWorkOrdersAsync(tokenProvider.BearerToken, scopedRequest, cancellationToken);
+    }
 }
 
 [Tags("Business Console MES")]
