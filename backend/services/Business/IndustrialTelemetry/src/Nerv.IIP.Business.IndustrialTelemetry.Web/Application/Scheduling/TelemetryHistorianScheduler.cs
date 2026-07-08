@@ -109,10 +109,9 @@ public sealed class TelemetryHistorianScheduler(
                 || cleanup.DailyRollupsDeleted > 0)
             {
                 logger.LogInformation(
-                    "IndustrialTelemetry historian processed {OrganizationId}/{EnvironmentId} ({TimeZoneId}): hourly={HourlyRollupsCreated}, daily={DailyRollupsCreated}, rawDeleted={RawSamplesDeleted}, hourlyDeleted={HourlyRollupsDeleted}, dailyDeleted={DailyRollupsDeleted}.",
+                    "IndustrialTelemetry historian processed {OrganizationId}/{EnvironmentId}: hourly={HourlyRollupsCreated}, daily={DailyRollupsCreated}, rawDeleted={RawSamplesDeleted}, hourlyDeleted={HourlyRollupsDeleted}, dailyDeleted={DailyRollupsDeleted}.",
                     scope.OrganizationId,
                     scope.EnvironmentId,
-                    scope.TimeZoneId,
                     downsampling.HourlyRollupsCreated,
                     downsampling.DailyRollupsCreated,
                     cleanup.RawSamplesDeleted,
@@ -210,20 +209,12 @@ public sealed class TelemetryHistorianScheduler(
             return null;
         }
 
-        var timeZoneId = section["TimeZoneId"]?.Trim();
-        if (string.IsNullOrWhiteSpace(timeZoneId))
-        {
-            timeZoneId = "UTC";
-        }
-
-        _ = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
         var maxRawSamples = ReadPositiveInt(section, "MaxRawSamples", DefaultMaxRawSamples, logger);
         var maxHourlyRollups = ReadPositiveInt(section, "MaxHourlyRollups", DefaultMaxHourlyRollups, logger);
 
         return new TelemetryHistorianScope(
             organizationId.Trim(),
             environmentId.Trim(),
-            timeZoneId,
             ReadRetention(section, "RawRetention", DefaultRawRetention, logger),
             ReadRetention(section, "HourlyRetention", DefaultHourlyRetention, logger),
             ReadRetention(section, "DailyRetention", DefaultDailyRetention, logger),
@@ -269,7 +260,6 @@ public sealed class TelemetryHistorianScheduler(
 public sealed record TelemetryHistorianScope(
     string OrganizationId,
     string EnvironmentId,
-    string TimeZoneId,
     TimeSpan RawRetention,
     TimeSpan HourlyRetention,
     TimeSpan DailyRetention,

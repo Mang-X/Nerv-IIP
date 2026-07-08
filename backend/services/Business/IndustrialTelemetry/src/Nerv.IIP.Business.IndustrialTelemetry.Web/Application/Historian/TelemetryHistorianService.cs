@@ -32,9 +32,11 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
             .Take(maxRawSamples + 1)
             .ToArrayAsync(cancellationToken);
         var rawSamples = rawSampleBatch.Take(maxRawSamples).ToArray();
-        var lastRawBatchKey = rawSampleBatch.Length > maxRawSamples
-            ? new RawWindowKey(rawSamples[^1].OrganizationId, rawSamples[^1].EnvironmentId, rawSamples[^1].DeviceAssetId, rawSamples[^1].TagKey, TruncateToHour(rawSamples[^1].BucketStartUtc))
-            : null;
+        var lastRawBatchKey = await ResolveRawBatchBoundaryAsync(rawSampleBatch, rawSamples, organizationId, environmentId, maxRawSamples, asOfUtc, cancellationToken);
+        if (lastRawBatchKey is null && rawSampleBatch.Length > maxRawSamples)
+        {
+            rawSamples = await LoadRawWindowAsync(ToRawWindowKey(rawSamples[0]), asOfUtc, cancellationToken);
+        }
 
         var hourlyRollupsCreated = 0;
         var createdHourlyRollups = new List<TelemetryRollup>();
@@ -86,11 +88,14 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
             .ThenBy(x => x.SourceSequence)
             .Take(maxHourlyRollups + 1)
             .ToArrayAsync(cancellationToken);
-        var hourlyRollups = hourlyRollupBatch.Take(maxHourlyRollups).ToArray();
-        hourlyRollups = hourlyRollups.Concat(createdHourlyRollups).ToArray();
-        var lastHourlyBatchKey = hourlyRollupBatch.Length > maxHourlyRollups
-            ? new RollupWindowKey(hourlyRollupBatch[maxHourlyRollups - 1].OrganizationId, hourlyRollupBatch[maxHourlyRollups - 1].EnvironmentId, hourlyRollupBatch[maxHourlyRollups - 1].DeviceAssetId, hourlyRollupBatch[maxHourlyRollups - 1].TagKey, hourlyRollupBatch[maxHourlyRollups - 1].WindowStartUtc.Date)
-            : null;
+        var persistedHourlyRollups = hourlyRollupBatch.Take(maxHourlyRollups).ToArray();
+        var lastHourlyBatchKey = await ResolveHourlyBatchBoundaryAsync(hourlyRollupBatch, persistedHourlyRollups, organizationId, environmentId, maxHourlyRollups, asOfUtc, cancellationToken);
+        if (lastHourlyBatchKey is null && hourlyRollupBatch.Length > maxHourlyRollups)
+        {
+            persistedHourlyRollups = await LoadHourlyDayAsync(ToRollupWindowKey(hourlyRollupBatch[0]), asOfUtc, cancellationToken);
+        }
+
+        var hourlyRollups = persistedHourlyRollups.Concat(createdHourlyRollups).ToArray();
 
         var dailyRollupsCreated = 0;
         foreach (var group in hourlyRollups.GroupBy(x => new
@@ -248,6 +253,136 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
         return weightedSum / totalCount;
     }
 
+    private async Task<RawWindowKey?> ResolveRawBatchBoundaryAsync(
+        TelemetryRawSample[] rawSampleBatch,
+        TelemetryRawSample[] rawSamples,
+        string organizationId,
+        string environmentId,
+        int maxRawSamples,
+        DateTimeOffset asOfUtc,
+        CancellationToken cancellationToken)
+    {
+        if (rawSampleBatch.Length <= maxRawSamples || rawSamples.Length == 0)
+        {
+            return null;
+        }
+
+        var firstKey = ToRawWindowKey(rawSamples[0]);
+        var lastKey = ToRawWindowKey(rawSamples[^1]);
+        if (firstKey == lastKey)
+        {
+            return null;
+        }
+
+        var firstWindowHasMoreRows = await HasRawWindowRowsAfterBatchAsync(firstKey, organizationId, environmentId, asOfUtc, maxRawSamples, cancellationToken);
+        return firstWindowHasMoreRows ? firstKey : lastKey;
+    }
+
+    private async Task<bool> HasRawWindowRowsAfterBatchAsync(
+        RawWindowKey key,
+        string organizationId,
+        string environmentId,
+        DateTimeOffset asOfUtc,
+        int maxRawSamples,
+        CancellationToken cancellationToken)
+    {
+        var windowEndUtc = key.WindowStartUtc.AddHours(1);
+        var count = await dbContext.TelemetryRawSamples
+            .Where(x => x.OrganizationId == organizationId)
+            .Where(x => x.EnvironmentId == environmentId)
+            .Where(x => x.DeviceAssetId == key.DeviceAssetId)
+            .Where(x => x.TagKey == key.TagKey)
+            .Where(x => x.BucketStartUtc >= key.WindowStartUtc)
+            .Where(x => x.BucketStartUtc < windowEndUtc)
+            .Where(x => x.BucketEndUtc <= asOfUtc)
+            .Take(maxRawSamples + 1)
+            .CountAsync(cancellationToken);
+        return count > maxRawSamples;
+    }
+
+    private async Task<TelemetryRawSample[]> LoadRawWindowAsync(RawWindowKey key, DateTimeOffset asOfUtc, CancellationToken cancellationToken)
+    {
+        var windowEndUtc = key.WindowStartUtc.AddHours(1);
+        return await dbContext.TelemetryRawSamples
+            .Where(x => x.OrganizationId == key.OrganizationId)
+            .Where(x => x.EnvironmentId == key.EnvironmentId)
+            .Where(x => x.DeviceAssetId == key.DeviceAssetId)
+            .Where(x => x.TagKey == key.TagKey)
+            .Where(x => x.BucketStartUtc >= key.WindowStartUtc)
+            .Where(x => x.BucketStartUtc < windowEndUtc)
+            .Where(x => x.BucketEndUtc <= asOfUtc)
+            .OrderBy(x => x.BucketStartUtc)
+            .ThenBy(x => x.SourceSequence)
+            .ToArrayAsync(cancellationToken);
+    }
+
+    private async Task<RollupWindowKey?> ResolveHourlyBatchBoundaryAsync(
+        TelemetryRollup[] hourlyRollupBatch,
+        TelemetryRollup[] hourlyRollups,
+        string organizationId,
+        string environmentId,
+        int maxHourlyRollups,
+        DateTimeOffset asOfUtc,
+        CancellationToken cancellationToken)
+    {
+        if (hourlyRollupBatch.Length <= maxHourlyRollups || hourlyRollups.Length == 0)
+        {
+            return null;
+        }
+
+        var firstKey = ToRollupWindowKey(hourlyRollups[0]);
+        var lastKey = ToRollupWindowKey(hourlyRollups[^1]);
+        if (firstKey == lastKey)
+        {
+            return null;
+        }
+
+        var firstDayHasMoreRows = await HasHourlyDayRowsAfterBatchAsync(firstKey, organizationId, environmentId, asOfUtc, maxHourlyRollups, cancellationToken);
+        return firstDayHasMoreRows ? firstKey : lastKey;
+    }
+
+    private async Task<bool> HasHourlyDayRowsAfterBatchAsync(
+        RollupWindowKey key,
+        string organizationId,
+        string environmentId,
+        DateTimeOffset asOfUtc,
+        int maxHourlyRollups,
+        CancellationToken cancellationToken)
+    {
+        var windowStartUtc = new DateTimeOffset(key.WindowStartUtc, TimeSpan.Zero);
+        var windowEndUtc = windowStartUtc.AddDays(1);
+        var count = await dbContext.TelemetryRollups
+            .Where(x => x.OrganizationId == organizationId)
+            .Where(x => x.EnvironmentId == environmentId)
+            .Where(x => x.DeviceAssetId == key.DeviceAssetId)
+            .Where(x => x.TagKey == key.TagKey)
+            .Where(x => x.Grain == TelemetryRollupGrain.Hourly)
+            .Where(x => x.WindowStartUtc >= windowStartUtc)
+            .Where(x => x.WindowStartUtc < windowEndUtc)
+            .Where(x => x.WindowEndUtc <= asOfUtc)
+            .Take(maxHourlyRollups + 1)
+            .CountAsync(cancellationToken);
+        return count > maxHourlyRollups;
+    }
+
+    private async Task<TelemetryRollup[]> LoadHourlyDayAsync(RollupWindowKey key, DateTimeOffset asOfUtc, CancellationToken cancellationToken)
+    {
+        var windowStartUtc = new DateTimeOffset(key.WindowStartUtc, TimeSpan.Zero);
+        var windowEndUtc = windowStartUtc.AddDays(1);
+        return await dbContext.TelemetryRollups
+            .Where(x => x.OrganizationId == key.OrganizationId)
+            .Where(x => x.EnvironmentId == key.EnvironmentId)
+            .Where(x => x.DeviceAssetId == key.DeviceAssetId)
+            .Where(x => x.TagKey == key.TagKey)
+            .Where(x => x.Grain == TelemetryRollupGrain.Hourly)
+            .Where(x => x.WindowStartUtc >= windowStartUtc)
+            .Where(x => x.WindowStartUtc < windowEndUtc)
+            .Where(x => x.WindowEndUtc <= asOfUtc)
+            .OrderBy(x => x.WindowStartUtc)
+            .ThenBy(x => x.SourceSequence)
+            .ToArrayAsync(cancellationToken);
+    }
+
     private async Task<TelemetryRetentionCleanupResult> ApplyRetentionAsync(
         string? organizationId,
         string? environmentId,
@@ -367,6 +502,16 @@ public sealed class TelemetryHistorianService(ApplicationDbContext dbContext)
         }
 
         return query;
+    }
+
+    private static RawWindowKey ToRawWindowKey(TelemetryRawSample sample)
+    {
+        return new RawWindowKey(sample.OrganizationId, sample.EnvironmentId, sample.DeviceAssetId, sample.TagKey, TruncateToHour(sample.BucketStartUtc));
+    }
+
+    private static RollupWindowKey ToRollupWindowKey(TelemetryRollup rollup)
+    {
+        return new RollupWindowKey(rollup.OrganizationId, rollup.EnvironmentId, rollup.DeviceAssetId, rollup.TagKey, rollup.WindowStartUtc.Date);
     }
 
     private sealed record RawWindowKey(string OrganizationId, string EnvironmentId, string DeviceAssetId, string TagKey, DateTimeOffset WindowStartUtc);

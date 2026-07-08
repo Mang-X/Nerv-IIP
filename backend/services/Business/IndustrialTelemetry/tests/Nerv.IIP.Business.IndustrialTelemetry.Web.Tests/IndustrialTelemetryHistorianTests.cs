@@ -200,6 +200,55 @@ public sealed class IndustrialTelemetryHistorianTests
     }
 
     [Fact]
+    public async Task Downsampling_processes_single_raw_window_that_exceeds_batch_size()
+    {
+        await using var dbContext = CreateDbContext(nameof(Downsampling_processes_single_raw_window_that_exceeds_batch_size));
+        dbContext.TelemetryRawSamples.AddRange(
+            Raw("DEV-CNC-01", "temperature", "2026-07-01T08:00:00Z", "2026-07-01T08:01:00Z", 1, 10m, 10m, 10m, 10m, 10m, "seq-001"),
+            Raw("DEV-CNC-01", "temperature", "2026-07-01T08:01:00Z", "2026-07-01T08:02:00Z", 1, 20m, 20m, 20m, 20m, 20m, "seq-002"),
+            Raw("DEV-CNC-01", "temperature", "2026-07-01T08:02:00Z", "2026-07-01T08:03:00Z", 1, 30m, 30m, 30m, 30m, 30m, "seq-003"));
+        await dbContext.SaveChangesAsync();
+
+        var service = new TelemetryHistorianService(dbContext);
+        var result = await service.RunDownsamplingAsync(
+            "org-001",
+            "env-dev",
+            new DateTimeOffset(2026, 7, 2, 0, 0, 0, TimeSpan.Zero),
+            CancellationToken.None,
+            maxRawSamples: 2);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(1, result.HourlyRollupsCreated);
+        var hourly = await dbContext.TelemetryRollups.SingleAsync(x => x.Grain == TelemetryRollupGrain.Hourly);
+        Assert.Equal(3, hourly.SampleCount);
+        Assert.Equal(20m, hourly.AverageValue);
+    }
+
+    [Fact]
+    public async Task Downsampling_processes_single_hourly_day_that_exceeds_batch_size()
+    {
+        await using var dbContext = CreateDbContext(nameof(Downsampling_processes_single_hourly_day_that_exceeds_batch_size));
+        dbContext.TelemetryRollups.AddRange(
+            Rollup(TelemetryRollupGrain.Hourly, "2026-07-01T08:00:00Z", "2026-07-01T09:00:00Z", "hour-001"),
+            Rollup(TelemetryRollupGrain.Hourly, "2026-07-01T09:00:00Z", "2026-07-01T10:00:00Z", "hour-002"),
+            Rollup(TelemetryRollupGrain.Hourly, "2026-07-01T10:00:00Z", "2026-07-01T11:00:00Z", "hour-003"));
+        await dbContext.SaveChangesAsync();
+
+        var service = new TelemetryHistorianService(dbContext);
+        var result = await service.RunDownsamplingAsync(
+            "org-001",
+            "env-dev",
+            new DateTimeOffset(2026, 7, 2, 0, 0, 0, TimeSpan.Zero),
+            CancellationToken.None,
+            maxHourlyRollups: 2);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(1, result.DailyRollupsCreated);
+        var daily = await dbContext.TelemetryRollups.SingleAsync(x => x.Grain == TelemetryRollupGrain.Daily);
+        Assert.Equal(3, daily.SampleCount);
+    }
+
+    [Fact]
     public async Task Retention_cleanup_removes_only_expired_layers()
     {
         await using var dbContext = CreateDbContext(nameof(Retention_cleanup_removes_only_expired_layers));
