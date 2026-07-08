@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   receipts: [] as Array<Record<string, unknown>>,
   receiptsTotal: 7,
   convertPurchaseRequisition: vi.fn(),
+  supplierPartners: [] as Array<Record<string, unknown>>,
 }))
 
 const purchaseOrderFilters = reactive<{ status?: string, keyword?: string, skip: number, take: number }>({
@@ -72,6 +73,17 @@ vi.mock('@/composables/useBusinessErp', () => ({
   }),
 }))
 
+vi.mock('@/composables/useBusinessMasterData', () => ({
+  useBusinessPartners: () => ({
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', resourceType: 'business-partner', includeDisabled: false, skip: 0, take: 100 }),
+    partners: computed(() => state.supplierPartners),
+    partnersTotal: computed(() => state.supplierPartners.length),
+    partnersPending: shallowRef(false),
+    partnersError: shallowRef(undefined),
+    refreshPartners: vi.fn(),
+  }),
+}))
+
 vi.mock('@/composables/usePagedList', () => ({
   usePagedList: () => ({ page: shallowRef(1), pageSize: shallowRef('10'), pageSizeNumber: shallowRef(10), resetPage: vi.fn() }),
 }))
@@ -88,6 +100,22 @@ const selectStubs = {
   SelectValue: { template: '<span />' },
   SelectProContent: { template: '<slot />' },
   SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+}
+const dialogStubs = {
+  DialogPro: { props: ['open'], emits: ['update:open'], template: '<section v-if="open" class="dialog"><slot /></section>' },
+  DialogProClose: { template: '<span><slot /></span>' },
+  DialogProContent: { template: '<div><slot /></div>' },
+  DialogProDescription: { template: '<p><slot /></p>' },
+  DialogProFooter: { template: '<footer><slot /></footer>' },
+  DialogProHeader: { template: '<header><slot /></header>' },
+  DialogProTitle: { template: '<h2><slot /></h2>' },
+}
+const checkboxStubs = {
+  CheckboxPro: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: '<input type="checkbox" :checked="modelValue" @change="$emit(\'update:modelValue\', $event.target.checked)" />',
+  },
 }
 const tableStub = {
   DataTablePro: {
@@ -106,7 +134,7 @@ const tableStub = {
   },
 }
 
-const globalStubs = { ...layoutStub, ...selectStubs, ...tableStub }
+const globalStubs = { ...layoutStub, ...selectStubs, ...dialogStubs, ...checkboxStubs, ...tableStub }
 
 beforeEach(() => {
   vi.restoreAllMocks()
@@ -123,6 +151,11 @@ beforeEach(() => {
   state.receiptsTotal = 7
   state.convertPurchaseRequisition.mockReset()
   state.convertPurchaseRequisition.mockResolvedValue({ success: true, data: { status: 'PurchaseOrderCreated', purchaseOrderNo: 'PO-REQ-001' } })
+  state.supplierPartners = [
+    { resourceType: 'business-partner', code: 'SUP-001', displayName: '第一供应商', active: true, partnerType: 'supplier' },
+    { resourceType: 'business-partner', code: 'SUP-002', displayName: '第二供应商', active: true, partnerType: 'supplier' },
+    { resourceType: 'business-partner', code: 'CUS-001', displayName: '客户一号', active: true, partnerType: 'customer' },
+  ]
   state.purchaseRequisitions = [
     {
       purchaseRequisitionId: 'pr-001',
@@ -190,8 +223,8 @@ describe('ERP procurement purchase requisition page', () => {
     expect(state.convertPurchaseRequisition).toHaveBeenCalledWith(['PR-001'])
   })
 
-  it('starts RFQ conversion with supplier candidates for open requisitions', async () => {
-    vi.spyOn(window, 'prompt').mockReturnValue('SUP-001, SUP-002')
+  it('starts RFQ conversion from selected supplier candidates', async () => {
+    const promptSpy = vi.spyOn(window, 'prompt')
     state.convertPurchaseRequisition.mockResolvedValue({ success: true, data: { status: 'RfqCreated', rfqNo: 'RFQ-REQ-001' } })
     const wrapper = mount(PurchaseRequisitionsPage, { global: { stubs: globalStubs } })
     await flushPromises()
@@ -200,6 +233,17 @@ describe('ERP procurement purchase requisition page', () => {
     expect(rfqButton).toBeTruthy()
 
     await rfqButton!.trigger('click')
+    await flushPromises()
+    expect(promptSpy).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('选择询价供应商')
+    expect(wrapper.text()).toContain('第一供应商')
+    expect(wrapper.text()).toContain('第二供应商')
+    expect(wrapper.text()).not.toContain('客户一号')
+
+    const supplierCheckboxes = wrapper.findAll('input[type="checkbox"]')
+    await supplierCheckboxes[0]!.setValue(true)
+    await supplierCheckboxes[1]!.setValue(true)
+    await wrapper.findAll('button').find((button) => button.text().includes('生成 RFQ'))!.trigger('click')
     await flushPromises()
 
     expect(state.convertPurchaseRequisition).toHaveBeenCalledWith(['PR-001'], { rfqSupplierCodes: ['SUP-001', 'SUP-002'] })
