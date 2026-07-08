@@ -16,6 +16,9 @@ import {
   type BusinessContextFields,
 } from './businessContextBinding'
 
+// Keep aligned with SpcCalculation.NoCompleteSubgroupMessage in the Quality service.
+const SPC_WARMUP_MESSAGE = 'SPC control chart requires at least one complete subgroup.'
+
 export interface QualityAnalysisBucket {
   label: string
   count: number
@@ -59,7 +62,7 @@ export function useQualitySpcAnalysis(initialFilters: Partial<QualitySpcFilters>
     }),
     enabled: hasSpcScope(filters),
   }))
-  const spcWarmup = computed(() => isSpcWarmupError(controlChartQuery.error.value))
+  const spcWarmup = computed(() => isSpcWarmupEnvelope(controlChartQuery.data.value))
 
   return {
     capability: computed(() => unwrapCapability(capabilityQuery.data.value)),
@@ -241,19 +244,6 @@ function toPositiveInteger(value: number | string, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
-function isSpcWarmupError(error: unknown) {
-  return errorMessage(error).includes('SPC control chart requires at least one complete subgroup.')
-}
-
-function errorMessage(error: unknown) {
-  if (error instanceof Error) {
-    return error.message
-  }
-
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const message = (error as { message?: unknown }).message
-    return typeof message === 'string' ? message : ''
-  }
-
-  return typeof error === 'string' ? error : ''
+function isSpcWarmupEnvelope(envelope: BusinessConsoleQualitySpcControlChartEnvelope | undefined) {
+  return envelope?.success === false && (envelope.message ?? '').includes(SPC_WARMUP_MESSAGE)
 }

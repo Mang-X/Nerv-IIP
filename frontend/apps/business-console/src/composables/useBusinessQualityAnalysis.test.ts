@@ -181,10 +181,10 @@ describe('business quality analysis summary', () => {
   })
 
   it('treats sparse SPC control-chart data as a warm-up empty state', () => {
-    coladaState.queryErrorById.set(
-      'queryBusinessConsoleQualitySpcControlChart',
-      new Error('SPC control chart requires at least one complete subgroup.'),
-    )
+    coladaState.queryDataById.set('queryBusinessConsoleQualitySpcControlChart', {
+      success: false,
+      message: 'SPC control chart requires at least one complete subgroup.',
+    })
 
     const spc = useQualitySpcAnalysis({
       skuCode: 'SKU-A',
