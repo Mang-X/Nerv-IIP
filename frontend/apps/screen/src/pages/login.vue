@@ -2,15 +2,19 @@
 import { useNow } from '@vueuse/core'
 import { Lock, User } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import heroUrl from '@/assets/login-hero.webp'
+import { IS_REAL_DATA } from '@/data/config'
 import { useAuthStore } from '@/stores/auth'
+import { useRealAuthStore } from '@/stores/realAuth'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const account = ref('')
 const password = ref('')
 const loading = ref(false)
+const errorMsg = ref('')
 
 // 秒级展示：固定 1s 间隔，避免默认 rAF 每帧触发重算
 const now = useNow({ interval: 1000 })
@@ -51,14 +55,33 @@ const particles = [
   { x: 74, y: 8, s: 5, tone: 'amber', dur: 14, d: 7.2, dy: -12 },
 ]
 
+function redirectTarget(): string {
+  const redirect = route.query.redirect
+  return typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
+    ? redirect
+    : '/'
+}
+
 async function onSubmit() {
   if (loading.value) return
   loading.value = true
-  // mock：本地登录后进入大屏（后端就绪后改为 @nerv-iip/auth 真实登录）
-  await new Promise((resolve) => setTimeout(resolve, 480))
-  auth.login(account.value)
-  loading.value = false
-  router.push('/')
+  errorMsg.value = ''
+  try {
+    if (IS_REAL_DATA) {
+      // 真实登录：@nerv-iip/auth 会话，token 由 api-client 拦截器自动注入。
+      await useRealAuthStore().login(account.value, password.value)
+      await router.push(redirectTarget())
+    } else {
+      // mock：本地登录后进入大屏（演示模式，任意账号密码）。
+      await new Promise((resolve) => setTimeout(resolve, 480))
+      auth.login(account.value)
+      await router.push('/')
+    }
+  } catch (error) {
+    errorMsg.value = error instanceof Error ? error.message : '登录失败，请重试'
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -134,19 +157,38 @@ async function onSubmit() {
         <span class="lbl">密码</span>
         <span class="inp">
           <Lock class="ic" :size="18" aria-hidden="true" />
-          <input v-model="password" type="password" placeholder="登录密码" autocomplete="current-password" />
+          <input
+            v-model="password"
+            type="password"
+            placeholder="登录密码"
+            autocomplete="current-password"
+          />
         </span>
       </label>
 
       <button class="submit reveal" style="--d: 0.42s" type="submit" :disabled="loading">
         <span>{{ loading ? '登录中' : '进入大屏' }}</span>
         <svg v-if="!loading" class="arrow" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          <path
+            d="M3 8h10M9 4l4 4-4 4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
         </svg>
         <span v-else class="spinner" aria-hidden="true" />
       </button>
 
-      <p class="hint reveal" style="--d: 0.5s">演示模式 · 任意账号密码即可进入（数据为 mock）</p>
+      <p v-if="errorMsg" class="err reveal" role="alert">{{ errorMsg }}</p>
+      <p class="hint reveal" style="--d: 0.5s">
+        {{
+          IS_REAL_DATA
+            ? '请使用工厂账号登录（连接真实数据）'
+            : '演示模式 · 任意账号密码即可进入（数据为 mock）'
+        }}
+      </p>
     </form>
   </div>
 </template>
@@ -298,11 +340,25 @@ async function onSubmit() {
   gap: 7px;
   z-index: 2;
 }
-.hud.mono { letter-spacing: 0.04em; }
-.hud.tl { top: 32px; left: 34px; }
-.hud.tr { top: 32px; right: 34px; }
-.hud.bl { bottom: 32px; left: 34px; }
-.hud.br { bottom: 32px; right: 34px; }
+.hud.mono {
+  letter-spacing: 0.04em;
+}
+.hud.tl {
+  top: 32px;
+  left: 34px;
+}
+.hud.tr {
+  top: 32px;
+  right: 34px;
+}
+.hud.bl {
+  bottom: 32px;
+  left: 34px;
+}
+.hud.br {
+  bottom: 32px;
+  right: 34px;
+}
 .live {
   width: 7px;
   height: 7px;
@@ -348,9 +404,14 @@ async function onSubmit() {
   letter-spacing: 0.17em;
   color: #fff;
 }
-.sep { color: var(--sb-cyan); margin: 0 1px; }
+.sep {
+  color: var(--sb-cyan);
+  margin: 0 1px;
+}
 
-.head { margin-bottom: 40px; }
+.head {
+  margin-bottom: 40px;
+}
 .head h1 {
   margin: 0;
   font-size: 29px;
@@ -365,7 +426,10 @@ async function onSubmit() {
   color: var(--sb-muted);
 }
 
-.field-row { display: block; margin-bottom: 22px; }
+.field-row {
+  display: block;
+  margin-bottom: 22px;
+}
 .lbl {
   display: block;
   font-size: 12.5px;
@@ -373,7 +437,11 @@ async function onSubmit() {
   color: var(--sb-muted);
   margin-bottom: 10px;
 }
-.inp { position: relative; display: flex; align-items: center; }
+.inp {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
 .ic {
   position: absolute;
   left: 15px;
@@ -396,8 +464,12 @@ async function onSubmit() {
     background-color 0.25s var(--sb-ease),
     box-shadow 0.25s var(--sb-ease);
 }
-.inp input::placeholder { color: var(--sb-faint); }
-.inp:focus-within .ic { color: var(--sb-cyan); }
+.inp input::placeholder {
+  color: var(--sb-faint);
+}
+.inp:focus-within .ic {
+  color: var(--sb-cyan);
+}
 .inp input:focus {
   border-color: var(--sb-accent-edge);
   background: rgba(74, 166, 238, 0.06);
@@ -425,15 +497,24 @@ async function onSubmit() {
     filter 0.25s var(--sb-ease),
     transform 0.12s var(--sb-ease);
 }
-.submit:hover { filter: brightness(1.07); }
-.submit:active { transform: scale(0.985); }
-.submit:disabled { cursor: default; filter: saturate(0.7) brightness(0.92); }
+.submit:hover {
+  filter: brightness(1.07);
+}
+.submit:active {
+  transform: scale(0.985);
+}
+.submit:disabled {
+  cursor: default;
+  filter: saturate(0.7) brightness(0.92);
+}
 .arrow {
   width: 16px;
   height: 16px;
   transition: transform 0.25s var(--sb-ease);
 }
-.submit:hover .arrow { transform: translateX(3px); }
+.submit:hover .arrow {
+  transform: translateX(3px);
+}
 .spinner {
   width: 15px;
   height: 15px;
@@ -441,6 +522,16 @@ async function onSubmit() {
   border-top-color: #04101f;
   border-radius: 50%;
   animation: spin-fast 0.7s linear infinite;
+}
+.err {
+  margin: 18px 0 0;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(239, 90, 99, 0.4);
+  background: rgba(239, 90, 99, 0.1);
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--sb-red);
 }
 .hint {
   margin: 24px 0 0;
@@ -455,19 +546,37 @@ async function onSubmit() {
   animation-delay: var(--d, 0s);
 }
 @keyframes reveal {
-  from { opacity: 0; transform: translateY(14px); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 @keyframes breathe {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 @keyframes glow-breathe {
-  0%, 100% { opacity: 0.1; }
-  50% { opacity: 0.85; }
+  0%,
+  100% {
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.85;
+  }
 }
 @keyframes spin-fast {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 窄屏：插画压暗作底（脱离布局流、全屏居中），面板居中 */
@@ -480,17 +589,38 @@ async function onSubmit() {
     inset: 0;
     opacity: 0.4;
   }
-  .hud.tr, .hud.br { display: none; }
+  .hud.tr,
+  .hud.br {
+    display: none;
+  }
 }
 @media (max-width: 560px) {
-  .panel { padding: 44px 32px 34px; }
+  .panel {
+    padding: 44px 32px 34px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .reveal, .logo-mark, .live, .glow, .spinner, .p { animation: none; }
-  .reveal { opacity: 1; transform: none; }
-  .glow { opacity: 0.3; }
-  .p { opacity: 0.15; }
-  .streak { display: none; }
+  .reveal,
+  .logo-mark,
+  .live,
+  .glow,
+  .spinner,
+  .p {
+    animation: none;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+  .glow {
+    opacity: 0.3;
+  }
+  .p {
+    opacity: 0.15;
+  }
+  .streak {
+    display: none;
+  }
 }
 </style>

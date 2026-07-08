@@ -40,9 +40,9 @@ interface DeviceProfile {
 }
 const DEVICE_PROFILES: Record<string, DeviceProfile> = {
   '卷绕机 1#': { state: 'alarm', block: '急停触发 · 安全门未复位' },
-  '前处理线体': { state: 'idle', block: '换型待机' },
-  '电泳槽': { state: 'idle', block: '换型待机' },
-  '合装举升机': { state: 'down', block: '等待维修 · 液压异常' },
+  前处理线体: { state: 'idle', block: '换型待机' },
+  电泳槽: { state: 'idle', block: '换型待机' },
+  合装举升机: { state: 'down', block: '等待维修 · 液压异常' },
   '输送滚床 2#': { state: 'offline', sourceFresh: false },
 }
 /** 大规模下的稳定散点：每 16 台落一台计划保养待机（确定性索引，轮询不跳变）。 */
@@ -75,7 +75,15 @@ const PARAM_LIBRARY: { match: RegExp; specs: ParamSpec[] }[] = [
       { label: '轴温', base: 52, amp: 6, dp: 0, unit: '℃', kind: 'temp', range: '≤ 75℃' },
       { label: '伺服电流', base: 18, amp: 3, dp: 1, unit: 'A', kind: 'current', range: '≤ 30A' },
       { label: '循环节拍', base: 58, amp: 5, dp: 1, unit: 's', kind: 'cycle', range: '55–65s' },
-      { label: '重复精度', base: 0.05, amp: 0.02, dp: 2, unit: 'mm', kind: 'vibration', range: '≤ 0.10mm' },
+      {
+        label: '重复精度',
+        base: 0.05,
+        amp: 0.02,
+        dp: 2,
+        unit: 'mm',
+        kind: 'vibration',
+        range: '≤ 0.10mm',
+      },
     ],
   },
   {
@@ -90,17 +98,49 @@ const PARAM_LIBRARY: { match: RegExp; specs: ParamSpec[] }[] = [
   {
     match: /压机|注塑/,
     specs: [
-      { label: '成形压力', base: 780, amp: 40, dp: 0, unit: 'T', kind: 'pressure', range: '≤ 850T' },
+      {
+        label: '成形压力',
+        base: 780,
+        amp: 40,
+        dp: 0,
+        unit: 'T',
+        kind: 'pressure',
+        range: '≤ 850T',
+      },
       { label: '油温', base: 48, amp: 5, dp: 0, unit: '℃', kind: 'temp', range: '≤ 60℃' },
       { label: '循环节拍', base: 12.5, amp: 1.5, dp: 1, unit: 's', kind: 'cycle', range: '11–15s' },
-      { label: '振动速度', base: 2.6, amp: 0.7, dp: 1, unit: 'mm/s', kind: 'vibration', range: '≤ 4.5mm/s' },
+      {
+        label: '振动速度',
+        base: 2.6,
+        amp: 0.7,
+        dp: 1,
+        unit: 'mm/s',
+        kind: 'vibration',
+        range: '≤ 4.5mm/s',
+      },
     ],
   },
   {
     match: /拧紧/,
     specs: [
-      { label: '拧紧扭矩', base: 128, amp: 6, dp: 0, unit: 'Nm', kind: 'torque', range: '120–140Nm' },
-      { label: '一次达标率', base: 99.1, amp: 0.6, dp: 1, unit: '%', kind: 'level', range: '≥ 98%' },
+      {
+        label: '拧紧扭矩',
+        base: 128,
+        amp: 6,
+        dp: 0,
+        unit: 'Nm',
+        kind: 'torque',
+        range: '120–140Nm',
+      },
+      {
+        label: '一次达标率',
+        base: 99.1,
+        amp: 0.6,
+        dp: 1,
+        unit: '%',
+        kind: 'level',
+        range: '≥ 98%',
+      },
       { label: '循环节拍', base: 46, amp: 4, dp: 0, unit: 's', kind: 'cycle', range: '42–52s' },
       { label: '伺服电流', base: 12, amp: 2, dp: 1, unit: 'A', kind: 'current', range: '≤ 20A' },
     ],
@@ -109,7 +149,15 @@ const PARAM_LIBRARY: { match: RegExp; specs: ParamSpec[] }[] = [
     match: /AGV/,
     specs: [
       { label: '电池电量', base: 76, amp: 10, dp: 0, unit: '%', kind: 'level', range: '≥ 30%' },
-      { label: '行驶速度', base: 1.2, amp: 0.3, dp: 1, unit: 'm/s', kind: 'speed', range: '≤ 1.8m/s' },
+      {
+        label: '行驶速度',
+        base: 1.2,
+        amp: 0.3,
+        dp: 1,
+        unit: 'm/s',
+        kind: 'speed',
+        range: '≤ 1.8m/s',
+      },
       { label: '今日任务', base: 26, amp: 6, dp: 0, unit: '单', kind: 'cycle', range: '—' },
       { label: '驱动温度', base: 44, amp: 5, dp: 0, unit: '℃', kind: 'temp', range: '≤ 65℃' },
     ],
@@ -117,18 +165,50 @@ const PARAM_LIBRARY: { match: RegExp; specs: ParamSpec[] }[] = [
   {
     match: /泵|槽|加注|注液|风机|空调|清洗/,
     specs: [
-      { label: '介质流量', base: 28, amp: 5, dp: 0, unit: 'L/min', kind: 'flow', range: '22–35L/min' },
-      { label: '工作压力', base: 0.62, amp: 0.06, dp: 2, unit: 'MPa', kind: 'pressure', range: '0.5–0.75MPa' },
+      {
+        label: '介质流量',
+        base: 28,
+        amp: 5,
+        dp: 0,
+        unit: 'L/min',
+        kind: 'flow',
+        range: '22–35L/min',
+      },
+      {
+        label: '工作压力',
+        base: 0.62,
+        amp: 0.06,
+        dp: 2,
+        unit: 'MPa',
+        kind: 'pressure',
+        range: '0.5–0.75MPa',
+      },
       { label: '液位', base: 72, amp: 8, dp: 0, unit: '%', kind: 'level', range: '≥ 40%' },
       { label: '介质温度', base: 46, amp: 6, dp: 0, unit: '℃', kind: 'temp', range: '≤ 60℃' },
     ],
   },
 ]
 const DEFAULT_SPECS: ParamSpec[] = [
-  { label: '主轴转速', base: 1450, amp: 80, dp: 0, unit: 'rpm', kind: 'speed', range: '1300–1600rpm' },
+  {
+    label: '主轴转速',
+    base: 1450,
+    amp: 80,
+    dp: 0,
+    unit: 'rpm',
+    kind: 'speed',
+    range: '1300–1600rpm',
+  },
   { label: '电机温度', base: 58, amp: 8, dp: 0, unit: '℃', kind: 'temp', range: '≤ 80℃' },
   { label: '负载电流', base: 32, amp: 5, dp: 1, unit: 'A', kind: 'current', range: '≤ 45A' },
-  { label: '振动速度', base: 2.4, amp: 0.7, dp: 1, unit: 'mm/s', kind: 'vibration', range: '≤ 4.5mm/s' },
+  {
+    label: '振动速度',
+    base: 2.4,
+    amp: 0.7,
+    dp: 1,
+    unit: 'mm/s',
+    kind: 'vibration',
+    range: '≤ 4.5mm/s',
+  },
 ]
 function specsFor(name: string): ParamSpec[] {
   return PARAM_LIBRARY.find((e) => e.match.test(name))?.specs ?? DEFAULT_SPECS
@@ -148,7 +228,14 @@ export function paramSeriesFor(name: string, state: DeviceState): DeviceParamSer
   const tempIdx = specs.findIndex((s) => s.kind === 'temp')
   return specs.map((spec, i) => {
     if (state === 'offline') {
-      return { label: spec.label, value: null, unit: spec.unit, kind: spec.kind, range: spec.range, spark: [] }
+      return {
+        label: spec.label,
+        value: null,
+        unit: spec.unit,
+        kind: spec.kind,
+        range: spec.range,
+        spark: [],
+      }
     }
     let eff = spec
     let tone: 'warn' | 'bad' | undefined
@@ -197,7 +284,9 @@ export function buildEquipmentOverview(
 ): EquipmentOverview {
   const factoryWorkshops = workshopsByFactory(factoryId)
   const workshops =
-    workshopIds === 'all' ? factoryWorkshops : factoryWorkshops.filter((w) => workshopIds.includes(w.id))
+    workshopIds === 'all'
+      ? factoryWorkshops
+      : factoryWorkshops.filter((w) => workshopIds.includes(w.id))
   const rawDevices = workshops.flatMap((w) => devicesByWorkshop(w.id))
 
   // 分批约束演练：真实端点每批 ≤50，逐批取状态后合并
@@ -248,11 +337,51 @@ export function buildEquipmentOverview(
   // —— 未恢复报警表（级别·未恢复时长·已触发工单 ✅ 闭环；叙事 + 常规池）——
   const hasAlarm = counts.alarm > 0
   // 正常工厂日的未恢复报警是少量例外（多了本身就是事故）——池子只放真 open 项
-  const ALARM_POOL: { line: string; level: 'sev' | 'gen'; name: string; minsAgo: number; status: string }[] = [
-    { line: '焊装一线', level: 'gen', name: '焊接机器人 R02 伺服过载预警', minsAgo: 108, status: '已确认 · 待处理' },
-    { line: '电芯线', level: 'gen', name: '注液机 注液量偏差预警', minsAgo: 137, status: `观察中 ${clamp(jitter(30, 8), 15, 50)} min` },
-    { line: '涂装线', level: 'gen', name: '空调送风机组 过滤网压差高', minsAgo: 166, status: '待保养' },
-    { line: '机加线', level: 'gen', name: '加工中心 M01 刀具寿命预警', minsAgo: 240, status: '计划换刀' },
+  // #686 响应状态：acked=false 即"还没人响应"（未确认高亮），指挥中心最关心的一列。
+  const ALARM_POOL: {
+    line: string
+    level: 'sev' | 'gen'
+    name: string
+    minsAgo: number
+    status: string
+    acked: boolean
+    ackBy?: string
+  }[] = [
+    {
+      line: '焊装一线',
+      level: 'gen',
+      name: '焊接机器人 R02 伺服过载预警',
+      minsAgo: 108,
+      status: '已确认 · 待处理',
+      acked: true,
+      ackBy: '王海涛',
+    },
+    {
+      line: '电芯线',
+      level: 'gen',
+      name: '注液机 注液量偏差预警',
+      minsAgo: 137,
+      status: `观察中 ${clamp(jitter(30, 8), 15, 50)} min`,
+      acked: false,
+    },
+    {
+      line: '涂装线',
+      level: 'gen',
+      name: '空调送风机组 过滤网压差高',
+      minsAgo: 166,
+      status: '待保养',
+      acked: true,
+      ackBy: '陈晓东',
+    },
+    {
+      line: '机加线',
+      level: 'gen',
+      name: '加工中心 M01 刀具寿命预警',
+      minsAgo: 240,
+      status: '计划换刀',
+      acked: true,
+      ackBy: '吴天明',
+    },
   ]
   const alarms: OpenAlarmRow[] = [
     ...(hasAlarm
@@ -264,6 +393,9 @@ export function buildEquipmentOverview(
             name: '卷绕机 1# 急停触发',
             wo: 'WO-1934',
             status: `未恢复 ${clamp(jitter(26, 6), 12, 45)} min`,
+            // 刚触发、尚无人确认 → 未确认高亮 + 已升级（醒目）。
+            acked: false,
+            escalated: true,
           },
         ]
       : []),
@@ -276,6 +408,8 @@ export function buildEquipmentOverview(
             name: '合装举升机 液压压力异常',
             wo: 'WO-1929',
             status: `维修中 ${clamp(jitter(41, 8), 20, 70)} min`,
+            acked: true,
+            ackBy: '刘志远',
           },
         ]
       : []),
@@ -288,6 +422,8 @@ export function buildEquipmentOverview(
             name: '800T 压机 1# 润滑油位低',
             wo: 'WO-1917',
             status: '已恢复待确认',
+            acked: true,
+            ackBy: '马春生',
           },
         ]
       : []),
@@ -298,6 +434,8 @@ export function buildEquipmentOverview(
       name: a.name,
       wo: seq('WO', 1921 - i),
       status: a.status,
+      acked: a.acked,
+      ackBy: a.ackBy,
     })),
   ]
 
@@ -390,7 +528,13 @@ export function buildEquipmentOverview(
   const INSPECTION_POOL: (Omit<InspectionRow, 'time'> & { minsAgo: number })[] = [
     { minsAgo: 28, device: '卷绕机 2#', item: '气压/温度点检', by: '孙立军', result: '合格' },
     { minsAgo: 52, device: '焊接机器人 R01', item: '焊接参数抽检', by: '王海涛', result: '合格' },
-    { minsAgo: 76, device: '喷涂机器人 P01', item: '雾化空气压力点检', by: '陈晓东', result: '合格' },
+    {
+      minsAgo: 76,
+      device: '喷涂机器人 P01',
+      item: '雾化空气压力点检',
+      by: '陈晓东',
+      result: '合格',
+    },
     { minsAgo: 92, device: '合装举升机', item: '液压油位点检', by: '赵敏', result: '异常' },
     { minsAgo: 118, device: '模组堆叠机', item: '真空吸盘点检', by: '孙立军', result: '合格' },
     { minsAgo: 141, device: '1000T 压机', item: '模具状态点检', by: '李国强', result: '合格' },
@@ -399,7 +543,13 @@ export function buildEquipmentOverview(
   ]
   const inspections: InspectionRow[] = INSPECTION_POOL.filter((i) =>
     visibleDeviceNames.has(i.device),
-  ).map((i) => ({ time: clock(i.minsAgo + jitter(2, 3)), device: i.device, item: i.item, by: i.by, result: i.result }))
+  ).map((i) => ({
+    time: clock(i.minsAgo + jitter(2, 3)),
+    device: i.device,
+    item: i.item,
+    by: i.by,
+    result: i.result,
+  }))
 
   return { factoryId, counts, devices, alarms, repairs, reliability, pmTasks, inspections }
 }

@@ -1,23 +1,43 @@
 <script setup lang="ts">
-import { RingGauge, ScreenPanel, ScreenScrollArea, ScreenSegmented, ScreenTabs, StatusLight, StatusTag, useScreenData } from '@nerv-iip/ui'
+import {
+  RingGauge,
+  ScreenPanel,
+  ScreenScrollArea,
+  ScreenSegmented,
+  ScreenTabs,
+  StatusLight,
+  StatusTag,
+  useScreenData,
+} from '@nerv-iip/ui'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
 import DeviceDetailModal from '@/components/equipment/DeviceDetailModal.vue'
 import { useBackLink } from '@/composables/useBackLink'
 import DeviceStatusWall from '@/components/equipment/DeviceStatusWall.vue'
-import type { DeviceCell, DeviceParamsTick, EquipmentOverview, RepairOrder } from '@/data/contracts/equipment'
+import type {
+  DeviceCell,
+  DeviceParamsTick,
+  EquipmentOverview,
+  RepairOrder,
+} from '@/data/contracts/equipment'
 import { REPAIR_STAGES } from '@/data/contracts/equipment'
 import { fetchDeviceParamsTick, fetchEquipmentOverview } from '@/data/fetchers/equipment'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
-// 刷新频率分层：格上参数 2s 快刷（仅视野内设备）· 全景/计数/流 5s ·
-// 详情弹窗 3s（弹窗内部）；页面隐藏时 useScreenData 统一暂停轮询。
+// 刷新频率分层（MAN-466 大屏轮询调参，观察 #734 Gateway 限流后再降频）：
+// 全景/计数/流 10s · 格上参数 5s 快刷（仅视野内设备；真实模式无 historian 时为空）·
+// 详情弹窗 3s（弹窗内部）；页面隐藏时 useScreenData 统一暂停轮询、失败保活标 stale。
 const scope = useAccessScope()
 const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
-const { data: ov, refresh } = useScreenData<EquipmentOverview>(
+const {
+  data: ov,
+  refresh,
+  isStale,
+  lastUpdated,
+} = useScreenData<EquipmentOverview>(
   () => fetchEquipmentOverview(scope.currentFactoryId, scope.persona.workshopIds),
-  { intervalMs: 5000 },
+  { intervalMs: 10000 },
 )
 /** 视野内设备集（墙体虚拟滚动上报）——视野外不请求、不产生数据变化。 */
 const visibleIds = ref<string[]>([])
@@ -32,7 +52,7 @@ const {
       scope.persona.workshopIds,
       visibleIds.value.length ? visibleIds.value : undefined,
     ),
-  { intervalMs: 2000 },
+  { intervalMs: 5000 },
 )
 /** 全景设备 + 高频参数合流：视野内参数以 2s tick 为准，视野外保持上帧（冻结）。 */
 const devicesLive = computed<DeviceCell[]>(() => {
@@ -113,7 +133,11 @@ const events = computed<EventRow[]>(() => {
       tone: r.overdue ? 'red' : r.blockedBy ? 'amber' : 'cyan',
       time: r.reportedAt,
       text: `${r.wo} · ${r.device} ${r.issue}`,
-      tag: r.overdue ? `已超期 · ${r.assignee}` : r.blockedBy ? '待备件' : `${r.stage} · ${r.assignee}`,
+      tag: r.overdue
+        ? `已超期 · ${r.assignee}`
+        : r.blockedBy
+          ? '待备件'
+          : `${r.stage} · ${r.assignee}`,
       late: r.overdue,
     })
   }
@@ -133,7 +157,9 @@ const events = computed<EventRow[]>(() => {
 
 // —— 事件分类 tab：每类用各自合适的形态（合并流/报警行/维修状态机/保养台账）——
 const evTab = ref<string | number>('all')
-const openAlarms = computed(() => ov.value?.alarms.filter((a) => !a.status.startsWith('已恢复')) ?? [])
+const openAlarms = computed(
+  () => ov.value?.alarms.filter((a) => !a.status.startsWith('已恢复')) ?? [],
+)
 const activeRepairs = computed(() => ov.value?.repairs.filter((r) => r.stage !== '已关闭') ?? [])
 const duePm = computed(() => ov.value?.pmTasks.filter((t) => t.state !== 'done') ?? [])
 const evTabs = computed(() => [
@@ -157,6 +183,25 @@ const relCells = computed(() => {
     { label: '故障次数', value: String(r.failures) },
     { label: '修复次数', value: String(r.repairs) },
   ]
+})
+
+// —— 数据新鲜度：断流/无数据诚实标 stale（页脚实时灯 + 最后更新时刻），不白屏 ——
+function hhmmss(ms: number): string {
+  const d = new Date(ms)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+const freshness = computed<{ tone: 'live' | 'stale' | 'wait'; text: string }>(() => {
+  if (isStale.value) {
+    return {
+      tone: 'stale',
+      text: lastUpdated.value
+        ? `数据滞留 · 最后更新 ${hhmmss(lastUpdated.value)}`
+        : '后端不可达 · 数据滞留',
+    }
+  }
+  if (lastUpdated.value) return { tone: 'live', text: `实时 · 更新于 ${hhmmss(lastUpdated.value)}` }
+  return { tone: 'wait', text: '连接数据…' }
 })
 </script>
 
@@ -222,17 +267,30 @@ const relCells = computed(() => {
                 </div>
               </template>
 
-              <!-- 报警：级别 + 产线·内容 + 工单联动 + 处置状态 -->
+              <!-- 报警：级别 + 产线·内容 + 工单联动 + 处置状态 + 响应状态（#686：未确认高亮 / 已确认+人） -->
               <template v-else-if="evTab === 'alarm'">
-                <div v-for="a in openAlarms" :key="a.wo + a.name" class="al-row">
+                <div
+                  v-for="a in openAlarms"
+                  :key="a.wo + a.name"
+                  class="al-row"
+                  :class="{ unacked: !a.acked }"
+                >
                   <div class="al-top">
                     <i class="ev-dot" :class="a.level === 'sev' ? 'red' : 'amber'" />
                     <b class="al-name">{{ a.line }} · {{ a.name }}</b>
+                    <span v-if="a.escalated" class="al-esc">已升级</span>
                     <span class="al-time">{{ a.time }}</span>
                   </div>
                   <div class="al-sub">
                     <span class="al-wo">{{ a.wo }}</span>
-                    <span class="al-status" :class="{ late: a.level === 'sev' }">{{ a.status }}</span>
+                    <span class="al-right">
+                      <span class="al-ack" :class="a.acked ? 'done' : 'pending'">
+                        {{ a.acked ? `已确认 · ${a.ackBy || '—'}` : '未确认' }}
+                      </span>
+                      <span class="al-status" :class="{ late: a.level === 'sev' }">{{
+                        a.status
+                      }}</span>
+                    </span>
                   </div>
                 </div>
                 <div v-if="!openAlarms.length" class="ev-empty">
@@ -256,7 +314,11 @@ const relCells = computed(() => {
                         v-for="(s, i) in REPAIR_STAGES"
                         :key="s"
                         class="rp-step"
-                        :class="{ on: i <= stageIdx(r), cur: i === stageIdx(r), late: r.overdue && i === stageIdx(r) }"
+                        :class="{
+                          on: i <= stageIdx(r),
+                          cur: i === stageIdx(r),
+                          late: r.overdue && i === stageIdx(r),
+                        }"
                         :title="s"
                       />
                     </span>
@@ -295,7 +357,12 @@ const relCells = computed(() => {
 
       <footer class="scr-foot">
         <RouterLink :to="backLink.to" class="scr-back">‹ {{ backLink.label }}</RouterLink>
-        <span>设备状态 / 参数为演示数据流 · OEE 性能率与良品率为占位 · 待 #570</span>
+        <div class="scr-foot-r">
+          <span class="scr-fresh" :class="freshness.tone"
+            ><i aria-hidden="true" />{{ freshness.text }}</span
+          >
+          <span>实时参数与趋势待 historian · #570 · OEE 性能率/良品率占位 · #738</span>
+        </div>
       </footer>
     </div>
     <div v-else class="eq-loading">连接数据…</div>
@@ -343,6 +410,54 @@ const relCells = computed(() => {
   font-size: 13.5px;
   flex: none;
 }
+.scr-foot-r {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.scr-fresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.scr-fresh i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sb-faint);
+}
+.scr-fresh.live {
+  color: var(--sb-green);
+}
+.scr-fresh.live i {
+  background: var(--sb-green);
+  box-shadow: 0 0 7px var(--sb-green);
+  animation: breathe 4.5s ease-in-out infinite;
+}
+.scr-fresh.stale {
+  color: var(--sb-amber);
+}
+.scr-fresh.stale i {
+  background: var(--sb-amber);
+  box-shadow: 0 0 7px var(--sb-amber);
+}
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scr-fresh.live i {
+    animation: none;
+  }
+}
 .main {
   flex: 1;
   min-height: 0;
@@ -385,7 +500,12 @@ const relCells = computed(() => {
   flex: 1;
   height: 1px;
   margin: 0 6px;
-  background: linear-gradient(90deg, rgba(135, 208, 255, 0.28), rgba(255, 255, 255, 0.05) 45%, transparent);
+  background: linear-gradient(
+    90deg,
+    rgba(135, 208, 255, 0.28),
+    rgba(255, 255, 255, 0.05) 45%,
+    transparent
+  );
 }
 
 /* —— 右窄栏 —— */
@@ -487,6 +607,48 @@ const relCells = computed(() => {
 }
 .al-status.late {
   color: var(--sb-red);
+}
+/* #686 未确认高亮：左侧红条 + 极淡红底，一眼看出"还没人响应" */
+.al-row.unacked {
+  background: linear-gradient(90deg, rgba(239, 90, 99, 0.1), transparent 60%);
+  box-shadow: inset 2px 0 0 var(--sb-red);
+  padding-left: 8px;
+}
+/* 已升级徽标 */
+.al-esc {
+  flex: none;
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--sb-red);
+  border: 1px solid rgba(239, 90, 99, 0.5);
+  background: rgba(239, 90, 99, 0.12);
+  letter-spacing: 0.04em;
+}
+/* 处置状态 + 响应状态右簇 */
+.al-right {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: none;
+}
+/* #686 响应状态胶囊：未确认红 / 已确认（含确认人）青 */
+.al-ack {
+  flex: none;
+  font-size: 11.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.al-ack.pending {
+  color: var(--sb-red);
+  background: rgba(239, 90, 99, 0.14);
+  border: 1px solid rgba(239, 90, 99, 0.4);
+}
+.al-ack.done {
+  color: var(--sb-cyan);
+  background: rgba(74, 166, 238, 0.12);
+  border: 1px solid rgba(74, 166, 238, 0.3);
 }
 
 /* 维修 tab：状态机步进行 */
