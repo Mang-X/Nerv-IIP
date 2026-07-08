@@ -7247,6 +7247,7 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient
                 request.SourceDocumentId ?? "WO-001",
                 "accepted",
                 null,
+                "observed",
                 DateTimeOffset.Parse("2026-06-03T01:00:00Z", CultureInfo.InvariantCulture)),
         ], 1));
     }

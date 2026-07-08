@@ -2838,6 +2838,7 @@ public sealed record BusinessConsoleBarcodeScanRecordItem(
     string SourceDocumentId,
     string Result,
     string? RejectionReason,
+    string DownstreamProcessingStatus,
     DateTimeOffset ScannedAtUtc);
 
 public sealed record BusinessConsoleMesListRequest(

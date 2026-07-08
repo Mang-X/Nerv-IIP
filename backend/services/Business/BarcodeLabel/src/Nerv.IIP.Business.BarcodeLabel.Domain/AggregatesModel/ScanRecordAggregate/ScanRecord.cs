@@ -66,6 +66,7 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
 
         if (Result == "rejected")
         {
+            DownstreamProcessingStatus = "not-required";
             this.AddDomainEvent(new ScanRejectedDomainEvent(this));
         }
         else
@@ -118,6 +119,7 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
     public string? OwnerType { get; private set; }
     public string? OwnerId { get; private set; }
     public string? BusinessAction { get; private set; }
+    public string DownstreamProcessingStatus { get; private set; } = string.Empty;
     public string? DownstreamEventId { get; private set; }
     public DateTimeOffset ScannedAtUtc { get; private set; }
     public List<EpcisEvent> EpcisEvents { get; private set; } = [];
@@ -191,7 +193,9 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
             && QualityStatus == other.QualityStatus
             && OwnerType == other.OwnerType
             && OwnerId == other.OwnerId
-            && Quantity == other.Quantity;
+            && Quantity == other.Quantity
+            && BusinessAction == other.BusinessAction
+            && DownstreamProcessingStatus == other.DownstreamProcessingStatus;
     }
 
     public void EnsureSameIdempotencyPayload(ScanRecord other)
@@ -199,6 +203,35 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
         if (!HasSameIdempotencyPayload(other))
         {
             throw new InvalidOperationException("Scan idempotency key conflicts with a different payload.");
+        }
+    }
+
+    public bool HasSameNaturalKeyPayload(ScanRecord other)
+    {
+        return OrganizationId == other.OrganizationId
+            && EnvironmentId == other.EnvironmentId
+            && ScannedValue == other.ScannedValue
+            && SourceWorkflow == other.SourceWorkflow
+            && SourceDocumentId == other.SourceDocumentId
+            && Result == other.Result
+            && RejectionReason == other.RejectionReason
+            && SkuCode == other.SkuCode
+            && UomCode == other.UomCode
+            && SiteCode == other.SiteCode
+            && LocationCode == other.LocationCode
+            && QualityStatus == other.QualityStatus
+            && OwnerType == other.OwnerType
+            && OwnerId == other.OwnerId
+            && Quantity == other.Quantity
+            && BusinessAction == other.BusinessAction
+            && DownstreamProcessingStatus == other.DownstreamProcessingStatus;
+    }
+
+    public void EnsureSameNaturalKeyPayload(ScanRecord other)
+    {
+        if (!HasSameNaturalKeyPayload(other))
+        {
+            throw new InvalidOperationException("Scan natural key conflicts with a different payload.");
         }
     }
 
@@ -235,6 +268,10 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
             "inventory.receipt" or "inventory.issue" or "inventory.adjustment" => "inventory-movement-requested",
             _ => BusinessAction,
         };
+
+        DownstreamProcessingStatus = BusinessAction == "inventory-movement-requested"
+            ? "requested"
+            : "observed";
 
         if (BusinessAction is not null)
         {

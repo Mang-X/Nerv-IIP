@@ -38684,6 +38684,9 @@
             "type": "string",
             "nullable": true
           },
+          "downstreamProcessingStatus": {
+            "type": "string"
+          },
           "scannedAtUtc": {
             "type": "string",
             "format": "date-time"
