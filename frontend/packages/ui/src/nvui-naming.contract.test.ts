@@ -5,143 +5,433 @@ import { describe, expect, it } from 'vitest'
 
 import * as ui from './index'
 
-// ADR 0020 (NvUI) Appendix A — `Nv*` is the canonical brand name; the old name
-// (`*Pro` / `Screen*` / bare) is kept only as a @deprecated alias this batch
-// (#787). This contract freezes the "new + old coexist, zero-breakage" state
-// and the "shadcn 原版 stay pure" invariant (Decision 4.4 item 5).
+// ADR 0020 (NvUI) Appendix A — the FULL old→new mapping, frozen. `Nv*` is the
+// canonical brand name; the old name (`*Pro` / `Screen*` / bare) is kept only as a
+// @deprecated alias this batch (#787). The arrays below ARE the contract: they are
+// checked bidirectionally against the barrels (any added/removed export fails and
+// must be reflected here), and every runtime name must actually resolve.
 
 const srcDir = dirname(fileURLToPath(import.meta.url))
 const read = (p: string) => readFileSync(resolve(srcDir, p), 'utf8')
 const exported = ui as Record<string, unknown>
 
-const NV_PRO = [
-  'NvButton',
-  'NvBadge',
-  'NvCard',
-  'NvMetricCard',
-  'NvDataTable',
-  'NvDataTablePagination',
-  'NvDataTableToolbar',
-  'NvDialog',
-  'NvDialogContent',
-  'NvDropdownMenu',
-  'NvField',
-  'NvSelect',
-  'NvSelectItem',
-  'NvSheet',
-  'NvTabs',
-  'NvTooltip',
-  'NvStatusDot',
-  'NvStatusBadge',
-  'NvNotifierHost',
-  'NvLoader',
-  'NvRadioGroup',
-  'NvNavigationMenu',
-  'NvAreaChart',
-  'NvLineChart',
-  'NvDonutChart',
-  'NvSidebarBrand',
-  'NvCheckbox',
-  'NvSwitch',
-  'NvSlider',
-  'NvTimeline',
-  'NvKanban',
-  'NvCommand',
-  'NvDatePicker',
-  'NvDescriptions',
-  'NvFilterBar',
-  'NvPopconfirm',
-]
-const NV_BLOCKS_LAYOUT = [
-  'NvPageHeader',
-  'NvSectionCard',
-  'NvSectionCards',
-  'NvToolbar',
-  'NvRowActions',
-  'NvThemePicker',
-  'NvThemeToggle',
-  'NvAppShellInset',
+// --- Frozen Appendix A (ui): 179 Nv names (incl. renamed derived types) + 174 old.
+const NV_ALL = [
+  'NvAlarmTable',
+  'NvAlertDialog',
+  'NvAlertDialogAction',
+  'NvAlertDialogCancel',
+  'NvAlertDialogContent',
+  'NvAlertDialogDescription',
+  'NvAlertDialogFooter',
+  'NvAlertDialogHeader',
+  'NvAlertDialogMedia',
+  'NvAlertDialogTitle',
+  'NvAlertDialogTrigger',
   'NvApp',
   'NvAppHeader',
+  'NvAppShellInset',
+  'NvAreaChart',
+  'NvBadge',
+  'NvBarChart',
+  'NvBorderPanel',
+  'NvButton',
+  'NvCapsuleBar',
+  'NvCard',
+  'NvCardAction',
+  'NvCardContent',
+  'NvCardDescription',
+  'NvCardFooter',
+  'NvCardHeader',
+  'NvCardTitle',
+  'NvCarousel',
+  'NvCheckbox',
+  'NvCommand',
   'NvContainer',
+  'NvDataTable',
+  'NvDataTableAlign',
+  'NvDataTableColumn',
+  'NvDataTableDensity',
+  'NvDataTableFilterOption',
+  'NvDataTableFilters',
+  'NvDataTablePagination',
+  'NvDataTableSort',
+  'NvDataTableToolbar',
+  'NvDatePicker',
+  'NvDateRangePicker',
+  'NvDescriptions',
+  'NvDialog',
+  'NvDialogClose',
+  'NvDialogContent',
+  'NvDialogDescription',
+  'NvDialogFooter',
+  'NvDialogHeader',
+  'NvDialogTitle',
+  'NvDialogTrigger',
+  'NvDigitalFlop',
+  'NvDonutChart',
+  'NvDropdownMenu',
+  'NvDropdownMenuCheckboxItem',
+  'NvDropdownMenuContent',
+  'NvDropdownMenuGroup',
+  'NvDropdownMenuItem',
+  'NvDropdownMenuLabel',
+  'NvDropdownMenuPortal',
+  'NvDropdownMenuRadioGroup',
+  'NvDropdownMenuRadioItem',
+  'NvDropdownMenuSeparator',
+  'NvDropdownMenuShortcut',
+  'NvDropdownMenuSub',
+  'NvDropdownMenuSubContent',
+  'NvDropdownMenuSubTrigger',
+  'NvDropdownMenuTrigger',
+  'NvField',
+  'NvFieldContent',
+  'NvFieldDescription',
+  'NvFieldError',
+  'NvFieldGroup',
+  'NvFieldLabel',
+  'NvFieldLegend',
+  'NvFieldSeparator',
+  'NvFieldSet',
+  'NvFieldTitle',
+  'NvFieldVariants',
+  'NvFilterBar',
+  'NvFormSection',
+  'NvGlowDivider',
+  'NvInput',
+  'NvKanban',
+  'NvKpiBar',
+  'NvLineChart',
+  'NvLoader',
+  'NvMetricCard',
+  'NvMetricComparison',
+  'NvNavigationMenu',
+  'NvNavigationMenuContent',
+  'NvNavigationMenuIndicator',
+  'NvNavigationMenuItem',
+  'NvNavigationMenuLink',
+  'NvNavigationMenuList',
+  'NvNavigationMenuTrigger',
+  'NvNavigationMenuViewport',
+  'NvNotifierHost',
+  'NvOeeHero',
   'NvPage',
   'NvPageAside',
-  'NvPageGrid',
   'NvPageColumns',
+  'NvPageGrid',
+  'NvPageHeader',
   'NvPageSection',
-]
-const NV_SCREEN_TOUCH = [
-  'NvScreenPanel',
-  'NvScrollBoard',
-  'NvOeeHero',
+  'NvPopconfirm',
+  'NvQtyStepper',
+  'NvRadioGroup',
+  'NvRadioGroupItem',
+  'NvRecordCard',
   'NvRingGauge',
-  'NvDigitalFlop',
-  'NvSparkline',
-  'NvScreenTrendChart',
+  'NvRowActions',
   'NvScreenBarChart',
+  'NvScreenButton',
   'NvScreenDonut',
-  'NvTaktGantt',
-  'NvScreenStatusCard',
-  'NvKpiBar',
-  'NvAlarmTable',
   'NvScreenHeader',
-  'NvTechFrame',
-  'NvTitleBar',
+  'NvScreenInput',
+  'NvScreenPagination',
+  'NvScreenPanel',
+  'NvScreenPareto',
+  'NvScreenScaler',
+  'NvScreenScrollArea',
+  'NvScreenSearch',
+  'NvScreenSegmented',
+  'NvScreenSelect',
+  'NvScreenStatusCard',
   'NvScreenStatusLight',
   'NvScreenStatusTag',
-  'NvScreenButton',
-  'NvScreenPagination',
-  'NvTouchButton',
+  'NvScreenSwitch',
+  'NvScreenTable',
+  'NvScreenTabs',
+  'NvScreenTrendChart',
+  'NvScrollBoard',
+  'NvSectionCard',
+  'NvSectionCards',
+  'NvSelect',
+  'NvSelectContent',
+  'NvSelectGroup',
+  'NvSelectItem',
+  'NvSelectTrigger',
+  'NvSelectValue',
+  'NvSheet',
+  'NvSheetClose',
+  'NvSheetContent',
+  'NvSheetDescription',
+  'NvSheetFooter',
+  'NvSheetHeader',
+  'NvSheetTitle',
+  'NvSheetTrigger',
+  'NvSidebarBrand',
+  'NvSidebarDot',
+  'NvSidebarSub',
+  'NvSidebarUser',
+  'NvSlider',
+  'NvSparkline',
   'NvStatTile',
-  'NvQtyStepper',
-  'NvTouchSegmented',
   'NvStationBar',
+  'NvStatusBadge',
+  'NvStatusDot',
+  'NvSwitch',
+  'NvTabs',
+  'NvTabsContent',
+  'NvTabsList',
+  'NvTabsTrigger',
+  'NvTaktGantt',
+  'NvTechFrame',
+  'NvThemePicker',
+  'NvThemeToggle',
+  'NvTimePicker',
+  'NvTimeline',
+  'NvTitleBar',
+  'NvToolbar',
+  'NvTooltip',
+  'NvTooltipContent',
+  'NvTooltipProvider',
+  'NvTooltipTrigger',
+  'NvTouchButton',
+  'NvTouchSegmented',
+  'nvFieldVariants',
 ]
-// Old names that must still resolve (business code compiles unchanged this batch).
-const LEGACY_STILL_EXPORTED = [
-  'ButtonPro',
-  'DataTablePro',
-  'DataTablePaginationPro',
+const OLD_ALL = [
+  'AlarmTable',
+  'AlertDialogPro',
+  'AlertDialogProAction',
+  'AlertDialogProCancel',
+  'AlertDialogProContent',
+  'AlertDialogProDescription',
+  'AlertDialogProFooter',
+  'AlertDialogProHeader',
+  'AlertDialogProMedia',
+  'AlertDialogProTitle',
+  'AlertDialogProTrigger',
   'App',
-  'Page',
-  'OeeHero',
-  'TaktGantt',
-  'TouchButton',
-  'ScreenButton',
-  'StatusDot',
-  'StatusBadgePro',
-  'PageHeader',
-  'SectionCard',
-  // §1.3 superseded blocks — kept @deprecated, no Nv name of their own:
+  'AppHeader',
+  'AppShellInset',
+  'AreaChartPro',
+  'BadgePro',
+  'BarChartPro',
+  'BorderPanel',
+  'ButtonPro',
+  'CapsuleBar',
+  'CardPro',
+  'CardProAction',
+  'CardProContent',
+  'CardProDescription',
+  'CardProFooter',
+  'CardProHeader',
+  'CardProTitle',
+  'CarouselPro',
+  'CheckboxPro',
+  'CommandPro',
+  'Container',
   'DataTable',
   'DataTablePagination',
+  'DataTablePaginationPro',
+  'DataTablePro',
+  'DataTableToolbarPro',
+  'DatePickerPro',
+  'DateRangePickerPro',
+  'DescriptionsPro',
+  'DialogPro',
+  'DialogProClose',
+  'DialogProContent',
+  'DialogProDescription',
+  'DialogProFooter',
+  'DialogProHeader',
+  'DialogProTitle',
+  'DialogProTrigger',
+  'DigitalFlop',
+  'DonutChartPro',
+  'DropdownMenuPro',
+  'DropdownMenuProCheckboxItem',
+  'DropdownMenuProContent',
+  'DropdownMenuProGroup',
+  'DropdownMenuProItem',
+  'DropdownMenuProLabel',
+  'DropdownMenuProPortal',
+  'DropdownMenuProRadioGroup',
+  'DropdownMenuProRadioItem',
+  'DropdownMenuProSeparator',
+  'DropdownMenuProShortcut',
+  'DropdownMenuProSub',
+  'DropdownMenuProSubContent',
+  'DropdownMenuProSubTrigger',
+  'DropdownMenuProTrigger',
+  'FieldPro',
+  'FieldProContent',
+  'FieldProDescription',
+  'FieldProError',
+  'FieldProGroup',
+  'FieldProLabel',
+  'FieldProLegend',
+  'FieldProSeparator',
+  'FieldProSet',
+  'FieldProTitle',
+  'FilterBarPro',
+  'FormSectionPro',
+  'GlowDivider',
+  'InputPro',
+  'KanbanPro',
+  'KpiBar',
+  'LineChartPro',
+  'Loader',
+  'MetricCardPro',
+  'MetricComparisonPro',
+  'NavigationMenuPro',
+  'NavigationMenuProContent',
+  'NavigationMenuProIndicator',
+  'NavigationMenuProItem',
+  'NavigationMenuProLink',
+  'NavigationMenuProList',
+  'NavigationMenuProTrigger',
+  'NavigationMenuProViewport',
+  'NotifierHost',
+  'OeeHero',
+  'Page',
+  'PageAside',
+  'PageColumns',
+  'PageGrid',
+  'PageHeader',
+  'PageSection',
+  'PopconfirmPro',
+  'QtyStepper',
+  'RadioGroupPro',
+  'RadioGroupProItem',
+  'RecordCardPro',
+  'RingGauge',
+  'RowActions',
+  'ScreenBarChart',
+  'ScreenButton',
+  'ScreenDonut',
+  'ScreenHeader',
+  'ScreenInput',
+  'ScreenPagination',
+  'ScreenPanel',
+  'ScreenPareto',
+  'ScreenScaler',
+  'ScreenScrollArea',
+  'ScreenSearch',
+  'ScreenSegmented',
+  'ScreenSelect',
+  'ScreenSwitch',
+  'ScreenTable',
+  'ScreenTabs',
+  'ScrollBoard',
+  'SectionCard',
+  'SectionCards',
+  'SelectPro',
+  'SelectProContent',
+  'SelectProGroup',
+  'SelectProItem',
+  'SelectProTrigger',
+  'SelectProValue',
+  'SheetPro',
+  'SheetProClose',
+  'SheetProContent',
+  'SheetProDescription',
+  'SheetProFooter',
+  'SheetProHeader',
+  'SheetProTitle',
+  'SheetProTrigger',
+  'SidebarProBrand',
+  'SidebarProDot',
+  'SidebarProSub',
+  'SidebarProUser',
+  'SliderPro',
+  'Sparkline',
+  'StatTile',
+  'StationBar',
   'StatusBadge',
+  'StatusBadgePro',
+  'StatusCard',
+  'StatusDot',
+  'StatusLight',
+  'StatusTag',
+  'SwitchPro',
+  'TabsPro',
+  'TabsProContent',
+  'TabsProList',
+  'TabsProTrigger',
+  'TaktGantt',
+  'TechFrame',
+  'ThemePicker',
+  'ThemeToggle',
+  'TimePickerPro',
+  'TimelinePro',
+  'TitleBar',
+  'Toolbar',
+  'TooltipPro',
+  'TooltipProContent',
+  'TooltipProProvider',
+  'TooltipProTrigger',
+  'TouchButton',
+  'TouchSegmented',
+  'TrendChart',
 ]
+// Names exported as types only (not runtime-checkable via the namespace object).
+const NV_TYPE_ONLY = new Set([
+  'NvDataTableAlign',
+  'NvDataTableColumn',
+  'NvDataTableDensity',
+  'NvDataTableFilterOption',
+  'NvDataTableFilters',
+  'NvDataTableSort',
+  'NvFieldVariants',
+])
 
-describe('NvUI canonical name contract (ADR 0020 Appendix A / #787)', () => {
-  it('exports Nv* canonical names for the pro layer', () => {
-    for (const n of NV_PRO) expect.soft(exported[n], `${n} should be exported`).toBeDefined()
+// Live derivation from the barrels — MUST equal the frozen arrays (bidirectional).
+function walk(dir: string, keep: (n: string) => boolean): string[] {
+  const out: string[] = []
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const full = resolve(dir, e.name)
+    if (e.isDirectory()) out.push(...walk(full, keep))
+    else if (keep(e.name)) out.push(full)
+  }
+  return out
+}
+const barrels = walk(resolve(srcDir, 'components'), (n) => n === 'index.ts').map((f) =>
+  readFileSync(f, 'utf8'),
+)
+const liveNv = new Set<string>()
+const liveOld = new Set<string>()
+for (const src of barrels) {
+  for (const m of src.matchAll(/(?:default|[A-Za-z0-9_]+)\s+as\s+(Nv[A-Za-z0-9]+)/g))
+    liveNv.add(m[1])
+  for (const m of src.matchAll(/export\s+(?:const|type)\s+(Nv[A-Za-z0-9]+|nv[A-Za-z0-9]+)\b/g))
+    liveNv.add(m[1])
+  for (const m of src.matchAll(
+    /@deprecated[^\n]*\n\s*(?:default|[A-Za-z0-9_]+)\s+as\s+([A-Za-z0-9_]+)/g,
+  ))
+    liveOld.add(m[1])
+}
+
+describe('NvUI Appendix A full-mapping freeze (@nerv-iip/ui / #787)', () => {
+  it('barrels export exactly the frozen Nv canonical set (Appendix A)', () => {
+    expect([...liveNv].sort()).toEqual([...NV_ALL].sort())
   })
 
-  it('exports Nv* canonical names for the blocks + layout layers', () => {
-    for (const n of NV_BLOCKS_LAYOUT)
-      expect.soft(exported[n], `${n} should be exported`).toBeDefined()
+  it('barrels expose exactly the frozen @deprecated old-name set (Appendix A)', () => {
+    expect([...liveOld].sort()).toEqual([...OLD_ALL].sort())
   })
 
-  it('exports Nv* canonical names for the screen + touch layers', () => {
-    for (const n of NV_SCREEN_TOUCH)
-      expect.soft(exported[n], `${n} should be exported`).toBeDefined()
+  it('every Nv canonical name actually resolves at runtime (types excluded)', () => {
+    for (const n of NV_ALL) {
+      if (!NV_TYPE_ONLY.has(n)) expect.soft(exported[n], `${n} should be exported`).toBeDefined()
+    }
+  })
+
+  it('every old name still resolves for the zero-breakage transition', () => {
+    for (const n of OLD_ALL)
+      expect.soft(exported[n], `${n} old name must still resolve`).toBeDefined()
   })
 
   it('exposes a canonical nvFieldVariants aliasing the old fieldProVariants', () => {
-    expect(exported.nvFieldVariants).toBeDefined()
     expect(exported.nvFieldVariants).toBe(exported.fieldProVariants)
-  })
-
-  it('keeps every old name exported for the zero-breakage transition', () => {
-    for (const n of LEGACY_STILL_EXPORTED) {
-      expect.soft(exported[n], `${n} old name must still resolve`).toBeDefined()
-    }
   })
 
   it('leaves the shadcn 原版 exports untouched (still exported, un-prefixed)', () => {
@@ -154,19 +444,9 @@ describe('NvUI canonical name contract (ADR 0020 Appendix A / #787)', () => {
     const btn = read('components/pro/button/index.ts')
     expect.soft(btn).toContain('NvButton')
     expect.soft(btn).toContain('@deprecated')
-
     const dt = read('components/pro/data-table/index.ts')
     expect.soft(dt, 'renamed pro type present').toContain('NvDataTableColumn')
     expect.soft(dt).toMatch(/@deprecated[\S\s]*?DataTablePro/)
-
-    const field = read('components/pro/field/index.ts')
-    expect.soft(field).toContain('nvFieldVariants')
-    expect.soft(field).toContain('NvFieldVariants')
-
-    const screen = read('components/screen/index.ts')
-    expect.soft(screen, 'R3b scene-root rename').toContain('NvScreenTrendChart')
-    expect.soft(screen).toContain('@deprecated')
-
     const blocksDt = read('components/blocks/data-table/index.ts')
     expect.soft(blocksDt, '§1.3 superseded → NvDataTable').toMatch(/@deprecated[\S\s]*?NvDataTable/)
   })
@@ -176,16 +456,7 @@ describe('NvUI canonical name contract (ADR 0020 Appendix A / #787)', () => {
 // identifier, no `--nv-` token, no `nv-` cascade layer may leak into shadcn 原版.
 describe('shadcn 原版 purity (components/ui/**)', () => {
   const uiDir = resolve(srcDir, 'components/ui')
-  function walk(dir: string): string[] {
-    const out: string[] = []
-    for (const e of readdirSync(dir, { withFileTypes: true })) {
-      const full = resolve(dir, e.name)
-      if (e.isDirectory()) out.push(...walk(full))
-      else if (/\.(vue|ts|css)$/.test(e.name) && !/\.(test|spec)\./.test(e.name)) out.push(full)
-    }
-    return out
-  }
-  const files = walk(uiDir)
+  const files = walk(uiDir, (n) => /\.(vue|ts|css)$/.test(n) && !/\.(test|spec)\./.test(n))
 
   it('finds原版 source files to guard', () => {
     expect(files.length).toBeGreaterThan(0)
