@@ -14,6 +14,7 @@ import {
 const coladaState = vi.hoisted(() => ({
   queryFactoriesById: new Map<string, () => unknown>(),
   queryDataById: new Map<string, unknown>(),
+  queryErrorById: new Map<string, unknown>(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -36,7 +37,7 @@ vi.mock('@pinia/colada', () => ({
 
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
-      error: shallowRef(),
+      error: shallowRef(coladaState.queryErrorById.get(id)),
       isLoading: shallowRef(false),
       refetch: vi.fn(),
     }
@@ -50,6 +51,7 @@ describe('business quality analysis summary', () => {
     vi.clearAllMocks()
     coladaState.queryFactoriesById.clear()
     coladaState.queryDataById.clear()
+    coladaState.queryErrorById.clear()
   })
 
   it('builds truthful defect Pareto and dimension summaries from the returned NCR window', () => {
@@ -176,5 +178,24 @@ describe('business quality analysis summary', () => {
     })
     expect(spc.spcChart.value?.ruleViolations).toHaveLength(1)
     expect(spc.capability.value?.cpk).toBe(1.11)
+  })
+
+  it('treats sparse SPC control-chart data as a warm-up empty state', () => {
+    coladaState.queryErrorById.set(
+      'queryBusinessConsoleQualitySpcControlChart',
+      new Error('SPC control chart requires at least one complete subgroup.'),
+    )
+
+    const spc = useQualitySpcAnalysis({
+      skuCode: 'SKU-A',
+      characteristicCode: 'DIAMETER',
+      workCenterId: 'WC-01',
+      subgroupSize: 5,
+      take: 40,
+    })
+
+    expect(spc.spcWarmup.value).toBe(true)
+    expect(spc.spcError.value).toBeUndefined()
+    expect(spc.spcViolations.value).toEqual([])
   })
 })

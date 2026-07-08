@@ -59,16 +59,18 @@ export function useQualitySpcAnalysis(initialFilters: Partial<QualitySpcFilters>
     }),
     enabled: hasSpcScope(filters),
   }))
+  const spcWarmup = computed(() => isSpcWarmupError(controlChartQuery.error.value))
 
   return {
     capability: computed(() => unwrapCapability(capabilityQuery.data.value)),
     filters,
     refreshSpc: () => refreshSpcQueries(filters, controlChartQuery, capabilityQuery),
     spcChart: computed(() => unwrapControlChart(controlChartQuery.data.value)),
-    spcError: computed(() => controlChartQuery.error.value ?? capabilityQuery.error.value),
+    spcError: computed(() => spcWarmup.value ? capabilityQuery.error.value : controlChartQuery.error.value ?? capabilityQuery.error.value),
     spcPending: computed(() => controlChartQuery.isLoading.value || capabilityQuery.isLoading.value),
     spcReady: computed(() => hasSpcScope(filters)),
     spcViolations: computed(() => unwrapControlChart(controlChartQuery.data.value)?.ruleViolations ?? []),
+    spcWarmup,
   }
 }
 
@@ -237,4 +239,21 @@ export type QualitySpcViolation = BusinessConsoleQualitySpcRuleViolation
 function toPositiveInteger(value: number | string, fallback: number) {
   const parsed = typeof value === 'number' ? value : Number.parseInt(value, 10)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function isSpcWarmupError(error: unknown) {
+  return errorMessage(error).includes('SPC control chart requires at least one complete subgroup.')
+}
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message
+    return typeof message === 'string' ? message : ''
+  }
+
+  return typeof error === 'string' ? error : ''
 }

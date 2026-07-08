@@ -50,6 +50,18 @@ const spcScopeHint = computed(() =>
     ? `${spc.filters.skuCode} / ${spc.filters.characteristicCode} / ${spc.filters.workCenterId}`
     : '填写 SKU、特性和工作中心后查询',
 )
+const spcControlLimitHint = computed(() => {
+  if (spc.spcWarmup.value) {
+    return '实测值不足一个完整子组'
+  }
+
+  return spc.spcChart.value?.controlLimits?.locked ? '控制限已锁定' : '自动计算控制限'
+})
+const spcViolationEmptyMessage = computed(() =>
+  spc.spcWarmup.value
+    ? '实测值不足一个完整子组，暂不生成控制限和判异。'
+    : '当前 SPC 范围没有判异。',
+)
 
 const paretoColumns: DataTableProColumn<QualityAnalysisBucket>[] = [
   { key: 'label', header: '缺陷原因', cellClass: 'font-medium' },
@@ -149,7 +161,7 @@ function spcViolationKey(row: QualitySpcViolation) {
 
       <SectionCards :columns="4">
         <SectionCard description="SPC 范围" :value="spcScopeHint" hint="SKU / 特性 / 工作中心" />
-        <SectionCard description="Xbar UCL" :value="formatMetric(spc.spcChart.value?.controlLimits?.xbarUpperControlLimit)" :hint="spc.spcChart.value?.controlLimits?.locked ? '控制限已锁定' : '自动计算控制限'" />
+        <SectionCard description="Xbar UCL" :value="formatMetric(spc.spcChart.value?.controlLimits?.xbarUpperControlLimit)" :hint="spcControlLimitHint" />
         <SectionCard description="Cp / Cpk" :value="`${formatMetric(spc.capability.value?.cp)} / ${formatMetric(spc.capability.value?.cpk)}`" :hint="`${spc.capability.value?.sampleCount ?? 0} 个实测值`" />
         <SectionCard description="判异" :value="spc.spcViolations.value.length" hint="质量 SPC 预警，不计入设备报警" />
       </SectionCards>
@@ -163,7 +175,7 @@ function spcViolationKey(row: QualitySpcViolation) {
         :loading="spc.spcPending.value"
         :searchable="false"
         :column-settings="false"
-        empty-message="当前 SPC 范围没有判异。"
+        :empty-message="spcViolationEmptyMessage"
       />
     </div>
 
