@@ -4,7 +4,7 @@ title: PullRefresh 下拉刷新
 ---
 
 <script setup>
-import { Cell, PullRefresh } from '@nerv-iip/ui-mobile'
+import { NvCell, NvPullRefresh } from '@nerv-iip/ui-mobile'
 import { ref } from 'vue'
 
 const refreshing = ref(false)
@@ -27,17 +27,18 @@ function onRefresh() {
 <MobileDoc>
 
 <template #phone>
+
   <section>
     <p class="ds-mdoc-label">基础用法</p>
     <div class="w-full overflow-hidden rounded-xl border border-border">
-      <PullRefresh v-model="refreshing" class="h-56" @refresh="onRefresh">
-        <Cell v-for="(item, i) in refreshList" :key="`${item}-${i}`" :title="item" />
-      </PullRefresh>
+      <NvPullRefresh v-model="refreshing" class="h-56" @refresh="onRefresh">
+        <NvCell v-for="(item, i) in refreshList" :key="`${item}-${i}`" :title="item" />
+      </NvPullRefresh>
     </div>
   </section>
 </template>
 
-# PullRefresh 下拉刷新
+# NvPullRefresh 下拉刷新
 
 在自身滚动区域顶部下拉以刷新。指针驱动并带阻尼，松手越过阈值即触发 `refresh`，显示加载态直到 `v-model` 清零。
 
@@ -47,7 +48,7 @@ function onRefresh() {
 
 ```vue
 <script setup>
-import { Cell, PullRefresh } from '@nerv-iip/ui-mobile'
+import { NvCell, NvPullRefresh } from '@nerv-iip/ui-mobile'
 import { ref } from 'vue'
 
 const refreshing = ref(false)
@@ -61,23 +62,23 @@ function onRefresh() {
 </script>
 
 <template>
-  <PullRefresh v-model="refreshing" class="h-56" @refresh="onRefresh">
-    <Cell v-for="(item, i) in list" :key="`${item}-${i}`" :title="item" />
-  </PullRefresh>
+  <NvPullRefresh v-model="refreshing" class="h-56" @refresh="onRefresh">
+    <NvCell v-for="(item, i) in list" :key="`${item}-${i}`" :title="item" />
+  </NvPullRefresh>
 </template>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `modelValue` | 刷新中状态（`v-model`） | `boolean` | `false` |
-| `threshold` | 触发刷新的下拉距离（px） | `number` | `56` |
+| 属性         | 说明                     | 类型      | 默认    |
+| ------------ | ------------------------ | --------- | ------- |
+| `modelValue` | 刷新中状态（`v-model`）  | `boolean` | `false` |
+| `threshold`  | 触发刷新的下拉距离（px） | `number`  | `56`    |
 
 ## 事件
 
-| 事件 | 说明 | 回调参数 |
-|---|---|---|
-| `refresh` | 下拉越过阈值触发 | — |
+| 事件      | 说明             | 回调参数 |
+| --------- | ---------------- | -------- |
+| `refresh` | 下拉越过阈值触发 | —        |
 
 </MobileDoc>

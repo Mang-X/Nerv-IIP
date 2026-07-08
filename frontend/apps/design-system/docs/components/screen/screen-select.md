@@ -4,7 +4,7 @@ title: ScreenSelect 下拉选择
 
 <script setup>
 import { ref } from 'vue'
-import { ScreenSelect } from '@nerv-iip/ui'
+import { NvScreenSelect } from '@nerv-iip/ui'
 
 const line = ref('line-a')
 const shift = ref('')
@@ -32,7 +32,7 @@ const shifts = [
 
 <ScreenDemo>
   <div style="width:260px">
-    <ScreenSelect v-model="line" :options="lines" />
+    <NvScreenSelect v-model="line" :options="lines" />
   </div>
 </ScreenDemo>
 
@@ -48,7 +48,7 @@ const lines = [
 </script>
 
 <template>
-  <ScreenSelect v-model="line" :options="lines" />
+  <NvScreenSelect v-model="line" :options="lines" />
 </template>
 ```
 
@@ -59,24 +59,24 @@ const lines = [
 <ScreenDemo>
   <div style="display:flex;gap:16px">
     <div style="width:240px">
-      <ScreenSelect v-model="shift" :options="shifts" placeholder="请选择班次" />
+      <NvScreenSelect v-model="shift" :options="shifts" placeholder="请选择班次" />
     </div>
     <div style="width:200px">
-      <ScreenSelect :options="lines" disabled placeholder="产线锁定" />
+      <NvScreenSelect :options="lines" disabled placeholder="产线锁定" />
     </div>
   </div>
 </ScreenDemo>
 
 ```vue
-<ScreenSelect v-model="shift" :options="shifts" placeholder="请选择班次" />
-<ScreenSelect :options="lines" disabled placeholder="产线锁定" />
+<NvScreenSelect v-model="shift" :options="shifts" placeholder="请选择班次" />
+<NvScreenSelect :options="lines" disabled placeholder="产线锁定" />
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `v-model` | 选中项的 `value` | `string \| number` | — |
-| `options` | 选项列表 | `{ label: string; value: string \| number }[]` | 内置示例产线 |
-| `placeholder` | 未选中时的占位 | `string` | `'请选择产线'` |
-| `disabled` | 禁用 | `boolean` | `false` |
+| 属性          | 说明             | 类型                                           | 默认           |
+| ------------- | ---------------- | ---------------------------------------------- | -------------- |
+| `v-model`     | 选中项的 `value` | `string \| number`                             | —              |
+| `options`     | 选项列表         | `{ label: string; value: string \| number }[]` | 内置示例产线   |
+| `placeholder` | 未选中时的占位   | `string`                                       | `'请选择产线'` |
+| `disabled`    | 禁用             | `boolean`                                      | `false`        |

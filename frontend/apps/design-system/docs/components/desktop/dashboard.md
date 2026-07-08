@@ -4,9 +4,9 @@ title: AppShellInset 应用外壳
 
 <script setup>
 import {
-  AppShellInset,
+  NvAppShellInset,
   SidebarFooter, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton,
-  SidebarProBrand, SidebarProDot, SidebarProUser,
+  NvSidebarBrand, NvSidebarDot, NvSidebarUser,
   Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator,
 } from '@nerv-iip/ui'
 import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, SettingsIcon } from 'lucide-vue-next'
@@ -20,9 +20,9 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
 
 <Demo>
 <div class="ds-shell-demo w-full">
-  <AppShellInset collapsible="icon">
+  <NvAppShellInset collapsible="icon">
     <template #sidebar-header>
-      <SidebarProBrand name="Nerv-IIP" sub="总装一厂 · 早班" logo="N" />
+      <NvSidebarBrand name="Nerv-IIP" sub="总装一厂 · 早班" logo="N" />
     </template>
     <template #sidebar>
       <SidebarGroup>
@@ -36,7 +36,7 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
       <SidebarGroup>
         <SidebarGroupLabel>资源</SidebarGroupLabel>
         <SidebarMenu>
-          <SidebarMenuItem><SidebarMenuButton><WrenchIcon /><span>设备</span><SidebarProDot tone="ok" /></SidebarMenuButton></SidebarMenuItem>
+          <SidebarMenuItem><SidebarMenuButton><WrenchIcon /><span>设备</span><NvSidebarDot tone="ok" /></SidebarMenuButton></SidebarMenuItem>
           <SidebarMenuItem><SidebarMenuButton><SettingsIcon /><span>设置</span></SidebarMenuButton></SidebarMenuItem>
         </SidebarMenu>
       </SidebarGroup>
@@ -45,7 +45,7 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton size="lg">
-            <SidebarProUser name="张伟" role="班长 · 早班" initials="张" />
+            <NvSidebarUser name="张伟" role="班长 · 早班" initials="张" />
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
@@ -64,7 +64,7 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
       <div class="rounded-xl border border-border bg-card p-4"><div class="text-xs text-muted-foreground">在制工单</div><div class="mt-1 text-2xl font-semibold tabular-nums">18</div></div>
       <div class="rounded-xl border border-border bg-card p-4"><div class="text-xs text-muted-foreground">设备 OEE</div><div class="mt-1 text-2xl font-semibold tabular-nums">78.6%</div></div>
     </div>
-  </AppShellInset>
+  </NvAppShellInset>
 </div>
 </Demo>
 
@@ -86,14 +86,14 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
 </style>
 
 ```vue
-<AppShellInset collapsible="icon">
-  <template #sidebar-header><SidebarProBrand name="Nerv-IIP" sub="总装一厂 · 早班" logo="N" /></template>
+<NvAppShellInset collapsible="icon">
+  <template #sidebar-header><NvSidebarBrand name="Nerv-IIP" sub="总装一厂 · 早班" logo="N" /></template>
   <template #sidebar>
     <SidebarGroup>
       <SidebarGroupLabel>生产</SidebarGroupLabel>
       <SidebarMenu>
         <SidebarMenuItem><SidebarMenuButton :is-active="true"><LayoutDashboardIcon /><span>总览</span></SidebarMenuButton></SidebarMenuItem>
-        <SidebarMenuItem><SidebarMenuButton><WrenchIcon /><span>设备</span><SidebarProDot tone="ok" /></SidebarMenuButton></SidebarMenuItem>
+        <SidebarMenuItem><SidebarMenuButton><WrenchIcon /><span>设备</span><NvSidebarDot tone="ok" /></SidebarMenuButton></SidebarMenuItem>
       </SidebarMenu>
     </SidebarGroup>
   </template>
@@ -101,7 +101,7 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
     <SidebarMenu>
       <SidebarMenuItem>
         <SidebarMenuButton size="lg">
-          <SidebarProUser name="张伟" role="班长 · 早班" initials="张" />
+          <NvSidebarUser name="张伟" role="班长 · 早班" initials="张" />
         </SidebarMenuButton>
       </SidebarMenuItem>
     </SidebarMenu>
@@ -109,18 +109,18 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
   <template #header><Breadcrumb>…</Breadcrumb></template>
 
   <!-- 主内容（default slot） -->
-</AppShellInset>
+</NvAppShellInset>
 ```
 
 ## 插槽 / 属性
 
-| 名称 | 说明 |
-|---|---|
-| `#sidebar-header` | 侧栏顶部（品牌 / 切换器）|
-| `#sidebar` | 侧栏主体(用 `SidebarGroup` + `SidebarMenu` 组织导航)|
-| `#sidebar-footer` | 侧栏底部（用户 / 操作）|
-| `#header` | 顶部栏内容（面包屑等），自带 `SidebarTrigger` 折叠按钮 |
-| `default` | inset 主内容区 |
-| `collapsible` | `offcanvas` \| `icon` \| `none`，侧栏折叠方式(默认 `icon`)|
+| 名称              | 说明                                                       |
+| ----------------- | ---------------------------------------------------------- |
+| `#sidebar-header` | 侧栏顶部（品牌 / 切换器）                                  |
+| `#sidebar`        | 侧栏主体(用 `SidebarGroup` + `SidebarMenu` 组织导航)       |
+| `#sidebar-footer` | 侧栏底部（用户 / 操作）                                    |
+| `#header`         | 顶部栏内容（面包屑等），自带 `SidebarTrigger` 折叠按钮     |
+| `default`         | inset 主内容区                                             |
+| `collapsible`     | `offcanvas` \| `icon` \| `none`，侧栏折叠方式(默认 `icon`) |
 
 > 底层通过 `@nerv-iip/ui` 稳定导出完整 Sidebar 系统(`SidebarProvider` / `Sidebar` / `SidebarRail` / `SidebarInset` / `SidebarTrigger` / `SidebarMenu*`),需要更深定制时也从组件库导入。

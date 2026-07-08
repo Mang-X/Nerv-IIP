@@ -3,7 +3,7 @@ title: StatusLight 状态灯
 ---
 
 <script setup>
-import { StatusLight } from '@nerv-iip/ui'
+import { NvScreenStatusLight } from '@nerv-iip/ui'
 </script>
 
 # StatusLight 状态灯
@@ -16,16 +16,16 @@ import { StatusLight } from '@nerv-iip/ui'
 
 <ScreenDemo>
   <div style="display:flex; gap:28px; align-items:center;">
-    <StatusLight tone="run" label="焊接线 A · 运行中" />
-    <StatusLight tone="idle" label="装配线 B · 待机" />
-    <StatusLight tone="alarm" label="CNC 线 C · 报警" />
+    <NvScreenStatusLight tone="run" label="焊接线 A · 运行中" />
+    <NvScreenStatusLight tone="idle" label="装配线 B · 待机" />
+    <NvScreenStatusLight tone="alarm" label="CNC 线 C · 报警" />
   </div>
 </ScreenDemo>
 
 ```vue
-<StatusLight tone="run" label="焊接线 A · 运行中" />
-<StatusLight tone="idle" label="装配线 B · 待机" />
-<StatusLight tone="alarm" label="CNC 线 C · 报警" />
+<NvScreenStatusLight tone="run" label="焊接线 A · 运行中" />
+<NvScreenStatusLight tone="idle" label="装配线 B · 待机" />
+<NvScreenStatusLight tone="alarm" label="CNC 线 C · 报警" />
 ```
 
 ## 原始颜色
@@ -34,21 +34,21 @@ import { StatusLight } from '@nerv-iip/ui'
 
 <ScreenDemo>
   <div style="display:flex; gap:28px; align-items:center;">
-    <StatusLight tone="cyan" label="数据采集中" />
-    <StatusLight tone="green" label="正常" />
-    <StatusLight tone="amber" label="预警" />
-    <StatusLight tone="red" label="故障" />
+    <NvScreenStatusLight tone="cyan" label="数据采集中" />
+    <NvScreenStatusLight tone="green" label="正常" />
+    <NvScreenStatusLight tone="amber" label="预警" />
+    <NvScreenStatusLight tone="red" label="故障" />
   </div>
 </ScreenDemo>
 
 ```vue
-<StatusLight tone="cyan" label="数据采集中" />
-<StatusLight tone="red" label="故障" />
+<NvScreenStatusLight tone="cyan" label="数据采集中" />
+<NvScreenStatusLight tone="red" label="故障" />
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `tone` | 运行别名或原始调色板颜色 | `run \| idle \| alarm \| cyan \| green \| amber \| red` | `run` |
-| `label` | 圆点旁文字,如「运行中」 | `string` | — |
+| 属性    | 说明                     | 类型                                                    | 默认  |
+| ------- | ------------------------ | ------------------------------------------------------- | ----- |
+| `tone`  | 运行别名或原始调色板颜色 | `run \| idle \| alarm \| cyan \| green \| amber \| red` | `run` |
+| `label` | 圆点旁文字,如「运行中」  | `string`                                                | —     |

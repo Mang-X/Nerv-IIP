@@ -3,7 +3,7 @@ title: Timeline 时间线
 ---
 
 <script setup>
-import { TimelinePro } from '@nerv-iip/ui'
+import { NvTimeline } from '@nerv-iip/ui'
 import {
   FilePlus2Icon,
   PackageCheckIcon,
@@ -49,18 +49,18 @@ const items = [
 
 # Timeline 时间线
 
-工序流转 / 操作日志的垂直时间线。`TimelinePro` 用不透明语义色节点串接在连接轨上，每个事件含标题、元信息标签与描述，并可在末尾追加脉动的“进行中”节点。
+工序流转 / 操作日志的垂直时间线。`NvTimeline` 用不透明语义色节点串接在连接轨上，每个事件含标题、元信息标签与描述，并可在末尾追加脉动的“进行中”节点。
 
 ## 工序日志
 
 <Demo>
   <div class="w-96">
-    <TimelinePro :items="items" pending pending-text="精加工中…" />
+    <NvTimeline :items="items" pending pending-text="精加工中…" />
   </div>
 </Demo>
 
 ```vue
-<TimelinePro :items="items" pending pending-text="精加工中…" />
+<NvTimeline :items="items" pending pending-text="精加工中…" />
 ```
 
 其中每个 `TimelineItem` 形如：
@@ -81,11 +81,11 @@ const items = [
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `items` | 事件数组（`title` / `label` / `description` / `tone` / `icon`） | `TimelineItem[]` | — |
-| `pending` | 末尾追加脉动的进行中节点 | `boolean` | `false` |
-| `pendingText` | 进行中节点文案 | `string` | `进行中…` |
-| `reverse` | 最新优先排序 | `boolean` | `false` |
+| 属性          | 说明                                                            | 类型             | 默认      |
+| ------------- | --------------------------------------------------------------- | ---------------- | --------- |
+| `items`       | 事件数组（`title` / `label` / `description` / `tone` / `icon`） | `TimelineItem[]` | —         |
+| `pending`     | 末尾追加脉动的进行中节点                                        | `boolean`        | `false`   |
+| `pendingText` | 进行中节点文案                                                  | `string`         | `进行中…` |
+| `reverse`     | 最新优先排序                                                    | `boolean`        | `false`   |
 
 `TimelineItem.tone` 取值：`brand \| success \| warning \| danger \| neutral`。

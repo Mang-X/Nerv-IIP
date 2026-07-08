@@ -3,7 +3,7 @@ title: ScreenPareto 帕累托
 ---
 
 <script setup>
-import { ScreenPareto } from '@nerv-iip/ui'
+import { NvScreenPareto } from '@nerv-iip/ui'
 
 const defects = [
   { label: '极片对齐度超差', sub: '电芯线', count: 46, pct: 32.4 },
@@ -28,12 +28,12 @@ const downtime = [
 `items` 传降序项(`pct` 为占**全量**的百分比);`total` 传全量总数以显示长尾行。
 
 <ScreenDemo>
-  <ScreenPareto :items="defects" :total="142" />
+  <NvScreenPareto :items="defects" :total="142" />
 </ScreenDemo>
 
 ```vue
 <template>
-  <ScreenPareto
+  <NvScreenPareto
     :items="[
       { label: '极片对齐度超差', sub: '电芯线', count: 46, pct: 32.4 },
       { label: '卷绕张力不良', sub: '电芯线', count: 31, pct: 21.8 },
@@ -49,17 +49,17 @@ const downtime = [
 `unit` 换数量单位;不传 `total` 时无长尾行。
 
 <ScreenDemo>
-  <ScreenPareto :items="downtime" unit="min" />
+  <NvScreenPareto :items="downtime" unit="min" />
 </ScreenDemo>
 
 ```vue
-<ScreenPareto :items="downtimeReasons" unit="min" />
+<NvScreenPareto :items="downtimeReasons" unit="min" />
 ```
 
 ## API
 
-| Prop | 类型 | 默认 | 说明 |
-| --- | --- | --- | --- |
-| `items` | `{ label, sub?, count, pct }[]` | — | 降序项;`pct` 为占全量 % |
-| `total` | `number` | — | 全量总数(算长尾行;不传则无长尾行) |
-| `unit` | `string` | `件` | 数量单位 |
+| Prop    | 类型                            | 默认 | 说明                              |
+| ------- | ------------------------------- | ---- | --------------------------------- |
+| `items` | `{ label, sub?, count, pct }[]` | —    | 降序项;`pct` 为占全量 %           |
+| `total` | `number`                        | —    | 全量总数(算长尾行;不传则无长尾行) |
+| `unit`  | `string`                        | `件` | 数量单位                          |

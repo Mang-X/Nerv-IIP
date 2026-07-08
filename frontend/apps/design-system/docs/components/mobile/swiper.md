@@ -4,7 +4,7 @@ title: Swiper 轮播图
 ---
 
 <script setup>
-import { Swiper, MobileButton, Tag } from '@nerv-iip/ui-mobile'
+import { NvSwiper, NvMobileButton, NvMobileTag } from '@nerv-iip/ui-mobile'
 import { ref } from 'vue'
 
 const panels = [
@@ -24,9 +24,10 @@ const current = ref(0)
 <MobileDoc>
 
 <template #phone>
+
   <section>
     <p class="ds-mdoc-label">基础用法 · 自动播放</p>
-    <Swiper :autoplay="3000" loop class="aspect-[16/9]">
+    <NvSwiper :autoplay="3000" loop class="aspect-[16/9]">
       <div
         v-for="p in panels"
         :key="p.title"
@@ -36,25 +37,25 @@ const current = ref(0)
         <div class="text-xl font-semibold">{{ p.title }}</div>
         <div class="mt-1 text-sm opacity-90">{{ p.sub }}</div>
       </div>
-    </Swiper>
+    </NvSwiper>
   </section>
   <section>
     <p class="ds-mdoc-label">数据驱动 · 工单卡片（可交互，指示器内置底部）</p>
-    <Swiper v-model:index="current" :items="orders" :frame="false">
+    <NvSwiper v-model:index="current" :items="orders" :frame="false">
       <template #default="{ item }">
         <div class="w-full shrink-0 px-1 pb-7">
           <div class="rounded-2xl border border-border bg-card p-4">
             <div class="flex items-center justify-between">
               <span class="text-sm text-muted-foreground">{{ item.code }}</span>
-              <Tag variant="brand" size="sm">{{ item.station }}</Tag>
+              <NvMobileTag variant="brand" size="sm">{{ item.station }}</NvMobileTag>
             </div>
             <div class="mt-2 text-lg font-medium">{{ item.product }}</div>
             <div class="mt-1 text-sm text-muted-foreground">完成进度 {{ item.qty }}</div>
-            <MobileButton variant="primary" size="sm" block class="mt-3">报工</MobileButton>
+            <NvMobileButton variant="primary" size="sm" block class="mt-3">报工</NvMobileButton>
           </div>
         </div>
       </template>
-    </Swiper>
+    </NvSwiper>
   </section>
 </template>
 
@@ -67,9 +68,9 @@ const current = ref(0)
 默认插槽放置任意全屏内容，`autoplay` 设置自动切换毫秒数，`loop` 开启首尾循环。底部圆点指示当前位置。
 
 ```vue
-<Swiper :autoplay="3000" loop class="aspect-[16/9]">
+<NvSwiper :autoplay="3000" loop class="aspect-[16/9]">
   <div v-for="p in panels" :key="p.title" class="h-full w-full shrink-0">…</div>
-</Swiper>
+</NvSwiper>
 ```
 
 ## 数据驱动
@@ -77,29 +78,29 @@ const current = ref(0)
 传入 `:items` 后，默认作用域插槽按 `{ item, index }` 渲染每屏；用 `v-model:index` 双向绑定当前页。
 
 ```vue
-<Swiper v-model:index="current" :items="orders">
+<NvSwiper v-model:index="current" :items="orders">
   <template #default="{ item }">
     <div class="w-full shrink-0">{{ item.product }}</div>
   </template>
-</Swiper>
+</NvSwiper>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `items` | 数据驱动的幻灯片列表（省略则用默认插槽） | `unknown[]` | — |
-| `autoplay` | 自动切换间隔（毫秒，0 关闭） | `number` | `0` |
-| `loop` | 首尾循环 | `boolean` | `false` |
-| `dots` | 显示圆点指示器 | `boolean` | `true` |
-| `indicator` | 指示器位置：`overlay` 浮于幻灯片上 / `outside` 外置于下方(可交互内容避让) | `'overlay' \| 'outside'` | `'overlay'` |
-| `frame` | 视口圆角灰底背板（图片/横幅用）；幻灯片本身是卡片时关闭，避免内外圆角不一致 | `boolean` | `true` |
-| `v-model:index` | 当前页索引 | `number` | `0` |
+| 属性            | 说明                                                                        | 类型                     | 默认        |
+| --------------- | --------------------------------------------------------------------------- | ------------------------ | ----------- |
+| `items`         | 数据驱动的幻灯片列表（省略则用默认插槽）                                    | `unknown[]`              | —           |
+| `autoplay`      | 自动切换间隔（毫秒，0 关闭）                                                | `number`                 | `0`         |
+| `loop`          | 首尾循环                                                                    | `boolean`                | `false`     |
+| `dots`          | 显示圆点指示器                                                              | `boolean`                | `true`      |
+| `indicator`     | 指示器位置：`overlay` 浮于幻灯片上 / `outside` 外置于下方(可交互内容避让)   | `'overlay' \| 'outside'` | `'overlay'` |
+| `frame`         | 视口圆角灰底背板（图片/横幅用）；幻灯片本身是卡片时关闭，避免内外圆角不一致 | `boolean`                | `true`      |
+| `v-model:index` | 当前页索引                                                                  | `number`                 | `0`         |
 
 ## 事件
 
-| 事件 | 说明 | 回调参数 |
-|---|---|---|
+| 事件     | 说明         | 回调参数          |
+| -------- | ------------ | ----------------- |
 | `change` | 切换到新一页 | `(index: number)` |
 
 </MobileDoc>

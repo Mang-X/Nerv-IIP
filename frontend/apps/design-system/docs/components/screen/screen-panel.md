@@ -3,7 +3,7 @@ title: ScreenPanel 面板
 ---
 
 <script setup>
-import { ScreenPanel, OeeHero } from '@nerv-iip/ui'
+import { NvScreenPanel, NvOeeHero } from '@nerv-iip/ui'
 </script>
 
 # ScreenPanel 面板
@@ -15,15 +15,15 @@ import { ScreenPanel, OeeHero } from '@nerv-iip/ui'
 传 `title` 出一条标题行,默认插槽放真实内容 —— 这里嵌一个核心指标块。
 
 <ScreenDemo>
-  <ScreenPanel title="焊接线 A · 设备综合效率" style="width: 420px">
-    <OeeHero label="OEE" :value="92.4" unit="%" delta="较昨日 +2.7%" />
-  </ScreenPanel>
+  <NvScreenPanel title="焊接线 A · 设备综合效率" style="width: 420px">
+    <NvOeeHero label="OEE" :value="92.4" unit="%" delta="较昨日 +2.7%" />
+  </NvScreenPanel>
 </ScreenDemo>
 
 ```vue
-<ScreenPanel title="焊接线 A · 设备综合效率">
-  <OeeHero label="OEE" :value="92.4" unit="%" delta="较昨日 +2.7%" />
-</ScreenPanel>
+<NvScreenPanel title="焊接线 A · 设备综合效率">
+  <NvOeeHero label="OEE" :value="92.4" unit="%" delta="较昨日 +2.7%" />
+</NvScreenPanel>
 ```
 
 ## 状态色条
@@ -31,43 +31,43 @@ import { ScreenPanel, OeeHero } from '@nerv-iip/ui'
 `accent` 在顶边压一条发光色条,用来给整块面板一个状态签名 —— 运行绿、报警红。`extra` 插槽落在标题行右侧放辅助信息。
 
 <ScreenDemo>
-  <ScreenPanel title="装配线 B · 实时产出" accent="green" style="width: 360px">
+  <NvScreenPanel title="装配线 B · 实时产出" accent="green" style="width: 360px">
     <template #extra>WO-2406-0312</template>
     <div style="display:flex;flex-direction:column;gap:8px;font-size:14px">
       <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">当班计划</span><span>1 200 件</span></div>
       <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">已完成</span><span>934 件</span></div>
       <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">实时节拍</span><span>48.2 s / 件</span></div>
     </div>
-  </ScreenPanel>
-  <ScreenPanel title="CNC 线 C · 主轴温度" accent="red" style="width: 360px">
+  </NvScreenPanel>
+  <NvScreenPanel title="CNC 线 C · 主轴温度" accent="red" style="width: 360px">
     <template #extra>已超阈值</template>
     <div style="display:flex;flex-direction:column;gap:8px;font-size:14px">
       <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">当前</span><span style="color:var(--sb-red)">78.6 ℃</span></div>
       <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">报警阈值</span><span>75.0 ℃</span></div>
       <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">持续</span><span>06 分 12 秒</span></div>
     </div>
-  </ScreenPanel>
+  </NvScreenPanel>
 </ScreenDemo>
 
 ```vue
-<ScreenPanel title="装配线 B · 实时产出" accent="green">
+<NvScreenPanel title="装配线 B · 实时产出" accent="green">
   <template #extra>WO-2406-0312</template>
   <!-- 产线明细 -->
-</ScreenPanel>
+</NvScreenPanel>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `title` | 标题行文本 | `string` | — |
-| `accent` | 顶边状态色条 | `'cyan' \| 'green' \| 'amber' \| 'red'` | — |
-| `class` | 透传到根 `<section>` 的类名 | `string` | — |
+| 属性     | 说明                        | 类型                                    | 默认 |
+| -------- | --------------------------- | --------------------------------------- | ---- |
+| `title`  | 标题行文本                  | `string`                                | —    |
+| `accent` | 顶边状态色条                | `'cyan' \| 'green' \| 'amber' \| 'red'` | —    |
+| `class`  | 透传到根 `<section>` 的类名 | `string`                                | —    |
 
 ## 插槽
 
-| 插槽 | 说明 |
-|---|---|
-| 默认 | 面板主体内容 |
-| `title-extra` | 紧跟标题文本之后的内联追加 |
-| `extra` | 标题行右侧的辅助信息(出现时才渲染标题行) |
+| 插槽          | 说明                                     |
+| ------------- | ---------------------------------------- |
+| 默认          | 面板主体内容                             |
+| `title-extra` | 紧跟标题文本之后的内联追加               |
+| `extra`       | 标题行右侧的辅助信息(出现时才渲染标题行) |

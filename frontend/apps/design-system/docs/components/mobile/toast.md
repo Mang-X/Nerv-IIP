@@ -4,7 +4,7 @@ title: MobileToast 居中提示
 ---
 
 <script setup>
-import { MobileButton, MobileToast } from '@nerv-iip/ui-mobile'
+import { NvMobileButton, NvMobileToast } from '@nerv-iip/ui-mobile'
 import { ref } from 'vue'
 
 const toastShow = ref(false)
@@ -29,25 +29,26 @@ function runLoadingToast() {
 <MobileDoc>
 
 <template #phone>
+
   <section>
     <p class="ds-mdoc-label">文字与状态</p>
     <div class="grid grid-cols-2 gap-2">
-      <MobileButton variant="default" size="md" @click="fireToast('text', '已复制单号')">文字</MobileButton>
-      <MobileButton variant="default" size="md" @click="fireToast('success', '报工成功')">成功</MobileButton>
-      <MobileButton variant="default" size="md" @click="fireToast('error', '网络异常')">失败</MobileButton>
+      <NvMobileButton variant="default" size="md" @click="fireToast('text', '已复制单号')">文字</NvMobileButton>
+      <NvMobileButton variant="default" size="md" @click="fireToast('success', '报工成功')">成功</NvMobileButton>
+      <NvMobileButton variant="default" size="md" @click="fireToast('error', '网络异常')">失败</NvMobileButton>
     </div>
-    <MobileToast v-model:show="toastShow" :type="toastType" :message="toastMsg" />
+    <NvMobileToast v-model:show="toastShow" :type="toastType" :message="toastMsg" />
   </section>
   <section>
     <p class="ds-mdoc-label">加载（带遮罩）</p>
-    <MobileButton variant="default" size="md" block @click="runLoadingToast">
+    <NvMobileButton variant="default" size="md" block @click="runLoadingToast">
       加载（带遮罩）
-    </MobileButton>
-    <MobileToast v-model:show="loadingToast" type="loading" message="提交中…" overlay />
+    </NvMobileButton>
+    <NvMobileToast v-model:show="loadingToast" type="loading" message="提交中…" overlay />
   </section>
 </template>
 
-# MobileToast 居中提示
+# NvMobileToast 居中提示
 
 居中浮层式 HUD 提示，深色圆角卡片配可选状态图标（加载/成功/失败），到时自动消失。
 
@@ -57,7 +58,7 @@ function runLoadingToast() {
 
 ```vue
 <script setup>
-import { MobileButton, MobileToast } from '@nerv-iip/ui-mobile'
+import { NvMobileButton, NvMobileToast } from '@nerv-iip/ui-mobile'
 import { ref } from 'vue'
 
 const toastShow = ref(false)
@@ -71,8 +72,8 @@ function fireToast(type, msg) {
 </script>
 
 <template>
-  <MobileButton @click="fireToast('success', '报工成功')">成功</MobileButton>
-  <MobileToast v-model:show="toastShow" :type="toastType" :message="toastMsg" />
+  <NvMobileButton @click="fireToast('success', '报工成功')">成功</NvMobileButton>
+  <NvMobileToast v-model:show="toastShow" :type="toastType" :message="toastMsg" />
 </template>
 ```
 
@@ -92,19 +93,19 @@ function runLoadingToast() {
 </script>
 
 <template>
-  <MobileButton block @click="runLoadingToast">加载（带遮罩）</MobileButton>
-  <MobileToast v-model:show="loadingToast" type="loading" message="提交中…" overlay />
+  <NvMobileButton block @click="runLoadingToast">加载（带遮罩）</NvMobileButton>
+  <NvMobileToast v-model:show="loadingToast" type="loading" message="提交中…" overlay />
 </template>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `show` | 是否显示（`v-model:show`） | `boolean` | — |
-| `message` | 提示文案 | `string` | — |
-| `type` | 状态类型 | `text \| loading \| success \| error` | `text` |
-| `duration` | 自动关闭延时（ms）；`loading` 与 `0` 时不自动关闭 | `number` | `2000` |
-| `overlay` | 阻断背后交互（配合 `loading`） | `boolean` | `false` |
+| 属性       | 说明                                              | 类型                                  | 默认    |
+| ---------- | ------------------------------------------------- | ------------------------------------- | ------- |
+| `show`     | 是否显示（`v-model:show`）                        | `boolean`                             | —       |
+| `message`  | 提示文案                                          | `string`                              | —       |
+| `type`     | 状态类型                                          | `text \| loading \| success \| error` | `text`  |
+| `duration` | 自动关闭延时（ms）；`loading` 与 `0` 时不自动关闭 | `number`                              | `2000`  |
+| `overlay`  | 阻断背后交互（配合 `loading`）                    | `boolean`                             | `false` |
 
 </MobileDoc>

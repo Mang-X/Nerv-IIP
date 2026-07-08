@@ -4,7 +4,7 @@ title: VirtualList 虚拟列表
 ---
 
 <script setup>
-import { VirtualList, Tag } from '@nerv-iip/ui-mobile'
+import { NvVirtualList, NvMobileTag } from '@nerv-iip/ui-mobile'
 
 const states = [
   { label: '运行', variant: 'success' },
@@ -31,10 +31,11 @@ const equipment = Array.from({ length: 6000 }, (_, i) => {
 <MobileDoc>
 
 <template #phone>
+
   <section>
     <p class="ds-mdoc-label">6000 台设备 · 仅渲染可视窗口</p>
     <div class="overflow-hidden rounded-xl border border-border">
-      <VirtualList :items="equipment" :item-height="64" class="h-[460px]">
+      <NvVirtualList :items="equipment" :item-height="64" class="h-[460px]">
         <template #default="{ item }">
           <div class="flex h-full items-center gap-3 border-b border-border bg-card px-4">
             <div class="min-w-0 flex-1">
@@ -43,10 +44,10 @@ const equipment = Array.from({ length: 6000 }, (_, i) => {
                 {{ item.code }} · {{ item.line }}
               </div>
             </div>
-            <Tag :variant="item.variant" size="sm">{{ item.label }}</Tag>
+            <NvMobileTag :variant="item.variant" size="sm">{{ item.label }}</NvMobileTag>
           </div>
         </template>
-      </VirtualList>
+      </NvVirtualList>
     </div>
   </section>
 </template>
@@ -60,14 +61,14 @@ const equipment = Array.from({ length: 6000 }, (_, i) => {
 给容器一个**确定的高度**（通过 `class`），并传入固定的 `itemHeight`（像素）。默认作用域插槽按 `{ item, index }` 渲染每一行；每行的实际高度必须等于 `itemHeight`，否则定位会错位。
 
 ```vue
-<VirtualList :items="equipment" :item-height="64" class="h-[460px]">
+<NvVirtualList :items="equipment" :item-height="64" class="h-[460px]">
   <template #default="{ item }">
     <div class="flex h-full items-center gap-3 px-4">
       <div class="min-w-0 flex-1">{{ item.name }}</div>
-      <Tag :variant="item.variant" size="sm">{{ item.label }}</Tag>
+      <NvMobileTag :variant="item.variant" size="sm">{{ item.label }}</NvMobileTag>
     </div>
   </template>
-</VirtualList>
+</NvVirtualList>
 ```
 
 ## 何时使用
@@ -78,17 +79,17 @@ const equipment = Array.from({ length: 6000 }, (_, i) => {
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `items` | 列表数据 | `T[]` | — |
-| `itemHeight` | 每行固定高度（像素） | `number` | — |
-| `buffer` | 可视区上下额外渲染的行数（缓冲） | `number` | `6` |
-| `class` | 根容器类（**须指定高度**，如 `h-[460px]`） | `string` | — |
+| 属性         | 说明                                       | 类型     | 默认 |
+| ------------ | ------------------------------------------ | -------- | ---- |
+| `items`      | 列表数据                                   | `T[]`    | —    |
+| `itemHeight` | 每行固定高度（像素）                       | `number` | —    |
+| `buffer`     | 可视区上下额外渲染的行数（缓冲）           | `number` | `6`  |
+| `class`      | 根容器类（**须指定高度**，如 `h-[460px]`） | `string` | —    |
 
 ## 作用域插槽
 
-| 插槽 | 说明 | 参数 |
-|---|---|---|
+| 插槽      | 说明     | 参数                         |
+| --------- | -------- | ---------------------------- |
 | `default` | 渲染单行 | `{ item: T, index: number }` |
 
 ::: tip 提示

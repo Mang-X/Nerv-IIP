@@ -4,18 +4,19 @@ title: NoticeBar 通知条
 ---
 
 <script setup>
-import { NoticeBar } from '@nerv-iip/ui-mobile'
+import { NvNoticeBar } from '@nerv-iip/ui-mobile'
 </script>
 
 <MobileDoc>
 
 <template #phone>
+
   <section>
     <p class="ds-mdoc-label">色调</p>
     <div class="w-full space-y-2">
-      <NoticeBar tone="info">今日计划已重排，受影响工单 6 张</NoticeBar>
-      <NoticeBar tone="warning">B 线物料不足：液压阀体 V3 缺口 452 件</NoticeBar>
-      <NoticeBar tone="danger">WC-ASM-04 设备报警，请尽快处理</NoticeBar>
+      <NvNoticeBar tone="info">今日计划已重排，受影响工单 6 张</NvNoticeBar>
+      <NvNoticeBar tone="warning">B 线物料不足：液压阀体 V3 缺口 452 件</NvNoticeBar>
+      <NvNoticeBar tone="danger">WC-ASM-04 设备报警，请尽快处理</NvNoticeBar>
     </div>
   </section>
 </template>
@@ -30,20 +31,20 @@ import { NoticeBar } from '@nerv-iip/ui-mobile'
 
 ```vue
 <script setup>
-import { NoticeBar } from '@nerv-iip/ui-mobile'
+import { NvNoticeBar } from '@nerv-iip/ui-mobile'
 </script>
 
 <template>
-  <NoticeBar tone="info">今日计划已重排，受影响工单 6 张</NoticeBar>
-  <NoticeBar tone="warning">B 线物料不足：液压阀体 V3 缺口 452 件</NoticeBar>
-  <NoticeBar tone="danger">WC-ASM-04 设备报警，请尽快处理</NoticeBar>
+  <NvNoticeBar tone="info">今日计划已重排，受影响工单 6 张</NvNoticeBar>
+  <NvNoticeBar tone="warning">B 线物料不足：液压阀体 V3 缺口 452 件</NvNoticeBar>
+  <NvNoticeBar tone="danger">WC-ASM-04 设备报警，请尽快处理</NvNoticeBar>
 </template>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
+| 属性   | 说明     | 类型                        | 默认   |
+| ------ | -------- | --------------------------- | ------ |
 | `tone` | 语义色调 | `info \| warning \| danger` | `info` |
 
 </MobileDoc>

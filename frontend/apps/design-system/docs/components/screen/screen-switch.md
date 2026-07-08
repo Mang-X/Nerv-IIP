@@ -4,7 +4,7 @@ title: ScreenSwitch 开关
 
 <script setup>
 import { ref } from 'vue'
-import { ScreenSwitch } from '@nerv-iip/ui'
+import { NvScreenSwitch } from '@nerv-iip/ui'
 
 const auto = ref(true)
 const alarm = ref(false)
@@ -21,10 +21,10 @@ const alarm = ref(false)
 <ScreenDemo>
   <div style="display:flex;align-items:center;gap:24px">
     <label style="display:flex;align-items:center;gap:10px;color:var(--sb-text-2);font-size:14px">
-      <ScreenSwitch v-model="auto" /> 自动排产
+      <NvScreenSwitch v-model="auto" /> 自动排产
     </label>
     <label style="display:flex;align-items:center;gap:10px;color:var(--sb-text-2);font-size:14px">
-      <ScreenSwitch v-model="alarm" /> 声光报警
+      <NvScreenSwitch v-model="alarm" /> 声光报警
     </label>
   </div>
 </ScreenDemo>
@@ -34,9 +34,7 @@ const alarm = ref(false)
 const auto = ref(true)
 </script>
 
-<template>
-  <ScreenSwitch v-model="auto" /> 自动排产
-</template>
+<template><NvScreenSwitch v-model="auto" /> 自动排产</template>
 ```
 
 ## 禁用态
@@ -45,19 +43,19 @@ const auto = ref(true)
 
 <ScreenDemo>
   <div style="display:flex;align-items:center;gap:24px">
-    <ScreenSwitch :model-value="true" disabled />
-    <ScreenSwitch :model-value="false" disabled />
+    <NvScreenSwitch :model-value="true" disabled />
+    <NvScreenSwitch :model-value="false" disabled />
   </div>
 </ScreenDemo>
 
 ```vue
-<ScreenSwitch :model-value="true" disabled />
-<ScreenSwitch :model-value="false" disabled />
+<NvScreenSwitch :model-value="true" disabled />
+<NvScreenSwitch :model-value="false" disabled />
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `v-model` | 开关状态 | `boolean` | `false` |
-| `disabled` | 禁用 | `boolean` | `false` |
+| 属性       | 说明     | 类型      | 默认    |
+| ---------- | -------- | --------- | ------- |
+| `v-model`  | 开关状态 | `boolean` | `false` |
+| `disabled` | 禁用     | `boolean` | `false` |

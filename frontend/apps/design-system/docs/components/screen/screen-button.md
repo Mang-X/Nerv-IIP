@@ -3,7 +3,7 @@ title: ScreenButton 按钮
 ---
 
 <script setup>
-import { ScreenButton } from '@nerv-iip/ui'
+import { NvScreenButton } from '@nerv-iip/ui'
 </script>
 
 # ScreenButton 按钮
@@ -15,15 +15,15 @@ import { ScreenButton } from '@nerv-iip/ui'
 主操作用 `primary`,次操作用 `secondary`,弱化项用 `ghost`。
 
 <ScreenDemo>
-  <ScreenButton>开始生产</ScreenButton>
-  <ScreenButton variant="secondary">暂停</ScreenButton>
-  <ScreenButton variant="ghost">复位</ScreenButton>
+  <NvScreenButton>开始生产</NvScreenButton>
+  <NvScreenButton variant="secondary">暂停</NvScreenButton>
+  <NvScreenButton variant="ghost">复位</NvScreenButton>
 </ScreenDemo>
 
 ```vue
-<ScreenButton>开始生产</ScreenButton>
-<ScreenButton variant="secondary">暂停</ScreenButton>
-<ScreenButton variant="ghost">复位</ScreenButton>
+<NvScreenButton>开始生产</NvScreenButton>
+<NvScreenButton variant="secondary">暂停</NvScreenButton>
+<NvScreenButton variant="ghost">复位</NvScreenButton>
 ```
 
 ## 禁用态
@@ -31,25 +31,25 @@ import { ScreenButton } from '@nerv-iip/ui'
 `disabled` 时降低不透明度并禁止指针,三种权重一致。
 
 <ScreenDemo>
-  <ScreenButton disabled>开始生产</ScreenButton>
-  <ScreenButton variant="secondary" disabled>暂停</ScreenButton>
-  <ScreenButton variant="ghost" disabled>复位</ScreenButton>
+  <NvScreenButton disabled>开始生产</NvScreenButton>
+  <NvScreenButton variant="secondary" disabled>暂停</NvScreenButton>
+  <NvScreenButton variant="ghost" disabled>复位</NvScreenButton>
 </ScreenDemo>
 
 ```vue
-<ScreenButton disabled>开始生产</ScreenButton>
+<NvScreenButton disabled>开始生产</NvScreenButton>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `variant` | 按钮权重 | `'primary' \| 'secondary' \| 'ghost'` | `'primary'` |
-| `disabled` | 禁用 | `boolean` | `false` |
-| `type` | 透传给原生 `<button>`,可提交/重置表单 | `'button' \| 'submit' \| 'reset'` | `'button'` |
+| 属性       | 说明                                  | 类型                                  | 默认        |
+| ---------- | ------------------------------------- | ------------------------------------- | ----------- |
+| `variant`  | 按钮权重                              | `'primary' \| 'secondary' \| 'ghost'` | `'primary'` |
+| `disabled` | 禁用                                  | `boolean`                             | `false`     |
+| `type`     | 透传给原生 `<button>`,可提交/重置表单 | `'button' \| 'submit' \| 'reset'`     | `'button'`  |
 
 ## 插槽
 
-| 插槽 | 说明 |
-|---|---|
+| 插槽      | 说明                    |
+| --------- | ----------------------- |
 | `default` | 按钮文本,缺省为「确定」 |

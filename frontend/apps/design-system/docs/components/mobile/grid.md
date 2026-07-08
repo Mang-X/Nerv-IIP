@@ -4,7 +4,7 @@ title: MobileGrid 宫格
 ---
 
 <script setup>
-import { MobileGrid } from '@nerv-iip/ui-mobile'
+import { NvMobileGrid } from '@nerv-iip/ui-mobile'
 import {
   BellIcon, BoxesIcon, ChartColumnIcon, ClipboardListIcon,
   ScanLineIcon, TruckIcon, UsersIcon, WrenchIcon,
@@ -30,15 +30,16 @@ function onGrid(item) {
 <MobileDoc>
 
 <template #phone>
+
   <section>
     <p class="ds-mdoc-label">基础用法</p>
     <div class="w-full overflow-hidden rounded-xl border border-border bg-card">
-      <MobileGrid :items="gridItems" :columns="4" @select="onGrid" />
+      <NvMobileGrid :items="gridItems" :columns="4" @select="onGrid" />
     </div>
   </section>
 </template>
 
-# MobileGrid 宫格
+# NvMobileGrid 宫格
 
 首页/工作台的功能入口宫格，图标加文字单元按 N 列排布，支持角标（数字或圆点），点击回传所选项。
 
@@ -48,7 +49,7 @@ function onGrid(item) {
 
 ```vue
 <script setup>
-import { MobileGrid } from '@nerv-iip/ui-mobile'
+import { NvMobileGrid } from '@nerv-iip/ui-mobile'
 import { ClipboardListIcon, ScanLineIcon, BoxesIcon, BellIcon } from 'lucide-vue-next'
 
 const gridItems = [
@@ -63,25 +64,25 @@ function onGrid(item) {
 </script>
 
 <template>
-  <MobileGrid :items="gridItems" :columns="4" @select="onGrid" />
+  <NvMobileGrid :items="gridItems" :columns="4" @select="onGrid" />
 </template>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `items` | 入口列表 | `GridItem[]` | — |
-| `columns` | 列数 | `number` | `4` |
-| `bordered` | 是否显示发线边框 | `boolean` | `false` |
-| `square` | 单元是否正方形 | `boolean` | `false` |
+| 属性       | 说明             | 类型         | 默认    |
+| ---------- | ---------------- | ------------ | ------- |
+| `items`    | 入口列表         | `GridItem[]` | —       |
+| `columns`  | 列数             | `number`     | `4`     |
+| `bordered` | 是否显示发线边框 | `boolean`    | `false` |
+| `square`   | 单元是否正方形   | `boolean`    | `false` |
 
 `GridItem`：`{ key?: string; icon?: Component; text?: string; badge?: string \| number \| boolean }`
 
 ## 事件
 
-| 事件 | 说明 | 回调参数 |
-|---|---|---|
+| 事件     | 说明         | 回调参数                          |
+| -------- | ------------ | --------------------------------- |
 | `select` | 点击某个入口 | `(item: GridItem, index: number)` |
 
 </MobileDoc>

@@ -4,7 +4,7 @@ title: ScreenInput 输入框
 
 <script setup>
 import { ref } from 'vue'
-import { ScreenInput } from '@nerv-iip/ui'
+import { NvScreenInput } from '@nerv-iip/ui'
 
 const wo = ref('WO-2406-0312')
 const qty = ref('1240')
@@ -21,8 +21,8 @@ const bad = ref('')
 
 <ScreenDemo>
   <div style="display:flex;flex-direction:column;gap:12px;width:280px">
-    <ScreenInput v-model="wo" placeholder="工单号" />
-    <ScreenInput v-model="qty" suffix="件" placeholder="计划产量" />
+    <NvScreenInput v-model="wo" placeholder="工单号" />
+    <NvScreenInput v-model="qty" suffix="件" placeholder="计划产量" />
   </div>
 </ScreenDemo>
 
@@ -33,8 +33,8 @@ const qty = ref('1240')
 </script>
 
 <template>
-  <ScreenInput v-model="wo" placeholder="工单号" />
-  <ScreenInput v-model="qty" suffix="件" placeholder="计划产量" />
+  <NvScreenInput v-model="wo" placeholder="工单号" />
+  <NvScreenInput v-model="qty" suffix="件" placeholder="计划产量" />
 </template>
 ```
 
@@ -44,22 +44,22 @@ const qty = ref('1240')
 
 <ScreenDemo>
   <div style="display:flex;flex-direction:column;gap:12px;width:280px">
-    <ScreenInput v-model="bad" error placeholder="工单号必填" />
-    <ScreenInput model-value="装配线 B" disabled />
+    <NvScreenInput v-model="bad" error placeholder="工单号必填" />
+    <NvScreenInput model-value="装配线 B" disabled />
   </div>
 </ScreenDemo>
 
 ```vue
-<ScreenInput v-model="bad" error placeholder="工单号必填" />
-<ScreenInput model-value="装配线 B" disabled />
+<NvScreenInput v-model="bad" error placeholder="工单号必填" />
+<NvScreenInput model-value="装配线 B" disabled />
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `v-model` | 输入值 | `string` | `''` |
-| `error` | 错误态(标红 + `aria-invalid`) | `boolean` | `false` |
-| `placeholder` | 占位文本 | `string` | `'请输入'` |
-| `suffix` | 右侧单位 | `string` | — |
-| `disabled` | 禁用 | `boolean` | `false` |
+| 属性          | 说明                          | 类型      | 默认       |
+| ------------- | ----------------------------- | --------- | ---------- |
+| `v-model`     | 输入值                        | `string`  | `''`       |
+| `error`       | 错误态(标红 + `aria-invalid`) | `boolean` | `false`    |
+| `placeholder` | 占位文本                      | `string`  | `'请输入'` |
+| `suffix`      | 右侧单位                      | `string`  | —          |
+| `disabled`    | 禁用                          | `boolean` | `false`    |

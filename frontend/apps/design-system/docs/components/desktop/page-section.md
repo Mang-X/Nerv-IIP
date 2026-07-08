@@ -3,7 +3,7 @@ title: PageSection 内容区块
 ---
 
 <script setup>
-import { PageSection, PageGrid } from '@nerv-iip/ui'
+import { NvPageSection, NvPageGrid } from '@nerv-iip/ui'
 </script>
 
 # PageSection 内容区块
@@ -13,29 +13,29 @@ import { PageSection, PageGrid } from '@nerv-iip/ui'
 ## 带页眉的区块
 
 <Demo>
-  <PageSection
+  <NvPageSection
     class="w-full !py-8"
     eyebrow="控制平面"
     title="一处掌握全厂"
     description="工单、设备、质检与节拍，按区块清晰编排。"
   >
-    <PageGrid :cols="3">
+    <NvPageGrid :cols="3">
       <div v-for="t in ['工单','设备','质检']" :key="t" class="rounded-xl border border-border bg-card p-4 text-center text-sm text-muted-foreground">{{ t }}</div>
-    </PageGrid>
-  </PageSection>
+    </NvPageGrid>
+  </NvPageSection>
 </Demo>
 
 ```vue
-<PageSection eyebrow="控制平面" title="一处掌握全厂" description="…">
-  <PageGrid :cols="3"><!-- 卡片 --></PageGrid>
-</PageSection>
+<NvPageSection eyebrow="控制平面" title="一处掌握全厂" description="…">
+  <NvPageGrid :cols="3"><!-- 卡片 --></NvPageGrid>
+</NvPageSection>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 |
-|---|---|---|
-| `eyebrow` | 标题上方的小标签 | `string` |
-| `title` | 区块标题 | `string` |
-| `description` | 区块描述 | `string` |
-| `#header` | 自定义页眉插槽（替代上述三项） | slot |
+| 属性          | 说明                           | 类型     |
+| ------------- | ------------------------------ | -------- |
+| `eyebrow`     | 标题上方的小标签               | `string` |
+| `title`       | 区块标题                       | `string` |
+| `description` | 区块描述                       | `string` |
+| `#header`     | 自定义页眉插槽（替代上述三项） | slot     |

@@ -3,7 +3,7 @@ title: ScrollBoard 无缝滚动板
 ---
 
 <script setup>
-import { ScrollBoard } from '@nerv-iip/ui'
+import { NvScrollBoard } from '@nerv-iip/ui'
 
 const alarms = [
   { time: '13:56', text: '电芯线 · 卷绕机 1# 急停触发 · 安全门未复位', level: 'alarm' },
@@ -25,7 +25,7 @@ const alarms = [
 
 <ScreenDemo>
   <div style="height: 150px">
-    <ScrollBoard :items="alarms" :row-key="(r) => r.time + r.text" :speed="22">
+    <NvScrollBoard :items="alarms" :row-key="(r) => r.time + r.text" :speed="22">
       <template #row="{ item }">
         <div style="display: flex; gap: 10px; padding: 7px 2px; font-size: 13px; border-bottom: 1px solid var(--sb-divider)">
           <span style="color: var(--sb-muted); font-variant-numeric: tabular-nums">{{ item.time }}</span>
@@ -34,18 +34,18 @@ const alarms = [
           </span>
         </div>
       </template>
-    </ScrollBoard>
+    </NvScrollBoard>
   </div>
 </ScreenDemo>
 
 ```vue
 <template>
   <div style="height: 150px">
-    <ScrollBoard :items="alarms" :row-key="(r) => r.time + r.text" :speed="22">
+    <NvScrollBoard :items="alarms" :row-key="(r) => r.time + r.text" :speed="22">
       <template #row="{ item }">
         <div class="row">{{ item.time }} · {{ item.text }}</div>
       </template>
-    </ScrollBoard>
+    </NvScrollBoard>
   </div>
 </template>
 ```
@@ -58,14 +58,14 @@ const alarms = [
 
 ## API
 
-| Prop | 类型 | 默认 | 说明 |
-| --- | --- | --- | --- |
-| `items` | `T[]` | — | 列表数据(泛型) |
-| `speed` | `number` | `28` | 滚动速度(px/s) |
-| `pauseOnHover` | `boolean` | `true` | 悬停暂停 |
-| `rowKey` | `(item, index) => string \| number` | 下标 | 行 key(轮询更新时保持 DOM 复用) |
-| `#row` 插槽 | `{ item, index }` | — | 行渲染 |
+| Prop           | 类型                                | 默认   | 说明                            |
+| -------------- | ----------------------------------- | ------ | ------------------------------- |
+| `items`        | `T[]`                               | —      | 列表数据(泛型)                  |
+| `speed`        | `number`                            | `28`   | 滚动速度(px/s)                  |
+| `pauseOnHover` | `boolean`                           | `true` | 悬停暂停                        |
+| `rowKey`       | `(item, index) => string \| number` | 下标   | 行 key(轮询更新时保持 DOM 复用) |
+| `#row` 插槽    | `{ item, index }`                   | —      | 行渲染                          |
 
 ::: tip 与 ScreenScrollArea 的分工
-`ScrollBoard` 是**自动轮巡**(无人操作的挂墙场景);[ScreenScrollArea](./screen-scroll-area) 是**手动滚动**(运维交互场景,悬浮细滚条 + 可滑提示)。按场景选择,不要混用。
+`NvScrollBoard` 是**自动轮巡**(无人操作的挂墙场景);[ScreenScrollArea](./screen-scroll-area) 是**手动滚动**(运维交互场景,悬浮细滚条 + 可滑提示)。按场景选择,不要混用。
 :::

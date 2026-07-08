@@ -3,7 +3,7 @@ title: StatusTag 状态标签
 ---
 
 <script setup>
-import { StatusTag } from '@nerv-iip/ui'
+import { NvScreenStatusTag } from '@nerv-iip/ui'
 </script>
 
 # StatusTag 状态标签
@@ -16,16 +16,16 @@ import { StatusTag } from '@nerv-iip/ui'
 
 <ScreenDemo>
   <div style="display:flex; gap:12px; align-items:center;">
-    <StatusTag tone="run" label="运行中" />
-    <StatusTag tone="idle" label="待机" />
-    <StatusTag tone="alarm" label="报警" />
+    <NvScreenStatusTag tone="run" label="运行中" />
+    <NvScreenStatusTag tone="idle" label="待机" />
+    <NvScreenStatusTag tone="alarm" label="报警" />
   </div>
 </ScreenDemo>
 
 ```vue
-<StatusTag tone="run" label="运行中" />
-<StatusTag tone="idle" label="待机" />
-<StatusTag tone="alarm" label="报警" />
+<NvScreenStatusTag tone="run" label="运行中" />
+<NvScreenStatusTag tone="idle" label="待机" />
+<NvScreenStatusTag tone="alarm" label="报警" />
 ```
 
 ## 原始颜色
@@ -34,21 +34,21 @@ import { StatusTag } from '@nerv-iip/ui'
 
 <ScreenDemo>
   <div style="display:flex; gap:12px; align-items:center;">
-    <StatusTag tone="cyan" label="数据采集" />
-    <StatusTag tone="green" label="达标" />
-    <StatusTag tone="amber" label="预警" />
-    <StatusTag tone="red" label="超限" />
+    <NvScreenStatusTag tone="cyan" label="数据采集" />
+    <NvScreenStatusTag tone="green" label="达标" />
+    <NvScreenStatusTag tone="amber" label="预警" />
+    <NvScreenStatusTag tone="red" label="超限" />
   </div>
 </ScreenDemo>
 
 ```vue
-<StatusTag tone="cyan" label="数据采集" />
-<StatusTag tone="red" label="超限" />
+<NvScreenStatusTag tone="cyan" label="数据采集" />
+<NvScreenStatusTag tone="red" label="超限" />
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `tone` | 运行别名或原始调色板颜色 | `run \| idle \| alarm \| cyan \| green \| amber \| red` | `run` |
-| `label` | 标签文字,如「运行中」/「待机」/「报警」 | `string` | `运行中` |
+| 属性    | 说明                                    | 类型                                                    | 默认     |
+| ------- | --------------------------------------- | ------------------------------------------------------- | -------- |
+| `tone`  | 运行别名或原始调色板颜色                | `run \| idle \| alarm \| cyan \| green \| amber \| red` | `run`    |
+| `label` | 标签文字,如「运行中」/「待机」/「报警」 | `string`                                                | `运行中` |

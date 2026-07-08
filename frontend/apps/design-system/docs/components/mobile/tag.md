@@ -4,35 +4,36 @@ title: Tag 标签
 ---
 
 <script setup>
-import { Tag } from '@nerv-iip/ui-mobile'
+import { NvMobileTag } from '@nerv-iip/ui-mobile'
 </script>
 
 <MobileDoc>
 
 <template #phone>
+
   <section>
     <p class="ds-mdoc-label">变体</p>
     <div class="flex flex-wrap items-center gap-1.5">
-      <Tag>常规</Tag>
-      <Tag variant="brand">优先</Tag>
-      <Tag variant="success">已入库</Tag>
-      <Tag variant="warning">待质检</Tag>
-      <Tag variant="danger">超期</Tag>
+      <NvMobileTag>常规</NvMobileTag>
+      <NvMobileTag variant="brand">优先</NvMobileTag>
+      <NvMobileTag variant="success">已入库</NvMobileTag>
+      <NvMobileTag variant="warning">待质检</NvMobileTag>
+      <NvMobileTag variant="danger">超期</NvMobileTag>
     </div>
   </section>
   <section>
     <p class="ds-mdoc-label">尺寸</p>
     <div class="flex flex-wrap items-center gap-1.5">
-      <Tag variant="brand" size="sm">小号</Tag>
-      <Tag variant="brand" size="md">中号</Tag>
+      <NvMobileTag variant="brand" size="sm">小号</NvMobileTag>
+      <NvMobileTag variant="brand" size="md">中号</NvMobileTag>
     </div>
   </section>
   <section>
     <p class="ds-mdoc-label">可关闭</p>
     <div class="flex flex-wrap items-center gap-1.5">
-      <Tag variant="brand" closable>注塑</Tag>
-      <Tag variant="success" closable>CNC</Tag>
-      <Tag variant="default" closable>装配</Tag>
+      <NvMobileTag variant="brand" closable>注塑</NvMobileTag>
+      <NvMobileTag variant="success" closable>CNC</NvMobileTag>
+      <NvMobileTag variant="default" closable>装配</NvMobileTag>
     </div>
   </section>
 </template>
@@ -46,9 +47,9 @@ import { Tag } from '@nerv-iip/ui-mobile'
 `default / brand / success / warning / danger` 五种语义色。
 
 ```vue
-<Tag variant="success">已入库</Tag>
-<Tag variant="warning">待质检</Tag>
-<Tag variant="danger">超期</Tag>
+<NvMobileTag variant="success">已入库</NvMobileTag>
+<NvMobileTag variant="warning">待质检</NvMobileTag>
+<NvMobileTag variant="danger">超期</NvMobileTag>
 ```
 
 ## 尺寸
@@ -56,8 +57,8 @@ import { Tag } from '@nerv-iip/ui-mobile'
 `sm / md` 两档，密集列表里用 `sm`。
 
 ```vue
-<Tag variant="brand" size="sm">小号</Tag>
-<Tag variant="brand" size="md">中号</Tag>
+<NvMobileTag variant="brand" size="sm">小号</NvMobileTag>
+<NvMobileTag variant="brand" size="md">中号</NvMobileTag>
 ```
 
 ## 可关闭
@@ -65,21 +66,21 @@ import { Tag } from '@nerv-iip/ui-mobile'
 加 `closable` 显示关闭按钮，点击触发 `close` 事件，由父组件移除该标签。
 
 ```vue
-<Tag variant="brand" closable @close="remove(t)">注塑</Tag>
+<NvMobileTag variant="brand" closable @close="remove(t)">注塑</NvMobileTag>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `variant` | 语义色 | `default \| brand \| success \| warning \| danger` | `default` |
-| `size` | 尺寸 | `sm \| md` | `md` |
-| `closable` | 是否显示关闭按钮 | `boolean` | `false` |
+| 属性       | 说明             | 类型                                               | 默认      |
+| ---------- | ---------------- | -------------------------------------------------- | --------- |
+| `variant`  | 语义色           | `default \| brand \| success \| warning \| danger` | `default` |
+| `size`     | 尺寸             | `sm \| md`                                         | `md`      |
+| `closable` | 是否显示关闭按钮 | `boolean`                                          | `false`   |
 
 ## 事件
 
-| 事件 | 说明 | 回调参数 |
-|---|---|---|
-| `close` | 点击关闭按钮时触发 | — |
+| 事件    | 说明               | 回调参数 |
+| ------- | ------------------ | -------- |
+| `close` | 点击关闭按钮时触发 | —        |
 
 </MobileDoc>

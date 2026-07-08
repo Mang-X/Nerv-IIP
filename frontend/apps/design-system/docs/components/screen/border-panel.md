@@ -3,7 +3,7 @@ title: BorderPanel 描边面板
 ---
 
 <script setup>
-import { BorderPanel } from '@nerv-iip/ui'
+import { NvBorderPanel } from '@nerv-iip/ui'
 </script>
 
 # BorderPanel 描边面板
@@ -15,20 +15,20 @@ import { BorderPanel } from '@nerv-iip/ui'
 传 `title` 在顶边缺口处带出居中标题,默认插槽放内容。
 
 <ScreenDemo>
-  <BorderPanel title="焊接线 A · 班次概览" style="width: 380px">
+  <NvBorderPanel title="焊接线 A · 班次概览" style="width: 380px">
     <div style="display:flex;flex-direction:column;gap:8px;font-size:14px">
       <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">当前工单</span><span>WO-2406-0312</span></div>
       <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">稼动率</span><span style="color:var(--sb-cyan)">86.5%</span></div>
       <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">节拍</span><span>42.0 s / 件</span></div>
       <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">良率</span><span>99.2%</span></div>
     </div>
-  </BorderPanel>
+  </NvBorderPanel>
 </ScreenDemo>
 
 ```vue
-<BorderPanel title="焊接线 A · 班次概览">
+<NvBorderPanel title="焊接线 A · 班次概览">
   <!-- 产线明细 -->
-</BorderPanel>
+</NvBorderPanel>
 ```
 
 ## 无标题
@@ -36,30 +36,30 @@ import { BorderPanel } from '@nerv-iip/ui'
 不传 `title` 时只剩纯描边外壳,角标与顶边缺口仍在,适合包一段不需要抬头的内容。
 
 <ScreenDemo>
-  <BorderPanel style="width: 320px">
+  <NvBorderPanel style="width: 320px">
     <div style="text-align:center">
       <div style="font-size:13px;color:var(--sb-muted)">CNC 线 C · 在制数量</div>
       <div style="font-size:40px;font-weight:600;color:var(--sb-cyan);margin-top:6px">128</div>
       <div style="font-size:12px;color:var(--sb-muted);margin-top:4px">截至 2024-06-12 10:24</div>
     </div>
-  </BorderPanel>
+  </NvBorderPanel>
 </ScreenDemo>
 
 ```vue
-<BorderPanel>
+<NvBorderPanel>
   <!-- 居中大数字 -->
-</BorderPanel>
+</NvBorderPanel>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `title` | 顶边居中标题 | `string` | — |
+| 属性    | 说明         | 类型     | 默认 |
+| ------- | ------------ | -------- | ---- |
+| `title` | 顶边居中标题 | `string` | —    |
 
 ## 插槽
 
-| 插槽 | 说明 |
-|---|---|
-| 默认 | 面板主体内容 |
+| 插槽    | 说明                            |
+| ------- | ------------------------------- |
+| 默认    | 面板主体内容                    |
 | `title` | 自定义标题区(覆盖 `title` 属性) |

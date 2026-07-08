@@ -5,7 +5,7 @@ title: NumberKeyboard 数字键盘
 
 <script setup>
 import { ref } from 'vue'
-import { NumberKeyboard, MobileButton } from '@nerv-iip/ui-mobile'
+import { NvNumberKeyboard, NvMobileButton } from '@nerv-iip/ui-mobile'
 
 const qty = ref('')
 const qtyShow = ref(false)
@@ -17,6 +17,7 @@ const workerShow = ref(false)
 <MobileDoc>
 
 <template #phone>
+
   <section>
     <p class="ds-mdoc-label">录入数量（带小数点）</p>
     <div
@@ -28,7 +29,7 @@ const workerShow = ref(false)
         {{ qty || '点此录入' }}
       </span>
     </div>
-    <NumberKeyboard v-model="qty" v-model:show="qtyShow" title="录入完工数量" extra-key="." />
+    <NvNumberKeyboard v-model="qty" v-model:show="qtyShow" title="录入完工数量" extra-key="." />
   </section>
   <section>
     <p class="ds-mdoc-label">录入工号（纯数字、无小数点）</p>
@@ -41,7 +42,7 @@ const workerShow = ref(false)
         {{ worker || '点此录入' }}
       </span>
     </div>
-    <NumberKeyboard
+    <NvNumberKeyboard
       v-model="worker"
       v-model:show="workerShow"
       title="录入操作工号"
@@ -61,7 +62,7 @@ PDA 屏幕数字键盘（Arco 表单形态）。底部固定面板由 `v-model:s
 `extra-key` 为左下角按键，默认 `.`（小数点，自动去重）。
 
 ```vue
-<NumberKeyboard v-model="qty" v-model:show="show" title="录入完工数量" extra-key="." />
+<NvNumberKeyboard v-model="qty" v-model:show="show" title="录入完工数量" extra-key="." />
 ```
 
 ## 录入工号
@@ -69,7 +70,7 @@ PDA 屏幕数字键盘（Arco 表单形态）。底部固定面板由 `v-model:s
 设 `extra-key=""` 隐藏小数点，`0` 键自动加宽占满；`maxlength` 限制位数。
 
 ```vue
-<NumberKeyboard
+<NvNumberKeyboard
   v-model="worker"
   v-model:show="show"
   extra-key=""
@@ -80,20 +81,20 @@ PDA 屏幕数字键盘（Arco 表单形态）。底部固定面板由 `v-model:s
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `v-model` | 录入的字符串 | `string` | `''` |
-| `v-model:show` | 面板是否展开 | `boolean` | `false` |
-| `title` | 面板标题 | `string` | `请输入` |
-| `extraKey` | 左下角按键，`''` 时隐藏并加宽 `0` | `string` | `.` |
-| `maxlength` | 最大字符数 | `number` | — |
-| `confirmText` | 确认按钮文案 | `string` | `完成` |
+| 属性           | 说明                              | 类型      | 默认     |
+| -------------- | --------------------------------- | --------- | -------- |
+| `v-model`      | 录入的字符串                      | `string`  | `''`     |
+| `v-model:show` | 面板是否展开                      | `boolean` | `false`  |
+| `title`        | 面板标题                          | `string`  | `请输入` |
+| `extraKey`     | 左下角按键，`''` 时隐藏并加宽 `0` | `string`  | `.`      |
+| `maxlength`    | 最大字符数                        | `number`  | —        |
+| `confirmText`  | 确认按钮文案                      | `string`  | `完成`   |
 
 ## 事件
 
-| 事件 | 说明 | 回调参数 |
-|---|---|---|
-| `press` | 任意按键按下（含 `delete`） | `(key: string)` |
-| `confirm` | 点击确认 | — |
+| 事件      | 说明                        | 回调参数        |
+| --------- | --------------------------- | --------------- |
+| `press`   | 任意按键按下（含 `delete`） | `(key: string)` |
+| `confirm` | 点击确认                    | —               |
 
 </MobileDoc>

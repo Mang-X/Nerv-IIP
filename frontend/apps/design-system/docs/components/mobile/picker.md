@@ -4,7 +4,7 @@ title: Picker 滚轮选择
 ---
 
 <script setup>
-import { Cell, CellGroup, Picker } from '@nerv-iip/ui-mobile'
+import { NvCell, NvCellGroup, NvPicker } from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
 
 const pickerOpen = ref(false)
@@ -24,12 +24,13 @@ const pickerLabel = computed(
 <MobileDoc>
 
 <template #phone>
+
   <section>
     <p class="ds-mdoc-label">基础用法</p>
-    <CellGroup>
-      <Cell title="目标产线" :value="pickerLabel" arrow @click="pickerOpen = true" />
-    </CellGroup>
-    <Picker
+    <NvCellGroup>
+      <NvCell title="目标产线" :value="pickerLabel" arrow @click="pickerOpen = true" />
+    </NvCellGroup>
+    <NvPicker
       v-model:open="pickerOpen"
       v-model="pickerLine"
       :options="pickerOptions"
@@ -61,10 +62,10 @@ const pickerLabel = computed(
 </script>
 
 <template>
-  <CellGroup>
-    <Cell title="目标产线" :value="pickerLabel" arrow @click="pickerOpen = true" />
-  </CellGroup>
-  <Picker
+  <NvCellGroup>
+    <NvCell title="目标产线" :value="pickerLabel" arrow @click="pickerOpen = true" />
+  </NvCellGroup>
+  <NvPicker
     v-model:open="pickerOpen"
     v-model="pickerLine"
     :options="pickerOptions"
@@ -75,12 +76,12 @@ const pickerLabel = computed(
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `v-model:open` | 抽屉显隐 | `boolean` | `false` |
-| `v-model` | 选中项的 `value` | `string` | — |
-| `options` | 选项列表 | `PickerOption[]` | — |
-| `title` | 标题 | `string` | `'请选择'` |
+| 属性           | 说明             | 类型             | 默认       |
+| -------------- | ---------------- | ---------------- | ---------- |
+| `v-model:open` | 抽屉显隐         | `boolean`        | `false`    |
+| `v-model`      | 选中项的 `value` | `string`         | —          |
+| `options`      | 选项列表         | `PickerOption[]` | —          |
+| `title`        | 标题             | `string`         | `'请选择'` |
 
 `PickerOption`：`{ label: string; value: string }`
 

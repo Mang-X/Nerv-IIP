@@ -3,7 +3,7 @@ title: ScreenHeader 大屏页头
 ---
 
 <script setup>
-import { ScreenHeader } from '@nerv-iip/ui'
+import { NvScreenHeader } from '@nerv-iip/ui'
 </script>
 
 # ScreenHeader 大屏页头
@@ -15,7 +15,7 @@ import { ScreenHeader } from '@nerv-iip/ui'
 横向占满整列,填入真实标题与挂钟时间。
 
 <ScreenDemo wide>
-  <ScreenHeader
+  <NvScreenHeader
     title="智能工厂 MES 运营看板"
     time="2024-06-12 10:24:36"
     date="星期三"
@@ -25,7 +25,7 @@ import { ScreenHeader } from '@nerv-iip/ui'
 </ScreenDemo>
 
 ```vue
-<ScreenHeader
+<NvScreenHeader
   title="智能工厂 MES 运营看板"
   time="2024-06-12 10:24:36"
   date="星期三"
@@ -39,7 +39,7 @@ import { ScreenHeader } from '@nerv-iip/ui'
 按需只传部分工具,缺省项自动隐去 —— 这里只保留时间与当前产线。
 
 <ScreenDemo wide>
-  <ScreenHeader
+  <NvScreenHeader
     title="焊接车间 · 产线监控"
     time="2024-06-12 10:24:36"
     line="焊接线 A"
@@ -50,7 +50,7 @@ import { ScreenHeader } from '@nerv-iip/ui'
 
 ```vue
 <!-- date / screen 传空串即隐去对应工具 -->
-<ScreenHeader
+<NvScreenHeader
   title="焊接车间 · 产线监控"
   time="2024-06-12 10:24:36"
   line="焊接线 A"
@@ -61,10 +61,10 @@ import { ScreenHeader } from '@nerv-iip/ui'
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `title` | 页头标题 | `string` | `'智能工厂 MES 运营看板'` |
-| `time` | 挂钟时间(传空串则隐去该工具) | `string` | `'2024-06-12 10:24:36'` |
-| `date` | 日期 / 星期(传空串则隐去) | `string` | `'星期三'` |
-| `line` | 当前产线筛选(传空串则隐去) | `string` | `'全部产线'` |
-| `screen` | 大屏 / 工位名(传空串则隐去) | `string` | `'中央控制室大屏 01'` |
+| 属性     | 说明                         | 类型     | 默认                      |
+| -------- | ---------------------------- | -------- | ------------------------- |
+| `title`  | 页头标题                     | `string` | `'智能工厂 MES 运营看板'` |
+| `time`   | 挂钟时间(传空串则隐去该工具) | `string` | `'2024-06-12 10:24:36'`   |
+| `date`   | 日期 / 星期(传空串则隐去)    | `string` | `'星期三'`                |
+| `line`   | 当前产线筛选(传空串则隐去)   | `string` | `'全部产线'`              |
+| `screen` | 大屏 / 工位名(传空串则隐去)  | `string` | `'中央控制室大屏 01'`     |

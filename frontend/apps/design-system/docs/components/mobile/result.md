@@ -4,16 +4,17 @@ title: Result 结果页
 ---
 
 <script setup>
-import { MobileButton, Result } from '@nerv-iip/ui-mobile'
+import { NvMobileButton, NvMobileResult } from '@nerv-iip/ui-mobile'
 </script>
 
 <MobileDoc>
 
 <template #phone>
+
   <section>
     <p class="ds-mdoc-label">成功</p>
     <div class="w-full rounded-xl border border-border bg-card">
-      <Result
+      <NvMobileResult
         status="success"
         title="本班产出已同步"
         description="已完成 4,210 件，良率 99.2%。"
@@ -23,15 +24,15 @@ import { MobileButton, Result } from '@nerv-iip/ui-mobile'
   <section>
     <p class="ds-mdoc-label">失败（带操作）</p>
     <div class="w-full rounded-xl border border-border bg-card">
-      <Result
+      <NvMobileResult
         status="error"
         title="工单上报失败"
         description="网关连接超时，请检查网络后重试。"
       >
         <template #actions>
-          <MobileButton variant="primary" size="md" block>重新上报</MobileButton>
+          <NvMobileButton variant="primary" size="md" block>重新上报</NvMobileButton>
         </template>
-      </Result>
+      </NvMobileResult>
     </div>
   </section>
 </template>
@@ -46,11 +47,11 @@ import { MobileButton, Result } from '@nerv-iip/ui-mobile'
 
 ```vue
 <script setup>
-import { Result } from '@nerv-iip/ui-mobile'
+import { NvMobileResult } from '@nerv-iip/ui-mobile'
 </script>
 
 <template>
-  <Result
+  <NvMobileResult
     status="success"
     title="本班产出已同步"
     description="已完成 4,210 件，良率 99.2%。"
@@ -64,26 +65,30 @@ import { Result } from '@nerv-iip/ui-mobile'
 
 ```vue
 <template>
-  <Result status="error" title="工单上报失败" description="网关连接超时，请检查网络后重试。">
+  <NvMobileResult
+    status="error"
+    title="工单上报失败"
+    description="网关连接超时，请检查网络后重试。"
+  >
     <template #actions>
-      <MobileButton variant="primary" size="md" block>重新上报</MobileButton>
+      <NvMobileButton variant="primary" size="md" block>重新上报</NvMobileButton>
     </template>
-  </Result>
+  </NvMobileResult>
 </template>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `status` | 结果状态 | `success \| error` | — |
-| `title` | 标题 | `string` | — |
-| `description` | 说明文字 | `string` | — |
+| 属性          | 说明     | 类型               | 默认 |
+| ------------- | -------- | ------------------ | ---- |
+| `status`      | 结果状态 | `success \| error` | —    |
+| `title`       | 标题     | `string`           | —    |
+| `description` | 说明文字 | `string`           | —    |
 
 ## 插槽
 
-| 插槽 | 说明 |
-|---|---|
+| 插槽      | 说明             |
+| --------- | ---------------- |
 | `actions` | 标题下方的操作区 |
 
 </MobileDoc>

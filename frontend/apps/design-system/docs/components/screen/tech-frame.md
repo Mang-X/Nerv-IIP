@@ -3,7 +3,7 @@ title: TechFrame 科技边框
 ---
 
 <script setup>
-import { TechFrame } from '@nerv-iip/ui'
+import { NvTechFrame } from '@nerv-iip/ui'
 </script>
 
 # TechFrame 科技边框
@@ -15,7 +15,7 @@ import { TechFrame } from '@nerv-iip/ui'
 边框无内置背景,直接包住一块自带尺寸的内容。默认青色。
 
 <ScreenDemo>
-  <TechFrame style="width: 380px">
+  <NvTechFrame style="width: 380px">
     <div style="padding:20px">
       <div style="font-size:14px;color:var(--sb-text-2);margin-bottom:10px">焊接线 A · 实时状态</div>
       <div style="display:flex;flex-direction:column;gap:8px;font-size:14px">
@@ -24,13 +24,13 @@ import { TechFrame } from '@nerv-iip/ui'
         <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">节拍</span><span>48.2 s / 件</span></div>
       </div>
     </div>
-  </TechFrame>
+  </NvTechFrame>
 </ScreenDemo>
 
 ```vue
-<TechFrame>
+<NvTechFrame>
   <!-- 自带尺寸的内容 -->
-</TechFrame>
+</NvTechFrame>
 ```
 
 ## 状态配色
@@ -38,35 +38,35 @@ import { TechFrame } from '@nerv-iip/ui'
 `accent` 同时着色边与折角,用来表达整框状态 —— 运行绿、报警红。
 
 <ScreenDemo>
-  <TechFrame accent="green" style="width: 300px">
+  <NvTechFrame accent="green" style="width: 300px">
     <div style="padding:18px;text-align:center">
       <div style="font-size:13px;color:var(--sb-muted)">装配线 B</div>
       <div style="font-size:18px;font-weight:600;color:var(--sb-green);margin-top:6px">运行中</div>
       <div style="font-size:12px;color:var(--sb-muted);margin-top:4px">已稳产 4 时 12 分</div>
     </div>
-  </TechFrame>
-  <TechFrame accent="red" style="width: 300px">
+  </NvTechFrame>
+  <NvTechFrame accent="red" style="width: 300px">
     <div style="padding:18px;text-align:center">
       <div style="font-size:13px;color:var(--sb-muted)">CNC 线 C</div>
       <div style="font-size:18px;font-weight:600;color:var(--sb-red);margin-top:6px">主轴超温</div>
       <div style="font-size:12px;color:var(--sb-muted);margin-top:4px">78.6 ℃ · 阈值 75.0 ℃</div>
     </div>
-  </TechFrame>
+  </NvTechFrame>
 </ScreenDemo>
 
 ```vue
-<TechFrame accent="green"><!-- 运行中 --></TechFrame>
-<TechFrame accent="red"><!-- 主轴超温 --></TechFrame>
+<NvTechFrame accent="green"><!-- 运行中 --></NvTechFrame>
+<NvTechFrame accent="red"><!-- 主轴超温 --></NvTechFrame>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
+| 属性     | 说明         | 类型                                    | 默认     |
+| -------- | ------------ | --------------------------------------- | -------- |
 | `accent` | 边与折角配色 | `'cyan' \| 'green' \| 'amber' \| 'red'` | `'cyan'` |
 
 ## 插槽
 
-| 插槽 | 说明 |
-|---|---|
+| 插槽 | 说明                           |
+| ---- | ------------------------------ |
 | 默认 | 被框住的内容(边框绘制在其之上) |

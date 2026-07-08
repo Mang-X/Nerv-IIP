@@ -3,7 +3,7 @@ title: Loader 加载
 ---
 
 <script setup>
-import { Loader, Skeleton } from '@nerv-iip/ui'
+import { NvLoader, Skeleton } from '@nerv-iip/ui'
 
 const loaderVariants = [
   { v: 'ring', name: '环形' },
@@ -15,40 +15,40 @@ const loaderVariants = [
 
 # Loader 加载
 
-克制、品牌着色的加载指示。`Loader` 提供四种形态用于即时反馈，`Skeleton` 用于内容占位；减弱动效下均降级为静态。
+克制、品牌着色的加载指示。`NvLoader` 提供四种形态用于即时反馈，`Skeleton` 用于内容占位；减弱动效下均降级为静态。
 
 ## 形态
 
 <Demo>
   <div class="flex flex-wrap gap-8">
     <div v-for="l in loaderVariants" :key="l.v" class="flex flex-col items-center gap-2">
-      <Loader :variant="l.v" size="lg" />
+      <NvLoader :variant="l.v" size="lg" />
       <span class="font-mono text-xs text-muted-foreground">{{ l.name }}</span>
     </div>
   </div>
 </Demo>
 
 ```vue
-<Loader variant="ring" size="lg" />
-<Loader variant="dots" size="lg" />
-<Loader variant="bars" size="lg" />
-<Loader variant="pulse" size="lg" />
+<NvLoader variant="ring" size="lg" />
+<NvLoader variant="dots" size="lg" />
+<NvLoader variant="bars" size="lg" />
+<NvLoader variant="pulse" size="lg" />
 ```
 
 ## 尺寸
 
 <Demo>
   <div class="flex items-center gap-6">
-    <Loader variant="ring" size="sm" />
-    <Loader variant="ring" />
-    <Loader variant="ring" size="lg" />
+    <NvLoader variant="ring" size="sm" />
+    <NvLoader variant="ring" />
+    <NvLoader variant="ring" size="lg" />
   </div>
 </Demo>
 
 ```vue
-<Loader size="sm" />
-<Loader />
-<Loader size="lg" />
+<NvLoader size="sm" />
+<NvLoader />
+<NvLoader size="lg" />
 ```
 
 ## 骨架屏 Skeleton
@@ -79,14 +79,14 @@ const loaderVariants = [
 
 ### Loader
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `variant` | 形态 | `ring \| dots \| bars \| pulse` | `ring` |
-| `size` | 尺寸 | `sm \| default \| lg` | `default` |
-| `label` | 无障碍标签 | `string` | `加载中` |
+| 属性      | 说明       | 类型                            | 默认      |
+| --------- | ---------- | ------------------------------- | --------- |
+| `variant` | 形态       | `ring \| dots \| bars \| pulse` | `ring`    |
+| `size`    | 尺寸       | `sm \| default \| lg`           | `default` |
+| `label`   | 无障碍标签 | `string`                        | `加载中`  |
 
 ### Skeleton
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `class` | 通过工具类控制宽高与圆角 | `string` | — |
+| 属性    | 说明                     | 类型     | 默认 |
+| ------- | ------------------------ | -------- | ---- |
+| `class` | 通过工具类控制宽高与圆角 | `string` | —    |

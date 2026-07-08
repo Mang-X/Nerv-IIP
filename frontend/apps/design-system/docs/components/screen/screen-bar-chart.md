@@ -3,7 +3,7 @@ title: ScreenBarChart 柱状图
 ---
 
 <script setup>
-import { ScreenBarChart } from '@nerv-iip/ui'
+import { NvScreenBarChart } from '@nerv-iip/ui'
 
 const inbound = [4, 9, 14, 18, 17, 21, 16, 19, 15, 12, 8, 3]
 const outbound = [2, 5, 9, 13, 16, 19, 21, 18, 20, 17, 11, 6]
@@ -20,7 +20,7 @@ const hours = Array.from({ length: 12 }, (_, i) => `${String(8 + i).padStart(2, 
 
 <ScreenDemo>
   <div style="height: 150px">
-    <ScreenBarChart
+    <NvScreenBarChart
       :series="[{ label: '入库行', color: '#4aa6ee', data: inbound }]"
       :hover-labels="hours"
       :x-labels="[hours[0], hours[6], '现在']"
@@ -31,7 +31,7 @@ const hours = Array.from({ length: 12 }, (_, i) => `${String(8 + i).padStart(2, 
 ```vue
 <template>
   <div style="height: 150px">
-    <ScreenBarChart
+    <NvScreenBarChart
       :series="[{ label: '入库行', color: '#4aa6ee', data: hourly }]"
       :hover-labels="hourLabels"
       :x-labels="[hourLabels[0], hourLabels[6], '现在']"
@@ -46,7 +46,7 @@ const hours = Array.from({ length: 12 }, (_, i) => `${String(8 + i).padStart(2, 
 
 <ScreenDemo>
   <div style="height: 170px">
-    <ScreenBarChart
+    <NvScreenBarChart
       :series="[
         { label: '入库行', color: '#4aa6ee', data: inbound },
         { label: '出库行', color: '#8b9be6', data: outbound },
@@ -58,7 +58,7 @@ const hours = Array.from({ length: 12 }, (_, i) => `${String(8 + i).padStart(2, 
 </ScreenDemo>
 
 ```vue
-<ScreenBarChart
+<NvScreenBarChart
   :series="[
     { label: '入库行', color: '#4aa6ee', data: inbound },
     { label: '出库行', color: '#8b9be6', data: outbound },
@@ -73,7 +73,7 @@ const hours = Array.from({ length: 12 }, (_, i) => `${String(8 + i).padStart(2, 
 
 <ScreenDemo>
   <div style="height: 150px">
-    <ScreenBarChart
+    <NvScreenBarChart
       :series="[{ label: '出库行', color: '#8b9be6', data: outbound }]"
       :hover-labels="hours"
       autoplay
@@ -83,15 +83,15 @@ const hours = Array.from({ length: 12 }, (_, i) => `${String(8 + i).padStart(2, 
 </ScreenDemo>
 
 ```vue
-<ScreenBarChart :series="series" :hover-labels="hourLabels" autoplay :autoplay-ms="2400" />
+<NvScreenBarChart :series="series" :hover-labels="hourLabels" autoplay :autoplay-ms="2400" />
 ```
 
 ## API
 
-| Prop | 类型 | 默认 | 说明 |
-| --- | --- | --- | --- |
-| `series` | `{ label, color, data }[]` | — | 1–2 条序列(并排分组柱),`data` 等长 |
-| `xLabels` | `string[]` | `[]` | X 轴下标签(可稀疏,均匀分布) |
-| `hoverLabels` | `string[]` | — | 悬停标签(与 `data` 等长;缺省用序号) |
-| `autoplay` | `boolean` | `false` | 信息卡自动巡显(用户悬停时暂停) |
-| `autoplayMs` | `number` | `2400` | 巡显间隔(毫秒) |
+| Prop          | 类型                       | 默认    | 说明                                |
+| ------------- | -------------------------- | ------- | ----------------------------------- |
+| `series`      | `{ label, color, data }[]` | —       | 1–2 条序列(并排分组柱),`data` 等长  |
+| `xLabels`     | `string[]`                 | `[]`    | X 轴下标签(可稀疏,均匀分布)         |
+| `hoverLabels` | `string[]`                 | —       | 悬停标签(与 `data` 等长;缺省用序号) |
+| `autoplay`    | `boolean`                  | `false` | 信息卡自动巡显(用户悬停时暂停)      |
+| `autoplayMs`  | `number`                   | `2400`  | 巡显间隔(毫秒)                      |

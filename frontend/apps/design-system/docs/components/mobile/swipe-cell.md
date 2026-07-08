@@ -4,7 +4,7 @@ title: SwipeCell 侧滑操作
 ---
 
 <script setup>
-import { SwipeCell } from '@nerv-iip/ui-mobile'
+import { NvSwipeCell } from '@nerv-iip/ui-mobile'
 import { ref } from 'vue'
 
 const swipeActions = [
@@ -25,10 +25,11 @@ function onSwipe(value) {
 <MobileDoc>
 
 <template #phone>
+
   <section>
     <p class="ds-mdoc-label">基础用法</p>
     <div class="w-full overflow-hidden rounded-xl border border-border">
-      <SwipeCell
+      <NvSwipeCell
         v-for="row in swipeRows"
         :key="row.code"
         :actions="swipeActions"
@@ -42,12 +43,12 @@ function onSwipe(value) {
           </div>
           <span class="shrink-0 text-xs text-muted-foreground">← 左滑</span>
         </div>
-      </SwipeCell>
+      </NvSwipeCell>
     </div>
   </section>
 </template>
 
-# SwipeCell 侧滑操作
+# NvSwipeCell 侧滑操作
 
 向左滑动行以露出右侧操作按钮。指针驱动（触摸与鼠标皆可），自动吸附开合，仅在水平拖拽时生效以保留纵向滚动。
 
@@ -57,7 +58,7 @@ function onSwipe(value) {
 
 ```vue
 <script setup>
-import { SwipeCell } from '@nerv-iip/ui-mobile'
+import { NvSwipeCell } from '@nerv-iip/ui-mobile'
 
 const swipeActions = [
   { label: '完工', value: 'finish', tone: 'brand' },
@@ -70,29 +71,29 @@ function onSwipe(value) {
 </script>
 
 <template>
-  <SwipeCell :actions="swipeActions" @select="onSwipe">
+  <NvSwipeCell :actions="swipeActions" @select="onSwipe">
     <div class="flex items-center gap-3 px-4 py-3">
       <div class="flex-1">
         <div class="text-[15px]">齿轮箱端盖</div>
         <div class="text-sm text-muted-foreground">WO-2406-0421</div>
       </div>
     </div>
-  </SwipeCell>
+  </NvSwipeCell>
 </template>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `actions` | 右侧操作按钮 | `SwipeAction[]` | — |
+| 属性      | 说明         | 类型            | 默认 |
+| --------- | ------------ | --------------- | ---- |
+| `actions` | 右侧操作按钮 | `SwipeAction[]` | —    |
 
 `SwipeAction`：`{ label: string; value: string; tone?: 'default' \| 'brand' \| 'danger' }`
 
 ## 事件
 
-| 事件 | 说明 | 回调参数 |
-|---|---|---|
+| 事件     | 说明         | 回调参数          |
+| -------- | ------------ | ----------------- |
 | `select` | 点击某个操作 | `(value: string)` |
 
 </MobileDoc>

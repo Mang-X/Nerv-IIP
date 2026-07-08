@@ -3,7 +3,7 @@ title: Carousel 轮播图
 ---
 
 <script setup>
-import { CarouselPro } from '@nerv-iip/ui'
+import { NvCarousel } from '@nerv-iip/ui'
 
 const lines = [
   { zone: '焊接 A 区', oee: '92%', tone: 'var(--brand)' },
@@ -26,7 +26,7 @@ const orders = [
 `autoplay` 设自动切换毫秒，`loop` 首尾循环。鼠标移入暂停，箭头随 hover 浮现。
 
 <Demo block>
-  <CarouselPro :autoplay="3500" loop class="aspect-[21/9]">
+  <NvCarousel :autoplay="3500" loop class="aspect-[21/9]">
     <div
       v-for="l in lines"
       :key="l.zone"
@@ -36,13 +36,13 @@ const orders = [
       <div class="text-2xl font-semibold">{{ l.zone }}</div>
       <div class="mt-1 text-sm opacity-90">OEE {{ l.oee }}</div>
     </div>
-  </CarouselPro>
+  </NvCarousel>
 </Demo>
 
 ```vue
-<CarouselPro :autoplay="3500" loop class="aspect-[21/9]">
+<NvCarousel :autoplay="3500" loop class="aspect-[21/9]">
   <div v-for="l in lines" :key="l.zone">…</div>
-</CarouselPro>
+</NvCarousel>
 ```
 
 ## 数据驱动
@@ -50,7 +50,7 @@ const orders = [
 传 `:items`，默认作用域插槽按 `{ item, index }` 渲染每屏；幻灯片本身是卡片时用 `:frame="false"` 关掉视口灰底。
 
 <Demo block>
-  <CarouselPro :items="orders" :frame="false">
+  <NvCarousel :items="orders" :frame="false">
     <template #default="{ item }">
       <div class="w-full shrink-0 px-1 pb-8">
         <div class="rounded-xl border border-border bg-card p-5">
@@ -59,29 +59,29 @@ const orders = [
         </div>
       </div>
     </template>
-  </CarouselPro>
+  </NvCarousel>
 </Demo>
 
 ```vue
-<CarouselPro :items="orders" :frame="false">
+<NvCarousel :items="orders" :frame="false">
   <template #default="{ item }">…</template>
-</CarouselPro>
+</NvCarousel>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `items` | 数据驱动幻灯片（省略则用默认插槽） | `unknown[]` | — |
-| `autoplay` | 自动切换间隔（毫秒，0 关闭；hover 暂停） | `number` | `0` |
-| `loop` | 首尾循环 | `boolean` | `false` |
-| `arrows` | 左右箭头（hover 浮现） | `boolean` | `true` |
-| `dots` | 圆点指示器 | `boolean` | `true` |
-| `frame` | 视口圆角灰底背板 | `boolean` | `true` |
-| `v-model:index` | 当前页索引 | `number` | `0` |
+| 属性            | 说明                                     | 类型        | 默认    |
+| --------------- | ---------------------------------------- | ----------- | ------- |
+| `items`         | 数据驱动幻灯片（省略则用默认插槽）       | `unknown[]` | —       |
+| `autoplay`      | 自动切换间隔（毫秒，0 关闭；hover 暂停） | `number`    | `0`     |
+| `loop`          | 首尾循环                                 | `boolean`   | `false` |
+| `arrows`        | 左右箭头（hover 浮现）                   | `boolean`   | `true`  |
+| `dots`          | 圆点指示器                               | `boolean`   | `true`  |
+| `frame`         | 视口圆角灰底背板                         | `boolean`   | `true`  |
+| `v-model:index` | 当前页索引                               | `number`    | `0`     |
 
 ## 事件
 
-| 事件 | 说明 | 回调参数 |
-|---|---|---|
+| 事件     | 说明         | 回调参数          |
+| -------- | ------------ | ----------------- |
 | `change` | 切换到新一页 | `(index: number)` |

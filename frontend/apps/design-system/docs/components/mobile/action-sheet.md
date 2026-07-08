@@ -4,7 +4,7 @@ title: ActionSheet 动作面板
 ---
 
 <script setup>
-import { ActionSheet, MobileButton } from '@nerv-iip/ui-mobile'
+import { NvActionSheet, NvMobileButton } from '@nerv-iip/ui-mobile'
 import { ref } from 'vue'
 
 const actionOpen = ref(false)
@@ -22,12 +22,13 @@ function onAction(value) {
 <MobileDoc>
 
 <template #phone>
+
   <section>
     <p class="ds-mdoc-label">基础用法</p>
-    <MobileButton variant="default" size="md" block @click="actionOpen = true">
+    <NvMobileButton variant="default" size="md" block @click="actionOpen = true">
       打开动作面板
-    </MobileButton>
-    <ActionSheet
+    </NvMobileButton>
+    <NvActionSheet
       v-model:open="actionOpen"
       title="工单操作"
       :actions="actions"
@@ -36,7 +37,7 @@ function onAction(value) {
   </section>
 </template>
 
-# ActionSheet 动作面板
+# NvActionSheet 动作面板
 
 从底部升起的动作列表，堆叠备选操作并单独分隔「取消」，点击后回传所选值。
 
@@ -46,7 +47,7 @@ function onAction(value) {
 
 ```vue
 <script setup>
-import { ActionSheet, MobileButton } from '@nerv-iip/ui-mobile'
+import { NvActionSheet, NvMobileButton } from '@nerv-iip/ui-mobile'
 import { ref } from 'vue'
 
 const actionOpen = ref(false)
@@ -61,34 +62,29 @@ function onAction(value) {
 </script>
 
 <template>
-  <MobileButton variant="default" size="md" block @click="actionOpen = true">
+  <NvMobileButton variant="default" size="md" block @click="actionOpen = true">
     打开动作面板
-  </MobileButton>
-  <ActionSheet
-    v-model:open="actionOpen"
-    title="工单操作"
-    :actions="actions"
-    @select="onAction"
-  />
+  </NvMobileButton>
+  <NvActionSheet v-model:open="actionOpen" title="工单操作" :actions="actions" @select="onAction" />
 </template>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `open` | 是否打开（`v-model:open`） | `boolean` | `false` |
-| `actions` | 动作列表 | `ActionItem[]` | — |
-| `title` | 标题 | `string` | — |
-| `description` | 描述 | `string` | — |
-| `cancelText` | 取消按钮文案 | `string` | `取消` |
+| 属性          | 说明                       | 类型           | 默认    |
+| ------------- | -------------------------- | -------------- | ------- |
+| `open`        | 是否打开（`v-model:open`） | `boolean`      | `false` |
+| `actions`     | 动作列表                   | `ActionItem[]` | —       |
+| `title`       | 标题                       | `string`       | —       |
+| `description` | 描述                       | `string`       | —       |
+| `cancelText`  | 取消按钮文案               | `string`       | `取消`  |
 
 `ActionItem`：`{ label: string; value: string; danger?: boolean }`
 
 ## 事件
 
-| 事件 | 说明 | 回调参数 |
-|---|---|---|
+| 事件     | 说明           | 回调参数          |
+| -------- | -------------- | ----------------- |
 | `select` | 选择某项时触发 | `(value: string)` |
 
 </MobileDoc>

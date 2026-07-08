@@ -10,7 +10,7 @@ import {
   SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarMenuAction, SidebarMenuBadge,
   SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton,
   SidebarSeparator, SidebarInput, SidebarRail, SidebarTrigger, SidebarInset,
-  SidebarProBrand, SidebarProDot, SidebarProUser, SidebarProSub,
+  NvSidebarBrand, NvSidebarDot, NvSidebarUser, NvSidebarSub,
   TooltipProvider,
 } from '@nerv-iip/ui'
 import {
@@ -43,7 +43,7 @@ const todo = ref('待派工单')
   <SidebarProvider>
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <SidebarProBrand name="Nerv-IIP" sub="总装一厂 · 早班" logo="N" />
+        <NvSidebarBrand name="Nerv-IIP" sub="总装一厂 · 早班" logo="N" />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
@@ -66,13 +66,13 @@ const todo = ref('待派工单')
             <SidebarMenuItem>
               <SidebarMenuButton :is-active="nav === '设备'" tooltip="设备 · 在线" @click="nav = '设备'">
                 <WrenchIcon /><span>设备</span>
-                <SidebarProDot tone="ok" />
+                <NvSidebarDot tone="ok" />
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton :is-active="nav === '告警'" tooltip="告警 · 2 条未读" @click="nav = '告警'">
                 <BellIcon /><span>告警</span>
-                <SidebarProDot tone="warn" />
+                <NvSidebarDot tone="warn" />
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem><SidebarMenuButton :is-active="nav === '设置'" tooltip="设置" @click="nav = '设置'"><SettingsIcon /><span>设置</span></SidebarMenuButton></SidebarMenuItem>
@@ -83,7 +83,7 @@ const todo = ref('待派工单')
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" tooltip="张伟 · 班长">
-              <SidebarProUser name="张伟" role="班长 · 早班" initials="张" />
+              <NvSidebarUser name="张伟" role="班长 · 早班" initials="张" />
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -114,7 +114,7 @@ const todo = ref('待派工单')
 ```vue
 <Sidebar collapsible="icon">
   <SidebarHeader>
-    <SidebarProBrand name="Nerv-IIP" sub="总装一厂 · 早班" logo="N" />
+    <NvSidebarBrand name="Nerv-IIP" sub="总装一厂 · 早班" logo="N" />
   </SidebarHeader>
   <SidebarContent>
     <SidebarGroup>
@@ -127,7 +127,7 @@ const todo = ref('待派工单')
         </SidebarMenuItem>
         <SidebarMenuItem>
           <SidebarMenuButton tooltip="设备">
-            <WrenchIcon /><span>设备</span><SidebarProDot tone="ok" />
+            <WrenchIcon /><span>设备</span><NvSidebarDot tone="ok" />
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
@@ -137,7 +137,7 @@ const todo = ref('待派工单')
     <SidebarMenu>
       <SidebarMenuItem>
         <SidebarMenuButton size="lg">
-          <SidebarProUser name="张伟" role="班长 · 早班" initials="张" />
+          <NvSidebarUser name="张伟" role="班长 · 早班" initials="张" />
         </SidebarMenuButton>
       </SidebarMenuItem>
     </SidebarMenu>
@@ -163,25 +163,25 @@ const todo = ref('待派工单')
                 <FactoryIcon /><span>冲压车间</span>
                 <ChevronRightIcon class="ds-sb-chevron ml-auto" :class="press && 'rotate-90'" />
               </SidebarMenuButton>
-              <SidebarProSub :open="press">
+              <NvSidebarSub :open="press">
                 <SidebarMenuSub>
                   <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'L01'" @click="line = 'L01'">L01 产线</SidebarMenuSubButton></SidebarMenuSubItem>
                   <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'L02'" @click="line = 'L02'">L02 产线</SidebarMenuSubButton></SidebarMenuSubItem>
                   <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'L03'" @click="line = 'L03'">L03 产线</SidebarMenuSubButton></SidebarMenuSubItem>
                 </SidebarMenuSub>
-              </SidebarProSub>
+              </NvSidebarSub>
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton @click="weld = !weld">
                 <FactoryIcon /><span>焊接车间</span>
                 <ChevronRightIcon class="ds-sb-chevron ml-auto" :class="weld && 'rotate-90'" />
               </SidebarMenuButton>
-              <SidebarProSub :open="weld">
+              <NvSidebarSub :open="weld">
                 <SidebarMenuSub>
                   <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'W01'" @click="line = 'W01'">W01 工位</SidebarMenuSubButton></SidebarMenuSubItem>
                   <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'W02'" @click="line = 'W02'">W02 工位</SidebarMenuSubButton></SidebarMenuSubItem>
                 </SidebarMenuSub>
-              </SidebarProSub>
+              </NvSidebarSub>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
@@ -219,13 +219,13 @@ const todo = ref('待派工单')
     <ChevronRightIcon class="ml-auto transition-transform" :class="open && 'rotate-90'" />
   </SidebarMenuButton>
   <!-- SidebarProSub 内置 grid-rows 0fr→1fr 高度动画 + 缩进导引线，无需手写 CSS -->
-  <SidebarProSub :open="open">
+  <NvSidebarSub :open="open">
     <SidebarMenuSub>
       <SidebarMenuSubItem>
         <SidebarMenuSubButton :is-active="line === 'L01'" @click="line = 'L01'">L01 产线</SidebarMenuSubButton>
       </SidebarMenuSubItem>
     </SidebarMenuSub>
-  </SidebarProSub>
+  </NvSidebarSub>
 </SidebarMenuItem>
 ```
 
@@ -276,24 +276,24 @@ const todo = ref('待派工单')
 
 ### Pro 件（高级化封装，配合上面的原子件）
 
-- `SidebarProBrand` — 工作区品牌锁头（渐变 logo + 名称 + 副标题），放 `SidebarHeader`；折叠为图标条时文字/箭头自动隐藏。属性：`name`、`sub?`、`logo?`、`caret?`。
-- `SidebarProDot` — 行尾状态点（`tone` `ok` / `warn` / `danger`），作 `SidebarMenuButton` 末位子节点。
-- `SidebarProUser` — 底栏用户行（首字头像 + 在线点 + 名称/角色），放页脚的 `SidebarMenuButton size="lg"`。属性：`name`、`role?`、`initials?`、`online?`、`caret?`。
-- `SidebarProSub` — 二级菜单高度动画外壳（`grid-rows 0fr→1fr` + 缩进导引线），`open` 用你自己的 `ref` 驱动，内裹 `SidebarMenuSub`。
+- `NvSidebarBrand` — 工作区品牌锁头（渐变 logo + 名称 + 副标题），放 `SidebarHeader`；折叠为图标条时文字/箭头自动隐藏。属性：`name`、`sub?`、`logo?`、`caret?`。
+- `NvSidebarDot` — 行尾状态点（`tone` `ok` / `warn` / `danger`），作 `SidebarMenuButton` 末位子节点。
+- `NvSidebarUser` — 底栏用户行（首字头像 + 在线点 + 名称/角色），放页脚的 `SidebarMenuButton size="lg"`。属性：`name`、`role?`、`initials?`、`online?`、`caret?`。
+- `NvSidebarSub` — 二级菜单高度动画外壳（`grid-rows 0fr→1fr` + 缩进导引线），`open` 用你自己的 `ref` 驱动，内裹 `SidebarMenuSub`。
 - 统一**选中态**（中性高起填充 + 品牌色图标）已是系统默认（`theme.css` 全局），无需额外样式即对所有侧栏生效。
 
 ## 属性
 
-| 组件 | 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|---|
-| `Sidebar` | `side` | 停靠侧 | `'left' \| 'right'` | `'left'` |
-| `Sidebar` | `variant` | 形态 | `'sidebar' \| 'floating' \| 'inset'` | `'sidebar'` |
-| `Sidebar` | `collapsible` | 折叠方式 | `'offcanvas' \| 'icon' \| 'none'` | `'offcanvas'` |
-| `SidebarMenuButton` | `isActive` | 激活态 | `boolean` | `false` |
-| `SidebarMenuButton` | `tooltip` | 折叠时悬浮标签 | `string \| Component` | — |
-| `SidebarMenuButton` | `size` | 尺寸 | `'default' \| 'sm' \| 'lg'` | `'default'` |
-| `SidebarMenuAction` | `showOnHover` | 仅悬停浮现 | `boolean` | `false` |
-| `SidebarProvider` | `defaultOpen` | 初始展开 | `boolean` | `true` |
+| 组件                | 属性          | 说明           | 类型                                 | 默认          |
+| ------------------- | ------------- | -------------- | ------------------------------------ | ------------- |
+| `Sidebar`           | `side`        | 停靠侧         | `'left' \| 'right'`                  | `'left'`      |
+| `Sidebar`           | `variant`     | 形态           | `'sidebar' \| 'floating' \| 'inset'` | `'sidebar'`   |
+| `Sidebar`           | `collapsible` | 折叠方式       | `'offcanvas' \| 'icon' \| 'none'`    | `'offcanvas'` |
+| `SidebarMenuButton` | `isActive`    | 激活态         | `boolean`                            | `false`       |
+| `SidebarMenuButton` | `tooltip`     | 折叠时悬浮标签 | `string \| Component`                | —             |
+| `SidebarMenuButton` | `size`        | 尺寸           | `'default' \| 'sm' \| 'lg'`          | `'default'`   |
+| `SidebarMenuAction` | `showOnHover` | 仅悬停浮现     | `boolean`                            | `false`       |
+| `SidebarProvider`   | `defaultOpen` | 初始展开       | `boolean`                            | `true`        |
 
 > 折叠为图标条时，`SidebarMenuButton` 会自动只留图标；放在 Header / Footer 的**自定义内容**需自行加 `group-data-[collapsible=icon]:hidden` 隐藏文字，避免被压缩。
 

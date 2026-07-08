@@ -4,7 +4,7 @@ title: ScreenTabs 标签页
 
 <script setup>
 import { ref } from 'vue'
-import { ScreenTabs } from '@nerv-iip/ui'
+import { NvScreenTabs } from '@nerv-iip/ui'
 
 const tab = ref('output')
 const items = [
@@ -25,7 +25,7 @@ const items = [
 
 <ScreenDemo>
   <div style="width:480px">
-    <ScreenTabs v-model="tab" :items="items" />
+    <NvScreenTabs v-model="tab" :items="items" />
     <div style="margin-top:16px;color:var(--sb-text-2);font-size:14px">
       当前视图:{{ items.find(i => i.value === tab)?.label }}
     </div>
@@ -44,13 +44,13 @@ const items = [
 </script>
 
 <template>
-  <ScreenTabs v-model="tab" :items="items" />
+  <NvScreenTabs v-model="tab" :items="items" />
 </template>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `v-model` | 激活项的 `value`,未绑定时自动取首项 | `string \| number` | — |
-| `items` | 标签列表 | `{ label: string; value: string \| number }[]` | 内置示例视图 |
+| 属性      | 说明                                | 类型                                           | 默认         |
+| --------- | ----------------------------------- | ---------------------------------------------- | ------------ |
+| `v-model` | 激活项的 `value`,未绑定时自动取首项 | `string \| number`                             | —            |
+| `items`   | 标签列表                            | `{ label: string; value: string \| number }[]` | 内置示例视图 |
