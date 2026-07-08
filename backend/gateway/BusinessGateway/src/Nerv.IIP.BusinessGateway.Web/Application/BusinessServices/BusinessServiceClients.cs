@@ -662,6 +662,11 @@ public interface IBusinessErpClient
         BusinessConsoleCreateErpRequestForQuotationRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleConvertErpPurchaseRequisitionsResponse> ConvertPurchaseRequisitionsToPurchaseOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleConvertErpPurchaseRequisitionsRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleReceiveErpSupplierQuotationResponse> ReceiveSupplierQuotationAsync(
         string internalBearerToken,
         BusinessConsoleReceiveErpSupplierQuotationRequest request,
@@ -4746,6 +4751,17 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/erp/rfqs",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleConvertErpPurchaseRequisitionsResponse> ConvertPurchaseRequisitionsToPurchaseOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleConvertErpPurchaseRequisitionsRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleConvertErpPurchaseRequisitionsResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/erp/purchase-requisitions/convert-to-purchase-order",
             request,
             cancellationToken);
 

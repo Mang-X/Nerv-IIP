@@ -1531,6 +1531,46 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Erp_procurement_purchase_requisition_convert_uses_internal_service_token_for_downstream_business_service()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order",
+            new BusinessConsoleConvertErpPurchaseRequisitionsRequest(
+                "org-001",
+                "env-dev",
+                ["PR-001", "PR-002"],
+                PurchaseOrderNo: "PO-REQ-001",
+                RfqSupplierCodes: ["SUP-001"],
+                IdempotencyKey: "idem-convert-001"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.NotNull(erp.LastConvertPurchaseRequisitionRequest);
+        Assert.Equal("org-001", erp.LastConvertPurchaseRequisitionRequest.OrganizationId);
+        Assert.Equal("env-dev", erp.LastConvertPurchaseRequisitionRequest.EnvironmentId);
+        Assert.Equal(["PR-001", "PR-002"], erp.LastConvertPurchaseRequisitionRequest.PurchaseRequisitionNos);
+        Assert.Equal("PO-REQ-001", erp.LastConvertPurchaseRequisitionRequest.PurchaseOrderNo);
+        Assert.Equal(["SUP-001"], erp.LastConvertPurchaseRequisitionRequest.RfqSupplierCodes);
+        Assert.Equal("idem-convert-001", erp.LastConvertPurchaseRequisitionRequest.IdempotencyKey);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("PurchaseOrderCreated", data.GetProperty("status").GetString());
+        Assert.Equal("PO-REQ-001", data.GetProperty("purchaseOrderNo").GetString());
+        Assert.Equal("SUP-001", data.GetProperty("supplierCode").GetString());
+    }
+
+    [Fact]
     public async Task Erp_sales_and_finance_facades_use_domain_specific_downstream_clients()
     {
         var erp = new RecordingErpClient();
@@ -6624,6 +6664,8 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public BusinessConsoleErpListRequest? LastPurchaseRequisitionListRequest { get; private set; }
 
+    public BusinessConsoleConvertErpPurchaseRequisitionsRequest? LastConvertPurchaseRequisitionRequest { get; private set; }
+
     public BusinessConsoleErpListRequest? LastRequestForQuotationListRequest { get; private set; }
 
     public BusinessConsoleErpListRequest? LastSalesOrderListRequest { get; private set; }
@@ -6666,6 +6708,34 @@ internal sealed class RecordingErpClient : IBusinessErpClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleCreateErpRequestForQuotationResponse("rfq-001"));
+    }
+
+    public Task<BusinessConsoleConvertErpPurchaseRequisitionsResponse> ConvertPurchaseRequisitionsToPurchaseOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleConvertErpPurchaseRequisitionsRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastConvertPurchaseRequisitionRequest = request;
+        return Task.FromResult(new BusinessConsoleConvertErpPurchaseRequisitionsResponse(
+            "PurchaseOrderCreated",
+            "po-id-001",
+            "PO-REQ-001",
+            null,
+            "SUP-001",
+            [
+                new BusinessConsoleConvertedErpPurchaseOrderLine(
+                    "10",
+                    "SKU-RM-001",
+                    "EA",
+                    5m,
+                    12m,
+                    DateOnly.Parse("2026-06-06"),
+                    [
+                        new BusinessConsoleConvertedErpPurchaseOrderLineSource("PR-001", "10", 2m),
+                        new BusinessConsoleConvertedErpPurchaseOrderLineSource("PR-002", "10", 3m),
+                    ]),
+            ]));
     }
 
     public Task<BusinessConsoleReceiveErpSupplierQuotationResponse> ReceiveSupplierQuotationAsync(

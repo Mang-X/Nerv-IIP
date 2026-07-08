@@ -199,6 +199,7 @@ export {
   closeBusinessConsoleErpAccountingPeriodMutationOptions,
   reopenBusinessConsoleErpAccountingPeriodMutationOptions,
   createBusinessConsoleErpPurchaseOrderMutationOptions,
+  convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions,
   createBusinessConsoleErpRequestForQuotationMutationOptions,
   createBusinessConsoleErpQuotationMutationOptions,
   approveBusinessConsoleErpQuotationMutationOptions,
