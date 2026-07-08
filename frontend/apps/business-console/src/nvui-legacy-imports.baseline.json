@@ -727,7 +727,15 @@
   ],
   "pages/erp/index.vue": [
     "ButtonPro",
+    "CheckboxPro",
     "DataTablePro",
+    "DialogPro",
+    "DialogProClose",
+    "DialogProContent",
+    "DialogProDescription",
+    "DialogProFooter",
+    "DialogProHeader",
+    "DialogProTitle",
     "InputPro",
     "PageHeader",
     "SectionCard",
@@ -1687,10 +1695,10 @@
   "pages/quality/analysis.vue": [
     "ButtonPro",
     "DataTablePro",
+    "InputPro",
     "PageHeader",
     "SectionCard",
     "SectionCards",
-    "StatusBadgePro",
     "Toolbar"
   ],
   "pages/quality/inspections.vue": [
