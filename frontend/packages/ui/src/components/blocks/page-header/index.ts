@@ -1,2 +1,6 @@
-export { default as PageHeader } from './PageHeader.vue'
-export type { PageHeaderCrumb } from './PageHeader.vue'
+export {
+  default as NvPageHeader,
+  /** @deprecated Use `NvPageHeader` (ADR 0020 NvUI); alias removed after codemod #789. */
+  default as PageHeader,
+  type PageHeaderCrumb,
+} from './PageHeader.vue'
