@@ -189,7 +189,7 @@ describe('product docs app contract', () => {
     expect(processContent).toContain('当前缺口')
   })
 
-  test('publishes the role-oriented first-week path map with availability status', () => {
+  test('publishes the role-oriented first-week path map with availability markers', () => {
     for (const slug of roleMapSlugs) {
       const content = readDocsFile(join('roles', `${slug}.md`))
 
@@ -197,15 +197,28 @@ describe('product docs app contract', () => {
       expect(content, `roles/${slug}.md should mark path availability`).toMatch(
         /✅ 可用|🟡 部分可用|⛔ 缺口/,
       )
+    }
+  })
+
+  // Guards LINK FORMAT only: every 🟡/⛔ gap row must carry a tracking issue link.
+  // It intentionally does NOT assert the issue still exists or is open. The
+  // "references a real open issue" guarantee in ADR 0020 is maintained by that
+  // ADR's quarterly gap recycle (a process), not by this test. Asserting open-state
+  // here would need a network call (non-hermetic, rate-limited CI); a static
+  // allowlist would re-encode the same numbers without proving liveness either.
+  test('gap rows in role path maps carry a tracking issue link (format only, not open-state)', () => {
+    for (const slug of roleMapSlugs) {
+      const content = readDocsFile(join('roles', `${slug}.md`))
 
       const gapRows = content
         .split('\n')
         .filter((line) => line.startsWith('|') && /🟡|⛔/.test(line))
 
       for (const row of gapRows) {
-        expect(row, `roles/${slug}.md gap rows should reference a tracking GitHub issue`).toMatch(
-          /https:\/\/github\.com\/Mang-X\/Nerv-IIP\/issues\/\d+/,
-        )
+        expect(
+          row,
+          `roles/${slug}.md gap rows should link a tracking GitHub issue by URL format`,
+        ).toMatch(/https:\/\/github\.com\/Mang-X\/Nerv-IIP\/issues\/\d+/)
       }
     }
   })
