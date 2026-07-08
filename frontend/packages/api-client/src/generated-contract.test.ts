@@ -5,24 +5,65 @@ import type { ListConsoleInstancesData } from './generated/types.gen'
 import type {
   BusinessConsoleApprovalChainResponse,
   BusinessConsoleBarcodePrintBatchResponse,
+  BusinessConsoleCancelScheduledEngineeringChangeRequest,
+  BusinessConsoleCreateErpPurchaseRequisitionEnvelope,
+  BusinessConsoleCreateErpPurchaseRequisitionResponse,
+  BusinessConsoleCreateOrUpdateForecastInputRequest,
+  BusinessConsoleErpCostCandidateSourceDocumentEnvelope,
+  BusinessConsoleErpCostCandidateSourceDocumentResponse,
+  BusinessConsoleErpPayableSourceDocumentEnvelope,
+  BusinessConsoleErpPayableSourceDocumentResponse,
+  BusinessConsoleErpReceivableSourceDocumentEnvelope,
+  BusinessConsoleErpReceivableSourceDocumentResponse,
+  BusinessConsoleForecastInputItem,
+  BusinessConsoleForecastInputItemEnvelope,
+  BusinessConsoleForecastInputListEnvelope,
+  BusinessConsoleForecastInputListResponse,
   BusinessConsoleMaintenanceAssetReliabilityEnvelope,
+  BusinessConsoleOpenNcrFromInspectionEnvelope,
+  BusinessConsoleOpenNcrFromInspectionRequest,
+  BusinessConsoleOpenNcrFromInspectionResponse,
+  BusinessConsolePublishSopDocumentRequest,
+  BusinessConsoleRescheduleEngineeringChangeRequest,
   BusinessConsoleSchedulingPlanSummaryResponse,
   BusinessConsoleSearchResponse,
   BusinessConsoleTelemetryOeeEnvelope,
   BusinessConsoleWorkbenchSummaryResponse,
   CancelBusinessConsolePlanningDemandData,
+  CancelScheduledBusinessConsoleEngineeringChangeData,
+  CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionData,
+  CreateOrUpdateBusinessConsolePlanningForecastData,
+  DownloadBusinessConsoleSopFileContentData,
+  GetBusinessConsoleCodeRuleData,
+  GetBusinessConsoleCurrentEngineeringSopDocumentsData,
   GetBusinessConsoleEngineeringStandardOperationData,
   GetBusinessConsoleEngineeringDocumentData,
   GetBusinessConsoleEngineeringItemData,
   GetBusinessConsoleEngineeringChangeData,
+  GetBusinessConsoleErpCostCandidateBySourceDocumentData,
+  GetBusinessConsoleErpPayableBySourceDocumentData,
+  GetBusinessConsoleErpReceivableBySourceDocumentData,
+  ListBusinessConsoleDeviceAssetsData,
+  ListBusinessConsolePlanningForecastsData,
+  ListBusinessConsoleQualityInspectionRecordsData,
+  OpenBusinessConsoleQualityNcrFromInspectionData,
+  PreviewBusinessConsoleCodeRuleData,
+  PublishBusinessConsoleEngineeringSopDocumentData,
+  RescheduleBusinessConsoleEngineeringChangeData,
   ResolveBusinessConsoleEngineeringProductionVersionData,
   SearchBusinessConsoleObjectsData,
 } from './business-console'
 import {
+  getConsoleNotificationDeadLetterMetricsQueryOptions,
+  getConsoleNotificationDeadLetterQueryOptions,
+  ignoreConsoleNotificationDeadLetterMutationOptions,
+  listConsoleNotificationDeadLettersQueryOptions,
   listConsoleNotificationMessagesQueryOptions,
   listConsoleNotificationTasksQueryOptions,
   markConsoleNotificationMessageReadMutationOptions,
   markConsoleNotificationMessagesReadMutationOptions,
+  replayConsoleNotificationDeadLetterMutationOptions,
+  replayConsoleNotificationDeadLettersMutationOptions,
   submitConsoleNotificationIntentMutationOptions,
 } from './console'
 import {
@@ -71,6 +112,7 @@ import {
   createConsoleIamRoleMutationOptions,
   createConsoleIamUserMutationOptions,
   disableConsoleIamUserMutationOptions,
+  enableConsoleIamUserMutationOptions,
   listConsoleIamPermissionsQueryOptions,
   listConsoleIamRolesQueryOptions,
   listConsoleIamSessionsQueryOptions,
@@ -108,6 +150,7 @@ describe('generated API client contract', () => {
     expect(createConsoleIamUserMutationOptions).toBeTypeOf('function')
     expect(updateConsoleIamUserMutationOptions).toBeTypeOf('function')
     expect(disableConsoleIamUserMutationOptions).toBeTypeOf('function')
+    expect(enableConsoleIamUserMutationOptions).toBeTypeOf('function')
     expect(resetConsoleIamUserPasswordMutationOptions).toBeTypeOf('function')
     expect(listConsoleIamRolesQueryOptions).toBeTypeOf('function')
     expect(createConsoleIamRoleMutationOptions).toBeTypeOf('function')
@@ -123,6 +166,12 @@ describe('generated API client contract', () => {
     expect(submitConsoleNotificationIntentMutationOptions).toBeTypeOf('function')
     expect(markConsoleNotificationMessageReadMutationOptions).toBeTypeOf('function')
     expect(markConsoleNotificationMessagesReadMutationOptions).toBeTypeOf('function')
+    expect(listConsoleNotificationDeadLettersQueryOptions).toBeTypeOf('function')
+    expect(getConsoleNotificationDeadLetterQueryOptions).toBeTypeOf('function')
+    expect(getConsoleNotificationDeadLetterMetricsQueryOptions).toBeTypeOf('function')
+    expect(replayConsoleNotificationDeadLetterMutationOptions).toBeTypeOf('function')
+    expect(replayConsoleNotificationDeadLettersMutationOptions).toBeTypeOf('function')
+    expect(ignoreConsoleNotificationDeadLetterMutationOptions).toBeTypeOf('function')
   })
 
   it('exports Business Console generated operations through stable api-client entry points', () => {
@@ -271,6 +320,93 @@ describe('generated API client contract', () => {
     for (const functionName of expectedFunctions) {
       expect(businessConsoleClient[functionName], functionName).toBeTypeOf('function')
     }
+  })
+
+  it('exports wave2 refreshed Business Console operations through stable api-client entry points', () => {
+    const expectedFunctions = [
+      'cancelScheduledBusinessConsoleEngineeringChangeMutationOptions',
+      'rescheduleBusinessConsoleEngineeringChangeMutationOptions',
+      'publishBusinessConsoleEngineeringSopDocumentMutationOptions',
+      'getBusinessConsoleCurrentEngineeringSopDocumentsQueryOptions',
+      'downloadBusinessConsoleSopFileContentQueryOptions',
+      'createOrUpdateBusinessConsolePlanningForecastMutationOptions',
+      'listBusinessConsolePlanningForecastsQueryOptions',
+      'listBusinessConsoleQualityInspectionRecordsQueryOptions',
+      'openBusinessConsoleQualityNcrFromInspectionMutationOptions',
+      'listBusinessConsoleDeviceAssetsQueryOptions',
+      'getBusinessConsoleCodeRuleQueryOptions',
+      'previewBusinessConsoleCodeRuleMutationOptions',
+      'createBusinessConsoleErpPurchaseRequisitionFromSuggestionMutationOptions',
+      'getBusinessConsoleErpCostCandidateBySourceDocumentQueryOptions',
+      'getBusinessConsoleErpPayableBySourceDocumentQueryOptions',
+      'getBusinessConsoleErpReceivableBySourceDocumentQueryOptions',
+      'cancelScheduledBusinessConsoleEngineeringChange',
+      'rescheduleBusinessConsoleEngineeringChange',
+      'publishBusinessConsoleEngineeringSopDocument',
+      'getBusinessConsoleCurrentEngineeringSopDocuments',
+      'downloadBusinessConsoleSopFileContent',
+      'createOrUpdateBusinessConsolePlanningForecast',
+      'listBusinessConsolePlanningForecasts',
+      'listBusinessConsoleQualityInspectionRecords',
+      'openBusinessConsoleQualityNcrFromInspection',
+      'listBusinessConsoleDeviceAssets',
+      'getBusinessConsoleCodeRule',
+      'previewBusinessConsoleCodeRule',
+      'createBusinessConsoleErpPurchaseRequisitionFromSuggestion',
+      'getBusinessConsoleErpCostCandidateBySourceDocument',
+      'getBusinessConsoleErpPayableBySourceDocument',
+      'getBusinessConsoleErpReceivableBySourceDocument',
+    ] as const
+
+    for (const functionName of expectedFunctions) {
+      expect(businessConsoleClient[functionName], functionName).toBeTypeOf('function')
+    }
+  })
+
+  it('exports wave2 refreshed Business Console request-payload Data types', () => {
+    // Importing each alias already guards against removal (src/**/*.ts is
+    // typechecked); the assertions additionally pin the exported shape.
+    expectTypeOf<CancelScheduledBusinessConsoleEngineeringChangeData>().toBeObject()
+    expectTypeOf<RescheduleBusinessConsoleEngineeringChangeData>().toBeObject()
+    expectTypeOf<PublishBusinessConsoleEngineeringSopDocumentData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleCurrentEngineeringSopDocumentsData>().toBeObject()
+    expectTypeOf<DownloadBusinessConsoleSopFileContentData>().toBeObject()
+    expectTypeOf<CreateOrUpdateBusinessConsolePlanningForecastData>().toBeObject()
+    expectTypeOf<ListBusinessConsolePlanningForecastsData>().toBeObject()
+    expectTypeOf<ListBusinessConsoleQualityInspectionRecordsData>().toBeObject()
+    expectTypeOf<OpenBusinessConsoleQualityNcrFromInspectionData>().toBeObject()
+    expectTypeOf<ListBusinessConsoleDeviceAssetsData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleCodeRuleData>().toBeObject()
+    expectTypeOf<PreviewBusinessConsoleCodeRuleData>().toBeObject()
+    expectTypeOf<CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleErpCostCandidateBySourceDocumentData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleErpPayableBySourceDocumentData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleErpReceivableBySourceDocumentData>().toBeObject()
+  })
+
+  it('exports wave2 refreshed Business Console request/response DTO aliases', () => {
+    expectTypeOf<BusinessConsoleCancelScheduledEngineeringChangeRequest>().toBeObject()
+    expectTypeOf<BusinessConsoleRescheduleEngineeringChangeRequest>().toBeObject()
+    expectTypeOf<BusinessConsolePublishSopDocumentRequest>().toBeObject()
+    expectTypeOf<BusinessConsoleCreateOrUpdateForecastInputRequest>().toBeObject()
+    expectTypeOf<BusinessConsoleForecastInputItem>().toBeObject()
+    expectTypeOf<BusinessConsoleForecastInputListResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleOpenNcrFromInspectionRequest>().toBeObject()
+    expectTypeOf<BusinessConsoleOpenNcrFromInspectionResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleCreateErpPurchaseRequisitionResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleErpCostCandidateSourceDocumentResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleErpPayableSourceDocumentResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleErpReceivableSourceDocumentResponse>().toBeObject()
+  })
+
+  it('exports wave2 refreshed Business Console response envelope aliases', () => {
+    expectTypeOf<BusinessConsoleCreateErpPurchaseRequisitionEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleErpCostCandidateSourceDocumentEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleErpPayableSourceDocumentEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleErpReceivableSourceDocumentEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleForecastInputItemEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleForecastInputListEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleOpenNcrFromInspectionEnvelope>().toBeObject()
   })
 
   it('exports stable Business Console deep capability types', () => {
