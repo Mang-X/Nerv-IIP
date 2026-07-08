@@ -249,12 +249,15 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
         }
 
         var lineDrafts = BuildPurchaseOrderLines(requisitions, priceSources);
+        var conversionIdempotencyKey = request.PurchaseOrderNo is null
+            ? StableIdempotencyKey("pr-to-po", supplierCode, request.CurrencyCode, requisitionNos)
+            : request.IdempotencyKey;
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId,
             "purchase-order",
             request.PurchaseOrderNo,
-            request.IdempotencyKey,
+            conversionIdempotencyKey,
             ErpCodingService.Fingerprint(supplierCode, request.CurrencyCode, requisitionNos),
             cancellationToken);
         var existingOrder = await dbContext.PurchaseOrders.SingleOrDefaultAsync(x =>
@@ -311,20 +314,26 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
         IReadOnlyCollection<PurchaseRequisition> requisitions,
         CancellationToken cancellationToken)
     {
+        var skuCodes = requisitions.Select(x => x.SkuCode).Distinct(StringComparer.Ordinal).ToArray();
+        var uomCodes = requisitions.Select(x => x.UomCode).Distinct(StringComparer.Ordinal).ToArray();
+        var siteCodes = requisitions.Select(x => x.SiteCode).Distinct(StringComparer.Ordinal).ToArray();
         var quotations = await dbContext.SupplierQuotations
-            .Include(x => x.Lines)
+            .Include(x => x.Lines.Where(line => skuCodes.Contains(line.SkuCode) && uomCodes.Contains(line.UomCode)))
             .Where(x =>
                 x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && (request.SupplierCode == null || x.SupplierCode == request.SupplierCode))
+                && (request.SupplierCode == null || x.SupplierCode == request.SupplierCode)
+                && x.Lines.Any(line => skuCodes.Contains(line.SkuCode) && uomCodes.Contains(line.UomCode)))
             .OrderByDescending(x => x.ReceivedAtUtc)
             .ToListAsync(cancellationToken);
         var purchaseOrders = await dbContext.PurchaseOrders
-            .Include(x => x.Lines)
+            .Include(x => x.Lines.Where(line => skuCodes.Contains(line.SkuCode) && uomCodes.Contains(line.UomCode)))
             .Where(x =>
                 x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && (request.SupplierCode == null || x.SupplierCode == request.SupplierCode))
+                && (request.SupplierCode == null || x.SupplierCode == request.SupplierCode)
+                && siteCodes.Contains(x.SiteCode)
+                && x.Lines.Any(line => skuCodes.Contains(line.SkuCode) && uomCodes.Contains(line.UomCode)))
             .OrderByDescending(x => x.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
@@ -384,7 +393,9 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             request.EnvironmentId,
             "request-for-quotation",
             request.RfqNo,
-            request.IdempotencyKey is null ? null : $"{request.IdempotencyKey}:rfq",
+            request.RfqNo is null
+                ? StableIdempotencyKey("pr-to-rfq", request.RfqSupplierCodes!, requisitions.Select(x => x.RequisitionNo))
+                : request.IdempotencyKey is null ? null : $"{request.IdempotencyKey}:rfq",
             ErpCodingService.Fingerprint(request.RfqSupplierCodes!, requisitions.Select(x => x.RequisitionNo)),
             cancellationToken);
         if (await dbContext.RequestForQuotations.AnyAsync(x =>
@@ -421,7 +432,7 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
                     x.SiteCode,
                     x.RequiredDate,
                     priceSource.UnitPrice,
-                    priceSource.PromisedDate,
+                    PromisedDate = priceSource.PromisedDate < x.RequiredDate ? x.RequiredDate : priceSource.PromisedDate,
                 };
             })
             .OrderBy(x => x.Key.SkuCode, StringComparer.Ordinal)
@@ -467,19 +478,11 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
 
     private sealed record ProcurementPriceSource(string SupplierCode, decimal UnitPrice, DateOnly PromisedDate);
 
-    private sealed class GeneratedPurchaseOrderApprovalClient : IPurchaseOrderApprovalClient
+    private static string StableIdempotencyKey(string prefix, params object?[] parts)
     {
-        public Task<PurchaseOrderApprovalResult> StartApprovalAsync(PurchaseOrderApprovalRequest request, CancellationToken cancellationToken)
-        {
-            return Task.FromResult(new PurchaseOrderApprovalResult(request.ChainId));
-        }
-
-        public static string BuildChainId(string organizationId, string environmentId, string purchaseOrderNo)
-        {
-            var raw = $"{organizationId}:{environmentId}:{purchaseOrderNo}";
-            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw)))[..32].ToLowerInvariant();
-            return $"erp-po-approval-{hash}";
-        }
+        var raw = ErpCodingService.Fingerprint(parts);
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw)))[..32].ToLowerInvariant();
+        return $"{prefix}:{hash}";
     }
 }
 
@@ -704,19 +707,20 @@ public sealed class CreatePurchaseOrderCommandHandler(
         return order.Id;
     }
 
-    private sealed class GeneratedPurchaseOrderApprovalClient : IPurchaseOrderApprovalClient
-    {
-        public Task<PurchaseOrderApprovalResult> StartApprovalAsync(PurchaseOrderApprovalRequest request, CancellationToken cancellationToken)
-        {
-            return Task.FromResult(new PurchaseOrderApprovalResult(request.ChainId));
-        }
+}
 
-        public static string BuildChainId(string organizationId, string environmentId, string purchaseOrderNo)
-        {
-            var raw = $"{organizationId}:{environmentId}:{purchaseOrderNo}";
-            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw)))[..32].ToLowerInvariant();
-            return $"erp-po-approval-{hash}";
-        }
+file sealed class GeneratedPurchaseOrderApprovalClient : IPurchaseOrderApprovalClient
+{
+    public Task<PurchaseOrderApprovalResult> StartApprovalAsync(PurchaseOrderApprovalRequest request, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(new PurchaseOrderApprovalResult(request.ChainId));
+    }
+
+    public static string BuildChainId(string organizationId, string environmentId, string purchaseOrderNo)
+    {
+        var raw = $"{organizationId}:{environmentId}:{purchaseOrderNo}";
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw)))[..32].ToLowerInvariant();
+        return $"erp-po-approval-{hash}";
     }
 }
 

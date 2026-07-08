@@ -83,6 +83,10 @@ interface ErpListQuery {
   take: number
 }
 
+interface ConvertPurchaseRequisitionOptions {
+  rfqSupplierCodes?: string[]
+}
+
 function unwrapItems<T>(envelope: { success?: boolean, data?: { items?: T[] } | null } | undefined): T[] {
   return envelope?.success ? envelope.data?.items ?? [] : []
 }
@@ -206,13 +210,13 @@ export function useErpPurchaseRequisitions(initialFilters: Partial<BusinessErpLi
 
   return {
     ...list,
-    convertToPurchaseOrder: (purchaseRequisitionNos: string[]) =>
+    convertToPurchaseOrder: (purchaseRequisitionNos: string[], options: ConvertPurchaseRequisitionOptions = {}) =>
       convertMutation.mutateAsync({
         body: {
           organizationId: list.organizationId.value,
           environmentId: list.environmentId.value,
           purchaseRequisitionNos,
-          rfqSupplierCodes: [],
+          rfqSupplierCodes: options.rfqSupplierCodes ?? [],
           currencyCode: 'CNY',
           idempotencyKey: makeIdempotencyKey(),
         },

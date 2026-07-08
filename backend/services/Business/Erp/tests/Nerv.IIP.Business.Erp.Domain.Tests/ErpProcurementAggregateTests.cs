@@ -50,6 +50,7 @@ public sealed class ErpProcurementAggregateTests
         Assert.Equal(PurchaseRequisitionStatus.Converted, requisition.Status);
         Assert.Equal("PO-001", requisition.ConvertedPurchaseOrderNo);
         Assert.NotNull(requisition.ConvertedAtUtc);
+        Assert.Single(requisition.GetDomainEvents().OfType<PurchaseRequisitionConvertedDomainEvent>());
         Assert.Throws<InvalidOperationException>(() => requisition.MarkConverted("PO-002"));
     }
 

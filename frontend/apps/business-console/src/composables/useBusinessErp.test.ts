@@ -84,6 +84,21 @@ describe('business ERP composable', () => {
     })
   })
 
+  it('passes RFQ supplier candidates when converting a purchase requisition without a price source', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-002', environmentId: 'prod' })
+
+    const erp = useErpPurchaseRequisitions()
+    await erp.convertToPurchaseOrder(['PR-001'], { rfqSupplierCodes: ['SUP-001', 'SUP-002'] })
+
+    expect(coladaState.mutateAsync).toHaveBeenCalledWith({
+      body: expect.objectContaining({
+        purchaseRequisitionNos: ['PR-001'],
+        rfqSupplierCodes: ['SUP-001', 'SUP-002'],
+      }),
+    })
+  })
+
   it('loads procurement purchase orders through the generated gateway client', () => {
     const context = useBusinessContextStore()
     context.patchContext({ organizationId: 'org-002', environmentId: 'prod' })

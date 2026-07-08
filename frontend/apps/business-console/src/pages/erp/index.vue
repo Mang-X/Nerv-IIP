@@ -20,7 +20,7 @@ import {
   Toolbar,
   toast,
 } from '@nerv-iip/ui'
-import { RefreshCwIcon, ShoppingCartIcon } from 'lucide-vue-next'
+import { FileSearchIcon, RefreshCwIcon, ShoppingCartIcon } from 'lucide-vue-next'
 import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { firstQueryParam, formatDate, formatError, formatQuantity } from './shared'
@@ -60,7 +60,7 @@ const columns: DataTableProColumn<BusinessConsoleErpPurchaseRequisitionItem>[] =
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'convertedPurchaseOrderNo', header: '采购订单', width: 'w-36', accessor: (r) => r.convertedPurchaseOrderNo ?? '-' },
   { key: 'suggestionId', header: 'MRP 建议', width: 'w-40', accessor: (r) => r.suggestionId ?? '-' },
-  { key: 'actions', header: '', align: 'end', width: 'w-36' },
+  { key: 'actions', header: '', align: 'end', width: 'w-56' },
 ]
 
 function statusLabel(value?: string | null) {
@@ -87,6 +87,40 @@ async function convertToPurchaseOrder(row: BusinessConsoleErpPurchaseRequisition
     toast.warning('缺少有效价源，请先发起 RFQ')
   } catch {
     toast.error(formatError(requisitions.convertToPurchaseOrderError.value) || '转单失败，请稍后重试。')
+  }
+}
+
+function parseSupplierCodes(input: string | null): string[] {
+  return (input ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value, index, values) => value.length > 0 && values.indexOf(value) === index)
+}
+
+async function startRfq(row: BusinessConsoleErpPurchaseRequisitionItem) {
+  if (!canConvert(row)) return
+  const supplierCodes = parseSupplierCodes(window.prompt('供应商编码，多个用逗号分隔'))
+  if (supplierCodes.length === 0) {
+    toast.warning('请先输入供应商编码')
+    return
+  }
+
+  try {
+    const response = await requisitions.convertToPurchaseOrder([row.requisitionNo!], { rfqSupplierCodes: supplierCodes })
+    const data = response?.success ? response.data : undefined
+    if (data?.status === 'RfqCreated') {
+      toast.success(data.rfqNo ? `已生成 RFQ ${data.rfqNo}` : '已进入 RFQ 流程')
+      return
+    }
+
+    if (data?.status === 'PurchaseOrderCreated' || data?.status === 'AlreadyConverted') {
+      toast.success(data.purchaseOrderNo ? `已转采购订单 ${data.purchaseOrderNo}` : '采购申请已转采购订单')
+      return
+    }
+
+    toast.warning('缺少有效价源，请检查供应商候选')
+  } catch {
+    toast.error(formatError(requisitions.convertToPurchaseOrderError.value) || '发起 RFQ 失败，请稍后重试。')
   }
 }
 </script>
@@ -141,17 +175,28 @@ async function convertToPurchaseOrder(row: BusinessConsoleErpPurchaseRequisition
       <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template>
       <template #cell-status="{ row }"><StatusBadgePro :value="statusLabel(row.status)" /></template>
       <template #cell-actions="{ row }">
-        <ButtonPro
-          v-if="canConvert(row)"
-          size="sm"
-          type="button"
-          variant="outline"
-          :disabled="requisitions.convertToPurchaseOrderPending.value"
-          @click="convertToPurchaseOrder(row)"
-        >
-          <ShoppingCartIcon aria-hidden="true" />
-          转采购订单
-        </ButtonPro>
+        <div v-if="canConvert(row)" class="flex justify-end gap-2">
+          <ButtonPro
+            size="sm"
+            type="button"
+            variant="outline"
+            :disabled="requisitions.convertToPurchaseOrderPending.value"
+            @click="startRfq(row)"
+          >
+            <FileSearchIcon aria-hidden="true" />
+            发起 RFQ
+          </ButtonPro>
+          <ButtonPro
+            size="sm"
+            type="button"
+            variant="outline"
+            :disabled="requisitions.convertToPurchaseOrderPending.value"
+            @click="convertToPurchaseOrder(row)"
+          >
+            <ShoppingCartIcon aria-hidden="true" />
+            转采购订单
+          </ButtonPro>
+        </div>
       </template>
     </DataTablePro>
   </BusinessLayout>

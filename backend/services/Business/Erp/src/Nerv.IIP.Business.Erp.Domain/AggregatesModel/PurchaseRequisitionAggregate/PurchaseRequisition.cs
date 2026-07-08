@@ -92,5 +92,6 @@ public sealed class PurchaseRequisition : Entity<PurchaseRequisitionId>, IAggreg
         Status = PurchaseRequisitionStatus.Converted;
         ConvertedPurchaseOrderNo = normalizedPurchaseOrderNo;
         ConvertedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new PurchaseRequisitionConvertedDomainEvent(this));
     }
 }

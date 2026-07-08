@@ -109,6 +109,7 @@ const tableStub = {
 const globalStubs = { ...layoutStub, ...selectStubs, ...tableStub }
 
 beforeEach(() => {
+  vi.restoreAllMocks()
   purchaseOrderFilters.status = undefined
   purchaseOrderFilters.keyword = undefined
   purchaseOrderFilters.skip = 0
@@ -187,6 +188,21 @@ describe('ERP procurement purchase requisition page', () => {
     await flushPromises()
 
     expect(state.convertPurchaseRequisition).toHaveBeenCalledWith(['PR-001'])
+  })
+
+  it('starts RFQ conversion with supplier candidates for open requisitions', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValue('SUP-001, SUP-002')
+    state.convertPurchaseRequisition.mockResolvedValue({ success: true, data: { status: 'RfqCreated', rfqNo: 'RFQ-REQ-001' } })
+    const wrapper = mount(PurchaseRequisitionsPage, { global: { stubs: globalStubs } })
+    await flushPromises()
+
+    const rfqButton = wrapper.findAll('button').find((button) => button.text().includes('发起 RFQ'))
+    expect(rfqButton).toBeTruthy()
+
+    await rfqButton!.trigger('click')
+    await flushPromises()
+
+    expect(state.convertPurchaseRequisition).toHaveBeenCalledWith(['PR-001'], { rfqSupplierCodes: ['SUP-001', 'SUP-002'] })
   })
 })
 
