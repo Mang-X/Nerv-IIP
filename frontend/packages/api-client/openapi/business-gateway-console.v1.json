@@ -9018,22 +9018,6 @@
               "default": 100,
               "nullable": false
             }
-          },
-          {
-            "name": "workCenterIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "deviceAssetIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
           }
         ],
         "responses": {
@@ -9244,22 +9228,6 @@
               "default": 100,
               "nullable": false
             }
-          },
-          {
-            "name": "workCenterIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "deviceAssetIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
           }
         ],
         "responses": {
@@ -9469,22 +9437,6 @@
               "format": "int32",
               "default": 100,
               "nullable": false
-            }
-          },
-          {
-            "name": "workCenterIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "deviceAssetIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
             }
           }
         ],
@@ -10000,22 +9952,6 @@
               "default": 100,
               "nullable": false
             }
-          },
-          {
-            "name": "workCenterIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "deviceAssetIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
           }
         ],
         "responses": {
@@ -10345,22 +10281,6 @@
               "default": 100,
               "nullable": false
             }
-          },
-          {
-            "name": "workCenterIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "deviceAssetIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
           }
         ],
         "responses": {
@@ -10499,22 +10419,6 @@
               "format": "int32",
               "default": 100,
               "nullable": false
-            }
-          },
-          {
-            "name": "workCenterIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "deviceAssetIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
             }
           }
         ],
@@ -10697,22 +10601,6 @@
               "format": "int32",
               "default": 100,
               "nullable": false
-            }
-          },
-          {
-            "name": "workCenterIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "deviceAssetIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
             }
           }
         ],
@@ -10966,22 +10854,6 @@
               "format": "int32",
               "default": 100,
               "nullable": false
-            }
-          },
-          {
-            "name": "workCenterIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "deviceAssetIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
             }
           }
         ],
@@ -11409,22 +11281,6 @@
               "format": "int32",
               "default": 100,
               "nullable": false
-            }
-          },
-          {
-            "name": "workCenterIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "deviceAssetIds",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
             }
           }
         ],
@@ -28797,7 +28653,7 @@
           }
         }
       },
-      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest": {
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderListRequest": {
         "type": "object",
         "additionalProperties": false
       },
@@ -29394,6 +29250,10 @@
             "nullable": true
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest": {
         "type": "object",

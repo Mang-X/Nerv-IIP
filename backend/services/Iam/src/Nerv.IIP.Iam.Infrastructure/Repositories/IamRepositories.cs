@@ -94,6 +94,7 @@ public sealed class RoleRepository(ApplicationDbContext context)
     {
         return await DbContext.Roles
             .Include(x => x.Permissions)
+            .Include(x => x.DataScopes)
             .SingleOrDefaultAsync(x => x.Id == roleId && x.Deleted == NotDeleted, cancellationToken);
     }
 
@@ -196,8 +197,9 @@ public sealed class MembershipRepository(ApplicationDbContext context)
         IamEnvironmentId environmentId,
         CancellationToken cancellationToken = default)
     {
-        return await DbContext.Memberships.SingleOrDefaultAsync(
-            x => x.UserId == userId
+        return await DbContext.Memberships
+            .Include(x => x.DataScopes)
+            .SingleOrDefaultAsync(x => x.UserId == userId
                 && x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId,
             cancellationToken);

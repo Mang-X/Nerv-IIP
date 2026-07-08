@@ -668,7 +668,7 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", mes.LastInternalToken);
-        Assert.Equal(new BusinessConsoleMesListRequest(
+        Assert.Equal(new BusinessConsoleMesWorkOrderListRequest(
             "org-001",
             "env-dev",
             "released",
@@ -712,9 +712,44 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.WorkCenterIds);
-        Assert.Equal("DEV-A", mes.LastWorkOrderListRequest.DeviceAssetIds);
+        Assert.Null(mes.LastWorkOrderListRequest.DeviceAssetIds);
         Assert.DoesNotContain("WC-B", mes.LastWorkOrderListRequest.WorkCenterIds);
-        Assert.DoesNotContain("DEV-B", mes.LastWorkOrderListRequest.DeviceAssetIds);
+    }
+
+    [Fact]
+    public async Task Mes_work_order_scope_reads_master_data_beyond_first_page()
+    {
+        var mes = new RecordingMesClient();
+        var firstPageLines = Enumerable.Range(0, 500)
+            .Select(index => new BusinessConsoleResourceItem("production-line", $"LINE-B-{index:000}", $"Line B {index}", true, "v1", WorkshopCode: "WS-B"));
+        var masterData = new RecordingMasterDataClient
+        {
+            Resources = firstPageLines
+                .Concat(
+                [
+                    new BusinessConsoleResourceItem("production-line", "LINE-A", "Line A", true, "v1", WorkshopCode: "WS-A"),
+                    new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1", LineCode: "LINE-A"),
+                    new BusinessConsoleResourceItem("device-asset", "DEV-A-CODE", "Device A", true, "v1", WorkCenterCode: "WC-A", DeviceAssetId: "DEV-A"),
+                ])
+                .ToArray(),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(new AuthorizationDataScope([], ["WS-A"], [])), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.WorkCenterIds);
+        Assert.True(masterData.ListResourcesCallCount > 3);
     }
 
     [Fact]
@@ -4031,7 +4066,7 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListWorkOrdersAsync(
             "internal-token-001",
-            new BusinessConsoleMesListRequest(
+            new BusinessConsoleMesWorkOrderListRequest(
                 "org-001",
                 "env-dev",
                 "released",
@@ -7756,7 +7791,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public string? LastInternalToken { get; private set; }
 
-    public BusinessConsoleMesListRequest? LastWorkOrderListRequest { get; private set; }
+    public BusinessConsoleMesWorkOrderListRequest? LastWorkOrderListRequest { get; private set; }
 
     public Exception? FoundationReadinessFailure { get; init; }
 
@@ -7839,7 +7874,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesWorkOrderListRequest request,
         CancellationToken cancellationToken)
     {
         WorkOrderListCallCount++;

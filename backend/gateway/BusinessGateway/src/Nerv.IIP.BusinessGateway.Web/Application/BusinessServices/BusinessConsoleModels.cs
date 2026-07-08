@@ -2849,6 +2849,17 @@ public sealed record BusinessConsoleMesListRequest(
     string? ShiftId = null,
     string? DeviceAssetId = null,
     int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleMesWorkOrderListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    int Skip = 0,
     int Take = 100,
     string? WorkCenterIds = null,
     string? DeviceAssetIds = null);

@@ -113,6 +113,38 @@ public class RoleDataScope : Entity<RoleDataScopeId>
 
 public sealed record DataScopeBinding(string ScopeType, string ScopeCode)
 {
+    public const string Site = "site";
+    public const string Workshop = "workshop";
+    public const string ProductionLine = "production-line";
+
+    public static readonly string[] KnownScopeTypes = [Site, Workshop, ProductionLine];
+
     public static DataScopeBinding Normalize(DataScopeBinding binding) =>
-        new(binding.ScopeType.Trim(), binding.ScopeCode.Trim());
+        new(NormalizeScopeType(binding.ScopeType), NormalizeScopeCode(binding.ScopeCode));
+
+    public static string NormalizeScopeType(string scopeType)
+    {
+        if (string.IsNullOrWhiteSpace(scopeType))
+        {
+            throw new ArgumentException("Data scope type is required.", nameof(scopeType));
+        }
+
+        var normalized = scopeType.Trim().ToLowerInvariant();
+        if (!KnownScopeTypes.Contains(normalized, StringComparer.Ordinal))
+        {
+            throw new ArgumentException($"Unknown data scope type '{scopeType}'.", nameof(scopeType));
+        }
+
+        return normalized;
+    }
+
+    public static string NormalizeScopeCode(string scopeCode)
+    {
+        if (string.IsNullOrWhiteSpace(scopeCode))
+        {
+            throw new ArgumentException("Data scope code is required.", nameof(scopeCode));
+        }
+
+        return scopeCode.Trim();
+    }
 }

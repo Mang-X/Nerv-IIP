@@ -367,16 +367,16 @@ public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(
     IBusinessMesClient mes,
     BusinessGatewayDataScopeFilter dataScopeFilter,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListRequest, BusinessConsoleMesWorkOrderListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesWorkOrderListRequest, BusinessConsoleMesWorkOrderListResponse>(
         auth,
         BusinessGatewayPermissions.MesWorkOrdersRead)
 {
-    protected override string OrganizationId(BusinessConsoleMesListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleMesWorkOrderListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMesListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleMesWorkOrderListRequest request) => request.EnvironmentId;
 
     protected override async Task<BusinessConsoleMesWorkOrderListResponse> ForwardAsync(
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesWorkOrderListRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
     {

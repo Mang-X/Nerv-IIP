@@ -2286,7 +2286,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workCenterName?: string | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderListRequest = {
     [key: string]: never;
 };
 
@@ -2445,6 +2445,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderNo?: string | null;
     operationTaskNo?: string | null;
     materialCode?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+    [key: string]: never;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest = {
@@ -9392,8 +9396,6 @@ export type ListBusinessConsoleMesMaterialIssueRequestsData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
-        workCenterIds?: string | null;
-        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/material-issue-requests';
 };
@@ -9463,8 +9465,6 @@ export type ListBusinessConsoleMesDispatchTasksData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
-        workCenterIds?: string | null;
-        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/dispatch-tasks';
 };
@@ -9534,8 +9534,6 @@ export type ListBusinessConsoleMesOperationTasksData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
-        workCenterIds?: string | null;
-        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/operation-tasks';
 };
@@ -9736,8 +9734,6 @@ export type GetBusinessConsoleMesWipSummaryData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
-        workCenterIds?: string | null;
-        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/wip';
 };
@@ -9865,8 +9861,6 @@ export type ListBusinessConsoleMesRelatedQualityItemsData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
-        workCenterIds?: string | null;
-        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/related-quality-items';
 };
@@ -9904,8 +9898,6 @@ export type ListBusinessConsoleMesFinishedGoodsReceiptRequestsData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
-        workCenterIds?: string | null;
-        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/finished-goods-receipt-requests';
 };
@@ -9970,8 +9962,6 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
-        workCenterIds?: string | null;
-        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/downtime-events';
 };
@@ -10068,8 +10058,6 @@ export type ListBusinessConsoleMesShiftHandoversData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
-        workCenterIds?: string | null;
-        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/shift-handovers';
 };
@@ -10262,8 +10250,6 @@ export type ListBusinessConsoleMesCapacityImpactsData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
-        workCenterIds?: string | null;
-        deviceAssetIds?: string | null;
     };
     url: '/api/business-console/v1/mes/capacity-impacts';
 };

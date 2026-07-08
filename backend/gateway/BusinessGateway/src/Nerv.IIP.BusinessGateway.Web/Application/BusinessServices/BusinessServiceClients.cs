@@ -1166,7 +1166,7 @@ public interface IBusinessMesClient
 
     Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesWorkOrderListRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesWorkOrderDetailResponse> GetWorkOrderDetailAsync(
@@ -5430,12 +5430,12 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
     public Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesWorkOrderListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMesWorkOrderListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/mes/work-orders?" + ListQuery(request),
+            "/api/business/v1/mes/work-orders?" + WorkOrderListQuery(request),
             null,
             cancellationToken);
 
@@ -5818,6 +5818,18 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         Query(("organizationId", organizationId), ("environmentId", environmentId));
 
     private static string ListQuery(BusinessConsoleMesListRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("status", request.Status),
+            ("keyword", request.Keyword),
+            ("workCenterId", request.WorkCenterId),
+            ("shiftId", request.ShiftId),
+            ("deviceAssetId", request.DeviceAssetId),
+            ("skip", request.Skip),
+            ("take", request.Take));
+
+    private static string WorkOrderListQuery(BusinessConsoleMesWorkOrderListRequest request) =>
         Query(
             ("organizationId", request.OrganizationId),
             ("environmentId", request.EnvironmentId),

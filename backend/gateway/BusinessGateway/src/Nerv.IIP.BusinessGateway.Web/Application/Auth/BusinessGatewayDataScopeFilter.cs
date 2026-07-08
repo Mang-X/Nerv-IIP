@@ -10,8 +10,8 @@ public sealed class BusinessGatewayDataScopeFilter(
 {
     private const string NoScopeMatch = "__iam_scope_no_match__";
 
-    public async Task<BusinessConsoleMesListRequest> ApplyToMesWorkOrdersAsync(
-        BusinessConsoleMesListRequest request,
+    public async Task<BusinessConsoleMesWorkOrderListRequest> ApplyToMesWorkOrdersAsync(
+        BusinessConsoleMesWorkOrderListRequest request,
         AuthorizationDataScope? dataScope,
         CancellationToken cancellationToken)
     {
@@ -24,7 +24,9 @@ public sealed class BusinessGatewayDataScopeFilter(
         return request with
         {
             WorkCenterIds = NarrowSingle(request.WorkCenterId, resolved.WorkCenterCodes),
-            DeviceAssetIds = NarrowSingle(request.DeviceAssetId, resolved.DeviceAssetIds),
+            DeviceAssetIds = string.IsNullOrWhiteSpace(request.DeviceAssetId)
+                ? null
+                : NarrowSingle(request.DeviceAssetId, resolved.DeviceAssetIds),
         };
     }
 
@@ -79,6 +81,11 @@ public sealed class BusinessGatewayDataScopeFilter(
         var siteCodes = Normalize(dataScope.SiteCodes);
         var workshopCodes = Normalize(dataScope.WorkshopCodes);
         var explicitLineCodes = Normalize(dataScope.ProductionLineCodes);
+        if (dataScope.DenyAll)
+        {
+            return new ResolvedDataScope([], []);
+        }
+
         var lines = await ListResourcesAsync(organizationId, environmentId, "production-line", cancellationToken);
         var scopedLineCodes = lines
             .Where(x => explicitLineCodes.Contains(x.Code)
@@ -119,17 +126,29 @@ public sealed class BusinessGatewayDataScopeFilter(
         string resourceType,
         CancellationToken cancellationToken)
     {
-        var response = await masterData.ListResourcesAsync(
-            tokenProvider.BearerToken,
-            new BusinessConsoleListResourcesRequest(
-                organizationId,
-                environmentId,
-                resourceType,
-                IncludeDisabled: false,
-                Take: 500,
-                All: true),
-            cancellationToken);
-        return response.Resources;
+        const int PageSize = 500;
+        var resources = new List<BusinessConsoleResourceItem>();
+        var skip = 0;
+        while (true)
+        {
+            var response = await masterData.ListResourcesAsync(
+                tokenProvider.BearerToken,
+                new BusinessConsoleListResourcesRequest(
+                    organizationId,
+                    environmentId,
+                    resourceType,
+                    IncludeDisabled: false,
+                    Skip: skip,
+                    Take: PageSize,
+                    All: true),
+                cancellationToken);
+            resources.AddRange(response.Resources);
+            skip += response.Resources.Count;
+            if (response.Resources.Count < PageSize || skip >= response.Total)
+            {
+                return resources;
+            }
+        }
     }
 
     private static string NarrowSingle(string? requested, IReadOnlyCollection<string> allowed)

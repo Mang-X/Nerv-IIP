@@ -428,10 +428,32 @@ public sealed class PostgreSqlIamAuthService(
             return null;
         }
 
+        var unknownTypes = scopes
+            .Select(x => x.ScopeType.Trim().ToLowerInvariant())
+            .Where(x => !DataScopeBinding.KnownScopeTypes.Contains(x, StringComparer.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (unknownTypes.Length > 0)
+        {
+            return new AuthorizationDataScope([], [], [], DenyAll: true);
+        }
+
         return new AuthorizationDataScope(
-            scopes.Where(x => x.ScopeType == "site").Select(x => x.ScopeCode).Distinct(StringComparer.Ordinal).ToArray(),
-            scopes.Where(x => x.ScopeType == "workshop").Select(x => x.ScopeCode).Distinct(StringComparer.Ordinal).ToArray(),
-            scopes.Where(x => x.ScopeType == "production-line").Select(x => x.ScopeCode).Distinct(StringComparer.Ordinal).ToArray());
+            scopes.Where(x => string.Equals(x.ScopeType.Trim(), DataScopeBinding.Site, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeCode.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+            scopes.Where(x => string.Equals(x.ScopeType.Trim(), DataScopeBinding.Workshop, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeCode.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+            scopes.Where(x => string.Equals(x.ScopeType.Trim(), DataScopeBinding.ProductionLine, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeCode.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray());
     }
 
     public async Task<EnterpriseAuthResponse> HandleOidcCallbackAsync(

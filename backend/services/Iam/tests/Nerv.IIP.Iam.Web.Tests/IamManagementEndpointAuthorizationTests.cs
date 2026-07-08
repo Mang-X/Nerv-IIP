@@ -21,6 +21,7 @@ public sealed class IamManagementEndpointAuthorizationTests
     {
         AssertRoleMutationEndpointUsesMediator<CreateRoleEndpoint>();
         AssertRoleMutationEndpointUsesMediator<PatchRolePermissionsEndpoint>();
+        AssertRoleMutationEndpointUsesMediator<PatchRoleDataScopesEndpoint>();
     }
 
     [Fact]
@@ -52,11 +53,13 @@ public sealed class IamManagementEndpointAuthorizationTests
     [InlineData("GET", "/api/iam/v1/users")]
     [InlineData("POST", "/api/iam/v1/users")]
     [InlineData("PATCH", "/api/iam/v1/users/user-admin")]
+    [InlineData("PATCH", "/api/iam/v1/users/user-admin/membership-data-scopes")]
     [InlineData("POST", "/api/iam/v1/users/user-admin/disable")]
     [InlineData("POST", "/api/iam/v1/users/user-admin/reset-password")]
     [InlineData("GET", "/api/iam/v1/roles")]
     [InlineData("POST", "/api/iam/v1/roles")]
     [InlineData("PATCH", "/api/iam/v1/roles/role-platform-admin/permissions")]
+    [InlineData("PATCH", "/api/iam/v1/roles/role-platform-admin/data-scopes")]
     [InlineData("GET", "/api/iam/v1/permissions")]
     public async Task Postgres_management_endpoints_reject_anonymous_callers_before_touching_persistence(string method, string path)
     {

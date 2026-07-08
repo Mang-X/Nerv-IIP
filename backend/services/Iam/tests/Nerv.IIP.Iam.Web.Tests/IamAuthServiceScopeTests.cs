@@ -95,6 +95,78 @@ public sealed class IamAuthServiceScopeTests
     }
 
     [Fact]
+    public async Task PrincipalHasPermissionAsync_returns_deny_all_scope_for_unknown_legacy_scope_type()
+    {
+        await using var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDbContext(connection);
+        await db.Database.EnsureCreatedAsync();
+        var passwordService = new IamPasswordService();
+        var user = new User(
+            new UserId("user-legacy-data-scope"),
+            "legacy-scope-user",
+            "legacy-scope-user@nerv-iip.local",
+            passwordService.Hash("Password123!"),
+            true,
+            Guid.NewGuid().ToString("n"),
+            1);
+        var role = new Role(new RoleId("role-legacy-scope"), "Legacy Scope", ["business.mes.work-orders.read"]);
+        var membership = new Membership(
+            new MembershipId("membership-legacy-scope"),
+            user.Id,
+            new OrganizationId("org-001"),
+            new IamEnvironmentId("env-dev"),
+            [role.Id]);
+
+        db.Users.Add(user);
+        db.Organizations.Add(new Organization(new OrganizationId("org-001"), "Nerv", "active"));
+        db.Environments.Add(new IamEnvironment(new IamEnvironmentId("env-dev"), new OrganizationId("org-001"), "Dev", "active"));
+        db.Roles.Add(role);
+        db.Memberships.Add(membership);
+        await db.SaveChangesAsync();
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO role_data_scopes (Id, RoleId, ScopeType, ScopeCode) VALUES ('role-legacy-scope:cell:CELL-A', 'role-legacy-scope', 'cell', 'CELL-A')");
+
+        var service = new PostgreSqlIamAuthService(
+            new UserRepository(db),
+            new UserSessionRepository(db),
+            new MembershipRepository(db),
+            new ConnectorHostCredentialRepository(db),
+            new ExternalClientRepository(db),
+            passwordService,
+            CreateTokenService(),
+            Options.Create(new IamAuthenticationOptions()),
+            Options.Create(new EnterpriseIdentityOptions()),
+            new InMemoryMfaChallengeStore(),
+            new NoopSecurityAuditRecorder(),
+            NullLogger<PostgreSqlIamAuthService>.Instance,
+            new TestWebHostEnvironment());
+        var principal = new CurrentPrincipalResponse(
+            user.Id.Id,
+            user.LoginName,
+            user.Email,
+            "user",
+            "org-001",
+            "env-dev",
+            user.PermissionVersion,
+            ["business.mes.work-orders.read"]);
+
+        var result = await service.PrincipalHasPermissionAsync(
+            principal,
+            "org-001",
+            "env-dev",
+            "business.mes.work-orders.read",
+            "mes-work-order",
+            null,
+            CancellationToken.None);
+
+        Assert.True(result.Allowed);
+        Assert.NotNull(result.DataScope);
+        Assert.True(result.DataScope!.DenyAll);
+        Assert.True(result.DataScope.HasRestrictions);
+    }
+
+    [Fact]
     public async Task GetCurrentPrincipalAsync_uses_access_token_membership_scope()
     {
         await using var connection = new SqliteConnection("Filename=:memory:");

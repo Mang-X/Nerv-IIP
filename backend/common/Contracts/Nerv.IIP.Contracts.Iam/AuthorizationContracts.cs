@@ -18,8 +18,9 @@ public sealed record AuthorizationCheckResponse(
 public sealed record AuthorizationDataScope(
     IReadOnlyCollection<string> SiteCodes,
     IReadOnlyCollection<string> WorkshopCodes,
-    IReadOnlyCollection<string> ProductionLineCodes)
+    IReadOnlyCollection<string> ProductionLineCodes,
+    bool DenyAll = false)
 {
     public bool HasRestrictions =>
-        SiteCodes.Count > 0 || WorkshopCodes.Count > 0 || ProductionLineCodes.Count > 0;
+        DenyAll || SiteCodes.Count > 0 || WorkshopCodes.Count > 0 || ProductionLineCodes.Count > 0;
 }
