@@ -56,7 +56,7 @@ if (-not [string]::IsNullOrWhiteSpace($effectivePostgresConnectionString)) {
             "backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj",
             "--no-restore",
             "--filter",
-            "FullyQualifiedName~Postgres_"
+            "FullyQualifiedName~Postgres_ | FullyQualifiedName~on_postgres"
         ) | Out-Null
     }
 

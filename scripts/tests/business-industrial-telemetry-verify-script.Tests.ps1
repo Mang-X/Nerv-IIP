@@ -32,7 +32,7 @@ foreach ($requiredText in @(
     'NERV_IIP_TEST_POSTGRES',
     'Use-ScopedEnvironmentVariable',
     'business-industrial-telemetry-postgres-tests',
-    'FullyQualifiedName~Postgres_',
+    'FullyQualifiedName~Postgres_ | FullyQualifiedName~on_postgres',
     'Business IndustrialTelemetry PostgreSQL regressions verified.'
 )) {
     if (-not $content.Contains($requiredText)) {
