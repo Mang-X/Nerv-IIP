@@ -25,7 +25,8 @@ public sealed record ModbusRegisterMapping(
     decimal Offset,
     int BucketSeconds,
     ModbusRegisterDataType DataType = ModbusRegisterDataType.UInt16,
-    ModbusWordOrder WordOrder = ModbusWordOrder.BigEndian);
+    ModbusWordOrder WordOrder = ModbusWordOrder.BigEndian,
+    string? SamplingPolicy = null);
 
 public enum ModbusRegisterTable
 {
@@ -95,6 +96,8 @@ internal sealed class ModbusTelemetryBucket(ModbusRegisterMapping mapping, DateT
     public int SampleCount { get; private set; }
     public decimal MinValue { get; private set; }
     public decimal MaxValue { get; private set; }
+    public decimal FirstValue { get; private set; }
+    public decimal LastValue { get; private set; }
     public decimal AverageValue => SampleCount == 0 ? 0 : _sum / SampleCount;
 
     public void Add(decimal value)
@@ -103,6 +106,7 @@ internal sealed class ModbusTelemetryBucket(ModbusRegisterMapping mapping, DateT
         {
             MinValue = value;
             MaxValue = value;
+            FirstValue = value;
         }
         else
         {
@@ -110,6 +114,7 @@ internal sealed class ModbusTelemetryBucket(ModbusRegisterMapping mapping, DateT
             MaxValue = Math.Max(MaxValue, value);
         }
 
+        LastValue = value;
         _sum += value;
         SampleCount++;
     }

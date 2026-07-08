@@ -303,7 +303,9 @@ public sealed class ModbusConnector(
             bucket.AverageValue,
             $"modbus:{options.ConnectorId}:{normalizedTagKey}:{bucketStartUnixMilliseconds}",
             "modbus",
-            $"{options.ConnectorHostId}/{options.ConnectorId}");
+            $"{options.ConnectorHostId}/{options.ConnectorId}",
+            FirstValue: bucket.FirstValue,
+            LastValue: bucket.LastValue);
     }
 
     private async Task MarkRunningAsync(CancellationToken cancellationToken)

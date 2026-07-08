@@ -22516,6 +22516,16 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "firstValue": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "lastValue": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
           }
         }
       },

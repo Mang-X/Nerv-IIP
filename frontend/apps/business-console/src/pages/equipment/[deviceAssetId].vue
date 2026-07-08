@@ -182,7 +182,7 @@ function metricLabel(value?: number | null, suffix = '') {
   return `${Number(value).toFixed(1)}${suffix}`
 }
 function historyTypeLabel(value?: string | null) {
-  const labels: Record<string, string> = { alarm: '报警', sample: '采样', state: '状态' }
+  const labels: Record<string, string> = { alarm: '报警', daily: '日汇总', hourly: '小时汇总', sample: '采样', state: '状态' }
   return value ? (labels[value.toLowerCase()] ?? value) : '事件'
 }
 function historyType(row: { itemType?: string | null }) {

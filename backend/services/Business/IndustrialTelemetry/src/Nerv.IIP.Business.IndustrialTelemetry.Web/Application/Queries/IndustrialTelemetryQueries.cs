@@ -3,7 +3,7 @@ using System.Globalization;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
-using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 
@@ -226,18 +226,28 @@ public sealed class QueryDeviceStateTimelineQueryHandler(ApplicationDbContext db
             .Select(x => new DeviceTimelineItem("state", x.DeviceAssetId, null, x.State, x.OccurredAtUtc))
             .Take(100)
             .ToArrayAsync(cancellationToken);
-        var summaries = await dbContext.TelemetrySummaries
+        var rawSamples = await dbContext.TelemetryRawSamples
             .Where(x => x.DeviceAssetId == request.DeviceAssetId)
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
             .Where(x => request.FromUtc == null || x.BucketEndUtc >= request.FromUtc)
             .Where(x => request.ToUtc == null || x.BucketStartUtc <= request.ToUtc)
             .OrderByDescending(x => x.BucketEndUtc)
-            .Select(x => new DeviceTimelineItem("summary", x.DeviceAssetId, x.TagKey, x.AverageValue.ToString(), x.BucketEndUtc))
+            .Select(x => new DeviceTimelineItem("sample", x.DeviceAssetId, x.TagKey, x.AverageValue.ToString(CultureInfo.InvariantCulture), x.BucketEndUtc))
+            .Take(100)
+            .ToArrayAsync(cancellationToken);
+        var rollups = await dbContext.TelemetryRollups
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => request.FromUtc == null || x.WindowEndUtc >= request.FromUtc)
+            .Where(x => request.ToUtc == null || x.WindowStartUtc <= request.ToUtc)
+            .OrderByDescending(x => x.WindowEndUtc)
+            .Select(x => new DeviceTimelineItem(x.Grain == TelemetryRollupGrain.Hourly ? "hourly" : "daily", x.DeviceAssetId, x.TagKey, x.AverageValue.ToString(CultureInfo.InvariantCulture), x.WindowEndUtc))
             .Take(100)
             .ToArrayAsync(cancellationToken);
 
-        return states.Concat(summaries)
+        return states.Concat(rawSamples).Concat(rollups)
             .OrderByDescending(x => x.OccurredAtUtc)
             .Take(100)
             .ToArray();

@@ -2,6 +2,8 @@ using System.Reflection;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.DomainEvents;
@@ -210,6 +212,8 @@ public sealed class IndustrialTelemetryAggregateTests
                 typeof(TelemetryTag),
                 typeof(DeviceStateSnapshot),
                 typeof(AlarmEvent),
+                typeof(TelemetryRawSample),
+                typeof(TelemetryRollup),
                 typeof(TelemetrySummary),
             }
             .SelectMany(type => type.GetMembers(BindingFlags.Instance | BindingFlags.Public).Select(member => $"{type.Name}.{member.Name}"))

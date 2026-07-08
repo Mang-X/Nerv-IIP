@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260707120823_AddIndustrialTelemetryHistorian")]
+    partial class AddIndustrialTelemetryHistorian
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -476,11 +479,6 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnName("first_value")
                         .HasComment("First observed numeric value in the raw historian bucket.");
 
-                    b.Property<DateTimeOffset>("HourlyWindowStartUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("hourly_window_start_utc")
-                        .HasComment("UTC hour window start used for indexed raw-to-hourly downsampling anti-joins.");
-
                     b.Property<decimal>("LastValue")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
@@ -549,9 +547,6 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "BucketStartUtc")
                         .HasDatabaseName("IX_telemetry_raw_samples_organization_id_environment_id_devic~1");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "HourlyWindowStartUtc", "DeviceAssetId", "TagKey")
-                        .HasDatabaseName("IX_telemetry_raw_samples_hourly_window");
-
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceSystem", "SourceConnector", "DeviceAssetId", "TagKey", "SourceSequence")
                         .IsUnique();
 
@@ -574,11 +569,6 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("average_value")
                         .HasComment("Weighted average value in the historian rollup.");
-
-                    b.Property<DateTimeOffset>("DailyWindowStartUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("daily_window_start_utc")
-                        .HasComment("UTC day window start used for indexed hourly-to-daily downsampling anti-joins.");
 
                     b.Property<string>("DeviceAssetId")
                         .IsRequired()
@@ -672,9 +662,6 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasComment("Inclusive UTC start of the historian rollup window.");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId", "EnvironmentId", "Grain", "DailyWindowStartUtc", "DeviceAssetId", "TagKey")
-                        .HasDatabaseName("IX_telemetry_rollups_daily_window");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "Grain", "WindowEndUnixTimeMilliseconds");
 

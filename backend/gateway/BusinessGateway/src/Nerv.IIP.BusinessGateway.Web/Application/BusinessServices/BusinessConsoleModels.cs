@@ -2009,7 +2009,9 @@ public sealed record BusinessConsoleRecordTelemetrySampleRequest(
     string SourceSystem,
     string SourceConnector,
     string? DeviceState = null,
-    DateTimeOffset? StateOccurredAtUtc = null);
+    DateTimeOffset? StateOccurredAtUtc = null,
+    decimal? FirstValue = null,
+    decimal? LastValue = null);
 
 public sealed record BusinessConsoleRecordTelemetrySampleResponse(
     string? TelemetrySummaryId,

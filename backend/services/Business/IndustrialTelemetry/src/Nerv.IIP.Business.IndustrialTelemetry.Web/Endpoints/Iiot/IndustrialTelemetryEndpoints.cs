@@ -98,6 +98,8 @@ public sealed record RecordTelemetrySampleRequest(
     string SourceSequence,
     string? SourceSystem,
     string? SourceConnector,
+    decimal? FirstValue,
+    decimal? LastValue,
     string? DeviceState,
     DateTimeOffset? StateOccurredAtUtc);
 public sealed record RecordTelemetrySampleResponse(TelemetrySummaryId? TelemetrySummaryId, DeviceStateSnapshotId? DeviceStateSnapshotId);
@@ -236,7 +238,7 @@ public sealed class RecordTelemetrySampleEndpoint(ISender sender) : IndustrialTe
 
     public override async Task HandleAsync(RecordTelemetrySampleRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new RecordTelemetrySampleCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.TagKey, req.BucketStartUtc, req.BucketEndUtc, req.SampleCount, req.MinValue, req.MaxValue, req.AverageValue, req.SourceSequence, req.SourceSystem, req.SourceConnector, req.DeviceState, req.StateOccurredAtUtc), ct);
+        var result = await sender.Send(new RecordTelemetrySampleCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.TagKey, req.BucketStartUtc, req.BucketEndUtc, req.SampleCount, req.MinValue, req.MaxValue, req.AverageValue, req.SourceSequence, req.SourceSystem, req.SourceConnector, req.FirstValue, req.LastValue, req.DeviceState, req.StateOccurredAtUtc), ct);
         await Send.OkAsync(new RecordTelemetrySampleResponse(result.TelemetrySummaryId, result.DeviceStateSnapshotId).AsResponseData(), cancellation: ct);
     }
 }

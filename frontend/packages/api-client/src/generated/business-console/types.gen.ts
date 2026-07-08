@@ -526,6 +526,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     sourceConnector: string;
     deviceState?: string | null;
     stateOccurredAtUtc?: string | null;
+    firstValue?: number | null;
+    lastValue?: number | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsolePostTelemetryAlarmResponse = NetCorePalExtensionsDtoResponseData & {
