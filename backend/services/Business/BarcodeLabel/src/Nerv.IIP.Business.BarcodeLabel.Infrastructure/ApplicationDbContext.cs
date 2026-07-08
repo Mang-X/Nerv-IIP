@@ -14,20 +14,63 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IMediator mediator)
     : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage
 {
-    private static readonly string[] ScanRecordUniqueIndexNames =
+    private static readonly UniqueConflictMapping[] ScanRecordUniqueConflicts =
     [
-        "UX_scan_records_idempotency",
-        "UX_scan_records_accepted_scanned_value",
-        "UX_scan_records_epc_uri",
-        "UX_scan_records_gtin_lot_serial",
-        "UX_scan_records_gtin_serial_no_lot"
+        new(
+            ["UX_scan_records_idempotency"],
+            ["scan_records.organization_id", "scan_records.environment_id", "scan_records.idempotency_key"],
+            "Duplicate barcode scan idempotency key is not allowed."),
+        new(
+            ["UX_scan_records_accepted_scan_natural_key"],
+            [
+                "scan_records.organization_id",
+                "scan_records.environment_id",
+                "scan_records.scanned_value",
+                "scan_records.source_workflow",
+                "scan_records.source_document_id"
+            ],
+            "Duplicate accepted barcode scan natural key is not allowed."),
+        new(
+            ["UX_scan_records_epc_uri"],
+            ["scan_records.organization_id", "scan_records.environment_id", "scan_records.epc_uri"],
+            "Duplicate serialized barcode scan is not allowed."),
+        new(
+            ["UX_scan_records_gtin_lot_serial"],
+            [
+                "scan_records.organization_id",
+                "scan_records.environment_id",
+                "scan_records.gtin",
+                "scan_records.lot_no",
+                "scan_records.serial_number"
+            ],
+            "Duplicate serialized barcode scan is not allowed."),
+        new(
+            ["UX_scan_records_gtin_serial_no_lot"],
+            ["scan_records.organization_id", "scan_records.environment_id", "scan_records.gtin", "scan_records.serial_number"],
+            "Duplicate serialized barcode scan is not allowed.")
     ];
 
-    private static readonly string[] EpcisEventUniqueIndexNames =
+    private static readonly UniqueConflictMapping[] EpcisEventUniqueConflicts =
     [
-        "UX_epcis_events_epc_uri",
-        "UX_epcis_events_gtin_lot_serial",
-        "UX_epcis_events_gtin_serial_no_lot"
+        new(
+            ["UX_epcis_events_epc_uri"],
+            ["epcis_events.organization_id", "epcis_events.environment_id", "epcis_events.event_type", "epcis_events.epc_uri"],
+            "Duplicate BarcodeLabel EPCIS event is not allowed."),
+        new(
+            ["UX_epcis_events_gtin_lot_serial"],
+            [
+                "epcis_events.organization_id",
+                "epcis_events.environment_id",
+                "epcis_events.event_type",
+                "epcis_events.gtin",
+                "epcis_events.lot_no",
+                "epcis_events.serial_number"
+            ],
+            "Duplicate BarcodeLabel EPCIS event is not allowed."),
+        new(
+            ["UX_epcis_events_gtin_serial_no_lot"],
+            ["epcis_events.organization_id", "epcis_events.environment_id", "epcis_events.event_type", "epcis_events.gtin", "epcis_events.serial_number"],
+            "Duplicate BarcodeLabel EPCIS event is not allowed.")
     ];
 
     public DbSet<BarcodeRule> BarcodeRules => Set<BarcodeRule>();
@@ -72,16 +115,22 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     {
         foreach (var current in EnumerateExceptions(exception))
         {
-            if (IsUniqueConflict(current, ScanRecordUniqueIndexNames, "scan_records"))
+            foreach (var mapping in ScanRecordUniqueConflicts)
             {
-                knownException = new KnownException("Duplicate serialized barcode scan is not allowed.", exception);
-                return true;
+                if (IsUniqueConflict(current, mapping))
+                {
+                    knownException = new KnownException(mapping.Message, exception);
+                    return true;
+                }
             }
 
-            if (IsUniqueConflict(current, EpcisEventUniqueIndexNames, "epcis_events"))
+            foreach (var mapping in EpcisEventUniqueConflicts)
             {
-                knownException = new KnownException("Duplicate BarcodeLabel EPCIS event is not allowed.", exception);
-                return true;
+                if (IsUniqueConflict(current, mapping))
+                {
+                    knownException = new KnownException(mapping.Message, exception);
+                    return true;
+                }
             }
         }
 
@@ -89,10 +138,10 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         return false;
     }
 
-    private bool IsUniqueConflict(Exception exception, IReadOnlyCollection<string> indexNames, string tableName)
+    private bool IsUniqueConflict(Exception exception, UniqueConflictMapping mapping)
     {
-        return IsPostgreSqlUniqueConflict(exception, indexNames) ||
-            IsSqliteUniqueConflict(exception, tableName);
+        return IsPostgreSqlUniqueConflict(exception, mapping.IndexNames) ||
+            IsSqliteUniqueConflict(exception, mapping.SqliteColumnNames);
     }
 
     private static IEnumerable<Exception> EnumerateExceptions(Exception exception)
@@ -121,7 +170,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
             indexNames.Contains(constraintName, StringComparer.Ordinal);
     }
 
-    private bool IsSqliteUniqueConflict(Exception exception, string tableName)
+    private bool IsSqliteUniqueConflict(Exception exception, IReadOnlyCollection<string> columnNames)
     {
         var providerName = Database.ProviderName ?? string.Empty;
         var typeName = exception.GetType().FullName ?? string.Empty;
@@ -137,7 +186,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
             return false;
         }
 
-        return exception.Message.Contains(tableName, StringComparison.OrdinalIgnoreCase);
+        return columnNames.All(columnName => exception.Message.Contains(columnName, StringComparison.OrdinalIgnoreCase));
     }
 
     private static int? GetIntProperty(Exception exception, string propertyName)
@@ -150,4 +199,9 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
             _ => null
         };
     }
+
+    private sealed record UniqueConflictMapping(
+        IReadOnlyCollection<string> IndexNames,
+        IReadOnlyCollection<string> SqliteColumnNames,
+        string Message);
 }

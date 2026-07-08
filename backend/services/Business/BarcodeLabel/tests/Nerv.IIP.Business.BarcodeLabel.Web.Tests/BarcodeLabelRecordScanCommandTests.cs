@@ -136,6 +136,59 @@ public sealed class BarcodeLabelRecordScanCommandTests
     }
 
     [Fact]
+    public async Task Scan_record_natural_key_unique_index_rejects_same_accepted_scan_with_business_message()
+    {
+        await using var database = await BarcodeLabelSqliteDatabase.CreateAsync();
+
+        await using (var dbContext = database.CreateDbContext())
+        {
+            dbContext.ScanRecords.Add(NewPlainInventoryScan("idem-natural-001"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using (var dbContext = database.CreateDbContext())
+        {
+            dbContext.ScanRecords.Add(NewPlainInventoryScan("idem-natural-002"));
+
+            var exception = await Assert.ThrowsAsync<KnownException>(() => dbContext.SaveChangesAsync());
+
+            Assert.Contains("accepted barcode scan natural key", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public async Task Scan_record_natural_key_partial_index_allows_same_rejected_scan()
+    {
+        await using var database = await BarcodeLabelSqliteDatabase.CreateAsync();
+        await using var dbContext = database.CreateDbContext();
+
+        dbContext.ScanRecords.Add(ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "BAD-NATURAL",
+            "wms.receiving",
+            "ASN-NATURAL",
+            "idem-reject-natural-001",
+            "rejected",
+            "unknown"));
+        dbContext.ScanRecords.Add(ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-02",
+            "BAD-NATURAL",
+            "wms.receiving",
+            "ASN-NATURAL",
+            "idem-reject-natural-002",
+            "rejected",
+            "unknown"));
+
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(2, await dbContext.ScanRecords.CountAsync());
+    }
+
+    [Fact]
     public async Task Scan_record_unique_index_rejects_same_gtin_serial_without_lot_across_barcode_forms()
     {
         await using var database = await BarcodeLabelSqliteDatabase.CreateAsync();
@@ -199,6 +252,28 @@ public sealed class BarcodeLabelRecordScanCommandTests
             scannedValue,
             "inventory.receipt",
             "ASN-001",
+            idempotencyKey,
+            "accepted",
+            null,
+            "SKU-FG-1000",
+            "EA",
+            "SITE-01",
+            "STAGE-01",
+            "qualified",
+            "owned",
+            null,
+            2);
+    }
+
+    private static ScanRecord NewPlainInventoryScan(string idempotencyKey)
+    {
+        return ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "PLAIN-NATURAL-001",
+            "inventory.receipt",
+            "ASN-NATURAL",
             idempotencyKey,
             "accepted",
             null,
