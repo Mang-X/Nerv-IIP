@@ -5,23 +5,50 @@ import type { ListConsoleInstancesData } from './generated/types.gen'
 import type {
   BusinessConsoleApprovalChainResponse,
   BusinessConsoleBarcodePrintBatchResponse,
+  BusinessConsoleCancelScheduledEngineeringChangeRequest,
+  BusinessConsoleCreateErpPurchaseRequisitionEnvelope,
+  BusinessConsoleCreateErpPurchaseRequisitionResponse,
+  BusinessConsoleCreateOrUpdateForecastInputRequest,
+  BusinessConsoleErpCostCandidateSourceDocumentEnvelope,
+  BusinessConsoleErpCostCandidateSourceDocumentResponse,
+  BusinessConsoleErpPayableSourceDocumentEnvelope,
+  BusinessConsoleErpPayableSourceDocumentResponse,
+  BusinessConsoleErpReceivableSourceDocumentEnvelope,
+  BusinessConsoleErpReceivableSourceDocumentResponse,
   BusinessConsoleForecastInputItem,
+  BusinessConsoleForecastInputItemEnvelope,
   BusinessConsoleForecastInputListEnvelope,
+  BusinessConsoleForecastInputListResponse,
   BusinessConsoleMaintenanceAssetReliabilityEnvelope,
+  BusinessConsoleOpenNcrFromInspectionEnvelope,
+  BusinessConsoleOpenNcrFromInspectionRequest,
   BusinessConsoleOpenNcrFromInspectionResponse,
+  BusinessConsolePublishSopDocumentRequest,
+  BusinessConsoleRescheduleEngineeringChangeRequest,
   BusinessConsoleSchedulingPlanSummaryResponse,
   BusinessConsoleSearchResponse,
   BusinessConsoleTelemetryOeeEnvelope,
   BusinessConsoleWorkbenchSummaryResponse,
   CancelBusinessConsolePlanningDemandData,
   CancelScheduledBusinessConsoleEngineeringChangeData,
+  CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionData,
   CreateOrUpdateBusinessConsolePlanningForecastData,
+  DownloadBusinessConsoleSopFileContentData,
+  GetBusinessConsoleCodeRuleData,
+  GetBusinessConsoleCurrentEngineeringSopDocumentsData,
   GetBusinessConsoleEngineeringStandardOperationData,
   GetBusinessConsoleEngineeringDocumentData,
   GetBusinessConsoleEngineeringItemData,
   GetBusinessConsoleEngineeringChangeData,
+  GetBusinessConsoleErpCostCandidateBySourceDocumentData,
+  GetBusinessConsoleErpPayableBySourceDocumentData,
+  GetBusinessConsoleErpReceivableBySourceDocumentData,
+  ListBusinessConsoleDeviceAssetsData,
   ListBusinessConsolePlanningForecastsData,
   ListBusinessConsoleQualityInspectionRecordsData,
+  OpenBusinessConsoleQualityNcrFromInspectionData,
+  PreviewBusinessConsoleCodeRuleData,
+  PublishBusinessConsoleEngineeringSopDocumentData,
   RescheduleBusinessConsoleEngineeringChangeData,
   ResolveBusinessConsoleEngineeringProductionVersionData,
   SearchBusinessConsoleObjectsData,
@@ -336,15 +363,50 @@ describe('generated API client contract', () => {
     }
   })
 
-  it('exports wave2 refreshed Business Console capability types', () => {
+  it('exports wave2 refreshed Business Console request-payload Data types', () => {
+    // Importing each alias already guards against removal (src/**/*.ts is
+    // typechecked); the assertions additionally pin the exported shape.
     expectTypeOf<CancelScheduledBusinessConsoleEngineeringChangeData>().toBeObject()
     expectTypeOf<RescheduleBusinessConsoleEngineeringChangeData>().toBeObject()
+    expectTypeOf<PublishBusinessConsoleEngineeringSopDocumentData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleCurrentEngineeringSopDocumentsData>().toBeObject()
+    expectTypeOf<DownloadBusinessConsoleSopFileContentData>().toBeObject()
     expectTypeOf<CreateOrUpdateBusinessConsolePlanningForecastData>().toBeObject()
     expectTypeOf<ListBusinessConsolePlanningForecastsData>().toBeObject()
     expectTypeOf<ListBusinessConsoleQualityInspectionRecordsData>().toBeObject()
+    expectTypeOf<OpenBusinessConsoleQualityNcrFromInspectionData>().toBeObject()
+    expectTypeOf<ListBusinessConsoleDeviceAssetsData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleCodeRuleData>().toBeObject()
+    expectTypeOf<PreviewBusinessConsoleCodeRuleData>().toBeObject()
+    expectTypeOf<CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleErpCostCandidateBySourceDocumentData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleErpPayableBySourceDocumentData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleErpReceivableBySourceDocumentData>().toBeObject()
+  })
+
+  it('exports wave2 refreshed Business Console request/response DTO aliases', () => {
+    expectTypeOf<BusinessConsoleCancelScheduledEngineeringChangeRequest>().toBeObject()
+    expectTypeOf<BusinessConsoleRescheduleEngineeringChangeRequest>().toBeObject()
+    expectTypeOf<BusinessConsolePublishSopDocumentRequest>().toBeObject()
+    expectTypeOf<BusinessConsoleCreateOrUpdateForecastInputRequest>().toBeObject()
     expectTypeOf<BusinessConsoleForecastInputItem>().toBeObject()
-    expectTypeOf<BusinessConsoleForecastInputListEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleForecastInputListResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleOpenNcrFromInspectionRequest>().toBeObject()
     expectTypeOf<BusinessConsoleOpenNcrFromInspectionResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleCreateErpPurchaseRequisitionResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleErpCostCandidateSourceDocumentResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleErpPayableSourceDocumentResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleErpReceivableSourceDocumentResponse>().toBeObject()
+  })
+
+  it('exports wave2 refreshed Business Console response envelope aliases', () => {
+    expectTypeOf<BusinessConsoleCreateErpPurchaseRequisitionEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleErpCostCandidateSourceDocumentEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleErpPayableSourceDocumentEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleErpReceivableSourceDocumentEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleForecastInputItemEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleForecastInputListEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleOpenNcrFromInspectionEnvelope>().toBeObject()
   })
 
   it('exports stable Business Console deep capability types', () => {
