@@ -37,7 +37,10 @@ export function hasScreenSession(): boolean {
 
 // —— 设备台账（deviceAssetId → 档案）——
 export interface DeviceRosterEntry {
+  /** 与 equipment/alarms/maintenance facade 联动的 telemetry 设备号（join 键）。 */
   deviceAssetId: string
+  /** master-data 资产编码（人读，展示用；可与 deviceAssetId 不等）。 */
+  code: string
   name: string
   lineCode: string
   lineName: string
@@ -59,13 +62,18 @@ const ROSTER_MAX = 50
 let rosterCache: { at: number; roster: DeviceRoster } | null = null
 
 function rosterEntryOf(item: BusinessConsoleResourceItem): DeviceRosterEntry | null {
-  const deviceAssetId = item.code?.trim()
+  // ⚠️ equipment/alarms/maintenance facade 消费 telemetry deviceAssetId；master-data code 仅作展示，
+  // 二者可不相等（网关测试覆盖 code=DEV-001 / deviceAssetId=018f…）。join 键必须用 deviceAssetId，
+  // 仅在 facade 未回填 deviceAssetId 时才回退 code，否则真实台账 code≠deviceAssetId 时查不到状态/报警/维修。
+  const deviceAssetId = item.deviceAssetId?.trim() || item.code?.trim()
   if (!deviceAssetId) return null
+  const code = item.code?.trim() || deviceAssetId
   const lineCode = item.lineCode?.trim() ?? ''
   const workshopCode = item.workshopCode?.trim() ?? ''
   return {
     deviceAssetId,
-    name: item.displayName?.trim() || deviceAssetId,
+    code,
+    name: item.displayName?.trim() || code,
     lineCode,
     // 真实平台无 workshop/line 名称维度，展示编码即可（分组视图据此归并）。
     lineName: lineCode || '—',

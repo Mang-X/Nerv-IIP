@@ -250,6 +250,72 @@ describe('fetchRealEquipmentOverview', () => {
   })
 })
 
+describe('fetchRealEquipmentOverview code≠deviceAssetId 联动', () => {
+  it('roster 以 deviceAssetId 作 join 键（非 code）；overview/alarm 按 deviceAssetId 命中，code 仅展示', async () => {
+    // master-data code=DEV-001 但 telemetry deviceAssetId=018f-cnc-01（网关测试覆盖二者分离）。
+    vi.mocked(api.listBusinessConsoleDeviceAssets).mockResolvedValue(
+      ok({
+        resources: [
+          {
+            code: 'DEV-001',
+            deviceAssetId: '018f-cnc-01',
+            displayName: '加工中心 M01',
+            lineCode: 'LN-MACH-1',
+            workshopCode: 'WS-MACH',
+          },
+        ],
+      }),
+    )
+    vi.mocked(api.getBusinessConsoleEquipmentOverview).mockResolvedValue(
+      ok({
+        devices: [
+          {
+            deviceAssetId: '018f-cnc-01',
+            currentState: 'running',
+            isSourceFresh: true,
+            activeAlarmCount: 0,
+            activeBlockCount: 0,
+          },
+        ],
+        activeBlocks: [],
+      }),
+    )
+    vi.mocked(api.listBusinessConsoleEquipmentAlarms).mockResolvedValue(
+      ok({
+        items: [
+          {
+            alarmEventId: 'AL-9',
+            deviceAssetId: '018f-cnc-01',
+            alarmCode: 'TEMP_HIGH',
+            severity: 'warning',
+            raisedAtUtc: '2026-07-08T02:00:00Z',
+          },
+        ],
+      }),
+    )
+    vi.mocked(api.listBusinessConsoleMaintenanceWorkOrders).mockResolvedValue(ok({ items: [] }))
+    vi.mocked(api.listBusinessConsoleMaintenancePlans).mockResolvedValue(ok({ items: [] }))
+    vi.mocked(api.listBusinessConsoleMaintenanceInspections).mockResolvedValue(ok({ items: [] }))
+
+    const ov = await fetchRealEquipmentOverview('F01')
+
+    // overview 查询用的是 deviceAssetId，而非 master-data code
+    expect(api.getBusinessConsoleEquipmentOverview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({ deviceAssetIds: '018f-cnc-01' }),
+      }),
+    )
+    // 设备命中：id/join=deviceAssetId、name 来自 roster、code 展示 master-data code
+    expect(ov.devices).toHaveLength(1)
+    expect(ov.devices[0].id).toBe('018f-cnc-01')
+    expect(ov.devices[0].name).toBe('加工中心 M01')
+    expect(ov.devices[0].code).toBe('DEV-001')
+    expect(ov.devices[0].state).toBe('run')
+    // 报警按 deviceAssetId 命中设备名（code≠deviceAssetId 时不丢失联动）
+    expect(ov.alarms[0].line).toBe('加工中心 M01')
+  })
+})
+
 describe('fetchRealEquipmentOverview 会话守卫', () => {
   it('无 org/env 上下文 → 抛错（useScreenData 标 stale、不打后端）', async () => {
     setScreenSession({ organizationId: '', environmentId: '' })

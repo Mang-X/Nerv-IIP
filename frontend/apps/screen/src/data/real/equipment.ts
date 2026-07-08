@@ -295,7 +295,8 @@ function deviceCellOf(
   if (!block && unknown && currentState) block = `状态未归类 · ${currentState}`
   return {
     id: deviceAssetId,
-    code: deviceAssetId,
+    // 展示用 master-data code（可与 join 键 deviceAssetId 不等）。
+    code: entry?.code ?? deviceAssetId,
     name: entry?.name ?? deviceAssetId,
     lineId: entry?.lineCode ?? '',
     lineName: entry?.lineName ?? '—',
