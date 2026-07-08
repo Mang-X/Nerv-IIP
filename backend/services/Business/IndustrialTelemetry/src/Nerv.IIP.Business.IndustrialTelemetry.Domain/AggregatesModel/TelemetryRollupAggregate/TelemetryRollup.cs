@@ -48,6 +48,7 @@ public sealed class TelemetryRollup : Entity<TelemetryRollupId>, IAggregateRoot
         Grain = grain;
         WindowStartUtc = windowStartUtc;
         WindowEndUtc = windowEndUtc;
+        DailyWindowStartUtc = TruncateToDay(windowStartUtc);
         WindowEndUnixTimeMilliseconds = windowEndUtc.ToUnixTimeMilliseconds();
         SampleCount = sampleCount;
         MinValue = minValue;
@@ -66,6 +67,7 @@ public sealed class TelemetryRollup : Entity<TelemetryRollupId>, IAggregateRoot
     public TelemetryRollupGrain Grain { get; private set; }
     public DateTimeOffset WindowStartUtc { get; private set; }
     public DateTimeOffset WindowEndUtc { get; private set; }
+    public DateTimeOffset DailyWindowStartUtc { get; private set; }
     public long WindowEndUnixTimeMilliseconds { get; private set; }
     public int SampleCount { get; private set; }
     public decimal MinValue { get; private set; }
@@ -107,5 +109,11 @@ public sealed class TelemetryRollup : Entity<TelemetryRollupId>, IAggregateRoot
             firstValue,
             lastValue,
             sourceSequence);
+    }
+
+    private static DateTimeOffset TruncateToDay(DateTimeOffset value)
+    {
+        var utc = value.ToUniversalTime();
+        return new DateTimeOffset(utc.Year, utc.Month, utc.Day, 0, 0, 0, TimeSpan.Zero);
     }
 }

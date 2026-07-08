@@ -42,6 +42,7 @@ public sealed class TelemetryRawSample : Entity<TelemetryRawSampleId>, IAggregat
         TagKey = IndustrialTelemetryText.RequiredLower(tagKey, nameof(tagKey));
         BucketStartUtc = bucketStartUtc;
         BucketEndUtc = bucketEndUtc;
+        HourlyWindowStartUtc = TruncateToHour(bucketStartUtc);
         BucketEndUnixTimeMilliseconds = bucketEndUtc.ToUnixTimeMilliseconds();
         SampleCount = sampleCount;
         MinValue = minValue;
@@ -61,6 +62,7 @@ public sealed class TelemetryRawSample : Entity<TelemetryRawSampleId>, IAggregat
     public string TagKey { get; private set; } = string.Empty;
     public DateTimeOffset BucketStartUtc { get; private set; }
     public DateTimeOffset BucketEndUtc { get; private set; }
+    public DateTimeOffset HourlyWindowStartUtc { get; private set; }
     public long BucketEndUnixTimeMilliseconds { get; private set; }
     public int SampleCount { get; private set; }
     public decimal MinValue { get; private set; }
@@ -126,5 +128,10 @@ public sealed class TelemetryRawSample : Entity<TelemetryRawSampleId>, IAggregat
             && AverageValue == other.AverageValue
             && FirstValue == other.FirstValue
             && LastValue == other.LastValue;
+    }
+
+    private static DateTimeOffset TruncateToHour(DateTimeOffset value)
+    {
+        return new DateTimeOffset(value.Year, value.Month, value.Day, value.Hour, 0, 0, value.Offset).ToUniversalTime();
     }
 }

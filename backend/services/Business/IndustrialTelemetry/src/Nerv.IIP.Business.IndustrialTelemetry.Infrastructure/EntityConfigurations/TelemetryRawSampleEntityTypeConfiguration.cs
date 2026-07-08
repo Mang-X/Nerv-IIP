@@ -15,6 +15,7 @@ public sealed class TelemetryRawSampleEntityTypeConfiguration : IEntityTypeConfi
         builder.Property(x => x.TagKey).IsRequired().HasMaxLength(150).HasColumnName("tag_key").HasComment("Telemetry tag key represented by this raw historian bucket.");
         builder.Property(x => x.BucketStartUtc).HasColumnName("bucket_start_utc").HasComment("Inclusive UTC start of the raw historian bucket.");
         builder.Property(x => x.BucketEndUtc).HasColumnName("bucket_end_utc").HasComment("Exclusive UTC end of the raw historian bucket.");
+        builder.Property(x => x.HourlyWindowStartUtc).HasColumnName("hourly_window_start_utc").HasComment("UTC hour window start used for indexed raw-to-hourly downsampling anti-joins.");
         builder.Property(x => x.BucketEndUnixTimeMilliseconds).HasColumnName("bucket_end_unix_time_milliseconds").HasComment("Exclusive UTC bucket end represented as Unix time milliseconds for provider-neutral retention scans.");
         builder.Property(x => x.SampleCount).HasColumnName("sample_count").HasComment("Number of collector samples represented by the raw historian bucket.");
         builder.Property(x => x.MinValue).HasColumnName("min_value").HasPrecision(18, 6).HasComment("Minimum numeric value in the raw historian bucket.");
@@ -30,6 +31,8 @@ public sealed class TelemetryRawSampleEntityTypeConfiguration : IEntityTypeConfi
             .IsUnique()
             .AreNullsDistinct(false);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.BucketStartUtc });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.HourlyWindowStartUtc })
+            .HasDatabaseName("IX_telemetry_raw_samples_hourly_window");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.BucketEndUnixTimeMilliseconds });
     }
 }

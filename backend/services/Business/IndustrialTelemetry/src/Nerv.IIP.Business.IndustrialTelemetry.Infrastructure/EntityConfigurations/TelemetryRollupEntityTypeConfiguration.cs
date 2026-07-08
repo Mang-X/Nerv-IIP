@@ -16,6 +16,7 @@ public sealed class TelemetryRollupEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.Grain).HasConversion<string>().HasMaxLength(20).HasColumnName("grain").HasComment("Historian rollup grain: Hourly or Daily.");
         builder.Property(x => x.WindowStartUtc).HasColumnName("window_start_utc").HasComment("Inclusive UTC start of the historian rollup window.");
         builder.Property(x => x.WindowEndUtc).HasColumnName("window_end_utc").HasComment("Exclusive UTC end of the historian rollup window.");
+        builder.Property(x => x.DailyWindowStartUtc).HasColumnName("daily_window_start_utc").HasComment("UTC day window start used for indexed hourly-to-daily downsampling anti-joins.");
         builder.Property(x => x.WindowEndUnixTimeMilliseconds).HasColumnName("window_end_unix_time_milliseconds").HasComment("Exclusive UTC rollup end represented as Unix time milliseconds for provider-neutral retention scans.");
         builder.Property(x => x.SampleCount).HasColumnName("sample_count").HasComment("Number of raw samples represented by the historian rollup.");
         builder.Property(x => x.MinValue).HasColumnName("min_value").HasPrecision(18, 6).HasComment("Minimum numeric value in the historian rollup.");
@@ -26,6 +27,8 @@ public sealed class TelemetryRollupEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.SourceSequence).IsRequired().HasMaxLength(200).HasColumnName("source_sequence").HasComment("Deterministic historian rollup source sequence for idempotent downsampling.");
         builder.Property(x => x.RolledUpAtUtc).HasColumnName("rolled_up_at_utc").HasComment("UTC time when the historian rollup was created.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.Grain, x.WindowStartUtc }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.Grain, x.DailyWindowStartUtc })
+            .HasDatabaseName("IX_telemetry_rollups_daily_window");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.Grain, x.WindowEndUnixTimeMilliseconds });
     }
 }
