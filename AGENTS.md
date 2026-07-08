@@ -374,4 +374,4 @@ At minimum:
   yes, update the docs in the same PR or reference a follow-up docs issue; if no,
   write "文档：无影响". Docs gaps recorded in the docs-site role path maps and
   `internal/gaps` are recycled into GitHub issues quarterly. Rationale and IA rules:
-  `docs/adr/0020-product-docs-information-architecture.md`.
+  `docs/adr/0021-product-docs-information-architecture.md`.

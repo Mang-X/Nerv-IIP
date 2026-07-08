@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitepress'
 
-// 导航信息架构口径见 docs/adr/0020-product-docs-information-architecture.md：
+// 导航信息架构口径见 docs/adr/0021-product-docs-information-architecture.md：
 // 四象限（教程/操作指南/概念解释/参考）+ 角色入口；processes/ 归概念解释象限且 URL 不迁移。
 export default defineConfig({
   title: 'Nerv-IIP 产品文档',

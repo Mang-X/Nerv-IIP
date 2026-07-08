@@ -202,7 +202,7 @@ describe('product docs app contract', () => {
 
   // Guards LINK FORMAT only: every 🟡/⛔ gap row must carry a tracking issue link.
   // It intentionally does NOT assert the issue still exists or is open. The
-  // "references a real open issue" guarantee in ADR 0020 is maintained by that
+  // "references a real open issue" guarantee in ADR 0021 is maintained by that
   // ADR's quarterly gap recycle (a process), not by this test. Asserting open-state
   // here would need a network call (non-hermetic, rate-limited CI); a static
   // allowlist would re-encode the same numbers without proving liveness either.
