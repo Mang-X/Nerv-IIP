@@ -24,6 +24,16 @@ vi.mock('@/composables/useBusinessErp', () => ({
     error: shallowRef(undefined),
     pending: shallowRef(false),
     refresh: vi.fn(),
+    convertToPurchaseOrder: vi.fn(),
+    convertToPurchaseOrderError: shallowRef(undefined),
+    convertToPurchaseOrderPending: shallowRef(false),
+  }),
+}))
+
+vi.mock('@/composables/useBusinessMasterData', () => ({
+  useBusinessPartners: () => ({
+    filters: reactive({ includeDisabled: undefined }),
+    partners: computed(() => []),
   }),
 }))
 
