@@ -2,18 +2,20 @@
 #   Category: verify
 #   SideEffects:
 #     - Runs .NET restore and focused IndustrialTelemetry MVP test commands only
+#     - When -PostgresConnectionString or NERV_IIP_TEST_POSTGRES is set, runs real PostgreSQL tests against disposable databases created by the test harness
 #   Writes:
 #     - bin/ and obj/ build outputs under tested .NET projects
 #     - artifacts/script-logs/**
 #   Cleanup:
-#     - None required
+#     - PostgreSQL test databases are dropped by the test harness
 #   Requires:
 #     - PowerShell 7
 #     - .NET SDK 10
 
 [CmdletBinding()]
 param(
-    [switch] $SkipRestore
+    [switch] $SkipRestore,
+    [string] $PostgresConnectionString
 )
 
 Set-StrictMode -Version Latest
@@ -41,5 +43,24 @@ Invoke-DotNet -Name "business-industrial-telemetry-web-tests" -WorkingDirectory 
     "backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj",
     "--no-restore"
 ) | Out-Null
+
+$effectivePostgresConnectionString = $PostgresConnectionString
+if ([string]::IsNullOrWhiteSpace($effectivePostgresConnectionString)) {
+    $effectivePostgresConnectionString = [Environment]::GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES", "Process")
+}
+
+if (-not [string]::IsNullOrWhiteSpace($effectivePostgresConnectionString)) {
+    Use-ScopedEnvironmentVariable -Name "NERV_IIP_TEST_POSTGRES" -Value $effectivePostgresConnectionString -ScriptBlock {
+        Invoke-DotNet -Name "business-industrial-telemetry-postgres-tests" -WorkingDirectory $root -Arguments @(
+            "test",
+            "backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj",
+            "--no-restore",
+            "--filter",
+            "FullyQualifiedName~Postgres_"
+        ) | Out-Null
+    }
+
+    Write-Host "Business IndustrialTelemetry PostgreSQL regressions verified."
+}
 
 Write-Host "Business IndustrialTelemetry MVP verified."
