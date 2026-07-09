@@ -436,6 +436,137 @@ public sealed class ReleaseBusinessConsoleMesWorkOrderEndpoint(
         mes.ReleaseWorkOrderAsync(tokenProvider.BearerToken, request.WorkOrderId, request, cancellationToken);
 }
 
+public abstract class BusinessConsoleMesWorkOrderReasonActionEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesWorkOrderReasonRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesWorkOrdersManage)
+{
+    protected override string OrganizationId(BusinessConsoleMesWorkOrderReasonRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesWorkOrderReasonRequest request) => request.EnvironmentId;
+
+    protected abstract Task<BusinessConsoleAcceptedResponse> ForwardOperationAsync(
+        string internalBearerToken,
+        BusinessConsoleMesWorkOrderReasonRequest request,
+        CancellationToken cancellationToken);
+
+    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesWorkOrderReasonRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        ForwardOperationAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/work-orders/{workOrderId}/hold")]
+[BusinessGatewayOperationId("holdBusinessConsoleMesWorkOrder")]
+public sealed class HoldBusinessConsoleMesWorkOrderEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : BusinessConsoleMesWorkOrderReasonActionEndpoint(auth, tokenProvider)
+{
+    protected override Task<BusinessConsoleAcceptedResponse> ForwardOperationAsync(
+        string internalBearerToken,
+        BusinessConsoleMesWorkOrderReasonRequest request,
+        CancellationToken cancellationToken) =>
+        mes.HoldWorkOrderAsync(internalBearerToken, request.WorkOrderId, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/work-orders/{workOrderId}/cancel")]
+[BusinessGatewayOperationId("cancelBusinessConsoleMesWorkOrder")]
+public sealed class CancelBusinessConsoleMesWorkOrderEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : BusinessConsoleMesWorkOrderReasonActionEndpoint(auth, tokenProvider)
+{
+    protected override Task<BusinessConsoleAcceptedResponse> ForwardOperationAsync(
+        string internalBearerToken,
+        BusinessConsoleMesWorkOrderReasonRequest request,
+        CancellationToken cancellationToken) =>
+        mes.CancelWorkOrderAsync(internalBearerToken, request.WorkOrderId, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/force-release")]
+[BusinessGatewayOperationId("forceReleaseBusinessConsoleMesQualityHold")]
+public sealed class ForceReleaseBusinessConsoleMesQualityHoldEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesForceReleaseQualityHoldRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesQualityWrite)
+{
+    protected override string OrganizationId(BusinessConsoleMesForceReleaseQualityHoldRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesForceReleaseQualityHoldRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesForceReleaseQualityHoldRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        // Bind the force-release audit actor to the authenticated principal so a caller holding
+        // MesQualityWrite cannot forge the releaser identity via a request-body field.
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
+        return mes.ForceReleaseQualityHoldAsync(
+            tokenProvider.BearerToken,
+            request.SourceDocumentId,
+            request,
+            actorRef,
+            cancellationToken);
+    }
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/production-reports/{reportNo}/reverse")]
+[BusinessGatewayOperationId("reverseBusinessConsoleMesProductionReport")]
+public sealed class ReverseBusinessConsoleMesProductionReportEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesReverseProductionReportRequest, BusinessConsoleMesReverseProductionReportResponse>(
+        auth,
+        BusinessGatewayPermissions.MesReportingWrite)
+{
+    protected override string OrganizationId(BusinessConsoleMesReverseProductionReportRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesReverseProductionReportRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleMesReverseProductionReportResponse> ForwardAsync(
+        BusinessConsoleMesReverseProductionReportRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        mes.ReverseProductionReportAsync(tokenProvider.BearerToken, request.ReportNo, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-posting/retry")]
+[BusinessGatewayOperationId("retryBusinessConsoleMesFinishedGoodsReceiptInventoryPosting")]
+public sealed class RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest, BusinessConsoleMesCreateReceiptResponse>(
+        auth,
+        BusinessGatewayPermissions.MesReceiptsManage)
+{
+    protected override string OrganizationId(BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleMesCreateReceiptResponse> ForwardAsync(
+        BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        mes.RetryFinishedGoodsReceiptInventoryPostingAsync(tokenProvider.BearerToken, request.RequestNo, request, cancellationToken);
+}
+
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/work-orders/rush")]
 [BusinessGatewayOperationId("createBusinessConsoleMesRushWorkOrder")]

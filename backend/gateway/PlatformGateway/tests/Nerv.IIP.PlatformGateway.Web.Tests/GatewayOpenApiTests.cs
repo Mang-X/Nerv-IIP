@@ -92,6 +92,9 @@ public sealed class GatewayOpenApiTests
         Assert.Equal("replayConsoleNotificationDeadLetter", paths.GetProperty("/api/console/v1/notifications/dlq/{deadLetterId}/replay").GetProperty("post").GetProperty("operationId").GetString());
         Assert.Equal("replayConsoleNotificationDeadLetters", paths.GetProperty("/api/console/v1/notifications/dlq/replay-batch").GetProperty("post").GetProperty("operationId").GetString());
         Assert.Equal("ignoreConsoleNotificationDeadLetter", paths.GetProperty("/api/console/v1/notifications/dlq/{deadLetterId}/ignore").GetProperty("post").GetProperty("operationId").GetString());
+        Assert.Equal("upsertConsoleNotificationPreference", paths.GetProperty("/api/console/v1/notifications/delivery/preferences").GetProperty("post").GetProperty("operationId").GetString());
+        Assert.Equal("upsertConsoleNotificationSubscription", paths.GetProperty("/api/console/v1/notifications/delivery/subscriptions").GetProperty("post").GetProperty("operationId").GetString());
+        Assert.Equal("upsertConsoleNotificationRecipientChannelBinding", paths.GetProperty("/api/console/v1/notifications/delivery/recipient-channel-bindings").GetProperty("post").GetProperty("operationId").GetString());
 
         var listFiles = paths.GetProperty("/api/console/v1/files").GetProperty("get");
         Assert.Equal("listConsoleFiles", listFiles.GetProperty("operationId").GetString());

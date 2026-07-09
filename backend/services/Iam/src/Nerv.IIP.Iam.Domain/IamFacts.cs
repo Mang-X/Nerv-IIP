@@ -155,6 +155,7 @@ public static class NervIipSeedPermissions
         "notifications.dlq.manage",
         "notifications.messages.read",
         "notifications.messages.mark-read",
-        "notifications.tasks.read"
+        "notifications.tasks.read",
+        "notifications.delivery.manage"
     ];
 }

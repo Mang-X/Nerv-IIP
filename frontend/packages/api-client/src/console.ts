@@ -14,6 +14,9 @@ export {
   markConsoleNotificationMessagesReadMutationOptions,
   restartConsoleInstanceMutationOptions,
   submitConsoleNotificationIntentMutationOptions,
+  upsertConsoleNotificationPreferenceMutationOptions,
+  upsertConsoleNotificationSubscriptionMutationOptions,
+  upsertConsoleNotificationRecipientChannelBindingMutationOptions,
 } from './generated/@pinia/colada.gen'
 
 import type {
@@ -72,13 +75,10 @@ export type NotificationDeadLetterMetricsResponse =
   NervIipContractsNotificationNotificationDeadLetterMetricsResponse
 export type NotificationDeadLetterReplayResponse =
   NervIipContractsNotificationNotificationDeadLetterReplayResponse
-export type NotificationIntentResponse =
-  NervIipContractsNotificationNotificationIntentResponse
-export type NotificationMessageResponse =
-  NervIipContractsNotificationNotificationMessageResponse
+export type NotificationIntentResponse = NervIipContractsNotificationNotificationIntentResponse
+export type NotificationMessageResponse = NervIipContractsNotificationNotificationMessageResponse
 export type NotificationResourceRef = NervIipContractsNotificationNotificationResourceRef
-export type NotificationTaskResponse =
-  NervIipContractsNotificationNotificationTaskResponse
+export type NotificationTaskResponse = NervIipContractsNotificationNotificationTaskResponse
 export type SubmitNotificationIntentRequest =
   NervIipContractsNotificationSubmitNotificationIntentRequest
 export type InstanceDetailEnvelope = NetCorePalExtensionsDtoResponseDataOfInstanceDetailResponse

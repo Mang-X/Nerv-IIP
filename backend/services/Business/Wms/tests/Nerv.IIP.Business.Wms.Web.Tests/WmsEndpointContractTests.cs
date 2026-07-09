@@ -26,6 +26,7 @@ using WarehouseTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTask
 using WarehouseTaskId = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskId;
 using WarehouseTaskType = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskType;
 using WcsTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate.WcsTask;
+using SupplierReturnRequest = Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate.SupplierReturnRequest;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -36,7 +37,7 @@ public sealed class WmsEndpointContractTests
     {
         var contracts = WmsEndpointContracts.All.ToArray();
 
-        Assert.Equal(22, contracts.Length);
+        Assert.Equal(24, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsInboundOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsPutawayTask");
@@ -59,6 +60,8 @@ public sealed class WmsEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-tasks/{externalTaskId}/complete" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "completeWmsWcsTask");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-tasks/{externalTaskId}/fail" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "failWmsWcsTask");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/wcs-tasks" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "listWmsWcsTasks");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/receiving-quality-gates" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsReceivingQualityGates");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/supplier-return-requests" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsSupplierReturnRequests");
         Assert.All(contracts, x => Assert.Equal(InternalServiceAuthorizationPolicy.Name, x.AuthorizationPolicy));
     }
 
@@ -282,6 +285,87 @@ public sealed class WmsEndpointContractTests
         var item = Assert.Single(result.Items);
         Assert.Equal("IN-PAGE-001", item.InboundOrderNo);
         Assert.Equal("Open", item.Status);
+    }
+
+    [Fact]
+    public async Task Receiving_quality_gate_query_projects_line_flow_and_filters_by_gate_status_and_tenant()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var passed = CreateQualityGateInboundOrder("IN-GATE-PASS-001");
+        passed.Complete("idem-gate-pass-001");
+        passed.ApplyInspectionResult("quality.InspectionPassed", "QI-PASS-001", "SKU-FG-1000", "LOT-001", null, 5m, null);
+        var rejected = CreateQualityGateInboundOrder("IN-GATE-REJ-001");
+        rejected.Complete("idem-gate-rej-001");
+        rejected.ApplyInspectionResult("quality.InspectionRejected", "QI-REJ-001", "SKU-FG-1000", "LOT-001", null, 5m, "critical-defect");
+        var pending = CreateQualityGateInboundOrder("IN-GATE-PEND-001");
+        pending.Complete("idem-gate-pend-001");
+        var notRequired = CreateInboundOrder("IN-GATE-NOGATE-001");
+        var otherTenant = CreateQualityGateInboundOrder("IN-GATE-PASS-001", "org-002");
+        otherTenant.Complete("idem-gate-other-001");
+        dbContext.InboundOrders.AddRange(passed, rejected, pending, notRequired, otherTenant);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ListReceivingQualityGatesQueryHandler(dbContext);
+        var all = await handler.Handle(
+            new ListReceivingQualityGatesQuery("org-001", "env-dev", 0, 100),
+            CancellationToken.None);
+
+        Assert.Equal(3, all.Total);
+        Assert.All(all.Items, x => Assert.NotEqual("not-required", x.QualityGateStatus));
+        Assert.DoesNotContain(all.Items, x => x.InboundOrderNo == "IN-GATE-NOGATE-001");
+
+        var rejectedOnly = await handler.Handle(
+            new ListReceivingQualityGatesQuery("org-001", "env-dev", 0, 100, "rejected"),
+            CancellationToken.None);
+
+        var fact = Assert.Single(rejectedOnly.Items);
+        Assert.Equal("IN-GATE-REJ-001", fact.InboundOrderNo);
+        Assert.Equal("rejected", fact.QualityGateStatus);
+        Assert.Equal("QI-REJ-001", fact.InspectionRecordId);
+        Assert.Equal("critical-defect", fact.QualityDispositionReason);
+        Assert.Equal("SKU-FG-1000", fact.SkuCode);
+        Assert.Equal("quality", fact.QualityStatus);
+        Assert.Equal(5m, fact.ReceivedQuantity);
+        Assert.Equal("LOT-001", fact.LotNo);
+        Assert.Equal("10", fact.LineNo);
+    }
+
+    [Fact]
+    public async Task Supplier_return_query_filters_status_keyword_before_offset_page_and_total_count()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.SupplierReturnRequests.AddRange(
+            CreateSupplierReturnRequest("IN-PAGE-001", "QI-1"),
+            CreateSupplierReturnRequest("IN-PAGE-002", "QI-2"),
+            CreateSupplierReturnRequest("IN-OTHER-001", "QI-3"),
+            CreateSupplierReturnRequest("IN-PAGE-003", "QI-4", "org-002"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ListSupplierReturnRequestsQueryHandler(dbContext);
+        var result = await handler.Handle(
+            new ListSupplierReturnRequestsQuery("org-001", "env-dev", 1, 1, "Open", "page"),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Total);
+        var item = Assert.Single(result.Items);
+        Assert.Equal("IN-PAGE-001", item.InboundOrderNo);
+        Assert.Equal("RTS-IN-PAGE-001-10-QI-1", item.SupplierReturnNo);
+        Assert.Equal("Open", item.Status);
+        Assert.Equal("return-to-supplier", item.DispositionType);
+        Assert.Equal("critical-defect", item.DispositionReason);
+        Assert.Equal(3m, item.Quantity);
+
+        var numeric = await handler.Handle(
+            new ListSupplierReturnRequestsQuery("org-001", "env-dev", 0, 100, "0", null),
+            CancellationToken.None);
+
+        Assert.Equal(0, numeric.Total);
+        Assert.Empty(numeric.Items);
     }
 
     [Fact]
@@ -536,6 +620,38 @@ public sealed class WmsEndpointContractTests
         }
 
         return order;
+    }
+
+    private static InboundOrder CreateQualityGateInboundOrder(string orderNo, string organizationId = "org-001")
+    {
+        return InboundOrder.Create(
+            organizationId,
+            "env-dev",
+            orderNo,
+            "purchase-receipt",
+            $"PO-{orderNo}",
+            "SITE-01",
+            [new InboundOrderLineDraft("10", "SKU-FG-1000", "kg", 5m, "STAGE-01", "LOT-001", null, "quality", "company", null)]);
+    }
+
+    private static SupplierReturnRequest CreateSupplierReturnRequest(string inboundOrderNo, string inspectionRecordId, string organizationId = "org-001")
+    {
+        return SupplierReturnRequest.Create(
+            organizationId,
+            "env-dev",
+            inboundOrderNo,
+            "10",
+            inspectionRecordId,
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "STAGE-01",
+            null,
+            null,
+            "company",
+            null,
+            3m,
+            "critical-defect");
     }
 
     private static OutboundOrder CreateOutboundOrder(string orderNo)

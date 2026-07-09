@@ -797,6 +797,38 @@ public sealed record BusinessConsoleInventoryAvailabilityLineResponse(
     decimal ReservedQuantity,
     decimal AvailableQuantity);
 
+public sealed record BusinessConsoleInventoryExpiryAlertsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SiteCode,
+    string? SkuCode,
+    string? LocationCode,
+    DateOnly? AsOfDate,
+    int? NearExpiryThresholdDays,
+    bool IncludeZeroAvailable = false);
+
+public sealed record BusinessConsoleInventoryExpiryAlertsResponse(
+    IReadOnlyCollection<BusinessConsoleInventoryExpiryAlertLineResponse> Items);
+
+public sealed record BusinessConsoleInventoryExpiryAlertLineResponse(
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId,
+    DateOnly? ProductionDate,
+    DateOnly ExpiryDate,
+    int DaysUntilExpiry,
+    bool IsExpired,
+    bool IsNearExpiry,
+    decimal OnHandQuantity,
+    decimal ReservedQuantity,
+    decimal AvailableQuantity);
+
 public sealed record BusinessConsolePostStockMovementRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1041,6 +1073,44 @@ public sealed record BusinessConsoleInspectionStockRelease(
     string? OwnerId);
 
 public sealed record BusinessConsoleCreateInspectionRecordResponse(string InspectionRecordId);
+
+public sealed record BusinessConsoleQualityInspectionTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? SkuCode = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleQualityInspectionTaskItem(
+    string InspectionTaskId,
+    string InspectionPlanId,
+    string SourceType,
+    string SourceService,
+    string SourceDocumentId,
+    string? SourceDocumentLineId,
+    string SkuCode,
+    decimal Quantity,
+    string UomCode,
+    string? BatchNo,
+    string? SerialNo,
+    string Status,
+    DateTimeOffset DueAtUtc,
+    DateTimeOffset CreatedAtUtc,
+    string? InspectionRecordId);
+
+public sealed record BusinessConsoleQualityInspectionTaskListResponse(
+    IReadOnlyCollection<BusinessConsoleQualityInspectionTaskItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleCreateInspectionRecordFromTaskRequest(
+    [property: RouteParam] string InspectionTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string InspectorUserId,
+    IReadOnlyCollection<BusinessConsoleInspectionCharacteristicResult>? ResultLines,
+    string? DispositionReason,
+    IReadOnlyCollection<string>? DispositionAttachmentFileIds);
 
 public sealed record BusinessConsoleOpenNcrFromInspectionRequest(
     [property: RouteParam] string InspectionRecordId,
@@ -3217,6 +3287,42 @@ public sealed record BusinessConsoleMesReleaseWorkOrderRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     bool ConfirmWarnings,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesWorkOrderReasonRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string Reason,
+    DateTimeOffset? ChangedAtUtc);
+
+// Actor is intentionally omitted: the gateway injects the authenticated principal as the
+// force-release audit actor so a caller cannot forge the releaser identity via the request body.
+public sealed record BusinessConsoleMesForceReleaseQualityHoldRequest(
+    [property: RouteParam] string SourceDocumentId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string Reason,
+    string? SourceService,
+    DateTimeOffset? ReleasedAtUtc);
+
+public sealed record BusinessConsoleMesReverseProductionReportRequest(
+    [property: RouteParam] string ReportNo,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string Reason,
+    DateTimeOffset? ReversedAtUtc,
+    string? IdempotencyKey);
+
+public sealed record BusinessConsoleMesReverseProductionReportResponse(
+    string ProductionReportId,
+    string ReportNo,
+    string OriginalReportNo);
+
+public sealed record BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest(
+    [property: RouteParam] string RequestNo,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
     string IdempotencyKey);
 
 public sealed record BusinessConsoleMesMaterialReadinessRequest(
