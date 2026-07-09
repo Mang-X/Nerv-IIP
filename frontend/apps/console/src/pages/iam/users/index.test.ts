@@ -155,9 +155,9 @@ describe('IAM users page', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('显示 1-20 / 45 条')
+    expect(wrapper.text()).toContain('显示 1–20 / 45 条')
 
-    wrapper.findComponent({ name: 'DataTablePagination' }).vm.$emit('update:page', 2)
+    wrapper.findComponent({ name: 'DataTablePaginationPro' }).vm.$emit('update:page', 2)
     await flushPromises()
 
     expect(iamState.filters.pageIndex).toBe(2)

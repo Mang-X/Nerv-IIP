@@ -7,11 +7,11 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  DataTable,
-  PageHeader,
-  SectionCard,
-  SectionCards,
-  StatusBadge,
+  NvDataTable,
+  NvPageHeader,
+  NvSectionCard,
+  NvSectionCards,
+  NvStatusBadge,
 } from '@nerv-iip/ui'
 
 definePage({
@@ -52,37 +52,40 @@ const columns: DataTableColumn<BusinessService>[] = [
 <template>
   <DefaultLayout>
     <section class="grid gap-6">
-      <PageHeader
+      <NvPageHeader
         title="业务平台状态"
         :breadcrumbs="[{ label: '平台' }]"
         :count="`${businessServices.length} 项服务`"
       />
 
-      <SectionCards :columns="3">
-        <SectionCard
+      <NvSectionCards :columns="3">
+        <NvSectionCard
           description="已交付服务"
           :value="businessServices.length"
           hint="业务后端能力层"
         />
-        <SectionCard description="就绪状态" value="已交付" hint="后端能力可用" />
-        <SectionCard description="覆盖范围" value="主线 MVP" hint="跨服务全链路验收推进中" />
-      </SectionCards>
+        <NvSectionCard description="就绪状态" value="已交付" hint="后端能力可用" />
+        <NvSectionCard description="覆盖范围" value="主线 MVP" hint="跨服务全链路验收推进中" />
+      </NvSectionCards>
 
       <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div class="grid min-w-0 content-start gap-2">
           <p class="text-sm text-muted-foreground">
             业务平台 MVP 已交付的后端能力与当前范围边界快照。
           </p>
-          <DataTable
+          <NvDataTable
+            :pagination="false"
+            :searchable="false"
+            :column-settings="false"
             :columns="columns"
             :rows="businessServices"
             row-key="name"
             empty-message="暂无已交付的业务服务。"
           >
             <template #cell-status>
-              <StatusBadge label="已交付" tone="success" />
+              <NvStatusBadge label="已交付" tone="success" />
             </template>
-          </DataTable>
+          </NvDataTable>
         </div>
 
         <Card class="content-start">
