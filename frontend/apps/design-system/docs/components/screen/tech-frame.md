@@ -17,11 +17,11 @@ import { NvTechFrame } from '@nerv-iip/ui'
 <ScreenDemo>
   <NvTechFrame style="width: 380px">
     <div style="padding:20px">
-      <div style="font-size:14px;color:var(--sb-text-2);margin-bottom:10px">焊接线 A · 实时状态</div>
+      <div style="font-size:14px;color:var(--nv-scr-text-2);margin-bottom:10px">焊接线 A · 实时状态</div>
       <div style="display:flex;flex-direction:column;gap:8px;font-size:14px">
-        <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">工单</span><span>WO-2406-0312</span></div>
-        <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">OEE</span><span style="color:var(--sb-cyan)">92.4%</span></div>
-        <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">节拍</span><span>48.2 s / 件</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--nv-scr-muted)">工单</span><span>WO-2406-0312</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--nv-scr-muted)">OEE</span><span style="color:var(--nv-scr-cyan)">92.4%</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--nv-scr-muted)">节拍</span><span>48.2 s / 件</span></div>
       </div>
     </div>
   </NvTechFrame>
@@ -40,16 +40,16 @@ import { NvTechFrame } from '@nerv-iip/ui'
 <ScreenDemo>
   <NvTechFrame accent="green" style="width: 300px">
     <div style="padding:18px;text-align:center">
-      <div style="font-size:13px;color:var(--sb-muted)">装配线 B</div>
-      <div style="font-size:18px;font-weight:600;color:var(--sb-green);margin-top:6px">运行中</div>
-      <div style="font-size:12px;color:var(--sb-muted);margin-top:4px">已稳产 4 时 12 分</div>
+      <div style="font-size:13px;color:var(--nv-scr-muted)">装配线 B</div>
+      <div style="font-size:18px;font-weight:600;color:var(--nv-scr-green);margin-top:6px">运行中</div>
+      <div style="font-size:12px;color:var(--nv-scr-muted);margin-top:4px">已稳产 4 时 12 分</div>
     </div>
   </NvTechFrame>
   <NvTechFrame accent="red" style="width: 300px">
     <div style="padding:18px;text-align:center">
-      <div style="font-size:13px;color:var(--sb-muted)">CNC 线 C</div>
-      <div style="font-size:18px;font-weight:600;color:var(--sb-red);margin-top:6px">主轴超温</div>
-      <div style="font-size:12px;color:var(--sb-muted);margin-top:4px">78.6 ℃ · 阈值 75.0 ℃</div>
+      <div style="font-size:13px;color:var(--nv-scr-muted)">CNC 线 C</div>
+      <div style="font-size:18px;font-weight:600;color:var(--nv-scr-red);margin-top:6px">主轴超温</div>
+      <div style="font-size:12px;color:var(--nv-scr-muted);margin-top:4px">78.6 ℃ · 阈值 75.0 ℃</div>
     </div>
   </NvTechFrame>
 </ScreenDemo>

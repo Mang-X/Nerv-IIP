@@ -156,7 +156,11 @@ onBeforeUnmount(() => {
   stopAutoplay()
   ro?.disconnect()
 })
-watch(() => props.items, () => requestAnimationFrame(syncCount), { deep: true })
+watch(
+  () => props.items,
+  () => requestAnimationFrame(syncCount),
+  { deep: true },
+)
 watch(() => props.autoplay, startAutoplay)
 </script>
 
@@ -223,41 +227,43 @@ watch(() => props.autoplay, startAutoplay)
 </template>
 
 <style scoped>
-.ds-swiper-track {
-  touch-action: pan-y;
-}
-.ds-swiper-snap {
-  transition: transform 0.34s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
-}
-.ds-swiper-dot {
-  height: 6px;
-  width: 6px;
-  border-radius: 9999px;
-  /* foreground-based so the dots read on both image banners and flat surfaces
+@layer nv-components {
+  .ds-swiper-track {
+    touch-action: pan-y;
+  }
+  .ds-swiper-snap {
+    transition: transform 0.34s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+  }
+  .ds-swiper-dot {
+    height: 6px;
+    width: 6px;
+    border-radius: 9999px;
+    /* foreground-based so the dots read on both image banners and flat surfaces
      (a --card fill vanishes against a dark page); soft halo keeps them legible
      over busy imagery. */
-  background: color-mix(in oklch, var(--foreground) 38%, transparent);
-  box-shadow: 0 0 2px color-mix(in oklch, var(--background) 55%, transparent);
-  transition:
-    width 0.3s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
-    background-color 0.3s ease;
-}
-.ds-swiper-dot-active {
-  width: 16px;
-  background: var(--brand);
-}
-/* outside dots sit on the page surface, not over an image — use a muted fill */
-.ds-swiper-dots-outside .ds-swiper-dot {
-  background: color-mix(in oklch, var(--muted-foreground) 32%, transparent);
-  box-shadow: none;
-}
-.ds-swiper-dots-outside .ds-swiper-dot-active {
-  background: var(--brand);
-}
-@media (prefers-reduced-motion: reduce) {
-  .ds-swiper-snap,
-  .ds-swiper-dot {
-    transition: none;
+    background: color-mix(in oklch, var(--foreground) 38%, transparent);
+    box-shadow: 0 0 2px color-mix(in oklch, var(--background) 55%, transparent);
+    transition:
+      width 0.3s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
+      background-color 0.3s ease;
+  }
+  .ds-swiper-dot-active {
+    width: 16px;
+    background: var(--nv-brand);
+  }
+  /* outside dots sit on the page surface, not over an image — use a muted fill */
+  .ds-swiper-dots-outside .ds-swiper-dot {
+    background: color-mix(in oklch, var(--muted-foreground) 32%, transparent);
+    box-shadow: none;
+  }
+  .ds-swiper-dots-outside .ds-swiper-dot-active {
+    background: var(--nv-brand);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-swiper-snap,
+    .ds-swiper-dot {
+      transition: none;
+    }
   }
 }
 </style>

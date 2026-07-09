@@ -1,3 +1,8 @@
+/* Global cascade-layer order (ADR 0020 §4.1) — MUST be the first statement.
+   reset/theme < tokens < base < components < nv-components < utilities <
+   nv-overrides < app. */
+@layer theme, nv-tokens, base, components, nv-components, utilities, nv-overrides, app;
+
 @import 'tailwindcss';
 
 @source '../../../../packages/ui/src';
@@ -8,51 +13,57 @@
 /* Design System v2 shared tokens (for shared components like Toaster) */
 @import '../../../../packages/ui/src/styles/theme.css';
 
-/* Big-screen --sb-* tokens (independent dark palette) */
+/* Big-screen --nv-scr-* tokens (independent dark palette) */
 @import '../../../../packages/ui/src/components/screen/tokens.css';
 
-html,
-body,
-#app {
-  height: 100%;
-}
+/* Host-override decorations (overlay glass) → nv-overrides. */
+@import '../../../../packages/ui/src/styles/overrides.css' layer(nv-overrides);
 
-body {
-  margin: 0;
-  background: var(--sb-bg);
-  color: var(--sb-text);
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    'Helvetica Neue',
-    Arial,
-    'PingFang SC',
-    'Microsoft YaHei',
-    sans-serif;
-}
+@layer app {
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
 
-/* 原生滚动容器的大屏细滚条（虚拟滚动容器无法换 ScreenScrollArea —— 它们必须
-   绑定原生滚动元素；此样式与 ScreenScrollArea 的 thumb 视觉完全一致） */
-.sb-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.13) transparent;
-}
-.sb-scroll::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.sb-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-.sb-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.13);
-  border: 1px solid transparent;
-  background-clip: padding-box;
-}
-.sb-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(135, 208, 255, 0.34);
-  background-clip: padding-box;
+  body {
+    margin: 0;
+    background: var(--nv-scr-bg);
+    color: var(--nv-scr-text);
+    font-family:
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      Roboto,
+      'Helvetica Neue',
+      Arial,
+      'PingFang SC',
+      'Microsoft YaHei',
+      sans-serif;
+  }
+
+  /* 原生滚动容器的大屏细滚条（虚拟滚动容器无法换 NvScreenScrollArea —— 它们必须
+     绑定原生滚动元素；此样式与 NvScreenScrollArea 的 thumb 视觉完全一致）。
+     以 @layer app 覆盖 tokens.css 的 hover-only 定义（ADR 0020 附录 B 备注）。 */
+  .nv-scr-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.13) transparent;
+  }
+  .nv-scr-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .nv-scr-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .nv-scr-scroll::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.13);
+    border: 1px solid transparent;
+    background-clip: padding-box;
+  }
+  .nv-scr-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(135, 208, 255, 0.34);
+    background-clip: padding-box;
+  }
 }

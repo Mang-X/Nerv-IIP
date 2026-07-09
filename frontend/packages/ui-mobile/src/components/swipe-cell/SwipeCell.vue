@@ -136,26 +136,28 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* No own rounding: the parent group's single `overflow:hidden + rounded` clip
+@layer nv-components {
+  /* No own rounding: the parent group's single `overflow:hidden + rounded` clip
    handles both the closed cover and the revealed actions. (Rounding the cell
    itself added a second, slightly different arc — the 1px crescent between the
    two radii is where the action colour leaked at the corners.) */
-.ds-swipe-content {
-  touch-action: pan-y;
-}
-.ds-swipe-snap {
-  transition: transform 0.26s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
-}
-/* During a drag, opacity tracks the offset live (no transition). On release the
+  .ds-swipe-content {
+    touch-action: pan-y;
+  }
+  .ds-swipe-snap {
+    transition: transform 0.26s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+  }
+  /* During a drag, opacity tracks the offset live (no transition). On release the
    snap class fades it with the SAME duration + easing as the content slide, so
    the colour and the position stay perfectly in step. */
-.ds-swipe-actions-snap {
-  transition: opacity 0.26s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
-}
-@media (prefers-reduced-motion: reduce) {
-  .ds-swipe-snap,
   .ds-swipe-actions-snap {
-    transition: none;
+    transition: opacity 0.26s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-swipe-snap,
+    .ds-swipe-actions-snap {
+      transition: none;
+    }
   }
 }
 </style>

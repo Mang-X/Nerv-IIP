@@ -734,106 +734,108 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 </template>
 
 <style scoped>
-.ds-m-eyebrow {
-  position: relative;
-  margin: 0 0 0.75rem 1rem;
-  padding-left: 0.625rem;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--muted-foreground);
-}
-.ds-m-eyebrow::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0.15rem;
-  bottom: 0.15rem;
-  width: 2px;
-  border-radius: 9999px;
-  background: var(--brand);
-}
+@layer app {
+  .ds-m-eyebrow {
+    position: relative;
+    margin: 0 0 0.75rem 1rem;
+    padding-left: 0.625rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--muted-foreground);
+  }
+  .ds-m-eyebrow::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.15rem;
+    bottom: 0.15rem;
+    width: 2px;
+    border-radius: 9999px;
+    background: var(--nv-brand);
+  }
 
-/* ---- Phone frame ----
+  /* ---- Phone frame ----
    Real phone (<sm): full-bleed app, OS draws the status bar.
    Larger screens: a centered device bezel with a mock status bar so the kit
    reads as a native app preview. */
-.ds-phone-wrap {
-  display: flex;
-  justify-content: center;
-  min-height: 100dvh;
-}
-.ds-phone {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100dvh;
-  background: var(--background);
-  color: var(--foreground);
-  overflow: hidden;
-}
-.ds-statusbar {
-  display: none;
-}
-.ds-home-indicator {
-  display: none;
-}
-
-@media (min-width: 640px) {
   .ds-phone-wrap {
-    align-items: center;
-    padding: 2rem 1rem;
-    background:
-      radial-gradient(
-        60% 50% at 50% 0%,
-        color-mix(in oklch, var(--brand) 10%, transparent),
-        transparent 70%
-      ),
-      var(--muted);
+    display: flex;
+    justify-content: center;
+    min-height: 100dvh;
   }
   .ds-phone {
-    width: 390px;
-    height: 844px;
-    border-radius: 3.25rem;
-    border: 11px solid color-mix(in oklch, var(--foreground) 92%, black);
-    box-shadow:
-      0 1px 0 1px color-mix(in oklch, var(--foreground) 70%, black) inset,
-      0 40px 90px -30px rgb(0 0 0 / 0.55);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100dvh;
+    background: var(--background);
+    color: var(--foreground);
+    overflow: hidden;
   }
   .ds-statusbar {
-    position: relative;
-    z-index: 30;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    height: 52px;
-    padding: 0 1.75rem 0 2rem;
-    font-size: 0.875rem;
-    color: var(--foreground);
-  }
-  .ds-island {
-    position: absolute;
-    left: 50%;
-    top: 8px;
-    transform: translateX(-50%);
-    width: 84px;
-    height: 26px;
-    border-radius: 9999px;
-    background: color-mix(in oklch, var(--foreground) 92%, black);
+    display: none;
   }
   .ds-home-indicator {
-    display: block;
-    height: 22px;
-    flex-shrink: 0;
+    display: none;
   }
-  .ds-home-indicator::after {
-    content: '';
-    display: block;
-    width: 134px;
-    height: 5px;
-    margin: 8px auto 0;
-    border-radius: 9999px;
-    background: color-mix(in oklch, var(--foreground) 55%, transparent);
+
+  @media (min-width: 640px) {
+    .ds-phone-wrap {
+      align-items: center;
+      padding: 2rem 1rem;
+      background:
+        radial-gradient(
+          60% 50% at 50% 0%,
+          color-mix(in oklch, var(--nv-brand) 10%, transparent),
+          transparent 70%
+        ),
+        var(--muted);
+    }
+    .ds-phone {
+      width: 390px;
+      height: 844px;
+      border-radius: 3.25rem;
+      border: 11px solid color-mix(in oklch, var(--foreground) 92%, black);
+      box-shadow:
+        0 1px 0 1px color-mix(in oklch, var(--foreground) 70%, black) inset,
+        0 40px 90px -30px rgb(0 0 0 / 0.55);
+    }
+    .ds-statusbar {
+      position: relative;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 52px;
+      padding: 0 1.75rem 0 2rem;
+      font-size: 0.875rem;
+      color: var(--foreground);
+    }
+    .ds-island {
+      position: absolute;
+      left: 50%;
+      top: 8px;
+      transform: translateX(-50%);
+      width: 84px;
+      height: 26px;
+      border-radius: 9999px;
+      background: color-mix(in oklch, var(--foreground) 92%, black);
+    }
+    .ds-home-indicator {
+      display: block;
+      height: 22px;
+      flex-shrink: 0;
+    }
+    .ds-home-indicator::after {
+      content: '';
+      display: block;
+      width: 134px;
+      height: 5px;
+      margin: 8px auto 0;
+      border-radius: 9999px;
+      background: color-mix(in oklch, var(--foreground) 55%, transparent);
+    }
   }
 }
 </style>

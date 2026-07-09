@@ -750,7 +750,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
   bottom: 0.15rem;
   width: 2px;
   border-radius: 9999px;
-  background: var(--brand);
+  background: var(--nv-brand);
 }
 
 /* ---- Phone frame ----
@@ -786,7 +786,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
     background:
       radial-gradient(
         60% 50% at 50% 0%,
-        color-mix(in oklch, var(--brand) 10%, transparent),
+        color-mix(in oklch, var(--nv-brand) 10%, transparent),
         transparent 70%
       ),
       var(--muted);

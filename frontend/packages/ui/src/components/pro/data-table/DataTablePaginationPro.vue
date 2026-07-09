@@ -215,134 +215,136 @@ function commitJump() {
 </template>
 
 <style scoped>
-.ds-pg-btn,
-.ds-pg-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 2rem;
-  min-width: 2rem;
-  padding-inline: 0.4rem;
-  border-radius: 7px;
-  font-size: 0.8125rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--foreground);
-  outline: none;
-  /* Page numbers: no background/color transition. When the page changes the
-     active brand fill must move instantly between numbers — a cross-fade left
-     two numbers highlighted for ~150ms, which read as a flicker on click. */
-  transition:
-    box-shadow 0.15s var(--ease-out-quart, ease-out),
-    transform 0.12s var(--ease-out-quart, ease-out);
-}
-/* Prev / next / edge buttons never hand off an active state, so a soft hover
-   fade is safe and adds polish. */
-.ds-pg-btn {
-  color: var(--muted-foreground);
-  transition:
-    background-color 0.15s var(--ease-out-quart, ease-out),
-    color 0.15s var(--ease-out-quart, ease-out),
-    box-shadow 0.15s var(--ease-out-quart, ease-out),
-    transform 0.12s var(--ease-out-quart, ease-out);
-}
-.ds-pg-btn:hover:not(:disabled),
-.ds-pg-num:hover:not([data-active]) {
-  background-color: var(--muted);
-  color: var(--foreground);
-}
-.ds-pg-btn:active:not(:disabled),
-.ds-pg-num:active:not([data-active]) {
-  transform: scale(0.94);
-}
-.ds-pg-btn:disabled {
-  opacity: 0.4;
-  pointer-events: none;
-}
-.ds-pg-btn:focus-visible,
-.ds-pg-num:focus-visible,
-.ds-pg-jump:focus-visible {
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 45%, transparent);
-}
-.ds-pg-num[data-active] {
-  background-color: var(--brand);
-  color: var(--brand-foreground);
-  font-weight: 600;
-  box-shadow:
-    inset 0 1px 0 0 color-mix(in oklch, white 16%, transparent),
-    0 1px 2px 0 color-mix(in oklch, black 24%, transparent);
-}
-/* Ellipsis doubles as a jump-by-5 control: '…' by default, double-chevron on hover. */
-.ds-pg-gap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 2rem;
-  min-width: 2rem;
-  border-radius: 7px;
-  color: var(--muted-foreground);
-  user-select: none;
-  outline: none;
-  transition:
-    background-color 0.15s var(--ease-out-quart, ease-out),
-    color 0.15s var(--ease-out-quart, ease-out);
-}
-.ds-pg-gap:hover {
-  background-color: var(--muted);
-  color: var(--foreground);
-}
-.ds-pg-gap:focus-visible {
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 45%, transparent);
-}
-.ds-pg-gap-dots,
-.ds-pg-gap-jump {
-  transition: opacity 0.15s var(--ease-out-quart, ease-out);
-}
-.ds-pg-gap-jump {
-  position: absolute;
-  opacity: 0;
-}
-.ds-pg-gap:hover .ds-pg-gap-dots {
-  opacity: 0;
-}
-.ds-pg-gap:hover .ds-pg-gap-jump {
-  opacity: 1;
-}
-@media (prefers-reduced-motion: reduce) {
-  .ds-pg-gap,
-  .ds-pg-gap-dots,
-  .ds-pg-gap-jump {
-    transition: none;
-  }
-}
-.ds-pg-jump {
-  width: 3rem;
-  height: 2rem;
-  border-radius: 7px;
-  border: 1px solid var(--border);
-  background-color: var(--card);
-  text-align: center;
-  font-size: 0.8125rem;
-  font-variant-numeric: tabular-nums;
-  outline: none;
-  transition:
-    border-color 0.15s var(--ease-out-quart, ease-out),
-    box-shadow 0.15s var(--ease-out-quart, ease-out);
-}
-.ds-pg-jump:focus-visible {
-  border-color: var(--brand);
-}
-
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
   .ds-pg-btn,
   .ds-pg-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 2rem;
+    min-width: 2rem;
+    padding-inline: 0.4rem;
+    border-radius: 7px;
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--foreground);
+    outline: none;
+    /* Page numbers: no background/color transition. When the page changes the
+     active brand fill must move instantly between numbers — a cross-fade left
+     two numbers highlighted for ~150ms, which read as a flicker on click. */
     transition:
-      background-color 0.1s linear,
-      color 0.1s linear;
+      box-shadow 0.15s var(--nv-ease-out-quart, ease-out),
+      transform 0.12s var(--nv-ease-out-quart, ease-out);
+  }
+  /* Prev / next / edge buttons never hand off an active state, so a soft hover
+   fade is safe and adds polish. */
+  .ds-pg-btn {
+    color: var(--muted-foreground);
+    transition:
+      background-color 0.15s var(--nv-ease-out-quart, ease-out),
+      color 0.15s var(--nv-ease-out-quart, ease-out),
+      box-shadow 0.15s var(--nv-ease-out-quart, ease-out),
+      transform 0.12s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-pg-btn:hover:not(:disabled),
+  .ds-pg-num:hover:not([data-active]) {
+    background-color: var(--muted);
+    color: var(--foreground);
   }
   .ds-pg-btn:active:not(:disabled),
   .ds-pg-num:active:not([data-active]) {
-    transform: none;
+    transform: scale(0.94);
+  }
+  .ds-pg-btn:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+  .ds-pg-btn:focus-visible,
+  .ds-pg-num:focus-visible,
+  .ds-pg-jump:focus-visible {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 45%, transparent);
+  }
+  .ds-pg-num[data-active] {
+    background-color: var(--nv-brand);
+    color: var(--nv-brand-foreground);
+    font-weight: 600;
+    box-shadow:
+      inset 0 1px 0 0 color-mix(in oklch, white 16%, transparent),
+      0 1px 2px 0 color-mix(in oklch, black 24%, transparent);
+  }
+  /* Ellipsis doubles as a jump-by-5 control: '…' by default, double-chevron on hover. */
+  .ds-pg-gap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 2rem;
+    min-width: 2rem;
+    border-radius: 7px;
+    color: var(--muted-foreground);
+    user-select: none;
+    outline: none;
+    transition:
+      background-color 0.15s var(--nv-ease-out-quart, ease-out),
+      color 0.15s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-pg-gap:hover {
+    background-color: var(--muted);
+    color: var(--foreground);
+  }
+  .ds-pg-gap:focus-visible {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 45%, transparent);
+  }
+  .ds-pg-gap-dots,
+  .ds-pg-gap-jump {
+    transition: opacity 0.15s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-pg-gap-jump {
+    position: absolute;
+    opacity: 0;
+  }
+  .ds-pg-gap:hover .ds-pg-gap-dots {
+    opacity: 0;
+  }
+  .ds-pg-gap:hover .ds-pg-gap-jump {
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-pg-gap,
+    .ds-pg-gap-dots,
+    .ds-pg-gap-jump {
+      transition: none;
+    }
+  }
+  .ds-pg-jump {
+    width: 3rem;
+    height: 2rem;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background-color: var(--card);
+    text-align: center;
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+    outline: none;
+    transition:
+      border-color 0.15s var(--nv-ease-out-quart, ease-out),
+      box-shadow 0.15s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-pg-jump:focus-visible {
+    border-color: var(--nv-brand);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ds-pg-btn,
+    .ds-pg-num {
+      transition:
+        background-color 0.1s linear,
+        color 0.1s linear;
+    }
+    .ds-pg-btn:active:not(:disabled),
+    .ds-pg-num:active:not([data-active]) {
+      transform: none;
+    }
   }
 }
 </style>

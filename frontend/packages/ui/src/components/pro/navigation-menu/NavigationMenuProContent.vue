@@ -37,12 +37,14 @@ const forwarded = useForwardPropsEmits(reactiveOmit(props, 'class'), emits)
 </template>
 
 <style scoped>
-.ds-nav-content {
-  animation-timing-function: var(--ease-out-quart, ease-out);
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
   .ds-nav-content {
-    animation: none !important;
+    animation-timing-function: var(--nv-ease-out-quart, ease-out);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-nav-content {
+      animation: none !important;
+    }
   }
 }
 </style>

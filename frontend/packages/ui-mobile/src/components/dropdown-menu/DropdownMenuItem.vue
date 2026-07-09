@@ -52,11 +52,7 @@ function pick(value: string | number) {
       type="button"
       class="ds-ddm-trigger flex h-full w-full min-w-0 items-center justify-center gap-1 px-3 text-[15px] transition-colors"
       :class="
-        cn(
-          open || isActive ? 'text-brand' : 'text-foreground',
-          'active:bg-accent',
-          $props.class,
-        )
+        cn(open || isActive ? 'text-brand' : 'text-foreground', 'active:bg-accent', $props.class)
       "
       :aria-expanded="open"
       @click="ctx!.toggle(id)"
@@ -92,26 +88,28 @@ function pick(value: string | number) {
 </template>
 
 <style scoped>
-.ds-ddm-trigger {
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-.ds-ddm-panel-enter-active,
-.ds-ddm-panel-leave-active {
-  transition:
-    transform 0.26s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
-    opacity 0.26s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
-}
-.ds-ddm-panel-enter-from,
-.ds-ddm-panel-leave-to {
-  transform: translateY(-8px);
-  opacity: 0;
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
+  .ds-ddm-trigger {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
   .ds-ddm-panel-enter-active,
-  .ds-ddm-panel-leave-active,
-  .ds-ddm-chevron {
-    transition: none;
+  .ds-ddm-panel-leave-active {
+    transition:
+      transform 0.26s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
+      opacity 0.26s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+  }
+  .ds-ddm-panel-enter-from,
+  .ds-ddm-panel-leave-to {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-ddm-panel-enter-active,
+    .ds-ddm-panel-leave-active,
+    .ds-ddm-chevron {
+      transition: none;
+    }
   }
 }
 </style>

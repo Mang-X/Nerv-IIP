@@ -59,81 +59,83 @@ const nodes = [
 </template>
 
 <style scoped>
-.flow {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-.rail {
-  fill: none;
-  stroke: rgba(120, 160, 220, 0.07);
-  stroke-width: 1;
-}
-.rail.main {
-  stroke: rgba(120, 160, 220, 0.1);
-  stroke-width: 1.5;
-}
-.flux {
-  fill: none;
-  stroke: var(--sb-cyan);
-  stroke-width: 1.4;
-  stroke-dasharray: 10 300;
-  opacity: 0.85;
-  filter: drop-shadow(0 0 4px var(--sb-cyan-dim));
-  animation-name: flux;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
-}
-.flux.main {
-  stroke-width: 1.8;
-  stroke-dasharray: 16 360;
-}
-@keyframes flux {
-  to {
-    stroke-dashoffset: -2200;
+@layer app {
+  .flow {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
   }
-}
-.node {
-  fill: var(--sb-cyan);
-  filter: drop-shadow(0 0 6px var(--sb-cyan));
-  animation: flow-pulse 4.5s ease-in-out infinite;
-}
-.ping {
-  fill: none;
-  stroke: var(--sb-cyan);
-  stroke-width: 1.2;
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: ping 5s ease-out infinite;
-}
-@keyframes flow-pulse {
-  0%,
-  100% {
-    opacity: 0.32;
+  .rail {
+    fill: none;
+    stroke: rgba(120, 160, 220, 0.07);
+    stroke-width: 1;
   }
-  50% {
-    opacity: 0.95;
+  .rail.main {
+    stroke: rgba(120, 160, 220, 0.1);
+    stroke-width: 1.5;
   }
-}
-@keyframes ping {
-  0% {
-    transform: scale(1);
-    opacity: 0.5;
+  .flux {
+    fill: none;
+    stroke: var(--nv-scr-cyan);
+    stroke-width: 1.4;
+    stroke-dasharray: 10 300;
+    opacity: 0.85;
+    filter: drop-shadow(0 0 4px var(--nv-scr-cyan-dim));
+    animation-name: flux;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
   }
-  70%,
-  100% {
-    transform: scale(4);
-    opacity: 0;
+  .flux.main {
+    stroke-width: 1.8;
+    stroke-dasharray: 16 360;
   }
-}
-@media (prefers-reduced-motion: reduce) {
-  .flux,
-  .ping {
-    display: none;
+  @keyframes flux {
+    to {
+      stroke-dashoffset: -2200;
+    }
   }
   .node {
-    animation: none;
+    fill: var(--nv-scr-cyan);
+    filter: drop-shadow(0 0 6px var(--nv-scr-cyan));
+    animation: flow-pulse 4.5s ease-in-out infinite;
+  }
+  .ping {
+    fill: none;
+    stroke: var(--nv-scr-cyan);
+    stroke-width: 1.2;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: ping 5s ease-out infinite;
+  }
+  @keyframes flow-pulse {
+    0%,
+    100% {
+      opacity: 0.32;
+    }
+    50% {
+      opacity: 0.95;
+    }
+  }
+  @keyframes ping {
+    0% {
+      transform: scale(1);
+      opacity: 0.5;
+    }
+    70%,
+    100% {
+      transform: scale(4);
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .flux,
+    .ping {
+      display: none;
+    }
+    .node {
+      animation: none;
+    }
   }
 }
 </style>

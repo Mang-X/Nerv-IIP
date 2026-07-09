@@ -68,22 +68,24 @@ const props = withDefaults(
 </template>
 
 <style scoped>
-.ds-tbtn {
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-  will-change: transform;
-}
-.ds-tbtn:active:not(:disabled) {
-  transform: scale(0.97);
-}
-.ds-tbtn-solid {
-  box-shadow:
-    inset 0 1px 0 0 color-mix(in oklch, white 16%, transparent),
-    0 1px 2px 0 color-mix(in oklch, black 22%, transparent);
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
+  .ds-tbtn {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    will-change: transform;
+  }
   .ds-tbtn:active:not(:disabled) {
-    transform: none;
+    transform: scale(0.97);
+  }
+  .ds-tbtn-solid {
+    box-shadow:
+      inset 0 1px 0 0 color-mix(in oklch, white 16%, transparent),
+      0 1px 2px 0 color-mix(in oklch, black 22%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-tbtn:active:not(:disabled) {
+      transform: none;
+    }
   }
 }
 </style>

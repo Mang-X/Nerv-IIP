@@ -70,42 +70,44 @@ function cancel() {
 </template>
 
 <style scoped>
-/* Cancel slides in by animating its track width; the flex field shrinks with it. */
-.ds-sb-cancel {
-  max-width: 0;
-  opacity: 0;
-  overflow: hidden;
-  transition:
-    max-width 0.28s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
-    opacity 0.2s ease;
-}
-.ds-sb-cancel.is-open {
-  max-width: 4rem;
-  opacity: 1;
-}
-.ds-sb-cancel > button {
-  padding-left: 0.5rem;
-}
-
-.ds-sb-clear-enter-active,
-.ds-sb-clear-leave-active {
-  transition:
-    opacity 0.15s ease,
-    transform 0.15s var(--ease-out-quart, ease-out);
-}
-.ds-sb-clear-enter-from,
-.ds-sb-clear-leave-to {
-  opacity: 0;
-  transform: scale(0.6);
-}
-
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
+  /* Cancel slides in by animating its track width; the flex field shrinks with it. */
   .ds-sb-cancel {
-    transition: opacity 0.15s linear;
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition:
+      max-width 0.28s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
+      opacity 0.2s ease;
   }
+  .ds-sb-cancel.is-open {
+    max-width: 4rem;
+    opacity: 1;
+  }
+  .ds-sb-cancel > button {
+    padding-left: 0.5rem;
+  }
+
   .ds-sb-clear-enter-active,
   .ds-sb-clear-leave-active {
-    transition: opacity 0.12s linear;
+    transition:
+      opacity 0.15s ease,
+      transform 0.15s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-sb-clear-enter-from,
+  .ds-sb-clear-leave-to {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ds-sb-cancel {
+      transition: opacity 0.15s linear;
+    }
+    .ds-sb-clear-enter-active,
+    .ds-sb-clear-leave-active {
+      transition: opacity 0.12s linear;
+    }
   }
 }
 </style>

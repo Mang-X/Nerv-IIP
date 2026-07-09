@@ -33,35 +33,37 @@ const forwarded = useForwardProps(reactiveOmit(props, 'class'))
 </template>
 
 <style scoped>
-.ds-mradio-tick {
-  animation: ds-mradio-pop 0.2s var(--ease-out-back, cubic-bezier(0.34, 1.4, 0.64, 1));
-}
-@keyframes ds-mradio-pop {
-  from {
-    opacity: 0;
-    transform: scale(0.4);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
   .ds-mradio-tick {
-    animation: none;
+    animation: ds-mradio-pop 0.2s var(--ease-out-back, cubic-bezier(0.34, 1.4, 0.64, 1));
   }
-}
-.ds-mradio::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 1px;
-  background: var(--border);
-  pointer-events: none;
-}
-.ds-mradio:last-child::after {
-  display: none;
+  @keyframes ds-mradio-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-mradio-tick {
+      animation: none;
+    }
+  }
+  .ds-mradio::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 1px;
+    background: var(--border);
+    pointer-events: none;
+  }
+  .ds-mradio:last-child::after {
+    display: none;
+  }
 }
 </style>

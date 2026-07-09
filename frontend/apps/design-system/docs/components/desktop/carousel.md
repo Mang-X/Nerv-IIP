@@ -6,7 +6,7 @@ title: NvCarousel 轮播图
 import { NvCarousel } from '@nerv-iip/ui'
 
 const lines = [
-  { zone: '焊接 A 区', oee: '92%', tone: 'var(--brand)' },
+  { zone: '焊接 A 区', oee: '92%', tone: 'var(--nv-brand)' },
   { zone: '装配 B 区', oee: '78%', tone: 'oklch(0.62 0.15 150)' },
   { zone: 'CNC C 区', oee: '64%', tone: 'oklch(0.65 0.16 40)' },
 ]

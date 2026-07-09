@@ -74,7 +74,13 @@ function nudge(delta: number) {
 <template>
   <div
     data-slot="slider"
-    :class="cn('ds-slider relative flex h-11 items-center select-none', disabled && 'opacity-40', props.class)"
+    :class="
+      cn(
+        'ds-slider relative flex h-11 items-center select-none',
+        disabled && 'opacity-40',
+        props.class,
+      )
+    "
   >
     <div
       ref="trackEl"
@@ -110,7 +116,10 @@ function nudge(delta: number) {
         <span
           class="ds-slider-ring grid size-5 place-items-center rounded-full bg-brand shadow-[0_1px_5px_rgb(0_0_0/0.35)]"
         >
-          <span class="ds-slider-dot block size-3.5 rounded-full bg-background" :class="dragging && 'is-active'" />
+          <span
+            class="ds-slider-dot block size-3.5 rounded-full bg-background"
+            :class="dragging && 'is-active'"
+          />
         </span>
         <span
           v-if="showBubble && dragging"
@@ -124,38 +133,40 @@ function nudge(delta: number) {
 </template>
 
 <style scoped>
-.ds-slider {
-  -webkit-tap-highlight-color: transparent;
-}
-.ds-slider-thumb {
-  touch-action: none;
-}
-/* The outer ring is fixed; the focus outline lives here so it frames the whole
+@layer nv-components {
+  .ds-slider {
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ds-slider-thumb {
+    touch-action: none;
+  }
+  /* The outer ring is fixed; the focus outline lives here so it frames the whole
    thumb. */
-.ds-slider-thumb:focus-visible .ds-slider-ring {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-/* WinUI3-style inner dot: visible at rest, grows a touch on hover, then shrinks
+  .ds-slider-thumb:focus-visible .ds-slider-ring {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  /* WinUI3-style inner dot: visible at rest, grows a touch on hover, then shrinks
    below rest the instant the pointer goes down. The pressed rule is qualified
    with `.ds-slider-thumb` so it OUT-SPECIFIES the hover rule (0,4,0 / 0,3,0) —
    otherwise hover (still active while pressing) would keep it big. */
-.ds-slider-dot {
-  transform: scale(0.92);
-  transition: transform 0.16s var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
-}
-.ds-slider-thumb:hover .ds-slider-dot,
-.ds-slider-thumb:focus-visible .ds-slider-dot {
-  transform: scale(1);
-}
-.ds-slider-thumb .ds-slider-dot.is-active,
-.ds-slider-thumb:hover .ds-slider-dot.is-active,
-.ds-slider-thumb:focus-visible .ds-slider-dot.is-active {
-  transform: scale(0.7);
-}
-@media (prefers-reduced-motion: reduce) {
   .ds-slider-dot {
-    transition: none;
+    transform: scale(0.92);
+    transition: transform 0.16s var(--nv-ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
+  }
+  .ds-slider-thumb:hover .ds-slider-dot,
+  .ds-slider-thumb:focus-visible .ds-slider-dot {
+    transform: scale(1);
+  }
+  .ds-slider-thumb .ds-slider-dot.is-active,
+  .ds-slider-thumb:hover .ds-slider-dot.is-active,
+  .ds-slider-thumb:focus-visible .ds-slider-dot.is-active {
+    transform: scale(0.7);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-slider-dot {
+      transition: none;
+    }
   }
 }
 </style>

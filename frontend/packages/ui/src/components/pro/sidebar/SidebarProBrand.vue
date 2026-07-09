@@ -34,16 +34,16 @@ const glyph = computed(() => props.logo ?? props.name.slice(0, 1).toUpperCase())
     :as-child="asChild"
     :type="as === 'button' ? 'button' : undefined"
     data-slot="sidebar-pro-brand"
-    class="sb-pro-brand group-data-[collapsible=icon]:justify-center"
+    class="nv-scr-pro-brand group-data-[collapsible=icon]:justify-center"
   >
-    <span class="sb-pro-logo">{{ glyph }}</span>
-    <span class="sb-pro-brand-text group-data-[collapsible=icon]:hidden">
-      <span class="sb-pro-brand-name">{{ name }}</span>
-      <span v-if="sub" class="sb-pro-brand-sub">{{ sub }}</span>
+    <span class="nv-scr-pro-logo">{{ glyph }}</span>
+    <span class="nv-scr-pro-brand-text group-data-[collapsible=icon]:hidden">
+      <span class="nv-scr-pro-brand-name">{{ name }}</span>
+      <span v-if="sub" class="nv-scr-pro-brand-sub">{{ sub }}</span>
     </span>
     <ChevronsUpDownIcon
       v-if="caret"
-      class="sb-pro-brand-caret group-data-[collapsible=icon]:hidden"
+      class="nv-scr-pro-brand-caret group-data-[collapsible=icon]:hidden"
       :size="16"
       aria-hidden="true"
     />
@@ -51,57 +51,63 @@ const glyph = computed(() => props.logo ?? props.name.slice(0, 1).toUpperCase())
 </template>
 
 <style scoped>
-.sb-pro-brand {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 0.625rem;
-  border-radius: 0.625rem;
-  padding: 0.375rem;
-  text-align: left;
-  color: inherit;
-  text-decoration: none;
-  transition: background-color 0.15s var(--ease-out-quart, ease);
-}
-.sb-pro-brand:hover {
-  background: var(--sidebar-accent, var(--muted));
-}
-.sb-pro-logo {
-  display: grid;
-  place-items: center;
-  width: 2rem;
-  height: 2rem;
-  flex-shrink: 0;
-  border-radius: 0.5rem;
-  background: linear-gradient(140deg, var(--brand), color-mix(in oklch, var(--brand) 70%, black));
-  color: var(--brand-foreground);
-  font-size: 0.875rem;
-  font-weight: 700;
-  box-shadow: inset 0 1px 0 0 color-mix(in oklch, white 22%, transparent);
-}
-.sb-pro-brand-text {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  line-height: 1.2;
-}
-.sb-pro-brand-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.8125rem;
-  font-weight: 600;
-}
-.sb-pro-brand-sub {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.6875rem;
-  color: var(--muted-foreground);
-}
-.sb-pro-brand-caret {
-  flex-shrink: 0;
-  color: var(--muted-foreground);
+@layer nv-components {
+  .nv-scr-pro-brand {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.625rem;
+    border-radius: 0.625rem;
+    padding: 0.375rem;
+    text-align: left;
+    color: inherit;
+    text-decoration: none;
+    transition: background-color 0.15s var(--nv-ease-out-quart, ease);
+  }
+  .nv-scr-pro-brand:hover {
+    background: var(--sidebar-accent, var(--muted));
+  }
+  .nv-scr-pro-logo {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+    border-radius: 0.5rem;
+    background: linear-gradient(
+      140deg,
+      var(--nv-brand),
+      color-mix(in oklch, var(--nv-brand) 70%, black)
+    );
+    color: var(--nv-brand-foreground);
+    font-size: 0.875rem;
+    font-weight: 700;
+    box-shadow: inset 0 1px 0 0 color-mix(in oklch, white 22%, transparent);
+  }
+  .nv-scr-pro-brand-text {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    line-height: 1.2;
+  }
+  .nv-scr-pro-brand-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+  .nv-scr-pro-brand-sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.6875rem;
+    color: var(--muted-foreground);
+  }
+  .nv-scr-pro-brand-caret {
+    flex-shrink: 0;
+    color: var(--muted-foreground);
+  }
 }
 </style>

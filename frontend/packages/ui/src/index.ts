@@ -25,12 +25,11 @@ export * from './components/pro'
 // Touch — large touch-optimized components for tablet boards / workshop kiosks.
 export * from './components/touch'
 
-// Screen — big-board / control-room layer (independent --sb-* dark tokens).
+// Screen — big-board / control-room layer (independent --nv-scr-* dark tokens).
 export * from './components/screen'
 
 // Layout — page scaffolding primitives (container, page+asides, grid, columns, sections).
 export * from './components/layout'
-
 
 export {
   Breadcrumb,

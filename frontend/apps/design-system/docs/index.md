@@ -90,7 +90,7 @@ import {
 .ds-home-eyebrow {
   font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--brand-strong);
+  color: var(--nv-brand-strong);
 }
 .ds-home-h2 {
   margin: 0.375rem 0 1.75rem;
@@ -120,14 +120,14 @@ import {
   color: var(--foreground) !important;
   text-decoration: none !important;
   transition:
-    border-color 0.2s var(--ease-out-quart, ease-out),
-    transform 0.2s var(--ease-out-quart, ease-out),
-    box-shadow 0.2s var(--ease-out-quart, ease-out);
+    border-color 0.2s var(--nv-ease-out-quart, ease-out),
+    transform 0.2s var(--nv-ease-out-quart, ease-out),
+    box-shadow 0.2s var(--nv-ease-out-quart, ease-out);
 }
 .ds-home-surface:hover {
-  border-color: color-mix(in oklch, var(--brand) 45%, var(--border));
+  border-color: color-mix(in oklch, var(--nv-brand) 45%, var(--border));
   transform: translateY(-3px);
-  box-shadow: 0 12px 32px -16px color-mix(in oklch, var(--brand) 55%, black 40%);
+  box-shadow: 0 12px 32px -16px color-mix(in oklch, var(--nv-brand) 55%, black 40%);
 }
 .ds-home-ic, .ds-home-fic {
   display: inline-flex;
@@ -136,8 +136,8 @@ import {
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 11px;
-  background: color-mix(in oklch, var(--brand) 12%, transparent);
-  color: var(--brand-strong);
+  background: color-mix(in oklch, var(--nv-brand) 12%, transparent);
+  color: var(--nv-brand-strong);
 }
 .ds-home-ic :deep(svg), .ds-home-fic :deep(svg) { width: 1.35rem; height: 1.35rem; }
 .ds-home-name, .ds-home-fname {
@@ -158,11 +158,11 @@ import {
   margin-top: 1rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--brand-strong);
+  color: var(--nv-brand-strong);
 }
 .ds-home-go :deep(svg) {
   width: 0.9rem; height: 0.9rem;
-  transition: transform 0.2s var(--ease-out-quart, ease-out);
+  transition: transform 0.2s var(--nv-ease-out-quart, ease-out);
 }
 .ds-home-surface:hover .ds-home-go :deep(svg) { transform: translateX(3px); }
 @media (prefers-reduced-motion: reduce) {

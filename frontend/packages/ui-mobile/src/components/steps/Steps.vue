@@ -73,32 +73,34 @@ withDefaults(
 </template>
 
 <style scoped>
-.ds-step-fill {
-  transition: width 0.45s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
-}
-.ds-step-node {
-  transition:
-    background-color 0.3s var(--ease-out-quart, ease-out),
-    border-color 0.3s var(--ease-out-quart, ease-out),
-    box-shadow 0.3s var(--ease-out-quart, ease-out);
-}
-.ds-step-check-enter-active,
-.ds-step-check-leave-active {
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s var(--ease-out-back, cubic-bezier(0.34, 1.4, 0.64, 1));
-}
-.ds-step-check-enter-from,
-.ds-step-check-leave-to {
-  opacity: 0;
-  transform: scale(0.5);
-}
-@media (prefers-reduced-motion: reduce) {
-  .ds-step-fill,
-  .ds-step-node,
+@layer nv-components {
+  .ds-step-fill {
+    transition: width 0.45s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+  }
+  .ds-step-node {
+    transition:
+      background-color 0.3s var(--nv-ease-out-quart, ease-out),
+      border-color 0.3s var(--nv-ease-out-quart, ease-out),
+      box-shadow 0.3s var(--nv-ease-out-quart, ease-out);
+  }
   .ds-step-check-enter-active,
   .ds-step-check-leave-active {
-    transition: none;
+    transition:
+      opacity 0.18s ease,
+      transform 0.18s var(--ease-out-back, cubic-bezier(0.34, 1.4, 0.64, 1));
+  }
+  .ds-step-check-enter-from,
+  .ds-step-check-leave-to {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-step-fill,
+    .ds-step-node,
+    .ds-step-check-enter-active,
+    .ds-step-check-leave-active {
+      transition: none;
+    }
   }
 }
 </style>

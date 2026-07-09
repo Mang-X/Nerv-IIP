@@ -29,8 +29,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   'update:show': [value: boolean]
-  'press': [key: string]
-  'confirm': []
+  press: [key: string]
+  confirm: []
 }>()
 
 const keys = computed(() => ['1', '2', '3', '4', '5', '6', '7', '8', '9'])
@@ -56,11 +56,7 @@ function confirm() {
        that is an ancestor (docs phone sim) is found instead of erroring. -->
   <Teleport defer :to="overlayTarget">
     <Transition name="ds-nk-fade">
-      <div
-        v-if="show"
-        class="fixed inset-0 z-40 bg-black/30"
-        @click="emit('update:show', false)"
-      />
+      <div v-if="show" class="fixed inset-0 z-40 bg-black/30" @click="emit('update:show', false)" />
     </Transition>
     <Transition name="ds-nk-slide">
       <div
@@ -136,35 +132,37 @@ function confirm() {
 </template>
 
 <style scoped>
-.ds-nk-key {
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-.ds-nk-key:active {
-  opacity: 0.6;
-}
-.ds-nk-fade-enter-active,
-.ds-nk-fade-leave-active {
-  transition: opacity 0.25s var(--ease-out-quart, ease-out);
-}
-.ds-nk-fade-enter-from,
-.ds-nk-fade-leave-to {
-  opacity: 0;
-}
-.ds-nk-slide-enter-active,
-.ds-nk-slide-leave-active {
-  transition: transform 0.3s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
-}
-.ds-nk-slide-enter-from,
-.ds-nk-slide-leave-to {
-  transform: translateY(100%);
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
+  .ds-nk-key {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .ds-nk-key:active {
+    opacity: 0.6;
+  }
   .ds-nk-fade-enter-active,
-  .ds-nk-fade-leave-active,
+  .ds-nk-fade-leave-active {
+    transition: opacity 0.25s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-nk-fade-enter-from,
+  .ds-nk-fade-leave-to {
+    opacity: 0;
+  }
   .ds-nk-slide-enter-active,
   .ds-nk-slide-leave-active {
-    transition: none;
+    transition: transform 0.3s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+  }
+  .ds-nk-slide-enter-from,
+  .ds-nk-slide-leave-to {
+    transform: translateY(100%);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-nk-fade-enter-active,
+    .ds-nk-fade-leave-active,
+    .ds-nk-slide-enter-active,
+    .ds-nk-slide-leave-active {
+      transition: none;
+    }
   }
 }
 </style>

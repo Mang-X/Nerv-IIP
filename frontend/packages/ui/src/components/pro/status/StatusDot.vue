@@ -21,10 +21,10 @@ const props = withDefaults(
 const toneVar = computed(
   () =>
     ({
-      success: 'var(--success)',
-      warning: 'var(--warning)',
+      success: 'var(--nv-success)',
+      warning: 'var(--nv-warning)',
       danger: 'var(--destructive)',
-      info: 'var(--brand)',
+      info: 'var(--nv-brand)',
       neutral: 'var(--muted-foreground)',
     })[props.tone],
 )
@@ -43,25 +43,27 @@ const toneVar = computed(
 </template>
 
 <style scoped>
-.ds-dot-ping {
-  background: var(--dot);
-  animation: ds-ping 1.6s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)) infinite;
-}
-@keyframes ds-ping {
-  0% {
-    transform: scale(1);
-    opacity: 0.55;
-  }
-  70%,
-  100% {
-    transform: scale(2.4);
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
   .ds-dot-ping {
-    animation: none;
-    opacity: 0;
+    background: var(--dot);
+    animation: ds-ping 1.6s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)) infinite;
+  }
+  @keyframes ds-ping {
+    0% {
+      transform: scale(1);
+      opacity: 0.55;
+    }
+    70%,
+    100% {
+      transform: scale(2.4);
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-dot-ping {
+      animation: none;
+      opacity: 0;
+    }
   }
 }
 </style>

@@ -271,7 +271,7 @@ const tones = { run: '运行中', idle: '待机', alarm: '报警' } as const
   );
   min-height: 100vh;
   padding: 26px 30px 60px;
-  color: var(--sb-text);
+  color: var(--nv-scr-text);
   font-family:
     ui-sans-serif,
     system-ui,
@@ -286,7 +286,7 @@ const tones = { run: '运行中', idle: '待机', alarm: '报警' } as const
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.16em;
-  color: var(--sb-cyan);
+  color: var(--nv-scr-cyan);
   text-transform: uppercase;
 }
 .g-grid {
@@ -306,12 +306,12 @@ const tones = { run: '运行中', idle: '待机', alarm: '报警' } as const
 .g-t {
   display: block;
   font-size: 11px;
-  color: var(--sb-faint);
+  color: var(--nv-scr-faint);
   margin-bottom: 7px;
   letter-spacing: 0.04em;
 }
 .g-fill {
-  color: var(--sb-text-2);
+  color: var(--nv-scr-text-2);
   font-size: 13px;
 }
 .g-pad {

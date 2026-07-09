@@ -24,13 +24,90 @@ const V = 0.5
 
 // 分散四周、间距拉大、避开中心登录框（约 x 480–960 / y 195–615）。MES 为核心，方块最大。
 const mods: Mod[] = [
-  { id: 'crm', sx: 175, sy: 138, w: 1.5, d: 1.4, h: 1.5, icon: Users, name: '客户管理', en: 'CRM', tone: 'indigo' },
-  { id: 'erp', sx: 120, sy: 420, w: 1.6, d: 1.5, h: 1.7, icon: Building2, name: '经营管理', en: 'ERP', tone: 'indigo' },
-  { id: 'iiot', sx: 235, sy: 672, w: 1.3, d: 1.3, h: 1.2, icon: Cpu, name: '设备物联', en: 'IIoT', tone: 'green' },
-  { id: 'mes', sx: 700, sy: 120, w: 1.9, d: 1.7, h: 1.9, icon: Factory, name: '制造执行', en: 'MES', tone: 'cyan' },
-  { id: 'qms', sx: 1250, sy: 150, w: 1.4, d: 1.5, h: 1.3, icon: ShieldCheck, name: '质量管理', en: 'QMS', tone: 'amber' },
-  { id: 'wms', sx: 1255, sy: 448, w: 1.6, d: 1.6, h: 1.5, icon: Boxes, name: '仓储管理', en: 'WMS', tone: 'cyan' },
-  { id: 'wcs', sx: 770, sy: 678, w: 1.5, d: 1.4, h: 1.4, icon: Bot, name: '设备控制', en: 'WCS', tone: 'green' },
+  {
+    id: 'crm',
+    sx: 175,
+    sy: 138,
+    w: 1.5,
+    d: 1.4,
+    h: 1.5,
+    icon: Users,
+    name: '客户管理',
+    en: 'CRM',
+    tone: 'indigo',
+  },
+  {
+    id: 'erp',
+    sx: 120,
+    sy: 420,
+    w: 1.6,
+    d: 1.5,
+    h: 1.7,
+    icon: Building2,
+    name: '经营管理',
+    en: 'ERP',
+    tone: 'indigo',
+  },
+  {
+    id: 'iiot',
+    sx: 235,
+    sy: 672,
+    w: 1.3,
+    d: 1.3,
+    h: 1.2,
+    icon: Cpu,
+    name: '设备物联',
+    en: 'IIoT',
+    tone: 'green',
+  },
+  {
+    id: 'mes',
+    sx: 700,
+    sy: 120,
+    w: 1.9,
+    d: 1.7,
+    h: 1.9,
+    icon: Factory,
+    name: '制造执行',
+    en: 'MES',
+    tone: 'cyan',
+  },
+  {
+    id: 'qms',
+    sx: 1250,
+    sy: 150,
+    w: 1.4,
+    d: 1.5,
+    h: 1.3,
+    icon: ShieldCheck,
+    name: '质量管理',
+    en: 'QMS',
+    tone: 'amber',
+  },
+  {
+    id: 'wms',
+    sx: 1255,
+    sy: 448,
+    w: 1.6,
+    d: 1.6,
+    h: 1.5,
+    icon: Boxes,
+    name: '仓储管理',
+    en: 'WMS',
+    tone: 'cyan',
+  },
+  {
+    id: 'wcs',
+    sx: 770,
+    sy: 678,
+    w: 1.5,
+    d: 1.4,
+    h: 1.4,
+    icon: Bot,
+    name: '设备控制',
+    en: 'WCS',
+    tone: 'green',
+  },
 ]
 
 function fx(sx: number, ix: number, iy: number) {
@@ -52,7 +129,19 @@ const cubes = mods.map((m) => {
   const ay = fy(sy, w / 2, d / 2, h)
   const labelY = fy(sy, w, d, 0) + 20
   const labelX = fx(sx, w / 2, d / 2)
-  return { top, left, right, ax, ay, labelX, labelY, icon: m.icon, name: m.name, en: m.en, tone: m.tone }
+  return {
+    top,
+    left,
+    right,
+    ax,
+    ay,
+    labelX,
+    labelY,
+    icon: m.icon,
+    name: m.name,
+    en: m.en,
+    tone: m.tone,
+  }
 })
 
 // 模块间有向数据流（非中心汇聚）
@@ -80,7 +169,10 @@ const flows = flowDefs.map(([a, b], i) => {
   const off = (i % 2 ? 1 : -1) * (40 + ((i * 33) % 80))
   const px = mx + (-dy / len) * off
   const py = my + (dx / len) * off
-  return { d: `M${A.x.toFixed(0)} ${A.y.toFixed(0)} Q${px.toFixed(0)} ${py.toFixed(0)} ${B.x.toFixed(0)} ${B.y.toFixed(0)}`, dur: 9 + (i % 4) }
+  return {
+    d: `M${A.x.toFixed(0)} ${A.y.toFixed(0)} Q${px.toFixed(0)} ${py.toFixed(0)} ${B.x.toFixed(0)} ${B.y.toFixed(0)}`,
+    dur: 9 + (i % 4),
+  }
 })
 </script>
 
@@ -113,66 +205,107 @@ const flows = flowDefs.map(([a, b], i) => {
 </template>
 
 <style scoped>
-.net {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-.rail {
-  fill: none;
-  stroke: rgba(120, 160, 220, 0.1);
-  stroke-width: 1;
-}
-.flux {
-  fill: none;
-  stroke: var(--sb-cyan);
-  stroke-width: 1.4;
-  stroke-dasharray: 5 60;
-  opacity: 0.85;
-  animation-name: flux;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
-}
-@keyframes flux {
-  from { stroke-dashoffset: 65; }
-  to { stroke-dashoffset: 0; }
-}
+@layer app {
+  .net {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .rail {
+    fill: none;
+    stroke: rgba(120, 160, 220, 0.1);
+    stroke-width: 1;
+  }
+  .flux {
+    fill: none;
+    stroke: var(--nv-scr-cyan);
+    stroke-width: 1.4;
+    stroke-dasharray: 5 60;
+    opacity: 0.85;
+    animation-name: flux;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+  @keyframes flux {
+    from {
+      stroke-dashoffset: 65;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
 
-/* 方块面：按模块域多色 */
-.face-t { fill: rgba(74, 166, 238, 0.06); stroke: rgba(120, 190, 245, 0.32); stroke-width: 1; }
-.face-l { fill: rgba(74, 166, 238, 0.025); stroke: rgba(120, 160, 220, 0.16); stroke-width: 1; }
-.face-r { fill: rgba(74, 166, 238, 0.045); stroke: rgba(120, 160, 220, 0.2); stroke-width: 1; }
-.green .face-t { fill: rgba(69, 208, 137, 0.06); stroke: rgba(69, 208, 137, 0.34); }
-.green .face-r { stroke: rgba(69, 208, 137, 0.2); }
-.amber .face-t { fill: rgba(242, 193, 78, 0.06); stroke: rgba(242, 193, 78, 0.34); }
-.amber .face-r { stroke: rgba(242, 193, 78, 0.2); }
-.indigo .face-t { fill: rgba(139, 155, 230, 0.06); stroke: rgba(139, 155, 230, 0.34); }
-.indigo .face-r { stroke: rgba(139, 155, 230, 0.2); }
+  /* 方块面：按模块域多色 */
+  .face-t {
+    fill: rgba(74, 166, 238, 0.06);
+    stroke: rgba(120, 190, 245, 0.32);
+    stroke-width: 1;
+  }
+  .face-l {
+    fill: rgba(74, 166, 238, 0.025);
+    stroke: rgba(120, 160, 220, 0.16);
+    stroke-width: 1;
+  }
+  .face-r {
+    fill: rgba(74, 166, 238, 0.045);
+    stroke: rgba(120, 160, 220, 0.2);
+    stroke-width: 1;
+  }
+  .green .face-t {
+    fill: rgba(69, 208, 137, 0.06);
+    stroke: rgba(69, 208, 137, 0.34);
+  }
+  .green .face-r {
+    stroke: rgba(69, 208, 137, 0.2);
+  }
+  .amber .face-t {
+    fill: rgba(242, 193, 78, 0.06);
+    stroke: rgba(242, 193, 78, 0.34);
+  }
+  .amber .face-r {
+    stroke: rgba(242, 193, 78, 0.2);
+  }
+  .indigo .face-t {
+    fill: rgba(139, 155, 230, 0.06);
+    stroke: rgba(139, 155, 230, 0.34);
+  }
+  .indigo .face-r {
+    stroke: rgba(139, 155, 230, 0.2);
+  }
 
-.ico {
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  color: var(--sb-cyan);
-}
-.green .ico { color: var(--sb-green); }
-.amber .ico { color: var(--sb-amber); }
-.indigo .ico { color: var(--sb-indigo); }
+  .ico {
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    color: var(--nv-scr-cyan);
+  }
+  .green .ico {
+    color: var(--nv-scr-green);
+  }
+  .amber .ico {
+    color: var(--nv-scr-amber);
+  }
+  .indigo .ico {
+    color: var(--nv-scr-indigo);
+  }
 
-.label {
-  fill: var(--sb-text-2);
-  font-size: 13px;
-  letter-spacing: 0.02em;
-}
-.en {
-  fill: var(--sb-faint);
-  font-size: 10px;
-  letter-spacing: 0.16em;
-}
+  .label {
+    fill: var(--nv-scr-text-2);
+    font-size: 13px;
+    letter-spacing: 0.02em;
+  }
+  .en {
+    fill: var(--nv-scr-faint);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+  }
 
-@media (prefers-reduced-motion: reduce) {
-  .flux { display: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .flux {
+      display: none;
+    }
+  }
 }
 </style>

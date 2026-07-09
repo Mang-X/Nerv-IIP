@@ -36,11 +36,13 @@ const forwarded = useForwardPropsEmits(reactiveOmit(props, 'class'), emits)
 </template>
 
 <style scoped>
-/* Subtle glass: a faint top highlight + inner sheen over the translucent fill.
+@layer nv-components {
+  /* Subtle glass: a faint top highlight + inner sheen over the translucent fill.
    Kept understated — depth, not spectacle. */
-.ds-tip {
-  box-shadow:
-    0 8px 28px -10px color-mix(in oklch, black 45%, transparent),
-    inset 0 1px 0 0 color-mix(in oklch, white 14%, transparent);
+  .ds-tip {
+    box-shadow:
+      0 8px 28px -10px color-mix(in oklch, black 45%, transparent),
+      inset 0 1px 0 0 color-mix(in oklch, white 14%, transparent);
+  }
 }
 </style>

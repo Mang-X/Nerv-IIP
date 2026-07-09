@@ -17,7 +17,7 @@ const items = [
 
 # NvScreenTabs 标签页
 
-大屏标签页:一排标签压在细基线上,激活项发青光,底部一道下划线随之平滑滑动(按索引驱动)。方向键在标签间移动。通过 `v-model` 绑定当前项 `value`,基于独立的 `--sb-*` 令牌。
+大屏标签页:一排标签压在细基线上,激活项发青光,底部一道下划线随之平滑滑动(按索引驱动)。方向键在标签间移动。通过 `v-model` 绑定当前项 `value`,基于独立的 `--nv-scr-*` 令牌。
 
 ## 基础用法
 
@@ -26,7 +26,7 @@ const items = [
 <ScreenDemo>
   <div style="width:480px">
     <NvScreenTabs v-model="tab" :items="items" />
-    <div style="margin-top:16px;color:var(--sb-text-2);font-size:14px">
+    <div style="margin-top:16px;color:var(--nv-scr-text-2);font-size:14px">
       当前视图:{{ items.find(i => i.value === tab)?.label }}
     </div>
   </div>

@@ -2,20 +2,20 @@
 import type { ParamKind } from '@/data/contracts/equipment'
 
 export const KIND_COLOR: Record<ParamKind, string> = {
-  temp: 'var(--sb-amber)',
-  energy: 'var(--sb-amber)',
-  pressure: 'var(--sb-cyan)',
-  flow: 'var(--sb-cyan)',
-  torque: 'var(--sb-cyan)',
-  speed: 'var(--sb-green)',
-  level: 'var(--sb-green)',
-  cycle: 'var(--sb-green)',
-  current: 'var(--sb-indigo)',
-  vibration: 'var(--sb-indigo)',
+  temp: 'var(--nv-scr-amber)',
+  energy: 'var(--nv-scr-amber)',
+  pressure: 'var(--nv-scr-cyan)',
+  flow: 'var(--nv-scr-cyan)',
+  torque: 'var(--nv-scr-cyan)',
+  speed: 'var(--nv-scr-green)',
+  level: 'var(--nv-scr-green)',
+  cycle: 'var(--nv-scr-green)',
+  current: 'var(--nv-scr-indigo)',
+  vibration: 'var(--nv-scr-indigo)',
 }
 
 export function paramColor(kind: ParamKind, tone?: 'warn' | 'bad'): string {
-  if (tone === 'bad') return 'var(--sb-red)'
-  if (tone === 'warn') return 'var(--sb-amber)'
+  if (tone === 'bad') return 'var(--nv-scr-red)'
+  if (tone === 'warn') return 'var(--nv-scr-amber)'
   return KIND_COLOR[kind]
 }

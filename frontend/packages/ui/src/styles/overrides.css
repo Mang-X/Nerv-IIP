@@ -1,0 +1,92 @@
+/*
+ * Nerv-IIP host-override decorations (ADR 0020 §4.1 `nv-overrides` layer).
+ *
+ * These rules MUST win over Tailwind `utilities` (e.g. a `bg-*` class on the same
+ * element) without `!important`. This file is deliberately UNLAYERED — the host
+ * decides its layer at the import point:
+ *   • product apps  → `@import '…/overrides.css' layer(nv-overrides);`  (after utilities)
+ *   • VitePress doc → plain `@import '…/overrides.css';`  (unlayered, wins by specificity
+ *     over VitePress's own unlayered resets — see ADR 0020 §4.2)
+ *
+ * Do NOT add `@layer` inside this file. Do NOT reintroduce the removed
+ * `revert-layer` hack (ADR 0020 §4.2.4).
+ *
+ * NOTE: the `[data-slot='…-pro-…']` selectors below still match the current
+ * (pre-rename)原版/Nv data-slot values; the `data-slot` → `nv-*` rename is
+ * naming-ticket scope (ADR 0020 §1.6), tracked separately from this token/layer
+ * batch. When that lands, update these selectors in lockstep.
+ */
+
+/* ── Floating overlay glass ──
+   Translucent fill + backdrop blur on portalled surfaces so they read as layered
+   glass over any content. Kept restrained (high opacity → text stays crisp).
+   `@supports` so non-blur browsers keep the opaque fill. */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  [data-slot='popover-content'],
+  [data-slot='dropdown-menu-content'],
+  [data-slot='dropdown-menu-sub-content'],
+  [data-slot='dropdown-menu-pro-content'],
+  [data-slot='dropdown-menu-pro-sub-content'],
+  [data-slot='select-content'],
+  [data-slot='select-pro-content'],
+  [data-slot='command-dialog'] {
+    background-color: color-mix(in oklch, var(--popover) 76%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(1.6);
+    backdrop-filter: blur(16px) saturate(1.6);
+  }
+  [data-slot='dialog-content'],
+  [data-slot='dialog-pro-content'],
+  [data-slot='alert-dialog-content'],
+  [data-slot='alert-dialog-pro-content'],
+  [data-slot='sheet-content'],
+  [data-slot='sheet-pro-content'] {
+    background-color: color-mix(in oklch, var(--card) 82%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(1.6);
+    backdrop-filter: blur(16px) saturate(1.6);
+  }
+  /* Mobile overlay surfaces (bottom sheet, centred dialog) — sit over a frosted
+     scrim, so a touch more blur/translucency reads as proper glass. */
+  [data-slot='mobile-sheet-content'],
+  [data-slot='mobile-dialog-content'] {
+    background-color: color-mix(in oklch, var(--card) 80%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(1.7);
+    backdrop-filter: blur(20px) saturate(1.7);
+  }
+  /* Inverted tooltip glass (dark-on-light / light-on-dark). */
+  [data-slot='tooltip-content'],
+  [data-slot='tooltip-pro-content'] {
+    background-color: color-mix(in oklch, var(--foreground) 84%, transparent);
+    -webkit-backdrop-filter: blur(10px) saturate(1.4);
+    backdrop-filter: blur(10px) saturate(1.4);
+  }
+}
+
+/* ── Sidebar — unified PREMIUM selected state (Linear / Vercel form) ──
+   Applied system-wide so every app-shell / page sidebar reads premium instead of
+   shadcn's gray default: hover is a clean neutral wash, the selected row is a
+   neutral *elevated* fill (no hue — a tinted fill reads muddy at any accent),
+   foreground text, and the glyph carries identity in the brand accent.
+
+   Qualified to (0,3,0) so it out-ranks the same-specificity
+   `data-active:bg-sidebar-accent` utilities on SidebarMenuButton regardless of
+   import order (here: guaranteed by the nv-overrides layer sitting after utilities). */
+[data-slot='sidebar-menu'] {
+  gap: 0.1875rem;
+}
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button']:hover,
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button']:hover {
+  background-color: color-mix(in oklch, var(--sidebar-foreground) 6%, transparent);
+  color: var(--sidebar-foreground);
+}
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button'][data-active='true'],
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button'][data-active='true'],
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button'][data-active='true']:hover,
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button'][data-active='true']:hover {
+  background-color: color-mix(in oklch, var(--sidebar-foreground) 12%, transparent);
+  color: var(--sidebar-foreground);
+  font-weight: 500;
+}
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button'][data-active='true'] svg,
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button'][data-active='true'] svg {
+  color: var(--nv-brand-strong);
+}

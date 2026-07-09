@@ -27,9 +27,9 @@ const alarms = [
   <div style="height: 150px">
     <NvScrollBoard :items="alarms" :row-key="(r) => r.time + r.text" :speed="22">
       <template #row="{ item }">
-        <div style="display: flex; gap: 10px; padding: 7px 2px; font-size: 13px; border-bottom: 1px solid var(--sb-divider)">
-          <span style="color: var(--sb-muted); font-variant-numeric: tabular-nums">{{ item.time }}</span>
-          <span :style="{ flex: 1, color: item.level === 'alarm' ? 'var(--sb-red)' : item.level === 'warn' ? 'var(--sb-amber)' : 'var(--sb-faint)' }">
+        <div style="display: flex; gap: 10px; padding: 7px 2px; font-size: 13px; border-bottom: 1px solid var(--nv-scr-divider)">
+          <span style="color: var(--nv-scr-muted); font-variant-numeric: tabular-nums">{{ item.time }}</span>
+          <span :style="{ flex: 1, color: item.level === 'alarm' ? 'var(--nv-scr-red)' : item.level === 'warn' ? 'var(--nv-scr-amber)' : 'var(--nv-scr-faint)' }">
             {{ item.text }}
           </span>
         </div>

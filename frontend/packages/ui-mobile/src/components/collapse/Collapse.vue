@@ -38,20 +38,22 @@ const open = defineModel<boolean>('open', { default: false })
 </template>
 
 <style scoped>
-.ds-collapse-head {
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-.ds-collapse-chevron {
-  transition: transform 0.24s var(--ease-out-quart, ease-out);
-}
-.ds-collapse-wrap {
-  transition: grid-template-rows 0.28s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
-}
-@media (prefers-reduced-motion: reduce) {
-  .ds-collapse-chevron,
+@layer nv-components {
+  .ds-collapse-head {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .ds-collapse-chevron {
+    transition: transform 0.24s var(--nv-ease-out-quart, ease-out);
+  }
   .ds-collapse-wrap {
-    transition: none;
+    transition: grid-template-rows 0.28s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-collapse-chevron,
+    .ds-collapse-wrap {
+      transition: none;
+    }
   }
 }
 </style>

@@ -23,7 +23,12 @@ const C = 2 * Math.PI * R
 /** 段间缝（弧长 px） */
 const GAP = 2.5
 
-const total = computed(() => Math.max(1, props.segments.reduce((n, s) => n + s.value, 0)))
+const total = computed(() =>
+  Math.max(
+    1,
+    props.segments.reduce((n, s) => n + s.value, 0),
+  ),
+)
 
 const arcs = computed(() => {
   let acc = 0
@@ -39,14 +44,21 @@ const arcs = computed(() => {
 </script>
 
 <template>
-  <div class="sb-dn">
-    <div class="sb-dn-ring" :style="{ width: `${size}px`, height: `${size}px` }">
-      <svg viewBox="0 0 120 120" class="sb-dn-svg">
-        <circle class="sb-dn-track" cx="60" cy="60" :r="R" fill="none" :stroke-width="thickness" />
+  <div class="nv-scr-dn">
+    <div class="nv-scr-dn-ring" :style="{ width: `${size}px`, height: `${size}px` }">
+      <svg viewBox="0 0 120 120" class="nv-scr-dn-svg">
+        <circle
+          class="nv-scr-dn-track"
+          cx="60"
+          cy="60"
+          :r="R"
+          fill="none"
+          :stroke-width="thickness"
+        />
         <circle
           v-for="a in arcs"
           :key="a.label"
-          class="sb-dn-arc"
+          class="nv-scr-dn-arc"
           cx="60"
           cy="60"
           :r="R"
@@ -59,88 +71,90 @@ const arcs = computed(() => {
           transform="rotate(-90 60 60)"
         />
       </svg>
-      <div class="sb-dn-center"><slot /></div>
+      <div class="nv-scr-dn-center"><slot /></div>
     </div>
-    <div v-if="legend" class="sb-dn-legend">
-      <div v-for="s in segments" :key="s.label" class="sb-dn-item">
+    <div v-if="legend" class="nv-scr-dn-legend">
+      <div v-for="s in segments" :key="s.label" class="nv-scr-dn-item">
         <i :style="{ background: s.color }" aria-hidden="true" />
-        <span class="sb-dn-l">{{ s.label }}</span>
-        <b class="sb-dn-v">{{ s.value.toLocaleString('en-US') }}</b>
+        <span class="nv-scr-dn-l">{{ s.label }}</span>
+        <b class="nv-scr-dn-v">{{ s.value.toLocaleString('en-US') }}</b>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.sb-dn {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  min-width: 0;
-}
-.sb-dn-ring {
-  position: relative;
-  flex: none;
-}
-.sb-dn-svg {
-  width: 100%;
-  height: 100%;
-}
-.sb-dn-track {
-  stroke: rgba(255, 255, 255, 0.06);
-}
-.sb-dn-arc {
-  transition:
-    stroke-dasharray 0.6s var(--sb-ease-emphasized),
-    stroke-dashoffset 0.6s var(--sb-ease-emphasized);
-}
-.sb-dn-center {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  pointer-events: none;
-}
-.sb-dn-legend {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.sb-dn-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  color: var(--sb-muted);
-  min-width: 0;
-}
-.sb-dn-item i {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  flex: none;
-}
-.sb-dn-l {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sb-dn-v {
-  margin-left: auto;
-  padding-left: 10px;
-  font-weight: 700;
-  color: var(--sb-text);
-  font-variant-numeric: tabular-nums;
-}
-@media (prefers-reduced-motion: reduce) {
-  .sb-dn-arc {
-    transition: none;
+@layer nv-components {
+  .nv-scr-dn {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    min-width: 0;
+  }
+  .nv-scr-dn-ring {
+    position: relative;
+    flex: none;
+  }
+  .nv-scr-dn-svg {
+    width: 100%;
+    height: 100%;
+  }
+  .nv-scr-dn-track {
+    stroke: rgba(255, 255, 255, 0.06);
+  }
+  .nv-scr-dn-arc {
+    transition:
+      stroke-dasharray 0.6s var(--nv-scr-ease-emphasized),
+      stroke-dashoffset 0.6s var(--nv-scr-ease-emphasized);
+  }
+  .nv-scr-dn-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    pointer-events: none;
+  }
+  .nv-scr-dn-legend {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .nv-scr-dn-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+    min-width: 0;
+  }
+  .nv-scr-dn-item i {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex: none;
+  }
+  .nv-scr-dn-l {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .nv-scr-dn-v {
+    margin-left: auto;
+    padding-left: 10px;
+    font-weight: 700;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .nv-scr-dn-arc {
+      transition: none;
+    }
   }
 }
 </style>

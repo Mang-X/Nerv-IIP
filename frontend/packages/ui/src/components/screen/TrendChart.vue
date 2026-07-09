@@ -23,7 +23,7 @@ const props = withDefaults(
     /** X-axis labels under the plot. */
     xLabels?: string[]
     /** Resting crosshair pin when not hovering. `x` is the data index. */
-    tooltip?: { x: number, label: string, actual: string, plan: string }
+    tooltip?: { x: number; label: string; actual: string; plan: string }
     title?: string
     /** 每个数据点的悬停标签（与 actual 等长）；缺省按 24h 均匀推算（2026-07 生产化） */
     hoverLabels?: string[]
@@ -85,7 +85,9 @@ function yAt(v: number) {
 }
 function linePath(data: number[]) {
   if (!data.length) return ''
-  return data.map((v, i) => `${i === 0 ? 'M' : 'L'}${xAt(i, data.length).toFixed(1)} ${yAt(v).toFixed(1)}`).join(' ')
+  return data
+    .map((v, i) => `${i === 0 ? 'M' : 'L'}${xAt(i, data.length).toFixed(1)} ${yAt(v).toFixed(1)}`)
+    .join(' ')
 }
 function fmt(v: number) {
   return v.toLocaleString('en-US')
@@ -97,9 +99,7 @@ const seriesPaths = computed(() =>
   (props.series ?? []).map((s) => ({ label: s.label, color: s.color, d: linePath(s.data) })),
 )
 const areaPath = computed(() =>
-  props.actual.length
-    ? `${actualPath.value} L${right} ${bottom} L${left} ${bottom} Z`
-    : '',
+  props.actual.length ? `${actualPath.value} L${right} ${bottom} L${left} ${bottom} Z` : '',
 )
 
 // Evenly spaced faint grid lines, one fewer than the y-label count.
@@ -169,40 +169,42 @@ const uid = Math.random().toString(36).slice(2, 8)
 </script>
 
 <template>
-  <ScreenPanel :title="title" class="sb-tc">
+  <ScreenPanel :title="title" class="nv-scr-tc">
     <!-- 图例 + 范围切换独立一行（标题下方）：标题行不再挤，tabs 永远完整可见 -->
-    <div v-if="(series?.length ?? 0) > 0 || ranges?.length || tabs" class="sb-tc-bar">
-      <em class="sb-tc-key">
+    <div v-if="(series?.length ?? 0) > 0 || ranges?.length || tabs" class="nv-scr-tc-bar">
+      <em class="nv-scr-tc-key">
         — {{ actualLabel }}　--- {{ planLabel }}
-        <span v-for="s in series ?? []" :key="s.label" class="sb-tc-key-s">
+        <span v-for="s in series ?? []" :key="s.label" class="nv-scr-tc-key-s">
           <i :style="{ background: s.color }" aria-hidden="true" />{{ s.label }}
         </span>
       </em>
-      <div v-if="ranges?.length" class="sb-tc-tabs">
+      <div v-if="ranges?.length" class="nv-scr-tc-tabs">
         <button
           v-for="r in ranges"
           :key="String(r.value)"
           type="button"
-          class="sb-tc-tab"
+          class="nv-scr-tc-tab"
           :class="{ on: r.value === range }"
           @click="range = r.value"
         >
           {{ r.label }}
         </button>
       </div>
-      <div v-else-if="tabs" class="sb-tc-tabs">
+      <div v-else-if="tabs" class="nv-scr-tc-tabs">
         <span class="on">今日</span><span>近7天</span><span>近30天</span>
       </div>
     </div>
-    <em v-else class="sb-tc-key sb-tc-key-solo">— {{ actualLabel }}　--- {{ planLabel }}</em>
+    <em v-else class="nv-scr-tc-key nv-scr-tc-key-solo"
+      >— {{ actualLabel }}　--- {{ planLabel }}</em
+    >
 
-    <div class="sb-tc-body">
-      <div class="sb-tc-y">
+    <div class="nv-scr-tc-body">
+      <div class="nv-scr-tc-y">
         <span v-for="(y, i) in yLabels" :key="i">{{ y }}</span>
       </div>
       <svg
         ref="svgEl"
-        class="sb-tc-svg"
+        class="nv-scr-tc-svg"
         :viewBox="`0 0 ${VB_W} ${VB_H}`"
         preserveAspectRatio="none"
         @mousemove="onMove"
@@ -210,38 +212,57 @@ const uid = Math.random().toString(36).slice(2, 8)
       >
         <defs>
           <linearGradient :id="`sbTc-${uid}`" x1="0" y1="0" x2="0" y2="1">
-            <stop class="sb-tc-g0" offset="0" />
-            <stop class="sb-tc-g1" offset="1" />
+            <stop class="nv-scr-tc-g0" offset="0" />
+            <stop class="nv-scr-tc-g1" offset="1" />
           </linearGradient>
         </defs>
 
-        <g class="sb-tc-grid" stroke-dasharray="3 6">
+        <g class="nv-scr-tc-grid" stroke-dasharray="3 6">
           <line v-for="(gy, i) in gridYs" :key="i" :x1="left" :y1="gy" :x2="right" :y2="gy" />
         </g>
 
         <!-- d 同时走 attribute（兜底）与 style —— Chromium 对 CSS d 做 transition：
              轮询同点数更新时曲线平滑变形（切换范围点数不同则直接切换） -->
-        <path class="sb-tc-area" :d="areaPath" :style="{ d: `path('${areaPath}')` }" :fill="`url(#sbTc-${uid})`" />
-        <path class="sb-tc-plan" :d="planPath" :style="{ d: `path('${planPath}')` }" fill="none" stroke-width="1.5" stroke-dasharray="5 5" />
+        <path
+          class="nv-scr-tc-area"
+          :d="areaPath"
+          :style="{ d: `path('${areaPath}')` }"
+          :fill="`url(#sbTc-${uid})`"
+        />
+        <path
+          class="nv-scr-tc-plan"
+          :d="planPath"
+          :style="{ d: `path('${planPath}')` }"
+          fill="none"
+          stroke-width="1.5"
+          stroke-dasharray="5 5"
+        />
         <!-- 附加对比序列：细线（主曲线之下，颜色由调用方定义） -->
         <path
           v-for="s in seriesPaths"
           :key="s.label"
-          class="sb-tc-ser"
+          class="nv-scr-tc-ser"
           :d="s.d"
           :style="{ d: `path('${s.d}')`, stroke: s.color }"
           fill="none"
           stroke-width="1.3"
           vector-effect="non-scaling-stroke"
         />
-        <path class="sb-tc-act" :d="actualPath" :style="{ d: `path('${actualPath}')` }" fill="none" stroke-width="2" vector-effect="non-scaling-stroke" />
+        <path
+          class="nv-scr-tc-act"
+          :d="actualPath"
+          :style="{ d: `path('${actualPath}')` }"
+          fill="none"
+          stroke-width="2"
+          vector-effect="non-scaling-stroke"
+        />
 
         <!-- transparent capture layer so hover fires over empty plot area too -->
         <rect :x="left" :y="top" :width="right - left" :height="bottom - top" fill="transparent" />
 
         <g v-if="cross" pointer-events="none">
           <line
-            class="sb-tc-rule"
+            class="nv-scr-tc-rule"
             :x1="cross.cx"
             :y1="top"
             :x2="cross.cx"
@@ -255,249 +276,259 @@ const uid = Math.random().toString(36).slice(2, 8)
            任何容器宽高比 / ScreenScaler 缩放下都不变形 -->
       <template v-if="cross">
         <i
-          class="sb-tc-dot"
+          class="nv-scr-tc-dot"
           :style="{ left: `${(cross.cx / VB_W) * 100}%`, top: `${(cross.cy / VB_H) * 100}%` }"
           aria-hidden="true"
         />
         <div
-          class="sb-tc-cardh"
+          class="nv-scr-tc-cardh"
           :class="{ flip: cross.flip }"
-          :style="{ left: `${(cross.cx / VB_W) * 100}%`, top: `${(cross.cyClamped / VB_H) * 100}%` }"
+          :style="{
+            left: `${(cross.cx / VB_W) * 100}%`,
+            top: `${(cross.cyClamped / VB_H) * 100}%`,
+          }"
         >
-          <span class="sb-tc-c-t">{{ cross.label }}</span>
-          <span class="sb-tc-c-a">● {{ actualLabel }}<b>{{ cross.aVal }}</b></span>
-          <span class="sb-tc-c-p">┄ {{ planLabel }}<b>{{ cross.pVal }}</b></span>
-          <span v-for="sv in cross.sVals" :key="sv.label" class="sb-tc-c-s">
-            <i :style="{ background: sv.color }" aria-hidden="true" />{{ sv.label }}<b>{{ sv.val }}</b>
+          <span class="nv-scr-tc-c-t">{{ cross.label }}</span>
+          <span class="nv-scr-tc-c-a"
+            >● {{ actualLabel }}<b>{{ cross.aVal }}</b></span
+          >
+          <span class="nv-scr-tc-c-p"
+            >┄ {{ planLabel }}<b>{{ cross.pVal }}</b></span
+          >
+          <span v-for="sv in cross.sVals" :key="sv.label" class="nv-scr-tc-c-s">
+            <i :style="{ background: sv.color }" aria-hidden="true" />{{ sv.label
+            }}<b>{{ sv.val }}</b>
           </span>
         </div>
       </template>
     </div>
 
-    <div class="sb-tc-x">
+    <div class="nv-scr-tc-x">
       <span v-for="(x, i) in xLabels" :key="i">{{ x }}</span>
     </div>
   </ScreenPanel>
 </template>
 
 <style scoped>
-.sb-tc {
-  display: flex;
-  flex-direction: column;
-  font-variant-numeric: tabular-nums;
-}
-/* 图例 + 范围切换工具行（标题下方独立一行）：图例左、tabs 右；
-   图例可收缩截断（真值在悬停卡），tabs 永远完整 */
-.sb-tc-bar {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin: -4px 0 9px;
-}
-.sb-tc-key {
-  flex: 1;
-  font-size: 12px;
-  color: var(--sb-muted);
-  font-style: normal;
-  font-weight: 400;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sb-tc-key-solo {
-  display: block;
-  margin: -4px 0 9px;
-}
-/* tabs 永不收缩折行（图例才是可收缩方） */
-.sb-tc-tabs {
-  display: flex;
-  flex: none;
-  border: 1px solid var(--sb-line-2);
-  border-radius: 6px;
-  overflow: hidden;
-  font-size: 12px;
-}
-.sb-tc-tabs span,
-.sb-tc-tab {
-  padding: 5px 14px;
-  color: var(--sb-muted);
-  white-space: nowrap;
-}
-/* 真实可切换 tab（button 语义） */
-.sb-tc-tab {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  font: inherit;
-  cursor: pointer;
-  transition: color 0.18s var(--sb-ease);
-}
-.sb-tc-tab:hover:not(.on) {
-  color: var(--sb-text-2);
-}
-.sb-tc-tab:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 2px var(--sb-cyan-dim);
-}
-.sb-tc-tabs span.on,
-.sb-tc-tab.on {
-  background: rgba(0, 229, 255, 0.13);
-  color: var(--sb-cyan);
-}
-.sb-tc-body {
-  flex: 1;
-  position: relative;
-  min-height: 0;
-}
-.sb-tc-y {
-  position: absolute;
-  left: 0;
-  top: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  color: var(--sb-faint);
-  font-size: 11px;
-  padding: 4px 0;
-}
-.sb-tc-svg {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  cursor: crosshair;
-}
-/* SVG paint via CSS props so the --sb-* tokens resolve reliably */
-.sb-tc-g0 {
-  stop-color: var(--sb-cyan);
-  stop-opacity: 0.2;
-}
-.sb-tc-g1 {
-  stop-color: var(--sb-cyan);
-  stop-opacity: 0;
-}
-.sb-tc-grid {
-  stroke: rgba(255, 255, 255, 0.045);
-}
-.sb-tc-plan {
-  stroke: var(--sb-indigo);
-  opacity: 0.85;
-}
-.sb-tc-act {
-  stroke: var(--sb-cyan);
-  filter: drop-shadow(0 0 3px var(--sb-cyan-dim));
-}
-/* 附加对比序列：细线不发光（主曲线才是主角），透明度略降层次分明 */
-.sb-tc-ser {
-  opacity: 0.85;
-}
-/* 数据增长动效：轮询更新时各路径平滑变形（emphasized 减速，无回弹） */
-.sb-tc-act,
-.sb-tc-plan,
-.sb-tc-area,
-.sb-tc-ser {
-  transition: d 0.6s var(--sb-ease-emphasized);
-}
-@media (prefers-reduced-motion: reduce) {
-  .sb-tc-act,
-  .sb-tc-plan,
-  .sb-tc-area,
-  .sb-tc-ser,
-  .sb-tc-tab {
-    transition: none;
+@layer nv-components {
+  .nv-scr-tc {
+    display: flex;
+    flex-direction: column;
+    font-variant-numeric: tabular-nums;
   }
-}
-.sb-tc-rule {
-  stroke: var(--sb-cyan);
-  opacity: 0.55;
-}
-/* 悬停点（HTML，圆度不受 SVG 拉伸影响） */
-.sb-tc-dot {
-  position: absolute;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 0 6px var(--sb-cyan);
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-/* 信息卡（HTML overlay）：玻璃暗卡 + 白发丝边；右半区 flip 翻到标线左侧 */
-.sb-tc-cardh {
-  position: absolute;
-  z-index: 1;
-  transform: translate(14px, -50%);
-  min-width: 150px;
-  padding: 9px 14px 10px;
-  border-radius: 6px;
-  background: rgba(9, 13, 22, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  white-space: nowrap;
-  pointer-events: none;
-}
-.sb-tc-cardh.flip {
-  transform: translate(calc(-100% - 14px), -50%);
-}
-.sb-tc-c-t {
-  font-size: 12.5px;
-  color: var(--sb-muted);
-  font-variant-numeric: tabular-nums;
-}
-.sb-tc-c-a {
-  font-size: 13px;
-  color: var(--sb-text);
-}
-.sb-tc-c-p {
-  font-size: 13px;
-  color: var(--sb-indigo);
-}
-.sb-tc-c-a b,
-.sb-tc-c-p b {
-  margin-left: 9px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-/* 附加序列：悬停行（色短线 + 名 + 值）与图例色点 */
-.sb-tc-c-s {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12.5px;
-  color: var(--sb-text-2);
-}
-.sb-tc-c-s i {
-  width: 9px;
-  height: 2px;
-  border-radius: 1px;
-  flex: none;
-}
-.sb-tc-c-s b {
-  margin-left: auto;
-  padding-left: 9px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.sb-tc-key-s {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-left: 12px;
-}
-.sb-tc-key-s i {
-  width: 9px;
-  height: 2px;
-  border-radius: 1px;
-}
-.sb-tc-x {
-  display: flex;
-  justify-content: space-between;
-  color: var(--sb-faint);
-  font-size: 11px;
-  margin-top: 4px;
-  padding-left: 46px;
+  /* 图例 + 范围切换工具行（标题下方独立一行）：图例左、tabs 右；
+   图例可收缩截断（真值在悬停卡），tabs 永远完整 */
+  .nv-scr-tc-bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: -4px 0 9px;
+  }
+  .nv-scr-tc-key {
+    flex: 1;
+    font-size: 12px;
+    color: var(--nv-scr-muted);
+    font-style: normal;
+    font-weight: 400;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nv-scr-tc-key-solo {
+    display: block;
+    margin: -4px 0 9px;
+  }
+  /* tabs 永不收缩折行（图例才是可收缩方） */
+  .nv-scr-tc-tabs {
+    display: flex;
+    flex: none;
+    border: 1px solid var(--nv-scr-line-2);
+    border-radius: 6px;
+    overflow: hidden;
+    font-size: 12px;
+  }
+  .nv-scr-tc-tabs span,
+  .nv-scr-tc-tab {
+    padding: 5px 14px;
+    color: var(--nv-scr-muted);
+    white-space: nowrap;
+  }
+  /* 真实可切换 tab（button 语义） */
+  .nv-scr-tc-tab {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+    transition: color 0.18s var(--nv-scr-ease);
+  }
+  .nv-scr-tc-tab:hover:not(.on) {
+    color: var(--nv-scr-text-2);
+  }
+  .nv-scr-tc-tab:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--nv-scr-cyan-dim);
+  }
+  .nv-scr-tc-tabs span.on,
+  .nv-scr-tc-tab.on {
+    background: rgba(0, 229, 255, 0.13);
+    color: var(--nv-scr-cyan);
+  }
+  .nv-scr-tc-body {
+    flex: 1;
+    position: relative;
+    min-height: 0;
+  }
+  .nv-scr-tc-y {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    color: var(--nv-scr-faint);
+    font-size: 11px;
+    padding: 4px 0;
+  }
+  .nv-scr-tc-svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    cursor: crosshair;
+  }
+  /* SVG paint via CSS props so the --nv-scr-* tokens resolve reliably */
+  .nv-scr-tc-g0 {
+    stop-color: var(--nv-scr-cyan);
+    stop-opacity: 0.2;
+  }
+  .nv-scr-tc-g1 {
+    stop-color: var(--nv-scr-cyan);
+    stop-opacity: 0;
+  }
+  .nv-scr-tc-grid {
+    stroke: rgba(255, 255, 255, 0.045);
+  }
+  .nv-scr-tc-plan {
+    stroke: var(--nv-scr-indigo);
+    opacity: 0.85;
+  }
+  .nv-scr-tc-act {
+    stroke: var(--nv-scr-cyan);
+    filter: drop-shadow(0 0 3px var(--nv-scr-cyan-dim));
+  }
+  /* 附加对比序列：细线不发光（主曲线才是主角），透明度略降层次分明 */
+  .nv-scr-tc-ser {
+    opacity: 0.85;
+  }
+  /* 数据增长动效：轮询更新时各路径平滑变形（emphasized 减速，无回弹） */
+  .nv-scr-tc-act,
+  .nv-scr-tc-plan,
+  .nv-scr-tc-area,
+  .nv-scr-tc-ser {
+    transition: d 0.6s var(--nv-scr-ease-emphasized);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .nv-scr-tc-act,
+    .nv-scr-tc-plan,
+    .nv-scr-tc-area,
+    .nv-scr-tc-ser,
+    .nv-scr-tc-tab {
+      transition: none;
+    }
+  }
+  .nv-scr-tc-rule {
+    stroke: var(--nv-scr-cyan);
+    opacity: 0.55;
+  }
+  /* 悬停点（HTML，圆度不受 SVG 拉伸影响） */
+  .nv-scr-tc-dot {
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 6px var(--nv-scr-cyan);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  /* 信息卡（HTML overlay）：玻璃暗卡 + 白发丝边；右半区 flip 翻到标线左侧 */
+  .nv-scr-tc-cardh {
+    position: absolute;
+    z-index: 1;
+    transform: translate(14px, -50%);
+    min-width: 150px;
+    padding: 9px 14px 10px;
+    border-radius: 6px;
+    background: rgba(9, 13, 22, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .nv-scr-tc-cardh.flip {
+    transform: translate(calc(-100% - 14px), -50%);
+  }
+  .nv-scr-tc-c-t {
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .nv-scr-tc-c-a {
+    font-size: 13px;
+    color: var(--nv-scr-text);
+  }
+  .nv-scr-tc-c-p {
+    font-size: 13px;
+    color: var(--nv-scr-indigo);
+  }
+  .nv-scr-tc-c-a b,
+  .nv-scr-tc-c-p b {
+    margin-left: 9px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  /* 附加序列：悬停行（色短线 + 名 + 值）与图例色点 */
+  .nv-scr-tc-c-s {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12.5px;
+    color: var(--nv-scr-text-2);
+  }
+  .nv-scr-tc-c-s i {
+    width: 9px;
+    height: 2px;
+    border-radius: 1px;
+    flex: none;
+  }
+  .nv-scr-tc-c-s b {
+    margin-left: auto;
+    padding-left: 9px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .nv-scr-tc-key-s {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: 12px;
+  }
+  .nv-scr-tc-key-s i {
+    width: 9px;
+    height: 2px;
+    border-radius: 1px;
+  }
+  .nv-scr-tc-x {
+    display: flex;
+    justify-content: space-between;
+    color: var(--nv-scr-faint);
+    font-size: 11px;
+    margin-top: 4px;
+    padding-left: 46px;
+  }
 }
 </style>

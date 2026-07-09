@@ -12,7 +12,7 @@ const tempSeries = ref([62, 64, 63, 67, 71, 69, 73, 70, 68, 66, 64, 63])
 
 # NvSparkline 迷你趋势
 
-极简迷你趋势线:一道辉光青色折线,按自身 min/max 归一化,可选线下渐变面积。`preserveAspectRatio="none"` 使其拉伸填满容器,任意量纲的序列都能塞进任意格子。基于独立的 `--sb-*` 工业蓝令牌。至少需要两个点。
+极简迷你趋势线:一道辉光青色折线,按自身 min/max 归一化,可选线下渐变面积。`preserveAspectRatio="none"` 使其拉伸填满容器,任意量纲的序列都能塞进任意格子。基于独立的 `--nv-scr-*` 工业蓝令牌。至少需要两个点。
 
 ::: tip 容器
 `NvSparkline` 是「裸内容」组件,会拉伸填满容器,通常放进 [`NvScreenPanel`](./screen-panel) 并给定宽高使用。

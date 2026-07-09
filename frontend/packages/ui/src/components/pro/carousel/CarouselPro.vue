@@ -153,12 +153,17 @@ watch(active, (v) => {
 // Runtime `items` change (async load, [] → many): re-measure, clamp the current
 // page to the new count, then (re)start autoplay — a carousel mounted empty would
 // otherwise never begin playing once its data arrives (count was ≤ 1 at start).
-watch(() => props.items, () => requestAnimationFrame(() => {
-  sync()
-  const max = Math.max(0, count.value - 1)
-  if (active.value > max) active.value = max
-  startAutoplay()
-}), { deep: true })
+watch(
+  () => props.items,
+  () =>
+    requestAnimationFrame(() => {
+      sync()
+      const max = Math.max(0, count.value - 1)
+      if (active.value > max) active.value = max
+      startAutoplay()
+    }),
+  { deep: true },
+)
 watch(() => props.autoplay, startAutoplay)
 </script>
 
@@ -166,7 +171,13 @@ watch(() => props.autoplay, startAutoplay)
   <div class="ds-carousel group/carousel w-full" data-slot="carousel-pro">
     <div
       ref="viewportEl"
-      :class="cn('ds-carousel-viewport relative w-full overflow-hidden', frame && 'rounded-xl bg-muted', $props.class)"
+      :class="
+        cn(
+          'ds-carousel-viewport relative w-full overflow-hidden',
+          frame && 'rounded-xl bg-muted',
+          $props.class,
+        )
+      "
       @pointerenter="stopAutoplay"
       @pointerleave="startAutoplay"
     >
@@ -214,88 +225,95 @@ watch(() => props.autoplay, startAutoplay)
         class="ds-carousel-dots pointer-events-none absolute inset-x-0 bottom-3 flex justify-center gap-1.5"
         aria-hidden="true"
       >
-        <span v-for="i in count" :key="i" class="ds-carousel-dot" :class="i - 1 === active && 'ds-carousel-dot-active'" />
+        <span
+          v-for="i in count"
+          :key="i"
+          class="ds-carousel-dot"
+          :class="i - 1 === active && 'ds-carousel-dot-active'"
+        />
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.ds-carousel-track {
-  touch-action: pan-y;
-  cursor: grab;
-}
-.ds-carousel-track:active {
-  cursor: grabbing;
-}
-.ds-carousel-snap {
-  transition: transform 0.34s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
-}
-.ds-carousel-arrow {
-  position: absolute;
-  top: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 9999px;
-  background: color-mix(in oklch, var(--background) 75%, transparent);
-  color: var(--foreground);
-  box-shadow: 0 1px 4px color-mix(in oklch, black 30%, transparent);
-  opacity: 0;
-  outline: none;
-  transition:
-    opacity 0.2s var(--ease-out-quart, ease-out),
-    background-color 0.18s ease;
-}
-.ds-carousel-arrow-prev {
-  left: 0.75rem;
-  transform: translateY(-50%);
-}
-.ds-carousel-arrow-next {
-  right: 0.75rem;
-  transform: translateY(-50%);
-}
-/* fade the arrows in on hover/focus (PC affordance); always shown on keyboard focus */
-.group\/carousel:hover .ds-carousel-arrow,
-.ds-carousel-arrow:focus-visible {
-  opacity: 1;
-}
-/* Explicit high-contrast focus ring — the arrows clear the UA outline, so
+@layer nv-components {
+  .ds-carousel-track {
+    touch-action: pan-y;
+    cursor: grab;
+  }
+  .ds-carousel-track:active {
+    cursor: grabbing;
+  }
+  .ds-carousel-snap {
+    transition: transform 0.34s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+  }
+  .ds-carousel-arrow {
+    position: absolute;
+    top: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 9999px;
+    background: color-mix(in oklch, var(--background) 75%, transparent);
+    color: var(--foreground);
+    box-shadow: 0 1px 4px color-mix(in oklch, black 30%, transparent);
+    opacity: 0;
+    outline: none;
+    transition:
+      opacity 0.2s var(--nv-ease-out-quart, ease-out),
+      background-color 0.18s ease;
+  }
+  .ds-carousel-arrow-prev {
+    left: 0.75rem;
+    transform: translateY(-50%);
+  }
+  .ds-carousel-arrow-next {
+    right: 0.75rem;
+    transform: translateY(-50%);
+  }
+  /* fade the arrows in on hover/focus (PC affordance); always shown on keyboard focus */
+  .group\/carousel:hover .ds-carousel-arrow,
+  .ds-carousel-arrow:focus-visible {
+    opacity: 1;
+  }
+  /* Explicit high-contrast focus ring — the arrows clear the UA outline, so
    keyboard users need a visible treatment to tell which arrow holds focus over a
    busy slide. */
-.ds-carousel-arrow:focus-visible {
-  box-shadow:
-    0 1px 4px color-mix(in oklch, black 30%, transparent),
-    0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
-}
-.ds-carousel-arrow:hover:not(:disabled) {
-  background: var(--background);
-}
-.ds-carousel-arrow:disabled {
-  opacity: 0 !important;
-  pointer-events: none;
-}
-.ds-carousel-dot {
-  height: 6px;
-  width: 6px;
-  border-radius: 9999px;
-  background: color-mix(in oklch, var(--foreground) 38%, transparent);
-  box-shadow: 0 0 2px color-mix(in oklch, var(--background) 55%, transparent);
-  transition:
-    width 0.3s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
-    background-color 0.3s ease;
-}
-.ds-carousel-dot-active {
-  width: 16px;
-  background: var(--brand);
-}
-@media (prefers-reduced-motion: reduce) {
-  .ds-carousel-snap,
-  .ds-carousel-arrow,
+  .ds-carousel-arrow:focus-visible {
+    box-shadow:
+      0 1px 4px color-mix(in oklch, black 30%, transparent),
+      0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
+  }
+  .ds-carousel-arrow:hover:not(:disabled) {
+    background: var(--background);
+  }
+  .ds-carousel-arrow:disabled {
+    opacity: 0 !important;
+    pointer-events: none;
+  }
   .ds-carousel-dot {
-    transition: none;
+    height: 6px;
+    width: 6px;
+    border-radius: 9999px;
+    background: color-mix(in oklch, var(--foreground) 38%, transparent);
+    box-shadow: 0 0 2px color-mix(in oklch, var(--background) 55%, transparent);
+    transition:
+      width 0.3s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
+      background-color 0.3s ease;
+  }
+  .ds-carousel-dot-active {
+    width: 16px;
+    background: var(--nv-brand);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-carousel-snap,
+    .ds-carousel-arrow,
+    .ds-carousel-dot {
+      transition: none;
+    }
   }
 }
 </style>

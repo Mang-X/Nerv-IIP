@@ -7,7 +7,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
  * highlight and a cyan glowing glyph; thousands are grouped with thin comma cells.
  * A numeric value rolls (tweens) to its new figure on change — the "flip" — over
  * 0.6s on the emphasized curve; a pre-formatted string shows verbatim. Under
- * reduced-motion the value snaps. Built on the independent `--sb-*` tokens.
+ * reduced-motion the value snaps. Built on the independent `--nv-scr-*` tokens.
  */
 const props = withDefaults(
   defineProps<{
@@ -40,7 +40,7 @@ watch(
     const step = (ts: number) => {
       if (!start) start = ts
       const t = Math.min(1, (ts - start) / dur)
-      // ease-out-expo — matches --sb-ease-emphasized
+      // ease-out-expo — matches --nv-scr-ease-emphasized
       const e = t === 1 ? 1 : 1 - 2 ** (-10 * t)
       display.value = from + (to - from) * e
       if (t < 1) raf = requestAnimationFrame(step)
@@ -71,55 +71,58 @@ const cells = computed(() =>
 </script>
 
 <template>
-  <div class="sb-df" role="img" :aria-label="`${text}${suffix ? ` ${suffix}` : ''}`">
+  <div class="nv-scr-df" role="img" :aria-label="`${text}${suffix ? ` ${suffix}` : ''}`">
     <span
       v-for="(c, i) in cells"
       :key="i"
-      class="sb-df-cell"
+      class="nv-scr-df-cell"
       :class="{ sep: c.sep }"
       aria-hidden="true"
-    >{{ c.ch }}</span>
-    <span v-if="suffix" class="sb-df-suffix">{{ suffix }}</span>
+      >{{ c.ch }}</span
+    >
+    <span v-if="suffix" class="nv-scr-df-suffix">{{ suffix }}</span>
   </div>
 </template>
 
 <style scoped>
-.sb-df {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 4px;
-  font-variant-numeric: tabular-nums;
-}
-/* modern flat figure — no skeuomorphic cell box, just a clean white glyph */
-.sb-df-cell {
-  position: relative;
-  min-width: 0;
-  text-align: center;
-  font-size: 40px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.01em;
-  color: #fff;
-  text-shadow: var(--sb-value-glow);
-}
-/* comma / dot / space — a thin transparent cell, no box */
-.sb-df-cell.sep {
-  min-width: 0;
-  padding-left: 1px;
-  padding-right: 1px;
-  background: none;
-  border: none;
-  box-shadow: none;
-  color: var(--sb-muted);
-  text-shadow: none;
-}
-.sb-df-cell.sep::before {
-  display: none;
-}
-.sb-df-suffix {
-  margin-left: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--sb-muted);
+@layer nv-components {
+  .nv-scr-df {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  /* modern flat figure — no skeuomorphic cell box, just a clean white glyph */
+  .nv-scr-df-cell {
+    position: relative;
+    min-width: 0;
+    text-align: center;
+    font-size: 40px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    color: #fff;
+    text-shadow: var(--nv-scr-value-glow);
+  }
+  /* comma / dot / space — a thin transparent cell, no box */
+  .nv-scr-df-cell.sep {
+    min-width: 0;
+    padding-left: 1px;
+    padding-right: 1px;
+    background: none;
+    border: none;
+    box-shadow: none;
+    color: var(--nv-scr-muted);
+    text-shadow: none;
+  }
+  .nv-scr-df-cell.sep::before {
+    display: none;
+  }
+  .nv-scr-df-suffix {
+    margin-left: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--nv-scr-muted);
+  }
 }
 </style>

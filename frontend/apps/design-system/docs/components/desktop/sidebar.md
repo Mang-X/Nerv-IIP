@@ -337,7 +337,7 @@ const todo = ref('待派工单')
   font-weight: 500;
 }
 .ds-sb [data-slot='sidebar-menu'] [data-active='true'] svg {
-  color: var(--brand-strong);
+  color: var(--nv-brand-strong);
 }
 
 /* Brand lockup / status dots / footer user / animated submenu now live in the
@@ -377,7 +377,7 @@ const todo = ref('待派工单')
   height: 1rem;
   /* Tailwind v4 `rotate-90` animates the `rotate` property (not `transform`), so
      transition `rotate` — transitioning `transform` here would never fire. */
-  transition: rotate 0.2s var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
+  transition: rotate 0.2s var(--nv-ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
 }
 @media (prefers-reduced-motion: reduce) {
   .ds-sb-chevron, .ds-sb-sub { transition: none; }

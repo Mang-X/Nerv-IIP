@@ -126,9 +126,9 @@ const tokenGroups = [
     desc: '状态只走语义令牌，去饱和处理，专业不刺眼。',
     items: [
       { name: '--primary', cls: 'bg-primary', role: '主操作' },
-      { name: '--brand', cls: 'bg-brand', role: '动态强调' },
-      { name: '--success', cls: 'bg-success', role: '健康 / 启用' },
-      { name: '--warning', cls: 'bg-warning', role: '预警' },
+      { name: '--nv-brand', cls: 'bg-brand', role: '动态强调' },
+      { name: '--nv-success', cls: 'bg-success', role: '健康 / 启用' },
+      { name: '--nv-warning', cls: 'bg-warning', role: '预警' },
       { name: '--destructive', cls: 'bg-destructive', role: '危险 / 错误' },
       { name: '--ring', cls: 'bg-ring', role: '聚焦环' },
     ],
@@ -697,7 +697,7 @@ const progress = computed(
                 <h3 class="text-sm font-semibold">动态品牌色板</h3>
                 <p class="mt-1 text-sm text-muted-foreground">
                   点击任意色号，整页
-                  <code class="font-mono text-xs">--brand</code> 即时切换并持久化。
+                  <code class="font-mono text-xs">--nv-brand</code> 即时切换并持久化。
                 </p>
               </div>
               <span class="text-xs text-muted-foreground">12 色 · OKLCH 同明度</span>
@@ -1434,73 +1434,75 @@ const progress = computed(
 </template>
 
 <style scoped>
-.ds-hero-glow {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(
-      60% 70% at 15% 0%,
-      color-mix(in oklch, var(--brand) 14%, transparent),
-      transparent 70%
-    ),
-    radial-gradient(
-      50% 60% at 100% 10%,
-      color-mix(in oklch, var(--brand) 9%, transparent),
-      transparent 65%
-    );
-  pointer-events: none;
-}
+@layer app {
+  .ds-hero-glow {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(
+        60% 70% at 15% 0%,
+        color-mix(in oklch, var(--nv-brand) 14%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        50% 60% at 100% 10%,
+        color-mix(in oklch, var(--nv-brand) 9%, transparent),
+        transparent 65%
+      );
+    pointer-events: none;
+  }
 
-.ds-eyebrow {
-  position: relative;
-  padding-left: 0.875rem;
-}
-.ds-eyebrow::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0.25rem;
-  bottom: 0.25rem;
-  width: 2px;
-  border-radius: 9999px;
-  background: var(--brand);
-}
+  .ds-eyebrow {
+    position: relative;
+    padding-left: 0.875rem;
+  }
+  .ds-eyebrow::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.25rem;
+    bottom: 0.25rem;
+    width: 2px;
+    border-radius: 9999px;
+    background: var(--nv-brand);
+  }
 
-.reveal-init {
-  opacity: 0;
-  transform: translateY(14px);
-  will-change: opacity, transform;
-}
-.reveal-in {
-  opacity: 1;
-  transform: none;
-  transition:
-    opacity 0.55s var(--ease-out-expo),
-    transform 0.55s var(--ease-out-expo);
-  transition-delay: var(--reveal-delay, 0ms);
-}
-
-.ds-motion-bar {
-  transform: translateX(0);
-  transition: transform 1.1s var(--ease-out-quart);
-}
-.ds-motion-card:hover .ds-motion-bar {
-  transform: translateX(200%);
-}
-.ds-motion-card:hover .ds-motion-bar.ease-out-expo {
-  transition-timing-function: var(--ease-out-expo);
-}
-.ds-motion-card:hover .ds-motion-bar.ease-in-out-quart {
-  transition-timing-function: var(--ease-in-out-quart);
-}
-
-@media (prefers-reduced-motion: reduce) {
   .reveal-init {
+    opacity: 0;
+    transform: translateY(14px);
+    will-change: opacity, transform;
+  }
+  .reveal-in {
     opacity: 1;
     transform: none;
+    transition:
+      opacity 0.55s var(--nv-ease-out-expo),
+      transform 0.55s var(--nv-ease-out-expo);
+    transition-delay: var(--reveal-delay, 0ms);
   }
+
   .ds-motion-bar {
-    transition: none;
+    transform: translateX(0);
+    transition: transform 1.1s var(--nv-ease-out-quart);
+  }
+  .ds-motion-card:hover .ds-motion-bar {
+    transform: translateX(200%);
+  }
+  .ds-motion-card:hover .ds-motion-bar.ease-out-expo {
+    transition-timing-function: var(--nv-ease-out-expo);
+  }
+  .ds-motion-card:hover .ds-motion-bar.ease-in-out-quart {
+    transition-timing-function: var(--nv-ease-in-out-quart);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal-init {
+      opacity: 1;
+      transform: none;
+    }
+    .ds-motion-bar {
+      transition: none;
+    }
   }
 }
 </style>

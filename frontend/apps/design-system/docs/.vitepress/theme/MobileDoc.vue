@@ -24,7 +24,9 @@ provide(MOBILE_OVERLAY_TARGET, '.ds-mdoc-screen')
     <aside class="ds-mdoc-aside">
       <div class="ds-mdoc-sticky">
         <ClientOnly>
-          <div class="ds-mdoc-phone">
+          <!-- `vp-raw` isolates the phone preview from VitePress base/vp-doc
+               resets (ADR 0020 §4.2); the prose column keeps its `vp-doc`. -->
+          <div class="ds-mdoc-phone vp-raw">
             <div class="ds-mdoc-statusbar">
               <span class="font-semibold tabular-nums">9:41</span>
               <span class="ds-mdoc-notch" aria-hidden="true" />

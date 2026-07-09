@@ -1,6 +1,6 @@
 # 设计令牌
 
-所有视觉常量都收敛为**语义令牌**，唯一真源是 `@nerv-iip/ui` 的 `src/styles/theme.css`（Tailwind v4 `@theme inline` + OKLCH）。组件只引用语义名（如 `--brand`、`--muted-foreground`），不写死颜色——这样动态色、亮暗切换都能一处生效。
+所有视觉常量都收敛为**语义令牌**，唯一真源是 `@nerv-iip/ui` 的 `src/styles/theme.css`（Tailwind v4 `@theme inline` + OKLCH）。组件只引用语义名（如 `--nv-brand`、`--muted-foreground`），不写死颜色——这样动态色、亮暗切换都能一处生效。
 
 ## 语义颜色（实时取色，跟随当前主题）
 
@@ -18,8 +18,8 @@
     <div class="px-2 py-1.5 text-xs text-muted-foreground bg-card">--muted</div>
   </div>
   <div class="rounded-lg border border-border overflow-hidden">
-    <div class="h-14" style="background:var(--brand)"></div>
-    <div class="px-2 py-1.5 text-xs text-muted-foreground bg-card">--brand</div>
+    <div class="h-14" style="background:var(--nv-brand)"></div>
+    <div class="px-2 py-1.5 text-xs text-muted-foreground bg-card">--nv-brand</div>
   </div>
   <div class="rounded-lg border border-border overflow-hidden">
     <div class="h-14" style="background:var(--foreground)"></div>
@@ -43,13 +43,13 @@
 
 ## 令牌族
 
-| 族 | 示例 | 说明 |
-|---|---|---|
-| 表面 | `--background` `--card` `--popover` `--muted` | 从底到浮层的层级 |
-| 文字 | `--foreground` `--muted-foreground` `--*-strong` | 含高对比强调变体 |
-| 品牌 | `--brand` `--brand-strong` `--brand-foreground` | 运行时动态色 |
-| 语义 | `--destructive` `--border` `--ring` `--accent` | 状态与边线 |
-| 动效 | `--ease-out-quart / expo / in-out-quart` | 统一缓动，见[动效](/foundations/motion) |
+| 族   | 示例                                                     | 说明                                    |
+| ---- | -------------------------------------------------------- | --------------------------------------- |
+| 表面 | `--background` `--card` `--popover` `--muted`            | 从底到浮层的层级                        |
+| 文字 | `--foreground` `--muted-foreground` `--*-strong`         | 含高对比强调变体                        |
+| 品牌 | `--nv-brand` `--nv-brand-strong` `--nv-brand-foreground` | 运行时动态色                            |
+| 语义 | `--destructive` `--border` `--ring` `--accent`           | 状态与边线                              |
+| 动效 | `--nv-ease-out-quart / expo / in-out-quart`              | 统一缓动，见[动效](/foundations/motion) |
 
 ## 为什么用 OKLCH
 
