@@ -62,6 +62,12 @@ export interface OpenAlarmRow {
   name: string
   wo: string
   status: string
+  /** #686 响应状态 —— 指挥中心最关心"有没有人响应"：已确认为 true（未确认高亮）。 */
+  acked?: boolean
+  /** 确认人（acked 时展示）。 */
+  ackBy?: string
+  /** #686 升级 —— 未及时确认被升级，列表醒目标识。 */
+  escalated?: boolean
 }
 
 /** 维修状态机阶段（现实衡量：状态流转 + 时间，非拍脑袋的百分比进度） */

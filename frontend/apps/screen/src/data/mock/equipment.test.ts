@@ -94,6 +94,16 @@ describe('buildEquipmentOverview', () => {
     expect(s.inspections.length).toBeGreaterThanOrEqual(6)
   })
 
+  it('#686 报警响应状态：急停未确认+已升级（高亮），已确认项带确认人', () => {
+    const s = buildEquipmentOverview('F01')
+    const eStop = s.alarms.find((a) => a.name.includes('急停'))!
+    expect(eStop.acked).toBe(false)
+    expect(eStop.escalated).toBe(true)
+    const acked = s.alarms.find((a) => a.acked === true)
+    expect(acked).toBeDefined()
+    expect(acked!.ackBy).toBeTruthy()
+  })
+
   it('格上关键参数：每台 ≥2 且带类型；断线全「—」；报警设备存在超限红参数', () => {
     const s = buildEquipmentOverview('F01')
     for (const d of s.devices) {

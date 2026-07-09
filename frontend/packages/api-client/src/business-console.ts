@@ -383,7 +383,10 @@ export {
   listBusinessConsoleBarcodeScans,
   listBusinessConsoleBarcodeTemplates,
   listBusinessConsoleEquipmentAlarms,
+  listBusinessConsoleMaintenanceInspections,
+  listBusinessConsoleMaintenancePlans,
   listBusinessConsoleMaintenanceSpareParts,
+  listBusinessConsoleMaintenanceWorkOrders,
   listBusinessConsoleTelemetryAlarmRules,
   listBusinessConsoleTelemetryAlarms,
   listBusinessConsoleTelemetryTags,
@@ -1783,10 +1786,8 @@ export type EquipmentRuntimeAvailabilityWindow =
   NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityWindowContract
 export type EquipmentRuntimeCurrentStateResponse =
   NervIipContractsEquipmentRuntimeEquipmentRuntimeCurrentStateResponse
-export type EquipmentRuntimeSeverity =
-  NervIipContractsEquipmentRuntimeEquipmentRuntimeSeverity
-export type EquipmentRuntimeSourceType =
-  NervIipContractsEquipmentRuntimeEquipmentRuntimeSourceType
+export type EquipmentRuntimeSeverity = NervIipContractsEquipmentRuntimeEquipmentRuntimeSeverity
+export type EquipmentRuntimeSourceType = NervIipContractsEquipmentRuntimeEquipmentRuntimeSourceType
 
 export type BusinessConsoleAcceptedEnvelope =
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse
