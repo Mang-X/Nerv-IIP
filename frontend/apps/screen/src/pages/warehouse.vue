@@ -36,6 +36,7 @@ import type {
   WhTaskRow,
 } from '@/data/contracts/warehouse'
 import { fetchWarehouseBoard, fetchWarehouseOpsTick } from '@/data/fetchers/warehouse'
+import { scopedOverride, type Scoped } from '@/data/scope'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
 // 仓储物流大屏（MAN-318）：WMS 作业指挥屏 —— 一眼掌握当日出入库进度、
@@ -45,18 +46,35 @@ import ScreenLayout from '@/layouts/ScreenLayout.vue'
 // 库存水位/低库存预警半屏仍缺 Inventory 读面聚合（待 #570），一期不做（诚实定位）。
 const scope = useAccessScope()
 const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
+// 两条流各自标记取数时的 scope，切换工厂/persona 时旧 scope 的 tick 不会覆盖新 board。
+const scopeKey = computed(() => `${scope.currentFactoryId}::${scope.personaId}`)
 const {
-  data: board,
+  data: boardEnv,
   lastUpdated,
-  isStale,
+  isStale: boardStale,
   refresh,
-} = useScreenData<WarehouseBoard>(() => fetchWarehouseBoard(scope.currentFactoryId), {
-  intervalMs: 10000,
-})
-const { data: ops, refresh: refreshOps } = useScreenData<WarehouseOpsTick>(
-  () => fetchWarehouseOpsTick(scope.currentFactoryId),
+} = useScreenData<Scoped<WarehouseBoard>>(
+  async () => ({
+    scopeKey: scopeKey.value,
+    data: await fetchWarehouseBoard(scope.currentFactoryId),
+  }),
+  { intervalMs: 10000 },
+)
+const {
+  data: opsEnv,
+  isStale: opsStale,
+  refresh: refreshOps,
+} = useScreenData<Scoped<WarehouseOpsTick>>(
+  async () => ({
+    scopeKey: scopeKey.value,
+    data: await fetchWarehouseOpsTick(scope.currentFactoryId),
+  }),
   { intervalMs: 15000 },
 )
+const board = computed(() => boardEnv.value?.data)
+// ops 仅在其 scope 与当前 board 一致时才优先（否则回退 board 完整快照）；页脚 stale 同时反映主板与 tick。
+const ops = computed(() => scopedOverride(opsEnv.value, boardEnv.value))
+const isStale = computed(() => Boolean(boardStale.value || opsStale.value))
 watch(
   () => [scope.currentFactoryId, scope.personaId],
   () => {
