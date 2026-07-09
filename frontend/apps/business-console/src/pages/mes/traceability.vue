@@ -1,35 +1,43 @@
 <script setup lang="ts">
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesTraceability } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  InputPro,
-  PageHeader,
-  SectionCard,
-  SectionCards,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
-  Toolbar,
+  NvButton,
+  NvDataTable,
+  NvInput,
+  NvPageHeader,
+  NvSectionCard,
+  NvSectionCards,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '追溯查询', requiredPermissions: ['business.mes.traceability.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '追溯查询',
+    requiredPermissions: ['business.mes.traceability.read'],
+  },
+})
 
-const { filters, refreshTraceability, traceability, traceabilityError, traceabilityPending } = useMesTraceability()
+const { filters, refreshTraceability, traceability, traceabilityError, traceabilityPending } =
+  useMesTraceability()
 const route = useRoute()
 
 watch(
   () => route.query,
   (query) => {
     const mode = firstQuery(query.mode)
-    const batchOrSerial = firstQuery(query.batchOrSerial) || firstQuery(query.serialNo) || firstQuery(query.batchNo)
+    const batchOrSerial =
+      firstQuery(query.batchOrSerial) || firstQuery(query.serialNo) || firstQuery(query.batchNo)
     const materialLotId = firstQuery(query.materialLotId)
     const workOrderId = firstQuery(query.workOrderId)
 
@@ -38,8 +46,7 @@ watch(
     if (batchOrSerial) {
       filters.batchOrSerial = batchOrSerial
       filters.materialLotId = materialLotId || batchOrSerial
-    }
-    else if (materialLotId) {
+    } else if (materialLotId) {
       filters.materialLotId = materialLotId
       if (!mode) filters.mode = 'material-lot'
     }
@@ -51,7 +58,10 @@ const nodes = computed(() => traceability.value?.nodes ?? [])
 const errorMessage = computed(() => formatError(traceabilityError.value))
 const batchModel = computed({
   get: () => filters.batchOrSerial ?? '',
-  set: (value: string) => { filters.batchOrSerial = value; filters.materialLotId = value },
+  set: (value: string) => {
+    filters.batchOrSerial = value
+    filters.materialLotId = value
+  },
 })
 const scanRecordQuery = computed(() => ({
   sourceWorkflow: filters.mode === 'work-order' ? 'production.report' : undefined,
@@ -60,7 +70,7 @@ const scanRecordQuery = computed(() => ({
 }))
 
 type NodeRow = (typeof nodes)['value'][number]
-const columns: DataTableProColumn<NodeRow>[] = [
+const columns: NvDataTableColumn<NodeRow>[] = [
   { key: 'nodeId', header: '节点', cellClass: 'font-medium' },
   { key: 'nodeType', header: '类型', width: 'w-32' },
   { key: 'displayName', header: '名称' },
@@ -78,41 +88,63 @@ function firstQuery(value: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="追溯查询" :breadcrumbs="[{ label: '制造执行' }]">
+    <NvPageHeader title="追溯查询" :breadcrumbs="[{ label: '制造执行' }]">
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" as-child>
+        <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="{ path: '/barcode/scans', query: scanRecordQuery }">扫码记录</RouterLink>
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="traceabilityPending" @click="refreshTraceability">
+        </NvButton>
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="traceabilityPending"
+          @click="refreshTraceability"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <SectionCards :columns="2">
-      <SectionCard description="节点" :value="nodes.length" hint="执行证据对象" />
-      <SectionCard description="关系" :value="traceability?.edges?.length ?? 0" hint="上下游关联" />
-    </SectionCards>
+    <NvSectionCards :columns="2">
+      <NvSectionCard description="节点" :value="nodes.length" hint="执行证据对象" />
+      <NvSectionCard
+        description="关系"
+        :value="traceability?.edges?.length ?? 0"
+        hint="上下游关联"
+      />
+    </NvSectionCards>
 
-    <Toolbar :show-search="false">
+    <NvToolbar :show-search="false">
       <template #filters>
-        <SelectPro v-model="filters.mode">
-          <SelectProTrigger class="h-9 w-36" aria-label="查询类型"><SelectProValue /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem value="work-order">工单</SelectProItem>
-            <SelectProItem value="batch">批次/序列号</SelectProItem>
-            <SelectProItem value="material-lot">物料批</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
-        <InputPro v-model="filters.workOrderId" class="h-9 w-40" placeholder="工单号" aria-label="工单号" />
-        <InputPro v-model="batchModel" class="h-9 w-44" placeholder="批次/序列号/物料批" aria-label="批次或物料批" />
+        <NvSelect v-model="filters.mode">
+          <NvSelectTrigger class="h-9 w-36" aria-label="查询类型"
+            ><NvSelectValue
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem value="work-order">工单</NvSelectItem>
+            <NvSelectItem value="batch">批次/序列号</NvSelectItem>
+            <NvSelectItem value="material-lot">物料批</NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
+        <NvInput
+          v-model="filters.workOrderId"
+          class="h-9 w-40"
+          placeholder="工单号"
+          aria-label="工单号"
+        />
+        <NvInput
+          v-model="batchModel"
+          class="h-9 w-44"
+          placeholder="批次/序列号/物料批"
+          aria-label="批次或物料批"
+        />
       </template>
-    </Toolbar>
+    </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro
+    <NvDataTable
       :columns="columns"
       :rows="nodes"
       row-key="nodeId"

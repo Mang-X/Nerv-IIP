@@ -1,39 +1,45 @@
 <script setup lang="ts">
 import type { BusinessConsoleBarcodeRuleItem } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBarcodeRules } from '@/composables/useBusinessBarcode'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DialogProTrigger,
-  FieldPro,
-  FieldProDescription,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDialogTrigger,
+  NvField,
+  NvFieldDescription,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { PencilIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '条码规则', requiredPermissions: ['business.barcodes.templates.manage'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '条码规则',
+    requiredPermissions: ['business.barcodes.templates.manage'],
+  },
+})
 
 const SOURCE_DOCUMENT_OPTIONS = [
   { value: 'inventory.receipt', label: '收货入库' },
@@ -87,9 +93,19 @@ const form = reactive({
   status: 'active',
 })
 
-const columns: DataTableProColumn<BusinessConsoleBarcodeRuleItem>[] = [
-  { key: 'ruleCode', header: '规则编码', cellClass: 'font-medium', accessor: (r) => r.ruleCode ?? '无' },
-  { key: 'barcodeType', header: '条码类型', width: 'w-28', accessor: (r) => typeLabel(r.barcodeType) },
+const columns: NvDataTableColumn<BusinessConsoleBarcodeRuleItem>[] = [
+  {
+    key: 'ruleCode',
+    header: '规则编码',
+    cellClass: 'font-medium',
+    accessor: (r) => r.ruleCode ?? '无',
+  },
+  {
+    key: 'barcodeType',
+    header: '条码类型',
+    width: 'w-28',
+    accessor: (r) => typeLabel(r.barcodeType),
+  },
   { key: 'prefix', header: '前缀', width: 'w-32', accessor: (r) => r.prefix ?? '无' },
   { key: 'length', header: '长度', width: 'w-20', accessor: (r) => String(r.length ?? '无') },
   { key: 'gs1CompanyPrefixLength', header: 'GS1 前缀', width: 'w-32' },
@@ -99,11 +115,15 @@ const columns: DataTableProColumn<BusinessConsoleBarcodeRuleItem>[] = [
   { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
 ]
 
-watch(keyword, (value) => {
-  filters.keyword = value.trim() || undefined
-  filters.skip = 0
-  page.value = 1
-}, { immediate: true })
+watch(
+  keyword,
+  (value) => {
+    filters.keyword = value.trim() || undefined
+    filters.skip = 0
+    page.value = 1
+  },
+  { immediate: true },
+)
 
 watch(
   () => route.query.ruleCode,
@@ -113,10 +133,14 @@ watch(
   },
 )
 
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * pageSizeNumber.value
-  filters.take = pageSizeNumber.value
-}, { immediate: true })
+watch(
+  [page, pageSize],
+  () => {
+    filters.skip = (page.value - 1) * pageSizeNumber.value
+    filters.take = pageSizeNumber.value
+  },
+  { immediate: true },
+)
 
 watch(pageSize, () => {
   page.value = 1
@@ -128,16 +152,19 @@ watch(statusFilter, (value) => {
   page.value = 1
 })
 
-const errorMessage = computed(() => rulesError.value instanceof Error ? rulesError.value.message : '')
+const errorMessage = computed(() =>
+  rulesError.value instanceof Error ? rulesError.value.message : '',
+)
 const isGs1 = computed(() => form.barcodeType.toLowerCase().includes('gs1'))
 const gs1PrefixNumber = computed(() => Number(form.gs1CompanyPrefixLength))
-const canSubmit = computed(() =>
-  form.ruleCode.trim().length > 0
-  && form.barcodeType.trim().length > 0
-  && form.prefix.trim().length > 0
-  && Number(form.length) > 0
-  && form.checksumRule.trim().length > 0
-  && (!isGs1.value || (Number.isInteger(gs1PrefixNumber.value) && gs1PrefixNumber.value > 0)),
+const canSubmit = computed(
+  () =>
+    form.ruleCode.trim().length > 0 &&
+    form.barcodeType.trim().length > 0 &&
+    form.prefix.trim().length > 0 &&
+    Number(form.length) > 0 &&
+    form.checksumRule.trim().length > 0 &&
+    (!isGs1.value || (Number.isInteger(gs1PrefixNumber.value) && gs1PrefixNumber.value > 0)),
 )
 
 function typeLabel(value?: string | null) {
@@ -147,7 +174,9 @@ function typeLabel(value?: string | null) {
 
 function sourceLabels(values?: readonly string[] | null) {
   if (!values?.length) return '暂未限定'
-  return values.map((value) => SOURCE_DOCUMENT_OPTIONS.find((o) => o.value === value)?.label ?? value).join('、')
+  return values
+    .map((value) => SOURCE_DOCUMENT_OPTIONS.find((o) => o.value === value)?.label ?? value)
+    .join('、')
 }
 
 function statusLabel(value?: string | null) {
@@ -194,7 +223,9 @@ function toggleSource(value: string, checked: boolean) {
     form.allowedSourceDocumentTypes.push(value)
   }
   if (!checked) {
-    form.allowedSourceDocumentTypes = form.allowedSourceDocumentTypes.filter((item) => item !== value)
+    form.allowedSourceDocumentTypes = form.allowedSourceDocumentTypes.filter(
+      (item) => item !== value,
+    )
   }
 }
 
@@ -224,8 +255,7 @@ async function submitRule() {
     notifySuccess(`条码规则「${form.ruleCode.trim()}」已保存。`)
     open.value = false
     resetForm()
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -233,113 +263,183 @@ async function submitRule() {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="条码规则" :breadcrumbs="[{ label: '条码标签' }]" :count="`${rulesTotal} 条规则`">
+    <NvPageHeader
+      title="条码规则"
+      :breadcrumbs="[{ label: '条码标签' }]"
+      :count="`${rulesTotal} 条规则`"
+    >
       <template #actions>
-        <ButtonPro size="sm" variant="outline" type="button" :disabled="rulesPending" @click="refreshRules">
+        <NvButton
+          size="sm"
+          variant="outline"
+          type="button"
+          :disabled="rulesPending"
+          @click="refreshRules"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <DialogPro v-model:open="open">
-          <DialogProTrigger as-child>
-            <ButtonPro size="sm" type="button" @click="resetForm">
+        </NvButton>
+        <NvDialog v-model:open="open">
+          <NvDialogTrigger as-child>
+            <NvButton size="sm" type="button" @click="resetForm">
               <PlusIcon aria-hidden="true" />
               新建规则
-            </ButtonPro>
-          </DialogProTrigger>
-          <DialogProContent class="sm:max-w-2xl">
-            <DialogProHeader>
-              <DialogProTitle>{{ editingRuleCode ? `编辑条码规则 · ${editingRuleCode}` : '新建条码规则' }}</DialogProTitle>
-              <DialogProDescription>{{ editingRuleCode ? '修改条码规则配置，规则编码不可修改。' : '创建条码规则。GS1 类型必须填写公司前缀长度。' }}</DialogProDescription>
-            </DialogProHeader>
+            </NvButton>
+          </NvDialogTrigger>
+          <NvDialogContent class="sm:max-w-2xl">
+            <NvDialogHeader>
+              <NvDialogTitle>{{
+                editingRuleCode ? `编辑条码规则 · ${editingRuleCode}` : '新建条码规则'
+              }}</NvDialogTitle>
+              <NvDialogDescription>{{
+                editingRuleCode
+                  ? '修改条码规则配置，规则编码不可修改。'
+                  : '创建条码规则。GS1 类型必须填写公司前缀长度。'
+              }}</NvDialogDescription>
+            </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitRule">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                {{ isGs1 && !form.gs1CompanyPrefixLength ? 'GS1 规则必须填写公司前缀长度。' : '请完整填写规则编码、条码类型、前缀、长度和校验规则。' }}
+                {{
+                  isGs1 && !form.gs1CompanyPrefixLength
+                    ? 'GS1 规则必须填写公司前缀长度。'
+                    : '请完整填写规则编码、条码类型、前缀、长度和校验规则。'
+                }}
               </p>
-              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-                <FieldPro :data-invalid="showErrors && !form.ruleCode.trim()">
-                  <FieldProLabel for="barcode-rule-code">规则编码 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="barcode-rule-code" v-model="form.ruleCode" autocomplete="off" :readonly="Boolean(editingRuleCode)" />
-                  <FieldProDescription v-if="editingRuleCode">规则编码由后端作为更新键，不可在编辑时修改。</FieldProDescription>
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel>状态</FieldProLabel>
-                  <SelectPro v-model="form.status">
-                    <SelectProTrigger aria-label="规则状态"><SelectProValue /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="option in STATUS_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel>条码类型 <span class="text-destructive">*</span></FieldProLabel>
-                  <SelectPro v-model="form.barcodeType" aria-label="条码类型">
-                    <SelectProTrigger aria-label="条码类型"><SelectProValue /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="option in BARCODE_TYPE_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !form.prefix.trim()">
-                  <FieldProLabel for="barcode-rule-prefix">条码前缀 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="barcode-rule-prefix" v-model="form.prefix" autocomplete="off" />
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !(Number(form.length) > 0)">
-                  <FieldProLabel for="barcode-rule-length">总长度 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="barcode-rule-length" v-model.number="form.length" type="number" min="1" />
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !form.checksumRule.trim()">
-                  <FieldProLabel for="barcode-rule-checksum">校验规则 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="barcode-rule-checksum" v-model="form.checksumRule" autocomplete="off" />
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && isGs1 && !form.gs1CompanyPrefixLength">
-                  <FieldProLabel for="barcode-rule-gs1-prefix">GS1 公司前缀长度</FieldProLabel>
-                  <InputPro id="barcode-rule-gs1-prefix" v-model="form.gs1CompanyPrefixLength" type="number" min="1" />
-                  <FieldProDescription>仅 GS1-128 / GS1 DataMatrix 等规则必填。</FieldProDescription>
-                </FieldPro>
-                <FieldPro class="sm:col-span-2">
-                  <FieldProLabel>适用场景</FieldProLabel>
+              <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+                <NvField :data-invalid="showErrors && !form.ruleCode.trim()">
+                  <NvFieldLabel for="barcode-rule-code"
+                    >规则编码 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="barcode-rule-code"
+                    v-model="form.ruleCode"
+                    autocomplete="off"
+                    :readonly="Boolean(editingRuleCode)"
+                  />
+                  <NvFieldDescription v-if="editingRuleCode"
+                    >规则编码由后端作为更新键，不可在编辑时修改。</NvFieldDescription
+                  >
+                </NvField>
+                <NvField>
+                  <NvFieldLabel>状态</NvFieldLabel>
+                  <NvSelect v-model="form.status">
+                    <NvSelectTrigger aria-label="规则状态"><NvSelectValue /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem
+                        v-for="option in STATUS_OPTIONS"
+                        :key="option.value"
+                        :value="option.value"
+                        >{{ option.label }}</NvSelectItem
+                      >
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+                <NvField>
+                  <NvFieldLabel>条码类型 <span class="text-destructive">*</span></NvFieldLabel>
+                  <NvSelect v-model="form.barcodeType" aria-label="条码类型">
+                    <NvSelectTrigger aria-label="条码类型"><NvSelectValue /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem
+                        v-for="option in BARCODE_TYPE_OPTIONS"
+                        :key="option.value"
+                        :value="option.value"
+                        >{{ option.label }}</NvSelectItem
+                      >
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+                <NvField :data-invalid="showErrors && !form.prefix.trim()">
+                  <NvFieldLabel for="barcode-rule-prefix"
+                    >条码前缀 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput id="barcode-rule-prefix" v-model="form.prefix" autocomplete="off" />
+                </NvField>
+                <NvField :data-invalid="showErrors && !(Number(form.length) > 0)">
+                  <NvFieldLabel for="barcode-rule-length"
+                    >总长度 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="barcode-rule-length"
+                    v-model.number="form.length"
+                    type="number"
+                    min="1"
+                  />
+                </NvField>
+                <NvField :data-invalid="showErrors && !form.checksumRule.trim()">
+                  <NvFieldLabel for="barcode-rule-checksum"
+                    >校验规则 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="barcode-rule-checksum"
+                    v-model="form.checksumRule"
+                    autocomplete="off"
+                  />
+                </NvField>
+                <NvField :data-invalid="showErrors && isGs1 && !form.gs1CompanyPrefixLength">
+                  <NvFieldLabel for="barcode-rule-gs1-prefix">GS1 公司前缀长度</NvFieldLabel>
+                  <NvInput
+                    id="barcode-rule-gs1-prefix"
+                    v-model="form.gs1CompanyPrefixLength"
+                    type="number"
+                    min="1"
+                  />
+                  <NvFieldDescription>仅 GS1-128 / GS1 DataMatrix 等规则必填。</NvFieldDescription>
+                </NvField>
+                <NvField class="sm:col-span-2">
+                  <NvFieldLabel>适用场景</NvFieldLabel>
                   <div class="grid gap-2 rounded-md border p-3 sm:grid-cols-2">
-                    <label v-for="option in SOURCE_DOCUMENT_OPTIONS" :key="option.value" class="flex items-center gap-2 text-sm">
+                    <label
+                      v-for="option in SOURCE_DOCUMENT_OPTIONS"
+                      :key="option.value"
+                      class="flex items-center gap-2 text-sm"
+                    >
                       <input
                         type="checkbox"
                         class="size-4"
                         :aria-label="`适用场景：${option.label}`"
                         :checked="form.allowedSourceDocumentTypes.includes(option.value)"
                         @change="onSourceChange(option.value, $event)"
-                      >
+                      />
                       {{ option.label }}
                     </label>
                   </div>
-                </FieldPro>
-              </FieldProGroup>
-              <DialogProFooter>
-                <ButtonPro type="button" variant="outline" @click="open = false">取消</ButtonPro>
-                <ButtonPro type="submit" :disabled="saveRulePending">
+                </NvField>
+              </NvFieldGroup>
+              <NvDialogFooter>
+                <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
+                <NvButton type="submit" :disabled="saveRulePending">
                   <Spinner v-if="saveRulePending" aria-hidden="true" />
                   保存规则
-                </ButtonPro>
-              </DialogProFooter>
+                </NvButton>
+              </NvDialogFooter>
             </form>
-          </DialogProContent>
-        </DialogPro>
+          </NvDialogContent>
+        </NvDialog>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <Toolbar v-model:search="keyword" search-placeholder="按规则编码筛选">
+    <NvToolbar v-model:search="keyword" search-placeholder="按规则编码筛选">
       <template #filters>
-        <SelectPro v-model="statusFilter">
-          <SelectProTrigger class="h-9 w-28" aria-label="状态筛选"><SelectProValue placeholder="全部状态" /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem value="all">全部状态</SelectProItem>
-            <SelectProItem v-for="option in STATUS_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+        <NvSelect v-model="statusFilter">
+          <NvSelectTrigger class="h-9 w-28" aria-label="状态筛选"
+            ><NvSelectValue placeholder="全部状态"
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem value="all">全部状态</NvSelectItem>
+            <NvSelectItem
+              v-for="option in STATUS_OPTIONS"
+              :key="option.value"
+              :value="option.value"
+              >{{ option.label }}</NvSelectItem
+            >
+          </NvSelectContent>
+        </NvSelect>
       </template>
-    </Toolbar>
+    </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -355,26 +455,39 @@ async function submitRule() {
       :column-settings="false"
     >
       <template #cell-gs1CompanyPrefixLength="{ row }">
-        <span class="text-muted-foreground">{{ row.gs1CompanyPrefixLength ? `GS1 公司前缀 ${row.gs1CompanyPrefixLength} 位` : '不适用' }}</span>
+        <span class="text-muted-foreground">{{
+          row.gs1CompanyPrefixLength ? `GS1 公司前缀 ${row.gs1CompanyPrefixLength} 位` : '不适用'
+        }}</span>
       </template>
       <template #cell-allowedSourceDocumentTypes="{ row }">
         {{ sourceLabels(row.allowedSourceDocumentTypes) }}
       </template>
       <template #cell-status="{ row }">
-        <StatusBadgePro :value="row.status === 'disabled' ? 'disabled' : 'active'" :label="statusLabel(row.status)" />
+        <NvStatusBadge
+          :value="row.status === 'disabled' ? 'disabled' : 'active'"
+          :label="statusLabel(row.status)"
+        />
       </template>
       <template #cell-skuLink="{ row }">
         <div class="grid gap-1 text-sm">
-          <RouterLink class="text-primary underline-offset-4 hover:underline" to="/master-data/skus">打开物料页</RouterLink>
+          <RouterLink class="text-primary underline-offset-4 hover:underline" to="/master-data/skus"
+            >打开物料页</RouterLink
+          >
           <span class="text-xs text-muted-foreground">按默认条码规则反查待 SKU facade 支持。</span>
         </div>
       </template>
       <template #cell-actions="{ row }">
-        <ButtonPro size="sm" variant="ghost" type="button" :disabled="!row.ruleCode" @click="openEdit(row)">
+        <NvButton
+          size="sm"
+          variant="ghost"
+          type="button"
+          :disabled="!row.ruleCode"
+          @click="openEdit(row)"
+        >
           <PencilIcon aria-hidden="true" />
           编辑
-        </ButtonPro>
+        </NvButton>
       </template>
-    </DataTablePro>
+    </NvDataTable>
   </BusinessLayout>
 </template>

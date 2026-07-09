@@ -3,39 +3,45 @@ import type {
   BusinessConsoleMaintenanceInspectionItem,
   BusinessConsoleRecordMaintenanceInspectionRequest,
 } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenanceInspections } from '@/composables/useBusinessMaintenance'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProClose,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  FieldPro,
-  FieldProError,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogClose,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvField,
+  NvFieldError,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
+  NvStatusBadge,
   toast,
 } from '@nerv-iip/ui'
 import { ClipboardCheckIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '点检记录', requiredPermissions: ['business.maintenance.plans.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '点检记录',
+    requiredPermissions: ['business.maintenance.plans.read'],
+  },
+})
 
 const {
   filters,
@@ -67,11 +73,18 @@ const recordForm = reactive({
 const recordError = shallowRef('')
 
 const listErrorMessage = computed(() => formatError(inspectionsError.value))
-const recordErrorMessage = computed(() => recordError.value || formatError(recordInspectionError.value))
+const recordErrorMessage = computed(
+  () => recordError.value || formatError(recordInspectionError.value),
+)
 
 type InspectionRow = BusinessConsoleMaintenanceInspectionItem
-const columns: DataTableProColumn<InspectionRow>[] = [
-  { key: 'inspectionId', header: '点检记录', cellClass: 'font-medium', accessor: (r) => inspectionNo(r) },
+const columns: NvDataTableColumn<InspectionRow>[] = [
+  {
+    key: 'inspectionId',
+    header: '点检记录',
+    cellClass: 'font-medium',
+    accessor: (r) => inspectionNo(r),
+  },
   { key: 'planId', header: '保养计划', accessor: (r) => r.planId ?? '未关联' },
   { key: 'workOrderId', header: '维修工单', accessor: (r) => r.workOrderId ?? '未关联' },
   { key: 'inspector', header: '点检人', accessor: (r) => r.inspector ?? '未记录' },
@@ -84,10 +97,14 @@ function inspectionNo(row: InspectionRow) {
   return id ? `INSP-${id.slice(-8).toUpperCase()}` : '点检记录'
 }
 function rowKey(row: InspectionRow) {
-  return row.inspectionId ?? `${row.planId ?? ''}-${row.workOrderId ?? ''}-${row.inspectedAtUtc ?? ''}`
+  return (
+    row.inspectionId ?? `${row.planId ?? ''}-${row.workOrderId ?? ''}-${row.inspectedAtUtc ?? ''}`
+  )
 }
 function resultLabel(value?: string | null) {
-  return resultOptions.find((o) => o.value === (value ?? '').toLowerCase())?.label ?? value ?? '未知'
+  return (
+    resultOptions.find((o) => o.value === (value ?? '').toLowerCase())?.label ?? value ?? '未知'
+  )
 }
 function nowLocal() {
   const date = new Date()
@@ -149,22 +166,34 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="点检记录" :breadcrumbs="[{ label: '设备监控' }]" :count="`${inspectionsTotal} 条点检记录`">
+    <NvPageHeader
+      title="点检记录"
+      :breadcrumbs="[{ label: '设备监控' }]"
+      :count="`${inspectionsTotal} 条点检记录`"
+    >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="inspectionsPending" @click="refreshInspections">
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="inspectionsPending"
+          @click="refreshInspections"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" @click="openRecord">
+        </NvButton>
+        <NvButton size="sm" type="button" @click="openRecord">
           <PlusIcon aria-hidden="true" />
           记录点检
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
+      {{ listErrorMessage }}
+    </p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -179,58 +208,79 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="暂无点检记录。可从保养计划或维修工单补录点检结果。"
     >
-      <template #cell-result="{ row }"><StatusBadgePro :value="resultLabel(row.result)" /></template>
-    </DataTablePro>
+      <template #cell-result="{ row }"><NvStatusBadge :value="resultLabel(row.result)" /></template>
+    </NvDataTable>
 
-    <DialogPro v-model:open="recordOpen">
-      <DialogProContent>
-        <DialogProHeader>
-          <DialogProTitle>记录点检</DialogProTitle>
-          <DialogProDescription>点检可关联保养计划或维修工单，用于释放设备维护上下文。</DialogProDescription>
-        </DialogProHeader>
+    <NvDialog v-model:open="recordOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>记录点检</NvDialogTitle>
+          <NvDialogDescription
+            >点检可关联保养计划或维修工单，用于释放设备维护上下文。</NvDialogDescription
+          >
+        </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitRecord">
-          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-            <FieldPro>
-              <FieldProLabel for="insp-plan">保养计划</FieldProLabel>
-              <InputPro id="insp-plan" v-model="recordForm.planId" autocomplete="off" placeholder="可选" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="insp-work-order">维修工单</FieldProLabel>
-              <InputPro id="insp-work-order" v-model="recordForm.workOrderId" autocomplete="off" placeholder="可选" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="insp-inspector">点检人</FieldProLabel>
-              <InputPro id="insp-inspector" v-model="recordForm.inspector" autocomplete="off" placeholder="如 设备保全班" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="insp-result">点检结果</FieldProLabel>
-              <SelectPro v-model="recordForm.result">
-                <SelectProTrigger id="insp-result" aria-label="点检结果"><SelectProValue /></SelectProTrigger>
-                <SelectProContent>
-                  <SelectProItem v-for="o in resultOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                </SelectProContent>
-              </SelectPro>
-            </FieldPro>
-            <FieldPro class="sm:col-span-2">
-              <FieldProLabel for="insp-time">点检时间</FieldProLabel>
-              <InputPro id="insp-time" v-model="recordForm.inspectedAtUtc" type="datetime-local" />
-            </FieldPro>
-          </FieldProGroup>
+          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+            <NvField>
+              <NvFieldLabel for="insp-plan">保养计划</NvFieldLabel>
+              <NvInput
+                id="insp-plan"
+                v-model="recordForm.planId"
+                autocomplete="off"
+                placeholder="可选"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="insp-work-order">维修工单</NvFieldLabel>
+              <NvInput
+                id="insp-work-order"
+                v-model="recordForm.workOrderId"
+                autocomplete="off"
+                placeholder="可选"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="insp-inspector">点检人</NvFieldLabel>
+              <NvInput
+                id="insp-inspector"
+                v-model="recordForm.inspector"
+                autocomplete="off"
+                placeholder="如 设备保全班"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="insp-result">点检结果</NvFieldLabel>
+              <NvSelect v-model="recordForm.result">
+                <NvSelectTrigger id="insp-result" aria-label="点检结果"
+                  ><NvSelectValue
+                /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem v-for="o in resultOptions" :key="o.value" :value="o.value">{{
+                    o.label
+                  }}</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+            </NvField>
+            <NvField class="sm:col-span-2">
+              <NvFieldLabel for="insp-time">点检时间</NvFieldLabel>
+              <NvInput id="insp-time" v-model="recordForm.inspectedAtUtc" type="datetime-local" />
+            </NvField>
+          </NvFieldGroup>
 
-          <FieldProError v-if="recordErrorMessage" :errors="[recordErrorMessage]" />
+          <NvFieldError v-if="recordErrorMessage" :errors="[recordErrorMessage]" />
 
-          <DialogProFooter>
-            <DialogProClose as-child>
-              <ButtonPro type="button" variant="outline">取消</ButtonPro>
-            </DialogProClose>
-            <ButtonPro type="submit" :disabled="recordInspectionPending">
+          <NvDialogFooter>
+            <NvDialogClose as-child>
+              <NvButton type="button" variant="outline">取消</NvButton>
+            </NvDialogClose>
+            <NvButton type="submit" :disabled="recordInspectionPending">
               <Spinner v-if="recordInspectionPending" aria-hidden="true" />
               <ClipboardCheckIcon v-else aria-hidden="true" />
               提交点检
-            </ButtonPro>
-          </DialogProFooter>
+            </NvButton>
+          </NvDialogFooter>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>

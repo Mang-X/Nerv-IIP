@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { PDA_TASK_KINDS } from '@nerv-iip/business-core'
-import { AppShellMobile, ScanBar } from '@nerv-iip/ui-mobile'
+import { NvAppShellMobile, NvScanBar } from '@nerv-iip/ui-mobile'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -28,7 +28,7 @@ function openTask(route: string, ready: boolean) {
 </script>
 
 <template>
-  <AppShellMobile>
+  <NvAppShellMobile>
     <template #header>
       <div class="px-4 py-3">
         <h1 class="text-lg font-semibold text-foreground">工作台</h1>
@@ -36,13 +36,9 @@ function openTask(route: string, ready: boolean) {
     </template>
 
     <div class="space-y-6 p-4">
-      <ScanBar placeholder="扫描工单 / 库位 / 物料 / 设备" @scan="onScan" />
+      <NvScanBar placeholder="扫描工单 / 库位 / 物料 / 设备" @scan="onScan" />
 
-      <p
-        v-if="lastScan"
-        data-testid="last-scan"
-        class="-mt-3 text-sm text-foreground"
-      >
+      <p v-if="lastScan" data-testid="last-scan" class="-mt-3 text-sm text-foreground">
         已扫码：{{ lastScan }}
         <span class="block text-xs text-muted-foreground">
           扫码直达将在后续里程碑（M5）落地，当前仅回显扫码内容。
@@ -74,5 +70,5 @@ function openTask(route: string, ready: boolean) {
         </div>
       </section>
     </div>
-  </AppShellMobile>
+  </NvAppShellMobile>
 </template>

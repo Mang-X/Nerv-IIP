@@ -1,38 +1,44 @@
 <script setup lang="ts">
 import type { BusinessConsoleBarcodeTemplateItem } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBarcodeTemplates } from '@/composables/useBusinessBarcode'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DialogProTrigger,
-  FieldPro,
-  FieldProDescription,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDialogTrigger,
+  NvField,
+  NvFieldDescription,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { PencilIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '标签模板', requiredPermissions: ['business.barcodes.templates.manage'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '标签模板',
+    requiredPermissions: ['business.barcodes.templates.manage'],
+  },
+})
 
 const STATUS_OPTIONS = [
   { value: 'active', label: '启用' },
@@ -66,10 +72,20 @@ const form = reactive({
   status: 'active',
 })
 
-const columns: DataTableProColumn<BusinessConsoleBarcodeTemplateItem>[] = [
-  { key: 'templateCode', header: '模板编码', cellClass: 'font-medium', accessor: (r) => r.templateCode ?? '无' },
+const columns: NvDataTableColumn<BusinessConsoleBarcodeTemplateItem>[] = [
+  {
+    key: 'templateCode',
+    header: '模板编码',
+    cellClass: 'font-medium',
+    accessor: (r) => r.templateCode ?? '无',
+  },
   { key: 'templateName', header: '模板名称', accessor: (r) => r.templateName ?? '无' },
-  { key: 'templateFileId', header: '模板文件', width: 'w-40', accessor: (r) => r.templateFileId ?? '无' },
+  {
+    key: 'templateFileId',
+    header: '模板文件',
+    width: 'w-40',
+    accessor: (r) => r.templateFileId ?? '无',
+  },
   { key: 'variableSchemaJson', header: '字段说明' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
@@ -81,30 +97,36 @@ watch(statusFilter, (value) => {
   page.value = 1
 })
 
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * pageSizeNumber.value
-  filters.take = pageSizeNumber.value
-}, { immediate: true })
+watch(
+  [page, pageSize],
+  () => {
+    filters.skip = (page.value - 1) * pageSizeNumber.value
+    filters.take = pageSizeNumber.value
+  },
+  { immediate: true },
+)
 
 watch(pageSize, () => {
   page.value = 1
 })
 
-const errorMessage = computed(() => templatesError.value instanceof Error ? templatesError.value.message : '')
-const canSubmit = computed(() =>
-  form.templateCode.trim().length > 0
-  && form.templateName.trim().length > 0
-  && form.templateFileId.trim().length > 0
-  && form.variableSchemaJson.trim().length > 0
-  && isValidJson(form.variableSchemaJson),
+const errorMessage = computed(() =>
+  templatesError.value instanceof Error ? templatesError.value.message : '',
+)
+const canSubmit = computed(
+  () =>
+    form.templateCode.trim().length > 0 &&
+    form.templateName.trim().length > 0 &&
+    form.templateFileId.trim().length > 0 &&
+    form.variableSchemaJson.trim().length > 0 &&
+    isValidJson(form.variableSchemaJson),
 )
 
 function isValidJson(value: string) {
   try {
     JSON.parse(value)
     return true
-  }
-  catch {
+  } catch {
     return false
   }
 }
@@ -141,8 +163,7 @@ function fieldSummary(value?: string | null) {
     if (Array.isArray(parsed.fields)) {
       return parsed.fields.map(String).join('、')
     }
-  }
-  catch {
+  } catch {
     return value
   }
   return value
@@ -171,8 +192,7 @@ async function submitTemplate() {
     notifySuccess(`标签模板「${form.templateName.trim()}」已保存。`)
     open.value = false
     resetForm()
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -180,86 +200,146 @@ async function submitTemplate() {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="标签模板" :breadcrumbs="[{ label: '条码标签' }]" :count="`${templatesTotal} 个模板`">
+    <NvPageHeader
+      title="标签模板"
+      :breadcrumbs="[{ label: '条码标签' }]"
+      :count="`${templatesTotal} 个模板`"
+    >
       <template #actions>
-        <ButtonPro size="sm" variant="outline" type="button" :disabled="templatesPending" @click="refreshTemplates">
+        <NvButton
+          size="sm"
+          variant="outline"
+          type="button"
+          :disabled="templatesPending"
+          @click="refreshTemplates"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <DialogPro v-model:open="open">
-          <DialogProTrigger as-child>
-            <ButtonPro size="sm" type="button" @click="resetForm">
+        </NvButton>
+        <NvDialog v-model:open="open">
+          <NvDialogTrigger as-child>
+            <NvButton size="sm" type="button" @click="resetForm">
               <PlusIcon aria-hidden="true" />
               新建模板
-            </ButtonPro>
-          </DialogProTrigger>
-          <DialogProContent class="sm:max-w-2xl">
-            <DialogProHeader>
-              <DialogProTitle>{{ editingTemplateCode ? `编辑标签模板 · ${editingTemplateCode}` : '新建标签模板' }}</DialogProTitle>
-              <DialogProDescription>{{ editingTemplateCode ? '修改标签模板引用和字段结构，模板编码不可修改。' : '创建标签模板。模板文件由文件服务管理，本页只维护引用和字段结构。' }}</DialogProDescription>
-            </DialogProHeader>
+            </NvButton>
+          </NvDialogTrigger>
+          <NvDialogContent class="sm:max-w-2xl">
+            <NvDialogHeader>
+              <NvDialogTitle>{{
+                editingTemplateCode ? `编辑标签模板 · ${editingTemplateCode}` : '新建标签模板'
+              }}</NvDialogTitle>
+              <NvDialogDescription>{{
+                editingTemplateCode
+                  ? '修改标签模板引用和字段结构，模板编码不可修改。'
+                  : '创建标签模板。模板文件由文件服务管理，本页只维护引用和字段结构。'
+              }}</NvDialogDescription>
+            </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitTemplate">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请填写模板编码、名称、模板文件，并提供合法 JSON 字段说明。
               </p>
-              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-                <FieldPro :data-invalid="showErrors && !form.templateCode.trim()">
-                  <FieldProLabel for="barcode-template-code">模板编码 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="barcode-template-code" v-model="form.templateCode" autocomplete="off" :readonly="Boolean(editingTemplateCode)" />
-                  <FieldProDescription v-if="editingTemplateCode">模板编码由后端作为更新键，不可在编辑时修改。</FieldProDescription>
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !form.templateName.trim()">
-                  <FieldProLabel for="barcode-template-name">模板名称 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="barcode-template-name" v-model="form.templateName" autocomplete="off" />
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !form.templateFileId.trim()">
-                  <FieldProLabel for="barcode-template-file">模板文件 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="barcode-template-file" v-model="form.templateFileId" autocomplete="off" />
-                  <FieldProDescription>填写文件服务返回的模板文件标识。</FieldProDescription>
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel>状态</FieldProLabel>
-                  <SelectPro v-model="form.status">
-                    <SelectProTrigger aria-label="模板状态"><SelectProValue /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="option in STATUS_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                </FieldPro>
-                <FieldPro class="sm:col-span-2" :data-invalid="showErrors && !isValidJson(form.variableSchemaJson)">
-                  <FieldProLabel for="barcode-template-schema">字段说明 <span class="text-destructive">*</span></FieldProLabel>
-                  <textarea id="barcode-template-schema" v-model="form.variableSchemaJson" class="min-h-24 rounded-md border bg-background px-3 py-2 text-sm" />
-                  <FieldProDescription>建议包含适用对象和字段数组，例如 SKU、批次、有效期或 SSCC。</FieldProDescription>
-                </FieldPro>
-              </FieldProGroup>
-              <DialogProFooter>
-                <ButtonPro type="button" variant="outline" @click="open = false">取消</ButtonPro>
-                <ButtonPro type="submit" :disabled="saveTemplatePending">
+              <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+                <NvField :data-invalid="showErrors && !form.templateCode.trim()">
+                  <NvFieldLabel for="barcode-template-code"
+                    >模板编码 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="barcode-template-code"
+                    v-model="form.templateCode"
+                    autocomplete="off"
+                    :readonly="Boolean(editingTemplateCode)"
+                  />
+                  <NvFieldDescription v-if="editingTemplateCode"
+                    >模板编码由后端作为更新键，不可在编辑时修改。</NvFieldDescription
+                  >
+                </NvField>
+                <NvField :data-invalid="showErrors && !form.templateName.trim()">
+                  <NvFieldLabel for="barcode-template-name"
+                    >模板名称 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="barcode-template-name"
+                    v-model="form.templateName"
+                    autocomplete="off"
+                  />
+                </NvField>
+                <NvField :data-invalid="showErrors && !form.templateFileId.trim()">
+                  <NvFieldLabel for="barcode-template-file"
+                    >模板文件 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="barcode-template-file"
+                    v-model="form.templateFileId"
+                    autocomplete="off"
+                  />
+                  <NvFieldDescription>填写文件服务返回的模板文件标识。</NvFieldDescription>
+                </NvField>
+                <NvField>
+                  <NvFieldLabel>状态</NvFieldLabel>
+                  <NvSelect v-model="form.status">
+                    <NvSelectTrigger aria-label="模板状态"><NvSelectValue /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem
+                        v-for="option in STATUS_OPTIONS"
+                        :key="option.value"
+                        :value="option.value"
+                        >{{ option.label }}</NvSelectItem
+                      >
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+                <NvField
+                  class="sm:col-span-2"
+                  :data-invalid="showErrors && !isValidJson(form.variableSchemaJson)"
+                >
+                  <NvFieldLabel for="barcode-template-schema"
+                    >字段说明 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <textarea
+                    id="barcode-template-schema"
+                    v-model="form.variableSchemaJson"
+                    class="min-h-24 rounded-md border bg-background px-3 py-2 text-sm"
+                  />
+                  <NvFieldDescription
+                    >建议包含适用对象和字段数组，例如 SKU、批次、有效期或 SSCC。</NvFieldDescription
+                  >
+                </NvField>
+              </NvFieldGroup>
+              <NvDialogFooter>
+                <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
+                <NvButton type="submit" :disabled="saveTemplatePending">
                   <Spinner v-if="saveTemplatePending" aria-hidden="true" />
                   保存模板
-                </ButtonPro>
-              </DialogProFooter>
+                </NvButton>
+              </NvDialogFooter>
             </form>
-          </DialogProContent>
-        </DialogPro>
+          </NvDialogContent>
+        </NvDialog>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <Toolbar>
+    <NvToolbar>
       <template #filters>
-        <SelectPro v-model="statusFilter">
-          <SelectProTrigger class="h-9 w-28" aria-label="状态筛选"><SelectProValue placeholder="全部状态" /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem value="all">全部状态</SelectProItem>
-            <SelectProItem v-for="option in STATUS_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+        <NvSelect v-model="statusFilter">
+          <NvSelectTrigger class="h-9 w-28" aria-label="状态筛选"
+            ><NvSelectValue placeholder="全部状态"
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem value="all">全部状态</NvSelectItem>
+            <NvSelectItem
+              v-for="option in STATUS_OPTIONS"
+              :key="option.value"
+              :value="option.value"
+              >{{ option.label }}</NvSelectItem
+            >
+          </NvSelectContent>
+        </NvSelect>
       </template>
-    </Toolbar>
+    </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -281,14 +361,23 @@ async function submitTemplate() {
         </div>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadgePro :value="row.status === 'disabled' ? 'disabled' : 'active'" :label="statusLabel(row.status)" />
+        <NvStatusBadge
+          :value="row.status === 'disabled' ? 'disabled' : 'active'"
+          :label="statusLabel(row.status)"
+        />
       </template>
       <template #cell-actions="{ row }">
-        <ButtonPro size="sm" variant="ghost" type="button" :disabled="!row.templateCode" @click="openEdit(row)">
+        <NvButton
+          size="sm"
+          variant="ghost"
+          type="button"
+          :disabled="!row.templateCode"
+          @click="openEdit(row)"
+        >
           <PencilIcon aria-hidden="true" />
           编辑
-        </ButtonPro>
+        </NvButton>
       </template>
-    </DataTablePro>
+    </NvDataTable>
   </BusinessLayout>
 </template>

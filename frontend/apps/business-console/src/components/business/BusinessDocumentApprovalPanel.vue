@@ -11,31 +11,34 @@ import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
-  ButtonPro,
-  FieldPro,
-  FieldProLabel,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvField,
+  NvFieldLabel,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
+  NvStatusBadge,
 } from '@nerv-iip/ui'
 import { ExternalLinkIcon, RefreshCwIcon, SendIcon } from 'lucide-vue-next'
 import { computed, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
-const props = withDefaults(defineProps<{
-  modelValue?: string
-  sourceService: string
-  documentType: string
-  documentId?: string
-  title?: string
-  allowStart?: boolean
-}>(), {
-  allowStart: true,
-})
+const props = withDefaults(
+  defineProps<{
+    modelValue?: string
+    sourceService: string
+    documentType: string
+    documentId?: string
+    title?: string
+    allowStart?: boolean
+  }>(),
+  {
+    allowStart: true,
+  },
+)
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
@@ -63,20 +66,18 @@ const autoMatchedChain = computed(() =>
 const selectedChain = computed(() => {
   const chainId = boundChainId.value
   if (chainId) {
-    return approval.chains.value.find((chain) => chain.chainId === chainId) ?? chainFromDetail(chainId)
+    return (
+      approval.chains.value.find((chain) => chain.chainId === chainId) ?? chainFromDetail(chainId)
+    )
   }
   return autoMatchedChain.value
 })
-const displayedChainId = computed(() =>
-  boundChainId.value || autoMatchedChain.value?.chainId || '',
-)
+const displayedChainId = computed(() => boundChainId.value || autoMatchedChain.value?.chainId || '')
 const displayedDetail = computed(() => {
   const detail = approval.chainDetail.value
   return detail?.chainId === displayedChainId.value ? detail : undefined
 })
-const displayedSteps = computed(() =>
-  displayedDetail.value?.steps ?? [],
-)
+const displayedSteps = computed(() => displayedDetail.value?.steps ?? [])
 const displayedDecisions = computed(() => {
   if (!displayedChainId.value) return []
   const detailDecisions = displayedDetail.value?.decisions ?? []
@@ -88,14 +89,15 @@ const legacyReferenceLabel = computed(() =>
     ? boundChainId.value
     : '',
 )
-const canAttachDisplayedChain = computed(() =>
-  !!autoMatchedChain.value?.chainId && autoMatchedChain.value.chainId !== boundChainId.value,
+const canAttachDisplayedChain = computed(
+  () => !!autoMatchedChain.value?.chainId && autoMatchedChain.value.chainId !== boundChainId.value,
 )
-const startDisabled = computed(() =>
-  !props.documentId?.trim()
-  || !selectedTemplateCode.value
-  || approval.startChainPending.value
-  || !canManageApprovals.value,
+const startDisabled = computed(
+  () =>
+    !props.documentId?.trim() ||
+    !selectedTemplateCode.value ||
+    approval.startChainPending.value ||
+    !canManageApprovals.value,
 )
 const approvalCenterTo = computed(() => ({
   path: '/approval',
@@ -120,15 +122,23 @@ watch(
   { immediate: true },
 )
 
-watch(activeTemplates, (templates) => {
-  if (templates.some((template) => template.templateCode === selectedTemplateCode.value)) return
-  selectedTemplateCode.value = templates[0]?.templateCode ?? ''
-}, { immediate: true })
+watch(
+  activeTemplates,
+  (templates) => {
+    if (templates.some((template) => template.templateCode === selectedTemplateCode.value)) return
+    selectedTemplateCode.value = templates[0]?.templateCode ?? ''
+  },
+  { immediate: true },
+)
 
-watch(displayedChainId, (chainId) => {
-  approval.chainDetailSelection.chainId = chainId
-  approval.decisionFilters.chainId = chainId || undefined
-}, { immediate: true })
+watch(
+  displayedChainId,
+  (chainId) => {
+    approval.chainDetailSelection.chainId = chainId
+    approval.decisionFilters.chainId = chainId || undefined
+  },
+  { immediate: true },
+)
 
 function chainFromDetail(chainId: string): BusinessConsoleApprovalChainItem | undefined {
   const detail = approval.chainDetail.value
@@ -168,8 +178,7 @@ async function startApprovalChain() {
       return
     }
     notifyError(result, '审批链发起未成功，请确认模板与单据状态。')
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error, '审批链发起失败，请确认模板、权限和单据状态后重试。')
   }
 }
@@ -195,7 +204,9 @@ function actorLabel(step: BusinessConsoleApprovalStepItem) {
   return `${actorType} · ${actorRef}`
 }
 
-function decisionKey(decision: BusinessConsoleApprovalDecisionItem | BusinessConsoleApprovalDecisionListItem) {
+function decisionKey(
+  decision: BusinessConsoleApprovalDecisionItem | BusinessConsoleApprovalDecisionListItem,
+) {
   return decision.decisionId ?? `${decision.stepNo}-${decision.actorRef}-${decision.decision}`
 }
 
@@ -213,42 +224,55 @@ function templateLabel(template: BusinessConsoleApprovalTemplateItem) {
           {{ documentType }}<template v-if="documentId"> · {{ documentId }}</template>
         </p>
       </div>
-      <ButtonPro size="sm" type="button" variant="outline" as-child>
+      <NvButton size="sm" type="button" variant="outline" as-child>
         <RouterLink :to="approvalCenterTo">
           <ExternalLinkIcon aria-hidden="true" />
           审批中心
         </RouterLink>
-      </ButtonPro>
+      </NvButton>
     </div>
 
     <div class="grid gap-2 rounded-md border bg-muted/20 p-3">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="grid gap-1">
           <span class="text-xs text-muted-foreground">当前链路</span>
-          <span class="text-sm font-medium break-all">{{ displayedChainId || '尚未关联审批链' }}</span>
+          <span class="text-sm font-medium break-all">{{
+            displayedChainId || '尚未关联审批链'
+          }}</span>
           <span v-if="legacyReferenceLabel" class="text-xs text-muted-foreground">
-            历史登记：<span class="font-medium break-all text-foreground">{{ legacyReferenceLabel }}</span>
+            历史登记：<span class="font-medium break-all text-foreground">{{
+              legacyReferenceLabel
+            }}</span>
           </span>
         </div>
-        <StatusBadgePro v-if="selectedChain?.status" :value="selectedChain.status" />
+        <NvStatusBadge v-if="selectedChain?.status" :value="selectedChain.status" />
       </div>
 
-      <FieldPro v-if="approval.chains.value.length">
-        <FieldProLabel>关联已有审批链</FieldProLabel>
-        <SelectPro :model-value="displayedChainId" @update:model-value="chooseChain">
-          <SelectProTrigger><SelectProValue placeholder="选择审批链" /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem v-for="chain in approval.chains.value" :key="chain.chainId" :value="chain.chainId ?? ''">
+      <NvField v-if="approval.chains.value.length">
+        <NvFieldLabel>关联已有审批链</NvFieldLabel>
+        <NvSelect :model-value="displayedChainId" @update:model-value="chooseChain">
+          <NvSelectTrigger><NvSelectValue placeholder="选择审批链" /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem
+              v-for="chain in approval.chains.value"
+              :key="chain.chainId"
+              :value="chain.chainId ?? ''"
+            >
               {{ chain.chainId }} · {{ chain.status }}
-            </SelectProItem>
-          </SelectProContent>
-        </SelectPro>
-      </FieldPro>
+            </NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
+      </NvField>
       <div v-if="canAttachDisplayedChain" class="flex justify-end">
-        <ButtonPro size="sm" type="button" variant="outline" @click="attachDisplayedChain">关联此审批链</ButtonPro>
+        <NvButton size="sm" type="button" variant="outline" @click="attachDisplayedChain"
+          >关联此审批链</NvButton
+        >
       </div>
 
-      <div v-if="approval.chainsPending.value" class="flex items-center gap-2 text-sm text-muted-foreground">
+      <div
+        v-if="approval.chainsPending.value"
+        class="flex items-center gap-2 text-sm text-muted-foreground"
+      >
         <Spinner aria-hidden="true" />
         正在加载审批链…
       </div>
@@ -263,10 +287,14 @@ function templateLabel(template: BusinessConsoleApprovalTemplateItem) {
     <div v-if="displayedSteps.length" class="grid gap-2">
       <div class="text-xs font-medium text-muted-foreground">当前步骤</div>
       <ol class="grid gap-2">
-        <li v-for="step in displayedSteps" :key="step.stepNo" class="rounded-md border bg-background p-2">
+        <li
+          v-for="step in displayedSteps"
+          :key="step.stepNo"
+          class="rounded-md border bg-background p-2"
+        >
           <div class="flex items-center justify-between gap-2">
             <span class="text-sm font-medium">{{ stepTitle(step) }}</span>
-            <StatusBadgePro :value="step.status" />
+            <NvStatusBadge :value="step.status" />
           </div>
           <p class="mt-1 text-xs text-muted-foreground">{{ actorLabel(step) }}</p>
         </li>
@@ -276,28 +304,41 @@ function templateLabel(template: BusinessConsoleApprovalTemplateItem) {
     <div v-if="displayedDecisions.length" class="grid gap-2">
       <div class="text-xs font-medium text-muted-foreground">历史决策</div>
       <ul class="grid gap-2">
-        <li v-for="decision in displayedDecisions" :key="decisionKey(decision)" class="rounded-md border bg-background p-2 text-sm">
+        <li
+          v-for="decision in displayedDecisions"
+          :key="decisionKey(decision)"
+          class="rounded-md border bg-background p-2 text-sm"
+        >
           <div class="flex items-center justify-between gap-2">
             <span>{{ decision.actorRef ?? '处理人' }}</span>
-            <StatusBadgePro :value="decision.decision" />
+            <NvStatusBadge :value="decision.decision" />
           </div>
-          <p v-if="decision.comment" class="mt-1 text-xs text-muted-foreground">{{ decision.comment }}</p>
+          <p v-if="decision.comment" class="mt-1 text-xs text-muted-foreground">
+            {{ decision.comment }}
+          </p>
         </li>
       </ul>
     </div>
 
-    <div v-if="allowStart !== false" class="grid gap-2 rounded-md border border-dashed bg-muted/20 p-3">
-      <FieldPro>
-        <FieldProLabel>发起审批模板</FieldProLabel>
-        <SelectPro v-model="selectedTemplateCode" :disabled="!activeTemplates.length">
-          <SelectProTrigger><SelectProValue placeholder="选择审批模板" /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem v-for="template in activeTemplates" :key="template.templateCode" :value="template.templateCode ?? ''">
+    <div
+      v-if="allowStart !== false"
+      class="grid gap-2 rounded-md border border-dashed bg-muted/20 p-3"
+    >
+      <NvField>
+        <NvFieldLabel>发起审批模板</NvFieldLabel>
+        <NvSelect v-model="selectedTemplateCode" :disabled="!activeTemplates.length">
+          <NvSelectTrigger><NvSelectValue placeholder="选择审批模板" /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem
+              v-for="template in activeTemplates"
+              :key="template.templateCode"
+              :value="template.templateCode ?? ''"
+            >
               {{ templateLabel(template) }}
-            </SelectProItem>
-          </SelectProContent>
-        </SelectPro>
-      </FieldPro>
+            </NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
+      </NvField>
       <p v-if="!activeTemplates.length" class="text-sm text-muted-foreground">
         没有可用审批模板，请到审批中心维护模板后再发起。
       </p>
@@ -308,15 +349,21 @@ function templateLabel(template: BusinessConsoleApprovalTemplateItem) {
         当前账号没有发起审批权限。
       </p>
       <div class="flex justify-end gap-2">
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="approval.chainsPending.value" @click="approval.refreshAll">
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="approval.chainsPending.value"
+          @click="approval.refreshAll"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新审批
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" :disabled="startDisabled" @click="startApprovalChain">
+        </NvButton>
+        <NvButton size="sm" type="button" :disabled="startDisabled" @click="startApprovalChain">
           <Spinner v-if="approval.startChainPending.value" aria-hidden="true" />
           <SendIcon v-else aria-hidden="true" />
           发起审批
-        </ButtonPro>
+        </NvButton>
       </div>
     </div>
   </section>

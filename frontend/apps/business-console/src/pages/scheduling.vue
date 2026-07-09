@@ -7,24 +7,24 @@ import type {
   BusinessConsoleSchedulingResourceLoad,
   BusinessConsoleSchedulingUnscheduledOperation,
 } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useBusinessScheduling } from '@/composables/useBusinessScheduling'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  PageHeader,
-  SheetPro,
-  SheetProContent,
-  SheetProDescription,
-  SheetProHeader,
-  SheetProTitle,
+  NvButton,
+  NvDataTable,
+  NvPageHeader,
+  NvSheet,
+  NvSheetContent,
+  NvSheetDescription,
+  NvSheetHeader,
+  NvSheetTitle,
   Spinner,
-  StatusBadgePro,
-  TabsPro,
-  TabsProContent,
-  TabsProList,
-  TabsProTrigger,
+  NvStatusBadge,
+  NvTabs,
+  NvTabsContent,
+  NvTabsList,
+  NvTabsTrigger,
   toast,
 } from '@nerv-iip/ui'
 import { CalendarClockIcon, EyeIcon, RefreshCwIcon, SendIcon } from 'lucide-vue-next'
@@ -34,10 +34,7 @@ definePage({
   meta: {
     requiresAuth: true,
     title: '排产工作台',
-    requiredPermissions: [
-      'business.scheduling.plans.read',
-      'business.scheduling.plans.release',
-    ],
+    requiredPermissions: ['business.scheduling.plans.read', 'business.scheduling.plans.release'],
   },
 })
 
@@ -56,11 +53,20 @@ const {
 const activeView = shallowRef('table')
 const detailOpen = shallowRef(false)
 
-const columns: DataTableProColumn<BusinessConsoleSchedulingPlanSummaryResponse>[] = [
-  { key: 'planId', header: '排程方案', cellClass: 'font-medium', accessor: (row) => row.planId ?? '未命名方案' },
+const columns: NvDataTableColumn<BusinessConsoleSchedulingPlanSummaryResponse>[] = [
+  {
+    key: 'planId',
+    header: '排程方案',
+    cellClass: 'font-medium',
+    accessor: (row) => row.planId ?? '未命名方案',
+  },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'range', header: '时间范围', accessor: () => '明细中确认' },
-  { key: 'operationCount', header: '工序数', accessor: (row) => `${row.assignmentCount ?? 0} 道工序` },
+  {
+    key: 'operationCount',
+    header: '工序数',
+    accessor: (row) => `${row.assignmentCount ?? 0} 道工序`,
+  },
   { key: 'conflicts', header: '冲突摘要', accessor: conflictSummary },
   { key: 'generatedAtUtc', header: '创建时间', width: 'w-44' },
   { key: 'actions', header: '操作', width: 'w-40', align: 'end' },
@@ -68,9 +74,11 @@ const columns: DataTableProColumn<BusinessConsoleSchedulingPlanSummaryResponse>[
 
 const selectedPlanRange = computed(() => rangeFromAssignments(planDetail.value?.assignments ?? []))
 const selectedResourceCount = computed(() => {
-  const resourceIds = new Set((planDetail.value?.resourceLoads ?? [])
-    .map((load) => load.resourceId)
-    .filter((value): value is string => Boolean(value)))
+  const resourceIds = new Set(
+    (planDetail.value?.resourceLoads ?? [])
+      .map((load) => load.resourceId)
+      .filter((value): value is string => Boolean(value)),
+  )
   return resourceIds.size
 })
 const detailFeedback = computed(() => {
@@ -104,7 +112,9 @@ function conflictSummary(row: BusinessConsoleSchedulingPlanSummaryResponse) {
   return [
     conflicts > 0 ? `${conflicts} 项冲突` : '',
     unscheduled > 0 ? `${unscheduled} 项未排` : '',
-  ].filter(Boolean).join('，')
+  ]
+    .filter(Boolean)
+    .join('，')
 }
 
 function formatDateTime(value?: string | null) {
@@ -114,7 +124,8 @@ function formatDateTime(value?: string | null) {
 }
 
 function rangeFromAssignments(assignments: BusinessConsoleSchedulingAssignment[]) {
-  const timestamps = assignments.flatMap((assignment) => [assignment.startUtc, assignment.endUtc])
+  const timestamps = assignments
+    .flatMap((assignment) => [assignment.startUtc, assignment.endUtc])
     .filter((value): value is string => Boolean(value))
     .map((value) => new Date(value))
     .filter((date) => !Number.isNaN(date.getTime()))
@@ -142,14 +153,17 @@ async function publish(planId: string | undefined) {
   }
 }
 
-function isReleased(row: BusinessConsoleSchedulingPlanSummaryResponse | BusinessConsoleSchedulePlan | undefined) {
+function isReleased(
+  row: BusinessConsoleSchedulingPlanSummaryResponse | BusinessConsoleSchedulePlan | undefined,
+) {
   return row?.status === 'released'
 }
 
 function loadText(load: BusinessConsoleSchedulingResourceLoad) {
   const assigned = load.assignedMinutes ?? 0
   const available = load.availableMinutes ?? 0
-  const utilization = load.utilization === undefined ? '无' : `${Math.round(load.utilization * 100)}%`
+  const utilization =
+    load.utilization === undefined ? '无' : `${Math.round(load.utilization * 100)}%`
   return `${assigned} / ${available} 分钟，利用率 ${utilization}`
 }
 
@@ -166,7 +180,9 @@ function conflictText(conflict: BusinessConsoleSchedulingConflict) {
     severityLabel(conflict.severity),
     reasonLabel(conflict.reasonCode),
     conflict.message ?? '',
-  ].filter(Boolean).join(' · ')
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 function unscheduledText(item: BusinessConsoleSchedulingUnscheduledOperation) {
@@ -175,7 +191,9 @@ function unscheduledText(item: BusinessConsoleSchedulingUnscheduledOperation) {
     item.operationId ?? '工序',
     reasonLabel(item.reasonCode),
     item.message ?? '',
-  ].filter(Boolean).join(' · ')
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 function severityLabel(severity?: string | null) {
@@ -199,29 +217,33 @@ function reasonLabel(reason?: string | null) {
     predecessorUnscheduled: '前序未排',
   }
 
-  return reason ? labels[reason] ?? reason : ''
+  return reason ? (labels[reason] ?? reason) : ''
 }
 </script>
 
 <template>
   <BusinessLayout>
-    <PageHeader title="排产工作台" :breadcrumbs="[{ label: '需求与计划' }]" :count="`${plans.length} 个方案`">
+    <NvPageHeader
+      title="排产工作台"
+      :breadcrumbs="[{ label: '需求与计划' }]"
+      :count="`${plans.length} 个方案`"
+    >
       <template #actions>
-        <ButtonPro size="sm" variant="outline" type="button" @click="refreshPlans">
+        <NvButton size="sm" variant="outline" type="button" @click="refreshPlans">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <TabsPro v-model="activeView">
-      <TabsProList>
-        <TabsProTrigger value="table">表格</TabsProTrigger>
-        <TabsProTrigger value="gantt">甘特图</TabsProTrigger>
-      </TabsProList>
+    <NvTabs v-model="activeView">
+      <NvTabsList>
+        <NvTabsTrigger value="table">表格</NvTabsTrigger>
+        <NvTabsTrigger value="gantt">甘特图</NvTabsTrigger>
+      </NvTabsList>
 
-      <TabsProContent value="table" class="grid gap-4">
-        <DataTablePro
+      <NvTabsContent value="table" class="grid gap-4">
+        <NvDataTable
           :pagination="false"
           :columns="columns"
           :rows="plans"
@@ -232,18 +254,18 @@ function reasonLabel(reason?: string | null) {
           empty-message="暂无 APS 排程方案。请先通过排程服务生成方案。"
         >
           <template #cell-status="{ row }">
-            <StatusBadgePro :label="statusLabel(row.status)" :tone="statusTone(row.status)" />
+            <NvStatusBadge :label="statusLabel(row.status)" :tone="statusTone(row.status)" />
           </template>
           <template #cell-generatedAtUtc="{ row }">
             {{ formatDateTime(row.generatedAtUtc) }}
           </template>
           <template #cell-actions="{ row }">
             <div class="flex justify-end gap-2">
-              <ButtonPro size="sm" variant="outline" type="button" @click="openDetail(row.planId)">
+              <NvButton size="sm" variant="outline" type="button" @click="openDetail(row.planId)">
                 <EyeIcon aria-hidden="true" />
                 明细
-              </ButtonPro>
-              <ButtonPro
+              </NvButton>
+              <NvButton
                 size="sm"
                 type="button"
                 :disabled="isReleased(row) || releasePlanPending"
@@ -252,33 +274,37 @@ function reasonLabel(reason?: string | null) {
                 <Spinner v-if="releasePlanPending" aria-hidden="true" />
                 <SendIcon v-else aria-hidden="true" />
                 发布
-              </ButtonPro>
+              </NvButton>
             </div>
           </template>
-        </DataTablePro>
-      </TabsProContent>
+        </NvDataTable>
+      </NvTabsContent>
 
-      <TabsProContent value="gantt">
+      <NvTabsContent value="gantt">
         <div class="rounded-lg border bg-card p-8 text-center">
           <CalendarClockIcon class="mx-auto size-10 text-muted-foreground" aria-hidden="true" />
           <h2 class="mt-4 text-base font-semibold text-foreground">甘特可视化待接入</h2>
           <p class="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
-            当前版本只展示来自 APS facade 的方案列表和明细。后续接入正式甘特组件后，此区域会替换为真实排程时间轴。
+            当前版本只展示来自 APS facade
+            的方案列表和明细。后续接入正式甘特组件后，此区域会替换为真实排程时间轴。
           </p>
         </div>
-      </TabsProContent>
-    </TabsPro>
+      </NvTabsContent>
+    </NvTabs>
 
-    <SheetPro v-model:open="detailOpen">
-      <SheetProContent side="right" class="w-full overflow-y-auto sm:max-w-3xl">
-        <SheetProHeader>
-          <SheetProTitle>排程方案明细</SheetProTitle>
-          <SheetProDescription>
+    <NvSheet v-model:open="detailOpen">
+      <NvSheetContent side="right" class="w-full overflow-y-auto sm:max-w-3xl">
+        <NvSheetHeader>
+          <NvSheetTitle>排程方案明细</NvSheetTitle>
+          <NvSheetDescription>
             {{ detailSelection.planId || '未选择方案' }}
-          </SheetProDescription>
-        </SheetProHeader>
+          </NvSheetDescription>
+        </NvSheetHeader>
 
-        <div v-if="planDetailPending" class="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
+        <div
+          v-if="planDetailPending"
+          class="mt-6 flex items-center gap-2 text-sm text-muted-foreground"
+        >
           <Spinner aria-hidden="true" />
           正在读取方案明细
         </div>
@@ -290,7 +316,10 @@ function reasonLabel(reason?: string | null) {
                 <h3 class="text-sm font-semibold text-foreground">计划概览</h3>
                 <p class="mt-1 text-sm text-muted-foreground">{{ selectedPlanRange }}</p>
               </div>
-              <StatusBadgePro :label="statusLabel(planDetail.status)" :tone="statusTone(planDetail.status)" />
+              <NvStatusBadge
+                :label="statusLabel(planDetail.status)"
+                :tone="statusTone(planDetail.status)"
+              />
             </div>
             <div class="grid gap-3 sm:grid-cols-4">
               <div>
@@ -299,15 +328,29 @@ function reasonLabel(reason?: string | null) {
               </div>
               <div>
                 <p class="text-xs text-muted-foreground">已排工序</p>
-                <p class="text-sm font-medium text-foreground">{{ planDetail.metrics?.scheduledOperationCount ?? planDetail.assignments?.length ?? 0 }}</p>
+                <p class="text-sm font-medium text-foreground">
+                  {{
+                    planDetail.metrics?.scheduledOperationCount ??
+                    planDetail.assignments?.length ??
+                    0
+                  }}
+                </p>
               </div>
               <div>
                 <p class="text-xs text-muted-foreground">未排工序</p>
-                <p class="text-sm font-medium text-foreground">{{ planDetail.metrics?.unscheduledOperationCount ?? planDetail.unscheduledOperations?.length ?? 0 }}</p>
+                <p class="text-sm font-medium text-foreground">
+                  {{
+                    planDetail.metrics?.unscheduledOperationCount ??
+                    planDetail.unscheduledOperations?.length ??
+                    0
+                  }}
+                </p>
               </div>
               <div>
                 <p class="text-xs text-muted-foreground">负荷分钟</p>
-                <p class="text-sm font-medium text-foreground">{{ planDetail.metrics?.assignedMinutes ?? 0 }}</p>
+                <p class="text-sm font-medium text-foreground">
+                  {{ planDetail.metrics?.assignedMinutes ?? 0 }}
+                </p>
               </div>
             </div>
           </section>
@@ -322,11 +365,14 @@ function reasonLabel(reason?: string | null) {
               >
                 <p class="text-sm font-medium text-foreground">{{ assignmentText(assignment) }}</p>
                 <p class="mt-1 text-sm text-muted-foreground">
-                  {{ formatDateTime(assignment.startUtc) }} 至 {{ formatDateTime(assignment.endUtc) }}
+                  {{ formatDateTime(assignment.startUtc) }} 至
+                  {{ formatDateTime(assignment.endUtc) }}
                 </p>
               </div>
             </div>
-            <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">暂无资源分配。</p>
+            <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+              暂无资源分配。
+            </p>
           </section>
 
           <section class="grid gap-3">
@@ -337,16 +383,23 @@ function reasonLabel(reason?: string | null) {
                 :key="load.resourceId ?? load.windowStartUtc"
                 class="rounded-md border bg-background p-3"
               >
-                <p class="text-sm font-medium text-foreground">{{ load.resourceId ?? '未命名资源' }}</p>
+                <p class="text-sm font-medium text-foreground">
+                  {{ load.resourceId ?? '未命名资源' }}
+                </p>
                 <p class="mt-1 text-sm text-muted-foreground">{{ loadText(load) }}</p>
               </div>
             </div>
-            <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">暂无资源负荷。</p>
+            <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+              暂无资源负荷。
+            </p>
           </section>
 
           <section class="grid gap-3">
             <h3 class="text-sm font-semibold text-foreground">冲突与不可排原因</h3>
-            <div v-if="planDetail.conflicts?.length || planDetail.unscheduledOperations?.length" class="grid gap-2">
+            <div
+              v-if="planDetail.conflicts?.length || planDetail.unscheduledOperations?.length"
+              class="grid gap-2"
+            >
               <p
                 v-for="conflict in planDetail.conflicts ?? []"
                 :key="conflict.conflictId ?? conflictText(conflict)"
@@ -362,14 +415,20 @@ function reasonLabel(reason?: string | null) {
                 {{ unscheduledText(item) }}
               </p>
             </div>
-            <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">未返回冲突或不可排原因。</p>
+            <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+              未返回冲突或不可排原因。
+            </p>
           </section>
         </div>
 
-        <div v-else class="mt-6 rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground" role="status">
+        <div
+          v-else
+          class="mt-6 rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground"
+          role="status"
+        >
           {{ detailFeedback }}
         </div>
-      </SheetProContent>
-    </SheetPro>
+      </NvSheetContent>
+    </NvSheet>
   </BusinessLayout>
 </template>

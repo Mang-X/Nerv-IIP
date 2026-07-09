@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useWmsPicking } from '@/composables/useBusinessWms'
 import { warehouseTaskStatusLabel } from '@nerv-iip/business-core'
-import { AppShellMobile, ListRow, ScanBar } from '@nerv-iip/ui-mobile'
+import { NvAppShellMobile, NvListRow, NvScanBar } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 
 definePage({
@@ -51,7 +51,7 @@ function rowSubtitle(task: {
 </script>
 
 <template>
-  <AppShellMobile>
+  <NvAppShellMobile>
     <template #header>
       <div class="px-4 py-3">
         <h1 class="text-lg font-semibold text-foreground">拣货</h1>
@@ -59,12 +59,12 @@ function rowSubtitle(task: {
     </template>
 
     <div class="space-y-4 p-4">
-      <ScanBar
-        placeholder="扫描库位"
-        @scan="onScan"
-      />
+      <NvScanBar placeholder="扫描库位" @scan="onScan" />
 
-      <div v-if="hasFilter" class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2 text-sm">
+      <div
+        v-if="hasFilter"
+        class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2 text-sm"
+      >
         <span class="truncate text-muted-foreground">库位 {{ filters.locationCode }}</span>
         <button
           type="button"
@@ -76,9 +76,7 @@ function rowSubtitle(task: {
         </button>
       </div>
 
-      <p class="text-xs text-muted-foreground">
-        拣货完成经复核发货过账
-      </p>
+      <p class="text-xs text-muted-foreground">拣货完成经复核发货过账</p>
 
       <p
         v-if="error"
@@ -96,7 +94,7 @@ function rowSubtitle(task: {
       </div>
 
       <div v-else-if="tasks.length > 0" class="overflow-hidden rounded-lg border border-border">
-        <ListRow
+        <NvListRow
           v-for="task in tasks"
           :key="task.warehouseTaskId"
           :interactive="false"
@@ -105,5 +103,5 @@ function rowSubtitle(task: {
         />
       </div>
     </div>
-  </AppShellMobile>
+  </NvAppShellMobile>
 </template>

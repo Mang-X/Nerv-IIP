@@ -3,42 +3,48 @@ import type {
   BusinessConsoleEngineeringDocumentItem,
   BusinessConsoleRegisterEngineeringDocumentRequest,
 } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useEngineeringDocuments } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DialogProTrigger,
-  FieldPro,
-  FieldProDescription,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SectionCard,
-  SectionCards,
-  SheetPro,
-  SheetProContent,
-  SheetProDescription,
-  SheetProHeader,
-  SheetProTitle,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDialogTrigger,
+  NvField,
+  NvFieldDescription,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSectionCard,
+  NvSectionCards,
+  NvSheet,
+  NvSheetContent,
+  NvSheetDescription,
+  NvSheetHeader,
+  NvSheetTitle,
   Spinner,
-  Toolbar,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { FileTextIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '工程文档', requiredPermissions: ['business.engineering.documents.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '工程文档',
+    requiredPermissions: ['business.engineering.documents.read'],
+  },
+})
 
 const {
   documents,
@@ -54,28 +60,38 @@ const {
 
 const documentTypeSearch = computed({
   get: () => filters.documentType ?? '',
-  set: (value: string) => { filters.documentType = value.trim() ? value : undefined },
+  set: (value: string) => {
+    filters.documentType = value.trim() ? value : undefined
+  },
 })
 
 const itemSearch = computed({
   get: () => filters.itemCode ?? '',
-  set: (value: string) => { filters.itemCode = value.trim() ? value : undefined },
+  set: (value: string) => {
+    filters.itemCode = value.trim() ? value : undefined
+  },
 })
 
 const page = ref(1)
 const pageSize = ref('10')
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * pageSizeNumber.value
-  filters.take = pageSizeNumber.value
-}, { immediate: true })
+watch(
+  [page, pageSize],
+  () => {
+    filters.skip = (page.value - 1) * pageSizeNumber.value
+    filters.take = pageSizeNumber.value
+  },
+  { immediate: true },
+)
 
-const docTypeCount = computed(() => new Set(documents.value.map((d) => d.documentType).filter(Boolean)).size)
+const docTypeCount = computed(
+  () => new Set(documents.value.map((d) => d.documentType).filter(Boolean)).size,
+)
 const linkedCount = computed(() => documents.value.filter((d) => d.itemCode).length)
 
 const listErrorMessage = computed(() => formatError(documentsError.value))
 
-const columns: DataTableProColumn<BusinessConsoleEngineeringDocumentItem>[] = [
+const columns: NvDataTableColumn<BusinessConsoleEngineeringDocumentItem>[] = [
   { key: 'documentNumber', header: '文档号', cellClass: 'font-medium' },
   { key: 'revision', header: '修订', width: 'w-20' },
   { key: 'documentType', header: '类型', width: 'w-28' },
@@ -118,13 +134,14 @@ const documentTypeValid = computed(() => form.documentType.trim().length > 0)
 const fileIdValid = computed(() => form.fileId.trim().length > 0)
 const fileNameValid = computed(() => form.fileName.trim().length > 0)
 const contentTypeValid = computed(() => form.contentType.trim().length > 0)
-const canSubmit = computed(() =>
-  documentNumberValid.value
-  && revisionValid.value
-  && documentTypeValid.value
-  && fileIdValid.value
-  && fileNameValid.value
-  && contentTypeValid.value,
+const canSubmit = computed(
+  () =>
+    documentNumberValid.value &&
+    revisionValid.value &&
+    documentTypeValid.value &&
+    fileIdValid.value &&
+    fileNameValid.value &&
+    contentTypeValid.value,
 )
 
 function openCreate() {
@@ -154,8 +171,7 @@ async function submitForm() {
     notifySuccess(`已登记文档「${form.documentNumber.trim()}」修订 ${form.revision.trim()}。`)
     showErrors.value = false
     formOpen.value = false
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -174,11 +190,9 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
   try {
     const detail = await fetchDocumentDetail(row.documentNumber, row.revision)
     if (detail) viewTarget.value = detail
-  }
-  catch (error) {
+  } catch (error) {
     detailError.value = formatError(error) || '加载文档明细失败，请稍后重试。'
-  }
-  finally {
+  } finally {
     detailPending.value = false
   }
 }
@@ -190,104 +204,153 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader
+    <NvPageHeader
       title="工程文档"
       :breadcrumbs="[{ label: '产品工程' }]"
       :count="`${documentsTotal} 个文档`"
     >
       <template #actions>
-        <ButtonPro size="sm" variant="outline" type="button" :disabled="documentsPending" @click="refresh">
+        <NvButton
+          size="sm"
+          variant="outline"
+          type="button"
+          :disabled="documentsPending"
+          @click="refresh"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <DialogPro v-model:open="formOpen">
-          <DialogProTrigger as-child>
-            <ButtonPro size="sm" type="button" @click="openCreate">
+        </NvButton>
+        <NvDialog v-model:open="formOpen">
+          <NvDialogTrigger as-child>
+            <NvButton size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               登记文档
-            </ButtonPro>
-          </DialogProTrigger>
-          <DialogProContent class="sm:max-w-xl">
-            <DialogProHeader>
-              <DialogProTitle>登记工程文档</DialogProTitle>
-              <DialogProDescription>
+            </NvButton>
+          </NvDialogTrigger>
+          <NvDialogContent class="sm:max-w-xl">
+            <NvDialogHeader>
+              <NvDialogTitle>登记工程文档</NvDialogTitle>
+              <NvDialogDescription>
                 按文档号 + 修订登记一份工程文档及其文件引用。带 * 为必填项。
-              </DialogProDescription>
-            </DialogProHeader>
+              </NvDialogDescription>
+            </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请完整填写带 * 的必填项。
               </p>
 
               <FormSectionTitle>文档标识</FormSectionTitle>
-              <FieldProGroup class="grid gap-3 sm:grid-cols-3">
-                <FieldPro :data-invalid="showErrors && !documentNumberValid">
-                  <FieldProLabel for="doc-number">文档号 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="doc-number" v-model="form.documentNumber" placeholder="如 DOC-0001" />
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !revisionValid">
-                  <FieldProLabel for="doc-rev">修订号 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="doc-rev" v-model="form.revision" placeholder="如 A、B" />
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !documentTypeValid">
-                  <FieldProLabel for="doc-type">文档类型 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="doc-type" v-model="form.documentType" placeholder="如 图纸、规格书" />
-                </FieldPro>
-              </FieldProGroup>
+              <NvFieldGroup class="grid gap-3 sm:grid-cols-3">
+                <NvField :data-invalid="showErrors && !documentNumberValid">
+                  <NvFieldLabel for="doc-number"
+                    >文档号 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="doc-number"
+                    v-model="form.documentNumber"
+                    placeholder="如 DOC-0001"
+                  />
+                </NvField>
+                <NvField :data-invalid="showErrors && !revisionValid">
+                  <NvFieldLabel for="doc-rev"
+                    >修订号 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput id="doc-rev" v-model="form.revision" placeholder="如 A、B" />
+                </NvField>
+                <NvField :data-invalid="showErrors && !documentTypeValid">
+                  <NvFieldLabel for="doc-type"
+                    >文档类型 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="doc-type"
+                    v-model="form.documentType"
+                    placeholder="如 图纸、规格书"
+                  />
+                </NvField>
+              </NvFieldGroup>
 
               <FormSectionTitle>文件引用</FormSectionTitle>
-              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-                <FieldPro class="sm:col-span-2" :data-invalid="showErrors && !fileIdValid">
-                  <FieldProLabel for="doc-file-id">文件引用 ID <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="doc-file-id" v-model="form.fileId" placeholder="填写文件存储引用 ID" />
-                  <FieldProDescription>
+              <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+                <NvField class="sm:col-span-2" :data-invalid="showErrors && !fileIdValid">
+                  <NvFieldLabel for="doc-file-id"
+                    >文件引用 ID <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="doc-file-id"
+                    v-model="form.fileId"
+                    placeholder="填写文件存储引用 ID"
+                  />
+                  <NvFieldDescription>
                     文件上传待接入，先填已存在的文件引用 ID（不在此页直接上传文件）。
-                  </FieldProDescription>
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !fileNameValid">
-                  <FieldProLabel for="doc-file-name">文件名 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="doc-file-name" v-model="form.fileName" placeholder="如 drawing.pdf" />
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !contentTypeValid">
-                  <FieldProLabel for="doc-content-type">内容类型 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="doc-content-type" v-model="form.contentType" placeholder="如 application/pdf" />
-                </FieldPro>
-              </FieldProGroup>
+                  </NvFieldDescription>
+                </NvField>
+                <NvField :data-invalid="showErrors && !fileNameValid">
+                  <NvFieldLabel for="doc-file-name"
+                    >文件名 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="doc-file-name"
+                    v-model="form.fileName"
+                    placeholder="如 drawing.pdf"
+                  />
+                </NvField>
+                <NvField :data-invalid="showErrors && !contentTypeValid">
+                  <NvFieldLabel for="doc-content-type"
+                    >内容类型 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="doc-content-type"
+                    v-model="form.contentType"
+                    placeholder="如 application/pdf"
+                  />
+                </NvField>
+              </NvFieldGroup>
 
               <FormSectionTitle>关联（可选）</FormSectionTitle>
-              <FieldPro>
-                <FieldProLabel for="doc-item-code">关联物料编码</FieldProLabel>
-                <InputPro id="doc-item-code" v-model="form.itemCode" placeholder="可留空" />
-                <FieldProDescription>如该文档对应某工程物料，填其编码以便追溯。</FieldProDescription>
-              </FieldPro>
+              <NvField>
+                <NvFieldLabel for="doc-item-code">关联物料编码</NvFieldLabel>
+                <NvInput id="doc-item-code" v-model="form.itemCode" placeholder="可留空" />
+                <NvFieldDescription>如该文档对应某工程物料，填其编码以便追溯。</NvFieldDescription>
+              </NvField>
 
-              <DialogProFooter>
-                <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
-                <ButtonPro type="submit" :disabled="registerPending">
+              <NvDialogFooter>
+                <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
+                <NvButton type="submit" :disabled="registerPending">
                   <Spinner v-if="registerPending" aria-hidden="true" />
                   登记文档
-                </ButtonPro>
-              </DialogProFooter>
+                </NvButton>
+              </NvDialogFooter>
             </form>
-          </DialogProContent>
-        </DialogPro>
+          </NvDialogContent>
+        </NvDialog>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <SectionCards :columns="2">
-      <SectionCard description="文档类型数" :value="docTypeCount" hint="当前范围内不同的文档类型" />
-      <SectionCard description="已关联物料" :value="linkedCount" hint="挂接到工程物料的文档" />
-    </SectionCards>
+    <NvSectionCards :columns="2">
+      <NvSectionCard
+        description="文档类型数"
+        :value="docTypeCount"
+        hint="当前范围内不同的文档类型"
+      />
+      <NvSectionCard description="已关联物料" :value="linkedCount" hint="挂接到工程物料的文档" />
+    </NvSectionCards>
 
-    <Toolbar v-model:search="itemSearch" search-placeholder="按关联物料编码筛选">
+    <NvToolbar v-model:search="itemSearch" search-placeholder="按关联物料编码筛选">
       <template #filters>
-        <InputPro v-model="documentTypeSearch" class="h-9 w-40" placeholder="按文档类型筛选" aria-label="文档类型筛选" />
+        <NvInput
+          v-model="documentTypeSearch"
+          class="h-9 w-40"
+          placeholder="按文档类型筛选"
+          aria-label="文档类型筛选"
+        />
       </template>
-    </Toolbar>
+    </NvToolbar>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
+      {{ listErrorMessage }}
+    </p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -306,26 +369,32 @@ function formatError(error: unknown) {
       <template #cell-registeredAtUtc="{ row }">{{ formatDateTime(row.registeredAtUtc) }}</template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end">
-          <ButtonPro type="button" variant="ghost" size="sm" @click="openView(row)">查看</ButtonPro>
+          <NvButton type="button" variant="ghost" size="sm" @click="openView(row)">查看</NvButton>
         </div>
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
-
-    <SheetPro v-model:open="viewOpen">
-      <SheetProContent class="sm:max-w-md">
-        <SheetProHeader>
-          <SheetProTitle>工程文档 · 明细</SheetProTitle>
-          <SheetProDescription>
+    <NvSheet v-model:open="viewOpen">
+      <NvSheetContent class="sm:max-w-md">
+        <NvSheetHeader>
+          <NvSheetTitle>工程文档 · 明细</NvSheetTitle>
+          <NvSheetDescription>
             {{ viewTarget ? `${viewTarget.documentNumber} · 修订 ${viewTarget.revision}` : '' }}
-          </SheetProDescription>
-        </SheetProHeader>
+          </NvSheetDescription>
+        </NvSheetHeader>
         <div v-if="viewTarget" class="grid gap-3 px-4 py-2">
-          <div v-if="detailPending" class="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+          <div
+            v-if="detailPending"
+            class="flex items-center gap-2 py-4 text-sm text-muted-foreground"
+          >
             <Spinner aria-hidden="true" />
             加载文档明细…
           </div>
-          <p v-else-if="detailError" class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+          <p
+            v-else-if="detailError"
+            class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+            role="alert"
+          >
             {{ detailError }}
           </p>
           <div v-else class="grid gap-2 text-sm">
@@ -359,7 +428,7 @@ function formatError(error: unknown) {
             </p>
           </div>
         </div>
-      </SheetProContent>
-    </SheetPro>
+      </NvSheetContent>
+    </NvSheet>
   </BusinessLayout>
 </template>

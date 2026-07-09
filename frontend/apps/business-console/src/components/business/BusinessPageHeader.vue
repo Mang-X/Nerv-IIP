@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BadgePro } from '@nerv-iip/ui'
+import { NvBadge } from '@nerv-iip/ui'
 
 withDefaults(
   defineProps<{
@@ -19,7 +19,9 @@ withDefaults(
 </script>
 
 <template>
-  <div class="flex min-w-0 flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
+  <div
+    class="flex min-w-0 flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between"
+  >
     <div class="min-w-0">
       <div class="flex flex-wrap items-center gap-2">
         <p class="max-w-full truncate text-xs font-bold uppercase text-primary">{{ domain }}</p>
@@ -41,7 +43,7 @@ withDefaults(
       </p>
     </div>
     <div class="flex shrink-0 flex-wrap items-center justify-start gap-2 sm:justify-end">
-      <BadgePro class="max-w-40 truncate rounded-sm" variant="neutral">{{ badge }}</BadgePro>
+      <NvBadge class="max-w-40 truncate rounded-sm" variant="neutral">{{ badge }}</NvBadge>
       <slot name="actions" />
     </div>
   </div>

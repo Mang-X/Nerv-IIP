@@ -1,15 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import {
-  BUSINESS_DOMAINS,
-  DOMAIN_SIDE_NAV,
-  permittedBy,
-} from '@/navigation'
+import { BUSINESS_DOMAINS, DOMAIN_SIDE_NAV, permittedBy } from '@/navigation'
 import { BUSINESS_DOMAIN_PERMISSIONS } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessWorkbenchSummary } from '@/composables/useBusinessWorkbench'
-import { BadgePro } from '@nerv-iip/ui'
+import { NvBadge } from '@nerv-iip/ui'
 import type { SideNav } from '@nerv-iip/app-shell'
 import type {
   BusinessConsoleWorkbenchAlertItem,
@@ -67,7 +63,7 @@ const visibleShortcutGroups = computed<ShortcutGroup[]>(() => {
 function permittedShortcutItems(groups: SideNav, codes: string[] | undefined) {
   return groups.flatMap((group) =>
     permittedBy(group.items, codes).map((item) => ({
-      path: typeof item.to === 'string' ? item.to : item.to.path ?? '/',
+      path: typeof item.to === 'string' ? item.to : (item.to.path ?? '/'),
       title: item.title,
     })),
   )
@@ -215,10 +211,11 @@ function formatDateTime(value: string) {
           <p class="text-xs font-bold uppercase text-primary">业务控制台</p>
           <h1 class="text-xl font-semibold text-foreground">业务工作台</h1>
           <p class="mt-1 max-w-3xl text-sm text-muted-foreground">
-            面向计划、车间、质量、库存和设备角色的 PC 入口；按当前权限汇总待办、消息、预警和可进入页面。
+            面向计划、车间、质量、库存和设备角色的 PC
+            入口；按当前权限汇总待办、消息、预警和可进入页面。
           </p>
         </div>
-        <BadgePro variant="neutral">PC 工作台</BadgePro>
+        <NvBadge variant="neutral">PC 工作台</NvBadge>
       </div>
 
       <section v-if="summaryPending" class="rounded-lg border bg-background p-3">
@@ -235,9 +232,14 @@ function formatDateTime(value: string) {
           <p class="mt-2 text-2xl font-semibold text-foreground">{{ kpi.value ?? 0 }}</p>
           <p class="mt-1 text-sm font-medium text-foreground">{{ kpiLabel(kpi) }}</p>
         </div>
-        <div v-if="!summaryPending && availableKpis.length === 0" class="rounded-lg border bg-background p-4 md:col-span-2 xl:col-span-4">
+        <div
+          v-if="!summaryPending && availableKpis.length === 0"
+          class="rounded-lg border bg-background p-4 md:col-span-2 xl:col-span-4"
+        >
           <p class="text-sm font-medium text-foreground">暂无可显示指标</p>
-          <p class="mt-1 text-sm text-muted-foreground">当前角色没有可汇总的跨域指标，或来源暂不可用。</p>
+          <p class="mt-1 text-sm text-muted-foreground">
+            当前角色没有可汇总的跨域指标，或来源暂不可用。
+          </p>
         </div>
       </section>
 
@@ -247,16 +249,25 @@ function formatDateTime(value: string) {
             <div class="border-b px-4 py-3">
               <div class="flex items-center justify-between gap-3">
                 <h2 class="text-sm font-semibold text-foreground">待办</h2>
-                <BadgePro variant="neutral">待办 {{ summary?.todos?.total ?? 0 }}</BadgePro>
+                <NvBadge variant="neutral">待办 {{ summary?.todos?.total ?? 0 }}</NvBadge>
               </div>
               <p class="mt-1 text-sm text-muted-foreground">审批和通知任务按当前用户过滤。</p>
             </div>
             <div class="divide-y">
-              <div v-for="item in todoItems" :key="`${item.source}-${item.itemId}`" class="px-4 py-3">
+              <div
+                v-for="item in todoItems"
+                :key="`${item.source}-${item.itemId}`"
+                class="px-4 py-3"
+              >
                 <p class="text-sm font-medium text-foreground">{{ todoLabel(item) }}</p>
                 <p class="mt-0.5 text-sm text-muted-foreground">{{ todoMeta(item) }}</p>
               </div>
-              <div v-if="!summaryPending && todoItems.length === 0" class="px-4 py-6 text-sm text-muted-foreground">暂无待处理事项</div>
+              <div
+                v-if="!summaryPending && todoItems.length === 0"
+                class="px-4 py-6 text-sm text-muted-foreground"
+              >
+                暂无待处理事项
+              </div>
             </div>
           </article>
 
@@ -264,7 +275,7 @@ function formatDateTime(value: string) {
             <div class="border-b px-4 py-3">
               <div class="flex items-center justify-between gap-3">
                 <h2 class="text-sm font-semibold text-foreground">消息</h2>
-                <BadgePro variant="neutral">消息 {{ summary?.messages?.total ?? 0 }}</BadgePro>
+                <NvBadge variant="neutral">消息 {{ summary?.messages?.total ?? 0 }}</NvBadge>
               </div>
               <p class="mt-1 text-sm text-muted-foreground">只展示消息状态，不展开消息标题。</p>
             </div>
@@ -273,7 +284,12 @@ function formatDateTime(value: string) {
                 <p class="text-sm font-medium text-foreground">{{ messageLabel(item) }}</p>
                 <p class="mt-0.5 text-sm text-muted-foreground">{{ messageMeta(item) }}</p>
               </div>
-              <div v-if="!summaryPending && messageItems.length === 0" class="px-4 py-6 text-sm text-muted-foreground">暂无未读消息</div>
+              <div
+                v-if="!summaryPending && messageItems.length === 0"
+                class="px-4 py-6 text-sm text-muted-foreground"
+              >
+                暂无未读消息
+              </div>
             </div>
           </article>
 
@@ -281,7 +297,7 @@ function formatDateTime(value: string) {
             <div class="border-b px-4 py-3">
               <div class="flex items-center justify-between gap-3">
                 <h2 class="text-sm font-semibold text-foreground">设备预警</h2>
-                <BadgePro variant="neutral">设备预警 {{ summary?.alerts?.total ?? 0 }}</BadgePro>
+                <NvBadge variant="neutral">设备预警 {{ summary?.alerts?.total ?? 0 }}</NvBadge>
               </div>
               <p class="mt-1 text-sm text-muted-foreground">来自设备运行事实的当前报警。</p>
             </div>
@@ -292,10 +308,19 @@ function formatDateTime(value: string) {
                 class="block px-4 py-3 transition-colors hover:bg-accent"
                 to="/equipment/alarms"
               >
-                <span class="block text-sm font-medium text-foreground">{{ alertLabel(item) }}</span>
-                <span class="mt-0.5 block text-sm text-muted-foreground">{{ alertMeta(item) }}</span>
+                <span class="block text-sm font-medium text-foreground">{{
+                  alertLabel(item)
+                }}</span>
+                <span class="mt-0.5 block text-sm text-muted-foreground">{{
+                  alertMeta(item)
+                }}</span>
               </RouterLink>
-              <div v-if="!summaryPending && alertItems.length === 0" class="px-4 py-6 text-sm text-muted-foreground">暂无当前预警</div>
+              <div
+                v-if="!summaryPending && alertItems.length === 0"
+                class="px-4 py-6 text-sm text-muted-foreground"
+              >
+                暂无当前预警
+              </div>
             </div>
           </article>
         </section>
@@ -313,9 +338,14 @@ function formatDateTime(value: string) {
               :data-source="source.source || source.label"
             >
               <span class="text-sm font-medium text-foreground">{{ source.label }}</span>
-              <BadgePro :variant="source.variant">{{ source.statusLabel }}</BadgePro>
+              <NvBadge :variant="source.variant">{{ source.statusLabel }}</NvBadge>
             </div>
-            <div v-if="!summaryPending && sourceStatusList.length === 0" class="px-1 py-3 text-sm text-muted-foreground">正在等待来源状态。</div>
+            <div
+              v-if="!summaryPending && sourceStatusList.length === 0"
+              class="px-1 py-3 text-sm text-muted-foreground"
+            >
+              正在等待来源状态。
+            </div>
           </div>
         </section>
       </div>
@@ -326,7 +356,11 @@ function formatDateTime(value: string) {
           <p class="mt-1 text-sm text-muted-foreground">仅展示当前角色可进入的页面。</p>
         </div>
         <div class="grid gap-3 p-3 lg:grid-cols-3">
-          <div v-for="group in visibleShortcutGroups" :key="group.title" class="grid gap-2 rounded-md border p-3">
+          <div
+            v-for="group in visibleShortcutGroups"
+            :key="group.title"
+            class="grid gap-2 rounded-md border p-3"
+          >
             <h3 class="text-sm font-semibold text-foreground">{{ group.title }}</h3>
             <RouterLink
               v-for="item in group.items"
@@ -337,7 +371,10 @@ function formatDateTime(value: string) {
               {{ item.title }}
             </RouterLink>
           </div>
-          <div v-if="visibleShortcutGroups.length === 0" class="rounded-md border p-3 text-sm text-muted-foreground lg:col-span-3">
+          <div
+            v-if="visibleShortcutGroups.length === 0"
+            class="rounded-md border p-3 text-sm text-muted-foreground lg:col-span-3"
+          >
             当前角色没有可进入页面。
           </div>
         </div>

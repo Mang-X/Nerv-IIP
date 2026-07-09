@@ -1,18 +1,20 @@
 <script setup lang="ts">
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { useMesProductionReports } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import {
-  ButtonPro,
-  DataTablePro,
-  PageHeader,
-} from '@nerv-iip/ui'
+import { NvButton, NvDataTable, NvPageHeader } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '报工记录', requiredPermissions: ['business.mes.reporting.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '报工记录',
+    requiredPermissions: ['business.mes.reporting.read'],
+  },
+})
 
 const {
   filters,
@@ -29,11 +31,20 @@ const quickViewWorkOrderId = ref<string | null>(null)
 const errorMessage = computed(() => formatError(productionReportsError.value))
 
 type ReportRow = (typeof productionReports)['value'][number]
-const columns: DataTableProColumn<ReportRow>[] = [
-  { key: 'reportNo', header: '报工单', cellClass: 'font-medium', accessor: (r) => r.reportNo ?? r.productionReportId ?? '无' },
+const columns: NvDataTableColumn<ReportRow>[] = [
+  {
+    key: 'reportNo',
+    header: '报工单',
+    cellClass: 'font-medium',
+    accessor: (r) => r.reportNo ?? r.productionReportId ?? '无',
+  },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'output', header: '产量', accessor: (r) => r.goodQuantity ?? 0 },
-  { key: 'operationTaskId', header: '工序任务', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无' },
+  {
+    key: 'operationTaskId',
+    header: '工序任务',
+    accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无',
+  },
   { key: 'reportedAtUtc', header: '报工时间', width: 'w-44' },
 ]
 
@@ -55,18 +66,28 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="报工记录" :breadcrumbs="[{ label: '制造执行' }]" :count="`${productionReportsTotal} 条报工`">
+    <NvPageHeader
+      title="报工记录"
+      :breadcrumbs="[{ label: '制造执行' }]"
+      :count="`${productionReportsTotal} 条报工`"
+    >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="productionReportsPending" @click="refreshProductionReports">
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="productionReportsPending"
+          @click="refreshProductionReports"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -105,8 +126,7 @@ function formatError(error: unknown) {
         </div>
       </template>
       <template #cell-reportedAtUtc="{ row }">{{ formatDateTime(row.reportedAtUtc) }}</template>
-    </DataTablePro>
-
+    </NvDataTable>
 
     <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>
