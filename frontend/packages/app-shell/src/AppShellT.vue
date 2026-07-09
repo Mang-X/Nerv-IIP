@@ -1,22 +1,22 @@
 <script setup lang="ts">
 import type { NavDomain, ShellUser, SideNav } from './types'
 import {
-  AppShellInset,
+  NvAppShellInset,
   Avatar,
   AvatarFallback,
-  ButtonPro,
-  DropdownMenuPro,
-  DropdownMenuProContent,
-  DropdownMenuProItem,
-  DropdownMenuProLabel,
-  DropdownMenuProSeparator,
-  DropdownMenuProTrigger,
+  NvButton,
+  NvDropdownMenu,
+  NvDropdownMenuContent,
+  NvDropdownMenuItem,
+  NvDropdownMenuLabel,
+  NvDropdownMenuSeparator,
+  NvDropdownMenuTrigger,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarProBrand,
+  NvSidebarBrand,
   cn,
 } from '@nerv-iip/ui'
 import { ClockIcon, LogOutIcon, SearchIcon, StarIcon } from 'lucide-vue-next'
@@ -48,11 +48,11 @@ const props = withDefaults(
   },
 )
 
-const emit = defineEmits<{ signOut: [], openSearch: [] }>()
+const emit = defineEmits<{ signOut: []; openSearch: [] }>()
 
 const initials = computed(() => (props.user?.name ?? '').slice(0, 2).toUpperCase() || 'NN')
 const sideGroups = computed<SideNav>(() => props.sideNav ?? [])
-const pinned = computed<{ label: string, icon: typeof StarIcon, items: NavLink[] }[]>(() =>
+const pinned = computed<{ label: string; icon: typeof StarIcon; items: NavLink[] }[]>(() =>
   [
     { label: '星标', icon: StarIcon, items: props.starred ?? [] },
     { label: '最近访问', icon: ClockIcon, items: props.recent ?? [] },
@@ -70,9 +70,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <AppShellInset>
+  <NvAppShellInset>
     <template #sidebar-header>
-      <SidebarProBrand :as="RouterLink" :to="{ path: '/' }" :name="title" logo="N" :caret="false" />
+      <NvSidebarBrand :as="RouterLink" :to="{ path: '/' }" :name="title" logo="N" :caret="false" />
     </template>
 
     <template #sidebar>
@@ -101,7 +101,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       />
 
       <div class="ml-2 flex shrink-0 items-center gap-1">
-        <ButtonPro
+        <NvButton
           type="button"
           variant="outline"
           size="sm"
@@ -112,8 +112,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <SearchIcon class="size-4" aria-hidden="true" />
           <span class="max-w-40 truncate">{{ searchLabel }}</span>
           <kbd class="ml-2 rounded border bg-muted px-1 text-[10px] font-medium">⌘K</kbd>
-        </ButtonPro>
-        <ButtonPro
+        </NvButton>
+        <NvButton
           type="button"
           variant="ghost"
           size="icon"
@@ -122,35 +122,43 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           @click="emit('openSearch')"
         >
           <SearchIcon class="size-4" aria-hidden="true" />
-        </ButtonPro>
+        </NvButton>
 
         <slot name="header-actions" />
 
-        <DropdownMenuPro v-if="user">
-          <DropdownMenuProTrigger as-child>
-            <ButtonPro type="button" variant="ghost" size="icon" class="rounded-full" aria-label="用户菜单">
+        <NvDropdownMenu v-if="user">
+          <NvDropdownMenuTrigger as-child>
+            <NvButton
+              type="button"
+              variant="ghost"
+              size="icon"
+              class="rounded-full"
+              aria-label="用户菜单"
+            >
               <Avatar class="size-7">
                 <AvatarFallback class="text-xs">{{ initials }}</AvatarFallback>
               </Avatar>
-            </ButtonPro>
-          </DropdownMenuProTrigger>
-          <DropdownMenuProContent align="end" class="w-56">
-            <DropdownMenuProLabel class="font-normal">
+            </NvButton>
+          </NvDropdownMenuTrigger>
+          <NvDropdownMenuContent align="end" class="w-56">
+            <NvDropdownMenuLabel class="font-normal">
               <div class="grid gap-0.5">
                 <span class="truncate text-sm font-semibold">{{ user.name }}</span>
-                <span v-if="user.email" class="truncate text-xs text-muted-foreground">{{ user.email }}</span>
+                <span v-if="user.email" class="truncate text-xs text-muted-foreground">{{
+                  user.email
+                }}</span>
               </div>
-            </DropdownMenuProLabel>
-            <DropdownMenuProSeparator />
-            <DropdownMenuProItem @select="emit('signOut')">
+            </NvDropdownMenuLabel>
+            <NvDropdownMenuSeparator />
+            <NvDropdownMenuItem @select="emit('signOut')">
               <LogOutIcon class="size-4" aria-hidden="true" />
               {{ signOutLabel }}
-            </DropdownMenuProItem>
-          </DropdownMenuProContent>
-        </DropdownMenuPro>
+            </NvDropdownMenuItem>
+          </NvDropdownMenuContent>
+        </NvDropdownMenu>
       </div>
     </template>
 
     <slot />
-  </AppShellInset>
+  </NvAppShellInset>
 </template>

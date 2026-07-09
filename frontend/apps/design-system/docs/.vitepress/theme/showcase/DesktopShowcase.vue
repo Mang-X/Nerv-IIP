@@ -2,7 +2,7 @@
 import type {
   CommandGroup,
   CommandItem,
-  DataTableProColumn,
+  NvDataTableColumn,
   DescriptionItem,
   TimelineItem,
 } from '@nerv-iip/ui'
@@ -424,7 +424,7 @@ const tableAll: WoRow[] = Array.from({ length: 48 }, (_, i) => ({
   qty: WO_QTYS[(i * 5) % WO_QTYS.length],
   status: WO_STATUS[(i * 2) % WO_STATUS.length],
 }))
-const tableColumns: DataTableProColumn<WoRow>[] = [
+const tableColumns: NvDataTableColumn<WoRow>[] = [
   {
     key: 'code',
     header: '工单号',

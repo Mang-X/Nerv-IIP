@@ -128,17 +128,17 @@ describe('NvUI mobile Appendix A6 full-mapping freeze (@nerv-iip/ui-mobile / #78
     expect([...liveNv].sort()).toEqual([...NV_ALL].sort())
   })
 
-  it('barrel exposes exactly the frozen @deprecated old-name set (Appendix A6)', () => {
-    expect([...liveOld].sort()).toEqual([...OLD_ALL].sort())
+  it('barrel exposes NO @deprecated old-name aliases (codemod closeout / #789)', () => {
+    expect([...liveOld].sort(), 'all @deprecated mobile aliases removed at closeout').toEqual([])
   })
 
   it('every Nv mobile canonical name actually resolves at runtime', () => {
     for (const n of NV_ALL) expect.soft(exported[n], `${n} should be exported`).toBeDefined()
   })
 
-  it('every old name still resolves for the zero-breakage transition', () => {
+  it('every old name no longer resolves at runtime (closeout — hard error, not warning)', () => {
     for (const n of OLD_ALL)
-      expect.soft(exported[n], `${n} old name must still resolve`).toBeDefined()
+      expect.soft(exported[n], `${n} old name must be gone after closeout`).toBeUndefined()
   })
 
   it('keeps the non-component exports unchanged', () => {
@@ -146,10 +146,12 @@ describe('NvUI mobile Appendix A6 full-mapping freeze (@nerv-iip/ui-mobile / #78
     expect.soft(exported.MOBILE_OVERLAY_TARGET).toBeDefined()
   })
 
-  it('applies the Mobile-root R2/R3 rule in source', () => {
-    expect.soft(barrel).toMatch(/NvMobileBadge[\S\s]*?default as Badge/)
-    expect.soft(barrel).toMatch(/NvMobileDropdownMenu[\S\s]*?default as DropdownMenu/)
-    expect.soft(barrel).toMatch(/NvScanBar[\S\s]*?default as ScanBar/)
-    expect.soft(barrel).toMatch(/NvCell[\S\s]*?default as Cell/)
+  it('removed the @deprecated mobile aliases from source; Nv canonicals stay', () => {
+    expect.soft(barrel, 'Nv canonical stays').toContain('NvMobileBadge')
+    expect.soft(barrel, 'Nv canonical stays').toContain('NvScanBar')
+    expect.soft(barrel, 'no @deprecated alias left').not.toContain('@deprecated')
+    expect.soft(barrel, 'old Badge alias removed').not.toMatch(/default as Badge\b/)
+    expect.soft(barrel, 'old ScanBar alias removed').not.toMatch(/default as ScanBar\b/)
+    expect.soft(barrel, 'old DropdownMenu alias removed').not.toMatch(/default as DropdownMenu\b/)
   })
 })

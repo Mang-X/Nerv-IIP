@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ThemePicker, ThemeToggle } from '@nerv-iip/ui'
+import { NvThemePicker, NvThemeToggle } from '@nerv-iip/ui'
 import { ArrowRightIcon, LayoutDashboardIcon, MonitorIcon, SmartphoneIcon } from 'lucide-vue-next'
 
 definePage({ meta: { title: '总览' } })
@@ -42,8 +42,8 @@ const surfaces = [
       <span class="text-sm font-semibold">Nerv-IIP 设计系统</span>
       <span class="text-xs text-muted-foreground">v2</span>
       <div class="ms-auto flex items-center gap-1.5">
-        <ThemePicker />
-        <ThemeToggle />
+        <NvThemePicker />
+        <NvThemeToggle />
       </div>
     </header>
 

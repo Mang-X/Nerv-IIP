@@ -1,15 +1,14 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import * as ui from './index'
 
-// ADR 0020 (NvUI) Appendix A — the FULL old→new mapping, frozen. `Nv*` is the
-// canonical brand name; the old name (`*Pro` / `Screen*` / bare) is kept only as a
-// @deprecated alias this batch (#787). The arrays below ARE the contract: they are
-// checked bidirectionally against the barrels (any added/removed export fails and
-// must be reflected here), and every runtime name must actually resolve.
+// ADR 0020 (NvUI) Appendix A — the FULL old→new mapping, frozen. `Nv*` is the canonical
+// brand name. The old names (`*Pro` / `Screen*` / bare) were `@deprecated` aliases in
+// #787; the #789 closeout REMOVED every alias, so `NV_ALL` must still resolve while
+// `OLD_ALL` must no longer resolve, and the barrels must expose zero `@deprecated`.
 
 const srcDir = dirname(fileURLToPath(import.meta.url))
 const read = (p: string) => readFileSync(resolve(srcDir, p), 'utf8')
@@ -415,8 +414,8 @@ describe('NvUI Appendix A full-mapping freeze (@nerv-iip/ui / #787)', () => {
     expect([...liveNv].sort()).toEqual([...NV_ALL].sort())
   })
 
-  it('barrels expose exactly the frozen @deprecated old-name set (Appendix A)', () => {
-    expect([...liveOld].sort()).toEqual([...OLD_ALL].sort())
+  it('barrels expose NO @deprecated old-name aliases (codemod closeout / #789)', () => {
+    expect([...liveOld].sort(), 'all @deprecated aliases removed at closeout').toEqual([])
   })
 
   it('every Nv canonical name actually resolves at runtime (types excluded)', () => {
@@ -425,13 +424,14 @@ describe('NvUI Appendix A full-mapping freeze (@nerv-iip/ui / #787)', () => {
     }
   })
 
-  it('every old name still resolves for the zero-breakage transition', () => {
+  it('every old name no longer resolves at runtime (closeout — hard error, not warning)', () => {
     for (const n of OLD_ALL)
-      expect.soft(exported[n], `${n} old name must still resolve`).toBeDefined()
+      expect.soft(exported[n], `${n} old name must be gone after closeout`).toBeUndefined()
   })
 
-  it('exposes a canonical nvFieldVariants aliasing the old fieldProVariants', () => {
-    expect(exported.nvFieldVariants).toBe(exported.fieldProVariants)
+  it('exposes canonical nvFieldVariants; the old fieldProVariants is gone', () => {
+    expect(exported.nvFieldVariants).toBeDefined()
+    expect(exported.fieldProVariants).toBeUndefined()
   })
 
   it('leaves the shadcn 原版 exports untouched (still exported, un-prefixed)', () => {
@@ -440,15 +440,29 @@ describe('NvUI Appendix A full-mapping freeze (@nerv-iip/ui / #787)', () => {
     }
   })
 
-  it('marks old aliases @deprecated and lands renamed derived types in source', () => {
+  it('removed the @deprecated aliases from source and deleted the superseded blocks (§1.3)', () => {
     const btn = read('components/pro/button/index.ts')
-    expect.soft(btn).toContain('NvButton')
-    expect.soft(btn).toContain('@deprecated')
+    expect.soft(btn, 'Nv canonical stays').toContain('NvButton')
+    expect.soft(btn, 'no @deprecated alias left').not.toContain('@deprecated')
+    // The `.vue` filenames are unchanged (`from './ButtonPro.vue'`), so assert only the
+    // deprecated EXPORT alias (`as ButtonPro`) is gone — not the filename substring.
+    expect.soft(btn, 'old ButtonPro export alias removed').not.toMatch(/\bas ButtonPro\b/)
     const dt = read('components/pro/data-table/index.ts')
-    expect.soft(dt, 'renamed pro type present').toContain('NvDataTableColumn')
-    expect.soft(dt).toMatch(/@deprecated[\S\s]*?DataTablePro/)
-    const blocksDt = read('components/blocks/data-table/index.ts')
-    expect.soft(blocksDt, '§1.3 superseded → NvDataTable').toMatch(/@deprecated[\S\s]*?NvDataTable/)
+    expect.soft(dt, 'renamed pro type stays').toContain('NvDataTableColumn')
+    expect.soft(dt, 'no @deprecated alias left').not.toContain('@deprecated')
+    // §1.3: superseded block components deleted; blocks barrel drops the data-table line.
+    expect
+      .soft(
+        existsSync(resolve(srcDir, 'components/blocks/data-table')),
+        'blocks/data-table deleted',
+      )
+      .toBe(false)
+    expect
+      .soft(read('components/blocks/index.ts'), 'blocks barrel drops data-table')
+      .not.toContain("'./data-table'")
+    expect
+      .soft(read('components/blocks/status-badge/index.ts'), 'blocks StatusBadge component removed')
+      .not.toContain('StatusBadge.vue')
   })
 })
 
@@ -456,7 +470,12 @@ describe('NvUI Appendix A full-mapping freeze (@nerv-iip/ui / #787)', () => {
 // identifier, no `--nv-` token, no `nv-` cascade layer may leak into shadcn 原版.
 describe('shadcn 原版 purity (components/ui/**)', () => {
   const uiDir = resolve(srcDir, 'components/ui')
-  const files = walk(uiDir, (n) => /\.(vue|ts|css)$/.test(n) && !/\.(test|spec)\./.test(n))
+  // `file-preview/` lives under components/ui/ but is a CUSTOM Nerv composite (the one
+  // allowed `@nerv-iip/ui/file-preview` sub-entry) that composes pro components — it is
+  // not shadcn 原版, so it legitimately references NvSelect etc. and is excluded here.
+  const files = walk(uiDir, (n) => /\.(vue|ts|css)$/.test(n) && !/\.(test|spec)\./.test(n)).filter(
+    (f) => !f.replace(/\\/g, '/').includes('/file-preview/'),
+  )
 
   it('finds原版 source files to guard', () => {
     expect(files.length).toBeGreaterThan(0)

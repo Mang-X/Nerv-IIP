@@ -7,13 +7,7 @@ import BadgePro from '../badge/BadgePro.vue'
 import ButtonPro from '../button/ButtonPro.vue'
 import DatePickerPro from '../date-picker/DatePickerPro.vue'
 import InputPro from '../input/InputPro.vue'
-import {
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
-} from '../select'
+import { NvSelect, NvSelectContent, NvSelectItem, NvSelectTrigger, NvSelectValue } from '../select'
 
 export interface FilterFieldOption {
   label: string
@@ -66,9 +60,7 @@ function isEmptyValue(v: any) {
   return false
 }
 
-const fieldMap = computed(() =>
-  Object.fromEntries(props.fields.map((f) => [f.key, f])),
-)
+const fieldMap = computed(() => Object.fromEntries(props.fields.map((f) => [f.key, f])))
 
 function setField(key: string, value: any) {
   const next = { ...props.modelValue, [key]: value }
@@ -109,9 +101,7 @@ const activeChips = computed(() =>
     })),
 )
 
-const hasActive = computed(
-  () => activeChips.value.length > 0 || !isEmptyValue(props.keyword),
-)
+const hasActive = computed(() => activeChips.value.length > 0 || !isEmptyValue(props.keyword))
 
 function clearField(key: string) {
   setField(key, fieldMap.value[key]?.type === 'daterange' ? {} : undefined)
@@ -142,27 +132,20 @@ function reset() {
       </InputPro>
 
       <template v-for="field in fields" :key="field.key">
-        <SelectPro
+        <NvSelect
           v-if="field.type === 'select'"
           :model-value="modelValue[field.key] ?? ''"
           @update:model-value="(v) => setField(field.key, v || undefined)"
         >
-          <SelectProTrigger
-            :aria-label="field.label"
-            class="w-full sm:w-44"
-          >
-            <SelectProValue :placeholder="field.placeholder ?? field.label" />
-          </SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem
-              v-for="opt in field.options ?? []"
-              :key="opt.value"
-              :value="opt.value"
-            >
+          <NvSelectTrigger :aria-label="field.label" class="w-full sm:w-44">
+            <NvSelectValue :placeholder="field.placeholder ?? field.label" />
+          </NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem v-for="opt in field.options ?? []" :key="opt.value" :value="opt.value">
               {{ opt.label }}
-            </SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+            </NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
 
         <DatePickerPro
           v-else-if="field.type === 'date'"
@@ -203,12 +186,7 @@ function reset() {
     </div>
 
     <div v-if="activeChips.length" class="flex flex-wrap items-center gap-1.5">
-      <BadgePro
-        v-for="chip in activeChips"
-        :key="chip.key"
-        variant="brand"
-        class="gap-1 pr-1"
-      >
+      <BadgePro v-for="chip in activeChips" :key="chip.key" variant="brand" class="gap-1 pr-1">
         <span class="text-muted-foreground">{{ chip.label }}:</span>
         <span class="tabular-nums">{{ chip.text }}</span>
         <button

@@ -4,17 +4,17 @@ import { computed } from 'vue'
 import {
   Avatar,
   AvatarFallback,
-  DropdownMenuPro,
-  DropdownMenuProContent,
-  DropdownMenuProGroup,
-  DropdownMenuProItem,
-  DropdownMenuProLabel,
-  DropdownMenuProSeparator,
-  DropdownMenuProTrigger,
+  NvDropdownMenu,
+  NvDropdownMenuContent,
+  NvDropdownMenuGroup,
+  NvDropdownMenuItem,
+  NvDropdownMenuLabel,
+  NvDropdownMenuSeparator,
+  NvDropdownMenuTrigger,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarProUser,
+  NvSidebarUser,
   useSidebar,
 } from '@nerv-iip/ui'
 
@@ -38,22 +38,22 @@ const initials = computed(() => props.user.name.slice(0, 2).toUpperCase())
 <template>
   <SidebarMenu>
     <SidebarMenuItem>
-      <DropdownMenuPro>
-        <DropdownMenuProTrigger as-child>
+      <NvDropdownMenu>
+        <NvDropdownMenuTrigger as-child>
           <SidebarMenuButton
             size="lg"
             class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
           >
-            <SidebarProUser :name="user.name" :role="user.email" :initials="initials" />
+            <NvSidebarUser :name="user.name" :role="user.email" :initials="initials" />
           </SidebarMenuButton>
-        </DropdownMenuProTrigger>
-        <DropdownMenuProContent
+        </NvDropdownMenuTrigger>
+        <NvDropdownMenuContent
           class="w-(--reka-dropdown-menu-trigger-width) min-w-56 rounded-lg"
           :side="isMobile ? 'bottom' : 'right'"
           align="end"
           :side-offset="4"
         >
-          <DropdownMenuProLabel class="p-0 font-normal">
+          <NvDropdownMenuLabel class="p-0 font-normal">
             <div class="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
               <Avatar class="size-8 rounded-lg">
                 <AvatarFallback class="rounded-lg">
@@ -65,16 +65,16 @@ const initials = computed(() => props.user.name.slice(0, 2).toUpperCase())
                 <span v-if="user.email" class="truncate text-xs">{{ user.email }}</span>
               </div>
             </div>
-          </DropdownMenuProLabel>
-          <DropdownMenuProSeparator />
-          <DropdownMenuProGroup>
-            <DropdownMenuProItem @click="emit('signOut')">
+          </NvDropdownMenuLabel>
+          <NvDropdownMenuSeparator />
+          <NvDropdownMenuGroup>
+            <NvDropdownMenuItem @click="emit('signOut')">
               <LogOut />
               {{ signOutLabel ?? 'Sign out' }}
-            </DropdownMenuProItem>
-          </DropdownMenuProGroup>
-        </DropdownMenuProContent>
-      </DropdownMenuPro>
+            </NvDropdownMenuItem>
+          </NvDropdownMenuGroup>
+        </NvDropdownMenuContent>
+      </NvDropdownMenu>
     </SidebarMenuItem>
   </SidebarMenu>
 </template>

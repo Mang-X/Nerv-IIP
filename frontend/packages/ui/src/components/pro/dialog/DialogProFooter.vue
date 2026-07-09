@@ -2,7 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { DialogClose } from 'reka-ui'
 import { cn } from '../../../lib/utils'
-import { ButtonPro } from '../button'
+import { NvButton } from '../button'
 
 /**
  * Pro — dialog footer. Mirrors base `DialogFooter`'s API so it drops in: pass
@@ -27,7 +27,7 @@ const props = withDefaults(
   >
     <slot />
     <DialogClose v-if="showCloseButton" as-child>
-      <ButtonPro variant="outline">关闭</ButtonPro>
+      <NvButton variant="outline">关闭</NvButton>
     </DialogClose>
   </div>
 </template>
