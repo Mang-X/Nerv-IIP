@@ -7,7 +7,7 @@ import {
   repairOrderFlow,
   type RepairCtx,
 } from '@nerv-iip/business-core'
-import { AppShellMobile, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
+import { NvAppShellMobile, NvListRow, NvMobileResult, NvScanBar } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -21,13 +21,8 @@ definePage({
 const route = useRoute()
 const router = useRouter()
 
-const {
-  workOrders,
-  workOrdersPending,
-  workOrdersError,
-  createWorkOrder,
-  createPending,
-} = useBusinessMaintenance()
+const { workOrders, workOrdersPending, workOrdersError, createWorkOrder, createPending } =
+  useBusinessMaintenance()
 
 // ---- 设备上下文来源优先级：route query 预填 > 扫码 > 手输 -------------------------
 const queryDeviceAssetId = computed(() => {
@@ -97,11 +92,7 @@ function retry() {
   phase.value = 'form'
 }
 
-function workOrderSubtitle(item: {
-  priority?: string
-  status?: string
-  openedAtUtc?: string
-}) {
+function workOrderSubtitle(item: { priority?: string; status?: string; openedAtUtc?: string }) {
   const parts = [
     `优先级 ${maintenancePriorityLabel(item.priority)}`,
     maintenanceWorkOrderStatusLabel(item.status),
@@ -114,7 +105,7 @@ function workOrderSubtitle(item: {
 </script>
 
 <template>
-  <AppShellMobile>
+  <NvAppShellMobile>
     <template #header>
       <div class="px-4 py-3">
         <h1 class="text-lg font-semibold text-foreground">故障报修</h1>
@@ -122,7 +113,7 @@ function workOrderSubtitle(item: {
     </template>
 
     <!-- 成功 / 失败：离场态（清空表单，防重复提交） -->
-    <Result
+    <NvMobileResult
       v-if="phase === 'success'"
       status="success"
       title="报修已提交"
@@ -144,9 +135,9 @@ function workOrderSubtitle(item: {
           返回
         </button>
       </template>
-    </Result>
+    </NvMobileResult>
 
-    <Result
+    <NvMobileResult
       v-else-if="phase === 'error'"
       status="error"
       title="报修提交失败"
@@ -168,14 +159,14 @@ function workOrderSubtitle(item: {
           返回
         </button>
       </template>
-    </Result>
+    </NvMobileResult>
 
     <div v-else class="space-y-6 p-4">
       <!-- 新建报修 -->
       <section class="space-y-3">
         <h2 class="text-sm font-medium text-muted-foreground">新建报修</h2>
 
-        <ScanBar placeholder="扫描设备码" :active="scanActive" @scan="onScan" />
+        <NvScanBar placeholder="扫描设备码" :active="scanActive" @scan="onScan" />
 
         <label class="block space-y-1">
           <span class="text-sm text-foreground">设备资产编号</span>
@@ -237,7 +228,10 @@ function workOrderSubtitle(item: {
           维修工单加载失败，请稍后重试。
         </p>
 
-        <div v-else-if="workOrdersPending" class="px-4 py-6 text-center text-sm text-muted-foreground">
+        <div
+          v-else-if="workOrdersPending"
+          class="px-4 py-6 text-center text-sm text-muted-foreground"
+        >
           加载中…
         </div>
 
@@ -249,7 +243,7 @@ function workOrderSubtitle(item: {
         </div>
 
         <div v-else class="overflow-hidden rounded-lg border border-border">
-          <ListRow
+          <NvListRow
             v-for="item in workOrders"
             :key="item.workOrderId"
             :title="item.deviceAssetId ?? '未知设备'"
@@ -259,5 +253,5 @@ function workOrderSubtitle(item: {
         </div>
       </section>
     </div>
-  </AppShellMobile>
+  </NvAppShellMobile>
 </template>
