@@ -8,7 +8,13 @@ import {
   workOrderSubtitle,
   workOrderTitle,
 } from '@nerv-iip/business-core'
-import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
+import {
+  NvAppShellMobile,
+  NvBottomSheet,
+  NvListRow,
+  NvMobileResult,
+  NvScanBar,
+} from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMesMaterialIssue, useMesWorkOrders } from '@/composables/useBusinessMes'
@@ -26,21 +32,10 @@ type WorkOrder = BusinessConsoleMesWorkOrderItem
 
 const router = useRouter()
 
-const {
-  filters,
-  requests,
-  total,
-  pending,
-  error,
-  createIssue,
-  confirmLineSideReceipt,
-} = useMesMaterialIssue()
+const { filters, requests, total, pending, error, createIssue, confirmLineSideReceipt } =
+  useMesMaterialIssue()
 
-const {
-  filters: workOrderFilters,
-  workOrders,
-  total: workOrderTotal,
-} = useMesWorkOrders()
+const { filters: workOrderFilters, workOrders, total: workOrderTotal } = useMesWorkOrders()
 
 // 可读中文状态标签 + 工单标题/副标题来自 @nerv-iip/business-core（不暴露原始状态码）。
 const statusLabel = materialIssueStatusLabel
@@ -66,7 +61,12 @@ const errorMessage = computed(() => {
 })
 
 // --- 结果反馈 ---
-type ResultState = { status: 'success' | 'error'; title: string; description?: string; retry: () => void | Promise<void> }
+type ResultState = {
+  status: 'success' | 'error'
+  title: string
+  description?: string
+  retry: () => void | Promise<void>
+}
 const result = ref<ResultState | null>(null)
 const submitting = ref(false)
 
@@ -124,11 +124,12 @@ async function submitCreate() {
   }
   submitting.value = true
   creating.value = false
-  const doSubmit = () => createIssue(workOrderId, {
-    materialId,
-    ...(quantity === null ? {} : { quantity }),
-    idempotencyKey: operationKey.value,
-  })
+  const doSubmit = () =>
+    createIssue(workOrderId, {
+      materialId,
+      ...(quantity === null ? {} : { quantity }),
+      idempotencyKey: operationKey.value,
+    })
   try {
     await doSubmit()
     result.value = {
@@ -194,10 +195,11 @@ async function submitReceive() {
   }
   submitting.value = true
   receiving.value = null
-  const doSubmit = () => confirmLineSideReceipt(requestId, {
-    ...(quantity === null ? {} : { receivedQuantity: quantity }),
-    idempotencyKey: operationKey.value,
-  })
+  const doSubmit = () =>
+    confirmLineSideReceipt(requestId, {
+      ...(quantity === null ? {} : { receivedQuantity: quantity }),
+      idempotencyKey: operationKey.value,
+    })
   try {
     await doSubmit()
     result.value = {
@@ -236,8 +238,8 @@ function goBack() {
 }
 
 // ScanBar 仅在列表态活跃；新建/接收/结果展开时不抢焦点
-const scanActive = computed(() =>
-  result.value === null && !creating.value && receiving.value === null,
+const scanActive = computed(
+  () => result.value === null && !creating.value && receiving.value === null,
 )
 
 function onScan(value: string) {
@@ -249,7 +251,7 @@ function onScanWorkOrder(value: string) {
 </script>
 
 <template>
-  <AppShellMobile>
+  <NvAppShellMobile>
     <template #header>
       <div class="flex items-center gap-3 px-4 py-3">
         <button
@@ -273,7 +275,7 @@ function onScanWorkOrder(value: string) {
     </template>
 
     <!-- 写操作结果反馈 -->
-    <Result
+    <NvMobileResult
       v-if="result"
       :status="result.status"
       :title="result.title"
@@ -305,10 +307,10 @@ function onScanWorkOrder(value: string) {
           返回
         </button>
       </template>
-    </Result>
+    </NvMobileResult>
 
     <div v-else class="space-y-4 p-4">
-      <ScanBar placeholder="扫描工单号 / 领料单" :active="scanActive" @scan="onScan" />
+      <NvScanBar placeholder="扫描工单号 / 领料单" :active="scanActive" @scan="onScan" />
 
       <p class="text-sm text-muted-foreground">共 {{ total }} 条领料申请</p>
 
@@ -322,7 +324,7 @@ function onScanWorkOrder(value: string) {
       </div>
 
       <div v-else class="overflow-hidden rounded-lg border border-border">
-        <ListRow
+        <NvListRow
           v-for="req in requests"
           :key="req.requestId ?? `${req.workOrderId}-${req.materialId}`"
           :title="requestTitle(req)"
@@ -339,20 +341,16 @@ function onScanWorkOrder(value: string) {
               线边接收
             </button>
           </template>
-        </ListRow>
+        </NvListRow>
       </div>
     </div>
 
     <!-- 新建领料表单 -->
-    <BottomSheet
-      :open="createSheetOpen"
-      title="新建领料"
-      @update:open="createSheetOpen = $event"
-    >
+    <NvBottomSheet :open="createSheetOpen" title="新建领料" @update:open="createSheetOpen = $event">
       <div class="space-y-4 pb-2">
         <!-- 选工单 -->
         <div v-if="!selectedWorkOrder" class="space-y-2">
-          <ScanBar placeholder="扫描工单号" :active="false" @scan="onScanWorkOrder" />
+          <NvScanBar placeholder="扫描工单号" :active="false" @scan="onScanWorkOrder" />
           <p class="text-sm text-muted-foreground">选择领料的工单（共 {{ workOrderTotal }} 张）</p>
           <div
             v-if="workOrders.length === 0"
@@ -360,8 +358,11 @@ function onScanWorkOrder(value: string) {
           >
             暂无可领料的工单
           </div>
-          <div v-else class="max-h-64 overflow-y-auto overflow-x-hidden rounded-lg border border-border">
-            <ListRow
+          <div
+            v-else
+            class="max-h-64 overflow-y-auto overflow-x-hidden rounded-lg border border-border"
+          >
+            <NvListRow
               v-for="wo in workOrders"
               :key="wo.workOrderId"
               :data-testid="`issue-work-order`"
@@ -374,10 +375,14 @@ function onScanWorkOrder(value: string) {
 
         <!-- 选好工单：填物料 + 数量 -->
         <div v-else class="space-y-4">
-          <div class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
+          <div
+            class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
+          >
             <div class="min-w-0">
               <p class="text-sm text-muted-foreground">当前工单</p>
-              <p class="truncate text-base font-medium text-foreground">{{ workOrderTitle(selectedWorkOrder) }}</p>
+              <p class="truncate text-base font-medium text-foreground">
+                {{ workOrderTitle(selectedWorkOrder) }}
+              </p>
             </div>
             <button
               type="button"
@@ -433,18 +438,16 @@ function onScanWorkOrder(value: string) {
           </button>
         </div>
       </div>
-    </BottomSheet>
+    </NvBottomSheet>
 
     <!-- 线边接收 -->
-    <BottomSheet
+    <NvBottomSheet
       :open="receiveSheetOpen"
       :title="receiving ? requestTitle(receiving) : ''"
       @update:open="receiveSheetOpen = $event"
     >
       <div v-if="receiving" class="space-y-4 pb-2">
-        <p class="text-sm text-muted-foreground">
-          当前状态：{{ statusLabel(receiving.status) }}
-        </p>
+        <p class="text-sm text-muted-foreground">当前状态：{{ statusLabel(receiving.status) }}</p>
 
         <label class="block space-y-1">
           <span class="text-sm font-medium text-foreground">接收数量</span>
@@ -458,9 +461,7 @@ function onScanWorkOrder(value: string) {
           />
         </label>
 
-        <p v-if="!receiveValid" class="text-sm text-muted-foreground">
-          接收数量须为非负数。
-        </p>
+        <p v-if="!receiveValid" class="text-sm text-muted-foreground">接收数量须为非负数。</p>
 
         <button
           type="button"
@@ -479,6 +480,6 @@ function onScanWorkOrder(value: string) {
           取消
         </button>
       </div>
-    </BottomSheet>
-  </AppShellMobile>
+    </NvBottomSheet>
+  </NvAppShellMobile>
 </template>
