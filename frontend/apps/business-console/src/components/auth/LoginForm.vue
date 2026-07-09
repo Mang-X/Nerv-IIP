@@ -2,18 +2,18 @@
 import {
   Alert,
   AlertDescription,
-  ButtonPro,
-  CardPro,
-  CardProContent,
-  CardProDescription,
-  CardProFooter,
-  CardProHeader,
-  CardProTitle,
-  FieldPro,
-  FieldProDescription,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
+  NvButton,
+  NvCard,
+  NvCardContent,
+  NvCardDescription,
+  NvCardFooter,
+  NvCardHeader,
+  NvCardTitle,
+  NvField,
+  NvFieldDescription,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
   Spinner,
 } from '@nerv-iip/ui'
 import { LogInIcon } from 'lucide-vue-next'
@@ -50,22 +50,25 @@ function submit() {
 </script>
 
 <template>
-  <CardPro class="border-none shadow-none">
+  <NvCard class="border-none shadow-none">
     <form class="flex flex-col gap-4" @submit.prevent="submit">
-      <CardProHeader class="text-center">
-        <CardProTitle class="text-xl">{{ t('login.title') }}</CardProTitle>
-        <CardProDescription>{{ t('login.description') }}</CardProDescription>
-      </CardProHeader>
+      <NvCardHeader class="text-center">
+        <NvCardTitle class="text-xl">{{ t('login.title') }}</NvCardTitle>
+        <NvCardDescription>{{ t('login.description') }}</NvCardDescription>
+      </NvCardHeader>
 
-      <CardProContent class="flex flex-col gap-4">
+      <NvCardContent class="flex flex-col gap-4">
         <Alert v-if="error" role="alert" variant="destructive">
           <AlertDescription>{{ error }}</AlertDescription>
         </Alert>
 
-        <FieldProGroup>
-          <FieldPro :data-invalid="Boolean(error) || undefined" :data-disabled="pending || undefined">
-            <FieldProLabel for="login-name">{{ t('login.loginName') }}</FieldProLabel>
-            <InputPro
+        <NvFieldGroup>
+          <NvField
+            :data-invalid="Boolean(error) || undefined"
+            :data-disabled="pending || undefined"
+          >
+            <NvFieldLabel for="login-name">{{ t('login.loginName') }}</NvFieldLabel>
+            <NvInput
               id="login-name"
               v-model="form.loginName"
               :aria-invalid="Boolean(error)"
@@ -75,12 +78,15 @@ function submit() {
               required
               type="text"
             />
-            <FieldProDescription>{{ t('login.loginNameHint') }}</FieldProDescription>
-          </FieldPro>
+            <NvFieldDescription>{{ t('login.loginNameHint') }}</NvFieldDescription>
+          </NvField>
 
-          <FieldPro :data-invalid="Boolean(error) || undefined" :data-disabled="pending || undefined">
-            <FieldProLabel for="password">{{ t('login.password') }}</FieldProLabel>
-            <InputPro
+          <NvField
+            :data-invalid="Boolean(error) || undefined"
+            :data-disabled="pending || undefined"
+          >
+            <NvFieldLabel for="password">{{ t('login.password') }}</NvFieldLabel>
+            <NvInput
               id="password"
               v-model="form.password"
               :aria-invalid="Boolean(error)"
@@ -90,17 +96,17 @@ function submit() {
               required
               type="password"
             />
-          </FieldPro>
-        </FieldProGroup>
-      </CardProContent>
+          </NvField>
+        </NvFieldGroup>
+      </NvCardContent>
 
-      <CardProFooter>
-        <ButtonPro class="w-full" :disabled="pending" type="submit">
+      <NvCardFooter>
+        <NvButton class="w-full" :disabled="pending" type="submit">
           <Spinner v-if="pending" data-icon="inline-start" />
           <LogInIcon v-else data-icon="inline-start" />
           {{ pending ? t('login.pending') : t('login.title') }}
-        </ButtonPro>
-      </CardProFooter>
+        </NvButton>
+      </NvCardFooter>
     </form>
-  </CardPro>
+  </NvCard>
 </template>

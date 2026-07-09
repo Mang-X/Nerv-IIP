@@ -1,20 +1,31 @@
 <script setup lang="ts">
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  PageHeader,
-  SectionCard,
-  SectionCards,
-  StatusBadgePro,
+  NvButton,
+  NvDataTable,
+  NvPageHeader,
+  NvSectionCard,
+  NvSectionCards,
+  NvStatusBadge,
 } from '@nerv-iip/ui'
-import { ClipboardCheckIcon, PackageCheckIcon, RefreshCwIcon, ShieldCheckIcon } from 'lucide-vue-next'
+import {
+  ClipboardCheckIcon,
+  PackageCheckIcon,
+  RefreshCwIcon,
+  ShieldCheckIcon,
+} from 'lucide-vue-next'
 import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '工单详情', requiredPermissions: ['business.mes.work-orders.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '工单详情',
+    requiredPermissions: ['business.mes.work-orders.read'],
+  },
+})
 
 const route = useRoute()
 const router = useRouter()
@@ -45,13 +56,26 @@ const blockingReasons = computed(() => [
   ...(materialReadiness.value?.blockingReasons ?? []),
 ])
 const blockingReasonDisplays = computed(() => blockingReasons.value.map(describeMesReadinessReason))
-const errorMessage = computed(() => formatError(detailError.value) || formatError(materialReadinessError.value))
+const errorMessage = computed(
+  () => formatError(detailError.value) || formatError(materialReadinessError.value),
+)
 
 type TaskRow = (typeof operationTasks)['value'][number]
-const taskColumns: DataTableProColumn<TaskRow>[] = [
-  { key: 'operationTaskId', header: '任务', cellClass: 'font-medium', accessor: (r) => r.operationTaskId ?? '无' },
+const taskColumns: NvDataTableColumn<TaskRow>[] = [
+  {
+    key: 'operationTaskId',
+    header: '任务',
+    cellClass: 'font-medium',
+    accessor: (r) => r.operationTaskId ?? '无',
+  },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'operationSequence', header: '序号', align: 'end', width: 'w-16', accessor: (r) => r.operationSequence ?? 0 },
+  {
+    key: 'operationSequence',
+    header: '序号',
+    align: 'end',
+    width: 'w-16',
+    accessor: (r) => r.operationSequence ?? 0,
+  },
   { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
   { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '未指定' },
   { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
@@ -60,8 +84,13 @@ const taskColumns: DataTableProColumn<TaskRow>[] = [
 ]
 
 type MaterialRow = (typeof materialRows)['value'][number]
-const materialColumns: DataTableProColumn<MaterialRow>[] = [
-  { key: 'materialId', header: '物料', cellClass: 'font-medium', accessor: (r) => r.materialId ?? '无' },
+const materialColumns: NvDataTableColumn<MaterialRow>[] = [
+  {
+    key: 'materialId',
+    header: '物料',
+    cellClass: 'font-medium',
+    accessor: (r) => r.materialId ?? '无',
+  },
   { key: 'materialLotId', header: '批次', accessor: (r) => r.materialLotId ?? '未指定' },
   { key: 'requiredQuantity', header: '需求', align: 'end', width: 'w-20' },
   { key: 'availableQuantity', header: '可用', align: 'end', width: 'w-20' },
@@ -111,44 +140,76 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader
+    <NvPageHeader
       :title="`工单 ${filters.workOrderId}`"
       :breadcrumbs="[{ label: '制造执行' }, { label: '工单与派工' }]"
     >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" @click="openRoute('/mes/production-reports')">
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          @click="openRoute('/mes/production-reports')"
+        >
           <ClipboardCheckIcon aria-hidden="true" />
           报工记录
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" variant="outline" @click="openRoute('/mes/receipts')">
+        </NvButton>
+        <NvButton size="sm" type="button" variant="outline" @click="openRoute('/mes/receipts')">
           <PackageCheckIcon aria-hidden="true" />
           完工入库
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" variant="outline" @click="openRoute('/quality/inspections')">
+        </NvButton>
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          @click="openRoute('/quality/inspections')"
+        >
           <ShieldCheckIcon aria-hidden="true" />
           质量检验
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="detailPending || materialReadinessPending" @click="refreshAll">
+        </NvButton>
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="detailPending || materialReadinessPending"
+          @click="refreshAll"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <SectionCards :columns="4">
-      <SectionCard description="工单状态" :value="formatStatus(detail?.status)" :hint="detail?.skuId ?? '无物料'" />
-      <SectionCard description="计划数量" :value="formatQuantity(detail?.quantity)" hint="工单计划量" />
-      <SectionCard description="工序数" :value="operationTasks.length" hint="执行任务" />
-      <SectionCard description="用料状态" :value="formatStatus(materialReadiness?.readinessStatus)" hint="齐套检查" />
-    </SectionCards>
+    <NvSectionCards :columns="4">
+      <NvSectionCard
+        description="工单状态"
+        :value="formatStatus(detail?.status)"
+        :hint="detail?.skuId ?? '无物料'"
+      />
+      <NvSectionCard
+        description="计划数量"
+        :value="formatQuantity(detail?.quantity)"
+        hint="工单计划量"
+      />
+      <NvSectionCard description="工序数" :value="operationTasks.length" hint="执行任务" />
+      <NvSectionCard
+        description="用料状态"
+        :value="formatStatus(materialReadiness?.readinessStatus)"
+        hint="齐套检查"
+      />
+    </NvSectionCards>
 
     <div v-if="blockingReasons.length" class="rounded-lg border bg-background p-4">
       <h2 class="text-sm font-semibold text-foreground">开工阻塞</h2>
       <div class="mt-3 grid gap-2">
-        <div v-for="reason in blockingReasonDisplays" :key="reason.code" class="rounded-md border border-warning/30 bg-warning/10 p-3">
-          <StatusBadgePro :label="reason.label" tone="warning" />
+        <div
+          v-for="reason in blockingReasonDisplays"
+          :key="reason.code"
+          class="rounded-md border border-warning/30 bg-warning/10 p-3"
+        >
+          <NvStatusBadge :label="reason.label" tone="warning" />
           <p class="mt-2 text-sm text-muted-foreground">{{ reason.nextStep }}</p>
         </div>
       </div>
@@ -156,7 +217,7 @@ function formatError(error: unknown) {
 
     <div class="grid gap-2">
       <span class="text-sm font-semibold text-foreground">工序任务</span>
-      <DataTablePro
+      <NvDataTable
         :columns="taskColumns"
         :rows="operationTasks"
         row-key="operationTaskId"
@@ -165,15 +226,19 @@ function formatError(error: unknown) {
         :searchable="false"
         :column-settings="false"
       >
-        <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
-        <template #cell-operationSequence="{ row }"><span class="tabular-nums">{{ row.operationSequence ?? 0 }}</span></template>
-        <template #cell-startedAtUtc="{ row }">{{ formatDateTime(row.startedAtUtc ?? row.plannedStartUtc) }}</template>
-      </DataTablePro>
+        <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+        <template #cell-operationSequence="{ row }"
+          ><span class="tabular-nums">{{ row.operationSequence ?? 0 }}</span></template
+        >
+        <template #cell-startedAtUtc="{ row }">{{
+          formatDateTime(row.startedAtUtc ?? row.plannedStartUtc)
+        }}</template>
+      </NvDataTable>
     </div>
 
     <div class="grid gap-2">
       <span class="text-sm font-semibold text-foreground">用料齐套</span>
-      <DataTablePro
+      <NvDataTable
         :columns="materialColumns"
         :rows="materialRows"
         :row-key="(r) => `${r.materialId}-${r.materialLotId}`"
@@ -182,12 +247,20 @@ function formatError(error: unknown) {
         :searchable="false"
         :column-settings="false"
       >
-        <template #cell-requiredQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.requiredQuantity) }}</span></template>
-        <template #cell-availableQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.availableQuantity) }}</span></template>
-        <template #cell-stagedQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.stagedQuantity) }}</span></template>
-        <template #cell-shortageQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.shortageQuantity) }}</span></template>
-        <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
-      </DataTablePro>
+        <template #cell-requiredQuantity="{ row }"
+          ><span class="tabular-nums">{{ formatQuantity(row.requiredQuantity) }}</span></template
+        >
+        <template #cell-availableQuantity="{ row }"
+          ><span class="tabular-nums">{{ formatQuantity(row.availableQuantity) }}</span></template
+        >
+        <template #cell-stagedQuantity="{ row }"
+          ><span class="tabular-nums">{{ formatQuantity(row.stagedQuantity) }}</span></template
+        >
+        <template #cell-shortageQuantity="{ row }"
+          ><span class="tabular-nums">{{ formatQuantity(row.shortageQuantity) }}</span></template
+        >
+        <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      </NvDataTable>
     </div>
   </BusinessLayout>
 </template>

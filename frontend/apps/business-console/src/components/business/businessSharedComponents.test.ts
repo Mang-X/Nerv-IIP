@@ -24,7 +24,7 @@ vi.mock('@nerv-iip/ui', () => {
     })
 
   return {
-    BadgePro: defineComponent({
+    NvBadge: defineComponent({
       name: 'BadgePro',
       props: {
         variant: {
@@ -36,7 +36,7 @@ vi.mock('@nerv-iip/ui', () => {
         return () => h('span', { ...attrs, 'data-variant': props.variant }, slots.default?.())
       },
     }),
-    ButtonPro: defineComponent({
+    NvButton: defineComponent({
       name: 'ButtonPro',
       props: {
         disabled: Boolean,
@@ -48,9 +48,9 @@ vi.mock('@nerv-iip/ui', () => {
       },
     }),
     // BusinessRowActions 已迁到 Pro 下拉，整模块 mock 按 Pro 导出名打桩。
-    DropdownMenuPro: passthrough('DropdownMenuPro'),
-    DropdownMenuProContent: passthrough('DropdownMenuProContent'),
-    DropdownMenuProTrigger: passthrough('DropdownMenuProTrigger'),
+    NvDropdownMenu: passthrough('DropdownMenuPro'),
+    NvDropdownMenuContent: passthrough('DropdownMenuProContent'),
+    NvDropdownMenuTrigger: passthrough('DropdownMenuProTrigger'),
     Pagination: defineComponent({
       name: 'Pagination',
       props: {
@@ -59,22 +59,30 @@ vi.mock('@nerv-iip/ui', () => {
       emits: ['update:page'],
       setup(_props, { emit, slots }) {
         return () =>
-          h('nav', { 'data-test': 'pagination', onClick: () => emit('update:page', 3) }, slots.default?.())
+          h(
+            'nav',
+            { 'data-test': 'pagination', onClick: () => emit('update:page', 3) },
+            slots.default?.(),
+          )
       },
     }),
     PaginationContent: passthrough('PaginationContent'),
     PaginationNext: passthrough('PaginationNext'),
     PaginationPrevious: passthrough('PaginationPrevious'),
-    SelectPro: defineComponent({
+    NvSelect: defineComponent({
       name: 'SelectPro',
       emits: ['update:modelValue'],
       setup(_props, { emit, slots }) {
         return () =>
-          h('div', { 'data-test': 'page-size-select', onClick: () => emit('update:modelValue', '50') }, slots.default?.())
+          h(
+            'div',
+            { 'data-test': 'page-size-select', onClick: () => emit('update:modelValue', '50') },
+            slots.default?.(),
+          )
       },
     }),
-    SelectProContent: passthrough('SelectProContent'),
-    SelectProItem: defineComponent({
+    NvSelectContent: passthrough('SelectProContent'),
+    NvSelectItem: defineComponent({
       name: 'SelectProItem',
       props: {
         value: String,
@@ -83,8 +91,8 @@ vi.mock('@nerv-iip/ui', () => {
         return () => h('div', { 'data-value': props.value }, slots.default?.())
       },
     }),
-    SelectProTrigger: passthrough('SelectProTrigger'),
-    SelectProValue: passthrough('SelectProValue'),
+    NvSelectTrigger: passthrough('SelectProTrigger'),
+    NvSelectValue: passthrough('SelectProValue'),
   }
 })
 

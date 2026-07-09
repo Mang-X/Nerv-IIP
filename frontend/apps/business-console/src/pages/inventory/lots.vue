@@ -1,28 +1,41 @@
 <script setup lang="ts">
 import type { BusinessConsoleInventoryAvailabilityLineResponse } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useInventoryAvailability } from '@/composables/useBusinessInventory'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  InputPro,
-  PageHeader,
-  SectionCard,
-  SectionCards,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
-  StatusBadgePro,
-  Toolbar,
+  NvButton,
+  NvDataTable,
+  NvInput,
+  NvPageHeader,
+  NvSectionCard,
+  NvSectionCards,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
-import { BarcodeIcon, ClipboardCheckIcon, PackageSearchIcon, RefreshCwIcon, RouteIcon, WarehouseIcon } from 'lucide-vue-next'
+import {
+  BarcodeIcon,
+  ClipboardCheckIcon,
+  PackageSearchIcon,
+  RefreshCwIcon,
+  RouteIcon,
+  WarehouseIcon,
+} from 'lucide-vue-next'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '批次与预留', requiredPermissions: ['business.inventory.ledger.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '批次与预留',
+    requiredPermissions: ['business.inventory.ledger.read'],
+  },
+})
 
 const route = useRoute()
 const {
@@ -39,7 +52,8 @@ watch(
   () => route.query,
   (query) => {
     const sku = firstQuery(query.skuCode) || firstQuery(query.skuId)
-    const lot = firstQuery(query.lotNo) || firstQuery(query.batchNo) || firstQuery(query.materialLotId)
+    const lot =
+      firstQuery(query.lotNo) || firstQuery(query.batchNo) || firstQuery(query.materialLotId)
     const serial = firstQuery(query.serialNo)
     const site = firstQuery(query.siteCode)
     const location = firstQuery(query.locationCode)
@@ -61,19 +75,31 @@ const qualityStatusOptions = [
 ]
 const qualityStatusFilter = computed({
   get: () => filters.qualityStatus || 'all',
-  set: (value: string) => { filters.qualityStatus = value === 'all' ? undefined : value },
+  set: (value: string) => {
+    filters.qualityStatus = value === 'all' ? undefined : value
+  },
 })
 
 const errorMessage = computed(() => formatError(availabilityError.value))
 const onHandQuantity = computed(() => availability.value?.onHandQuantity ?? 0)
-const reservedQuantity = computed(() => availability.value?.reservedQuantity ?? sumQuantity(availabilityLines.value, 'reservedQuantity'))
+const reservedQuantity = computed(
+  () =>
+    availability.value?.reservedQuantity ??
+    sumQuantity(availabilityLines.value, 'reservedQuantity'),
+)
 const availableQuantity = computed(() => availability.value?.availableQuantity ?? 0)
-const blockedQuantity = computed(() => Math.max(onHandQuantity.value - availableQuantity.value - reservedQuantity.value, 0))
-const lotCount = computed(() => new Set(availabilityLines.value.map((line) => line.lotNo).filter(Boolean)).size)
-const serialCount = computed(() => new Set(availabilityLines.value.map((line) => line.serialNo).filter(Boolean)).size)
+const blockedQuantity = computed(() =>
+  Math.max(onHandQuantity.value - availableQuantity.value - reservedQuantity.value, 0),
+)
+const lotCount = computed(
+  () => new Set(availabilityLines.value.map((line) => line.lotNo).filter(Boolean)).size,
+)
+const serialCount = computed(
+  () => new Set(availabilityLines.value.map((line) => line.serialNo).filter(Boolean)).size,
+)
 
 type Line = BusinessConsoleInventoryAvailabilityLineResponse
-const columns: DataTableProColumn<Line>[] = [
+const columns: NvDataTableColumn<Line>[] = [
   { key: 'lotNo', header: '批次', cellClass: 'font-medium', accessor: (r) => r.lotNo ?? '无批次' },
   { key: 'serialNo', header: '序列号', accessor: (r) => r.serialNo ?? '无序列号' },
   { key: 'locationCode', header: '库位', width: 'w-28', accessor: (r) => r.locationCode ?? '无' },
@@ -127,7 +153,10 @@ function barcodeQuery(line: Line) {
 }
 
 function lineBlockedQuantity(line: Line) {
-  return Math.max((line.onHandQuantity ?? 0) - (line.availableQuantity ?? 0) - (line.reservedQuantity ?? 0), 0)
+  return Math.max(
+    (line.onHandQuantity ?? 0) - (line.availableQuantity ?? 0) - (line.reservedQuantity ?? 0),
+    0,
+  )
 }
 
 function sumQuantity(lines: Line[], key: 'reservedQuantity') {
@@ -150,53 +179,98 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="批次与预留" :breadcrumbs="[{ label: '库存' }]" :count="`${availabilityLines.length} 条库存明细`">
+    <NvPageHeader
+      title="批次与预留"
+      :breadcrumbs="[{ label: '库存' }]"
+      :count="`${availabilityLines.length} 条库存明细`"
+    >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" as-child>
-          <RouterLink :to="{ path: '/inventory/availability', query: { skuCode: filters.skuCode || undefined, siteCode: filters.siteCode || undefined } }">
+        <NvButton size="sm" type="button" variant="outline" as-child>
+          <RouterLink
+            :to="{
+              path: '/inventory/availability',
+              query: {
+                skuCode: filters.skuCode || undefined,
+                siteCode: filters.siteCode || undefined,
+              },
+            }"
+          >
             <PackageSearchIcon aria-hidden="true" />
             可用量
           </RouterLink>
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="availabilityPending" @click="refreshAvailability">
+        </NvButton>
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="availabilityPending"
+          @click="refreshAvailability"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <SectionCards :columns="4">
-      <SectionCard description="批次数" :value="lotCount" hint="来自可用量明细" />
-      <SectionCard description="序列号数" :value="serialCount" hint="来自可用量明细" />
-      <SectionCard description="预留量" :value="formatQuantity(reservedQuantity)" :hint="filters.uomCode" />
-      <SectionCard description="冻结/其他" :value="formatQuantity(blockedQuantity)" hint="按现存量减可用量和预留量推导" />
-    </SectionCards>
+    <NvSectionCards :columns="4">
+      <NvSectionCard description="批次数" :value="lotCount" hint="来自可用量明细" />
+      <NvSectionCard description="序列号数" :value="serialCount" hint="来自可用量明细" />
+      <NvSectionCard
+        description="预留量"
+        :value="formatQuantity(reservedQuantity)"
+        :hint="filters.uomCode"
+      />
+      <NvSectionCard
+        description="冻结/其他"
+        :value="formatQuantity(blockedQuantity)"
+        hint="按现存量减可用量和预留量推导"
+      />
+    </NvSectionCards>
 
     <div class="rounded-md border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
       <strong class="font-medium text-foreground">后端缺口：</strong>
-      当前只消费 Inventory availability facade；独立批次台账、序列号履历、冻结/解冻、预留明细和服务端库存分析尚无 BusinessGateway facade，本页不做本地筛选或假分析。
+      当前只消费 Inventory availability
+      facade；独立批次台账、序列号履历、冻结/解冻、预留明细和服务端库存分析尚无 BusinessGateway
+      facade，本页不做本地筛选或假分析。
     </div>
 
-    <Toolbar :show-search="false">
+    <NvToolbar :show-search="false">
       <template #filters>
-        <InputPro v-model="filters.skuCode" class="h-9 w-32" placeholder="SKU" aria-label="SKU" />
-        <InputPro v-model="filters.uomCode" class="h-9 w-20" placeholder="单位" aria-label="单位" />
-        <InputPro v-model="filters.siteCode" class="h-9 w-20" placeholder="工厂" aria-label="工厂" />
-        <InputPro v-model="filters.locationCode" class="h-9 w-24" placeholder="库位" aria-label="库位" />
-        <InputPro v-model="filters.lotNo" class="h-9 w-28" placeholder="批次" aria-label="批次" />
-        <InputPro v-model="filters.serialNo" class="h-9 w-28" placeholder="序列号" aria-label="序列号" />
-        <SelectPro v-model="qualityStatusFilter">
-          <SelectProTrigger class="h-9 w-28" aria-label="质量状态"><SelectProValue /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem v-for="option in qualityStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+        <NvInput v-model="filters.skuCode" class="h-9 w-32" placeholder="SKU" aria-label="SKU" />
+        <NvInput v-model="filters.uomCode" class="h-9 w-20" placeholder="单位" aria-label="单位" />
+        <NvInput v-model="filters.siteCode" class="h-9 w-20" placeholder="工厂" aria-label="工厂" />
+        <NvInput
+          v-model="filters.locationCode"
+          class="h-9 w-24"
+          placeholder="库位"
+          aria-label="库位"
+        />
+        <NvInput v-model="filters.lotNo" class="h-9 w-28" placeholder="批次" aria-label="批次" />
+        <NvInput
+          v-model="filters.serialNo"
+          class="h-9 w-28"
+          placeholder="序列号"
+          aria-label="序列号"
+        />
+        <NvSelect v-model="qualityStatusFilter">
+          <NvSelectTrigger class="h-9 w-28" aria-label="质量状态"
+            ><NvSelectValue
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem
+              v-for="option in qualityStatusOptions"
+              :key="option.value"
+              :value="option.value"
+              >{{ option.label }}</NvSelectItem
+            >
+          </NvSelectContent>
+        </NvSelect>
       </template>
-    </Toolbar>
+    </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro
+    <NvDataTable
       :columns="columns"
       :rows="availabilityLines"
       :row-key="lineKey"
@@ -206,40 +280,48 @@ function formatError(error: unknown) {
       empty-message="输入 SKU、单位和工厂后查询批次、序列号和预留信息。"
     >
       <template #cell-qualityStatus="{ row }">
-        <StatusBadgePro :value="row.qualityStatus" />
+        <NvStatusBadge :value="row.qualityStatus" />
       </template>
-      <template #cell-onHandQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.onHandQuantity) }}</span></template>
-      <template #cell-reservedQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.reservedQuantity) }}</span></template>
-      <template #cell-availableQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.availableQuantity) }}</span></template>
-      <template #cell-blockedQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(lineBlockedQuantity(row)) }}</span></template>
+      <template #cell-onHandQuantity="{ row }"
+        ><span class="tabular-nums">{{ formatQuantity(row.onHandQuantity) }}</span></template
+      >
+      <template #cell-reservedQuantity="{ row }"
+        ><span class="tabular-nums">{{ formatQuantity(row.reservedQuantity) }}</span></template
+      >
+      <template #cell-availableQuantity="{ row }"
+        ><span class="tabular-nums">{{ formatQuantity(row.availableQuantity) }}</span></template
+      >
+      <template #cell-blockedQuantity="{ row }"
+        ><span class="tabular-nums">{{ formatQuantity(lineBlockedQuantity(row)) }}</span></template
+      >
       <template #cell-actions="{ row }">
         <div class="flex flex-wrap justify-end gap-2">
-          <ButtonPro size="sm" variant="ghost" as-child>
+          <NvButton size="sm" variant="ghost" as-child>
             <RouterLink :to="{ path: '/mes/traceability', query: traceabilityQuery(row) }">
               <RouteIcon aria-hidden="true" />
               MES追溯
             </RouterLink>
-          </ButtonPro>
-          <ButtonPro size="sm" variant="ghost" as-child>
+          </NvButton>
+          <NvButton size="sm" variant="ghost" as-child>
             <RouterLink :to="{ path: '/barcode/scans', query: barcodeQuery(row) }">
               <BarcodeIcon aria-hidden="true" />
               扫码
             </RouterLink>
-          </ButtonPro>
-          <ButtonPro size="sm" variant="ghost" as-child>
+          </NvButton>
+          <NvButton size="sm" variant="ghost" as-child>
             <RouterLink :to="{ path: '/wms/picking', query: lineContextQuery(row) }">
               <WarehouseIcon aria-hidden="true" />
               WMS
             </RouterLink>
-          </ButtonPro>
-          <ButtonPro size="sm" variant="ghost" as-child>
+          </NvButton>
+          <NvButton size="sm" variant="ghost" as-child>
             <RouterLink :to="{ path: '/quality/inspections', query: lineContextQuery(row) }">
               <ClipboardCheckIcon aria-hidden="true" />
               质量
             </RouterLink>
-          </ButtonPro>
+          </NvButton>
         </div>
       </template>
-    </DataTablePro>
+    </NvDataTable>
   </BusinessLayout>
 </template>
