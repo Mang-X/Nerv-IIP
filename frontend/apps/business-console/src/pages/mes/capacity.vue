@@ -1,28 +1,34 @@
 <script setup lang="ts">
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesCapacityImpacts } from '@/composables/useBusinessMes'
 import { mesCapacityStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  InputPro,
-  PageHeader,
-  SectionCard,
-  SectionCards,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
-  StatusBadgePro,
-  Toolbar,
+  NvButton,
+  NvDataTable,
+  NvInput,
+  NvPageHeader,
+  NvSectionCard,
+  NvSectionCards,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed, shallowRef, watch } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '产能影响', requiredPermissions: ['business.mes.capacity.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '产能影响',
+    requiredPermissions: ['business.mes.capacity.read'],
+  },
+})
 
 const {
   capacityImpacts,
@@ -35,17 +41,32 @@ const {
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 const statusFilter = shallowRef('all')
 
-const openCount = computed(() => capacityImpacts.value.filter((item) => item.status?.toLowerCase() === 'open').length)
+const openCount = computed(
+  () => capacityImpacts.value.filter((item) => item.status?.toLowerCase() === 'open').length,
+)
 const errorMessage = computed(() => formatError(capacityImpactsError.value))
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
 
 type ImpactRow = (typeof capacityImpacts)['value'][number]
-const columns: DataTableProColumn<ImpactRow>[] = [
-  { key: 'impactId', header: '影响编号', cellClass: 'font-medium', accessor: (r) => r.impactId ?? '无' },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? r.workCenterCode ?? r.workCenterId ?? '无' },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定' },
+const columns: NvDataTableColumn<ImpactRow>[] = [
+  {
+    key: 'impactId',
+    header: '影响编号',
+    cellClass: 'font-medium',
+    accessor: (r) => r.impactId ?? '无',
+  },
+  {
+    key: 'workCenterId',
+    header: '工作中心',
+    accessor: (r) => r.workCenterName ?? r.workCenterCode ?? r.workCenterId ?? '无',
+  },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定',
+  },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'effectiveFromUtc', header: '开始', width: 'w-44' },
   { key: 'effectiveToUtc', header: '结束', width: 'w-44' },
@@ -64,35 +85,56 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="产能影响" :breadcrumbs="[{ label: '制造执行' }]" :count="`${capacityImpactsTotal} 条影响`">
+    <NvPageHeader
+      title="产能影响"
+      :breadcrumbs="[{ label: '制造执行' }]"
+      :count="`${capacityImpactsTotal} 条影响`"
+    >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="capacityImpactsPending" @click="refreshCapacityImpacts">
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="capacityImpactsPending"
+          @click="refreshCapacityImpacts"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <SectionCards :columns="3">
-      <SectionCard description="影响记录" :value="capacityImpactsTotal" hint="后端筛选总数" />
-      <SectionCard description="本页未恢复" :value="openCount" hint="当前页统计" />
-      <SectionCard description="本页已恢复" :value="capacityImpacts.length - openCount" hint="当前页统计" />
-    </SectionCards>
+    <NvSectionCards :columns="3">
+      <NvSectionCard description="影响记录" :value="capacityImpactsTotal" hint="后端筛选总数" />
+      <NvSectionCard description="本页未恢复" :value="openCount" hint="当前页统计" />
+      <NvSectionCard
+        description="本页已恢复"
+        :value="capacityImpacts.length - openCount"
+        hint="当前页统计"
+      />
+    </NvSectionCards>
 
-    <Toolbar :show-search="false">
+    <NvToolbar :show-search="false">
       <template #filters>
-        <SelectPro v-model="statusFilter">
-          <SelectProTrigger class="h-9 w-32" aria-label="影响状态"><SelectProValue /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem v-for="option in mesCapacityStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+        <NvSelect v-model="statusFilter">
+          <NvSelectTrigger class="h-9 w-32" aria-label="影响状态"
+            ><NvSelectValue
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem
+              v-for="option in mesCapacityStatusOptions"
+              :key="option.value"
+              :value="option.value"
+              >{{ option.label }}</NvSelectItem
+            >
+          </NvSelectContent>
+        </NvSelect>
       </template>
-    </Toolbar>
+    </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -107,10 +149,11 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="暂无产能影响。设备停机或维护冲突发生时会在这里汇总。"
     >
-      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
-      <template #cell-effectiveFromUtc="{ row }">{{ formatDateTime(row.effectiveFromUtc) }}</template>
+      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-effectiveFromUtc="{ row }">{{
+        formatDateTime(row.effectiveFromUtc)
+      }}</template>
       <template #cell-effectiveToUtc="{ row }">{{ formatDateTime(row.effectiveToUtc) }}</template>
-    </DataTablePro>
-
+    </NvDataTable>
   </BusinessLayout>
 </template>

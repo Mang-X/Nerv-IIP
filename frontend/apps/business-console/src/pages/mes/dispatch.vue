@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesDispatchTasks } from '@/composables/useBusinessMes'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
@@ -7,36 +7,42 @@ import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DropdownMenuProItem,
-  FieldPro,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  RowActions,
-  SectionCard,
-  SectionCards,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDropdownMenuItem,
+  NvField,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvRowActions,
+  NvSectionCard,
+  NvSectionCards,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon, UserCheckIcon } from 'lucide-vue-next'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '派工看板', requiredPermissions: ['business.mes.dispatch.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '派工看板',
+    requiredPermissions: ['business.mes.dispatch.read'],
+  },
+})
 
 const {
   assignDispatchTask,
@@ -56,8 +62,12 @@ watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
 
-const blockedCount = computed(() => dispatchTasks.value.filter((x) => x.blockingReasons?.length).length)
-const dispatchableCount = computed(() => dispatchTasks.value.filter((x) => !x.blockingReasons?.length).length)
+const blockedCount = computed(
+  () => dispatchTasks.value.filter((x) => x.blockingReasons?.length).length,
+)
+const dispatchableCount = computed(
+  () => dispatchTasks.value.filter((x) => !x.blockingReasons?.length).length,
+)
 const errorMessage = computed(() => formatError(dispatchTasksError.value))
 
 type DispatchRow = (typeof dispatchTasks)['value'][number]
@@ -66,15 +76,34 @@ type DispatchRow = (typeof dispatchTasks)['value'][number]
 const workerOptions = computed(() =>
   workers.value
     .filter((w) => w.userId)
-    .map((w) => ({ value: w.userId as string, label: w.employeeNo ? `${w.displayName ?? w.userId} · ${w.employeeNo}` : (w.displayName ?? w.userId as string) })),
+    .map((w) => ({
+      value: w.userId as string,
+      label: w.employeeNo
+        ? `${w.displayName ?? w.userId} · ${w.employeeNo}`
+        : (w.displayName ?? (w.userId as string)),
+    })),
 )
 
-const columns: DataTableProColumn<DispatchRow>[] = [
-  { key: 'operationTaskId', header: '工序任务', cellClass: 'font-medium', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无' },
+const columns: NvDataTableColumn<DispatchRow>[] = [
+  {
+    key: 'operationTaskId',
+    header: '工序任务',
+    cellClass: 'font-medium',
+    accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无',
+  },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? resolveWorkCenter(r.workCenterCode ?? r.workCenterId) ?? '无' },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定' },
+  {
+    key: 'workCenterId',
+    header: '工作中心',
+    accessor: (r) =>
+      r.workCenterName ?? resolveWorkCenter(r.workCenterCode ?? r.workCenterId) ?? '无',
+  },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定',
+  },
   { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
   { key: 'plannedStartUtc', header: '计划开始', width: 'w-44' },
   { key: 'blockingReasons', header: '阻塞处理' },
@@ -111,8 +140,7 @@ async function confirmAssign() {
     assignOpen.value = false
     assignTarget.value = null
     void refreshDispatchTasks()
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -132,35 +160,52 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="派工看板" :breadcrumbs="[{ label: '制造执行' }]" :count="`${dispatchTasksTotal} 个待派工序`">
+    <NvPageHeader
+      title="派工看板"
+      :breadcrumbs="[{ label: '制造执行' }]"
+      :count="`${dispatchTasksTotal} 个待派工序`"
+    >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="dispatchTasksPending" @click="refreshDispatchTasks">
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="dispatchTasksPending"
+          @click="refreshDispatchTasks"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <SectionCards :columns="3">
-      <SectionCard description="派工任务" :value="dispatchTasksTotal" hint="后端筛选总数" />
-      <SectionCard description="本页可派工" :value="dispatchableCount" hint="当前页统计" />
-      <SectionCard description="本页有阻塞" :value="blockedCount" hint="当前页统计" />
-    </SectionCards>
+    <NvSectionCards :columns="3">
+      <NvSectionCard description="派工任务" :value="dispatchTasksTotal" hint="后端筛选总数" />
+      <NvSectionCard description="本页可派工" :value="dispatchableCount" hint="当前页统计" />
+      <NvSectionCard description="本页有阻塞" :value="blockedCount" hint="当前页统计" />
+    </NvSectionCards>
 
-    <Toolbar :show-search="false">
+    <NvToolbar :show-search="false">
       <template #filters>
-        <SelectPro v-model="statusFilter">
-          <SelectProTrigger class="h-9 w-32" aria-label="派工状态"><SelectProValue /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem v-for="option in mesOperationTaskStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+        <NvSelect v-model="statusFilter">
+          <NvSelectTrigger class="h-9 w-32" aria-label="派工状态"
+            ><NvSelectValue
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem
+              v-for="option in mesOperationTaskStatusOptions"
+              :key="option.value"
+              :value="option.value"
+              >{{ option.label }}</NvSelectItem
+            >
+          </NvSelectContent>
+        </NvSelect>
       </template>
-    </Toolbar>
+    </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -175,55 +220,65 @@ function formatError(error: unknown) {
       :searchable="false"
       :column-settings="false"
     >
-      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-plannedStartUtc="{ row }">{{ formatDateTime(row.plannedStartUtc) }}</template>
       <template #cell-blockingReasons="{ row }">
         <div v-if="row.blockingReasons?.length" class="grid gap-2">
-          <div v-for="reason in readinessList(row.blockingReasons)" :key="`${row.operationTaskId}-${reason.code}`" class="grid gap-0.5">
-            <StatusBadgePro :label="reason.label" tone="warning" />
+          <div
+            v-for="reason in readinessList(row.blockingReasons)"
+            :key="`${row.operationTaskId}-${reason.code}`"
+            class="grid gap-0.5"
+          >
+            <NvStatusBadge :label="reason.label" tone="warning" />
             <p class="text-xs text-muted-foreground">{{ reason.nextStep }}</p>
           </div>
         </div>
         <span v-else class="text-muted-foreground">可派工</span>
       </template>
       <template #cell-actions="{ row }">
-        <RowActions :label="`派工操作 ${row.operationTaskId ?? ''}`">
-          <DropdownMenuProItem :disabled="!canDispatch(row)" @click="openAssign(row)">
+        <NvRowActions :label="`派工操作 ${row.operationTaskId ?? ''}`">
+          <NvDropdownMenuItem :disabled="!canDispatch(row)" @click="openAssign(row)">
             <UserCheckIcon aria-hidden="true" />
             {{ canDispatch(row) ? '派工（指派操作员）' : '有阻塞，先处理' }}
-          </DropdownMenuProItem>
-        </RowActions>
+          </NvDropdownMenuItem>
+        </NvRowActions>
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
-
-    <DialogPro v-model:open="assignOpen">
-      <DialogProContent>
-        <DialogProHeader>
-          <DialogProTitle>派工 · 指派操作员</DialogProTitle>
-          <DialogProDescription>
-            为工单 {{ assignTarget?.workOrderId ?? '' }} 的工序任务指派操作员；设备与班次沿用排程结果。
-          </DialogProDescription>
-        </DialogProHeader>
+    <NvDialog v-model:open="assignOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>派工 · 指派操作员</NvDialogTitle>
+          <NvDialogDescription>
+            为工单
+            {{ assignTarget?.workOrderId ?? '' }} 的工序任务指派操作员；设备与班次沿用排程结果。
+          </NvDialogDescription>
+        </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="confirmAssign">
-          <FieldPro>
-            <FieldProLabel for="assign-operator">操作员 <span class="text-destructive">*</span></FieldProLabel>
-            <SelectPro v-model="assignedUserId">
-              <SelectProTrigger id="assign-operator"><SelectProValue placeholder="选择操作员" /></SelectProTrigger>
-              <SelectProContent>
-                <SelectProItem v-for="o in workerOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-              </SelectProContent>
-            </SelectPro>
-          </FieldPro>
-          <DialogProFooter>
-            <ButtonPro type="button" variant="outline" @click="assignOpen = false">取消</ButtonPro>
-            <ButtonPro type="submit" :disabled="assignDispatchTaskPending || !assignedUserId">
+          <NvField>
+            <NvFieldLabel for="assign-operator"
+              >操作员 <span class="text-destructive">*</span></NvFieldLabel
+            >
+            <NvSelect v-model="assignedUserId">
+              <NvSelectTrigger id="assign-operator"
+                ><NvSelectValue placeholder="选择操作员"
+              /></NvSelectTrigger>
+              <NvSelectContent>
+                <NvSelectItem v-for="o in workerOptions" :key="o.value" :value="o.value">{{
+                  o.label
+                }}</NvSelectItem>
+              </NvSelectContent>
+            </NvSelect>
+          </NvField>
+          <NvDialogFooter>
+            <NvButton type="button" variant="outline" @click="assignOpen = false">取消</NvButton>
+            <NvButton type="submit" :disabled="assignDispatchTaskPending || !assignedUserId">
               <Spinner v-if="assignDispatchTaskPending" aria-hidden="true" />
               确认派工
-            </ButtonPro>
-          </DialogProFooter>
+            </NvButton>
+          </NvDialogFooter>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>

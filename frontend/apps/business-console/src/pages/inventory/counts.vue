@@ -3,31 +3,37 @@ import type {
   BusinessConsoleConfirmStockCountAdjustmentRequest,
   BusinessConsoleCreateStockCountTaskRequest,
 } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useInventoryCounts } from '@/composables/useBusinessInventory'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProHeader,
-  DialogProTitle,
-  DropdownMenuProItem,
-  FieldPro,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  RowActions,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDropdownMenuItem,
+  NvField,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvRowActions,
   Spinner,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, ClipboardPlusIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '库存盘点', requiredPermissions: ['business.inventory.counts.manage'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '库存盘点',
+    requiredPermissions: ['business.inventory.counts.manage'],
+  },
+})
 
 const route = useRoute()
 const {
@@ -114,7 +120,7 @@ const canConfirmAdjustment = computed(
 )
 
 type QueueRow = CountTaskQueueRow
-const columns: DataTableProColumn<QueueRow>[] = [
+const columns: NvDataTableColumn<QueueRow>[] = [
   { key: 'countTaskId', header: '任务号', cellClass: 'font-medium' },
   { key: 'skuCode', header: '物料' },
   { key: 'location', header: '库位', accessor: (r) => `${r.siteCode} / ${r.locationCode}` },
@@ -203,19 +209,25 @@ function isNonEmpty(value: string) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="库存盘点" :breadcrumbs="[{ label: '库存' }]" :count="`${countTaskQueue.length} 个本次任务`">
+    <NvPageHeader
+      title="库存盘点"
+      :breadcrumbs="[{ label: '库存' }]"
+      :count="`${countTaskQueue.length} 个本次任务`"
+    >
       <template #actions>
-        <ButtonPro v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
-          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`">返回工单 {{ contextWorkOrderId }}</RouterLink>
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" @click="taskSheetOpen = true">
+        <NvButton v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`"
+            >返回工单 {{ contextWorkOrderId }}</RouterLink
+          >
+        </NvButton>
+        <NvButton size="sm" type="button" @click="taskSheetOpen = true">
           <ClipboardPlusIcon aria-hidden="true" />
           创建盘点任务
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <DataTablePro
+    <NvDataTable
       :columns="columns"
       :rows="countTaskQueue"
       row-key="countTaskId"
@@ -224,101 +236,124 @@ function isNonEmpty(value: string) {
       empty-message="暂无盘点任务。先创建盘点任务，再从任务行进入差异确认。"
     >
       <template #cell-actions="{ row }">
-        <RowActions :label="`盘点操作 ${row.countTaskId}`">
-          <DropdownMenuProItem @click="openAdjustment(row)">
+        <NvRowActions :label="`盘点操作 ${row.countTaskId}`">
+          <NvDropdownMenuItem @click="openAdjustment(row)">
             <CheckCircle2Icon aria-hidden="true" />
             确认差异
-          </DropdownMenuProItem>
-        </RowActions>
+          </NvDropdownMenuItem>
+        </NvRowActions>
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
-    <DialogPro v-model:open="taskSheetOpen">
-      <DialogProContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogProHeader>
-          <DialogProTitle>创建盘点任务</DialogProTitle>
-          <DialogProDescription>指定物料、工厂、库位和批次后创建盘点任务。</DialogProDescription>
-        </DialogProHeader>
+    <NvDialog v-model:open="taskSheetOpen">
+      <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <NvDialogHeader>
+          <NvDialogTitle>创建盘点任务</NvDialogTitle>
+          <NvDialogDescription>指定物料、工厂、库位和批次后创建盘点任务。</NvDialogDescription>
+        </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitTask">
-          <p v-if="taskErrorMessage" class="text-sm text-destructive" role="alert">{{ taskErrorMessage }}</p>
+          <p v-if="taskErrorMessage" class="text-sm text-destructive" role="alert">
+            {{ taskErrorMessage }}
+          </p>
           <p v-if="taskSuccess" class="text-sm text-success" role="status">{{ taskSuccess }}</p>
-          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-            <FieldPro>
-              <FieldProLabel for="count-task-sku">SKU</FieldProLabel>
-              <InputPro id="count-task-sku" v-model="taskForm.skuCode" required />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="count-task-uom">单位</FieldProLabel>
-              <InputPro id="count-task-uom" v-model="taskForm.uomCode" required />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="count-task-site">工厂</FieldProLabel>
-              <InputPro id="count-task-site" v-model="taskForm.siteCode" required />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="count-task-location">库位</FieldProLabel>
-              <InputPro id="count-task-location" v-model="taskForm.locationCode" required />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="count-task-quality">质量状态</FieldProLabel>
-              <InputPro id="count-task-quality" v-model="taskForm.qualityStatus" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="count-task-owner-type">货主类型</FieldProLabel>
-              <InputPro id="count-task-owner-type" v-model="taskForm.ownerType" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="count-task-owner-id">货主</FieldProLabel>
-              <InputPro id="count-task-owner-id" v-model="taskForm.ownerId" placeholder="可选货主名称或编码" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="count-task-lot">批次</FieldProLabel>
-              <InputPro id="count-task-lot" v-model="taskForm.lotNo" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="count-task-serial">序列号</FieldProLabel>
-              <InputPro id="count-task-serial" v-model="taskForm.serialNo" />
-            </FieldPro>
-          </FieldProGroup>
+          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+            <NvField>
+              <NvFieldLabel for="count-task-sku">SKU</NvFieldLabel>
+              <NvInput id="count-task-sku" v-model="taskForm.skuCode" required />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="count-task-uom">单位</NvFieldLabel>
+              <NvInput id="count-task-uom" v-model="taskForm.uomCode" required />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="count-task-site">工厂</NvFieldLabel>
+              <NvInput id="count-task-site" v-model="taskForm.siteCode" required />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="count-task-location">库位</NvFieldLabel>
+              <NvInput id="count-task-location" v-model="taskForm.locationCode" required />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="count-task-quality">质量状态</NvFieldLabel>
+              <NvInput id="count-task-quality" v-model="taskForm.qualityStatus" />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="count-task-owner-type">货主类型</NvFieldLabel>
+              <NvInput id="count-task-owner-type" v-model="taskForm.ownerType" />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="count-task-owner-id">货主</NvFieldLabel>
+              <NvInput
+                id="count-task-owner-id"
+                v-model="taskForm.ownerId"
+                placeholder="可选货主名称或编码"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="count-task-lot">批次</NvFieldLabel>
+              <NvInput id="count-task-lot" v-model="taskForm.lotNo" />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="count-task-serial">序列号</NvFieldLabel>
+              <NvInput id="count-task-serial" v-model="taskForm.serialNo" />
+            </NvField>
+          </NvFieldGroup>
           <div class="flex justify-end">
-            <ButtonPro type="submit" :disabled="createCountTaskPending || !canCreateTask">
+            <NvButton type="submit" :disabled="createCountTaskPending || !canCreateTask">
               <Spinner v-if="createCountTaskPending" aria-hidden="true" />
               <ClipboardPlusIcon v-else aria-hidden="true" />
               创建任务
-            </ButtonPro>
+            </NvButton>
           </div>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
 
-    <DialogPro v-model:open="adjustmentSheetOpen">
-      <DialogProContent>
-        <DialogProHeader>
-          <DialogProTitle>确认盘点差异</DialogProTitle>
-          <DialogProDescription>从已完成实盘的任务进入差异确认，重复提交保护由系统处理。</DialogProDescription>
-        </DialogProHeader>
+    <NvDialog v-model:open="adjustmentSheetOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>确认盘点差异</NvDialogTitle>
+          <NvDialogDescription
+            >从已完成实盘的任务进入差异确认，重复提交保护由系统处理。</NvDialogDescription
+          >
+        </NvDialogHeader>
         <form class="grid content-start gap-4" @submit.prevent="submitAdjustment">
-          <p v-if="adjustmentErrorMessage" class="text-sm text-destructive" role="alert">{{ adjustmentErrorMessage }}</p>
-          <p v-if="adjustmentSuccess" class="text-sm text-success" role="status">{{ adjustmentSuccess }}</p>
-          <FieldProGroup class="grid gap-3">
-            <FieldPro>
-              <FieldProLabel for="count-adjust-task-id">盘点任务</FieldProLabel>
-              <InputPro id="count-adjust-task-id" v-model="adjustmentForm.countTaskId" readonly required />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="count-adjust-quantity">实盘数量</FieldProLabel>
-              <InputPro id="count-adjust-quantity" v-model="adjustmentForm.countedQuantity" inputmode="decimal" required type="number" />
-            </FieldPro>
-          </FieldProGroup>
+          <p v-if="adjustmentErrorMessage" class="text-sm text-destructive" role="alert">
+            {{ adjustmentErrorMessage }}
+          </p>
+          <p v-if="adjustmentSuccess" class="text-sm text-success" role="status">
+            {{ adjustmentSuccess }}
+          </p>
+          <NvFieldGroup class="grid gap-3">
+            <NvField>
+              <NvFieldLabel for="count-adjust-task-id">盘点任务</NvFieldLabel>
+              <NvInput
+                id="count-adjust-task-id"
+                v-model="adjustmentForm.countTaskId"
+                readonly
+                required
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="count-adjust-quantity">实盘数量</NvFieldLabel>
+              <NvInput
+                id="count-adjust-quantity"
+                v-model="adjustmentForm.countedQuantity"
+                inputmode="decimal"
+                required
+                type="number"
+              />
+            </NvField>
+          </NvFieldGroup>
           <div class="flex justify-end">
-            <ButtonPro type="submit" :disabled="confirmAdjustmentPending || !canConfirmAdjustment">
+            <NvButton type="submit" :disabled="confirmAdjustmentPending || !canConfirmAdjustment">
               <Spinner v-if="confirmAdjustmentPending" aria-hidden="true" />
               <CheckCircle2Icon v-else aria-hidden="true" />
               确认调整
-            </ButtonPro>
+            </NvButton>
           </div>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>

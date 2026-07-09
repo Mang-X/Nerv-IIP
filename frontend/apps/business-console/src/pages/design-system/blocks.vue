@@ -1,24 +1,24 @@
 <script setup lang="ts">
-import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import {
-  AppShellInset,
+  NvAppShellInset,
   Button,
-  DataTable,
-  DataTablePagination,
+  NvDataTable,
+  NvDataTablePagination,
   DropdownMenuItem,
-  PageHeader,
-  RowActions,
-  SectionCard,
-  SectionCards,
+  NvPageHeader,
+  NvRowActions,
+  NvSectionCard,
+  NvSectionCards,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  StatusBadge,
-  ThemePicker,
-  ThemeToggle,
-  Toolbar,
+  NvStatusBadge,
+  NvThemePicker,
+  NvThemeToggle,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { BoxesIcon, FactoryIcon, GaugeIcon, LayersIcon } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
@@ -43,7 +43,7 @@ const allRows: WorkOrderRow[] = [
 ]
 
 const search = ref('')
-const sort = ref<DataTableSort | null>({ key: 'code', direction: 'asc' })
+const sort = ref<NvDataTableSort | null>({ key: 'code', direction: 'asc' })
 const page = ref(1)
 const pageSize = ref('5')
 
@@ -58,7 +58,7 @@ const paged = computed(() => {
   return filtered.value.slice(start, start + pageSizeNum.value)
 })
 
-const columns: DataTableColumn<WorkOrderRow>[] = [
+const columns: NvDataTableColumn<WorkOrderRow>[] = [
   { key: 'code', header: '工单号', sortable: true, width: 'w-32', cellClass: 'font-medium' },
   { key: 'product', header: '产品', sortable: true },
   { key: 'qty', header: '数量', align: 'end', sortable: true, width: 'w-24' },
@@ -76,10 +76,12 @@ const navItems = [
 </script>
 
 <template>
-  <AppShellInset>
+  <NvAppShellInset>
     <template #sidebar-header>
       <div class="flex items-center gap-2 px-1 py-1.5">
-        <div class="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sm font-extrabold text-sidebar-primary-foreground">
+        <div
+          class="flex size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sm font-extrabold text-sidebar-primary-foreground"
+        >
           N
         </div>
         <span class="truncate text-sm font-semibold">Nerv-IIP</span>
@@ -103,12 +105,12 @@ const navItems = [
     <template #header>
       <span class="text-sm font-semibold">设计系统 · Block 组件库</span>
       <div class="ml-auto flex items-center gap-1">
-        <ThemePicker />
-        <ThemeToggle />
+        <NvThemePicker />
+        <NvThemeToggle />
       </div>
     </template>
 
-    <PageHeader
+    <NvPageHeader
       title="生产驾驶舱"
       :breadcrumbs="[{ label: '制造执行', href: '#' }]"
       :count="`${filtered.length} 个工单`"
@@ -117,22 +119,46 @@ const navItems = [
         <Button variant="outline" size="sm">导出</Button>
         <Button size="sm">新建工单</Button>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <SectionCards>
-      <SectionCard description="在制工单" :value="42" :trend="{ value: '+8.2%', direction: 'up' }" footnote="较上周稳步提升" hint="本周新开 12 单" />
-      <SectionCard description="按时完工率" value="94.6%" :trend="{ value: '+1.4%', direction: 'up' }" footnote="高于目标 92%" hint="近 30 天" />
-      <SectionCard description="受阻工单" :value="3" :trend="{ value: '-2', direction: 'down' }" footnote="齐套待解决" hint="物料短缺 2 单" />
-      <SectionCard description="设备综合效率" value="81.3%" :trend="{ value: '0.0%', direction: 'flat' }" footnote="与昨日持平" hint="OEE" />
-    </SectionCards>
+    <NvSectionCards>
+      <NvSectionCard
+        description="在制工单"
+        :value="42"
+        :trend="{ value: '+8.2%', direction: 'up' }"
+        footnote="较上周稳步提升"
+        hint="本周新开 12 单"
+      />
+      <NvSectionCard
+        description="按时完工率"
+        value="94.6%"
+        :trend="{ value: '+1.4%', direction: 'up' }"
+        footnote="高于目标 92%"
+        hint="近 30 天"
+      />
+      <NvSectionCard
+        description="受阻工单"
+        :value="3"
+        :trend="{ value: '-2', direction: 'down' }"
+        footnote="齐套待解决"
+        hint="物料短缺 2 单"
+      />
+      <NvSectionCard
+        description="设备综合效率"
+        value="81.3%"
+        :trend="{ value: '0.0%', direction: 'flat' }"
+        footnote="与昨日持平"
+        hint="OEE"
+      />
+    </NvSectionCards>
 
-    <Toolbar v-model:search="search" search-placeholder="按工单号或产品搜索">
+    <NvToolbar v-model:search="search" search-placeholder="按工单号或产品搜索">
       <template #actions>
         <Button variant="outline" size="sm">筛选</Button>
       </template>
-    </Toolbar>
+    </NvToolbar>
 
-    <DataTable
+    <NvDataTable
       v-model:sort="sort"
       :columns="columns"
       :rows="paged"
@@ -146,22 +172,22 @@ const navItems = [
         <span class="tabular-nums">{{ value }}%</span>
       </template>
       <template #cell-status="{ value }">
-        <StatusBadge :value="String(value)" />
+        <NvStatusBadge :value="String(value)" />
       </template>
       <template #cell-actions>
-        <RowActions>
+        <NvRowActions>
           <DropdownMenuItem>查看详情</DropdownMenuItem>
           <DropdownMenuItem>派工</DropdownMenuItem>
           <DropdownMenuItem variant="destructive">关闭工单</DropdownMenuItem>
-        </RowActions>
+        </NvRowActions>
       </template>
-    </DataTable>
+    </NvDataTable>
 
-    <DataTablePagination
+    <NvDataTablePagination
       v-model:page="page"
       v-model:page-size="pageSize"
       :total-items="filtered.length"
-      :page-size-options="['5', '10', '20']"
+      :page-size-options="[5, 10, 20]"
     />
-  </AppShellInset>
+  </NvAppShellInset>
 </template>

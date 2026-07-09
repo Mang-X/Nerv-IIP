@@ -1,40 +1,46 @@
 <script setup lang="ts">
 import type { BusinessConsoleBarcodeScanRecordItem } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useBarcodeScans } from '@/composables/useBusinessBarcode'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DialogProTrigger,
-  FieldPro,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDialogTrigger,
+  NvField,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { BARCODE_SCAN_WORKFLOW_OPTIONS, barcodeScanWorkflowLabel } from './workflow-options'
 
-definePage({ meta: { requiresAuth: true, title: '扫码记录', requiredPermissions: ['business.barcodes.templates.manage'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '扫码记录',
+    requiredPermissions: ['business.barcodes.templates.manage'],
+  },
+})
 
 const WORKFLOW_OPTIONS = BARCODE_SCAN_WORKFLOW_OPTIONS
 
@@ -56,7 +62,12 @@ const {
   scansTotal,
 } = useBarcodeScans()
 const { page, pageSize } = usePagedList(filters, {
-  resetOn: [() => filters.deviceCode, () => filters.scannedValue, () => filters.sourceWorkflow, () => filters.sourceDocumentId],
+  resetOn: [
+    () => filters.deviceCode,
+    () => filters.scannedValue,
+    () => filters.sourceWorkflow,
+    () => filters.sourceDocumentId,
+  ],
 })
 
 const open = shallowRef(false)
@@ -71,8 +82,13 @@ const form = reactive({
   rejectionReason: '',
 })
 
-const columns: DataTableProColumn<BusinessConsoleBarcodeScanRecordItem>[] = [
-  { key: 'scannedValue', header: '扫码原文', cellClass: 'font-mono text-xs', accessor: (r) => r.scannedValue ?? '无' },
+const columns: NvDataTableColumn<BusinessConsoleBarcodeScanRecordItem>[] = [
+  {
+    key: 'scannedValue',
+    header: '扫码原文',
+    cellClass: 'font-mono text-xs',
+    accessor: (r) => r.scannedValue ?? '无',
+  },
   { key: 'parsed', header: '解析结果' },
   { key: 'sourceWorkflow', header: '动作来源', width: 'w-36' },
   { key: 'sourceDocumentId', header: '业务对象', accessor: (r) => r.sourceDocumentId ?? '无' },
@@ -104,13 +120,14 @@ watch(workflowFilter, (value) => {
 })
 
 const errorMessage = computed(() => formatError(scansError.value))
-const canSubmit = computed(() =>
-  form.deviceCode.trim().length > 0
-  && form.scannedValue.trim().length > 0
-  && form.sourceWorkflow.trim().length > 0
-  && form.sourceDocumentId.trim().length > 0
-  && form.result.trim().length > 0
-  && (form.result === 'accepted' || form.rejectionReason.trim().length > 0),
+const canSubmit = computed(
+  () =>
+    form.deviceCode.trim().length > 0 &&
+    form.scannedValue.trim().length > 0 &&
+    form.sourceWorkflow.trim().length > 0 &&
+    form.sourceDocumentId.trim().length > 0 &&
+    form.result.trim().length > 0 &&
+    (form.result === 'accepted' || form.rejectionReason.trim().length > 0),
 )
 
 function openRecordDialog() {
@@ -146,8 +163,7 @@ async function submitScan() {
     })
     notifySuccess('扫码审计已记录。')
     open.value = false
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -163,7 +179,8 @@ function resultLabel(value?: string | null) {
 
 function resultTone(value?: string | null) {
   const normalized = value?.toLowerCase()
-  if (normalized === 'accepted' || normalized === 'success' || normalized === 'succeeded') return 'success'
+  if (normalized === 'accepted' || normalized === 'success' || normalized === 'succeeded')
+    return 'success'
   if (normalized === 'rejected') return 'warning'
   if (normalized === 'failed' || normalized === 'error') return 'danger'
   return undefined
@@ -172,8 +189,10 @@ function resultTone(value?: string | null) {
 function rejectionMessage(value?: string | null) {
   const normalized = value?.trim().toLowerCase()
   if (!normalized) return ''
-  if (normalized.includes('unsupported')) return '该扫码场景暂未接入自动业务动作，请转人工处理或从对应业务页面重试。'
-  if (normalized.includes('parse') || normalized.includes('invalid')) return '条码解析失败，请核对标签内容、规则和扫描方式。'
+  if (normalized.includes('unsupported'))
+    return '该扫码场景暂未接入自动业务动作，请转人工处理或从对应业务页面重试。'
+  if (normalized.includes('parse') || normalized.includes('invalid'))
+    return '条码解析失败，请核对标签内容、规则和扫描方式。'
   if (normalized.includes('duplicate')) return '该条码动作已被记录，请检查是否重复扫码。'
   return value ?? ''
 }
@@ -213,89 +232,152 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="扫码记录" :breadcrumbs="[{ label: '条码标签' }]" :count="`${scansTotal} 条记录`">
+    <NvPageHeader
+      title="扫码记录"
+      :breadcrumbs="[{ label: '条码标签' }]"
+      :count="`${scansTotal} 条记录`"
+    >
       <template #actions>
-        <ButtonPro size="sm" variant="outline" type="button" :disabled="scansPending" @click="refreshScans">
+        <NvButton
+          size="sm"
+          variant="outline"
+          type="button"
+          :disabled="scansPending"
+          @click="refreshScans"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <DialogPro v-model:open="open">
-          <DialogProTrigger as-child>
-            <ButtonPro size="sm" type="button" @click="openRecordDialog">
+        </NvButton>
+        <NvDialog v-model:open="open">
+          <NvDialogTrigger as-child>
+            <NvButton size="sm" type="button" @click="openRecordDialog">
               <PlusIcon aria-hidden="true" />
               补录扫码审计
-            </ButtonPro>
-          </DialogProTrigger>
-          <DialogProContent class="sm:max-w-2xl">
-            <DialogProHeader>
-              <DialogProTitle>补录扫码审计</DialogProTitle>
-              <DialogProDescription>记录 PC 端可见的扫码审计事实；PDA 扫码界面和离线能力不在本页实现。</DialogProDescription>
-            </DialogProHeader>
+            </NvButton>
+          </NvDialogTrigger>
+          <NvDialogContent class="sm:max-w-2xl">
+            <NvDialogHeader>
+              <NvDialogTitle>补录扫码审计</NvDialogTitle>
+              <NvDialogDescription
+                >记录 PC 端可见的扫码审计事实；PDA
+                扫码界面和离线能力不在本页实现。</NvDialogDescription
+              >
+            </NvDialogHeader>
             <form class="grid gap-4" @submit.prevent="submitScan">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请填写终端、扫码原文、动作来源、业务对象；失败或拒绝时必须填写原因。
               </p>
-              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-                <FieldPro :data-invalid="showErrors && !form.deviceCode.trim()">
-                  <FieldProLabel for="barcode-scan-device">设备/终端 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="barcode-scan-device" v-model="form.deviceCode" autocomplete="off" />
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel>扫码结果 <span class="text-destructive">*</span></FieldProLabel>
-                  <SelectPro v-model="form.result" aria-label="扫码结果">
-                    <SelectProTrigger aria-label="扫码结果"><SelectProValue /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="option in RESULT_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                </FieldPro>
-                <FieldPro class="sm:col-span-2" :data-invalid="showErrors && !form.scannedValue.trim()">
-                  <FieldProLabel for="barcode-scan-value">扫码原文 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="barcode-scan-value" v-model="form.scannedValue" autocomplete="off" />
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !form.sourceWorkflow.trim()">
-                  <FieldProLabel for="barcode-scan-workflow">动作来源 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="barcode-scan-workflow" v-model="form.sourceWorkflow" autocomplete="off" />
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !form.sourceDocumentId.trim()">
-                  <FieldProLabel for="barcode-scan-source-id">业务对象 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="barcode-scan-source-id" v-model="form.sourceDocumentId" autocomplete="off" />
-                </FieldPro>
-                <FieldPro class="sm:col-span-2" :data-invalid="showErrors && form.result !== 'accepted' && !form.rejectionReason.trim()">
-                  <FieldProLabel for="barcode-scan-reason">失败/拒绝原因</FieldProLabel>
-                  <InputPro id="barcode-scan-reason" v-model="form.rejectionReason" autocomplete="off" />
-                </FieldPro>
-              </FieldProGroup>
-              <DialogProFooter>
-                <ButtonPro type="button" variant="outline" @click="open = false">取消</ButtonPro>
-                <ButtonPro type="submit" :disabled="recordScanPending">
+              <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+                <NvField :data-invalid="showErrors && !form.deviceCode.trim()">
+                  <NvFieldLabel for="barcode-scan-device"
+                    >设备/终端 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput id="barcode-scan-device" v-model="form.deviceCode" autocomplete="off" />
+                </NvField>
+                <NvField>
+                  <NvFieldLabel>扫码结果 <span class="text-destructive">*</span></NvFieldLabel>
+                  <NvSelect v-model="form.result" aria-label="扫码结果">
+                    <NvSelectTrigger aria-label="扫码结果"><NvSelectValue /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem
+                        v-for="option in RESULT_OPTIONS"
+                        :key="option.value"
+                        :value="option.value"
+                        >{{ option.label }}</NvSelectItem
+                      >
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+                <NvField
+                  class="sm:col-span-2"
+                  :data-invalid="showErrors && !form.scannedValue.trim()"
+                >
+                  <NvFieldLabel for="barcode-scan-value"
+                    >扫码原文 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput id="barcode-scan-value" v-model="form.scannedValue" autocomplete="off" />
+                </NvField>
+                <NvField :data-invalid="showErrors && !form.sourceWorkflow.trim()">
+                  <NvFieldLabel for="barcode-scan-workflow"
+                    >动作来源 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="barcode-scan-workflow"
+                    v-model="form.sourceWorkflow"
+                    autocomplete="off"
+                  />
+                </NvField>
+                <NvField :data-invalid="showErrors && !form.sourceDocumentId.trim()">
+                  <NvFieldLabel for="barcode-scan-source-id"
+                    >业务对象 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="barcode-scan-source-id"
+                    v-model="form.sourceDocumentId"
+                    autocomplete="off"
+                  />
+                </NvField>
+                <NvField
+                  class="sm:col-span-2"
+                  :data-invalid="
+                    showErrors && form.result !== 'accepted' && !form.rejectionReason.trim()
+                  "
+                >
+                  <NvFieldLabel for="barcode-scan-reason">失败/拒绝原因</NvFieldLabel>
+                  <NvInput
+                    id="barcode-scan-reason"
+                    v-model="form.rejectionReason"
+                    autocomplete="off"
+                  />
+                </NvField>
+              </NvFieldGroup>
+              <NvDialogFooter>
+                <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
+                <NvButton type="submit" :disabled="recordScanPending">
                   <Spinner v-if="recordScanPending" aria-hidden="true" />
                   记录审计
-                </ButtonPro>
-              </DialogProFooter>
+                </NvButton>
+              </NvDialogFooter>
             </form>
-          </DialogProContent>
-        </DialogPro>
+          </NvDialogContent>
+        </NvDialog>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <Toolbar v-model:search="filters.scannedValue" search-placeholder="按扫码原文筛选">
+    <NvToolbar v-model:search="filters.scannedValue" search-placeholder="按扫码原文筛选">
       <template #filters>
-        <SelectPro v-model="workflowFilter">
-          <SelectProTrigger class="h-9 w-36" aria-label="动作来源"><SelectProValue placeholder="全部来源" /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem value="all">全部来源</SelectProItem>
-            <SelectProItem v-for="option in WORKFLOW_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
-        <InputPro v-model="filters.sourceDocumentId" class="h-9 w-40" placeholder="业务对象" aria-label="业务对象" />
-        <InputPro v-model="filters.deviceCode" class="h-9 w-32" placeholder="终端" aria-label="终端" />
+        <NvSelect v-model="workflowFilter">
+          <NvSelectTrigger class="h-9 w-36" aria-label="动作来源"
+            ><NvSelectValue placeholder="全部来源"
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem value="all">全部来源</NvSelectItem>
+            <NvSelectItem
+              v-for="option in WORKFLOW_OPTIONS"
+              :key="option.value"
+              :value="option.value"
+              >{{ option.label }}</NvSelectItem
+            >
+          </NvSelectContent>
+        </NvSelect>
+        <NvInput
+          v-model="filters.sourceDocumentId"
+          class="h-9 w-40"
+          placeholder="业务对象"
+          aria-label="业务对象"
+        />
+        <NvInput
+          v-model="filters.deviceCode"
+          class="h-9 w-32"
+          placeholder="终端"
+          aria-label="终端"
+        />
       </template>
-    </Toolbar>
+    </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -318,12 +400,16 @@ function formatError(error: unknown) {
       </template>
       <template #cell-result="{ row }">
         <div class="grid gap-1">
-          <StatusBadgePro :value="row.result" :label="resultLabel(row.result)" :tone="resultTone(row.result)" />
+          <NvStatusBadge
+            :value="row.result"
+            :label="resultLabel(row.result)"
+            :tone="resultTone(row.result)"
+          />
           <span v-if="rejectionMessage(row.rejectionReason)" class="text-xs text-muted-foreground">
             {{ rejectionMessage(row.rejectionReason) }}
           </span>
         </div>
       </template>
-    </DataTablePro>
+    </NvDataTable>
   </BusinessLayout>
 </template>
