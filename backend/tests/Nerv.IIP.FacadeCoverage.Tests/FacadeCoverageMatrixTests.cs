@@ -124,6 +124,13 @@ public sealed class FacadeCoverageMatrixTests
                     {
                         problems.Add($"  {e.Service} {e.Method} {e.Route}: exposed requires non-empty 'gateways'.");
                     }
+
+                    if (e.GatewayOperationIds is not { Count: > 0 })
+                    {
+                        problems.Add($"  {e.Service} {e.Method} {e.Route}: exposed requires non-empty " +
+                            "'gatewayOperationIds' (verifiable facade evidence, not just a note).");
+                    }
+
                     break;
                 case "deferred":
                     if (string.IsNullOrWhiteSpace(e.FollowUp))
@@ -148,13 +155,20 @@ public sealed class FacadeCoverageMatrixTests
     }
 
     [Fact]
-    public void Exposed_gateway_operation_ids_exist_in_the_named_snapshot()
+    public void Every_exposed_row_has_a_facade_operation_id_in_the_named_snapshot()
     {
         var problems = new List<string>();
-        foreach (var e in Matrix.Value.Where(x => x.Classification == "exposed" && x.GatewayOperationIds is { Count: > 0 }))
+        foreach (var e in Matrix.Value.Where(x => x.Classification == "exposed"))
         {
+            if (e.GatewayOperationIds is not { Count: > 0 })
+            {
+                problems.Add($"  {e.Service} {e.Method} {e.Route}: exposed row has no gatewayOperationIds — " +
+                    "exposed must carry verifiable facade evidence, not just a note.");
+                continue;
+            }
+
             var gateways = e.Gateways ?? [];
-            foreach (var opId in e.GatewayOperationIds!)
+            foreach (var opId in e.GatewayOperationIds)
             {
                 var inBusiness = gateways.Contains("business") && BusinessSnapshot.Value.OperationIds.Contains(opId);
                 var inPlatform = gateways.Contains("platform") && PlatformSnapshot.Value.OperationIds.Contains(opId);
@@ -168,7 +182,7 @@ public sealed class FacadeCoverageMatrixTests
 
         Assert.True(
             problems.Count == 0,
-            "An 'exposed' row records a facade operationId that is absent from the Gateway snapshot " +
+            "Every 'exposed' row must record facade operationId(s) present in the Gateway snapshot " +
             "(the #784 failure mode: endpoint claims exposed but no facade shipped):\n" + string.Join('\n', problems));
     }
 

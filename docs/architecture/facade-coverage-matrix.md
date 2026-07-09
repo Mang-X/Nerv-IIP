@@ -25,11 +25,12 @@ legitimate, recorded states.
 
 Every business-service external HTTP endpoint is exactly one of:
 
-- **`exposed`** — reachable through a Gateway facade. The capability is present in
-  a Gateway OpenAPI snapshot, regenerated into `@nerv-iip/api-client` (`types.gen.ts`),
-  and re-exported from a stable barrel (`business-console.ts` / `console.ts`).
-  Business endpoints are exposed through **BusinessGateway**; platform-plane
-  facades (Console) live in **PlatformGateway**.
+- **`exposed`** — reachable through a Gateway facade. The row records the facade
+  `gatewayOperationIds`, each **verified by the gate to exist in the Gateway OpenAPI
+  snapshot** — so `exposed` always carries machine-checkable facade evidence. The
+  capability is present in a snapshot, regenerated into `@nerv-iip/api-client`
+  (`types.gen.ts`), and re-exported from a stable barrel (`business-console.ts` /
+  `console.ts`). Business endpoints are exposed through **BusinessGateway**.
 - **`deferred`** — the service endpoint exists but no Gateway facade is delivered
   yet. This is a *tracked* gap that follows a frontend menu phase or a named
   issue. `deferred` must carry a `followUp` note. It is the honest, visible form
@@ -59,10 +60,12 @@ declaration against what actually shipped (facade + codegen + barrel for
 2. **No stale rows** — every JSON row must map back to a live endpoint, so renamed
    or removed endpoints cannot rot in the registry.
 3. **Classification validity** — value ∈ {`exposed`,`deferred`,`internal`} with the
-   required companion field (`gateways` / `followUp` / `rationale`).
-4. **`exposed` truthfulness** — any recorded `gatewayOperationIds` must actually
-   exist in the named Gateway OpenAPI snapshot. A row that *claims* `exposed` but
-   whose facade is absent from the snapshot fails — the exact #784 failure mode.
+   required companion field: `exposed` → non-empty `gateways` **and** non-empty
+   `gatewayOperationIds`; `deferred` → `followUp`; `internal` → `rationale`.
+4. **`exposed` truthfulness** — every `exposed` row's `gatewayOperationIds` must
+   actually exist in the named Gateway OpenAPI snapshot. An `exposed` row with no
+   verifiable facade operationId, or one whose facade is absent from the snapshot,
+   fails — the exact #784 failure mode (endpoint claims exposed, no facade shipped).
 5. **`deferred`/`internal` are not silently exposed** — a `deferred` or `internal`
    endpoint must **not** appear as a 1:1 facade route in the BusinessGateway
    snapshot. Shipping a facade without flipping the classification fails.
@@ -72,8 +75,8 @@ declaration against what actually shipped (facade + codegen + barrel for
 ## Maintaining the matrix
 
 - **New endpoint** → add its row to `facade-coverage-matrix.json` with the chosen
-  classification. If `exposed`, also deliver the facade and (recommended) record
-  the facade `gatewayOperationIds`.
+  classification. If `exposed`, deliver the facade and record the facade
+  `gatewayOperationIds` (the gate verifies them against the snapshot).
 - **Flip `deferred` → `exposed`** when the facade ships: change `classification`,
   add `gateways` + `gatewayOperationIds`, drop `followUp`.
 - **New business service** → add its `.Web` project reference and assembly name to
@@ -90,20 +93,21 @@ declaration against what actually shipped (facade + codegen + barrel for
 | BarcodeLabel | 9 | 9 | 0 | 0 |
 | DemandPlanning | 15 | 15 | 0 | 0 |
 | Erp | 45 | 39 | 5 | 1 |
-| IndustrialTelemetry | 18 | 16 | 0 | 2 |
+| IndustrialTelemetry | 18 | 15 | 1 | 2 |
 | Inventory | 11 | 5 | 2 | 4 |
 | Maintenance | 20 | 15 | 5 | 0 |
 | MasterData | 41 | 38 | 0 | 3 |
 | Mes | 46 | 43 | 3 | 0 |
 | ProductEngineering | 38 | 38 | 0 | 0 |
-| Quality | 27 | 18 | 9 | 0 |
+| Quality | 27 | 16 | 11 | 0 |
 | Scheduling | 7 | 6 | 1 | 0 |
 | Wms | 24 | 19 | 3 | 2 |
-| **Total** | **317** | **272** | **32** | **13** |
+| **Total** | **317** | **269** | **35** | **13** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-The `exposed` rows (272) are enumerated in the JSON registry. The `deferred` and
-`internal` rows — the actual governance decisions — are listed in full below.
+The `exposed` rows (269) — each with its verified facade `gatewayOperationIds` — are
+enumerated in the JSON registry. The `deferred` and `internal` rows, the actual
+governance decisions, are listed in full below.
 
 ### Deferred endpoints (facade tracked, not yet exposed)
 
@@ -118,6 +122,7 @@ The `exposed` rows (272) are enumerated in the JSON registry. The `deferred` and
 | Erp | POST | `/api/business/v1/erp/supplier-invoices` | BusinessGateway facade pending; supplier-invoice UI is a known ERP frontend gap (readiness). |
 | Erp | POST | `/api/business/v1/erp/supplier-invoices/{invoiceNo}/release-payment-hold` | BusinessGateway facade pending; supplier-invoice payment-hold UI is a known ERP frontend gap. |
 | Erp | POST | `/api/business/v1/erp/supplier-invoices/{invoiceNo}/void-payment-hold` | BusinessGateway facade pending; supplier-invoice payment-hold UI is a known ERP frontend gap. |
+| IndustrialTelemetry | POST | `/api/business/v1/iiot/tags` | BusinessGateway facade pending; telemetry tag create follows the equipment/telemetry config menu phase (only tag list GET is exposed today). |
 | Inventory | POST | `/api/inventory/v1/count-tasks/{countTaskId}/cancel` | BusinessGateway facade pending; count-task create/adjust are exposed, cancel follows the inventory count Business Console menu phase. |
 | Inventory | POST | `/api/inventory/v1/locations` | BusinessGateway facade pending; inventory location master-setup UI is a later menu phase. |
 | Maintenance | GET | `/api/business/v1/maintenance/downtime-reasons` | BusinessGateway facade pending; downtime-reason catalog config UI is a later Maintenance menu phase. |
@@ -133,7 +138,9 @@ The `exposed` rows (272) are enumerated in the JSON registry. The `deferred` and
 | Quality | POST | `/api/business/v1/quality/capas/{correctiveActionId}/actions/{correctiveActionItemId}/complete` | BusinessGateway facade pending; CAPA management facade tracked by #677, unlocks frontend #804. |
 | Quality | POST | `/api/business/v1/quality/capas/{correctiveActionId}/close` | BusinessGateway facade pending; CAPA management facade tracked by #677, unlocks frontend #804. |
 | Quality | POST | `/api/business/v1/quality/capas/{correctiveActionId}/effectiveness` | BusinessGateway facade pending; CAPA management facade tracked by #677, unlocks frontend #804. |
+| Quality | POST | `/api/business/v1/quality/inspection-plans` | BusinessGateway facade pending; inspection-plan create follows the Quality plan-config menu phase (only plan list GET is exposed today). |
 | Quality | POST | `/api/business/v1/quality/inspection-plans/{inspectionPlanId}/activate` | BusinessGateway facade pending; inspection-plan activation follows the Quality plan-lifecycle menu phase. |
+| Quality | POST | `/api/business/v1/quality/ncrs` | BusinessGateway facade pending; generic NCR create follows the Quality NCR menu phase (only NCR-from-inspection is exposed today via openBusinessConsoleQualityNcrFromInspection). |
 | Quality | GET | `/api/business/v1/quality/ncrs/{ncrId}` | BusinessGateway facade pending; NCR list/disposition/close are exposed, single-NCR detail-by-id follows the Quality NCR detail menu phase. |
 | Quality | POST | `/api/business/v1/quality/spc/control-chart/evaluate` | BusinessGateway facade pending; SPC control-chart read is exposed, evaluate (write) follows the SPC analysis menu phase (#725). |
 | Quality | POST | `/api/business/v1/quality/spc/control-chart/lock` | BusinessGateway facade pending; SPC control-limit lock (write) follows the SPC analysis menu phase (#725). |

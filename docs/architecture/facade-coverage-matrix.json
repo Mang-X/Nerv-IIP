@@ -6,7 +6,7 @@
     "frontend/packages/api-client/openapi/platform-gateway.v1.json"
   ],
   "classifications": {
-    "exposed": "Reachable through a Gateway facade (OpenAPI snapshot + api-client codegen + stable barrel).",
+    "exposed": "Reachable through a Gateway facade; the row records the facade operationId(s), verified to exist in the Gateway OpenAPI snapshot.",
     "deferred": "Service endpoint exists but no Gateway facade yet; a tracked gap that follows a frontend menu phase / issue.",
     "internal": "Never exposed through a Gateway by design (service-to-service, scheduler, or connector/WCS callback)."
   },
@@ -25,7 +25,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleApprovalChains"
+      ]
     },
     {
       "service": "Approval",
@@ -36,7 +38,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "startBusinessConsoleApprovalChain"
+      ]
     },
     {
       "service": "Approval",
@@ -47,7 +51,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "getBusinessConsoleApprovalChain"
+      ]
     },
     {
       "service": "Approval",
@@ -74,7 +80,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "resolveBusinessConsoleApprovalStep"
+      ]
     },
     {
       "service": "Approval",
@@ -101,7 +109,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleApprovalDecisions"
+      ]
     },
     {
       "service": "Approval",
@@ -112,7 +122,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleApprovalDelegations"
+      ]
     },
     {
       "service": "Approval",
@@ -123,7 +135,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "createBusinessConsoleApprovalDelegation"
+      ]
     },
     {
       "service": "Approval",
@@ -134,7 +148,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "revokeBusinessConsoleApprovalDelegation"
+      ]
     },
     {
       "service": "Approval",
@@ -145,7 +161,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleApprovalTasks"
+      ]
     },
     {
       "service": "Approval",
@@ -164,7 +182,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleApprovalTemplates"
+      ]
     },
     {
       "service": "Approval",
@@ -175,7 +195,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "createOrUpdateBusinessConsoleApprovalTemplate"
+      ]
     },
     {
       "service": "BarcodeLabel",
@@ -186,7 +208,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleBarcodePrintBatches"
+      ]
     },
     {
       "service": "BarcodeLabel",
@@ -197,7 +221,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "createBusinessConsoleBarcodePrintBatch"
+      ]
     },
     {
       "service": "BarcodeLabel",
@@ -208,7 +234,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "getBusinessConsoleBarcodePrintBatch"
+      ]
     },
     {
       "service": "BarcodeLabel",
@@ -219,7 +247,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleBarcodeRules"
+      ]
     },
     {
       "service": "BarcodeLabel",
@@ -230,7 +260,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "createOrUpdateBusinessConsoleBarcodeRule"
+      ]
     },
     {
       "service": "BarcodeLabel",
@@ -241,7 +273,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleBarcodeScans"
+      ]
     },
     {
       "service": "BarcodeLabel",
@@ -252,7 +286,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "recordBusinessConsoleBarcodeScan"
+      ]
     },
     {
       "service": "BarcodeLabel",
@@ -263,7 +299,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleBarcodeTemplates"
+      ]
     },
     {
       "service": "BarcodeLabel",
@@ -274,7 +312,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "createOrUpdateBusinessConsoleBarcodeTemplate"
+      ]
     },
     {
       "service": "DemandPlanning",
@@ -480,7 +520,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpDeliveryOrders"
+      ]
     },
     {
       "service": "Erp",
@@ -491,7 +533,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "releaseBusinessConsoleErpDeliveryOrder"
+      ]
     },
     {
       "service": "Erp",
@@ -791,7 +835,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpOpportunities"
+      ]
     },
     {
       "service": "Erp",
@@ -802,7 +848,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "openBusinessConsoleErpOpportunity"
+      ]
     },
     {
       "service": "Erp",
@@ -813,7 +861,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpPurchaseOrders"
+      ]
     },
     {
       "service": "Erp",
@@ -824,7 +874,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "createBusinessConsoleErpPurchaseOrder"
+      ]
     },
     {
       "service": "Erp",
@@ -835,7 +887,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "recordBusinessConsoleErpPurchaseReceipt"
+      ]
     },
     {
       "service": "Erp",
@@ -854,7 +908,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpPurchaseRequisitions"
+      ]
     },
     {
       "service": "Erp",
@@ -865,7 +921,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrder"
+      ]
     },
     {
       "service": "Erp",
@@ -876,7 +934,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "createBusinessConsoleErpPurchaseRequisitionFromSuggestion"
+      ]
     },
     {
       "service": "Erp",
@@ -887,7 +947,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpQuotations"
+      ]
     },
     {
       "service": "Erp",
@@ -898,7 +960,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "createBusinessConsoleErpQuotation"
+      ]
     },
     {
       "service": "Erp",
@@ -909,7 +973,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "approveBusinessConsoleErpQuotation"
+      ]
     },
     {
       "service": "Erp",
@@ -920,7 +986,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpRequestsForQuotation"
+      ]
     },
     {
       "service": "Erp",
@@ -931,7 +999,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "createBusinessConsoleErpRequestForQuotation"
+      ]
     },
     {
       "service": "Erp",
@@ -942,7 +1012,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpSalesOrders"
+      ]
     },
     {
       "service": "Erp",
@@ -953,7 +1025,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "createBusinessConsoleErpSalesOrder"
+      ]
     },
     {
       "service": "Erp",
@@ -988,7 +1062,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "receiveBusinessConsoleErpSupplierQuotation"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -999,7 +1075,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleTelemetryAlarmRules"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -1010,7 +1088,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "createOrUpdateBusinessConsoleTelemetryAlarmRule"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -1021,7 +1101,10 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleEquipmentAlarms",
+        "listBusinessConsoleTelemetryAlarms"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -1032,7 +1115,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "postBusinessConsoleTelemetryAlarm"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -1051,7 +1136,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "acknowledgeBusinessConsoleEquipmentAlarm"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -1062,7 +1149,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "shelveBusinessConsoleEquipmentAlarm"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -1073,7 +1162,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "unshelveBusinessConsoleEquipmentAlarm"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -1084,7 +1175,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "createBusinessConsoleTelemetryDeviceControlCommand"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -1095,7 +1188,11 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "note": "Aggregated into the equipment overview and device-detail facades.",
+      "gatewayOperationIds": [
+        "getBusinessConsoleEquipmentOverview",
+        "getBusinessConsoleEquipmentDevice"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -1106,7 +1203,10 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "note": "Aggregated into the equipment device-detail facade.",
+      "gatewayOperationIds": [
+        "getBusinessConsoleEquipmentDevice"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -1117,7 +1217,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "queryBusinessConsoleTelemetryDeviceHistory"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -1128,7 +1230,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "queryBusinessConsoleTelemetryOee"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -1139,7 +1243,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "queryBusinessConsoleTelemetryRuntimeAvailability"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -1158,7 +1264,9 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "recordBusinessConsoleTelemetrySample"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -1169,18 +1277,17 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "gatewayOperationIds": [
+        "listBusinessConsoleTelemetryTags"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
       "method": "POST",
       "route": "/api/business/v1/iiot/tags",
       "operationId": "createBusinessIiotTelemetryTag",
-      "classification": "exposed",
-      "gateways": [
-        "business"
-      ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; telemetry tag create follows the equipment/telemetry config menu phase (only tag list GET is exposed today)."
     },
     {
       "service": "Inventory",
@@ -1304,7 +1411,10 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "note": "Maintenance availability windows are aggregated into the equipment device-detail facade.",
+      "gatewayOperationIds": [
+        "getBusinessConsoleEquipmentDevice"
+      ]
     },
     {
       "service": "Maintenance",
@@ -1615,7 +1725,10 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "note": "Facade route renamed to /master-data/business-partners.",
+      "gatewayOperationIds": [
+        "createBusinessConsoleBusinessPartner"
+      ]
     },
     {
       "service": "MasterData",
@@ -2183,7 +2296,10 @@
       "gateways": [
         "business"
       ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "note": "Exposed via the aggregating foundation-readiness facade (iterates all area codes).",
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesFoundationReadiness"
+      ]
     },
     {
       "service": "Mes",
@@ -3177,11 +3293,8 @@
       "method": "POST",
       "route": "/api/business/v1/quality/inspection-plans",
       "operationId": "createBusinessQualityInspectionPlan",
-      "classification": "exposed",
-      "gateways": [
-        "business"
-      ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; inspection-plan create follows the Quality plan-config menu phase (only plan list GET is exposed today)."
     },
     {
       "service": "Quality",
@@ -3274,11 +3387,8 @@
       "method": "POST",
       "route": "/api/business/v1/quality/ncrs",
       "operationId": "createBusinessQualityNcr",
-      "classification": "exposed",
-      "gateways": [
-        "business"
-      ],
-      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; generic NCR create follows the Quality NCR menu phase (only NCR-from-inspection is exposed today via openBusinessConsoleQualityNcrFromInspection)."
     },
     {
       "service": "Quality",
