@@ -282,7 +282,8 @@ function wcsFailureOf(t: BusinessConsoleWmsWcsTaskItem, nowMs: number): WcsFailu
   return {
     cmd: t.externalTaskId?.trim() || t.wcsTaskId?.trim() || '—',
     kind,
-    adapter: t.adapterType?.trim() || WCS_KIND_LABELS[kind],
+    // 展示归一后的中文设备类名（如「巷道堆垛机」），而非后端原始 adapterType 码（stacker/agv）。
+    adapter: WCS_KIND_LABELS[kind],
     error: t.failureMessage?.trim() || t.failureCode?.trim() || '设备异常',
     retries: t.attemptCount ?? 0,
     sinceMin: minutesSince(failedIso, nowMs),

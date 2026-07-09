@@ -13,10 +13,12 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Bot,
+  ChartPie,
   ClipboardCheck,
   Container,
   Forklift,
   GitFork,
+  LayoutList,
   MoveHorizontal,
   MoveVertical,
   OctagonAlert,
@@ -24,7 +26,7 @@ import {
   Scale,
   Shuffle,
 } from 'lucide-vue-next'
-import { type Component, computed, watch } from 'vue'
+import { type Component, computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
 import { useBackLink } from '@/composables/useBackLink'
@@ -258,6 +260,9 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   sorter: GitFork,
   hoist: MoveVertical,
 }
+
+// WCS 链路负载视图：环形图 ↔ 适配器明细列表，点击切换（同一空间内二选一，列表得满高）。
+const wcsView = ref<'chart' | 'list'>('chart')
 </script>
 
 <template>
@@ -483,36 +488,77 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
                   <StatusLight tone="run" label="无失败指令" />
                 </div>
               </ScreenScrollArea>
-              <!-- ② 链路负载构成（排队/执行/失败 = 当前在链指令）环形，中心 = 今日吞吐 -->
-              <ScreenDonut
-                class="wa-donut"
-                :size="88"
-                :segments="[
-                  { label: '排队', value: wcs.counts.queued, color: 'rgba(160, 200, 245, 0.45)' },
-                  { label: '执行中', value: wcs.counts.running, color: '#4aa6ee' },
-                  { label: '失败', value: wcs.counts.failed, color: '#ef5a63' },
-                ]"
-              >
-                <b class="wa-dn-num">{{ nf.format(wcs.counts.completed) }}</b>
-                <span class="wa-dn-cap">今日完成</span>
-              </ScreenDonut>
-              <!-- ③ 按适配器明细（占剩余空间，超出滚动 —— 永不溢出容器） -->
-              <ScreenScrollArea class="wa-rows">
-                <div v-for="a in wcs.adapters" :key="a.kind" class="wa-row">
-                  <component
-                    :is="ADAPTER_ICONS[a.kind]"
-                    :size="14"
-                    :stroke-width="1.8"
-                    class="wa-ic"
-                  />
-                  <span class="wa-name">{{ a.label }}</span>
-                  <span class="wa-nums"
-                    >执行 <b>{{ a.running }}</b> · 排队 <b>{{ a.queued }}</b></span
+              <!-- ② 链路负载：环形图 ↔ 适配器明细列表点击切换（同一区域二选一，列表得满高） -->
+              <div class="wm-toggle">
+                <span class="wm-toggle-t">链路负载</span>
+                <div class="wm-seg" role="tablist" aria-label="链路负载视图">
+                  <button
+                    type="button"
+                    class="wm-seg-b"
+                    :class="{ on: wcsView === 'chart' }"
+                    role="tab"
+                    :aria-selected="wcsView === 'chart'"
+                    aria-label="环形图"
+                    @click="wcsView = 'chart'"
                   >
-                  <span class="wa-done">完成 {{ nf.format(a.completed) }}</span>
-                  <b v-if="a.failed > 0" class="wa-fail">失败 {{ a.failed }}</b>
+                    <ChartPie :size="13" :stroke-width="1.9" />
+                  </button>
+                  <button
+                    type="button"
+                    class="wm-seg-b"
+                    :class="{ on: wcsView === 'list' }"
+                    role="tab"
+                    :aria-selected="wcsView === 'list'"
+                    aria-label="适配器明细"
+                    @click="wcsView = 'list'"
+                  >
+                    <LayoutList :size="13" :stroke-width="1.9" />
+                  </button>
                 </div>
-              </ScreenScrollArea>
+              </div>
+              <div class="wm-body">
+                <Transition name="wm-swap" mode="out-in">
+                  <!-- 环形：排队/执行/失败 = 当前在链指令，中心 = 今日完成 -->
+                  <div v-if="wcsView === 'chart'" key="chart" class="wm-chart">
+                    <ScreenDonut
+                      class="wa-donut"
+                      :size="104"
+                      :segments="[
+                        {
+                          label: '排队',
+                          value: wcs.counts.queued,
+                          color: 'rgba(160, 200, 245, 0.45)',
+                        },
+                        { label: '执行中', value: wcs.counts.running, color: '#4aa6ee' },
+                        { label: '失败', value: wcs.counts.failed, color: '#ef5a63' },
+                      ]"
+                    >
+                      <b class="wa-dn-num">{{ nf.format(wcs.counts.completed) }}</b>
+                      <span class="wa-dn-cap">今日完成</span>
+                    </ScreenDonut>
+                  </div>
+                  <!-- 适配器明细（满高，超出滚动） -->
+                  <ScreenScrollArea v-else key="list" class="wa-rows">
+                    <div v-for="a in wcs.adapters" :key="a.kind" class="wa-row">
+                      <component
+                        :is="ADAPTER_ICONS[a.kind]"
+                        :size="14"
+                        :stroke-width="1.8"
+                        class="wa-ic"
+                      />
+                      <span class="wa-name">{{ a.label }}</span>
+                      <span class="wa-nums"
+                        >执行 <b>{{ a.running }}</b> · 排队 <b>{{ a.queued }}</b></span
+                      >
+                      <span class="wa-done">完成 {{ nf.format(a.completed) }}</span>
+                      <b v-if="a.failed > 0" class="wa-fail">失败 {{ a.failed }}</b>
+                    </div>
+                    <div v-if="wcs.adapters.length === 0" class="wf-empty">
+                      <StatusLight tone="run" label="无在链设备" />
+                    </div>
+                  </ScreenScrollArea>
+                </Transition>
+              </div>
             </div>
           </ScreenPanel>
 
@@ -1138,13 +1184,81 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   justify-content: center;
 }
 
-/* 链路负载环形（失败区与适配器行之间的固定块，上下发丝分隔） */
+/* 链路负载视图切换：分段器 + 环形/列表二选一区域 */
+.wm-toggle {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 9px;
+  border-top: 1px solid var(--sb-divider);
+}
+.wm-toggle-t {
+  font-size: 12.5px;
+  color: var(--sb-muted);
+}
+.wm-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.wm-seg-b {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 20px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--sb-faint);
+  cursor: pointer;
+  transition:
+    background 0.2s var(--sb-ease-emphasized),
+    color 0.2s var(--sb-ease-emphasized);
+}
+.wm-seg-b:hover {
+  color: var(--sb-text-2);
+}
+.wm-seg-b.on {
+  background: rgba(74, 166, 238, 0.18);
+  color: var(--sb-cyan);
+}
+.wm-body {
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+}
+/* 环形视图：区域内居中 */
+.wm-chart {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .wa-donut {
   flex: none;
-  padding: 8px 4px;
-  border-top: 1px solid var(--sb-divider);
-  border-bottom: 1px solid var(--sb-divider);
-  margin: 6px 0 4px;
+}
+/* 视图切换动效：淡入 + 轻微上滑（out-in 顺序切换，不叠加） */
+.wm-swap-enter-active,
+.wm-swap-leave-active {
+  transition:
+    opacity 0.22s var(--sb-ease-emphasized),
+    transform 0.22s var(--sb-ease-emphasized);
+}
+.wm-swap-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.wm-swap-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 .wa-dn-num {
   font-size: 21px;
@@ -1316,6 +1430,15 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   }
   .wb-bar i {
     transition: none;
+  }
+  .wm-swap-enter-active,
+  .wm-swap-leave-active,
+  .wm-seg-b {
+    transition: none;
+  }
+  .wm-swap-enter-from,
+  .wm-swap-leave-to {
+    transform: none;
   }
 }
 </style>
