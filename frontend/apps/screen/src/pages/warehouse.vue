@@ -915,13 +915,13 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
 .tg-cols,
 .tg-row {
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr) 84px 232px 92px 72px;
+  grid-template-columns: 104px minmax(0, 1fr) 80px 224px 88px 104px;
   gap: 10px;
   align-items: center;
 }
 .tg-cols.count,
 .tg-row.count {
-  grid-template-columns: 76px minmax(0, 1fr) 110px 150px 72px;
+  grid-template-columns: 104px minmax(0, 1fr) 104px 140px 104px;
 }
 .tg-cols {
   margin-top: 7px;
