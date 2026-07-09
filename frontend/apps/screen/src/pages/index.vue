@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import * as icons from 'lucide-vue-next'
-import { GlowDivider, KpiBar, ScreenScaler, ScreenSegmented, StatusLight, StatusTag, useScreenData } from '@nerv-iip/ui'
+import {
+  NvGlowDivider,
+  NvKpiBar,
+  NvScreenScaler,
+  NvScreenSegmented,
+  NvScreenStatusLight,
+  NvScreenStatusTag,
+  useScreenData,
+} from '@nerv-iip/ui'
 import { useNow } from '@vueuse/core'
 import { Activity, AlertTriangle, Cpu, PackageCheck } from 'lucide-vue-next'
 import { type Component, computed, watch } from 'vue'
@@ -20,7 +28,12 @@ function iconOf(name: string): Component {
 }
 
 // —— 门厅实时摘要（mock seam，#570 就绪只换 fetcher）——
-const { data: summary, lastUpdated, isStale, refresh } = useScreenData<LauncherSummary>(
+const {
+  data: summary,
+  lastUpdated,
+  isStale,
+  refresh,
+} = useScreenData<LauncherSummary>(
   () => fetchLauncherSummary(scope.currentFactoryId, scope.persona.workshopIds),
   { intervalMs: 5000 },
 )
@@ -48,7 +61,8 @@ const factoryModel = computed<string | number>({
 const now = useNow({ interval: 1000 })
 const pad = (n: number) => String(n).padStart(2, '0')
 const clock = computed(
-  () => `${pad(now.value.getHours())}:${pad(now.value.getMinutes())}:${pad(now.value.getSeconds())}`,
+  () =>
+    `${pad(now.value.getHours())}:${pad(now.value.getMinutes())}:${pad(now.value.getSeconds())}`,
 )
 const WEEKDAYS = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
 const dateText = computed(() => {
@@ -77,8 +91,18 @@ const kpiItems = computed<KpiCell[]>(() => {
     { icon: PackageCheck, value: k.output.toLocaleString('en-US'), label: '今日产量（件）' },
     { value: `${k.achievement}%`, label: '计划达成率', tone: 'cyan', ring: k.achievement },
     { icon: Cpu, value: `${k.runningDevices}/${k.totalDevices}`, label: '运行设备' },
-    { icon: AlertTriangle, value: String(k.openAlarms), label: '未恢复报警', tone: k.openAlarms > 0 ? 'amber' : undefined },
-    { icon: Activity, value: `${k.health}%`, label: '综合健康度', tone: k.health >= 85 ? 'green' : 'amber' },
+    {
+      icon: AlertTriangle,
+      value: String(k.openAlarms),
+      label: '未恢复报警',
+      tone: k.openAlarms > 0 ? 'amber' : undefined,
+    },
+    {
+      icon: Activity,
+      value: `${k.health}%`,
+      label: '综合健康度',
+      tone: k.health >= 85 ? 'green' : 'amber',
+    },
   ]
 })
 
@@ -89,7 +113,7 @@ const scopeCounts = computed(() => {
 </script>
 
 <template>
-  <ScreenScaler :design-width="1920" :design-height="1080">
+  <NvScreenScaler :design-width="1920" :design-height="1080">
     <div class="hall">
       <header class="hall-top">
         <div>
@@ -100,36 +124,41 @@ const scopeCounts = computed(() => {
           <div class="hall-time">{{ clock }}</div>
           <div class="hall-meta">
             <span>{{ dateText }}</span>
-            <StatusLight :tone="isStale ? 'idle' : 'run'" :label="isStale ? '数据链路波动' : '数据链路正常'" />
+            <NvScreenStatusLight
+              :tone="isStale ? 'idle' : 'run'"
+              :label="isStale ? '数据链路波动' : '数据链路正常'"
+            />
           </div>
         </div>
       </header>
 
-      <GlowDivider />
+      <NvGlowDivider />
 
       <div class="hall-ctx">
         <div class="hall-ctx-left">
-          <ScreenSegmented
+          <NvScreenSegmented
             v-if="scope.factories.length > 1"
             v-model="factoryModel"
             :options="factoryOptions"
           />
-          <StatusTag tone="cyan" :label="scope.persona.label" />
+          <NvScreenStatusTag tone="cyan" :label="scope.persona.label" />
         </div>
         <span class="hall-counts">{{ scopeCounts }}</span>
       </div>
 
       <div class="hall-kpi">
-        <KpiBar v-if="kpiItems.length" :items="kpiItems" />
+        <NvKpiBar v-if="kpiItems.length" :items="kpiItems" />
         <div v-else class="hall-kpi-skl" aria-hidden="true" />
       </div>
 
-      <main
-        class="hall-cards"
-        :class="{ single: cards.length === 1, grid: cards.length > 3 }"
-      >
+      <main class="hall-cards" :class="{ single: cards.length === 1, grid: cards.length > 3 }">
         <RouterLink v-for="s in cards" :key="s.key" :to="s.route" class="hall-card-link">
-          <LauncherCard :title="s.title" :desc="s.desc" :icon="iconOf(s.icon)" :glance="glanceOf(s.key)" />
+          <LauncherCard
+            :title="s.title"
+            :desc="s.desc"
+            :icon="iconOf(s.icon)"
+            :glance="glanceOf(s.key)"
+          />
         </RouterLink>
         <p v-if="cards.length === 0" class="hall-empty">当前账号无可见大屏，请联系管理员开通</p>
       </main>
@@ -139,7 +168,7 @@ const scopeCounts = computed(() => {
         <span>演示数据流 · 后端接入待 #570</span>
       </footer>
     </div>
-  </ScreenScaler>
+  </NvScreenScaler>
 </template>
 
 <style scoped>
@@ -156,8 +185,7 @@ const scopeCounts = computed(() => {
   background:
     radial-gradient(1100px 460px at 50% -6%, rgba(74, 166, 238, 0.06), transparent 70%),
     linear-gradient(rgba(255, 255, 255, 0.013) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.013) 1px, transparent 1px),
-    var(--sb-bg);
+    linear-gradient(90deg, rgba(255, 255, 255, 0.013) 1px, transparent 1px), var(--sb-bg);
   background-size:
     auto,
     96px 96px,

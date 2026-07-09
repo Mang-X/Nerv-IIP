@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { ScreenScrollArea, Sparkline, StatusLight, StatusTag, useScreenData } from '@nerv-iip/ui'
+import {
+  NvScreenScrollArea,
+  NvSparkline,
+  NvScreenStatusLight,
+  NvScreenStatusTag,
+  useScreenData,
+} from '@nerv-iip/ui'
 import {
   Activity,
   BatteryCharging,
@@ -57,7 +63,11 @@ const infoRows = computed(() => {
     { label: '所属产线', value: d.device.lineName },
     { label: '工作中心', value: d.workCenterName },
     { label: '负责人', value: d.managerName },
-    { label: '数据源', value: d.device.sourceFresh ? '在线 · 新鲜' : '断线', bad: !d.device.sourceFresh },
+    {
+      label: '数据源',
+      value: d.device.sourceFresh ? '在线 · 新鲜' : '断线',
+      bad: !d.device.sourceFresh,
+    },
     { label: '当前状态', value: d.device.stateLabel },
     ...(d.device.block ? [{ label: '阻塞原因', value: d.device.block, bad: true }] : []),
   ]
@@ -95,12 +105,19 @@ function leaveSpark() {
 <template>
   <Teleport to="body">
     <div class="ddm-mask" @click.self="emit('close')">
-      <section class="ddm" role="dialog" aria-modal="true" :aria-label="detail?.device.name ?? '设备详情'">
+      <section
+        class="ddm"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="detail?.device.name ?? '设备详情'"
+      >
         <header class="ddm-h">
-          <StatusLight v-if="detail" :tone="tone" :label="detail.device.stateLabel" />
+          <NvScreenStatusLight v-if="detail" :tone="tone" :label="detail.device.stateLabel" />
           <h3 class="ddm-t">{{ detail?.device.name ?? '设备详情' }}</h3>
           <span v-if="detail" class="ddm-code">{{ detail.device.code }}</span>
-          <span v-if="detail" class="ddm-path">{{ detail.device.workshopName }} · {{ detail.device.lineName }}</span>
+          <span v-if="detail" class="ddm-path"
+            >{{ detail.device.workshopName }} · {{ detail.device.lineName }}</span
+          >
           <button type="button" class="ddm-x" aria-label="关闭" @click="emit('close')">
             <X :size="20" />
           </button>
@@ -108,105 +125,110 @@ function leaveSpark() {
 
         <div v-if="!detail" class="ddm-loading">读取设备档案…</div>
 
-        <ScreenScrollArea v-else class="ddm-scroll">
+        <NvScreenScrollArea v-else class="ddm-scroll">
           <div class="ddm-body">
-          <!-- 上：基础信息横排 -->
-          <section class="ddm-sec">
-            <dl class="ddm-info">
-              <div v-for="r in infoRows" :key="r.label">
-                <dt>{{ r.label }}</dt>
-                <dd :class="{ bad: r.bad }">{{ r.value }}</dd>
-              </div>
-            </dl>
-          </section>
+            <!-- 上：基础信息横排 -->
+            <section class="ddm-sec">
+              <dl class="ddm-info">
+                <div v-for="r in infoRows" :key="r.label">
+                  <dt>{{ r.label }}</dt>
+                  <dd :class="{ bad: r.bad }">{{ r.value }}</dd>
+                </div>
+              </dl>
+            </section>
 
-          <!-- 中：参数可视化一行四卡（类型配色 + 图标 + 正常范围 + 趋势 hover 取值） -->
-          <section class="ddm-sec">
-            <h4 class="ddm-st">关键参数 · 近 12 点 · 3s 刷新</h4>
-            <div class="ddm-params">
-              <div v-for="p in detail.params" :key="p.label" class="ddm-param" :class="p.tone">
-                <div class="ddm-param-h">
-                  <component
-                    :is="KIND_ICON[p.kind]"
-                    :size="15"
-                    class="ddm-param-ic"
-                    :style="{ color: paramColor(p.kind, p.tone) }"
-                  />
-                  <span class="ddm-param-l">{{ p.label }}</span>
-                  <b class="ddm-param-v" :style="{ color: paramColor(p.kind, p.tone) }">
-                    {{ p.value === null ? '—' : p.value }}<small v-if="p.value !== null">{{ p.unit }}</small>
-                  </b>
-                </div>
-                <p v-if="p.range !== '—'" class="ddm-param-r">正常 {{ p.range }}</p>
-                <div class="ddm-spark" @mousemove="onSpark($event, p)" @mouseleave="leaveSpark">
-                  <Sparkline :data="p.spark" area :color="paramColor(p.kind, p.tone)" />
-                  <template v-if="sparkTip?.key === p.label">
-                    <i class="ddm-spark-cursor" :style="{ left: `${sparkTip.x}px` }" />
-                    <span
-                      class="ddm-spark-tip"
-                      :style="{ left: `${Math.min(Math.max(sparkTip.x, 42), 200)}px` }"
-                    >
-                      {{ sparkTip.v }}{{ p.unit }} · {{ sparkTip.back === 0 ? '最新' : `T-${sparkTip.back}` }}
-                    </span>
-                  </template>
-                </div>
-              </div>
-            </div>
-            <p class="ddm-note">参数为演示数据流 · historian / 实时采集接入待 #570</p>
-          </section>
-
-          <!-- 下：维修 | 保养点检 两列 -->
-          <section class="ddm-sec ddm-bottom">
-            <div>
-              <h4 class="ddm-st">维修与可靠性</h4>
-              <div class="ddm-rel">
-                <div>
-                  <dt>单机 MTBF</dt>
-                  <dd>{{ detail.mtbfHours === null ? '—' : `${detail.mtbfHours} h` }}</dd>
-                </div>
-                <div>
-                  <dt>单机 MTTR</dt>
-                  <dd>{{ detail.mttrMinutes === null ? '—' : `${detail.mttrMinutes} min` }}</dd>
-                </div>
-              </div>
-              <div v-if="detail.repairs.length" class="ddm-repairs">
-                <div v-for="r in detail.repairs" :key="r.wo" class="ddm-repair">
-                  <div class="ddm-repair-top">
-                    <span class="ddm-wo">{{ r.wo }}</span>
-                    <span class="ddm-issue">{{ r.issue }}</span>
-                    <StatusTag v-if="r.overdue" tone="red" label="超时" />
-                    <StatusTag v-else-if="r.blockedBy" tone="amber" label="待备件" />
-                    <StatusTag v-else-if="r.awaitingConfirm" tone="cyan" label="待确认" />
-                    <span v-else class="ddm-stage">{{ r.stage }}</span>
+            <!-- 中：参数可视化一行四卡（类型配色 + 图标 + 正常范围 + 趋势 hover 取值） -->
+            <section class="ddm-sec">
+              <h4 class="ddm-st">关键参数 · 近 12 点 · 3s 刷新</h4>
+              <div class="ddm-params">
+                <div v-for="p in detail.params" :key="p.label" class="ddm-param" :class="p.tone">
+                  <div class="ddm-param-h">
+                    <component
+                      :is="KIND_ICON[p.kind]"
+                      :size="15"
+                      class="ddm-param-ic"
+                      :style="{ color: paramColor(p.kind, p.tone) }"
+                    />
+                    <span class="ddm-param-l">{{ p.label }}</span>
+                    <b class="ddm-param-v" :style="{ color: paramColor(p.kind, p.tone) }">
+                      {{ p.value === null ? '—' : p.value
+                      }}<small v-if="p.value !== null">{{ p.unit }}</small>
+                    </b>
                   </div>
-                  <div class="ddm-repair-meta" :class="{ late: r.overdue }">
-                    {{ r.stage }} · 报修 {{ r.reportedAt }} · 已历时 {{ r.elapsedMin }} min · {{ r.etaText }} ·
-                    {{ r.assignee }}
+                  <p v-if="p.range !== '—'" class="ddm-param-r">正常 {{ p.range }}</p>
+                  <div class="ddm-spark" @mousemove="onSpark($event, p)" @mouseleave="leaveSpark">
+                    <NvSparkline :data="p.spark" area :color="paramColor(p.kind, p.tone)" />
+                    <template v-if="sparkTip?.key === p.label">
+                      <i class="ddm-spark-cursor" :style="{ left: `${sparkTip.x}px` }" />
+                      <span
+                        class="ddm-spark-tip"
+                        :style="{ left: `${Math.min(Math.max(sparkTip.x, 42), 200)}px` }"
+                      >
+                        {{ sparkTip.v }}{{ p.unit }} ·
+                        {{ sparkTip.back === 0 ? '最新' : `T-${sparkTip.back}` }}
+                      </span>
+                    </template>
                   </div>
                 </div>
               </div>
-              <p v-else class="ddm-empty">暂无进行中的维修单</p>
-            </div>
+              <p class="ddm-note">参数为演示数据流 · historian / 实时采集接入待 #570</p>
+            </section>
 
-            <div>
-              <h4 class="ddm-st">保养与点检</h4>
-              <div class="ddm-list">
-                <div v-for="t in detail.pmTasks" :key="t.task" class="ddm-row">
-                  <span class="ddm-row-txt">PM · {{ t.task }}</span>
-                  <span class="ddm-due" :class="t.state">{{ t.due }}</span>
+            <!-- 下：维修 | 保养点检 两列 -->
+            <section class="ddm-sec ddm-bottom">
+              <div>
+                <h4 class="ddm-st">维修与可靠性</h4>
+                <div class="ddm-rel">
+                  <div>
+                    <dt>单机 MTBF</dt>
+                    <dd>{{ detail.mtbfHours === null ? '—' : `${detail.mtbfHours} h` }}</dd>
+                  </div>
+                  <div>
+                    <dt>单机 MTTR</dt>
+                    <dd>{{ detail.mttrMinutes === null ? '—' : `${detail.mttrMinutes} min` }}</dd>
+                  </div>
                 </div>
-                <div v-for="i in detail.inspections" :key="i.time" class="ddm-row">
-                  <span class="ddm-row-txt">点检 · {{ i.item }} · {{ i.by }}</span>
-                  <span class="ddm-res" :class="{ bad: i.result === '异常' }">{{ i.result }}</span>
+                <div v-if="detail.repairs.length" class="ddm-repairs">
+                  <div v-for="r in detail.repairs" :key="r.wo" class="ddm-repair">
+                    <div class="ddm-repair-top">
+                      <span class="ddm-wo">{{ r.wo }}</span>
+                      <span class="ddm-issue">{{ r.issue }}</span>
+                      <NvScreenStatusTag v-if="r.overdue" tone="red" label="超时" />
+                      <NvScreenStatusTag v-else-if="r.blockedBy" tone="amber" label="待备件" />
+                      <NvScreenStatusTag v-else-if="r.awaitingConfirm" tone="cyan" label="待确认" />
+                      <span v-else class="ddm-stage">{{ r.stage }}</span>
+                    </div>
+                    <div class="ddm-repair-meta" :class="{ late: r.overdue }">
+                      {{ r.stage }} · 报修 {{ r.reportedAt }} · 已历时 {{ r.elapsedMin }} min ·
+                      {{ r.etaText }} ·
+                      {{ r.assignee }}
+                    </div>
+                  </div>
                 </div>
-                <p v-if="!detail.pmTasks.length && !detail.inspections.length" class="ddm-empty">
-                  今日暂无保养 / 点检记录
-                </p>
+                <p v-else class="ddm-empty">暂无进行中的维修单</p>
               </div>
-            </div>
-          </section>
+
+              <div>
+                <h4 class="ddm-st">保养与点检</h4>
+                <div class="ddm-list">
+                  <div v-for="t in detail.pmTasks" :key="t.task" class="ddm-row">
+                    <span class="ddm-row-txt">PM · {{ t.task }}</span>
+                    <span class="ddm-due" :class="t.state">{{ t.due }}</span>
+                  </div>
+                  <div v-for="i in detail.inspections" :key="i.time" class="ddm-row">
+                    <span class="ddm-row-txt">点检 · {{ i.item }} · {{ i.by }}</span>
+                    <span class="ddm-res" :class="{ bad: i.result === '异常' }">{{
+                      i.result
+                    }}</span>
+                  </div>
+                  <p v-if="!detail.pmTasks.length && !detail.inspections.length" class="ddm-empty">
+                    今日暂无保养 / 点检记录
+                  </p>
+                </div>
+              </div>
+            </section>
           </div>
-        </ScreenScrollArea>
+        </NvScreenScrollArea>
       </section>
     </div>
   </Teleport>

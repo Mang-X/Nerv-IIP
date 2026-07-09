@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { RingGauge, ScreenPanel, ScreenScrollArea, Sparkline, StatusTag, TrendChart, useScreenData } from '@nerv-iip/ui'
+import {
+  NvRingGauge,
+  NvScreenPanel,
+  NvScreenScrollArea,
+  NvSparkline,
+  NvScreenStatusTag,
+  NvScreenTrendChart,
+  useScreenData,
+} from '@nerv-iip/ui'
 import { ChevronDown, CircleCheck, OctagonAlert, UserRound, Users } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
@@ -157,8 +165,10 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
             </div>
           </dl>
 
-          <ScreenScrollArea class="lb-devs">
-            <h5 class="lb-devs-t">线上设备 · {{ board.devices.length }} 台 <small>点击展开参数</small></h5>
+          <NvScreenScrollArea class="lb-devs">
+            <h5 class="lb-devs-t">
+              线上设备 · {{ board.devices.length }} 台 <small>点击展开参数</small>
+            </h5>
             <div v-for="d in board.devices" :key="d.id" class="lb-dev-wrap">
               <button type="button" class="lb-dev" :class="d.state" @click="toggleDev(d.id)">
                 <i class="dot" :class="d.state" />
@@ -172,7 +182,9 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
                   <div class="lb-dev-detail-in">
                     <div v-for="p in d.params" :key="p.label" class="lb-dp">
                       <span class="lb-dp-l">{{ p.label }}</span>
-                      <span class="lb-dp-spark"><Sparkline :data="p.spark" :color="paramColor(p.kind, p.tone)" /></span>
+                      <span class="lb-dp-spark"
+                        ><NvSparkline :data="p.spark" :color="paramColor(p.kind, p.tone)"
+                      /></span>
                       <b :style="{ color: paramColor(p.kind, p.tone) }">
                         {{ p.value === null ? '—' : `${p.value}${p.unit}` }}
                       </b>
@@ -181,76 +193,109 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
                 </div>
               </Transition>
             </div>
-          </ScreenScrollArea>
+          </NvScreenScrollArea>
 
           <!-- 安灯呼叫（并入线体域，与状态灯同侧；闭环 待 MAN-322） -->
           <div class="lb-andon-mini">
             <div class="lb-andon-h">
               <span>安灯呼叫</span>
-              <StatusTag tone="amber" label="闭环 · 待 MAN-322" />
+              <NvScreenStatusTag tone="amber" label="闭环 · 待 MAN-322" />
             </div>
             <div v-for="a in board.andon" :key="a.time + a.station" class="lb-andon-row">
               <span class="lb-andon-time">{{ a.time }}</span>
               <span class="lb-andon-txt">{{ a.station }} · {{ a.type }} · {{ a.response }}</span>
               <b class="lb-andon-state" :class="{ open: a.state === '响应中' }">{{ a.state }}</b>
             </div>
-            <div v-if="!board.andon.length" class="lb-andon-empty"><i class="lb-andon-ok" />当班无安灯呼叫</div>
+            <div v-if="!board.andon.length" class="lb-andon-empty">
+              <i class="lb-andon-ok" />当班无安灯呼叫
+            </div>
           </div>
         </section>
 
         <!-- 右：产量/节拍 · 小时趋势 · 当前工单 -->
         <div class="lb-right">
           <div class="lb-row1">
-            <ScreenPanel title="当班产量" class="lb-output">
+            <NvScreenPanel title="当班产量" class="lb-output">
               <template #extra>
-                <span class="lb-shift">{{ board.shift.name }} {{ board.shift.range }} · 剩余 {{ fmtMin(board.shift.remainingMin) }}</span>
+                <span class="lb-shift"
+                  >{{ board.shift.name }} {{ board.shift.range }} · 剩余
+                  {{ fmtMin(board.shift.remainingMin) }}</span
+                >
               </template>
               <div class="lb-out-in">
                 <div class="lb-out-hero">
                   <div class="lb-out-v">
-                    {{ nf.format(board.output.good) }}<small>/ {{ nf.format(board.output.plan) }} 件</small>
+                    {{ nf.format(board.output.good)
+                    }}<small>/ {{ nf.format(board.output.plan) }} 件</small>
                   </div>
                   <div class="lb-out-sub">
-                    <span>良品 <b class="ok">{{ nf.format(board.output.good) }}</b></span>
-                    <span>报废 <b :class="{ bad: board.output.scrap > 0 }">{{ board.output.scrap }}</b></span>
-                    <span>返修 <b :class="{ warn: board.output.rework > 0 }">{{ board.output.rework }}</b></span>
+                    <span
+                      >良品 <b class="ok">{{ nf.format(board.output.good) }}</b></span
+                    >
+                    <span
+                      >报废
+                      <b :class="{ bad: board.output.scrap > 0 }">{{ board.output.scrap }}</b></span
+                    >
+                    <span
+                      >返修
+                      <b :class="{ warn: board.output.rework > 0 }">{{
+                        board.output.rework
+                      }}</b></span
+                    >
                   </div>
                 </div>
-                <RingGauge :value="board.output.achievement" label="当班达成率" :size="132" :value-size="34" />
+                <NvRingGauge
+                  :value="board.output.achievement"
+                  label="当班达成率"
+                  :size="132"
+                  :value-size="34"
+                />
               </div>
-            </ScreenPanel>
+            </NvScreenPanel>
 
-            <ScreenPanel title="节拍达成" class="lb-takt">
+            <NvScreenPanel title="节拍达成" class="lb-takt">
               <div class="lb-takt-in">
                 <div class="lb-takt-v" :class="{ late: board.takt.deviationPct > 0 }">
-                  <span class="lb-num">{{ board.takt.deviationPct > 0 ? '+' : '' }}{{ board.takt.deviationPct }}<small>%</small></span>
+                  <span class="lb-num"
+                    >{{ board.takt.deviationPct > 0 ? '+' : '' }}{{ board.takt.deviationPct
+                    }}<small>%</small></span
+                  >
                   <i class="lb-score-line" aria-hidden="true" />
                 </div>
                 <p class="lb-takt-sub">
                   标准 {{ board.takt.standardSec }}s · 实际
                   <b :class="{ late: board.takt.deviationPct > 0 }">{{ board.takt.actualSec }}s</b>
                 </p>
-                <p class="lb-takt-hint">{{ board.takt.deviationPct > 0 ? '节拍落后，关注瓶颈工位' : '节拍达标' }}</p>
+                <p class="lb-takt-hint">
+                  {{ board.takt.deviationPct > 0 ? '节拍落后，关注瓶颈工位' : '节拍达标' }}
+                </p>
               </div>
-            </ScreenPanel>
+            </NvScreenPanel>
 
-            <ScreenPanel title="产线 OEE" class="lb-oee">
+            <NvScreenPanel title="产线 OEE" class="lb-oee">
               <template #extra>
-                <StatusTag tone="amber" label="班内推算 · 待 #570" />
+                <NvScreenStatusTag tone="amber" label="班内推算 · 待 #570" />
               </template>
               <div class="lb-oee-in">
-                <div class="lb-oee-big" :class="{ warn: board.oee.overall < 75, bad: board.oee.overall < 55 }">
+                <div
+                  class="lb-oee-big"
+                  :class="{ warn: board.oee.overall < 75, bad: board.oee.overall < 55 }"
+                >
                   <span class="lb-num">{{ board.oee.overall }}<small>%</small></span>
                   <i class="lb-score-line" aria-hidden="true" />
                 </div>
                 <dl class="lb-oee-rates">
                   <div>
                     <dt>可用率</dt>
-                    <dd :class="{ warn: board.oee.availability < 90 }">{{ board.oee.availability }}%</dd>
+                    <dd :class="{ warn: board.oee.availability < 90 }">
+                      {{ board.oee.availability }}%
+                    </dd>
                   </div>
                   <div>
                     <dt>性能率</dt>
-                    <dd :class="{ warn: board.oee.performance < 90 }">{{ board.oee.performance }}%</dd>
+                    <dd :class="{ warn: board.oee.performance < 90 }">
+                      {{ board.oee.performance }}%
+                    </dd>
                   </div>
                   <div>
                     <dt>良品率</dt>
@@ -258,10 +303,10 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
                   </div>
                 </dl>
               </div>
-            </ScreenPanel>
+            </NvScreenPanel>
           </div>
 
-          <TrendChart
+          <NvScreenTrendChart
             v-if="trendData"
             v-model:range="trendRange"
             class="lb-trend"
@@ -278,46 +323,62 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
           />
 
           <div class="lb-row3">
-            <ScreenPanel v-if="board.wo" title="当前工单" class="lb-wo">
-            <template #extra>
-              <StatusTag v-if="board.wo.kitting === 'short'" tone="amber" label="线边缺料" />
-              <span v-else class="lb-kitting">线边齐套</span>
-            </template>
-            <div class="lb-wo-in">
-              <div class="lb-wo-info">
-                <div class="lb-wo-head">
-                  <span class="lb-wo-code">{{ board.wo.code }}</span>
-                  <b class="lb-wo-product">{{ board.wo.product }}</b>
-                </div>
-                <!-- 工序流分布（流水线：各工序同时在产）——工位累计完成沿流向递减，
+            <NvScreenPanel v-if="board.wo" title="当前工单" class="lb-wo">
+              <template #extra>
+                <NvScreenStatusTag
+                  v-if="board.wo.kitting === 'short'"
+                  tone="amber"
+                  label="线边缺料"
+                />
+                <span v-else class="lb-kitting">线边齐套</span>
+              </template>
+              <div class="lb-wo-in">
+                <div class="lb-wo-info">
+                  <div class="lb-wo-head">
+                    <span class="lb-wo-code">{{ board.wo.code }}</span>
+                    <b class="lb-wo-product">{{ board.wo.product }}</b>
+                  </div>
+                  <!-- 工序流分布（流水线：各工序同时在产）——工位累计完成沿流向递减，
                      段间差值即在制；停摆红 / 瓶颈黄 -->
-                <div class="lb-wo-flow">
-                  <template v-for="(s, i) in board.wo.stations" :key="s.name">
-                    <div class="lb-station" :class="s.state">
-                      <span class="lb-station-name">
-                        {{ s.name }}
-                        <em v-if="s.state === 'blocked'">停摆</em>
-                        <em v-else-if="s.state === 'bottleneck'">瓶颈</em>
-                      </span>
-                      <b class="lb-station-done">{{ nf.format(s.done) }}</b>
-                    </div>
-                    <span v-if="i < board.wo.stations.length - 1" class="lb-flow-arrow" aria-hidden="true">›</span>
-                  </template>
+                  <div class="lb-wo-flow">
+                    <template v-for="(s, i) in board.wo.stations" :key="s.name">
+                      <div class="lb-station" :class="s.state">
+                        <span class="lb-station-name">
+                          {{ s.name }}
+                          <em v-if="s.state === 'blocked'">停摆</em>
+                          <em v-else-if="s.state === 'bottleneck'">瓶颈</em>
+                        </span>
+                        <b class="lb-station-done">{{ nf.format(s.done) }}</b>
+                      </div>
+                      <span
+                        v-if="i < board.wo.stations.length - 1"
+                        class="lb-flow-arrow"
+                        aria-hidden="true"
+                        >›</span
+                      >
+                    </template>
+                  </div>
+                  <div class="lb-wo-nums">
+                    <span
+                      >完工 <b>{{ nf.format(board.wo.qtyDone) }}</b> /
+                      {{ nf.format(board.wo.qtyPlan) }}</span
+                    >
+                    <span
+                      >工序间在制 <b>{{ nf.format(board.wo.wip) }}</b></span
+                    >
+                  </div>
                 </div>
-                <div class="lb-wo-nums">
-                  <span>完工 <b>{{ nf.format(board.wo.qtyDone) }}</b> / {{ nf.format(board.wo.qtyPlan) }}</span>
-                  <span>工序间在制 <b>{{ nf.format(board.wo.wip) }}</b></span>
+                <div class="lb-due">
+                  <dt>距交付</dt>
+                  <dd :class="{ warn: board.wo.dueInMin < 120 }">
+                    {{ fmtMin(board.wo.dueInMin) }}
+                  </dd>
                 </div>
               </div>
-              <div class="lb-due">
-                <dt>距交付</dt>
-                <dd :class="{ warn: board.wo.dueInMin < 120 }">{{ fmtMin(board.wo.dueInMin) }}</dd>
-              </div>
-            </div>
-            </ScreenPanel>
+            </NvScreenPanel>
 
             <!-- OEE 24 小时热力（waffle 4×6）：一格一小时，分档着色，悬停读值 -->
-            <ScreenPanel title="OEE · 24h 热力" class="lb-waffle">
+            <NvScreenPanel title="OEE · 24h 热力" class="lb-waffle">
               <template #extra>
                 <span class="lb-wf-legend">
                   <i class="g4" />≥85 <i class="g3" />70+ <i class="g2" />55+ <i class="g1" />&lt;55
@@ -340,7 +401,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
                 </span>
               </div>
               <div class="lb-wf-axis"><span>24h 前</span><span>现在</span></div>
-            </ScreenPanel>
+            </NvScreenPanel>
           </div>
         </div>
       </div>

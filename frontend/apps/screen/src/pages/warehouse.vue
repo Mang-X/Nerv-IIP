@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import {
-  ScreenBarChart,
-  ScreenDonut,
-  ScreenPanel,
-  ScreenScrollArea,
-  ScrollBoard,
-  StatusLight,
-  StatusTag,
+  NvScreenBarChart,
+  NvScreenDonut,
+  NvScreenPanel,
+  NvScreenScrollArea,
+  NvScrollBoard,
+  NvScreenStatusLight,
+  NvScreenStatusTag,
   useScreenData,
 } from '@nerv-iip/ui'
 import {
@@ -269,7 +269,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
   <ScreenLayout title="Nerv-IIP 仓储物流大屏" :line="factoryName" screen="指挥中心大屏 05">
     <div v-if="board" class="wb">
       <!-- 顶部 KPI 带：出库进度 hero + 五格，语义色渐隐强调线 -->
-      <ScreenPanel class="wb-band">
+      <NvScreenPanel class="wb-band">
         <div class="wb-band-in">
           <div v-if="heroKpi" class="wb-hero">
             <div class="wb-hero-v">
@@ -303,12 +303,12 @@ const wcsView = ref<'chart' | 'list'>('chart')
             >
           </div>
         </div>
-      </ScreenPanel>
+      </NvScreenPanel>
 
       <div class="wb-main">
         <!-- 左：出入库双进度（大数字 + 发丝进度条 + 12h 流量） -->
         <section class="wb-flows">
-          <ScreenPanel title="当日入库 · ASN" class="wb-flow">
+          <NvScreenPanel title="当日入库 · ASN" class="wb-flow">
             <template #extra>
               <span class="wb-flow-docs"
                 >收货单 {{ board.inbound.docsDone }}/{{ board.inbound.docsTotal }}</span
@@ -339,7 +339,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
             </div>
             <!-- 小时流量是离散量 —— 柱状比面积曲线更诚实（每小时一根柱） -->
             <div class="wb-flow-spark">
-              <ScreenBarChart
+              <NvScreenBarChart
                 :series="[{ label: '入库', color: '#4aa6ee', data: board.inbound.hourly }]"
                 :hover-labels="board.inbound.hourLabels"
                 autoplay
@@ -350,9 +350,9 @@ const wcsView = ref<'chart' | 'list'>('chart')
               <span>{{ board.inbound.hourLabels[6] }}</span>
               <span>现在</span>
             </div>
-          </ScreenPanel>
+          </NvScreenPanel>
 
-          <ScreenPanel title="当日出库 · SO" class="wb-flow out">
+          <NvScreenPanel title="当日出库 · SO" class="wb-flow out">
             <template #extra>
               <span class="wb-flow-docs"
                 >发运 {{ board.outbound.docsDone }}/{{ board.outbound.docsTotal }} 单</span
@@ -374,7 +374,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
               >
             </div>
             <div class="wb-flow-spark">
-              <ScreenBarChart
+              <NvScreenBarChart
                 :series="[{ label: '出库', color: '#8b9be6', data: board.outbound.hourly }]"
                 :hover-labels="board.outbound.hourLabels"
                 autoplay
@@ -386,11 +386,11 @@ const wcsView = ref<'chart' | 'list'>('chart')
               <span>{{ board.outbound.hourLabels[6] }}</span>
               <span>现在</span>
             </div>
-          </ScreenPanel>
+          </NvScreenPanel>
         </section>
 
         <!-- 中：作业任务看板（拣货 / 上架 / 盘点分组，超时红标，自动滚动） -->
-        <ScreenPanel title="作业任务看板" class="wb-tasks">
+        <NvScreenPanel title="作业任务看板" class="wb-tasks">
           <template #extra>
             <span class="wb-tasks-sum">{{ taskSummary }}</span>
           </template>
@@ -426,7 +426,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
                 </template>
               </div>
               <div class="tg-list">
-                <ScrollBoard :items="g.rows" :row-key="(r: WhTaskRow) => r.id" :speed="g.speed">
+                <NvScrollBoard :items="g.rows" :row-key="(r: WhTaskRow) => r.id" :speed="g.speed">
                   <template #row="{ item }">
                     <div class="tg-row" :class="{ count: g.isCount, late: item.overdue }">
                       <span class="tg-id">{{ item.id }}</span>
@@ -446,16 +446,16 @@ const wcsView = ref<'chart' | 'list'>('chart')
                       </span>
                     </div>
                   </template>
-                </ScrollBoard>
+                </NvScrollBoard>
               </div>
             </section>
           </div>
-        </ScreenPanel>
+        </NvScreenPanel>
 
         <!-- 右：WCS 自动化（失败告警 + 指令状态合并为一块 —— 单一 flex 容器内动态共享
              垂直空间：失败多则告警区滚动、不挤压下方；省一个面板头/间距给适配器行） · 任务超时榜 -->
         <section class="wb-wcs">
-          <ScreenPanel
+          <NvScreenPanel
             title="WCS 自动化"
             :accent="wcs && wcs.failures.length > 0 ? 'red' : undefined"
             class="wb-wcsboard"
@@ -469,7 +469,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
             </template>
             <div v-if="wcs" class="wm">
               <!-- ① 失败告警（异常优先置顶；约 3 条完整显示，更多滚动） -->
-              <ScreenScrollArea class="wf-list">
+              <NvScreenScrollArea class="wf-list">
                 <div v-for="x in wcs.failures" :key="x.cmd" class="wf-row">
                   <i class="wf-dot" aria-hidden="true" />
                   <div class="wf-main">
@@ -485,9 +485,9 @@ const wcsView = ref<'chart' | 'list'>('chart')
                   </div>
                 </div>
                 <div v-if="wcs.failures.length === 0" class="wf-empty">
-                  <StatusLight tone="run" label="无失败指令" />
+                  <NvScreenStatusLight tone="run" label="无失败指令" />
                 </div>
-              </ScreenScrollArea>
+              </NvScreenScrollArea>
               <!-- ② 链路负载：环形图 ↔ 适配器明细列表点击切换（同一区域二选一，列表得满高） -->
               <div class="wm-toggle">
                 <span class="wm-toggle-t">链路负载</span>
@@ -520,7 +520,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
                 <Transition name="wm-swap" mode="out-in">
                   <!-- 环形：排队/执行/失败 = 当前在链指令，中心 = 今日完成 -->
                   <div v-if="wcsView === 'chart'" key="chart" class="wm-chart">
-                    <ScreenDonut
+                    <NvScreenDonut
                       class="wa-donut"
                       :size="104"
                       :segments="[
@@ -531,10 +531,10 @@ const wcsView = ref<'chart' | 'list'>('chart')
                     >
                       <b class="wa-dn-num">{{ nf.format(wcs.counts.completed) }}</b>
                       <span class="wa-dn-cap">今日完成</span>
-                    </ScreenDonut>
+                    </NvScreenDonut>
                   </div>
                   <!-- 适配器明细（满高，超出滚动） -->
-                  <ScreenScrollArea v-else key="list" class="wa-rows">
+                  <NvScreenScrollArea v-else key="list" class="wa-rows">
                     <div v-for="a in wcs.adapters" :key="a.kind" class="wa-row">
                       <component
                         :is="ADAPTER_ICONS[a.kind]"
@@ -550,17 +550,17 @@ const wcsView = ref<'chart' | 'list'>('chart')
                       <b v-if="a.failed > 0" class="wa-fail">失败 {{ a.failed }}</b>
                     </div>
                     <div v-if="wcs.adapters.length === 0" class="wf-empty">
-                      <StatusLight tone="run" label="无在链设备" />
+                      <NvScreenStatusLight tone="run" label="无在链设备" />
                     </div>
-                  </ScreenScrollArea>
+                  </NvScreenScrollArea>
                 </Transition>
               </div>
             </div>
-          </ScreenPanel>
+          </NvScreenPanel>
 
-          <ScreenPanel title="任务超时榜 · TOP5" class="wb-overdue">
+          <NvScreenPanel title="任务超时榜 · TOP5" class="wb-overdue">
             <template #extra>
-              <StatusTag
+              <NvScreenStatusTag
                 tone="amber"
                 :label="IS_REAL_DATA ? '龄期按创建时刻推算' : '龄期推算 · 待 #570'"
               />
@@ -574,10 +574,10 @@ const wcsView = ref<'chart' | 'list'>('chart')
                 <b class="wo-age">{{ fmtAge(r.ageMin) }}</b>
               </div>
               <div v-if="overdueTop.length === 0" class="wo-empty">
-                <StatusLight tone="run" label="无超时任务" />
+                <NvScreenStatusLight tone="run" label="无超时任务" />
               </div>
             </div>
-          </ScreenPanel>
+          </NvScreenPanel>
         </section>
       </div>
 

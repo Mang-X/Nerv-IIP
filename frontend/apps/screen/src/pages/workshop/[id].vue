@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { ScreenPanel, ScreenScrollArea, ScreenSegmented, StatusLight, StatusTag, TrendChart, useScreenData } from '@nerv-iip/ui'
+import {
+  NvScreenPanel,
+  NvScreenScrollArea,
+  NvScreenSegmented,
+  NvScreenStatusLight,
+  NvScreenStatusTag,
+  NvScreenTrendChart,
+  useScreenData,
+} from '@nerv-iip/ui'
 import {
   Boxes,
   CircleCheck,
@@ -40,7 +48,9 @@ watch(
 )
 
 // —— 车间切换器（persona 可见车间；大屏轮播/多车间巡检场景）——
-const wsOptions = computed(() => scope.visibleWorkshops.map((w) => ({ label: w.name, value: w.id })))
+const wsOptions = computed(() =>
+  scope.visibleWorkshops.map((w) => ({ label: w.name, value: w.id })),
+)
 const wsModel = computed<string | number>({
   get: () => workshopId.value,
   set: (id) => {
@@ -49,7 +59,11 @@ const wsModel = computed<string | number>({
 })
 
 const stateTone = computed(() =>
-  board.value?.state === 'alarm' ? ('alarm' as const) : board.value?.state === 'attention' ? ('idle' as const) : ('run' as const),
+  board.value?.state === 'alarm'
+    ? ('alarm' as const)
+    : board.value?.state === 'attention'
+      ? ('idle' as const)
+      : ('run' as const),
 )
 
 // 返回链按来路识别：门厅进回门厅、工厂总览下钻回工厂总览；直接输 URL 走 fallback
@@ -108,7 +122,11 @@ const trendData = computed(() => {
     series: b.shiftCurve.byLine.map((l, i) => ({
       label: l.name,
       color:
-        l.state === 'alarm' ? '#ef5a63' : l.state === 'attention' ? '#f0ad4e' : LINE_TREND_COLORS[i % LINE_TREND_COLORS.length],
+        l.state === 'alarm'
+          ? '#ef5a63'
+          : l.state === 'attention'
+            ? '#f0ad4e'
+            : LINE_TREND_COLORS[i % LINE_TREND_COLORS.length],
       data: l.data,
     })),
   }
@@ -155,18 +173,18 @@ const devSummary = computed(() => {
     <div v-if="board" class="wb">
       <!-- 顶行：车间切换器（persona 可见范围） + 车间态 + 主任/班次 -->
       <div class="wb-top">
-        <ScreenSegmented v-if="wsOptions.length > 1" v-model="wsModel" :options="wsOptions" />
+        <NvScreenSegmented v-if="wsOptions.length > 1" v-model="wsModel" :options="wsOptions" />
         <div class="wb-top-right">
-          <StatusLight :tone="stateTone" :label="board.stateLabel" />
+          <NvScreenStatusLight :tone="stateTone" :label="board.stateLabel" />
           <span class="wb-top-meta">
-            主任 {{ board.managerName }} · {{ board.shift.name }} {{ board.shift.range }} ·
-            剩余 {{ fmtMin(board.shift.remainingMin) }}
+            主任 {{ board.managerName }} · {{ board.shift.name }} {{ board.shift.range }} · 剩余
+            {{ fmtMin(board.shift.remainingMin) }}
           </span>
         </div>
       </div>
 
       <!-- 当班 KPI 带：达成率主数 + 产量/合格率/报废返修/停机/齐套/交接 -->
-      <ScreenPanel class="wb-band">
+      <NvScreenPanel class="wb-band">
         <div class="wb-band-in">
           <div class="wb-hero">
             <div class="wb-hero-v" :class="achTone">
@@ -179,12 +197,15 @@ const devSummary = computed(() => {
             <div class="wb-cell">
               <dt><PackageCheck :size="17" class="wb-cell-ic" />当班产量（件）</dt>
               <dd>
-                {{ nf.format(board.output.actual) }}<small>/ {{ nf.format(board.output.plan) }}</small>
+                {{ nf.format(board.output.actual)
+                }}<small>/ {{ nf.format(board.output.plan) }}</small>
               </dd>
             </div>
             <div class="wb-cell">
               <dt><CircleCheck :size="17" class="wb-cell-ic" />一次合格率</dt>
-              <dd :class="{ warn: board.quality.fpy < 98 }">{{ board.quality.fpy }}<small>%</small></dd>
+              <dd :class="{ warn: board.quality.fpy < 98 }">
+                {{ board.quality.fpy }}<small>%</small>
+              </dd>
             </div>
             <div class="wb-cell">
               <dt><Recycle :size="17" class="wb-cell-ic" />报废 / 返修</dt>
@@ -200,7 +221,9 @@ const devSummary = computed(() => {
             </div>
             <div class="wb-cell">
               <dt><Boxes :size="17" class="wb-cell-ic" />物料齐套</dt>
-              <dd :class="{ warn: board.kitting.rate < 100 }">{{ board.kitting.rate }}<small>%</small></dd>
+              <dd :class="{ warn: board.kitting.rate < 100 }">
+                {{ board.kitting.rate }}<small>%</small>
+              </dd>
             </div>
             <div class="wb-cell">
               <dt><ClipboardList :size="17" class="wb-cell-ic" />交接遗留</dt>
@@ -210,7 +233,7 @@ const devSummary = computed(() => {
             </div>
           </dl>
         </div>
-      </ScreenPanel>
+      </NvScreenPanel>
 
       <div class="wb-main">
         <!-- 左：产线状态墙（与产线屏同源，点卡下钻）+ 工单交付预警 -->
@@ -221,23 +244,29 @@ const devSummary = computed(() => {
             <span class="sec-rule" aria-hidden="true" />
             <span class="sec-meta">
               {{ board.lines.length }} 条
-              <template v-if="board.lineStates.alarm"> · <b class="bad">{{ board.lineStates.alarm }} 报警</b></template>
-              <template v-if="board.lineStates.attention"> · <b class="warn">{{ board.lineStates.attention }} 关注</b></template>
+              <template v-if="board.lineStates.alarm">
+                · <b class="bad">{{ board.lineStates.alarm }} 报警</b></template
+              >
+              <template v-if="board.lineStates.attention">
+                · <b class="warn">{{ board.lineStates.attention }} 关注</b></template
+              >
               · 点击进入单线屏
             </span>
           </div>
-          <ScreenScrollArea class="wb-lines-list">
+          <NvScreenScrollArea class="wb-lines-list">
             <div class="wb-lines-in">
               <WorkshopLineCard v-for="l in board.lines" :key="l.id" :card="l" />
             </div>
-          </ScreenScrollArea>
-          <ScreenPanel title="当班班组" class="wb-crew">
+          </NvScreenScrollArea>
+          <NvScreenPanel title="当班班组" class="wb-crew">
             <template #extra>
-              <StatusTag tone="amber" label="花名册口径 · 考勤未接入" />
+              <NvScreenStatusTag tone="amber" label="花名册口径 · 考勤未接入" />
             </template>
             <div class="wb-crew-head">
               <span class="wb-crew-team">{{ board.crew.teamName }}</span>
-              <span class="wb-crew-lead"><UserRound :size="17" class="wb-cell-ic" />组长 {{ board.crew.leader }}</span>
+              <span class="wb-crew-lead"
+                ><UserRound :size="17" class="wb-cell-ic" />组长 {{ board.crew.leader }}</span
+              >
             </div>
             <dl class="wb-crew-nums">
               <div>
@@ -256,13 +285,15 @@ const devSummary = computed(() => {
               </div>
             </dl>
             <p v-if="board.crew.handoverNote" class="wb-crew-note">{{ board.crew.handoverNote }}</p>
-          </ScreenPanel>
+          </NvScreenPanel>
           <div class="wb-woa" :class="{ 'is-empty': !board.woAlerts.length }">
             <h5 class="wb-sub-h">工单交付预警</h5>
             <div v-for="w in board.woAlerts" :key="w.code" class="wb-woa-row">
               <span class="wb-woa-code">{{ w.code }}</span>
               <span class="wb-woa-txt">{{ w.product }} · {{ w.lineName }}</span>
-              <b class="wb-woa-due" :class="w.kind === 'overdue' ? 'bad' : 'warn'">{{ w.dueText }}</b>
+              <b class="wb-woa-due" :class="w.kind === 'overdue' ? 'bad' : 'warn'">{{
+                w.dueText
+              }}</b>
             </div>
             <div v-if="!board.woAlerts.length" class="wb-empty-row">
               <i class="wb-ok-dot" />无临期 / 超期工单
@@ -272,7 +303,7 @@ const devSummary = computed(() => {
 
         <!-- 中：产量趋势（当班累计 / 近 30 天，拿大头）+ 停机/报警事件流（固定高内滚） -->
         <div class="wb-center">
-          <TrendChart
+          <NvScreenTrendChart
             v-if="trendData"
             v-model:range="trendRange"
             class="wb-trend"
@@ -288,11 +319,11 @@ const devSummary = computed(() => {
             :plan-label="trendData.planLabel"
             :ranges="WS_TREND_RANGES"
           />
-          <ScreenPanel title="停机 · 报警" class="wb-events">
+          <NvScreenPanel title="停机 · 报警" class="wb-events">
             <template #extra>
               <span class="wb-dev-sum">{{ devSummary }}</span>
             </template>
-            <ScreenScrollArea class="wb-ev-list">
+            <NvScreenScrollArea class="wb-ev-list">
               <div
                 v-for="e in board.events"
                 :key="e.id"
@@ -308,29 +339,36 @@ const devSummary = computed(() => {
               <div v-if="!board.events.length" class="wb-empty-row wb-ev-empty">
                 <i class="wb-ok-dot" />当班无停机 · 无设备报警
               </div>
-            </ScreenScrollArea>
-          </ScreenPanel>
+            </NvScreenScrollArea>
+          </NvScreenPanel>
         </div>
 
         <!-- 右：车间效率 OEE · 齐套/缺料 · 质量（指标域；班组随「人」归左列执行域） -->
         <div class="wb-right">
-          <ScreenPanel title="车间效率 OEE" class="wb-oee">
+          <NvScreenPanel title="车间效率 OEE" class="wb-oee">
             <template #extra>
-              <StatusTag tone="amber" label="班内推算 · 待 #570" />
+              <NvScreenStatusTag tone="amber" label="班内推算 · 待 #570" />
             </template>
             <div class="wb-oee-top">
-              <div class="wb-oee-hero" :class="{ warn: board.oee.overall < 75, bad: board.oee.overall < 60 }">
+              <div
+                class="wb-oee-hero"
+                :class="{ warn: board.oee.overall < 75, bad: board.oee.overall < 60 }"
+              >
                 <span class="wb-num">{{ board.oee.overall }}<small>%</small></span>
                 <i class="wb-score-line" aria-hidden="true" />
               </div>
               <dl class="wb-oee-apq">
                 <div>
                   <dt>可用率 A</dt>
-                  <dd :class="{ warn: board.oee.availability < 90 }">{{ board.oee.availability }}<small>%</small></dd>
+                  <dd :class="{ warn: board.oee.availability < 90 }">
+                    {{ board.oee.availability }}<small>%</small>
+                  </dd>
                 </div>
                 <div>
                   <dt>性能率 P</dt>
-                  <dd :class="{ warn: board.oee.performance < 90 }">{{ board.oee.performance }}<small>%</small></dd>
+                  <dd :class="{ warn: board.oee.performance < 90 }">
+                    {{ board.oee.performance }}<small>%</small>
+                  </dd>
                 </div>
                 <div>
                   <dt>良品率 Q</dt>
@@ -347,8 +385,8 @@ const devSummary = computed(() => {
                 <b class="wb-oee-v" :class="l.state">{{ l.oee }}<small>%</small></b>
               </div>
             </div>
-          </ScreenPanel>
-          <ScreenPanel title="物料齐套" class="wb-kit">
+          </NvScreenPanel>
+          <NvScreenPanel title="物料齐套" class="wb-kit">
             <div class="wb-kit-top">
               <div class="wb-kit-v" :class="{ warn: board.kitting.rate < 100 }">
                 <span class="wb-num">{{ board.kitting.rate }}<small>%</small></span>
@@ -361,12 +399,14 @@ const devSummary = computed(() => {
                 </div>
                 <div>
                   <dt>阻塞</dt>
-                  <dd :class="{ bad: board.kitting.woBlocked > 0 }">{{ board.kitting.woBlocked }}</dd>
+                  <dd :class="{ bad: board.kitting.woBlocked > 0 }">
+                    {{ board.kitting.woBlocked }}
+                  </dd>
                 </div>
               </dl>
             </div>
             <h5 class="wb-sub-h">缺料 Top</h5>
-            <ScreenScrollArea class="wb-shorts">
+            <NvScreenScrollArea class="wb-shorts">
               <div v-for="s in board.kitting.shortages" :key="s.code" class="wb-short">
                 <div class="wb-short-l">
                   <b class="wb-short-mat">{{ s.material }}</b>
@@ -374,7 +414,8 @@ const devSummary = computed(() => {
                 </div>
                 <div class="wb-short-r">
                   <span class="wb-short-qty">
-                    <b>-{{ nf.format(s.shortQty) }}</b><small>/ {{ nf.format(s.requiredQty) }}</small>
+                    <b>-{{ nf.format(s.shortQty) }}</b
+                    ><small>/ {{ nf.format(s.requiredQty) }}</small>
                   </span>
                   <span class="wb-short-eta">{{ s.eta }}</span>
                 </div>
@@ -382,19 +423,19 @@ const devSummary = computed(() => {
               <div v-if="!board.kitting.shortages.length" class="wb-empty-row">
                 <i class="wb-ok-dot" />线边物料齐套
               </div>
-            </ScreenScrollArea>
-          </ScreenPanel>
+            </NvScreenScrollArea>
+          </NvScreenPanel>
 
-          <ScreenPanel title="当班质量" class="wb-quality">
+          <NvScreenPanel title="当班质量" class="wb-quality">
             <template #extra>
               <!-- FPY/报废/返修大数字在顶部 KPI 带已有 —— 此处只留摘要，面板专注 NCR -->
               <span class="wb-q-sum">
-                FPY <b :class="{ warn: board.quality.fpy < 98 }">{{ board.quality.fpy }}%</b>
-                · 报废 <b :class="{ bad: board.quality.scrap > 0 }">{{ board.quality.scrap }}</b>
-                · 返修 <b>{{ board.quality.rework }}</b>
+                FPY <b :class="{ warn: board.quality.fpy < 98 }">{{ board.quality.fpy }}%</b> · 报废
+                <b :class="{ bad: board.quality.scrap > 0 }">{{ board.quality.scrap }}</b> · 返修
+                <b>{{ board.quality.rework }}</b>
               </span>
             </template>
-            <ScreenScrollArea class="wb-ncr">
+            <NvScreenScrollArea class="wb-ncr">
               <div v-for="n in board.quality.ncr" :key="n.code" class="wb-ncr-row">
                 <span class="wb-ncr-code">{{ n.code }}</span>
                 <span class="wb-ncr-txt">{{ n.lineName }} · {{ n.text }}</span>
@@ -403,8 +444,8 @@ const devSummary = computed(() => {
               <div v-if="!board.quality.ncr.length" class="wb-empty-row">
                 <i class="wb-ok-dot" />无待办 NCR
               </div>
-            </ScreenScrollArea>
-          </ScreenPanel>
+            </NvScreenScrollArea>
+          </NvScreenPanel>
         </div>
       </div>
 
@@ -615,7 +656,12 @@ const devSummary = computed(() => {
   flex: 1;
   height: 1px;
   margin: 0 6px;
-  background: linear-gradient(90deg, rgba(135, 208, 255, 0.28), rgba(255, 255, 255, 0.05) 45%, transparent);
+  background: linear-gradient(
+    90deg,
+    rgba(135, 208, 255, 0.28),
+    rgba(255, 255, 255, 0.05) 45%,
+    transparent
+  );
 }
 .sec-meta {
   font-size: 12.5px;

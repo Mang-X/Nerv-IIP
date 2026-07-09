@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Sparkline } from '@nerv-iip/ui'
+import { NvSparkline } from '@nerv-iip/ui'
 import { useVirtualList } from '@vueuse/core'
 import { computed, ref, watch } from 'vue'
 import type { DeviceCell, DeviceDetail, StateCounts } from '@/data/contracts/equipment'
@@ -54,7 +54,11 @@ const rowsSrc = computed(() => {
   for (let i = 0; i < props.devices.length; i += COLS) out.push(props.devices.slice(i, i + COLS))
   return out
 })
-const { list: vRows, containerProps, wrapperProps } = useVirtualList(rowsSrc, {
+const {
+  list: vRows,
+  containerProps,
+  wrapperProps,
+} = useVirtualList(rowsSrc, {
   itemHeight: 134,
   overscan: 1,
 })
@@ -231,20 +235,30 @@ function pick(d: DeviceCell) {
         </div>
         <div class="dsw-tip-sub">
           {{ tip.device.workshopName }} · {{ tip.device.lineName
-          }}<template v-if="tipDetail"> · {{ tipDetail.workCenterName }} · 负责人 {{ tipDetail.managerName }}</template>
+          }}<template v-if="tipDetail">
+            · {{ tipDetail.workCenterName }} · 负责人 {{ tipDetail.managerName }}</template
+          >
         </div>
-        <div v-if="tip.device.block" class="dsw-tip-block" :class="tip.device.state">{{ tip.device.block }}</div>
+        <div v-if="tip.device.block" class="dsw-tip-block" :class="tip.device.state">
+          {{ tip.device.block }}
+        </div>
 
         <!-- 满血：4 参数 + 迷你趋势；档案未到时先显格上 2 参数 -->
         <template v-if="tipDetail">
           <div v-for="p in tipDetail.params" :key="p.label" class="dsw-tip-prow">
             <span class="l">{{ p.label }}</span>
-            <span class="spark"><Sparkline :data="p.spark" :color="paramColor(p.kind, p.tone)" /></span>
-            <b :style="{ color: paramColor(p.kind, p.tone) }">{{ p.value === null ? '—' : `${p.value}${p.unit}` }}</b>
+            <span class="spark"
+              ><NvSparkline :data="p.spark" :color="paramColor(p.kind, p.tone)"
+            /></span>
+            <b :style="{ color: paramColor(p.kind, p.tone) }">{{
+              p.value === null ? '—' : `${p.value}${p.unit}`
+            }}</b>
           </div>
           <div class="dsw-tip-meta">
             <span>MTBF {{ tipDetail.mtbfHours === null ? '—' : `${tipDetail.mtbfHours}h` }}</span>
-            <span>MTTR {{ tipDetail.mttrMinutes === null ? '—' : `${tipDetail.mttrMinutes}min` }}</span>
+            <span
+              >MTTR {{ tipDetail.mttrMinutes === null ? '—' : `${tipDetail.mttrMinutes}min` }}</span
+            >
           </div>
           <div v-if="tipDetail.repairs[0]" class="dsw-tip-repair">
             <span class="wo">{{ tipDetail.repairs[0].wo }}</span>
