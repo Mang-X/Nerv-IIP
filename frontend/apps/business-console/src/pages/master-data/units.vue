@@ -4,7 +4,7 @@ import type {
   BusinessConsoleCreateUomConversionRequest,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import {
   useBusinessMasterDataResources,
@@ -14,33 +14,33 @@ import {
 } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DialogProTrigger,
-  FieldPro,
-  FieldProDescription,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDialogTrigger,
+  NvField,
+  NvFieldDescription,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
-  TabsPro,
-  TabsProContent,
-  TabsProList,
-  TabsProTrigger,
-  Toolbar,
+  NvStatusBadge,
+  NvTabs,
+  NvTabsContent,
+  NvTabsList,
+  NvTabsTrigger,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { ArrowRightLeftIcon, PlusIcon, RulerIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
@@ -48,9 +48,18 @@ import { formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import { mergeReferenceOptions } from '@/data/masterDataReference'
 
-definePage({ meta: { requiresAuth: true, title: '计量单位', requiredPermissions: ['business.masterdata.products.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '计量单位',
+    requiredPermissions: ['business.masterdata.products.read'],
+  },
+})
 
-interface Option { value: string, label: string }
+interface Option {
+  value: string
+  label: string
+}
 
 // 通用 resources 列表项只含 5 个稳定字段；UoM 的量纲 / 精度 / 取整由后端按需附带，
 // 但未进 ResourceItem 静态类型。读这些可选附带字段时收窄到本地形状（缺失即 undefined）。
@@ -121,8 +130,12 @@ const {
 const conversionActions = useMasterDataResourceActions('uom-conversion')
 
 // 量纲下拉「实时拉取 + 常量兜底」：取数据字典 uom-dimension，实时为空回退常量。
-const { resources: dimensionResources } = useBusinessMasterDataResources('reference-data', { codeSet: 'uom-dimension' })
-const dimensionOptions = computed<Option[]>(() => mergeReferenceOptions(dimensionResources.value, DIMENSION_OPTIONS))
+const { resources: dimensionResources } = useBusinessMasterDataResources('reference-data', {
+  codeSet: 'uom-dimension',
+})
+const dimensionOptions = computed<Option[]>(() =>
+  mergeReferenceOptions(dimensionResources.value, DIMENSION_OPTIONS),
+)
 
 const keyword = ref('')
 const page = ref(1)
@@ -155,12 +168,22 @@ const conversionForm = reactive({
   roundingMode: UOM_DEFAULTS.roundingMode,
 })
 
-const columns: DataTableProColumn<BusinessConsoleResourceItem>[] = [
+const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
-  { key: 'dimensionType', header: '量纲', width: 'w-28', accessor: (r) => labelOf(dimensionOptions.value, asUom(r).dimensionType) || '无' },
+  {
+    key: 'dimensionType',
+    header: '量纲',
+    width: 'w-28',
+    accessor: (r) => labelOf(dimensionOptions.value, asUom(r).dimensionType) || '无',
+  },
   { key: 'active', header: '状态', width: 'w-24' },
-  { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
+  {
+    key: 'snapshotVersion',
+    header: '更新时间',
+    width: 'w-40',
+    accessor: (r) => formatDateTime(r.snapshotVersion),
+  },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
 
@@ -190,15 +213,37 @@ function conversionFormula(row: BusinessConsoleResourceItem): string {
   const to = uomName(c.toUomCode)
   const factor = c.factor != null ? c.factor : 1
   const base = `1 ${from || '?'} = ${factor} ${to || '?'}`
-  return c.offset != null && c.offset !== 0 ? `${base} ${c.offset > 0 ? '+' : '-'} ${Math.abs(c.offset)}` : base
+  return c.offset != null && c.offset !== 0
+    ? `${base} ${c.offset > 0 ? '+' : '-'} ${Math.abs(c.offset)}`
+    : base
 }
 
-const conversionColumns: DataTableProColumn<BusinessConsoleResourceItem>[] = [
-  { key: 'formula', header: '换算关系', cellClass: 'font-medium', accessor: (r) => conversionFormula(r) },
-  { key: 'fromUom', header: '源单位', width: 'w-28', accessor: (r) => uomName(asConversion(r).fromUomCode) || '无' },
-  { key: 'toUom', header: '目标单位', width: 'w-28', accessor: (r) => uomName(asConversion(r).toUomCode) || '无' },
+const conversionColumns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
+  {
+    key: 'formula',
+    header: '换算关系',
+    cellClass: 'font-medium',
+    accessor: (r) => conversionFormula(r),
+  },
+  {
+    key: 'fromUom',
+    header: '源单位',
+    width: 'w-28',
+    accessor: (r) => uomName(asConversion(r).fromUomCode) || '无',
+  },
+  {
+    key: 'toUom',
+    header: '目标单位',
+    width: 'w-28',
+    accessor: (r) => uomName(asConversion(r).toUomCode) || '无',
+  },
   { key: 'active', header: '状态', width: 'w-24' },
-  { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
+  {
+    key: 'snapshotVersion',
+    header: '更新时间',
+    width: 'w-40',
+    accessor: (r) => formatDateTime(r.snapshotVersion),
+  },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
 function conversionDetailFields(row: BusinessConsoleResourceItem) {
@@ -234,11 +279,12 @@ const listRows = computed(() => {
     [row.code, row.displayName].some((value) => (value ?? '').toLowerCase().includes(kw)),
   )
 })
-const canCreateUom = computed(() =>
-  isNonEmpty(createForm.name)
-  && inOptions(dimensionOptions.value, createForm.dimensionType)
-  && inOptions(ROUNDING_OPTIONS, createForm.roundingMode)
-  && isPrecisionValid(createForm.precision),
+const canCreateUom = computed(
+  () =>
+    isNonEmpty(createForm.name) &&
+    inOptions(dimensionOptions.value, createForm.dimensionType) &&
+    inOptions(ROUNDING_OPTIONS, createForm.roundingMode) &&
+    isPrecisionValid(createForm.precision),
 )
 const listErrorMessage = computed(() => formatError(uomsError.value))
 
@@ -247,35 +293,53 @@ const conversionRows = computed(() => {
   if (!kw) return conversions.value
   return conversions.value.filter((row) => {
     const c = asConversion(row)
-    return [uomName(c.fromUomCode), uomName(c.toUomCode), c.fromUomCode, c.toUomCode]
-      .some((value) => (value ?? '').toLowerCase().includes(kw))
+    return [uomName(c.fromUomCode), uomName(c.toUomCode), c.fromUomCode, c.toUomCode].some(
+      (value) => (value ?? '').toLowerCase().includes(kw),
+    )
   })
 })
 // fromUom≠toUom 且 factor>0；factor 必填且为正数。
-const canCreateConversion = computed(() =>
-  inOptions(uomSelectOptions.value, conversionForm.fromUom)
-  && inOptions(uomSelectOptions.value, conversionForm.toUom)
-  && conversionForm.fromUom !== conversionForm.toUom
-  && isFactorValid(conversionForm.factor)
-  && inOptions(ROUNDING_OPTIONS, conversionForm.roundingMode)
-  && isOffsetValid(conversionForm.offset)
-  && isPrecisionValid(conversionForm.precision),
+const canCreateConversion = computed(
+  () =>
+    inOptions(uomSelectOptions.value, conversionForm.fromUom) &&
+    inOptions(uomSelectOptions.value, conversionForm.toUom) &&
+    conversionForm.fromUom !== conversionForm.toUom &&
+    isFactorValid(conversionForm.factor) &&
+    inOptions(ROUNDING_OPTIONS, conversionForm.roundingMode) &&
+    isOffsetValid(conversionForm.offset) &&
+    isPrecisionValid(conversionForm.precision),
 )
 const conversionListError = computed(() => formatError(conversionsError.value))
 
-watch(createOpen, (open) => { if (open) createShowErrors.value = false })
-watch([keyword, pageSize], () => { page.value = 1 })
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * (Number(pageSize.value) || 10)
-  filters.take = Number(pageSize.value) || 10
-}, { immediate: true })
+watch(createOpen, (open) => {
+  if (open) createShowErrors.value = false
+})
+watch([keyword, pageSize], () => {
+  page.value = 1
+})
+watch(
+  [page, pageSize],
+  () => {
+    filters.skip = (page.value - 1) * (Number(pageSize.value) || 10)
+    filters.take = Number(pageSize.value) || 10
+  },
+  { immediate: true },
+)
 
-watch(conversionOpen, (open) => { if (open) conversionShowErrors.value = false })
-watch([conversionKeyword, conversionPageSize], () => { conversionPage.value = 1 })
-watch([conversionPage, conversionPageSize], () => {
-  conversionFilters.skip = (conversionPage.value - 1) * (Number(conversionPageSize.value) || 10)
-  conversionFilters.take = Number(conversionPageSize.value) || 10
-}, { immediate: true })
+watch(conversionOpen, (open) => {
+  if (open) conversionShowErrors.value = false
+})
+watch([conversionKeyword, conversionPageSize], () => {
+  conversionPage.value = 1
+})
+watch(
+  [conversionPage, conversionPageSize],
+  () => {
+    conversionFilters.skip = (conversionPage.value - 1) * (Number(conversionPageSize.value) || 10)
+    conversionFilters.take = Number(conversionPageSize.value) || 10
+  },
+  { immediate: true },
+)
 
 function rowKey(item: BusinessConsoleResourceItem) {
   return `${item.resourceType ?? 'unit-of-measure'}:${item.code || item.displayName || ''}`
@@ -344,11 +408,11 @@ async function openEdit(row: BusinessConsoleResourceItem) {
       code: row.code,
       name: d?.name ?? row.displayName ?? '',
       dimensionType: d?.dimensionType ?? u.dimensionType ?? UOM_DEFAULTS.dimensionType,
-      precision: d?.precision != null ? String(d.precision) : (u.precision != null ? String(u.precision) : ''),
+      precision:
+        d?.precision != null ? String(d.precision) : u.precision != null ? String(u.precision) : '',
       roundingMode: d?.roundingMode ?? u.roundingMode ?? UOM_DEFAULTS.roundingMode,
     })
-  }
-  finally {
+  } finally {
     editLoading.value = false
   }
 }
@@ -366,8 +430,7 @@ async function submitUom() {
         roundingMode: createForm.roundingMode,
       })
       notifySuccess(`计量单位「${createForm.name.trim()}」已更新。`)
-    }
-    else {
+    } else {
       const body: BusinessConsoleCreateUnitOfMeasureRequest = {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -383,8 +446,7 @@ async function submitUom() {
     editingCode.value = null
     createShowErrors.value = false
     createOpen.value = false
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -429,8 +491,7 @@ async function submitConversion() {
     resetConversionForm()
     conversionShowErrors.value = false
     conversionOpen.value = false
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -438,93 +499,170 @@ async function submitConversion() {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="计量单位" :breadcrumbs="[{ label: '基础数据' }]" :count="`${uomsTotal} 个单位`">
+    <NvPageHeader
+      title="计量单位"
+      :breadcrumbs="[{ label: '基础数据' }]"
+      :count="`${uomsTotal} 个单位`"
+    >
       <template #actions>
-        <ButtonPro size="sm" variant="outline" type="button" :disabled="uomsPending || conversionsPending" @click="refreshAll">
+        <NvButton
+          size="sm"
+          variant="outline"
+          type="button"
+          :disabled="uomsPending || conversionsPending"
+          @click="refreshAll"
+        >
           <RulerIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <p class="text-sm text-muted-foreground">计量单位是物料基本单位与单位换算的取值来源；物料表单的「基本单位」实时取自这里，换算关系定义单位间的折算系数。</p>
+    <p class="text-sm text-muted-foreground">
+      计量单位是物料基本单位与单位换算的取值来源；物料表单的「基本单位」实时取自这里，换算关系定义单位间的折算系数。
+    </p>
 
-    <TabsPro default-value="units">
-      <TabsProList>
-        <TabsProTrigger value="units">计量单位 ({{ uomsTotal }})</TabsProTrigger>
-        <TabsProTrigger value="conversions">换算关系 ({{ conversionsTotal }})</TabsProTrigger>
-      </TabsProList>
+    <NvTabs default-value="units">
+      <NvTabsList>
+        <NvTabsTrigger value="units">计量单位 ({{ uomsTotal }})</NvTabsTrigger>
+        <NvTabsTrigger value="conversions">换算关系 ({{ conversionsTotal }})</NvTabsTrigger>
+      </NvTabsList>
 
       <!-- 计量单位 -->
-      <TabsProContent value="units" class="grid gap-3">
-        <Toolbar v-model:search="keyword" search-placeholder="在当前页内筛选编码、名称">
+      <NvTabsContent value="units" class="grid gap-3">
+        <NvToolbar v-model:search="keyword" search-placeholder="在当前页内筛选编码、名称">
           <template #actions>
-            <DialogPro v-model:open="createOpen">
-              <DialogProTrigger as-child>
-                <ButtonPro size="sm" type="button" @click="openCreate">
+            <NvDialog v-model:open="createOpen">
+              <NvDialogTrigger as-child>
+                <NvButton size="sm" type="button" @click="openCreate">
                   <PlusIcon aria-hidden="true" />
                   新建计量单位
-                </ButtonPro>
-              </DialogProTrigger>
-              <DialogProContent class="sm:max-w-2xl">
-                <DialogProHeader>
-                  <DialogProTitle>{{ editingCode ? `编辑计量单位 · ${editingCode}` : '新建计量单位' }}</DialogProTitle>
-                  <DialogProDescription>{{ editingCode ? '修改计量单位（编码不可修改）。带 * 为必填项。' : '为库存、核算与单位换算建立统一的计量单位。带 * 为必填项。' }}</DialogProDescription>
-                </DialogProHeader>
+                </NvButton>
+              </NvDialogTrigger>
+              <NvDialogContent class="sm:max-w-2xl">
+                <NvDialogHeader>
+                  <NvDialogTitle>{{
+                    editingCode ? `编辑计量单位 · ${editingCode}` : '新建计量单位'
+                  }}</NvDialogTitle>
+                  <NvDialogDescription>{{
+                    editingCode
+                      ? '修改计量单位（编码不可修改）。带 * 为必填项。'
+                      : '为库存、核算与单位换算建立统一的计量单位。带 * 为必填项。'
+                  }}</NvDialogDescription>
+                </NvDialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitUom">
-                  <p v-if="createShowErrors && !canCreateUom" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
-                  <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-                    <FieldPro v-if="editingCode">
-                      <FieldProLabel for="uom-code">编码</FieldProLabel>
-                      <InputPro id="uom-code" :model-value="createForm.code" disabled />
-                      <FieldProDescription>系统分配，不可修改。</FieldProDescription>
-                    </FieldPro>
-                    <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
-                      <FieldProLabel for="uom-name">名称 <span class="text-destructive">*</span></FieldProLabel>
-                      <InputPro id="uom-name" v-model="createForm.name" autocomplete="off" required />
-                      <FieldProDescription v-if="!editingCode">编码由系统自动生成（如 EA、pcs、kg）。</FieldProDescription>
-                    </FieldPro>
-                    <FieldPro :data-invalid="createShowErrors && !inOptions(dimensionOptions, createForm.dimensionType)">
-                      <FieldProLabel for="uom-dimension">量纲 <span class="text-destructive">*</span></FieldProLabel>
-                      <SelectPro v-model="createForm.dimensionType">
-                        <SelectProTrigger id="uom-dimension"><SelectProValue placeholder="请选择量纲" /></SelectProTrigger>
-                        <SelectProContent>
-                          <SelectProItem v-for="o in dimensionOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                        </SelectProContent>
-                      </SelectPro>
-                      <FieldProDescription>同一量纲内的单位才可互相换算。</FieldProDescription>
-                    </FieldPro>
-                    <FieldPro :data-invalid="createShowErrors && !inOptions(ROUNDING_OPTIONS, createForm.roundingMode)">
-                      <FieldProLabel for="uom-rounding">取整方式 <span class="text-destructive">*</span></FieldProLabel>
-                      <SelectPro v-model="createForm.roundingMode">
-                        <SelectProTrigger id="uom-rounding"><SelectProValue /></SelectProTrigger>
-                        <SelectProContent>
-                          <SelectProItem v-for="o in ROUNDING_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                        </SelectProContent>
-                      </SelectPro>
-                    </FieldPro>
-                    <FieldPro :data-invalid="createShowErrors && !isPrecisionValid(createForm.precision)">
-                      <FieldProLabel for="uom-precision">小数精度</FieldProLabel>
-                      <InputPro id="uom-precision" v-model="createForm.precision" type="number" min="0" step="1" autocomplete="off" placeholder="可留空" />
-                      <FieldProDescription>保留的小数位数，可留空。</FieldProDescription>
-                    </FieldPro>
-                  </FieldProGroup>
-                  <DialogProFooter>
-                    <ButtonPro type="button" variant="outline" @click="createOpen = false">取消</ButtonPro>
-                    <ButtonPro type="submit" :disabled="createUomPending || uomActions.updatePending.value || editLoading">
-                      <Spinner v-if="createUomPending || uomActions.updatePending.value" aria-hidden="true" />
+                  <p
+                    v-if="createShowErrors && !canCreateUom"
+                    class="text-sm text-destructive"
+                    role="alert"
+                  >
+                    请完整填写带 * 的必填项（已标红）。
+                  </p>
+                  <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+                    <NvField v-if="editingCode">
+                      <NvFieldLabel for="uom-code">编码</NvFieldLabel>
+                      <NvInput id="uom-code" :model-value="createForm.code" disabled />
+                      <NvFieldDescription>系统分配，不可修改。</NvFieldDescription>
+                    </NvField>
+                    <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
+                      <NvFieldLabel for="uom-name"
+                        >名称 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvInput
+                        id="uom-name"
+                        v-model="createForm.name"
+                        autocomplete="off"
+                        required
+                      />
+                      <NvFieldDescription v-if="!editingCode"
+                        >编码由系统自动生成（如 EA、pcs、kg）。</NvFieldDescription
+                      >
+                    </NvField>
+                    <NvField
+                      :data-invalid="
+                        createShowErrors && !inOptions(dimensionOptions, createForm.dimensionType)
+                      "
+                    >
+                      <NvFieldLabel for="uom-dimension"
+                        >量纲 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvSelect v-model="createForm.dimensionType">
+                        <NvSelectTrigger id="uom-dimension"
+                          ><NvSelectValue placeholder="请选择量纲"
+                        /></NvSelectTrigger>
+                        <NvSelectContent>
+                          <NvSelectItem
+                            v-for="o in dimensionOptions"
+                            :key="o.value"
+                            :value="o.value"
+                            >{{ o.label }}</NvSelectItem
+                          >
+                        </NvSelectContent>
+                      </NvSelect>
+                      <NvFieldDescription>同一量纲内的单位才可互相换算。</NvFieldDescription>
+                    </NvField>
+                    <NvField
+                      :data-invalid="
+                        createShowErrors && !inOptions(ROUNDING_OPTIONS, createForm.roundingMode)
+                      "
+                    >
+                      <NvFieldLabel for="uom-rounding"
+                        >取整方式 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvSelect v-model="createForm.roundingMode">
+                        <NvSelectTrigger id="uom-rounding"><NvSelectValue /></NvSelectTrigger>
+                        <NvSelectContent>
+                          <NvSelectItem
+                            v-for="o in ROUNDING_OPTIONS"
+                            :key="o.value"
+                            :value="o.value"
+                            >{{ o.label }}</NvSelectItem
+                          >
+                        </NvSelectContent>
+                      </NvSelect>
+                    </NvField>
+                    <NvField
+                      :data-invalid="createShowErrors && !isPrecisionValid(createForm.precision)"
+                    >
+                      <NvFieldLabel for="uom-precision">小数精度</NvFieldLabel>
+                      <NvInput
+                        id="uom-precision"
+                        v-model="createForm.precision"
+                        type="number"
+                        min="0"
+                        step="1"
+                        autocomplete="off"
+                        placeholder="可留空"
+                      />
+                      <NvFieldDescription>保留的小数位数，可留空。</NvFieldDescription>
+                    </NvField>
+                  </NvFieldGroup>
+                  <NvDialogFooter>
+                    <NvButton type="button" variant="outline" @click="createOpen = false"
+                      >取消</NvButton
+                    >
+                    <NvButton
+                      type="submit"
+                      :disabled="createUomPending || uomActions.updatePending.value || editLoading"
+                    >
+                      <Spinner
+                        v-if="createUomPending || uomActions.updatePending.value"
+                        aria-hidden="true"
+                      />
                       {{ editingCode ? '保存修改' : '保存计量单位' }}
-                    </ButtonPro>
-                  </DialogProFooter>
+                    </NvButton>
+                  </NvDialogFooter>
                 </form>
-              </DialogProContent>
-            </DialogPro>
+              </NvDialogContent>
+            </NvDialog>
           </template>
-        </Toolbar>
+        </NvToolbar>
 
-        <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+        <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
+          {{ listErrorMessage }}
+        </p>
 
-        <DataTablePro
+        <NvDataTable
           manual
           :page="page"
           :page-size="pageSize"
@@ -540,94 +678,196 @@ async function submitConversion() {
           empty-message="还没有计量单位，点击「新建计量单位」创建第一条。"
         >
           <template #cell-active="{ row }">
-            <StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" />
+            <NvStatusBadge :value="row.active === false ? 'disabled' : 'active'" />
           </template>
           <template #cell-actions="{ row }">
-            <MasterDataRowActions :row="row" entity-label="计量单位" :detail-fields="uomDetailFields(row)" :actions="uomActions" @edit="openEdit" />
+            <MasterDataRowActions
+              :row="row"
+              entity-label="计量单位"
+              :detail-fields="uomDetailFields(row)"
+              :actions="uomActions"
+              @edit="openEdit"
+            />
           </template>
-        </DataTablePro>
-      </TabsProContent>
+        </NvDataTable>
+      </NvTabsContent>
 
       <!-- 换算关系 -->
-      <TabsProContent value="conversions" class="grid gap-3">
-        <p class="text-sm text-muted-foreground">换算关系定义两个单位间的折算：1 源单位 = 系数 × 目标单位（可带偏移量）。源单位与目标单位显示其单位名称。</p>
-        <Toolbar v-model:search="conversionKeyword" search-placeholder="在当前页内筛选源 / 目标单位">
+      <NvTabsContent value="conversions" class="grid gap-3">
+        <p class="text-sm text-muted-foreground">
+          换算关系定义两个单位间的折算：1 源单位 = 系数 ×
+          目标单位（可带偏移量）。源单位与目标单位显示其单位名称。
+        </p>
+        <NvToolbar
+          v-model:search="conversionKeyword"
+          search-placeholder="在当前页内筛选源 / 目标单位"
+        >
           <template #actions>
-            <DialogPro v-model:open="conversionOpen">
-              <DialogProTrigger as-child>
-                <ButtonPro size="sm" type="button" @click="openCreateConversion">
+            <NvDialog v-model:open="conversionOpen">
+              <NvDialogTrigger as-child>
+                <NvButton size="sm" type="button" @click="openCreateConversion">
                   <ArrowRightLeftIcon aria-hidden="true" />
                   新建换算关系
-                </ButtonPro>
-              </DialogProTrigger>
-              <DialogProContent class="sm:max-w-2xl">
-                <DialogProHeader>
-                  <DialogProTitle>新建换算关系</DialogProTitle>
-                  <DialogProDescription>定义一组单位换算：1 源单位 = 系数 × 目标单位（可带偏移量）。带 * 为必填项。</DialogProDescription>
-                </DialogProHeader>
+                </NvButton>
+              </NvDialogTrigger>
+              <NvDialogContent class="sm:max-w-2xl">
+                <NvDialogHeader>
+                  <NvDialogTitle>新建换算关系</NvDialogTitle>
+                  <NvDialogDescription
+                    >定义一组单位换算：1 源单位 = 系数 × 目标单位（可带偏移量）。带 *
+                    为必填项。</NvDialogDescription
+                  >
+                </NvDialogHeader>
                 <form class="grid gap-4" @submit.prevent="submitConversion">
-                  <p v-if="conversionShowErrors && !canCreateConversion" class="text-sm text-destructive" role="alert">请检查带 * 的必填项：源单位与目标单位不能相同，换算系数须大于 0（已标红）。</p>
-                  <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-                    <FieldPro :data-invalid="conversionShowErrors && (!inOptions(uomSelectOptions, conversionForm.fromUom) || conversionForm.fromUom === conversionForm.toUom)">
-                      <FieldProLabel for="conv-from">源单位 <span class="text-destructive">*</span></FieldProLabel>
-                      <SelectPro v-model="conversionForm.fromUom">
-                        <SelectProTrigger id="conv-from"><SelectProValue placeholder="请选择源单位" /></SelectProTrigger>
-                        <SelectProContent>
-                          <SelectProItem v-for="o in uomSelectOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                        </SelectProContent>
-                      </SelectPro>
-                    </FieldPro>
-                    <FieldPro :data-invalid="conversionShowErrors && (!inOptions(uomSelectOptions, conversionForm.toUom) || conversionForm.fromUom === conversionForm.toUom)">
-                      <FieldProLabel for="conv-to">目标单位 <span class="text-destructive">*</span></FieldProLabel>
-                      <SelectPro v-model="conversionForm.toUom">
-                        <SelectProTrigger id="conv-to"><SelectProValue placeholder="请选择目标单位" /></SelectProTrigger>
-                        <SelectProContent>
-                          <SelectProItem v-for="o in uomSelectOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                        </SelectProContent>
-                      </SelectPro>
-                      <FieldProDescription>目标单位需与源单位不同。</FieldProDescription>
-                    </FieldPro>
-                    <FieldPro :data-invalid="conversionShowErrors && !isFactorValid(conversionForm.factor)">
-                      <FieldProLabel for="conv-factor">换算系数 <span class="text-destructive">*</span></FieldProLabel>
-                      <InputPro id="conv-factor" v-model="conversionForm.factor" type="number" min="0" step="any" autocomplete="off" placeholder="如 1000" />
-                      <FieldProDescription>1 源单位等于多少目标单位，须大于 0。</FieldProDescription>
-                    </FieldPro>
-                    <FieldPro :data-invalid="conversionShowErrors && !isOffsetValid(conversionForm.offset)">
-                      <FieldProLabel for="conv-offset">偏移量</FieldProLabel>
-                      <InputPro id="conv-offset" v-model="conversionForm.offset" type="number" step="any" autocomplete="off" placeholder="可留空" />
-                      <FieldProDescription>线性换算的常数项（如温标换算），可留空。</FieldProDescription>
-                    </FieldPro>
-                    <FieldPro :data-invalid="conversionShowErrors && !inOptions(ROUNDING_OPTIONS, conversionForm.roundingMode)">
-                      <FieldProLabel for="conv-rounding">取整方式 <span class="text-destructive">*</span></FieldProLabel>
-                      <SelectPro v-model="conversionForm.roundingMode">
-                        <SelectProTrigger id="conv-rounding"><SelectProValue /></SelectProTrigger>
-                        <SelectProContent>
-                          <SelectProItem v-for="o in ROUNDING_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                        </SelectProContent>
-                      </SelectPro>
-                    </FieldPro>
-                    <FieldPro :data-invalid="conversionShowErrors && !isPrecisionValid(conversionForm.precision)">
-                      <FieldProLabel for="conv-precision">小数精度</FieldProLabel>
-                      <InputPro id="conv-precision" v-model="conversionForm.precision" type="number" min="0" step="1" autocomplete="off" placeholder="可留空" />
-                      <FieldProDescription>换算结果保留的小数位数，可留空。</FieldProDescription>
-                    </FieldPro>
-                  </FieldProGroup>
-                  <DialogProFooter>
-                    <ButtonPro type="button" variant="outline" @click="conversionOpen = false">取消</ButtonPro>
-                    <ButtonPro type="submit" :disabled="createUomConversionPending">
+                  <p
+                    v-if="conversionShowErrors && !canCreateConversion"
+                    class="text-sm text-destructive"
+                    role="alert"
+                  >
+                    请检查带 * 的必填项：源单位与目标单位不能相同，换算系数须大于 0（已标红）。
+                  </p>
+                  <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+                    <NvField
+                      :data-invalid="
+                        conversionShowErrors &&
+                        (!inOptions(uomSelectOptions, conversionForm.fromUom) ||
+                          conversionForm.fromUom === conversionForm.toUom)
+                      "
+                    >
+                      <NvFieldLabel for="conv-from"
+                        >源单位 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvSelect v-model="conversionForm.fromUom">
+                        <NvSelectTrigger id="conv-from"
+                          ><NvSelectValue placeholder="请选择源单位"
+                        /></NvSelectTrigger>
+                        <NvSelectContent>
+                          <NvSelectItem
+                            v-for="o in uomSelectOptions"
+                            :key="o.value"
+                            :value="o.value"
+                            >{{ o.label }}</NvSelectItem
+                          >
+                        </NvSelectContent>
+                      </NvSelect>
+                    </NvField>
+                    <NvField
+                      :data-invalid="
+                        conversionShowErrors &&
+                        (!inOptions(uomSelectOptions, conversionForm.toUom) ||
+                          conversionForm.fromUom === conversionForm.toUom)
+                      "
+                    >
+                      <NvFieldLabel for="conv-to"
+                        >目标单位 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvSelect v-model="conversionForm.toUom">
+                        <NvSelectTrigger id="conv-to"
+                          ><NvSelectValue placeholder="请选择目标单位"
+                        /></NvSelectTrigger>
+                        <NvSelectContent>
+                          <NvSelectItem
+                            v-for="o in uomSelectOptions"
+                            :key="o.value"
+                            :value="o.value"
+                            >{{ o.label }}</NvSelectItem
+                          >
+                        </NvSelectContent>
+                      </NvSelect>
+                      <NvFieldDescription>目标单位需与源单位不同。</NvFieldDescription>
+                    </NvField>
+                    <NvField
+                      :data-invalid="conversionShowErrors && !isFactorValid(conversionForm.factor)"
+                    >
+                      <NvFieldLabel for="conv-factor"
+                        >换算系数 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvInput
+                        id="conv-factor"
+                        v-model="conversionForm.factor"
+                        type="number"
+                        min="0"
+                        step="any"
+                        autocomplete="off"
+                        placeholder="如 1000"
+                      />
+                      <NvFieldDescription>1 源单位等于多少目标单位，须大于 0。</NvFieldDescription>
+                    </NvField>
+                    <NvField
+                      :data-invalid="conversionShowErrors && !isOffsetValid(conversionForm.offset)"
+                    >
+                      <NvFieldLabel for="conv-offset">偏移量</NvFieldLabel>
+                      <NvInput
+                        id="conv-offset"
+                        v-model="conversionForm.offset"
+                        type="number"
+                        step="any"
+                        autocomplete="off"
+                        placeholder="可留空"
+                      />
+                      <NvFieldDescription
+                        >线性换算的常数项（如温标换算），可留空。</NvFieldDescription
+                      >
+                    </NvField>
+                    <NvField
+                      :data-invalid="
+                        conversionShowErrors &&
+                        !inOptions(ROUNDING_OPTIONS, conversionForm.roundingMode)
+                      "
+                    >
+                      <NvFieldLabel for="conv-rounding"
+                        >取整方式 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvSelect v-model="conversionForm.roundingMode">
+                        <NvSelectTrigger id="conv-rounding"><NvSelectValue /></NvSelectTrigger>
+                        <NvSelectContent>
+                          <NvSelectItem
+                            v-for="o in ROUNDING_OPTIONS"
+                            :key="o.value"
+                            :value="o.value"
+                            >{{ o.label }}</NvSelectItem
+                          >
+                        </NvSelectContent>
+                      </NvSelect>
+                    </NvField>
+                    <NvField
+                      :data-invalid="
+                        conversionShowErrors && !isPrecisionValid(conversionForm.precision)
+                      "
+                    >
+                      <NvFieldLabel for="conv-precision">小数精度</NvFieldLabel>
+                      <NvInput
+                        id="conv-precision"
+                        v-model="conversionForm.precision"
+                        type="number"
+                        min="0"
+                        step="1"
+                        autocomplete="off"
+                        placeholder="可留空"
+                      />
+                      <NvFieldDescription>换算结果保留的小数位数，可留空。</NvFieldDescription>
+                    </NvField>
+                  </NvFieldGroup>
+                  <NvDialogFooter>
+                    <NvButton type="button" variant="outline" @click="conversionOpen = false"
+                      >取消</NvButton
+                    >
+                    <NvButton type="submit" :disabled="createUomConversionPending">
                       <Spinner v-if="createUomConversionPending" aria-hidden="true" />
                       保存换算关系
-                    </ButtonPro>
-                  </DialogProFooter>
+                    </NvButton>
+                  </NvDialogFooter>
                 </form>
-              </DialogProContent>
-            </DialogPro>
+              </NvDialogContent>
+            </NvDialog>
           </template>
-        </Toolbar>
+        </NvToolbar>
 
-        <p v-if="conversionListError" class="text-sm text-destructive" role="alert">{{ conversionListError }}</p>
+        <p v-if="conversionListError" class="text-sm text-destructive" role="alert">
+          {{ conversionListError }}
+        </p>
 
-        <DataTablePro
+        <NvDataTable
           manual
           :page="conversionPage"
           :page-size="conversionPageSize"
@@ -643,13 +883,18 @@ async function submitConversion() {
           empty-message="还没有换算关系，点击「新建换算关系」创建第一条。"
         >
           <template #cell-active="{ row }">
-            <StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" />
+            <NvStatusBadge :value="row.active === false ? 'disabled' : 'active'" />
           </template>
           <template #cell-actions="{ row }">
-            <MasterDataRowActions :row="row" entity-label="换算关系" :detail-fields="conversionDetailFields(row)" :actions="conversionActions" />
+            <MasterDataRowActions
+              :row="row"
+              entity-label="换算关系"
+              :detail-fields="conversionDetailFields(row)"
+              :actions="conversionActions"
+            />
           </template>
-        </DataTablePro>
-      </TabsProContent>
-    </TabsPro>
+        </NvDataTable>
+      </NvTabsContent>
+    </NvTabs>
   </BusinessLayout>
 </template>

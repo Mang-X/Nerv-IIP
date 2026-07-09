@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BadgePro } from '@nerv-iip/ui'
+import { NvBadge } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
 const props = defineProps<{
@@ -41,19 +41,48 @@ const statusLabels: Record<string, string> = {
   warning: '预警',
 }
 const rawValue = computed(() => props.value?.trim() || '')
-const label = computed(() => statusLabels[rawValue.value.toLowerCase()] ?? (rawValue.value || '未知'))
+const label = computed(
+  () => statusLabels[rawValue.value.toLowerCase()] ?? (rawValue.value || '未知'),
+)
 const variant = computed(() => {
   const value = rawValue.value.toLowerCase()
-  if (['ready', 'completed', 'closed', 'passed', 'available', 'active', 'approved'].includes(value)) {
+  if (
+    ['ready', 'completed', 'closed', 'passed', 'available', 'active', 'approved'].includes(value)
+  ) {
     return 'success'
   }
-  if (['running', 'inprogress', 'in-progress', 'started', 'manual', 'released', 'issued', 'scheduled'].includes(value)) {
+  if (
+    [
+      'running',
+      'inprogress',
+      'in-progress',
+      'started',
+      'manual',
+      'released',
+      'issued',
+      'scheduled',
+    ].includes(value)
+  ) {
     return 'neutral'
   }
   if (['blocked', 'failed', 'rejected', 'unavailable', 'cancelled', 'disabled'].includes(value)) {
     return 'danger'
   }
-  if (['pending', 'warning', 'conditional-release', 'conditionalrelease', 'held', 'paused', 'open', 'created', 'planned', 'queued', 'submitted'].includes(value)) {
+  if (
+    [
+      'pending',
+      'warning',
+      'conditional-release',
+      'conditionalrelease',
+      'held',
+      'paused',
+      'open',
+      'created',
+      'planned',
+      'queued',
+      'submitted',
+    ].includes(value)
+  ) {
     return 'warning'
   }
   return 'neutral'
@@ -61,7 +90,7 @@ const variant = computed(() => {
 </script>
 
 <template>
-  <BadgePro class="max-w-32 truncate rounded-sm" :aria-label="`状态：${label}`" :variant="variant">
+  <NvBadge class="max-w-32 truncate rounded-sm" :aria-label="`状态：${label}`" :variant="variant">
     {{ label }}
-  </BadgePro>
+  </NvBadge>
 </template>

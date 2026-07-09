@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BadgePro } from '@nerv-iip/ui'
+import { NvBadge } from '@nerv-iip/ui'
 
 defineProps<{
   domain: string
@@ -16,7 +16,7 @@ defineProps<{
         <h1 class="text-xl font-semibold text-foreground">{{ routeName }}</h1>
         <p class="mt-1 max-w-3xl text-sm text-muted-foreground">{{ summary }}</p>
       </div>
-      <BadgePro variant="neutral">待完善路由</BadgePro>
+      <NvBadge variant="neutral">待完善路由</NvBadge>
     </div>
 
     <div class="rounded-lg border bg-background p-4 text-sm text-muted-foreground">

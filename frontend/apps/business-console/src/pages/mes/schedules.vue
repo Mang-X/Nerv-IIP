@@ -3,37 +3,43 @@ import type {
   BusinessConsoleRunScheduleRequest,
   BusinessConsoleScheduledOperation,
 } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesSchedules } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  FieldPro,
-  FieldProGroup,
-  FieldProLabel,
-  PageHeader,
-  SectionCard,
-  SectionCards,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvField,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvPageHeader,
+  NvSectionCard,
+  NvSectionCards,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
+  NvStatusBadge,
 } from '@nerv-iip/ui'
 import { CalendarCogIcon, PlayIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '规则排程（过渡）', requiredPermissions: ['business.mes.schedules.read', 'business.mes.schedules.manage'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '规则排程（过渡）',
+    requiredPermissions: ['business.mes.schedules.read', 'business.mes.schedules.manage'],
+  },
+})
 
 const { lastSchedule, runSchedule, runScheduleError, runSchedulePending } = useMesSchedules()
 const businessContext = useBusinessContextStore()
@@ -56,11 +62,16 @@ watch(
   { flush: 'sync', immediate: true },
 )
 
-const assignments = computed<BusinessConsoleScheduledOperation[]>(() => lastSchedule.value?.assignments ?? [])
+const assignments = computed<BusinessConsoleScheduledOperation[]>(
+  () => lastSchedule.value?.assignments ?? [],
+)
 const affectedWorkOrderIds = computed(() => lastSchedule.value?.affectedWorkOrderIds ?? [])
 const errorMessage = computed(() => formatError(runScheduleError.value))
 const canRunSchedule = computed(
-  () => isNonEmpty(runForm.organizationId) && isNonEmpty(runForm.environmentId) && isNonEmpty(runForm.trigger),
+  () =>
+    isNonEmpty(runForm.organizationId) &&
+    isNonEmpty(runForm.environmentId) &&
+    isNonEmpty(runForm.trigger),
 )
 
 const page = ref(1)
@@ -74,8 +85,13 @@ watch([pageSize, () => assignments.value.length], () => {
   page.value = 1
 })
 
-const columns: DataTableProColumn<BusinessConsoleScheduledOperation>[] = [
-  { key: 'workOrderId', header: '工单', cellClass: 'font-medium', accessor: (r) => r.workOrderId ?? '无' },
+const columns: NvDataTableColumn<BusinessConsoleScheduledOperation>[] = [
+  {
+    key: 'workOrderId',
+    header: '工单',
+    cellClass: 'font-medium',
+    accessor: (r) => r.workOrderId ?? '无',
+  },
   { key: 'operationTaskId', header: '工序', accessor: (r) => r.operationTaskId ?? '无' },
   { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
   { key: 'startUtc', header: '开始', width: 'w-44' },
@@ -121,41 +137,56 @@ function isNonEmpty(value: string) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="规则排程（过渡）" :breadcrumbs="[{ label: '制造执行' }]" :count="`${assignments.length} 条分配`">
+    <NvPageHeader
+      title="规则排程（过渡）"
+      :breadcrumbs="[{ label: '制造执行' }]"
+      :count="`${assignments.length} 条分配`"
+    >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" as-child>
+        <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/scheduling">
             <CalendarCogIcon aria-hidden="true" />
             排产工作台
           </RouterLink>
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" @click="scheduleSheetOpen = true">
+        </NvButton>
+        <NvButton size="sm" type="button" @click="scheduleSheetOpen = true">
           <PlayIcon aria-hidden="true" />
           运行规则排程
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
     <p class="max-w-3xl text-sm leading-6 text-muted-foreground">
-      此页保留 MES 执行域内的规则排程过渡和诊断结果，用于查看或手动触发工序分配。正式 APS / 甘特、方案发布和冲突治理请进入排产工作台。
+      此页保留 MES 执行域内的规则排程过渡和诊断结果，用于查看或手动触发工序分配。正式 APS /
+      甘特、方案发布和冲突治理请进入排产工作台。
     </p>
 
-    <SectionCards :columns="3">
-      <SectionCard
+    <NvSectionCards :columns="3">
+      <NvSectionCard
         description="规则版本"
         :value="lastSchedule?.scheduleVersion ?? '无'"
         :hint="lastSchedule?.trigger ? triggerLabel(lastSchedule.trigger) : '尚未运行'"
       />
-      <SectionCard description="规则分配" :value="assignments.length" hint="执行域返回的工序分配行" />
-      <SectionCard description="影响工单" :value="affectedWorkOrderIds.length" hint="本次受影响工单号" />
-    </SectionCards>
+      <NvSectionCard
+        description="规则分配"
+        :value="assignments.length"
+        hint="执行域返回的工序分配行"
+      />
+      <NvSectionCard
+        description="影响工单"
+        :value="affectedWorkOrderIds.length"
+        hint="本次受影响工单号"
+      />
+    </NvSectionCards>
 
     <div class="flex items-center justify-between">
       <span class="text-sm font-semibold text-foreground">规则排程结果</span>
-      <span class="text-sm text-muted-foreground">{{ formatDateTime(lastSchedule?.scheduledAtUtc) }}</span>
+      <span class="text-sm text-muted-foreground">{{
+        formatDateTime(lastSchedule?.scheduledAtUtc)
+      }}</span>
     </div>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -172,54 +203,71 @@ function isNonEmpty(value: string) {
     >
       <template #cell-startUtc="{ row }">{{ formatDateTime(row.startUtc) }}</template>
       <template #cell-endUtc="{ row }">{{ formatDateTime(row.endUtc) }}</template>
-    </DataTablePro>
-
+    </NvDataTable>
 
     <div v-if="affectedWorkOrderIds.length" class="rounded-lg border bg-background p-4">
       <h2 class="text-sm font-semibold text-foreground">受影响工单</h2>
       <div class="mt-3 flex flex-wrap gap-2">
-        <StatusBadgePro v-for="workOrderId in affectedWorkOrderIds" :key="workOrderId" :label="workOrderId" tone="neutral" />
+        <NvStatusBadge
+          v-for="workOrderId in affectedWorkOrderIds"
+          :key="workOrderId"
+          :label="workOrderId"
+          tone="neutral"
+        />
       </div>
     </div>
 
-    <DialogPro v-model:open="scheduleSheetOpen">
-      <DialogProContent>
-        <DialogProHeader>
-          <DialogProTitle>运行规则排程</DialogProTitle>
-          <DialogProDescription>规则排程只重新计算 MES 执行域工序分配；正式排产方案、甘特和发布动作请在排产工作台处理。</DialogProDescription>
-        </DialogProHeader>
+    <NvDialog v-model:open="scheduleSheetOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>运行规则排程</NvDialogTitle>
+          <NvDialogDescription
+            >规则排程只重新计算 MES
+            执行域工序分配；正式排产方案、甘特和发布动作请在排产工作台处理。</NvDialogDescription
+          >
+        </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitScheduleRun">
-          <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-          <p v-if="!isNonEmpty(runForm.organizationId) || !isNonEmpty(runForm.environmentId)" class="text-sm text-muted-foreground" role="status">
+          <p v-if="errorMessage" class="text-sm text-destructive" role="alert">
+            {{ errorMessage }}
+          </p>
+          <p
+            v-if="!isNonEmpty(runForm.organizationId) || !isNonEmpty(runForm.environmentId)"
+            class="text-sm text-muted-foreground"
+            role="status"
+          >
             请先完成业务上下文选择。
           </p>
           <p v-if="runSuccess" class="text-sm text-success" role="status">{{ runSuccess }}</p>
 
-          <FieldProGroup class="grid gap-3">
-            <FieldPro>
-              <FieldProLabel for="schedule-trigger">触发来源</FieldProLabel>
-              <SelectPro v-model="runForm.trigger">
-                <SelectProTrigger id="schedule-trigger" aria-label="排程触发来源"><SelectProValue /></SelectProTrigger>
-                <SelectProContent>
-                  <SelectProItem value="Manual">手动</SelectProItem>
-                  <SelectProItem value="RushOrder">急单</SelectProItem>
-                  <SelectProItem value="AssetUnavailable">设备不可用</SelectProItem>
-                  <SelectProItem value="AssetRestored">设备恢复</SelectProItem>
-                </SelectProContent>
-              </SelectPro>
-            </FieldPro>
-          </FieldProGroup>
+          <NvFieldGroup class="grid gap-3">
+            <NvField>
+              <NvFieldLabel for="schedule-trigger">触发来源</NvFieldLabel>
+              <NvSelect v-model="runForm.trigger">
+                <NvSelectTrigger id="schedule-trigger" aria-label="排程触发来源"
+                  ><NvSelectValue
+                /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem value="Manual">手动</NvSelectItem>
+                  <NvSelectItem value="RushOrder">急单</NvSelectItem>
+                  <NvSelectItem value="AssetUnavailable">设备不可用</NvSelectItem>
+                  <NvSelectItem value="AssetRestored">设备恢复</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+            </NvField>
+          </NvFieldGroup>
 
-          <DialogProFooter>
-            <ButtonPro type="button" variant="outline" @click="scheduleSheetOpen = false">取消</ButtonPro>
-            <ButtonPro type="submit" :disabled="runSchedulePending || !canRunSchedule">
+          <NvDialogFooter>
+            <NvButton type="button" variant="outline" @click="scheduleSheetOpen = false"
+              >取消</NvButton
+            >
+            <NvButton type="submit" :disabled="runSchedulePending || !canRunSchedule">
               <Spinner v-if="runSchedulePending" aria-hidden="true" />
               <PlayIcon v-else aria-hidden="true" />
               运行规则排程
-            </ButtonPro>
-          </DialogProFooter>
+            </NvButton>
+          </NvDialogFooter>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>

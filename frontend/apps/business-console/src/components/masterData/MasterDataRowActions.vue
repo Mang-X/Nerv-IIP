@@ -1,24 +1,24 @@
 <script setup lang="ts">
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import {
-  AlertDialogPro,
-  AlertDialogProAction,
-  AlertDialogProCancel,
-  AlertDialogProContent,
-  AlertDialogProDescription,
-  AlertDialogProFooter,
-  AlertDialogProHeader,
-  AlertDialogProTitle,
-  ButtonPro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DropdownMenuProItem,
-  RowActions,
-  StatusBadgePro,
+  NvAlertDialog,
+  NvAlertDialogAction,
+  NvAlertDialogCancel,
+  NvAlertDialogContent,
+  NvAlertDialogDescription,
+  NvAlertDialogFooter,
+  NvAlertDialogHeader,
+  NvAlertDialogTitle,
+  NvButton,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDropdownMenuItem,
+  NvRowActions,
+  NvStatusBadge,
   toast,
 } from '@nerv-iip/ui'
 import { CircleSlashIcon, EyeIcon, PencilIcon, PlayIcon } from 'lucide-vue-next'
@@ -63,43 +63,43 @@ async function confirmToggle() {
     if (isActive) {
       await props.actions.disable(code)
       toast.success('已停用')
-    }
-    else {
+    } else {
       await props.actions.enable(code)
       toast.success('已启用')
     }
     toggleOpen.value = false
-  }
-  catch (error) {
+  } catch (error) {
     toast.error(formatError(error))
   }
 }
 </script>
 
 <template>
-  <RowActions :label="`${entityLabel}操作 ${row.code ?? ''}`">
-    <DropdownMenuProItem @click="detailOpen = true">
+  <NvRowActions :label="`${entityLabel}操作 ${row.code ?? ''}`">
+    <NvDropdownMenuItem @click="detailOpen = true">
       <EyeIcon aria-hidden="true" />
       查看详情
-    </DropdownMenuProItem>
-    <DropdownMenuProItem :disabled="!row.code" @click="emit('edit', row)">
+    </NvDropdownMenuItem>
+    <NvDropdownMenuItem :disabled="!row.code" @click="emit('edit', row)">
       <PencilIcon aria-hidden="true" />
       编辑
-    </DropdownMenuProItem>
-    <DropdownMenuProItem :disabled="!row.code" @click="toggleOpen = true">
+    </NvDropdownMenuItem>
+    <NvDropdownMenuItem :disabled="!row.code" @click="toggleOpen = true">
       <CircleSlashIcon v-if="row.active !== false" aria-hidden="true" />
       <PlayIcon v-else aria-hidden="true" />
       {{ row.active !== false ? '停用' : '启用' }}
-    </DropdownMenuProItem>
-  </RowActions>
+    </NvDropdownMenuItem>
+  </NvRowActions>
 
   <!-- 查看详情（只读） -->
-  <DialogPro v-model:open="detailOpen">
-    <DialogProContent class="sm:max-w-lg">
-      <DialogProHeader>
-        <DialogProTitle>{{ entityLabel }}详情</DialogProTitle>
-        <DialogProDescription>{{ row.displayName ?? row.code ?? '' }} 的关键信息。</DialogProDescription>
-      </DialogProHeader>
+  <NvDialog v-model:open="detailOpen">
+    <NvDialogContent class="sm:max-w-lg">
+      <NvDialogHeader>
+        <NvDialogTitle>{{ entityLabel }}详情</NvDialogTitle>
+        <NvDialogDescription
+          >{{ row.displayName ?? row.code ?? '' }} 的关键信息。</NvDialogDescription
+        >
+      </NvDialogHeader>
       <dl class="grid gap-3 sm:grid-cols-2">
         <div v-for="field in detailFields" :key="field.label" class="grid gap-1">
           <dt class="text-xs text-muted-foreground">{{ field.label }}</dt>
@@ -107,39 +107,39 @@ async function confirmToggle() {
         </div>
         <div class="grid gap-1">
           <dt class="text-xs text-muted-foreground">状态</dt>
-          <dd><StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" /></dd>
+          <dd><NvStatusBadge :value="row.active === false ? 'disabled' : 'active'" /></dd>
         </div>
       </dl>
-      <DialogProFooter>
-        <ButtonPro type="button" variant="outline" @click="detailOpen = false">关闭</ButtonPro>
-      </DialogProFooter>
-    </DialogProContent>
-  </DialogPro>
+      <NvDialogFooter>
+        <NvButton type="button" variant="outline" @click="detailOpen = false">关闭</NvButton>
+      </NvDialogFooter>
+    </NvDialogContent>
+  </NvDialog>
 
   <!-- 停用 / 启用 二次确认 -->
-  <AlertDialogPro v-model:open="toggleOpen">
-    <AlertDialogProContent>
-      <AlertDialogProHeader>
-        <AlertDialogProTitle>
+  <NvAlertDialog v-model:open="toggleOpen">
+    <NvAlertDialogContent>
+      <NvAlertDialogHeader>
+        <NvAlertDialogTitle>
           {{ row.active !== false ? `确认停用该${entityLabel}？` : `确认启用该${entityLabel}？` }}
-        </AlertDialogProTitle>
-        <AlertDialogProDescription>
+        </NvAlertDialogTitle>
+        <NvAlertDialogDescription>
           {{
             row.active !== false
               ? '停用后将不能用于新建/计划，已有记录不受影响。'
               : '启用后可重新用于新建与计划。'
           }}
-        </AlertDialogProDescription>
-      </AlertDialogProHeader>
-      <AlertDialogProFooter>
-        <AlertDialogProCancel>取消</AlertDialogProCancel>
-        <AlertDialogProAction
+        </NvAlertDialogDescription>
+      </NvAlertDialogHeader>
+      <NvAlertDialogFooter>
+        <NvAlertDialogCancel>取消</NvAlertDialogCancel>
+        <NvAlertDialogAction
           :disabled="actions.disablePending.value || actions.enablePending.value"
           @click="confirmToggle"
         >
           {{ row.active !== false ? '确认停用' : '确认启用' }}
-        </AlertDialogProAction>
-      </AlertDialogProFooter>
-    </AlertDialogProContent>
-  </AlertDialogPro>
+        </NvAlertDialogAction>
+      </NvAlertDialogFooter>
+    </NvAlertDialogContent>
+  </NvAlertDialog>
 </template>

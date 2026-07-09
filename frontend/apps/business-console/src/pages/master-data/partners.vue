@@ -1,42 +1,54 @@
 <script setup lang="ts">
-import type { BusinessConsoleCreateBusinessPartnerRequest, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
-import type { DataTableProColumn, DataTableSort } from '@nerv-iip/ui'
+import type {
+  BusinessConsoleCreateBusinessPartnerRequest,
+  BusinessConsoleResourceItem,
+} from '@nerv-iip/api-client'
+import type { NvDataTableColumn, DataTableSort } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
-import { useBusinessPartners, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
+import {
+  useBusinessPartners,
+  useMasterDataResourceActions,
+} from '@/composables/useBusinessMasterData'
 import { PARTNER_TYPE_OPTIONS } from '@/data/masterDataReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  CheckboxPro,
-  DataTablePro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DialogProTrigger,
-  FieldPro,
-  FieldProDescription,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvCheckbox,
+  NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDialogTrigger,
+  NvField,
+  NvFieldDescription,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '业务伙伴', requiredPermissions: ['business.masterdata.resources.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '业务伙伴',
+    requiredPermissions: ['business.masterdata.resources.read'],
+  },
+})
 
 const {
   createPartner,
@@ -86,8 +98,9 @@ const listRows = computed(() => {
     const roleMatched = roleFilter.value === 'all' || roles.includes(roleFilter.value)
     const kwMatched =
       !kw ||
-      [row.code, row.displayName, rolesLabel(row), row.taxId]
-        .some((value) => (value ?? '').toLowerCase().includes(kw))
+      [row.code, row.displayName, rolesLabel(row), row.taxId].some((value) =>
+        (value ?? '').toLowerCase().includes(kw),
+      )
     return roleMatched && kwMatched
   })
 })
@@ -95,9 +108,16 @@ const sortedRows = computed(() => {
   if (!sort.value) return listRows.value
   const { key, direction } = sort.value
   const factor = direction === 'asc' ? 1 : -1
-  return [...listRows.value].sort((a, b) =>
-    String(key === 'roles' ? rolesLabel(a) : a[key as keyof BusinessConsoleResourceItem] ?? '')
-      .localeCompare(String(key === 'roles' ? rolesLabel(b) : b[key as keyof BusinessConsoleResourceItem] ?? ''), 'zh-Hans-CN') * factor,
+  return [...listRows.value].sort(
+    (a, b) =>
+      String(
+        key === 'roles' ? rolesLabel(a) : (a[key as keyof BusinessConsoleResourceItem] ?? ''),
+      ).localeCompare(
+        String(
+          key === 'roles' ? rolesLabel(b) : (b[key as keyof BusinessConsoleResourceItem] ?? ''),
+        ),
+        'zh-Hans-CN',
+      ) * factor,
   )
 })
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
@@ -124,20 +144,28 @@ const extraRoleOptions = computed(() =>
   PARTNER_TYPE_OPTIONS.filter((o) => o.value !== createForm.partnerType),
 )
 function selectedExtraRoles() {
-  return PARTNER_TYPE_OPTIONS
-    .map((o) => o.value)
-    .filter((value) => extraRoleState[value] && value !== createForm.partnerType)
+  return PARTNER_TYPE_OPTIONS.map((o) => o.value).filter(
+    (value) => extraRoleState[value] && value !== createForm.partnerType,
+  )
 }
-const canCreatePartner = computed(() =>
-  [createForm.name, createForm.partnerType].every(isNonEmpty) && !creditLimitValidationMessage.value,
+const canCreatePartner = computed(
+  () =>
+    [createForm.name, createForm.partnerType].every(isNonEmpty) &&
+    !creditLimitValidationMessage.value,
 )
-const hasCustomerRole = computed(() =>
-  createForm.partnerType === 'customer' || selectedExtraRoles().includes('customer'),
+const hasCustomerRole = computed(
+  () => createForm.partnerType === 'customer' || selectedExtraRoles().includes('customer'),
 )
 const creditLimitValue = computed(() => String(createForm.creditLimit ?? '').trim())
-const creditCurrencyValue = computed(() => String(createForm.creditCurrencyCode ?? '').trim().toUpperCase())
+const creditCurrencyValue = computed(() =>
+  String(createForm.creditCurrencyCode ?? '')
+    .trim()
+    .toUpperCase(),
+)
 const hasOriginalCreditProfile = computed(() => Boolean(originalCreditLimitValue.value))
-const shouldShowCreditFields = computed(() => hasCustomerRole.value || hasOriginalCreditProfile.value)
+const shouldShowCreditFields = computed(
+  () => hasCustomerRole.value || hasOriginalCreditProfile.value,
+)
 const creditLimitValidationMessage = computed(() => {
   if (!hasCustomerRole.value || !creditLimitValue.value) return ''
   const amount = Number(creditLimitValue.value)
@@ -147,19 +175,26 @@ const creditLimitValidationMessage = computed(() => {
 })
 const creditLimitDescription = computed(() => {
   if (!editingCode.value) return '销售订单信用检查使用的客户额度。'
-  if (!hasCustomerRole.value && hasOriginalCreditProfile.value) return '移除客户角色后保存会同步清空信用额度。'
-  if (hasOriginalCreditProfile.value && !creditLimitValue.value) return '留空保存会清空已有信用额度。'
+  if (!hasCustomerRole.value && hasOriginalCreditProfile.value)
+    return '移除客户角色后保存会同步清空信用额度。'
+  if (hasOriginalCreditProfile.value && !creditLimitValue.value)
+    return '留空保存会清空已有信用额度。'
   return '销售订单信用检查使用的客户额度。'
 })
 
-const columns: DataTableProColumn<BusinessConsoleResourceItem>[] = [
+const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'roles', header: '角色', width: 'w-40' },
   { key: 'taxId', header: '税号', width: 'w-44', accessor: (r) => r.taxId ?? '无' },
   { key: 'creditLimit', header: '信用额度', width: 'w-36', accessor: (r) => formatCreditLimit(r) },
   { key: 'active', header: '状态', width: 'w-24' },
-  { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
+  {
+    key: 'snapshotVersion',
+    header: '更新时间',
+    width: 'w-40',
+    accessor: (r) => formatDateTime(r.snapshotVersion),
+  },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
 
@@ -177,15 +212,22 @@ watch([keyword, roleFilter, pageSize], () => {
   page.value = 1
 })
 
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * pageSizeNumber.value
-  filters.take = pageSizeNumber.value
-}, { immediate: true })
+watch(
+  [page, pageSize],
+  () => {
+    filters.skip = (page.value - 1) * pageSizeNumber.value
+    filters.take = pageSizeNumber.value
+  },
+  { immediate: true },
+)
 
-watch(() => createForm.partnerType, (value) => {
-  // 主角色不应同时出现在附加角色里。
-  extraRoleState[value] = false
-})
+watch(
+  () => createForm.partnerType,
+  (value) => {
+    // 主角色不应同时出现在附加角色里。
+    extraRoleState[value] = false
+  },
+)
 
 function resetFilters() {
   keyword.value = ''
@@ -227,12 +269,13 @@ async function openEdit(row: BusinessConsoleResourceItem) {
       creditLimit: originalCreditLimitValue.value,
       creditCurrencyCode: originalCreditCurrencyValue.value || 'CNY',
     })
-    const extras = new Set((d?.partnerRoles ?? row.partnerRoles ?? []).map((r) => (r ?? '').trim()).filter(Boolean))
+    const extras = new Set(
+      (d?.partnerRoles ?? row.partnerRoles ?? []).map((r) => (r ?? '').trim()).filter(Boolean),
+    )
     for (const o of PARTNER_TYPE_OPTIONS) {
       extraRoleState[o.value] = extras.has(o.value) && o.value !== type
     }
-  }
-  finally {
+  } finally {
     editLoading.value = false
   }
 }
@@ -254,8 +297,7 @@ async function submitPartner() {
         ...creditPatch,
       })
       notifySuccess(`业务伙伴「${createForm.name.trim()}」已更新。`)
-    }
-    else {
+    } else {
       const body: BusinessConsoleCreateBusinessPartnerRequest = {
         organizationId: createForm.organizationId.trim(),
         environmentId: createForm.environmentId.trim(),
@@ -272,8 +314,7 @@ async function submitPartner() {
     editingCode.value = null
     createShowErrors.value = false
     createOpen.value = false
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -289,7 +330,11 @@ function isNonEmpty(value: string) {
   return value.trim().length > 0
 }
 function customerCreditPatch() {
-  if (editingCode.value && hasOriginalCreditProfile.value && (!hasCustomerRole.value || !creditLimitValue.value)) {
+  if (
+    editingCode.value &&
+    hasOriginalCreditProfile.value &&
+    (!hasCustomerRole.value || !creditLimitValue.value)
+  ) {
     return { clearCreditLimit: true }
   }
 
@@ -302,7 +347,9 @@ function customerCreditPatch() {
     creditCurrencyCode: creditCurrencyValue.value,
   }
 }
-function formatCreditLimit(row: Pick<BusinessConsoleResourceItem, 'creditLimit' | 'creditCurrencyCode'>) {
+function formatCreditLimit(
+  row: Pick<BusinessConsoleResourceItem, 'creditLimit' | 'creditCurrencyCode'>,
+) {
   if (row.creditLimit === undefined || row.creditLimit === null) return '无'
   return `${row.creditCurrencyCode ?? ''} ${row.creditLimit}`.trim()
 }
@@ -310,110 +357,190 @@ function formatCreditLimit(row: Pick<BusinessConsoleResourceItem, 'creditLimit' 
 
 <template>
   <BusinessLayout>
-    <PageHeader title="业务伙伴" :breadcrumbs="[{ label: '基础数据' }]" :count="`${partnersTotal} 个伙伴`">
+    <NvPageHeader
+      title="业务伙伴"
+      :breadcrumbs="[{ label: '基础数据' }]"
+      :count="`${partnersTotal} 个伙伴`"
+    >
       <template #actions>
-        <ButtonPro size="sm" variant="outline" type="button" :disabled="partnersPending" @click="refreshPartners">
+        <NvButton
+          size="sm"
+          variant="outline"
+          type="button"
+          :disabled="partnersPending"
+          @click="refreshPartners"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <DialogPro v-model:open="createOpen" @update:open="syncContextFromFilters">
-          <DialogProTrigger as-child>
-            <ButtonPro size="sm" type="button" @click="openCreate">
+        </NvButton>
+        <NvDialog v-model:open="createOpen" @update:open="syncContextFromFilters">
+          <NvDialogTrigger as-child>
+            <NvButton size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建伙伴
-            </ButtonPro>
-          </DialogProTrigger>
-          <DialogProContent class="sm:max-w-2xl">
-            <DialogProHeader>
-              <DialogProTitle>{{ editingCode ? `编辑业务伙伴 · ${editingCode}` : '新建业务伙伴' }}</DialogProTitle>
-              <DialogProDescription>{{ editingCode ? '修改伙伴档案（编码不可修改）。一个伙伴可兼具多个角色。带 * 为必填项。' : '客户、供应商、承运商统一建档。一个伙伴可兼具多个角色。带 * 为必填项。' }}</DialogProDescription>
-            </DialogProHeader>
+            </NvButton>
+          </NvDialogTrigger>
+          <NvDialogContent class="sm:max-w-2xl">
+            <NvDialogHeader>
+              <NvDialogTitle>{{
+                editingCode ? `编辑业务伙伴 · ${editingCode}` : '新建业务伙伴'
+              }}</NvDialogTitle>
+              <NvDialogDescription>{{
+                editingCode
+                  ? '修改伙伴档案（编码不可修改）。一个伙伴可兼具多个角色。带 * 为必填项。'
+                  : '客户、供应商、承运商统一建档。一个伙伴可兼具多个角色。带 * 为必填项。'
+              }}</NvDialogDescription>
+            </NvDialogHeader>
             <form class="grid gap-4" @submit.prevent="submitPartner">
-              <p v-if="createShowErrors && !canCreatePartner" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
+              <p
+                v-if="createShowErrors && !canCreatePartner"
+                class="text-sm text-destructive"
+                role="alert"
+              >
+                请完整填写带 * 的必填项（已标红）。
+              </p>
 
-              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-                <FieldPro v-if="editingCode">
-                  <FieldProLabel for="partner-code">编码</FieldProLabel>
-                  <InputPro id="partner-code" :model-value="createForm.code" disabled />
-                </FieldPro>
-                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
-                  <FieldProLabel for="partner-name">名称 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="partner-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
-                  <FieldProDescription v-if="!editingCode">编码由系统自动生成。</FieldProDescription>
-                </FieldPro>
-                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.partnerType)">
-                  <FieldProLabel for="partner-type">主角色 <span class="text-destructive">*</span></FieldProLabel>
-                  <SelectPro v-model="createForm.partnerType">
-                    <SelectProTrigger id="partner-type"><SelectProValue /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="o in PARTNER_TYPE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                  <FieldProDescription>该伙伴的主要业务角色。</FieldProDescription>
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel for="partner-tax">统一社会信用代码</FieldProLabel>
-                  <InputPro id="partner-tax" v-model="createForm.taxId" autocomplete="off" placeholder="可留空" />
-                  <FieldProDescription>用于开票与对账，可后续补录。</FieldProDescription>
-                </FieldPro>
-                <FieldPro v-if="shouldShowCreditFields" :data-invalid="createShowErrors && Boolean(creditLimitValidationMessage)">
-                  <FieldProLabel for="partner-credit-limit">信用额度</FieldProLabel>
-                  <InputPro id="partner-credit-limit" v-model="createForm.creditLimit" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="可留空" />
-                  <FieldProDescription>{{ creditLimitValidationMessage || creditLimitDescription }}</FieldProDescription>
-                </FieldPro>
-                <FieldPro v-if="shouldShowCreditFields" :data-invalid="createShowErrors && Boolean(creditLimitValidationMessage)">
-                  <FieldProLabel for="partner-credit-currency">信用币种</FieldProLabel>
-                  <InputPro id="partner-credit-currency" v-model="createForm.creditCurrencyCode" autocomplete="off" maxlength="10" />
-                  <FieldProDescription>填写信用额度时使用，默认 CNY。</FieldProDescription>
-                </FieldPro>
-              </FieldProGroup>
+              <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+                <NvField v-if="editingCode">
+                  <NvFieldLabel for="partner-code">编码</NvFieldLabel>
+                  <NvInput id="partner-code" :model-value="createForm.code" disabled />
+                </NvField>
+                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
+                  <NvFieldLabel for="partner-name"
+                    >名称 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="partner-name"
+                    v-model="createForm.name"
+                    autocomplete="off"
+                    aria-required="true"
+                    required
+                  />
+                  <NvFieldDescription v-if="!editingCode">编码由系统自动生成。</NvFieldDescription>
+                </NvField>
+                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.partnerType)">
+                  <NvFieldLabel for="partner-type"
+                    >主角色 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvSelect v-model="createForm.partnerType">
+                    <NvSelectTrigger id="partner-type"><NvSelectValue /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem
+                        v-for="o in PARTNER_TYPE_OPTIONS"
+                        :key="o.value"
+                        :value="o.value"
+                        >{{ o.label }}</NvSelectItem
+                      >
+                    </NvSelectContent>
+                  </NvSelect>
+                  <NvFieldDescription>该伙伴的主要业务角色。</NvFieldDescription>
+                </NvField>
+                <NvField>
+                  <NvFieldLabel for="partner-tax">统一社会信用代码</NvFieldLabel>
+                  <NvInput
+                    id="partner-tax"
+                    v-model="createForm.taxId"
+                    autocomplete="off"
+                    placeholder="可留空"
+                  />
+                  <NvFieldDescription>用于开票与对账，可后续补录。</NvFieldDescription>
+                </NvField>
+                <NvField
+                  v-if="shouldShowCreditFields"
+                  :data-invalid="createShowErrors && Boolean(creditLimitValidationMessage)"
+                >
+                  <NvFieldLabel for="partner-credit-limit">信用额度</NvFieldLabel>
+                  <NvInput
+                    id="partner-credit-limit"
+                    v-model="createForm.creditLimit"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputmode="decimal"
+                    autocomplete="off"
+                    placeholder="可留空"
+                  />
+                  <NvFieldDescription>{{
+                    creditLimitValidationMessage || creditLimitDescription
+                  }}</NvFieldDescription>
+                </NvField>
+                <NvField
+                  v-if="shouldShowCreditFields"
+                  :data-invalid="createShowErrors && Boolean(creditLimitValidationMessage)"
+                >
+                  <NvFieldLabel for="partner-credit-currency">信用币种</NvFieldLabel>
+                  <NvInput
+                    id="partner-credit-currency"
+                    v-model="createForm.creditCurrencyCode"
+                    autocomplete="off"
+                    maxlength="10"
+                  />
+                  <NvFieldDescription>填写信用额度时使用，默认 CNY。</NvFieldDescription>
+                </NvField>
+              </NvFieldGroup>
 
-              <FieldPro>
-                <FieldProLabel>附加角色</FieldProLabel>
+              <NvField>
+                <NvFieldLabel>附加角色</NvFieldLabel>
                 <div class="flex flex-wrap gap-4">
                   <label
                     v-for="o in extraRoleOptions"
                     :key="o.value"
                     class="flex items-center gap-2 text-sm"
                   >
-                    <CheckboxPro v-model:checked="extraRoleState[o.value]" :aria-label="o.label" />
+                    <NvCheckbox v-model:checked="extraRoleState[o.value]" :aria-label="o.label" />
                     {{ o.label }}
                   </label>
                 </div>
-                <FieldProDescription>除主角色外，该伙伴还承担的角色，可不选。</FieldProDescription>
-              </FieldPro>
+                <NvFieldDescription>除主角色外，该伙伴还承担的角色，可不选。</NvFieldDescription>
+              </NvField>
 
-              <DialogProFooter>
-                <ButtonPro type="button" variant="outline" @click="createOpen = false">取消</ButtonPro>
-                <ButtonPro type="submit" :disabled="createPartnerPending || partnerActions.updatePending.value || editLoading">
-                  <Spinner v-if="createPartnerPending || partnerActions.updatePending.value" aria-hidden="true" />
+              <NvDialogFooter>
+                <NvButton type="button" variant="outline" @click="createOpen = false"
+                  >取消</NvButton
+                >
+                <NvButton
+                  type="submit"
+                  :disabled="
+                    createPartnerPending || partnerActions.updatePending.value || editLoading
+                  "
+                >
+                  <Spinner
+                    v-if="createPartnerPending || partnerActions.updatePending.value"
+                    aria-hidden="true"
+                  />
                   {{ editingCode ? '保存修改' : '保存伙伴' }}
-                </ButtonPro>
-              </DialogProFooter>
+                </NvButton>
+              </NvDialogFooter>
             </form>
-          </DialogProContent>
-        </DialogPro>
+          </NvDialogContent>
+        </NvDialog>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <Toolbar v-model:search="keyword" search-placeholder="在当前页内筛选编码、名称、角色">
+    <NvToolbar v-model:search="keyword" search-placeholder="在当前页内筛选编码、名称、角色">
       <template #filters>
-        <SelectPro v-model="roleFilter">
-          <SelectProTrigger class="h-9 w-32" aria-label="伙伴角色"><SelectProValue /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem value="all">全部角色</SelectProItem>
-            <SelectProItem v-for="o in PARTNER_TYPE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+        <NvSelect v-model="roleFilter">
+          <NvSelectTrigger class="h-9 w-32" aria-label="伙伴角色"
+            ><NvSelectValue
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem value="all">全部角色</NvSelectItem>
+            <NvSelectItem v-for="o in PARTNER_TYPE_OPTIONS" :key="o.value" :value="o.value">{{
+              o.label
+            }}</NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
       </template>
       <template #actions>
-        <ButtonPro type="button" variant="ghost" size="sm" @click="resetFilters">重置</ButtonPro>
+        <NvButton type="button" variant="ghost" size="sm" @click="resetFilters">重置</NvButton>
       </template>
-    </Toolbar>
+    </NvToolbar>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
+      {{ listErrorMessage }}
+    </p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -432,16 +559,27 @@ function formatCreditLimit(row: Pick<BusinessConsoleResourceItem, 'creditLimit' 
     >
       <template #cell-roles="{ row }">
         <span class="inline-flex flex-wrap gap-1">
-          <StatusBadgePro v-for="r in partnerRoles(row)" :key="r" :label="roleLabel(r)" tone="neutral" />
+          <NvStatusBadge
+            v-for="r in partnerRoles(row)"
+            :key="r"
+            :label="roleLabel(r)"
+            tone="neutral"
+          />
           <span v-if="!partnerRoles(row).length" class="text-muted-foreground">未分配</span>
         </span>
       </template>
       <template #cell-active="{ row }">
-        <StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" />
+        <NvStatusBadge :value="row.active === false ? 'disabled' : 'active'" />
       </template>
       <template #cell-actions="{ row }">
-        <MasterDataRowActions :row="row" entity-label="伙伴" :detail-fields="partnerDetailFields(row)" :actions="partnerActions" @edit="openEdit" />
+        <MasterDataRowActions
+          :row="row"
+          entity-label="伙伴"
+          :detail-fields="partnerDetailFields(row)"
+          :actions="partnerActions"
+          @edit="openEdit"
+        />
       </template>
-    </DataTablePro>
+    </NvDataTable>
   </BusinessLayout>
 </template>
