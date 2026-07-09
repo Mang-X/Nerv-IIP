@@ -1010,6 +1010,17 @@ public interface IBusinessIndustrialTelemetryClient
         BusinessConsoleTelemetryDeviceControlCommandRequest request,
         string requestedBy,
         CancellationToken cancellationToken);
+
+    Task<BusinessConsoleTelemetryDeviceControlCommandDetail> GetDeviceControlCommandAsync(
+        string internalBearerToken,
+        string commandId,
+        BusinessConsoleTelemetryDeviceControlCommandContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleTelemetryDeviceControlCommandListResponse> ListDeviceControlCommandsAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryDeviceControlCommandListRequest request,
+        CancellationToken cancellationToken);
 }
 
 public interface IBusinessMaintenanceClient
@@ -4220,6 +4231,37 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                     response.Approval.DecidedAtUtc,
                     response.Approval.DecisionReason));
     }
+
+    public Task<BusinessConsoleTelemetryDeviceControlCommandDetail> GetDeviceControlCommandAsync(
+        string internalBearerToken,
+        string commandId,
+        BusinessConsoleTelemetryDeviceControlCommandContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleTelemetryDeviceControlCommandDetail>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/iiot/device-control-commands/{Uri.EscapeDataString(commandId)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleTelemetryDeviceControlCommandListResponse> ListDeviceControlCommandsAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryDeviceControlCommandListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleTelemetryDeviceControlCommandListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/iiot/device-control-commands?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("deviceAssetId", request.DeviceAssetId),
+                ("status", request.Status),
+                ("fromUtc", request.FromUtc),
+                ("toUtc", request.ToUtc),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
 
     public async Task<BusinessConsoleRecordTelemetrySampleResponse> RecordSampleAsync(
         string internalBearerToken,

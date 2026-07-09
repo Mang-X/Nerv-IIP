@@ -147,6 +147,16 @@ public sealed record QueryRuntimeHoursRequest(string OrganizationId, string Envi
 public sealed record GetDeviceRuntimeAvailabilityRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, int FreshnessMaxAgeMinutes = 60);
 public sealed record QueryRuntimeAvailabilityRequest(string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, string? DeviceAssetIds, string? WorkCenterIds, int FreshnessMaxAgeMinutes = 60);
 public sealed record GetDeviceCurrentStateRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId, DateTimeOffset? AsOfUtc, int FreshnessMaxAgeMinutes = 60);
+public sealed record GetDeviceControlCommandRequest(string OrganizationId, string EnvironmentId);
+public sealed record ListDeviceControlCommandsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DeviceAssetId,
+    string? Status,
+    DateTimeOffset? FromUtc,
+    DateTimeOffset? ToUtc,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed class CreateTelemetryTagEndpoint(ISender sender) : IndustrialTelemetryEndpoint<CreateTelemetryTagRequest, ResponseData<CreateTelemetryTagResponse>>
 {
@@ -180,6 +190,28 @@ public sealed class CreateDeviceControlCommandEndpoint(ISender sender) : Industr
             req.IdempotencyKey,
             req.CorrelationId), ct);
         await Send.OkAsync(new CreateDeviceControlCommandResponse(result.OperationTaskId, result.Status, result.Approval).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetDeviceControlCommandEndpoint(ISender sender) : IndustrialTelemetryEndpoint<GetDeviceControlCommandRequest, ResponseData<DeviceControlCommandResult>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<GetDeviceControlCommandEndpoint>());
+
+    public override async Task HandleAsync(GetDeviceControlCommandRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new GetDeviceControlCommandQuery(Route<string>("commandId")!, req.OrganizationId, req.EnvironmentId), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListDeviceControlCommandsEndpoint(ISender sender) : IndustrialTelemetryEndpoint<ListDeviceControlCommandsRequest, ResponseData<PagedListResponse<DeviceControlCommandListItem>>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<ListDeviceControlCommandsEndpoint>());
+
+    public override async Task HandleAsync(ListDeviceControlCommandsRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ListDeviceControlCommandsQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Status, req.FromUtc, req.ToUtc, req.Skip, req.Take), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -449,6 +481,29 @@ public sealed class ListAlarmEventsRequestValidator : Validator<ListAlarmEventsR
     }
 }
 
+public sealed class GetDeviceControlCommandRequestValidator : Validator<GetDeviceControlCommandRequest>
+{
+    public GetDeviceControlCommandRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class ListDeviceControlCommandsRequestValidator : Validator<ListDeviceControlCommandsRequest>
+{
+    public ListDeviceControlCommandsRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).MaximumLength(150);
+        RuleFor(x => x.Status).MaximumLength(50);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        RuleFor(x => x.ToUtc).GreaterThan(x => x.FromUtc).When(x => x.FromUtc is not null && x.ToUtc is not null);
+    }
+}
+
 public sealed record IndustrialTelemetryEndpointContract(Type EndpointType, string HttpMethod, string Route, string PermissionCode, string AuthorizationPolicy, string OperationId);
 
 public static class IndustrialTelemetryEndpointContracts
@@ -458,6 +513,8 @@ public static class IndustrialTelemetryEndpointContracts
         new(typeof(CreateTelemetryTagEndpoint), "POST", "/api/business/v1/iiot/tags", IndustrialTelemetryPermissionCodes.TagsManage, InternalServiceAuthorizationPolicy.Name, "createBusinessIiotTelemetryTag"),
         new(typeof(ListTelemetryTagsEndpoint), "GET", "/api/business/v1/iiot/tags", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotTelemetryTags"),
         new(typeof(CreateDeviceControlCommandEndpoint), "POST", "/api/business/v1/iiot/device-control-commands", IndustrialTelemetryPermissionCodes.DeviceControlWrite, InternalServiceAuthorizationPolicy.Name, "createBusinessIiotDeviceControlCommand"),
+        new(typeof(GetDeviceControlCommandEndpoint), "GET", "/api/business/v1/iiot/device-control-commands/{commandId}", IndustrialTelemetryPermissionCodes.DeviceControlRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotDeviceControlCommand"),
+        new(typeof(ListDeviceControlCommandsEndpoint), "GET", "/api/business/v1/iiot/device-control-commands", IndustrialTelemetryPermissionCodes.DeviceControlRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotDeviceControlCommands"),
         new(typeof(CreateOrUpdateAlarmRuleEndpoint), "POST", "/api/business/v1/iiot/alarm-rules", IndustrialTelemetryPermissionCodes.AlarmRulesManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdateBusinessIiotAlarmRule"),
         new(typeof(ListAlarmRulesEndpoint), "GET", "/api/business/v1/iiot/alarm-rules", IndustrialTelemetryPermissionCodes.AlarmsRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotAlarmRules"),
         new(typeof(RecordTelemetrySampleEndpoint), "POST", "/api/business/v1/iiot/samples", IndustrialTelemetryPermissionCodes.TelemetryWrite, InternalServiceAuthorizationPolicy.Name, "recordBusinessIiotTelemetrySample"),

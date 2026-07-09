@@ -2,6 +2,7 @@ using MediatR;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlCommandAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
@@ -15,6 +16,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage
 {
     public DbSet<AlarmRule> AlarmRules => Set<AlarmRule>();
+    public DbSet<DeviceControlCommand> DeviceControlCommands => Set<DeviceControlCommand>();
     public DbSet<TelemetryTag> TelemetryTags => Set<TelemetryTag>();
     public DbSet<DeviceStateSnapshot> DeviceStateSnapshots => Set<DeviceStateSnapshot>();
     public DbSet<AlarmEvent> AlarmEvents => Set<AlarmEvent>();

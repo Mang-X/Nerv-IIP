@@ -1,7 +1,9 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlCommandAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
@@ -88,6 +90,8 @@ public sealed class CreateTelemetryTagCommandHandler(ApplicationDbContext dbCont
 public interface IDeviceControlOpsClient
 {
     Task<OperationTaskResponse> CreateDeviceControlTaskAsync(CreateOperationTaskRequest request, CancellationToken cancellationToken);
+
+    Task<OperationTaskResponse> GetDeviceControlTaskAsync(string operationTaskId, CancellationToken cancellationToken);
 }
 
 public sealed class DeviceControlOpsClient(IOpsClient opsClient) : IDeviceControlOpsClient
@@ -95,6 +99,11 @@ public sealed class DeviceControlOpsClient(IOpsClient opsClient) : IDeviceContro
     public Task<OperationTaskResponse> CreateDeviceControlTaskAsync(CreateOperationTaskRequest request, CancellationToken cancellationToken)
     {
         return opsClient.CreateOperationTaskAsync(request, cancellationToken);
+    }
+
+    public Task<OperationTaskResponse> GetDeviceControlTaskAsync(string operationTaskId, CancellationToken cancellationToken)
+    {
+        return opsClient.GetOperationTaskAsync(operationTaskId, cancellationToken);
     }
 }
 
@@ -189,6 +198,10 @@ public sealed class CreateDeviceControlCommandCommandHandler(
             ["deviceAssetId"] = request.DeviceAssetId.Trim()
         };
 
+        string? ledgerTagKey = null;
+        string? ledgerValue = null;
+        string? ledgerParametersJson = null;
+
         switch (commandType)
         {
             case "write-tag":
@@ -198,9 +211,12 @@ public sealed class CreateDeviceControlCommandCommandHandler(
                 await ValidateWritableTagAsync(request, tagKey, value, cancellationToken);
                 parameters["tagKey"] = tagKey;
                 parameters["value"] = value;
+                ledgerTagKey = tagKey;
+                ledgerValue = value;
                 break;
             case "parameter-set":
-                await AddParameterSetAsync(request, parameters, cancellationToken);
+                var parameterSet = await AddParameterSetAsync(request, parameters, cancellationToken);
+                ledgerParametersJson = JsonSerializer.Serialize(parameterSet);
                 break;
             default:
                 throw new KnownException($"Unsupported device control command type: {request.CommandType}");
@@ -216,10 +232,50 @@ public sealed class CreateDeviceControlCommandCommandHandler(
             request.Reason,
             request.CorrelationId,
             parameters);
-        return await opsClient.CreateDeviceControlTaskAsync(taskRequest, cancellationToken);
+        var response = await opsClient.CreateDeviceControlTaskAsync(taskRequest, cancellationToken);
+        await RecordCommandLedgerAsync(request, response, commandType, ledgerTagKey, ledgerValue, ledgerParametersJson, cancellationToken);
+        return response;
     }
 
-    private async Task AddParameterSetAsync(
+    private async Task RecordCommandLedgerAsync(
+        CreateDeviceControlCommandCommand request,
+        OperationTaskResponse response,
+        string commandType,
+        string? tagKey,
+        string? value,
+        string? parametersJson,
+        CancellationToken cancellationToken)
+    {
+        // Ops task creation is idempotent on the idempotency key: repeat dispatches resolve to the
+        // same operation task id, so anchor the ledger on that id to keep the command history clean.
+        var alreadyRecorded = await dbContext.DeviceControlCommands
+            .AnyAsync(x => x.OperationTaskId == response.OperationTaskId, cancellationToken);
+        if (alreadyRecorded)
+        {
+            return;
+        }
+
+        dbContext.DeviceControlCommands.Add(DeviceControlCommand.Record(
+            response.OperationTaskId,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ConnectorHostId,
+            request.InstanceKey,
+            request.DeviceAssetId,
+            commandType,
+            tagKey,
+            value,
+            parametersJson,
+            request.RequestedBy,
+            request.Reason,
+            request.IdempotencyKey,
+            request.CorrelationId,
+            response.Status,
+            response.Approval?.Status,
+            response.RequestedAtUtc));
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>> AddParameterSetAsync(
         CreateDeviceControlCommandCommand request,
         IDictionary<string, string> parameters,
         CancellationToken cancellationToken)
@@ -229,13 +285,17 @@ public sealed class CreateDeviceControlCommandCommandHandler(
             throw new KnownException("Parameter-set device control command requires parameters.");
         }
 
+        var parameterSet = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var item in request.Parameters.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
         {
             var tagKey = IndustrialTelemetryText.RequiredLower(item.Key, nameof(request.Parameters));
             var value = IndustrialTelemetryText.Required(item.Value, nameof(request.Parameters));
             await ValidateWritableTagAsync(request, tagKey, value, cancellationToken);
             parameters[$"parameter.{tagKey}"] = value;
+            parameterSet[tagKey] = value;
         }
+
+        return parameterSet;
     }
 
     private async Task ValidateWritableTagAsync(
@@ -888,13 +948,13 @@ public sealed class IndustrialTelemetryIdempotentIngestionBehavior<TRequest, TRe
 
     private static bool IsIdempotentIngestionCommand(TRequest request)
     {
-        return request is RecordTelemetrySampleCommand or RaiseAlarmCommand;
+        return request is RecordTelemetrySampleCommand or RaiseAlarmCommand or CreateDeviceControlCommandCommand;
     }
 
     private static bool IsIdempotentIngestionUniqueConflict(DbUpdateException exception, ApplicationDbContext context)
     {
         // Keep detection entity-scoped so provider-specific index names do not leak into the application layer.
-        return exception.Entries.Any(entry => entry.Entity is TelemetryRawSample or TelemetrySummary or DeviceStateSnapshot or AlarmEvent) &&
+        return exception.Entries.Any(entry => entry.Entity is TelemetryRawSample or TelemetrySummary or DeviceStateSnapshot or AlarmEvent or DeviceControlCommand) &&
             EnumerateExceptions(exception).Any(inner =>
                 IsPostgreSqlUniqueConflict(inner) ||
                 IsSqliteUniqueConflict(context, inner) ||

@@ -402,6 +402,19 @@ describe('generated API client contract', () => {
     }
   })
 
+  it('exports device-control command result/history read-face (#842) Business Console operations through stable api-client entry points', () => {
+    const expectedFunctions = [
+      'getBusinessConsoleTelemetryDeviceControlCommandQueryOptions',
+      'listBusinessConsoleTelemetryDeviceControlCommandsQueryOptions',
+      'getBusinessConsoleTelemetryDeviceControlCommand',
+      'listBusinessConsoleTelemetryDeviceControlCommands',
+    ] as const
+
+    for (const functionName of expectedFunctions) {
+      expect(businessConsoleClient[functionName], functionName).toBeTypeOf('function')
+    }
+  })
+
   it('exports wave2 refreshed Business Console request-payload Data types', () => {
     // Importing each alias already guards against removal (src/**/*.ts is
     // typechecked); the assertions additionally pin the exported shape.

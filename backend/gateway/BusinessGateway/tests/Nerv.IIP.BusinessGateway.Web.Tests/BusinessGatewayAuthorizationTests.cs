@@ -212,6 +212,23 @@ public sealed class BusinessGatewayAuthorizationTests
         Assert.Equal(expectedPermission, auth.LastRequirement!.PermissionCode);
     }
 
+    [Theory]
+    [InlineData("/api/business-console/v1/telemetry/device-control-commands/op-task-001")]
+    [InlineData("/api/business-console/v1/telemetry/device-control-commands")]
+    public async Task Device_control_read_facade_returns_forbidden_when_iam_denies(string path)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync($"{path}?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Equal(BusinessGatewayPermissions.IiotDeviceControlRead, auth.LastRequirement!.PermissionCode);
+    }
+
     [Fact]
     public async Task Business_console_endpoint_rejects_context_mismatch_before_permission_check()
     {
