@@ -4240,7 +4240,10 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         SendAsync<BusinessConsoleTelemetryDeviceControlCommandDetail>(
             internalBearerToken,
             HttpMethod.Get,
-            $"/api/business/v1/iiot/device-control-commands/{Uri.EscapeDataString(commandId)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            $"/api/business/v1/iiot/device-control-commands/{Uri.EscapeDataString(commandId)}?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("deviceAssetId", request.DeviceAssetId)),
             null,
             cancellationToken);
 

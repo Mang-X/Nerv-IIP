@@ -147,7 +147,7 @@ public sealed record QueryRuntimeHoursRequest(string OrganizationId, string Envi
 public sealed record GetDeviceRuntimeAvailabilityRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, int FreshnessMaxAgeMinutes = 60);
 public sealed record QueryRuntimeAvailabilityRequest(string OrganizationId, string EnvironmentId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, string? DeviceAssetIds, string? WorkCenterIds, int FreshnessMaxAgeMinutes = 60);
 public sealed record GetDeviceCurrentStateRequest(string DeviceAssetId, string OrganizationId, string EnvironmentId, DateTimeOffset? AsOfUtc, int FreshnessMaxAgeMinutes = 60);
-public sealed record GetDeviceControlCommandRequest(string OrganizationId, string EnvironmentId);
+public sealed record GetDeviceControlCommandRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId);
 public sealed record ListDeviceControlCommandsRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -199,7 +199,7 @@ public sealed class GetDeviceControlCommandEndpoint(ISender sender) : Industrial
 
     public override async Task HandleAsync(GetDeviceControlCommandRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new GetDeviceControlCommandQuery(Route<string>("commandId")!, req.OrganizationId, req.EnvironmentId), ct);
+        var result = await sender.Send(new GetDeviceControlCommandQuery(Route<string>("commandId")!, req.OrganizationId, req.EnvironmentId, req.DeviceAssetId), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -487,6 +487,7 @@ public sealed class GetDeviceControlCommandRequestValidator : Validator<GetDevic
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
     }
 }
 

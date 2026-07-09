@@ -2504,18 +2504,18 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.GetAsync("/api/business-console/v1/telemetry/device-control-commands/op-task-001?organizationId=org-001&environmentId=env-dev");
+        var response = await client.GetAsync("/api/business-console/v1/telemetry/device-control-commands/op-task-001?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", industrialTelemetry.LastInternalToken);
         Assert.Equal("op-task-001", industrialTelemetry.LastDeviceControlCommandId);
-        Assert.Equal(new BusinessConsoleTelemetryDeviceControlCommandContextRequest("org-001", "env-dev"), industrialTelemetry.LastDeviceControlContextRequest);
+        Assert.Equal(new BusinessConsoleTelemetryDeviceControlCommandContextRequest("org-001", "env-dev", "DEV-CNC-01"), industrialTelemetry.LastDeviceControlContextRequest);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var data = document.RootElement.GetProperty("data");
         Assert.Equal("op-task-001", data.GetProperty("commandId").GetString());
         Assert.Equal("DEV-CNC-01", data.GetProperty("deviceAssetId").GetString());
         Assert.Equal("write-tag", data.GetProperty("commandType").GetString());
-        Assert.Equal("succeeded", data.GetProperty("status").GetString());
+        Assert.Equal("completed", data.GetProperty("status").GetString());
         Assert.True(data.GetProperty("statusFromLiveOps").GetBoolean());
         var attempt = Assert.Single(data.GetProperty("attempts").EnumerateArray());
         Assert.Equal("ok", attempt.GetProperty("output").GetProperty("result").GetString());
@@ -8433,7 +8433,7 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
             "corr-device-control-001",
             "idem-device-control-001",
             DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
-            "succeeded",
+            "completed",
             true,
             new BusinessConsoleTelemetryOperationApprovalSummary(
                 "approved",

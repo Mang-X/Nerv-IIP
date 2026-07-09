@@ -120,11 +120,11 @@ public sealed class IndustrialTelemetryDeviceControlReadFaceTests
         var opsClient = new StubDeviceControlOpsClient(_ => CompletedTask("op-live"));
 
         var result = await new GetDeviceControlCommandQueryHandler(dbContext, opsClient).Handle(
-            new GetDeviceControlCommandQuery("op-live", "org-001", "env-dev"),
+            new GetDeviceControlCommandQuery("op-live", "org-001", "env-dev", "DEV-A"),
             CancellationToken.None);
 
         Assert.Equal("op-live", result.CommandId);
-        Assert.Equal("succeeded", result.Status);
+        Assert.Equal("completed", result.Status);
         Assert.True(result.StatusFromLiveOps);
         Assert.Equal("approved", result.Approval?.Status);
         var attempt = Assert.Single(result.Attempts);
@@ -139,7 +139,7 @@ public sealed class IndustrialTelemetryDeviceControlReadFaceTests
         var opsClient = new StubDeviceControlOpsClient(_ => null);
 
         var result = await new GetDeviceControlCommandQueryHandler(dbContext, opsClient).Handle(
-            new GetDeviceControlCommandQuery("op-down", "org-001", "env-dev"),
+            new GetDeviceControlCommandQuery("op-down", "org-001", "env-dev", "DEV-A"),
             CancellationToken.None);
 
         Assert.Equal("approval-pending", result.Status);
@@ -155,7 +155,7 @@ public sealed class IndustrialTelemetryDeviceControlReadFaceTests
         var opsClient = new StubDeviceControlOpsClient(_ => null);
 
         await Assert.ThrowsAsync<KnownException>(() => new GetDeviceControlCommandQueryHandler(dbContext, opsClient).Handle(
-            new GetDeviceControlCommandQuery("op-missing", "org-001", "env-dev"),
+            new GetDeviceControlCommandQuery("op-missing", "org-001", "env-dev", "DEV-A"),
             CancellationToken.None));
     }
 
@@ -167,7 +167,20 @@ public sealed class IndustrialTelemetryDeviceControlReadFaceTests
         var opsClient = new StubDeviceControlOpsClient(_ => null);
 
         await Assert.ThrowsAsync<KnownException>(() => new GetDeviceControlCommandQueryHandler(dbContext, opsClient).Handle(
-            new GetDeviceControlCommandQuery("op-scope", "org-999", "env-dev"),
+            new GetDeviceControlCommandQuery("op-scope", "org-999", "env-dev", "DEV-A"),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Result_does_not_leak_command_across_device_scope()
+    {
+        await using var dbContext = CreateDbContext(nameof(Result_does_not_leak_command_across_device_scope));
+        await RecordAsync(dbContext, "op-device-scope", "DEV-A", "approval-pending", BaseTime);
+        var opsClient = new StubDeviceControlOpsClient(_ => null);
+
+        // A caller authorized for DEV-B must not resolve a DEV-A command by guessing its command id.
+        await Assert.ThrowsAsync<KnownException>(() => new GetDeviceControlCommandQueryHandler(dbContext, opsClient).Handle(
+            new GetDeviceControlCommandQuery("op-device-scope", "org-001", "env-dev", "DEV-B"),
             CancellationToken.None));
     }
 
@@ -197,7 +210,7 @@ public sealed class IndustrialTelemetryDeviceControlReadFaceTests
         var opsClient = new StubDeviceControlOpsClient(_ => null);
 
         var result = await new GetDeviceControlCommandQueryHandler(dbContext, opsClient).Handle(
-            new GetDeviceControlCommandQuery("op-params", "org-001", "env-dev"),
+            new GetDeviceControlCommandQuery("op-params", "org-001", "env-dev", "DEV-A"),
             CancellationToken.None);
 
         Assert.Equal("parameter-set", result.CommandType);
@@ -253,7 +266,7 @@ public sealed class IndustrialTelemetryDeviceControlReadFaceTests
             "env-dev",
             "opcua-cell-01",
             "device.control.command",
-            "succeeded",
+            "completed",
             "user:operator-001",
             BaseTime,
             new OperationApprovalSummary("approved", "user:operator-001", BaseTime, "user:supervisor-001", BaseTime.AddMinutes(2), "approved"),

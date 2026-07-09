@@ -343,6 +343,32 @@ public sealed class CreateDeviceControlCommandCommandHandler(
 
 }
 
+// Advances a device control command ledger row to a terminal Ops outcome. Sent by the Ops
+// OperationTaskCompleted/Failed consumers so the history read-face reflects the real result
+// instead of the dispatch-time snapshot. Idempotent: unknown or already-terminal commands no-op.
+public sealed record AdvanceDeviceControlCommandStatusCommand(
+    string OperationTaskId,
+    string TerminalStatus,
+    DateTimeOffset FinishedAtUtc,
+    string? FailureCode) : ICommand<bool>;
+
+public sealed class AdvanceDeviceControlCommandStatusCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<AdvanceDeviceControlCommandStatusCommand, bool>
+{
+    public async Task<bool> Handle(AdvanceDeviceControlCommandStatusCommand request, CancellationToken cancellationToken)
+    {
+        var command = await dbContext.DeviceControlCommands
+            .SingleOrDefaultAsync(x => x.OperationTaskId == request.OperationTaskId, cancellationToken);
+        if (command is null || command.IsTerminal)
+        {
+            return false;
+        }
+
+        command.ApplyOpsOutcome(request.TerminalStatus, request.FinishedAtUtc, request.FailureCode);
+        return true;
+    }
+}
+
 public sealed record CreateOrUpdateAlarmRuleCommand(
     string OrganizationId,
     string EnvironmentId,

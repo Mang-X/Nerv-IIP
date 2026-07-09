@@ -28,6 +28,8 @@ public sealed class DeviceControlCommandEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.RequestedAtUtc).HasColumnName("requested_at_utc").HasComment("UTC time when the command was dispatched to Ops.");
         builder.Property(x => x.RequestedAtUnixTimeMilliseconds).HasColumnName("requested_at_unix_time_milliseconds").HasComment("Requested UTC time as Unix time milliseconds for provider-neutral history range filtering and ordering.");
         builder.Property(x => x.RecordedAtUtc).HasColumnName("recorded_at_utc").HasComment("UTC time when the ledger row was recorded.");
+        builder.Property(x => x.FinishedAtUtc).HasColumnName("finished_at_utc").HasComment("UTC time the Ops task reached a terminal outcome (completed/failed/rejected); null while in flight.");
+        builder.Property(x => x.FailureCode).HasMaxLength(100).HasColumnName("failure_code").HasComment("Machine-readable failure code from Ops when the command failed; null otherwise.");
         builder.HasIndex(x => x.OperationTaskId).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.RequestedAtUnixTimeMilliseconds });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.RequestedAtUnixTimeMilliseconds });

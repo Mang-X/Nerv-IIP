@@ -6651,6 +6651,7 @@ export type GetBusinessConsoleTelemetryDeviceControlCommandData = {
     query: {
         organizationId: string;
         environmentId: string;
+        deviceAssetId: string;
     };
     url: '/api/business-console/v1/telemetry/device-control-commands/{commandId}';
 };

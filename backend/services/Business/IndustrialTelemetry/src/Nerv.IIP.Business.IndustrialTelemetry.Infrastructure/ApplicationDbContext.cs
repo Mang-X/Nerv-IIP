@@ -8,6 +8,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawS
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
+using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
@@ -29,6 +30,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         ArgumentNullException.ThrowIfNull(modelBuilder);
         modelBuilder.HasDefaultSchema(IndustrialTelemetryFacts.Schema);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        modelBuilder.ConfigureIntegrationEventDeadLetters();
         base.OnModelCreating(modelBuilder);
     }
 

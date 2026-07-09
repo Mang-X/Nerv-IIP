@@ -150,7 +150,7 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
         // Simulate the connector host executing and completing the task in Ops.
         factory.OpsClient.SetTaskState(commandId, CompletedTask(commandId));
 
-        using var response = await client.GetAsync($"/api/business/v1/iiot/device-control-commands/{Uri.EscapeDataString(commandId)}?organizationId=org-001&environmentId=env-dev");
+        using var response = await client.GetAsync($"/api/business/v1/iiot/device-control-commands/{Uri.EscapeDataString(commandId)}?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01");
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -162,7 +162,7 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
         Assert.Equal("spindle.speed", data.GetProperty("tagKey").GetString());
         Assert.Equal("80", data.GetProperty("value").GetString());
         Assert.Equal("user:operator-001", data.GetProperty("requestedBy").GetString());
-        Assert.Equal("succeeded", data.GetProperty("status").GetString());
+        Assert.Equal("completed", data.GetProperty("status").GetString());
         Assert.True(data.GetProperty("statusFromLiveOps").GetBoolean());
         Assert.Equal("approved", data.GetProperty("approval").GetProperty("status").GetString());
         var attempt = Assert.Single(data.GetProperty("attempts").EnumerateArray());
@@ -182,7 +182,7 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
         factory.OpsClient.SetTaskState(commandId, CompletedTask(commandId));
         factory.OpsClient.FailGet = true;
 
-        using var response = await client.GetAsync($"/api/business/v1/iiot/device-control-commands/{Uri.EscapeDataString(commandId)}?organizationId=org-001&environmentId=env-dev");
+        using var response = await client.GetAsync($"/api/business/v1/iiot/device-control-commands/{Uri.EscapeDataString(commandId)}?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01");
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -254,7 +254,7 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
             "env-dev",
             "opcua-cell-01",
             "device.control.command",
-            "succeeded",
+            "completed",
             "user:operator-001",
             DateTimeOffset.Parse("2026-07-07T00:00:00Z"),
             new OperationApprovalSummary("approved", "user:operator-001", DateTimeOffset.Parse("2026-07-07T00:00:00Z"), "user:supervisor-001", DateTimeOffset.Parse("2026-07-07T00:02:00Z"), "approved for maintenance"),

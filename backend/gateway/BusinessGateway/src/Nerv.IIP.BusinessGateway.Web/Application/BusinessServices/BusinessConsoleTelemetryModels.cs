@@ -95,9 +95,13 @@ public sealed record BusinessConsoleTelemetryOperationApprovalSummary(
     DateTimeOffset? DecidedAtUtc,
     string? DecisionReason);
 
+// DeviceAssetId scopes the single-command read to a device resource: device control audit is a
+// device-resource surface, so the gateway authorizes on device-asset and the service verifies the
+// command belongs to that device rather than letting any org/env reader resolve it by command id.
 public sealed record BusinessConsoleTelemetryDeviceControlCommandContextRequest(
     string OrganizationId,
-    string EnvironmentId);
+    string EnvironmentId,
+    string DeviceAssetId);
 
 public sealed record BusinessConsoleTelemetryDeviceControlCommandListRequest(
     string OrganizationId,

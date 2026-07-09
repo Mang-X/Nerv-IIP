@@ -2229,6 +2229,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "deviceAssetId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {

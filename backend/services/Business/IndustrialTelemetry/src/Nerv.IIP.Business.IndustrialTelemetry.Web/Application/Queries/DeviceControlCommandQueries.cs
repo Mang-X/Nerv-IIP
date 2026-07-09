@@ -69,7 +69,8 @@ public sealed record DeviceControlCommandListItem(
 public sealed record GetDeviceControlCommandQuery(
     string OperationTaskId,
     string OrganizationId,
-    string EnvironmentId) : IQuery<DeviceControlCommandResult>;
+    string EnvironmentId,
+    string DeviceAssetId) : IQuery<DeviceControlCommandResult>;
 
 public sealed class GetDeviceControlCommandQueryHandler(
     ApplicationDbContext dbContext,
@@ -78,12 +79,15 @@ public sealed class GetDeviceControlCommandQueryHandler(
 {
     public async Task<DeviceControlCommandResult> Handle(GetDeviceControlCommandQuery request, CancellationToken cancellationToken)
     {
+        // Device control audit is a device-resource surface: scope the lookup by device asset so a
+        // caller authorized for one device cannot read another device's command by guessing a command id.
         var command = await dbContext.DeviceControlCommands
             .AsNoTracking()
             .SingleOrDefaultAsync(
                 x => x.OperationTaskId == request.OperationTaskId
                     && x.OrganizationId == request.OrganizationId
-                    && x.EnvironmentId == request.EnvironmentId,
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.DeviceAssetId == request.DeviceAssetId,
                 cancellationToken)
             ?? throw new KnownException($"Device control command was not found: {request.OperationTaskId}");
 

@@ -85,6 +85,40 @@ public sealed class DeviceControlCommand : Entity<DeviceControlCommandId>, IAggr
     public long RequestedAtUnixTimeMilliseconds { get; private set; }
     public DateTimeOffset RecordedAtUtc { get; private set; }
 
+    /// <summary>UTC time the Ops task reached a terminal outcome (completed/failed/rejected); null while in flight.</summary>
+    public DateTimeOffset? FinishedAtUtc { get; private set; }
+
+    /// <summary>Machine-readable failure code from Ops when the command failed; null otherwise.</summary>
+    public string? FailureCode { get; private set; }
+
+    private static readonly string[] TerminalStatuses = ["completed", "failed", "rejected"];
+
+    /// <summary>Whether the command has reached a terminal Ops outcome and must not transition again.</summary>
+    public bool IsTerminal => TerminalStatuses.Contains(Status);
+
+    /// <summary>
+    /// Advance the ledger to a terminal Ops outcome (completed/failed/rejected) driven by Ops
+    /// OperationTaskCompleted/Failed/ApprovalRejected events. Idempotent: the first terminal outcome
+    /// wins, so duplicate or out-of-order delivery does not overwrite the recorded result.
+    /// </summary>
+    public void ApplyOpsOutcome(string terminalStatus, DateTimeOffset finishedAtUtc, string? failureCode)
+    {
+        var normalized = IndustrialTelemetryText.RequiredLower(terminalStatus, nameof(terminalStatus));
+        if (!TerminalStatuses.Contains(normalized))
+        {
+            throw new ArgumentOutOfRangeException(nameof(terminalStatus), "Device control outcome must be completed, failed or rejected.");
+        }
+
+        if (IsTerminal)
+        {
+            return;
+        }
+
+        Status = normalized;
+        FinishedAtUtc = finishedAtUtc;
+        FailureCode = IndustrialTelemetryText.Optional(failureCode);
+    }
+
     public static DeviceControlCommand Record(
         string operationTaskId,
         string organizationId,

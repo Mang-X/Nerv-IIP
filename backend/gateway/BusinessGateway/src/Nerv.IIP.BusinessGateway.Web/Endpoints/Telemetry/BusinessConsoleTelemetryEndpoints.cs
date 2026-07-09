@@ -142,6 +142,10 @@ public sealed class GetBusinessConsoleTelemetryDeviceControlCommandEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleTelemetryDeviceControlCommandContextRequest request) => request.EnvironmentId;
 
+    protected override string ResourceType(BusinessConsoleTelemetryDeviceControlCommandContextRequest request) => "device-asset";
+
+    protected override string ResourceId(BusinessConsoleTelemetryDeviceControlCommandContextRequest request) => request.DeviceAssetId;
+
     protected override Task<BusinessConsoleTelemetryDeviceControlCommandDetail> ForwardAsync(
         BusinessConsoleTelemetryDeviceControlCommandContextRequest request,
         string bearerToken,
@@ -467,6 +471,7 @@ public sealed class BusinessConsoleTelemetryDeviceControlCommandContextRequestVa
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
     }
 }
 
