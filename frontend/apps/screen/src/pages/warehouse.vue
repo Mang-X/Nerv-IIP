@@ -447,12 +447,13 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
           </div>
         </ScreenPanel>
 
-        <!-- 右：WCS 自动化（失败告警榜 · 指令状态 · 任务超时榜） -->
+        <!-- 右：WCS 自动化（失败告警 + 指令状态合并为一块 —— 单一 flex 容器内动态共享
+             垂直空间：失败多则告警区滚动、不挤压下方；省一个面板头/间距给适配器行） · 任务超时榜 -->
         <section class="wb-wcs">
           <ScreenPanel
-            title="WCS 失败告警"
+            title="WCS 自动化"
             :accent="wcs && wcs.failures.length > 0 ? 'red' : undefined"
-            class="wb-fails"
+            class="wb-wcsboard"
           >
             <template #extra>
               <span class="wf-count" :class="{ calm: !wcs || wcs.failures.length === 0 }">
@@ -461,30 +462,28 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
                 }}
               </span>
             </template>
-            <ScreenScrollArea v-if="wcs" class="wf-list">
-              <div v-for="x in wcs.failures" :key="x.cmd" class="wf-row">
-                <i class="wf-dot" aria-hidden="true" />
-                <div class="wf-main">
-                  <div class="wf-top">
-                    <b class="wf-ad">{{ x.adapter }}</b>
-                    <span class="wf-cmd">{{ x.cmd }}</span>
-                    <span class="wf-since">{{ x.firstAt }} 起 · {{ x.sinceMin }} min</span>
-                  </div>
-                  <div class="wf-sub">
-                    <span class="wf-err">{{ x.error }}</span>
-                    <em class="wf-retry">重试 {{ x.retries }} 次</em>
+            <div v-if="wcs" class="wm">
+              <!-- ① 失败告警（异常优先置顶；约 3 条完整显示，更多滚动） -->
+              <ScreenScrollArea class="wf-list">
+                <div v-for="x in wcs.failures" :key="x.cmd" class="wf-row">
+                  <i class="wf-dot" aria-hidden="true" />
+                  <div class="wf-main">
+                    <div class="wf-top">
+                      <b class="wf-ad">{{ x.adapter }}</b>
+                      <span class="wf-cmd">{{ x.cmd }}</span>
+                      <span class="wf-since">{{ x.firstAt }} 起 · {{ x.sinceMin }} min</span>
+                    </div>
+                    <div class="wf-sub">
+                      <span class="wf-err">{{ x.error }}</span>
+                      <em class="wf-retry">重试 {{ x.retries }} 次</em>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div v-if="wcs.failures.length === 0" class="wf-empty">
-                <StatusLight tone="run" label="无失败指令" />
-              </div>
-            </ScreenScrollArea>
-          </ScreenPanel>
-
-          <ScreenPanel title="WCS 指令状态" class="wb-adapters">
-            <div v-if="wcs" class="wa">
-              <!-- 链路负载构成（排队/执行/失败 = 当前在链指令）环形，中心 = 今日吞吐 -->
+                <div v-if="wcs.failures.length === 0" class="wf-empty">
+                  <StatusLight tone="run" label="无失败指令" />
+                </div>
+              </ScreenScrollArea>
+              <!-- ② 链路负载构成（排队/执行/失败 = 当前在链指令）环形，中心 = 今日吞吐 -->
               <ScreenDonut
                 class="wa-donut"
                 :size="88"
@@ -497,6 +496,7 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
                 <b class="wa-dn-num">{{ nf.format(wcs.counts.completed) }}</b>
                 <span class="wa-dn-cap">今日完成</span>
               </ScreenDonut>
+              <!-- ③ 按适配器明细（占剩余空间，超出滚动 —— 永不溢出容器） -->
               <ScreenScrollArea class="wa-rows">
                 <div v-for="a in wcs.adapters" :key="a.kind" class="wa-row">
                   <component
@@ -1019,15 +1019,24 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   letter-spacing: 0.04em;
 }
 
-/* —— 右列：WCS 自动化 —— */
+/* —— 右列：WCS 自动化（合并面板：失败告警 + 环形 + 适配器行动态共享空间） —— */
 .wb-wcs {
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-height: 0;
 }
-.wb-fails {
-  flex: none;
+.wb-wcsboard {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.wm {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .wf-count {
   font-size: 13px;
@@ -1037,8 +1046,9 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
 .wf-count.calm {
   color: var(--sb-green);
 }
-/* 失败榜：约 3 条完整显示，更多滚动（数据量变化不挤压下方面板） */
+/* 失败告警区：约 3 条完整显示，更多滚动（失败量增长不挤压下方环形/适配器行） */
 .wf-list {
+  flex: none;
   max-height: 156px;
 }
 .wf-row {
@@ -1128,24 +1138,13 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   justify-content: center;
 }
 
-/* WCS 指令状态：状态分布条 + 适配器行 */
-.wb-adapters {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.wa {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
+/* 链路负载环形（失败区与适配器行之间的固定块，上下发丝分隔） */
 .wa-donut {
   flex: none;
-  padding: 0 4px 8px;
+  padding: 8px 4px;
+  border-top: 1px solid var(--sb-divider);
   border-bottom: 1px solid var(--sb-divider);
-  margin-bottom: 4px;
+  margin: 6px 0 4px;
 }
 .wa-dn-num {
   font-size: 21px;
@@ -1160,9 +1159,10 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   font-size: 10.5px;
   color: var(--sb-muted);
 }
+/* 适配器行占剩余空间；min-height 0 保证被压缩时内部滚动而非溢出容器 */
 .wa-rows {
   flex: 1;
-  min-height: 60px;
+  min-height: 0;
 }
 /* 环形区图例更紧凑（右列窄面板预算） */
 .wa-donut :deep(.sb-dn-legend) {
