@@ -89,7 +89,7 @@ scripts/verify-*.ps1                  # Verification scripts
 
 | Change area | Required docs | Required checks |
 |---|---|---|
-| Backend service / endpoint | implementation-readiness, api-contract-and-codegen | `dotnet test backend/Nerv.IIP.sln`; if contract changed: export OpenAPI |
+| Backend service / endpoint | implementation-readiness, api-contract-and-codegen, facade-coverage-matrix | `dotnet test backend/Nerv.IIP.sln` (includes the facade-coverage gate); declare each new/changed business endpoint `exposed`/`deferred`/`internal` and register it in `facade-coverage-matrix.json`; if contract changed: export OpenAPI |
 | Gateway route / contract | api-contract-and-codegen | backend tests; export OpenAPI; `pnpm -C frontend generate:api` |
 | DB schema / migration | database-schema-conventions, database-schema-catalog | migration + schema convention tests; update catalog + comments |
 | Frontend page / feature | frontend-structure | `pnpm -C frontend typecheck && pnpm -C frontend test && pnpm -C frontend build` |
@@ -390,6 +390,9 @@ At minimum:
 5. ✅ Scripts pass governance if scripts changed.
 6. ✅ Affected `verify-*.ps1` scripts still pass.
 7. ✅ Relevant docs in `docs/architecture/` and `docs/adr/` updated.
+8. ✅ New/changed business-service HTTP endpoints are declared and registered in
+   `facade-coverage-matrix.json` as `exposed`/`deferred`/`internal`; the
+   facade-coverage gate passes (see "Facade Coverage Governance").
 
 ## Finding Documentation
 
@@ -411,6 +414,37 @@ At minimum:
 - `scripts/AGENTS.md` — Additional script governance rules if needed.
 - Use `AGENTS.override.md` for temporary overrides; rename or remove to restore base guidance.
 
+## Facade Coverage Governance — the two-hop DoD (business endpoints)
+
+A business capability is only usable end-to-end when it ships as **two hops**: the
+service HTTP endpoint **and** a Gateway facade (OpenAPI snapshot → `pnpm -C frontend
+generate:api` → `types.gen.ts` → stable barrel). Issue acceptance used to watch only
+the first hop, so a missing facade turned no gate red — X1/#784 had to recover 11 such
+gaps by full audit. This is the HTTP-facade analogue of the dangling-integration-event
+problem solved by `docs/architecture/integration-event-consumption-matrix.md`.
+
+**Mandatory declaration (no default).** Any issue/PR that adds or changes a
+business-service HTTP endpoint MUST declare, per new/changed endpoint, one of:
+
+1. **`exposed`** — this PR also delivers the Gateway facade + OpenAPI export + codegen
+   + stable-barrel re-export. PR review confirms the type is reachable in
+   `types.gen.ts` and exported from the barrel.
+2. **`deferred`** — explicitly postponed. Register the row in
+   `facade-coverage-matrix.json` with a `followUp` (the frontend issue / menu phase it
+   will follow). A tracked gap, never a silent one.
+3. **`internal`** — never exposed by design (service-to-service contract, background
+   scheduler, connector/WCS callback). Register with a `rationale`. Precedent: IIoT
+   `GET /iiot/runtime-hours` (#688), consumed only by Maintenance PM.
+
+**Enforcement.** `backend/tests/Nerv.IIP.FacadeCoverage.Tests` (runs inside
+`dotnet test backend/Nerv.IIP.sln`, already in CI) reflects every service's
+`*EndpointContracts.All` registry and fails if a live endpoint is missing from
+`facade-coverage-matrix.json`, if an `exposed` row's facade is absent from the Gateway
+snapshot, or if a `deferred`/`internal` row was silently given a facade. The registry
+and the governance narrative are `docs/architecture/facade-coverage-matrix.json` and
+`docs/architecture/facade-coverage-matrix.md`. Adding a new business service also
+requires registering its `.Web` assembly in the gate project.
+
 ## GitHub Workflow
 
 - Use `gh` CLI directly for PR creation. Do not use the GitHub connector — it has
@@ -423,3 +457,7 @@ At minimum:
   write "文档：无影响". Docs gaps recorded in the docs-site role path maps and
   `internal/gaps` are recycled into GitHub issues quarterly. Rationale and IA rules:
   `docs/adr/0021-product-docs-information-architecture.md`.
+- If the PR adds or changes a business-service HTTP endpoint, state the facade
+  declaration for each — `exposed` / `deferred` / `internal` — and confirm
+  `facade-coverage-matrix.json` was updated (see "Facade Coverage Governance"). This
+  is a hard gate: the facade-coverage test fails an unregistered endpoint.

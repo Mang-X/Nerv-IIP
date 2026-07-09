@@ -5,34 +5,40 @@ import type {
   BusinessConsoleBomDiffLineItem,
   BusinessConsoleBomWhereUsedItem,
 } from '@nerv-iip/api-client'
-import type { DataTableProColumn, StatusTone } from '@nerv-iip/ui'
+import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
 import { useBomAnalysis } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { formatDate, today } from '@/utils/format'
 import {
-  ButtonPro,
-  DataTablePro,
-  DatePickerPro,
-  FieldPro,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SectionCard,
-  SectionCards,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvDataTable,
+  NvDatePicker,
+  NvField,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSectionCard,
+  NvSectionCards,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { NetworkIcon, SearchIcon } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: 'BOM 分析', requiredPermissions: ['business.engineering.boms.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: 'BOM 分析',
+    requiredPermissions: ['business.engineering.boms.read'],
+  },
+})
 
 type BomKind = 'engineering' | 'manufacturing'
 type AnalysisView = 'tree' | 'explosion' | 'where-used' | 'diff'
@@ -74,7 +80,7 @@ const form = reactive({
 })
 const submitted = ref(false)
 
-const analysisViews: Array<{ value: AnalysisView, label: string }> = [
+const analysisViews: Array<{ value: AnalysisView; label: string }> = [
   { value: 'tree', label: '树视图' },
   { value: 'explosion', label: '爆炸' },
   { value: 'where-used', label: '反查' },
@@ -85,11 +91,18 @@ const kindOptions = [
   { value: 'manufacturing', label: 'MBOM' },
 ]
 
-const codeLabel = computed(() => form.kind === 'engineering' ? '父项物料' : '产出物料')
-const codePlaceholder = computed(() => form.kind === 'engineering' ? '如 FG-100' : '如 SKU-FG-100')
+const codeLabel = computed(() => (form.kind === 'engineering' ? '父项物料' : '产出物料'))
+const codePlaceholder = computed(() =>
+  form.kind === 'engineering' ? '如 FG-100' : '如 SKU-FG-100',
+)
 const canSubmit = computed(() => {
   if (form.view === 'diff') {
-    return !!form.fromBomCode.trim() && !!form.fromRevision.trim() && !!form.toBomCode.trim() && !!form.toRevision.trim()
+    return (
+      !!form.fromBomCode.trim() &&
+      !!form.fromRevision.trim() &&
+      !!form.toBomCode.trim() &&
+      !!form.toRevision.trim()
+    )
   }
   if (!form.effectiveDate) return false
   return form.view === 'where-used'
@@ -106,18 +119,22 @@ const resultCount = computed(() => {
   if (form.view === 'diff') return diffRows.value.length
   return flattenedNodes.value.length
 })
-const warningCount = computed(() => diagnostics.value.filter((d) => (d.severity ?? '').toLowerCase() !== 'error').length)
-const errorCount = computed(() => diagnostics.value.filter((d) => (d.severity ?? '').toLowerCase() === 'error').length)
+const warningCount = computed(
+  () => diagnostics.value.filter((d) => (d.severity ?? '').toLowerCase() !== 'error').length,
+)
+const errorCount = computed(
+  () => diagnostics.value.filter((d) => (d.severity ?? '').toLowerCase() === 'error').length,
+)
 const errorMessage = computed(() => formatError(error.value))
 
-const treeColumns: DataTableProColumn<TreeRow>[] = [
+const treeColumns: NvDataTableColumn<TreeRow>[] = [
   { key: 'itemCode', header: '物料', cellClass: 'font-medium' },
   { key: 'requiredQuantity', header: '需求量', align: 'end', width: 'w-28' },
   { key: 'unitOfMeasureCode', header: '单位', width: 'w-24' },
   { key: 'bomCode', header: 'BOM 版本' },
   { key: 'flags', header: '属性', width: 'w-44' },
 ]
-const explosionColumns: DataTableProColumn<TreeRow>[] = [
+const explosionColumns: NvDataTableColumn<TreeRow>[] = [
   { key: 'itemCode', header: '物料', cellClass: 'font-medium' },
   { key: 'level', header: '层级', align: 'end', width: 'w-20' },
   { key: 'lineQuantity', header: '行数量', align: 'end', width: 'w-24' },
@@ -125,7 +142,7 @@ const explosionColumns: DataTableProColumn<TreeRow>[] = [
   { key: 'yield', header: '损耗/得率', align: 'end', width: 'w-28' },
   { key: 'alternates', header: '替代/位号' },
 ]
-const whereUsedColumns: DataTableProColumn<BusinessConsoleBomWhereUsedItem>[] = [
+const whereUsedColumns: NvDataTableColumn<BusinessConsoleBomWhereUsedItem>[] = [
   { key: 'parentItemCode', header: '父项', cellClass: 'font-medium' },
   { key: 'bomCode', header: 'BOM 版本' },
   { key: 'lineQuantity', header: '用量', align: 'end', width: 'w-24' },
@@ -133,7 +150,7 @@ const whereUsedColumns: DataTableProColumn<BusinessConsoleBomWhereUsedItem>[] = 
   { key: 'effectiveDate', header: '生效日', width: 'w-28' },
   { key: 'flags', header: '行属性', width: 'w-44' },
 ]
-const diffColumns: DataTableProColumn<BusinessConsoleBomDiffLineItem>[] = [
+const diffColumns: NvDataTableColumn<BusinessConsoleBomDiffLineItem>[] = [
   { key: 'changeType', header: '变化', width: 'w-24' },
   { key: 'itemCode', header: '物料', cellClass: 'font-medium' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-32' },
@@ -141,23 +158,26 @@ const diffColumns: DataTableProColumn<BusinessConsoleBomDiffLineItem>[] = [
   { key: 'rates', header: '损耗/得率', align: 'end', width: 'w-40' },
   { key: 'fields', header: '字段变化' },
 ]
-const diagnosticColumns: DataTableProColumn<BusinessConsoleBomExplosionDiagnostic>[] = [
+const diagnosticColumns: NvDataTableColumn<BusinessConsoleBomExplosionDiagnostic>[] = [
   { key: 'severity', header: '级别', width: 'w-24' },
   { key: 'itemCode', header: '物料', width: 'w-32' },
   { key: 'message', header: '诊断' },
   { key: 'path', header: '路径' },
 ]
 
-watch(() => form.kind, () => {
-  form.rootCode = ''
-  form.componentCode = ''
-  form.bomCode = ''
-  form.revision = ''
-  form.fromBomCode = ''
-  form.fromRevision = ''
-  form.toBomCode = ''
-  form.toRevision = ''
-})
+watch(
+  () => form.kind,
+  () => {
+    form.rootCode = ''
+    form.componentCode = ''
+    form.bomCode = ''
+    form.revision = ''
+    form.fromBomCode = ''
+    form.fromRevision = ''
+    form.toBomCode = ''
+    form.toRevision = ''
+  },
+)
 
 onMounted(() => {
   applyRouteQuery()
@@ -175,7 +195,8 @@ function applyRouteQuery() {
   const kind = firstQuery(route.query.kind)
   const view = firstQuery(route.query.view)
   form.kind = kind === 'manufacturing' ? 'manufacturing' : 'engineering'
-  if (view === 'tree' || view === 'explosion' || view === 'where-used' || view === 'diff') form.view = view
+  if (view === 'tree' || view === 'explosion' || view === 'where-used' || view === 'diff')
+    form.view = view
   form.rootCode = firstQuery(route.query.itemCode) ?? firstQuery(route.query.skuCode) ?? ''
   form.componentCode = firstQuery(route.query.componentCode) ?? ''
   form.effectiveDate = firstQuery(route.query.effectiveDate) ?? today()
@@ -206,11 +227,12 @@ async function submit() {
         ? { componentCode: form.componentCode.trim(), itemCode: undefined, skuCode: undefined }
         : form.view === 'diff'
           ? { componentCode: undefined, itemCode: undefined, skuCode: undefined }
-        : {
-            [form.kind === 'engineering' ? 'itemCode' : 'skuCode']: form.rootCode.trim(),
-            componentCode: undefined,
-          }),
-      lotSize: form.view === 'where-used' || form.view === 'diff' ? undefined : String(lotSize ?? 1),
+          : {
+              [form.kind === 'engineering' ? 'itemCode' : 'skuCode']: form.rootCode.trim(),
+              componentCode: undefined,
+            }),
+      lotSize:
+        form.view === 'where-used' || form.view === 'diff' ? undefined : String(lotSize ?? 1),
       bomCode: form.view === 'diff' ? undefined : bomCode,
       revision: form.view === 'diff' ? undefined : revision,
       fromBomCode: form.view === 'diff' ? form.fromBomCode.trim() : undefined,
@@ -249,7 +271,11 @@ async function submit() {
   else await loadManufacturingExplosion(input)
 }
 
-function flattenBom(node: BusinessConsoleBomExplosionNode | undefined, depth = 0, prefix = 'root'): TreeRow[] {
+function flattenBom(
+  node: BusinessConsoleBomExplosionNode | undefined,
+  depth = 0,
+  prefix = 'root',
+): TreeRow[] {
   if (!node) return []
   const children = node.children ?? []
   return [
@@ -278,11 +304,16 @@ function formatRate(value?: number | null) {
   return Number(value).toLocaleString('zh-CN', { style: 'percent', maximumFractionDigits: 2 })
 }
 
-function flagLabels(row: Pick<TreeRow, 'isPhantom' | 'backflush' | 'alternateGroup' | 'alternatePriority'>) {
+function flagLabels(
+  row: Pick<TreeRow, 'isPhantom' | 'backflush' | 'alternateGroup' | 'alternatePriority'>,
+) {
   const labels: string[] = []
   if (row.isPhantom) labels.push('虚拟件')
   if (row.backflush) labels.push('倒冲')
-  if (row.alternateGroup) labels.push(`替代组 ${row.alternateGroup}${row.alternatePriority ? `/${row.alternatePriority}` : ''}`)
+  if (row.alternateGroup)
+    labels.push(
+      `替代组 ${row.alternateGroup}${row.alternatePriority ? `/${row.alternatePriority}` : ''}`,
+    )
   return labels
 }
 
@@ -328,9 +359,11 @@ function formatTextDiff(oldValue?: string | null, newValue?: string | null) {
 }
 
 function fieldChangeLabels(row: BusinessConsoleBomDiffLineItem) {
-  const labels = row.fieldChanges?.map((field) =>
-    `${fieldLabel(field.fieldName)}: ${field.oldValue ?? '无'} -> ${field.newValue ?? '无'}`,
-  ) ?? []
+  const labels =
+    row.fieldChanges?.map(
+      (field) =>
+        `${fieldLabel(field.fieldName)}: ${field.oldValue ?? '无'} -> ${field.newValue ?? '无'}`,
+    ) ?? []
   return labels.length ? labels : ['无']
 }
 
@@ -351,7 +384,9 @@ function fieldLabel(fieldName?: string | null) {
 }
 
 function isContextNode(row: Pick<TreeRow, 'itemCode'>) {
-  return !!form.componentCode && row.itemCode?.toLowerCase() === form.componentCode.trim().toLowerCase()
+  return (
+    !!form.componentCode && row.itemCode?.toLowerCase() === form.componentCode.trim().toLowerCase()
+  )
 }
 
 function diagnosticTone(severity?: string | null): StatusTone {
@@ -372,20 +407,17 @@ function formatError(value: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader
-      title="BOM 分析"
-      description="多级 BOM 树、滚算爆炸、反查与版本对比"
-    />
+    <NvPageHeader title="BOM 分析" description="多级 BOM 树、滚算爆炸、反查与版本对比" />
 
-    <SectionCards :columns="3">
-      <SectionCard description="结果行" :value="resultCount" hint="来自后端 BOM facade" />
-      <SectionCard description="警告" :value="warningCount" hint="缺失下级版本等诊断" />
-      <SectionCard description="错误" :value="errorCount" hint="循环引用等阻断诊断" />
-    </SectionCards>
+    <NvSectionCards :columns="3">
+      <NvSectionCard description="结果行" :value="resultCount" hint="来自后端 BOM facade" />
+      <NvSectionCard description="警告" :value="warningCount" hint="缺失下级版本等诊断" />
+      <NvSectionCard description="错误" :value="errorCount" hint="循环引用等阻断诊断" />
+    </NvSectionCards>
 
     <form class="grid gap-4 rounded-md border bg-background p-4" @submit.prevent="submit">
       <div class="flex flex-wrap items-center gap-2" role="group" aria-label="分析视图">
-        <ButtonPro
+        <NvButton
           v-for="option in analysisViews"
           :key="option.value"
           type="button"
@@ -394,93 +426,104 @@ function formatError(value: unknown) {
           @click="form.view = option.value"
         >
           {{ option.label }}
-        </ButtonPro>
+        </NvButton>
       </div>
 
       <div class="grid gap-3 md:grid-cols-[11rem_1fr_1fr_9rem]">
-        <FieldPro>
-          <FieldProLabel for="bom-kind">BOM 类型</FieldProLabel>
-          <SelectPro id="bom-kind" v-model="form.kind">
-            <SelectProTrigger class="h-9"><SelectProValue /></SelectProTrigger>
-            <SelectProContent>
-              <SelectProItem v-for="option in kindOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-            </SelectProContent>
-          </SelectPro>
-        </FieldPro>
+        <NvField>
+          <NvFieldLabel for="bom-kind">BOM 类型</NvFieldLabel>
+          <NvSelect id="bom-kind" v-model="form.kind">
+            <NvSelectTrigger class="h-9"><NvSelectValue /></NvSelectTrigger>
+            <NvSelectContent>
+              <NvSelectItem
+                v-for="option in kindOptions"
+                :key="option.value"
+                :value="option.value"
+                >{{ option.label }}</NvSelectItem
+              >
+            </NvSelectContent>
+          </NvSelect>
+        </NvField>
 
-        <FieldPro v-if="form.view !== 'where-used' && form.view !== 'diff'" :data-invalid="submitted && !form.rootCode.trim()">
-          <FieldProLabel for="bom-root">{{ codeLabel }}</FieldProLabel>
-          <InputPro id="bom-root" v-model="form.rootCode" :placeholder="codePlaceholder" />
-        </FieldPro>
-        <FieldPro v-else-if="form.view === 'where-used'" :data-invalid="submitted && !form.componentCode.trim()">
-          <FieldProLabel for="bom-component">组件物料</FieldProLabel>
-          <InputPro id="bom-component" v-model="form.componentCode" placeholder="如 RM-200" />
-        </FieldPro>
-        <FieldPro v-else>
-          <FieldProLabel>对比对象</FieldProLabel>
-          <InputPro :model-value="form.kind === 'engineering' ? 'EBOM' : 'MBOM'" disabled />
-        </FieldPro>
+        <NvField
+          v-if="form.view !== 'where-used' && form.view !== 'diff'"
+          :data-invalid="submitted && !form.rootCode.trim()"
+        >
+          <NvFieldLabel for="bom-root">{{ codeLabel }}</NvFieldLabel>
+          <NvInput id="bom-root" v-model="form.rootCode" :placeholder="codePlaceholder" />
+        </NvField>
+        <NvField
+          v-else-if="form.view === 'where-used'"
+          :data-invalid="submitted && !form.componentCode.trim()"
+        >
+          <NvFieldLabel for="bom-component">组件物料</NvFieldLabel>
+          <NvInput id="bom-component" v-model="form.componentCode" placeholder="如 RM-200" />
+        </NvField>
+        <NvField v-else>
+          <NvFieldLabel>对比对象</NvFieldLabel>
+          <NvInput :model-value="form.kind === 'engineering' ? 'EBOM' : 'MBOM'" disabled />
+        </NvField>
 
-        <FieldPro v-if="form.view !== 'diff'">
-          <FieldProLabel for="bom-effective">有效日期</FieldProLabel>
-          <DatePickerPro id="bom-effective" v-model="form.effectiveDate" />
-        </FieldPro>
+        <NvField v-if="form.view !== 'diff'">
+          <NvFieldLabel for="bom-effective">有效日期</NvFieldLabel>
+          <NvDatePicker id="bom-effective" v-model="form.effectiveDate" />
+        </NvField>
 
-        <FieldPro v-if="form.view !== 'where-used' && form.view !== 'diff'">
-          <FieldProLabel for="bom-lot">批量</FieldProLabel>
-          <InputPro id="bom-lot" v-model="form.lotSize" type="number" min="0.000001" step="any" />
-        </FieldPro>
+        <NvField v-if="form.view !== 'where-used' && form.view !== 'diff'">
+          <NvFieldLabel for="bom-lot">批量</NvFieldLabel>
+          <NvInput id="bom-lot" v-model="form.lotSize" type="number" min="0.000001" step="any" />
+        </NvField>
       </div>
 
       <div v-if="form.view === 'diff'" class="grid gap-3 md:grid-cols-[1fr_8rem_1fr_8rem_auto]">
-        <FieldPro :data-invalid="submitted && !form.fromBomCode.trim()">
-          <FieldProLabel for="bom-from-code">来源 BOM</FieldProLabel>
-          <InputPro id="bom-from-code" v-model="form.fromBomCode" placeholder="如 EBOM-FG" />
-        </FieldPro>
-        <FieldPro :data-invalid="submitted && !form.fromRevision.trim()">
-          <FieldProLabel for="bom-from-revision">来源修订</FieldProLabel>
-          <InputPro id="bom-from-revision" v-model="form.fromRevision" placeholder="A" />
-        </FieldPro>
-        <FieldPro :data-invalid="submitted && !form.toBomCode.trim()">
-          <FieldProLabel for="bom-to-code">目标 BOM</FieldProLabel>
-          <InputPro id="bom-to-code" v-model="form.toBomCode" placeholder="如 EBOM-FG" />
-        </FieldPro>
-        <FieldPro :data-invalid="submitted && !form.toRevision.trim()">
-          <FieldProLabel for="bom-to-revision">目标修订</FieldProLabel>
-          <InputPro id="bom-to-revision" v-model="form.toRevision" placeholder="B" />
-        </FieldPro>
+        <NvField :data-invalid="submitted && !form.fromBomCode.trim()">
+          <NvFieldLabel for="bom-from-code">来源 BOM</NvFieldLabel>
+          <NvInput id="bom-from-code" v-model="form.fromBomCode" placeholder="如 EBOM-FG" />
+        </NvField>
+        <NvField :data-invalid="submitted && !form.fromRevision.trim()">
+          <NvFieldLabel for="bom-from-revision">来源修订</NvFieldLabel>
+          <NvInput id="bom-from-revision" v-model="form.fromRevision" placeholder="A" />
+        </NvField>
+        <NvField :data-invalid="submitted && !form.toBomCode.trim()">
+          <NvFieldLabel for="bom-to-code">目标 BOM</NvFieldLabel>
+          <NvInput id="bom-to-code" v-model="form.toBomCode" placeholder="如 EBOM-FG" />
+        </NvField>
+        <NvField :data-invalid="submitted && !form.toRevision.trim()">
+          <NvFieldLabel for="bom-to-revision">目标修订</NvFieldLabel>
+          <NvInput id="bom-to-revision" v-model="form.toRevision" placeholder="B" />
+        </NvField>
         <div class="flex items-end">
-          <ButtonPro type="submit" :disabled="pending">
+          <NvButton type="submit" :disabled="pending">
             <Spinner v-if="pending" aria-hidden="true" />
             <NetworkIcon v-else aria-hidden="true" />
             对比
-          </ButtonPro>
+          </NvButton>
         </div>
       </div>
 
       <div v-else-if="form.view !== 'where-used'" class="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-        <FieldPro>
-          <FieldProLabel for="bom-code">指定 BOM</FieldProLabel>
-          <InputPro id="bom-code" v-model="form.bomCode" placeholder="留空自动选择" />
-        </FieldPro>
-        <FieldPro>
-          <FieldProLabel for="bom-revision">指定修订</FieldProLabel>
-          <InputPro id="bom-revision" v-model="form.revision" placeholder="留空自动选择" />
-        </FieldPro>
+        <NvField>
+          <NvFieldLabel for="bom-code">指定 BOM</NvFieldLabel>
+          <NvInput id="bom-code" v-model="form.bomCode" placeholder="留空自动选择" />
+        </NvField>
+        <NvField>
+          <NvFieldLabel for="bom-revision">指定修订</NvFieldLabel>
+          <NvInput id="bom-revision" v-model="form.revision" placeholder="留空自动选择" />
+        </NvField>
         <div class="flex items-end">
-          <ButtonPro type="submit" :disabled="pending">
+          <NvButton type="submit" :disabled="pending">
             <Spinner v-if="pending" aria-hidden="true" />
             <NetworkIcon v-else aria-hidden="true" />
             分析
-          </ButtonPro>
+          </NvButton>
         </div>
       </div>
       <div v-else class="flex justify-end">
-        <ButtonPro type="submit" :disabled="pending">
+        <NvButton type="submit" :disabled="pending">
           <Spinner v-if="pending" aria-hidden="true" />
           <SearchIcon v-else aria-hidden="true" />
           反查
-        </ButtonPro>
+        </NvButton>
       </div>
 
       <p v-if="submitted && !canSubmit" class="text-sm text-destructive" role="alert">
@@ -489,9 +532,9 @@ function formatError(value: unknown) {
       <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
     </form>
 
-    <Toolbar v-if="form.view !== 'where-used'" search-placeholder="按物料、BOM 或路径筛选" />
+    <NvToolbar v-if="form.view !== 'where-used'" search-placeholder="按物料、BOM 或路径筛选" />
 
-    <DataTablePro
+    <NvDataTable
       v-if="form.view === 'tree'"
       :columns="treeColumns"
       :rows="flattenedNodes"
@@ -501,13 +544,15 @@ function formatError(value: unknown) {
     >
       <template #cell-itemCode="{ row }">
         <div class="flex items-center gap-2" :style="{ paddingLeft: `${row.depth * 1.25}rem` }">
-            <span class="text-muted-foreground">{{ row.hasChildren ? '▾' : '•' }}</span>
-            <div class="flex flex-col gap-0.5">
+          <span class="text-muted-foreground">{{ row.hasChildren ? '▾' : '•' }}</span>
+          <div class="flex flex-col gap-0.5">
             <span class="inline-flex items-center gap-2">
               {{ row.itemCode || '无' }}
-              <StatusBadgePro v-if="isContextNode(row)" label="追溯节点" tone="info" />
+              <NvStatusBadge v-if="isContextNode(row)" label="追溯节点" tone="info" />
             </span>
-            <span v-if="row.parentItemCode" class="text-xs text-muted-foreground">上级 {{ row.parentItemCode }}</span>
+            <span v-if="row.parentItemCode" class="text-xs text-muted-foreground"
+              >上级 {{ row.parentItemCode }}</span
+            >
           </div>
         </div>
       </template>
@@ -517,13 +562,13 @@ function formatError(value: unknown) {
       </template>
       <template #cell-flags="{ row }">
         <div class="flex flex-wrap gap-1">
-          <StatusBadgePro v-for="flag in flagLabels(row)" :key="flag" :label="flag" tone="neutral" />
+          <NvStatusBadge v-for="flag in flagLabels(row)" :key="flag" :label="flag" tone="neutral" />
           <span v-if="!flagLabels(row).length" class="text-muted-foreground">无</span>
         </div>
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
-    <DataTablePro
+    <NvDataTable
       v-else-if="form.view === 'explosion'"
       :columns="explosionColumns"
       :rows="flattenedNodes"
@@ -532,9 +577,12 @@ function formatError(value: unknown) {
       empty-message="当前条件没有 BOM 爆炸结果。"
     >
       <template #cell-itemCode="{ row }">
-        <span class="inline-flex items-center gap-2" :style="{ paddingLeft: `${row.depth * 1.25}rem` }">
+        <span
+          class="inline-flex items-center gap-2"
+          :style="{ paddingLeft: `${row.depth * 1.25}rem` }"
+        >
           {{ row.itemCode || '无' }}
-          <StatusBadgePro v-if="isContextNode(row)" label="追溯节点" tone="info" />
+          <NvStatusBadge v-if="isContextNode(row)" label="追溯节点" tone="info" />
         </span>
       </template>
       <template #cell-lineQuantity="{ row }">{{ formatQty(row.lineQuantity) }}</template>
@@ -545,12 +593,14 @@ function formatError(value: unknown) {
       <template #cell-alternates="{ row }">
         <div class="grid gap-0.5 text-sm">
           <span>{{ row.substituteSkuCodes || row.alternateGroup || '无' }}</span>
-          <span v-if="row.referenceDesignators" class="text-xs text-muted-foreground">{{ row.referenceDesignators }}</span>
+          <span v-if="row.referenceDesignators" class="text-xs text-muted-foreground">{{
+            row.referenceDesignators
+          }}</span>
         </div>
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
-    <DataTablePro
+    <NvDataTable
       v-else-if="form.view === 'diff'"
       :columns="diffColumns"
       :rows="diffRows"
@@ -559,7 +609,10 @@ function formatError(value: unknown) {
       empty-message="当前两个 BOM 版本没有结构差异。"
     >
       <template #cell-changeType="{ row }">
-        <StatusBadgePro :label="diffChangeLabel(row.changeType)" :tone="diffChangeTone(row.changeType)" />
+        <NvStatusBadge
+          :label="diffChangeLabel(row.changeType)"
+          :tone="diffChangeTone(row.changeType)"
+        />
       </template>
       <template #cell-itemCode="{ row }">{{ diffItemLabel(row) }}</template>
       <template #cell-quantity="{ row }">
@@ -574,12 +627,17 @@ function formatError(value: unknown) {
       </template>
       <template #cell-fields="{ row }">
         <div class="flex flex-wrap gap-1">
-          <StatusBadgePro v-for="label in fieldChangeLabels(row)" :key="label" :label="label" tone="neutral" />
+          <NvStatusBadge
+            v-for="label in fieldChangeLabels(row)"
+            :key="label"
+            :label="label"
+            tone="neutral"
+          />
         </div>
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
-    <DataTablePro
+    <NvDataTable
       v-else
       :columns="whereUsedColumns"
       :rows="whereUsedRows"
@@ -592,15 +650,15 @@ function formatError(value: unknown) {
       <template #cell-effectiveDate="{ row }">{{ formatDate(row.effectiveDate) }}</template>
       <template #cell-flags="{ row }">
         <div class="flex flex-wrap gap-1">
-          <StatusBadgePro v-for="flag in flagLabels(row)" :key="flag" :label="flag" tone="neutral" />
+          <NvStatusBadge v-for="flag in flagLabels(row)" :key="flag" :label="flag" tone="neutral" />
           <span v-if="!flagLabels(row).length" class="text-muted-foreground">无</span>
         </div>
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
     <section v-if="diagnostics.length" class="grid gap-3">
       <h2 class="text-base font-semibold">诊断</h2>
-      <DataTablePro
+      <NvDataTable
         :columns="diagnosticColumns"
         :rows="diagnostics"
         :row-key="(row) => `${row.severity}:${row.itemCode}:${row.path}:${row.code}`"
@@ -609,9 +667,12 @@ function formatError(value: unknown) {
         empty-message="没有诊断。"
       >
         <template #cell-severity="{ row }">
-          <StatusBadgePro :label="diagnosticLabel(row.severity)" :tone="diagnosticTone(row.severity)" />
+          <NvStatusBadge
+            :label="diagnosticLabel(row.severity)"
+            :tone="diagnosticTone(row.severity)"
+          />
         </template>
-      </DataTablePro>
+      </NvDataTable>
     </section>
   </BusinessLayout>
 </template>

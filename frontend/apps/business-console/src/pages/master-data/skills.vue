@@ -12,41 +12,47 @@ import { useSkillCatalog } from '@/composables/usePromotedCatalogs'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  BadgePro,
-  ButtonPro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DialogProTrigger,
-  FieldPro,
-  FieldProDescription,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SectionCard,
-  SectionCards,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvBadge,
+  NvButton,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDialogTrigger,
+  NvField,
+  NvFieldDescription,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSectionCard,
+  NvSectionCards,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  Toolbar,
-  TooltipPro,
-  TooltipProContent,
-  TooltipProProvider,
-  TooltipProTrigger,
+  NvToolbar,
+  NvTooltip,
+  NvTooltipContent,
+  NvTooltipProvider,
+  NvTooltipTrigger,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
 import { formatDate } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '人员技能', requiredPermissions: ['business.masterdata.resources.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '人员技能',
+    requiredPermissions: ['business.masterdata.resources.read'],
+  },
+})
 
 // 人员技能：矩阵（工人 × 技能，一屏可读「谁会什么、到期没」）+ 登记 Dialog（录入/更新某工人某技能等级）。
 const matrix = usePersonnelSkillMatrix()
@@ -92,7 +98,10 @@ const skillName = (skillCode: string): string => {
 const skillOptions = computed(() =>
   skillCatalog.value
     .filter((s) => s.enabled !== false && (s.skillCode ?? '').trim().length > 0)
-    .map((s) => ({ value: (s.skillCode ?? '').trim(), label: s.skillName?.trim() || (s.skillCode ?? '').trim() })),
+    .map((s) => ({
+      value: (s.skillCode ?? '').trim(),
+      label: s.skillName?.trim() || (s.skillCode ?? '').trim(),
+    })),
 )
 
 // ── 矩阵行/格 ────────────────────────────────────────────────
@@ -179,8 +188,9 @@ const skillForm = reactive({ userId: '', skillCode: '', level: '', effectiveFrom
 function isNonEmpty(value: string) {
   return value.trim().length > 0
 }
-const canAssignSkill = computed(() =>
-  isNonEmpty(skillForm.userId) && isNonEmpty(skillForm.skillCode) && isNonEmpty(skillForm.level),
+const canAssignSkill = computed(
+  () =>
+    isNonEmpty(skillForm.userId) && isNonEmpty(skillForm.skillCode) && isNonEmpty(skillForm.level),
 )
 watch(skillOpen, (open) => {
   if (open) {
@@ -188,7 +198,7 @@ watch(skillOpen, (open) => {
   }
 })
 /** 打开登记弹窗，可预填某工人某技能（格子点击进入）。 */
-function openAssign(prefill?: { userId?: string, skillCode?: string }) {
+function openAssign(prefill?: { userId?: string; skillCode?: string }) {
   Object.assign(skillForm, {
     userId: prefill?.userId ?? '',
     skillCode: prefill?.skillCode ?? '',
@@ -214,8 +224,7 @@ async function submitSkill() {
     skillShowErrors.value = false
     skillOpen.value = false
     void matrix.refresh()
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -223,59 +232,82 @@ async function submitSkill() {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="人员技能" :breadcrumbs="[{ label: '基础数据' }]" :count="`${matrix.rows.value.length} 名工人`">
+    <NvPageHeader
+      title="人员技能"
+      :breadcrumbs="[{ label: '基础数据' }]"
+      :count="`${matrix.rows.value.length} 名工人`"
+    >
       <template #actions>
-        <ButtonPro size="sm" variant="outline" type="button" :disabled="matrix.matrixPending.value" @click="refreshAll">
+        <NvButton
+          size="sm"
+          variant="outline"
+          type="button"
+          :disabled="matrix.matrixPending.value"
+          @click="refreshAll"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" @click="openAssign()">
+        </NvButton>
+        <NvButton size="sm" type="button" @click="openAssign()">
           <PlusIcon aria-hidden="true" />
           登记技能
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
     <p class="text-sm text-muted-foreground">
-      技能矩阵：行为工人、列为技能，格内为等级与有效期，用于派工上岗资格校验。点击格子可登记或更新；临期 / 过期会高亮提醒。
+      技能矩阵：行为工人、列为技能，格内为等级与有效期，用于派工上岗资格校验。点击格子可登记或更新；临期
+      / 过期会高亮提醒。
     </p>
 
-    <SectionCards :columns="3">
-      <SectionCard description="在岗工人" :value="matrix.rows.value.length" hint="已登记任一技能的工人" />
-      <SectionCard description="技能项" :value="matrix.skillCodes.value.length" hint="矩阵覆盖的技能种类" />
-      <SectionCard
+    <NvSectionCards :columns="3">
+      <NvSectionCard
+        description="在岗工人"
+        :value="matrix.rows.value.length"
+        hint="已登记任一技能的工人"
+      />
+      <NvSectionCard
+        description="技能项"
+        :value="matrix.skillCodes.value.length"
+        hint="矩阵覆盖的技能种类"
+      />
+      <NvSectionCard
         description="临期 / 已过期"
         :value="`${expiryStats.soon} / ${expiryStats.past}`"
         hint="临期（30 天内到期）需及时复评"
       />
-    </SectionCards>
+    </NvSectionCards>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索工人姓名 / 工号 / 部门">
+    <NvToolbar v-model:search="keyword" search-placeholder="搜索工人姓名 / 工号 / 部门">
       <template #filters>
-        <SelectPro v-model="skillFilter">
-          <SelectProTrigger class="w-44"><SelectProValue placeholder="按技能筛选" /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem value="all">全部技能</SelectProItem>
-            <SelectProItem v-for="code in matrix.skillCodes.value" :key="code" :value="code">
+        <NvSelect v-model="skillFilter">
+          <NvSelectTrigger class="w-44"><NvSelectValue placeholder="按技能筛选" /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem value="all">全部技能</NvSelectItem>
+            <NvSelectItem v-for="code in matrix.skillCodes.value" :key="code" :value="code">
               {{ skillName(code) }}
-            </SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+            </NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
       </template>
-    </Toolbar>
+    </NvToolbar>
 
-    <p v-if="matrixListError" class="text-sm text-destructive" role="alert">{{ matrixListError }}</p>
+    <p v-if="matrixListError" class="text-sm text-destructive" role="alert">
+      {{ matrixListError }}
+    </p>
 
     <!-- 空态：无维度（无工人 / 无技能登记）→ 引导去登记，绝不造假数据网格。 -->
     <div
       v-if="!hasDimensions && !matrix.matrixPending.value"
       class="flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/20 px-4 py-12 text-center"
     >
-      <p class="text-sm text-muted-foreground">还没有任何技能登记，先为工人登记一项技能即可生成矩阵。</p>
-      <ButtonPro size="sm" type="button" @click="openAssign()">
+      <p class="text-sm text-muted-foreground">
+        还没有任何技能登记，先为工人登记一项技能即可生成矩阵。
+      </p>
+      <NvButton size="sm" type="button" @click="openAssign()">
         <PlusIcon aria-hidden="true" />
         去登记技能
-      </ButtonPro>
+      </NvButton>
     </div>
 
     <!-- 筛选无结果。 -->
@@ -284,9 +316,22 @@ async function submitSkill() {
       class="flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/20 px-4 py-12 text-center"
     >
       <p class="text-sm text-muted-foreground">
-        没有符合条件的工人{{ skillFilter !== 'all' ? `（持有「${skillName(skillFilter)}」）` : '' }}。
+        没有符合条件的工人{{
+          skillFilter !== 'all' ? `（持有「${skillName(skillFilter)}」）` : ''
+        }}。
       </p>
-      <ButtonPro size="sm" variant="outline" type="button" @click="keyword = ''; skillFilter = 'all'">清空筛选</ButtonPro>
+      <NvButton
+        size="sm"
+        variant="outline"
+        type="button"
+        @click="
+          () => {
+            keyword = ''
+            skillFilter = 'all'
+          }
+        "
+        >清空筛选</NvButton
+      >
     </div>
 
     <!-- 矩阵网格：横向可滚、首列（工人）冻结。 -->
@@ -294,7 +339,9 @@ async function submitSkill() {
       <table class="w-full border-collapse text-sm">
         <thead>
           <tr class="border-b border-border bg-muted/40">
-            <th class="sticky left-0 z-10 min-w-44 bg-muted/40 px-3 py-2 text-left font-medium text-muted-foreground">
+            <th
+              class="sticky left-0 z-10 min-w-44 bg-muted/40 px-3 py-2 text-left font-medium text-muted-foreground"
+            >
               工人
             </th>
             <th
@@ -302,22 +349,28 @@ async function submitSkill() {
               :key="code"
               class="min-w-32 px-3 py-2 text-left font-medium text-muted-foreground"
             >
-              <TooltipProProvider>
-                <TooltipPro>
-                  <TooltipProTrigger as-child>
+              <NvTooltipProvider>
+                <NvTooltip>
+                  <NvTooltipTrigger as-child>
                     <span class="block max-w-32 truncate">{{ skillName(code) }}</span>
-                  </TooltipProTrigger>
-                  <TooltipProContent>{{ skillName(code) }}</TooltipProContent>
-                </TooltipPro>
-              </TooltipProProvider>
+                  </NvTooltipTrigger>
+                  <NvTooltipContent>{{ skillName(code) }}</NvTooltipContent>
+                </NvTooltip>
+              </NvTooltipProvider>
             </th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="row in filteredRows" :key="row.userId" class="border-b border-border last:border-b-0">
+          <tr
+            v-for="row in filteredRows"
+            :key="row.userId"
+            class="border-b border-border last:border-b-0"
+          >
             <th class="sticky left-0 z-10 bg-card px-3 py-2 text-left align-top font-normal">
               <div class="font-medium text-foreground">{{ workerName(row.userId) }}</div>
-              <div v-if="workerMeta(row.userId)" class="text-xs text-muted-foreground">{{ workerMeta(row.userId) }}</div>
+              <div v-if="workerMeta(row.userId)" class="text-xs text-muted-foreground">
+                {{ workerMeta(row.userId) }}
+              </div>
             </th>
             <td v-for="code in visibleSkillCodes" :key="code" class="px-3 py-2 align-top">
               <button
@@ -326,15 +379,18 @@ async function submitSkill() {
                 class="flex w-full flex-col items-start gap-1 rounded-sm px-2 py-1 text-left transition-colors hover:bg-accent"
                 @click="openAssign({ userId: row.userId, skillCode: code })"
               >
-                <BadgePro
+                <NvBadge
                   variant="neutral"
                   :class="['rounded-sm', EXPIRY_CLASS[expiryTone(cellOf(row, code)!.effectiveTo)]]"
                 >
                   {{ levelLabel(cellOf(row, code)!.level) }}
-                  <span v-if="EXPIRY_BADGE[expiryTone(cellOf(row, code)!.effectiveTo)]" class="ml-1">
+                  <span
+                    v-if="EXPIRY_BADGE[expiryTone(cellOf(row, code)!.effectiveTo)]"
+                    class="ml-1"
+                  >
                     · {{ EXPIRY_BADGE[expiryTone(cellOf(row, code)!.effectiveTo)] }}
                   </span>
-                </BadgePro>
+                </NvBadge>
                 <span v-if="cellOf(row, code)!.effectiveTo" class="text-xs text-muted-foreground">
                   至 {{ formatDate(cellOf(row, code)!.effectiveTo) }}
                 </span>
@@ -355,55 +411,86 @@ async function submitSkill() {
     </div>
 
     <!-- 登记 Dialog：录入 / 更新某工人某技能等级；可由「登记技能」按钮或格子点击触发。 -->
-    <DialogPro v-model:open="skillOpen">
-      <DialogProTrigger class="sr-only" as-child>
+    <NvDialog v-model:open="skillOpen">
+      <NvDialogTrigger class="sr-only" as-child>
         <button type="button">登记技能</button>
-      </DialogProTrigger>
-      <DialogProContent class="sm:max-w-lg">
-        <DialogProHeader>
-          <DialogProTitle>登记人员技能</DialogProTitle>
-          <DialogProDescription>为某位工人登记一项技能与等级，可选填生效日期。带 * 为必填项。</DialogProDescription>
-        </DialogProHeader>
+      </NvDialogTrigger>
+      <NvDialogContent class="sm:max-w-lg">
+        <NvDialogHeader>
+          <NvDialogTitle>登记人员技能</NvDialogTitle>
+          <NvDialogDescription
+            >为某位工人登记一项技能与等级，可选填生效日期。带 * 为必填项。</NvDialogDescription
+          >
+        </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitSkill">
-          <p v-if="skillShowErrors && !canAssignSkill" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
-          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-            <FieldPro class="sm:col-span-2" :data-invalid="skillShowErrors && !isNonEmpty(skillForm.userId)">
-              <FieldProLabel for="skill-worker">工人 <span class="text-destructive">*</span></FieldProLabel>
-              <WorkerSelect id="skill-worker" v-model="skillForm.userId" placeholder="搜索并选择工人" />
-            </FieldPro>
-            <FieldPro :data-invalid="skillShowErrors && !isNonEmpty(skillForm.skillCode)">
-              <FieldProLabel for="skill-code">技能 <span class="text-destructive">*</span></FieldProLabel>
-              <SelectPro v-model="skillForm.skillCode">
-                <SelectProTrigger id="skill-code"><SelectProValue placeholder="请选择技能" /></SelectProTrigger>
-                <SelectProContent>
-                  <SelectProItem v-for="s in skillOptions" :key="s.value" :value="s.value">{{ s.label }}</SelectProItem>
-                </SelectProContent>
-              </SelectPro>
-              <p v-if="!skillOptions.length" class="text-xs text-muted-foreground">技能目录为空——请先在「基础数据 › 技能目录」里维护技能项。</p>
-            </FieldPro>
-            <FieldPro :data-invalid="skillShowErrors && !isNonEmpty(skillForm.level)">
-              <FieldProLabel for="skill-level">等级 <span class="text-destructive">*</span></FieldProLabel>
-              <SelectPro v-model="skillForm.level">
-                <SelectProTrigger id="skill-level"><SelectProValue placeholder="请选择等级" /></SelectProTrigger>
-                <SelectProContent>
-                  <SelectProItem v-for="lvl in SKILL_LEVELS" :key="lvl.value" :value="lvl.value">{{ lvl.label }}</SelectProItem>
-                </SelectProContent>
-              </SelectPro>
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="skill-from">生效日期</FieldProLabel>
-              <InputPro id="skill-from" v-model="skillForm.effectiveFrom" type="date" />
-              <FieldProDescription>留空表示即时生效。</FieldProDescription>
-            </FieldPro>
-          </FieldProGroup>
-          <DialogProFooter>
-            <ButtonPro type="button" variant="outline" @click="skillOpen = false">取消</ButtonPro>
-            <ButtonPro type="submit" :disabled="skillAssignment.assignPending.value">
+          <p
+            v-if="skillShowErrors && !canAssignSkill"
+            class="text-sm text-destructive"
+            role="alert"
+          >
+            请完整填写带 * 的必填项（已标红）。
+          </p>
+          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+            <NvField
+              class="sm:col-span-2"
+              :data-invalid="skillShowErrors && !isNonEmpty(skillForm.userId)"
+            >
+              <NvFieldLabel for="skill-worker"
+                >工人 <span class="text-destructive">*</span></NvFieldLabel
+              >
+              <WorkerSelect
+                id="skill-worker"
+                v-model="skillForm.userId"
+                placeholder="搜索并选择工人"
+              />
+            </NvField>
+            <NvField :data-invalid="skillShowErrors && !isNonEmpty(skillForm.skillCode)">
+              <NvFieldLabel for="skill-code"
+                >技能 <span class="text-destructive">*</span></NvFieldLabel
+              >
+              <NvSelect v-model="skillForm.skillCode">
+                <NvSelectTrigger id="skill-code"
+                  ><NvSelectValue placeholder="请选择技能"
+                /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem v-for="s in skillOptions" :key="s.value" :value="s.value">{{
+                    s.label
+                  }}</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+              <p v-if="!skillOptions.length" class="text-xs text-muted-foreground">
+                技能目录为空——请先在「基础数据 › 技能目录」里维护技能项。
+              </p>
+            </NvField>
+            <NvField :data-invalid="skillShowErrors && !isNonEmpty(skillForm.level)">
+              <NvFieldLabel for="skill-level"
+                >等级 <span class="text-destructive">*</span></NvFieldLabel
+              >
+              <NvSelect v-model="skillForm.level">
+                <NvSelectTrigger id="skill-level"
+                  ><NvSelectValue placeholder="请选择等级"
+                /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem v-for="lvl in SKILL_LEVELS" :key="lvl.value" :value="lvl.value">{{
+                    lvl.label
+                  }}</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="skill-from">生效日期</NvFieldLabel>
+              <NvInput id="skill-from" v-model="skillForm.effectiveFrom" type="date" />
+              <NvFieldDescription>留空表示即时生效。</NvFieldDescription>
+            </NvField>
+          </NvFieldGroup>
+          <NvDialogFooter>
+            <NvButton type="button" variant="outline" @click="skillOpen = false">取消</NvButton>
+            <NvButton type="submit" :disabled="skillAssignment.assignPending.value">
               <Spinner v-if="skillAssignment.assignPending.value" aria-hidden="true" />登记技能
-            </ButtonPro>
-          </DialogProFooter>
+            </NvButton>
+          </NvDialogFooter>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>

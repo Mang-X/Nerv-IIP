@@ -3,50 +3,56 @@ import type {
   BusinessConsoleEngineeringBomItem,
   BusinessConsoleReleaseEngineeringBomRequest,
 } from '@nerv-iip/api-client'
-import type { DataTableProColumn, StatusTone } from '@nerv-iip/ui'
+import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessSkus, useBusinessUoms } from '@/composables/useBusinessMasterData'
 import { useEngineeringEboms } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  DatePickerPro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DialogProTrigger,
-  FieldPro,
-  FieldProDescription,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SectionCard,
-  SectionCards,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
-  SheetPro,
-  SheetProContent,
-  SheetProDescription,
-  SheetProHeader,
-  SheetProTitle,
+  NvButton,
+  NvDataTable,
+  NvDatePicker,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDialogTrigger,
+  NvField,
+  NvFieldDescription,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSectionCard,
+  NvSectionCards,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
+  NvSheet,
+  NvSheetContent,
+  NvSheetDescription,
+  NvSheetHeader,
+  NvSheetTitle,
   Spinner,
-  StatusBadgePro,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, today } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: 'EBOM 设计BOM', requiredPermissions: ['business.engineering.boms.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: 'EBOM 设计BOM',
+    requiredPermissions: ['business.engineering.boms.read'],
+  },
+})
 
 const {
   eboms,
@@ -77,16 +83,22 @@ watch(statusFilter, (value) => {
 
 const parentSearch = computed({
   get: () => filters.parentItemCode ?? '',
-  set: (value: string) => { filters.parentItemCode = value.trim() ? value : undefined },
+  set: (value: string) => {
+    filters.parentItemCode = value.trim() ? value : undefined
+  },
 })
 
 const page = ref(1)
 const pageSize = ref('10')
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * pageSizeNumber.value
-  filters.take = pageSizeNumber.value
-}, { immediate: true })
+watch(
+  [page, pageSize],
+  () => {
+    filters.skip = (page.value - 1) * pageSizeNumber.value
+    filters.take = pageSizeNumber.value
+  },
+  { immediate: true },
+)
 
 const skuNameByCode = computed(() => {
   const map = new Map<string, string>()
@@ -106,16 +118,17 @@ const skuOptions = computed(() =>
     .map((s) => ({ value: s.code as string, label: `${s.displayName ?? s.code} · ${s.code}` })),
 )
 // 物料编码 → 基本单位，选物料后自动带出行单位（仍可手动覆盖）。
-const baseUomByCode = computed(() =>
-  new Map(skus.value.filter((s) => s.code).map((s) => [s.code as string, s.baseUomCode ?? ''])),
+const baseUomByCode = computed(
+  () =>
+    new Map(skus.value.filter((s) => s.code).map((s) => [s.code as string, s.baseUomCode ?? ''])),
 )
 const uomOptions = computed(() =>
   uoms.value
     .filter((u) => u.code)
-    .map((u) => ({ value: u.code as string, label: u.displayName ?? u.code as string })),
+    .map((u) => ({ value: u.code as string, label: u.displayName ?? (u.code as string) })),
 )
 
-function engStatus(status?: string | null): { label: string, tone: StatusTone } {
+function engStatus(status?: string | null): { label: string; tone: StatusTone } {
   const s = (status ?? '').toLowerCase()
   if (s === 'published') return { label: '已发布', tone: 'success' }
   if (s === 'draft') return { label: '草稿', tone: 'warning' }
@@ -123,12 +136,16 @@ function engStatus(status?: string | null): { label: string, tone: StatusTone } 
   return { label: status || '未知', tone: 'neutral' }
 }
 
-const publishedCount = computed(() => eboms.value.filter((b) => (b.status ?? '').toLowerCase() === 'published').length)
-const draftCount = computed(() => eboms.value.filter((b) => (b.status ?? '').toLowerCase() === 'draft').length)
+const publishedCount = computed(
+  () => eboms.value.filter((b) => (b.status ?? '').toLowerCase() === 'published').length,
+)
+const draftCount = computed(
+  () => eboms.value.filter((b) => (b.status ?? '').toLowerCase() === 'draft').length,
+)
 
 const listErrorMessage = computed(() => formatError(ebomsError.value))
 
-const columns: DataTableProColumn<BusinessConsoleEngineeringBomItem>[] = [
+const columns: NvDataTableColumn<BusinessConsoleEngineeringBomItem>[] = [
   { key: 'bomCode', header: 'BOM 编号', cellClass: 'font-medium' },
   { key: 'revision', header: '修订', width: 'w-20' },
   { key: 'parentItemCode', header: '父项' },
@@ -182,9 +199,11 @@ const parentValid = computed(() => form.parentItemCode.trim().length > 0)
 const revisionValid = computed(() => form.revision.trim().length > 0)
 const effectiveValid = computed(() => !!form.effectiveDate)
 function lineValid(line: ComponentLine) {
-  return line.componentCode.trim().length > 0
-    && (parseNumber(line.quantity) ?? 0) > 0
-    && line.unitOfMeasureCode.trim().length > 0
+  return (
+    line.componentCode.trim().length > 0 &&
+    (parseNumber(line.quantity) ?? 0) > 0 &&
+    line.unitOfMeasureCode.trim().length > 0
+  )
 }
 const linesValid = computed(() => form.lines.length > 0 && form.lines.every(lineValid))
 // 同一组件不能重复（后端 AddLine 拒绝重复子件，否则 500）。返回第一个重复的组件编码。
@@ -207,7 +226,15 @@ const selfReferenceComponent = computed(() => {
   }
   return ''
 })
-const canSubmit = computed(() => parentValid.value && revisionValid.value && effectiveValid.value && linesValid.value && !duplicateComponent.value && !selfReferenceComponent.value)
+const canSubmit = computed(
+  () =>
+    parentValid.value &&
+    revisionValid.value &&
+    effectiveValid.value &&
+    linesValid.value &&
+    !duplicateComponent.value &&
+    !selfReferenceComponent.value,
+)
 
 function openCreate() {
   Object.assign(form, blankForm())
@@ -241,11 +268,12 @@ async function submitForm() {
   }
   try {
     await releaseEbom(body)
-    notifySuccess(`已发布设计 BOM「${skuLabel(form.parentItemCode)}」修订 ${form.revision.trim()}。`)
+    notifySuccess(
+      `已发布设计 BOM「${skuLabel(form.parentItemCode)}」修订 ${form.revision.trim()}。`,
+    )
     showErrors.value = false
     formOpen.value = false
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -265,11 +293,9 @@ async function openView(row: BusinessConsoleEngineeringBomItem) {
   try {
     const detail = await fetchEbomDetail(row.bomCode, row.revision)
     if (detail) viewTarget.value = detail
-  }
-  catch (error) {
+  } catch (error) {
     detailError.value = formatError(error) || '加载组件行失败，请稍后重试。'
-  }
-  finally {
+  } finally {
     detailPending.value = false
   }
 }
@@ -285,69 +311,100 @@ function uomLabel(code?: string | null) {
 
 <template>
   <BusinessLayout>
-    <PageHeader
+    <NvPageHeader
       title="EBOM 设计BOM"
       :breadcrumbs="[{ label: '产品工程' }]"
       :count="`${ebomsTotal} 个版本`"
     >
       <template #actions>
-        <ButtonPro size="sm" variant="outline" type="button" :disabled="ebomsPending" @click="refresh">
+        <NvButton
+          size="sm"
+          variant="outline"
+          type="button"
+          :disabled="ebomsPending"
+          @click="refresh"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <DialogPro v-model:open="formOpen">
-          <DialogProTrigger as-child>
-            <ButtonPro size="sm" type="button" @click="openCreate">
+        </NvButton>
+        <NvDialog v-model:open="formOpen">
+          <NvDialogTrigger as-child>
+            <NvButton size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               发布新版本
-            </ButtonPro>
-          </DialogProTrigger>
-          <DialogProContent class="sm:max-w-3xl">
-            <DialogProHeader>
-              <DialogProTitle>发布设计 BOM 新版本</DialogProTitle>
-              <DialogProDescription>
-                设计 BOM 一经发布即不可变。修改请填一套新的组件行 + 新修订号，发布出新版本。带 * 为必填项。
-              </DialogProDescription>
-            </DialogProHeader>
+            </NvButton>
+          </NvDialogTrigger>
+          <NvDialogContent class="sm:max-w-3xl">
+            <NvDialogHeader>
+              <NvDialogTitle>发布设计 BOM 新版本</NvDialogTitle>
+              <NvDialogDescription>
+                设计 BOM 一经发布即不可变。修改请填一套新的组件行 + 新修订号，发布出新版本。带 *
+                为必填项。
+              </NvDialogDescription>
+            </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
-              <p v-if="showErrors && selfReferenceComponent" class="text-sm text-destructive" role="alert">
-                组件不能与父项「{{ skuLabel(selfReferenceComponent) }}」相同——一个物料不能把自己当组件，请改选别的组件。
+              <p
+                v-if="showErrors && selfReferenceComponent"
+                class="text-sm text-destructive"
+                role="alert"
+              >
+                组件不能与父项「{{
+                  skuLabel(selfReferenceComponent)
+                }}」相同——一个物料不能把自己当组件，请改选别的组件。
               </p>
-              <p v-else-if="showErrors && duplicateComponent" class="text-sm text-destructive" role="alert">
-                组件「{{ skuLabel(duplicateComponent) }}」重复了——同一组件只能有一行，请合并数量或删除重复行。
+              <p
+                v-else-if="showErrors && duplicateComponent"
+                class="text-sm text-destructive"
+                role="alert"
+              >
+                组件「{{
+                  skuLabel(duplicateComponent)
+                }}」重复了——同一组件只能有一行，请合并数量或删除重复行。
               </p>
               <p v-else-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请完整填写带 * 的必填项，并确保至少一行组件填好编码、数量（大于 0）与单位。
               </p>
 
               <FormSectionTitle>版本头</FormSectionTitle>
-              <FieldProGroup class="grid gap-3 sm:grid-cols-3">
-                <FieldPro :data-invalid="showErrors && !parentValid">
-                  <FieldProLabel for="ebom-parent">父项物料 <span class="text-destructive">*</span></FieldProLabel>
-                  <SelectPro v-model="form.parentItemCode">
-                    <SelectProTrigger id="ebom-parent"><SelectProValue placeholder="选择父项" /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                  <FieldProDescription>来自基础数据物料。</FieldProDescription>
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !revisionValid">
-                  <FieldProLabel for="ebom-rev">修订号 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="ebom-rev" v-model="form.revision" placeholder="如 A、B、001" />
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !effectiveValid">
-                  <FieldProLabel>生效日 <span class="text-destructive">*</span></FieldProLabel>
-                  <DatePickerPro v-model="form.effectiveDate" placeholder="选择生效日" class="w-full" />
-                </FieldPro>
-              </FieldProGroup>
+              <NvFieldGroup class="grid gap-3 sm:grid-cols-3">
+                <NvField :data-invalid="showErrors && !parentValid">
+                  <NvFieldLabel for="ebom-parent"
+                    >父项物料 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvSelect v-model="form.parentItemCode">
+                    <NvSelectTrigger id="ebom-parent"
+                      ><NvSelectValue placeholder="选择父项"
+                    /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{
+                        o.label
+                      }}</NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                  <NvFieldDescription>来自基础数据物料。</NvFieldDescription>
+                </NvField>
+                <NvField :data-invalid="showErrors && !revisionValid">
+                  <NvFieldLabel for="ebom-rev"
+                    >修订号 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput id="ebom-rev" v-model="form.revision" placeholder="如 A、B、001" />
+                </NvField>
+                <NvField :data-invalid="showErrors && !effectiveValid">
+                  <NvFieldLabel>生效日 <span class="text-destructive">*</span></NvFieldLabel>
+                  <NvDatePicker
+                    v-model="form.effectiveDate"
+                    placeholder="选择生效日"
+                    class="w-full"
+                  />
+                </NvField>
+              </NvFieldGroup>
 
               <div class="flex items-center justify-between">
                 <FormSectionTitle>组件行</FormSectionTitle>
-                <ButtonPro type="button" variant="outline" size="sm" @click="addLine">
+                <NvButton type="button" variant="outline" size="sm" @click="addLine">
                   <PlusIcon aria-hidden="true" />
                   增加组件
-                </ButtonPro>
+                </NvButton>
               </div>
               <div class="grid gap-2">
                 <div
@@ -355,29 +412,52 @@ function uomLabel(code?: string | null) {
                   :key="index"
                   class="grid grid-cols-[1fr_6rem_8rem_auto] items-end gap-2 rounded-md border p-2"
                 >
-                  <FieldPro :data-invalid="showErrors && !line.componentCode.trim()">
-                    <FieldProLabel :for="`ebom-comp-${index}`">组件物料 <span class="text-destructive">*</span></FieldProLabel>
-                    <SelectPro v-model="line.componentCode" @update:model-value="(v) => applyComponentUom(line, String(v ?? ''))">
-                      <SelectProTrigger :id="`ebom-comp-${index}`"><SelectProValue placeholder="选择组件" /></SelectProTrigger>
-                      <SelectProContent>
-                        <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                      </SelectProContent>
-                    </SelectPro>
-                  </FieldPro>
-                  <FieldPro :data-invalid="showErrors && (parseNumber(line.quantity) ?? 0) <= 0">
-                    <FieldProLabel :for="`ebom-qty-${index}`">数量 <span class="text-destructive">*</span></FieldProLabel>
-                    <InputPro :id="`ebom-qty-${index}`" v-model="line.quantity" type="number" min="0" step="any" />
-                  </FieldPro>
-                  <FieldPro :data-invalid="showErrors && !line.unitOfMeasureCode.trim()">
-                    <FieldProLabel :for="`ebom-uom-${index}`">单位 <span class="text-destructive">*</span></FieldProLabel>
-                    <SelectPro v-model="line.unitOfMeasureCode">
-                      <SelectProTrigger :id="`ebom-uom-${index}`"><SelectProValue placeholder="单位" /></SelectProTrigger>
-                      <SelectProContent>
-                        <SelectProItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                      </SelectProContent>
-                    </SelectPro>
-                  </FieldPro>
-                  <ButtonPro
+                  <NvField :data-invalid="showErrors && !line.componentCode.trim()">
+                    <NvFieldLabel :for="`ebom-comp-${index}`"
+                      >组件物料 <span class="text-destructive">*</span></NvFieldLabel
+                    >
+                    <NvSelect
+                      v-model="line.componentCode"
+                      @update:model-value="(v) => applyComponentUom(line, String(v ?? ''))"
+                    >
+                      <NvSelectTrigger :id="`ebom-comp-${index}`"
+                        ><NvSelectValue placeholder="选择组件"
+                      /></NvSelectTrigger>
+                      <NvSelectContent>
+                        <NvSelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{
+                          o.label
+                        }}</NvSelectItem>
+                      </NvSelectContent>
+                    </NvSelect>
+                  </NvField>
+                  <NvField :data-invalid="showErrors && (parseNumber(line.quantity) ?? 0) <= 0">
+                    <NvFieldLabel :for="`ebom-qty-${index}`"
+                      >数量 <span class="text-destructive">*</span></NvFieldLabel
+                    >
+                    <NvInput
+                      :id="`ebom-qty-${index}`"
+                      v-model="line.quantity"
+                      type="number"
+                      min="0"
+                      step="any"
+                    />
+                  </NvField>
+                  <NvField :data-invalid="showErrors && !line.unitOfMeasureCode.trim()">
+                    <NvFieldLabel :for="`ebom-uom-${index}`"
+                      >单位 <span class="text-destructive">*</span></NvFieldLabel
+                    >
+                    <NvSelect v-model="line.unitOfMeasureCode">
+                      <NvSelectTrigger :id="`ebom-uom-${index}`"
+                        ><NvSelectValue placeholder="单位"
+                      /></NvSelectTrigger>
+                      <NvSelectContent>
+                        <NvSelectItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{
+                          o.label
+                        }}</NvSelectItem>
+                      </NvSelectContent>
+                    </NvSelect>
+                  </NvField>
+                  <NvButton
                     type="button"
                     variant="ghost"
                     size="icon"
@@ -386,42 +466,56 @@ function uomLabel(code?: string | null) {
                     @click="removeLine(index)"
                   >
                     <Trash2Icon aria-hidden="true" />
-                  </ButtonPro>
+                  </NvButton>
                 </div>
               </div>
 
-              <DialogProFooter>
-                <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
-                <ButtonPro type="submit" :disabled="releasePending">
+              <NvDialogFooter>
+                <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
+                <NvButton type="submit" :disabled="releasePending">
                   <Spinner v-if="releasePending" aria-hidden="true" />
                   发布版本
-                </ButtonPro>
-              </DialogProFooter>
+                </NvButton>
+              </NvDialogFooter>
             </form>
-          </DialogProContent>
-        </DialogPro>
+          </NvDialogContent>
+        </NvDialog>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <SectionCards :columns="2">
-      <SectionCard description="已发布 EBOM" :value="publishedCount" hint="可供 MBOM 引用的设计 BOM 版本" />
-      <SectionCard description="草稿 EBOM" :value="draftCount" hint="尚未发布、不可被引用的版本" />
-    </SectionCards>
+    <NvSectionCards :columns="2">
+      <NvSectionCard
+        description="已发布 EBOM"
+        :value="publishedCount"
+        hint="可供 MBOM 引用的设计 BOM 版本"
+      />
+      <NvSectionCard
+        description="草稿 EBOM"
+        :value="draftCount"
+        hint="尚未发布、不可被引用的版本"
+      />
+    </NvSectionCards>
 
-    <Toolbar v-model:search="parentSearch" search-placeholder="按父项物料编码筛选">
+    <NvToolbar v-model:search="parentSearch" search-placeholder="按父项物料编码筛选">
       <template #filters>
-        <SelectPro v-model="statusFilter">
-          <SelectProTrigger class="h-9 w-32" aria-label="状态筛选"><SelectProValue /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem v-for="o in STATUS_FILTER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+        <NvSelect v-model="statusFilter">
+          <NvSelectTrigger class="h-9 w-32" aria-label="状态筛选"
+            ><NvSelectValue
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem v-for="o in STATUS_FILTER_OPTIONS" :key="o.value" :value="o.value">{{
+              o.label
+            }}</NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
       </template>
-    </Toolbar>
+    </NvToolbar>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
+      {{ listErrorMessage }}
+    </p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -443,42 +537,59 @@ function uomLabel(code?: string | null) {
         </div>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadgePro :label="engStatus(row.status).label" :tone="engStatus(row.status).tone" />
+        <NvStatusBadge :label="engStatus(row.status).label" :tone="engStatus(row.status).tone" />
       </template>
-      <template #cell-effectiveDate="{ row }">{{ row.effectiveDate ? formatDate(row.effectiveDate) : '长期' }}</template>
+      <template #cell-effectiveDate="{ row }">{{
+        row.effectiveDate ? formatDate(row.effectiveDate) : '长期'
+      }}</template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end">
-          <ButtonPro type="button" variant="ghost" size="sm" @click="openView(row)">查看</ButtonPro>
+          <NvButton type="button" variant="ghost" size="sm" @click="openView(row)">查看</NvButton>
         </div>
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
-
-    <SheetPro v-model:open="viewOpen">
-      <SheetProContent class="sm:max-w-lg">
-        <SheetProHeader>
-          <SheetProTitle>设计 BOM · 组件行</SheetProTitle>
-          <SheetProDescription>
-            {{ viewTarget ? `${viewTarget.bomCode} · 修订 ${viewTarget.revision} · ${skuLabel(viewTarget.parentItemCode)}` : '' }}
-          </SheetProDescription>
-        </SheetProHeader>
+    <NvSheet v-model:open="viewOpen">
+      <NvSheetContent class="sm:max-w-lg">
+        <NvSheetHeader>
+          <NvSheetTitle>设计 BOM · 组件行</NvSheetTitle>
+          <NvSheetDescription>
+            {{
+              viewTarget
+                ? `${viewTarget.bomCode} · 修订 ${viewTarget.revision} · ${skuLabel(viewTarget.parentItemCode)}`
+                : ''
+            }}
+          </NvSheetDescription>
+        </NvSheetHeader>
         <div v-if="viewTarget" class="grid gap-3 px-4 py-2">
           <div class="grid gap-2 text-sm">
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">状态</span>
-              <StatusBadgePro :label="engStatus(viewTarget.status).label" :tone="engStatus(viewTarget.status).tone" />
+              <NvStatusBadge
+                :label="engStatus(viewTarget.status).label"
+                :tone="engStatus(viewTarget.status).tone"
+              />
             </div>
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">生效日</span>
-              <span class="font-medium">{{ viewTarget.effectiveDate ? formatDate(viewTarget.effectiveDate) : '长期' }}</span>
+              <span class="font-medium">{{
+                viewTarget.effectiveDate ? formatDate(viewTarget.effectiveDate) : '长期'
+              }}</span>
             </div>
           </div>
 
-          <div v-if="detailPending" class="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+          <div
+            v-if="detailPending"
+            class="flex items-center gap-2 py-4 text-sm text-muted-foreground"
+          >
             <Spinner aria-hidden="true" />
             加载组件行…
           </div>
-          <p v-else-if="detailError" class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+          <p
+            v-else-if="detailError"
+            class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+            role="alert"
+          >
             {{ detailError }}
           </p>
           <div v-else-if="viewLines.length" class="overflow-hidden rounded-md border">
@@ -508,7 +619,7 @@ function uomLabel(code?: string | null) {
             该版本没有组件行。
           </p>
         </div>
-      </SheetProContent>
-    </SheetPro>
+      </NvSheetContent>
+    </NvSheet>
   </BusinessLayout>
 </template>

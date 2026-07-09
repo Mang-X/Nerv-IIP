@@ -2,7 +2,13 @@
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useWmsCount } from '@/composables/useBusinessWms'
 import { countExecutionFlow, countExecutionStatusLabel } from '@nerv-iip/business-core'
-import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
+import {
+  NvAppShellMobile,
+  NvBottomSheet,
+  NvListRow,
+  NvMobileResult,
+  NvScanBar,
+} from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -63,7 +69,11 @@ function onScan(value: string) {
   filters.locationCode = value
 }
 
-function selectExecution(countExecutionId: string | undefined, countNo: string | undefined, expected: number | undefined) {
+function selectExecution(
+  countExecutionId: string | undefined,
+  countNo: string | undefined,
+  expected: number | undefined,
+) {
   if (!countExecutionId) return
   selectedExecutionId.value = countExecutionId
   selectedCountNo.value = countNo ?? ''
@@ -118,7 +128,7 @@ function goHome() {
 </script>
 
 <template>
-  <AppShellMobile>
+  <NvAppShellMobile>
     <template #header>
       <div class="px-4 py-3">
         <h1 class="text-lg font-semibold text-foreground">盘点</h1>
@@ -126,7 +136,7 @@ function goHome() {
     </template>
 
     <!-- 成功结果态 -->
-    <Result
+    <NvMobileResult
       v-if="completed"
       status="success"
       title="盘点已提交"
@@ -148,14 +158,10 @@ function goHome() {
           返回
         </button>
       </template>
-    </Result>
+    </NvMobileResult>
 
     <div v-else class="space-y-4 p-4">
-      <ScanBar
-        placeholder="扫描库位"
-        :active="scanActive"
-        @scan="onScan"
-      />
+      <NvScanBar placeholder="扫描库位" :active="scanActive" @scan="onScan" />
 
       <p
         v-if="error"
@@ -173,22 +179,24 @@ function goHome() {
       </div>
 
       <div v-else class="overflow-hidden rounded-lg border border-border">
-        <ListRow
+        <NvListRow
           v-for="execution in executions"
           :key="execution.countExecutionId"
           :title="`盘点 ${execution.countNo ?? ''}`"
           :subtitle="`SKU ${execution.skuCode ?? ''} · 库位 ${execution.locationCode ?? ''} · 预期 ${execution.expectedQuantity ?? 0} · ${countExecutionStatusLabel(execution.status)}`"
-          @select="selectExecution(execution.countExecutionId, execution.countNo, execution.expectedQuantity)"
+          @select="
+            selectExecution(
+              execution.countExecutionId,
+              execution.countNo,
+              execution.expectedQuantity,
+            )
+          "
         />
       </div>
     </div>
 
     <!-- 完成盘点确认抽屉 -->
-    <BottomSheet
-      :open="sheetOpen"
-      title="完成盘点"
-      @update:open="(v) => (sheetOpen = v)"
-    >
+    <NvBottomSheet :open="sheetOpen" title="完成盘点" @update:open="(v) => (sheetOpen = v)">
       <div class="space-y-4">
         <p v-if="selectedCountNo" class="text-sm text-muted-foreground">
           盘点 {{ selectedCountNo }}
@@ -203,7 +211,7 @@ function goHome() {
             type="number"
             readonly
             class="min-h-touch w-full rounded-lg border border-border bg-muted px-3 text-base text-muted-foreground"
-          >
+          />
         </label>
 
         <label class="block space-y-2">
@@ -216,7 +224,7 @@ function goHome() {
             min="0"
             placeholder="请输入实盘数量"
             class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base text-foreground"
-          >
+          />
         </label>
 
         <p v-if="validCount" class="text-sm text-muted-foreground">
@@ -244,6 +252,6 @@ function goHome() {
           </button>
         </div>
       </div>
-    </BottomSheet>
-  </AppShellMobile>
+    </NvBottomSheet>
+  </NvAppShellMobile>
 </template>

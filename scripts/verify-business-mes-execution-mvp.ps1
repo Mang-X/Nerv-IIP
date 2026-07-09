@@ -2,6 +2,7 @@
 #   Category: verify
 #   SideEffects:
 #     - Runs .NET restore and focused MES execution domain/web test commands only
+#     - Reads api-client generated types.gen.ts and stable barrel for the facade-coverage assertion
 #   Writes:
 #     - bin/ and obj/ build outputs under tested .NET projects
 #     - artifacts/script-logs/**
@@ -41,5 +42,14 @@ Invoke-DotNet -Name "business-mes-web-tests" -WorkingDirectory $root -Arguments 
     "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj",
     "--no-restore"
 ) | Out-Null
+
+# Facade-coverage (MAN-475 / #841) sample: MES work-order hold/cancel governance is
+# declared `exposed` in facade-coverage-matrix.json (#833 backfill). Assert the two-hop
+# delivery — the generated type is queryable in types.gen.ts and re-exported from the
+# stable barrel — so a dropped facade type/export fails this focused gate, not only CI.
+Assert-FacadeTypesGenExport `
+    -Surface "business-console" `
+    -TypeName @("HoldBusinessConsoleMesWorkOrderData", "CancelBusinessConsoleMesWorkOrderData") `
+    -ExportName @("holdBusinessConsoleMesWorkOrder", "cancelBusinessConsoleMesWorkOrder")
 
 Write-Host "Business MES persistence and execution MVP verified."

@@ -3,7 +3,13 @@ import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
 import { openDownloadGrantBlob, operationTaskStatusLabel } from '@nerv-iip/business-core'
 import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
-import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
+import {
+  NvAppShellMobile,
+  NvBottomSheet,
+  NvListRow,
+  NvMobileResult,
+  NvScanBar,
+} from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -99,7 +105,13 @@ const sheetOpen = computed({
 const confirmingComplete = ref(false)
 
 // --- 结果反馈 ---
-type ResultState = { status: 'success' | 'error'; title: string; description?: string; action: ActionKind; taskId: string }
+type ResultState = {
+  status: 'success' | 'error'
+  title: string
+  description?: string
+  action: ActionKind
+  taskId: string
+}
 const result = ref<ResultState | null>(null)
 const openingSopFileId = ref<string | null>(null)
 const sopFileError = ref('')
@@ -240,7 +252,7 @@ function formatDate(value?: string | null) {
 </script>
 
 <template>
-  <AppShellMobile>
+  <NvAppShellMobile>
     <template #header>
       <div class="flex items-center gap-3 px-4 py-3">
         <button
@@ -256,7 +268,7 @@ function formatDate(value?: string | null) {
     </template>
 
     <!-- 动作结果反馈 -->
-    <Result
+    <NvMobileResult
       v-if="result"
       :status="result.status"
       :title="result.title"
@@ -288,10 +300,10 @@ function formatDate(value?: string | null) {
           返回列表
         </button>
       </template>
-    </Result>
+    </NvMobileResult>
 
     <div v-else class="space-y-4 p-4">
-      <ScanBar placeholder="扫描工单 / 工序号" :active="scanActive" @scan="onScan" />
+      <NvScanBar placeholder="扫描工单 / 工序号" :active="scanActive" @scan="onScan" />
 
       <p class="text-sm text-muted-foreground">共 {{ total }} 个工序任务</p>
 
@@ -305,7 +317,7 @@ function formatDate(value?: string | null) {
       </div>
 
       <div v-else class="overflow-hidden rounded-lg border border-border">
-        <ListRow
+        <NvListRow
           v-for="task in operationTasks"
           :key="task.operationTaskId ?? `${task.workOrderId}-${task.operationSequence}`"
           :title="rowTitle(task)"
@@ -316,23 +328,31 @@ function formatDate(value?: string | null) {
     </div>
 
     <!-- 动作面板 -->
-    <BottomSheet
+    <NvBottomSheet
       :open="sheetOpen"
       :title="selected ? rowTitle(selected) : ''"
       @update:open="sheetOpen = $event"
     >
       <div v-if="selected" class="space-y-3 pb-2">
-        <p class="text-sm text-muted-foreground">
-          当前状态：{{ statusLabel(selected.status) }}
-        </p>
+        <p class="text-sm text-muted-foreground">当前状态：{{ statusLabel(selected.status) }}</p>
 
         <section class="space-y-2 rounded-lg border border-border px-3 py-3">
           <div class="flex items-center justify-between gap-3">
             <h2 class="text-sm font-semibold text-foreground">当前SOP</h2>
-            <span v-if="selected.operationCode" class="font-mono text-xs text-muted-foreground">{{ selected.operationCode }}</span>
+            <span v-if="selected.operationCode" class="font-mono text-xs text-muted-foreground">{{
+              selected.operationCode
+            }}</span>
           </div>
-          <p v-if="!selected.operationCode" class="text-sm text-muted-foreground">当前任务未绑定标准工序。</p>
-          <p v-else-if="sopsErrorMessage || sopFileError" class="text-sm text-destructive" role="alert">{{ sopsErrorMessage || sopFileError }}</p>
+          <p v-if="!selected.operationCode" class="text-sm text-muted-foreground">
+            当前任务未绑定标准工序。
+          </p>
+          <p
+            v-else-if="sopsErrorMessage || sopFileError"
+            class="text-sm text-destructive"
+            role="alert"
+          >
+            {{ sopsErrorMessage || sopFileError }}
+          </p>
           <p v-else-if="sopsPending" class="text-sm text-muted-foreground">正在加载SOP...</p>
           <div v-else-if="currentSops.length" class="space-y-2">
             <div
@@ -341,7 +361,10 @@ function formatDate(value?: string | null) {
               class="rounded-md bg-muted px-3 py-2 text-sm"
             >
               <p class="font-medium text-foreground">{{ sop.fileName || sop.documentNumber }}</p>
-              <p class="text-xs text-muted-foreground">{{ sop.documentNumber }} · rev {{ sop.revision }} · 生效 {{ formatDate(sop.effectiveDate) }}</p>
+              <p class="text-xs text-muted-foreground">
+                {{ sop.documentNumber }} · rev {{ sop.revision }} · 生效
+                {{ formatDate(sop.effectiveDate) }}
+              </p>
               <button
                 type="button"
                 class="mt-2 min-h-touch rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground disabled:opacity-60"
@@ -385,9 +408,11 @@ function formatDate(value?: string | null) {
             :data-testid="`action-${action}`"
             :disabled="actionPending"
             class="min-h-touch w-full rounded-lg text-base font-medium disabled:opacity-60"
-            :class="action === 'complete'
-              ? 'bg-destructive text-destructive-foreground'
-              : 'bg-primary text-primary-foreground'"
+            :class="
+              action === 'complete'
+                ? 'bg-destructive text-destructive-foreground'
+                : 'bg-primary text-primary-foreground'
+            "
             @click="runAction(action)"
           >
             {{ ACTION_LABELS[action] }}
@@ -400,6 +425,6 @@ function formatDate(value?: string | null) {
           </p>
         </div>
       </div>
-    </BottomSheet>
-  </AppShellMobile>
+    </NvBottomSheet>
+  </NvAppShellMobile>
 </template>

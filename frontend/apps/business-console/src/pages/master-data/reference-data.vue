@@ -1,39 +1,51 @@
 <script setup lang="ts">
-import type { BusinessConsoleCreateReferenceDataCodeRequest, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
-import type { DataTableProColumn, DataTableSort } from '@nerv-iip/ui'
+import type {
+  BusinessConsoleCreateReferenceDataCodeRequest,
+  BusinessConsoleResourceItem,
+} from '@nerv-iip/api-client'
+import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
-import { useReferenceDataCodes, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
+import {
+  useReferenceDataCodes,
+  useMasterDataResourceActions,
+} from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DialogProTrigger,
-  FieldPro,
-  FieldProDescription,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDialogTrigger,
+  NvField,
+  NvFieldDescription,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '数据字典', requiredPermissions: ['business.masterdata.resources.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '数据字典',
+    requiredPermissions: ['business.masterdata.resources.read'],
+  },
+})
 
 // 平台预置的受控值分组（CodeSet → 中文名，对齐产品文档 §5.1）。Phase 1 作左侧固定主列表，
 // Phase 2 后端字典就绪后可改为动态拉取，UI 不变。
@@ -77,7 +89,7 @@ const codeActions = useMasterDataResourceActions('reference-data')
 
 const selectedCodeSet = ref(CODE_SETS[0]!.codeSet)
 const keyword = ref('')
-const sort = ref<DataTableSort | null>(null)
+const sort = ref<NvDataTableSort | null>(null)
 const page = ref(1)
 const pageSize = ref('10')
 
@@ -87,7 +99,9 @@ const createShowErrors = ref(false)
 const editingCode = shallowRef<string | null>(null)
 const editLoading = shallowRef(false)
 
-const selectedCodeSetMeta = computed(() => CODE_SETS.find((s) => s.codeSet === selectedCodeSet.value) ?? CODE_SETS[0]!)
+const selectedCodeSetMeta = computed(
+  () => CODE_SETS.find((s) => s.codeSet === selectedCodeSet.value) ?? CODE_SETS[0]!,
+)
 const selectedLabel = computed(() => codeSetLabel(selectedCodeSet.value))
 // 系统枚举由平台维护，不可新增条目；平台预置 / 工厂自定义可新增。
 const selectedCodeSetCanAdd = computed(() => selectedCodeSetMeta.value.kind !== 'system-enum')
@@ -103,9 +117,12 @@ const sortedRows = computed(() => {
   if (!sort.value) return listRows.value
   const { key, direction } = sort.value
   const factor = direction === 'asc' ? 1 : -1
-  return [...listRows.value].sort((a, b) =>
-    String(a[key as keyof BusinessConsoleResourceItem] ?? '')
-      .localeCompare(String(b[key as keyof BusinessConsoleResourceItem] ?? ''), 'zh-Hans-CN') * factor,
+  return [...listRows.value].sort(
+    (a, b) =>
+      String(a[key as keyof BusinessConsoleResourceItem] ?? '').localeCompare(
+        String(b[key as keyof BusinessConsoleResourceItem] ?? ''),
+        'zh-Hans-CN',
+      ) * factor,
   )
 })
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
@@ -113,7 +130,7 @@ const pagedRows = computed(() => sortedRows.value)
 
 const listErrorMessage = computed(() => formatError(codesError.value))
 
-const columns: DataTableProColumn<BusinessConsoleResourceItem>[] = [
+const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'active', header: '状态', width: 'w-24' },
@@ -130,8 +147,10 @@ const createForm = reactive({
   environmentId: filters.environmentId,
   ...CREATE_FORM_DEFAULTS,
 })
-const canCreateCode = computed(() =>
-  selectedCodeSetCanAdd.value && [createForm.codeSet, createForm.code, createForm.name].every(isNonEmpty),
+const canCreateCode = computed(
+  () =>
+    selectedCodeSetCanAdd.value &&
+    [createForm.codeSet, createForm.code, createForm.name].every(isNonEmpty),
 )
 // 提交校验区分新建/编辑：新建受 kind 守卫（系统枚举不可新增）；编辑只改名称，
 // 名称非空即可——系统枚举允许改名（治理规则：Name 可改，只是不能新增/改 code）。
@@ -140,19 +159,27 @@ const canSubmitCode = computed(() =>
 )
 
 // 选中 CodeSet 即服务端过滤（真分页：codeSet + skip/take 都交给后端）。
-watch(selectedCodeSet, (value) => {
-  filters.codeSet = value
-  page.value = 1
-}, { immediate: true })
+watch(
+  selectedCodeSet,
+  (value) => {
+    filters.codeSet = value
+    page.value = 1
+  },
+  { immediate: true },
+)
 
 watch([keyword, pageSize], () => {
   page.value = 1
 })
 
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * pageSizeNumber.value
-  filters.take = pageSizeNumber.value
-}, { immediate: true })
+watch(
+  [page, pageSize],
+  () => {
+    filters.skip = (page.value - 1) * pageSizeNumber.value
+    filters.take = pageSizeNumber.value
+  },
+  { immediate: true },
+)
 
 function selectCodeSet(codeSet: string) {
   selectedCodeSet.value = codeSet
@@ -196,8 +223,7 @@ async function openEdit(row: BusinessConsoleResourceItem) {
       code: row.code,
       name: d?.name ?? row.displayName ?? '',
     })
-  }
-  finally {
+  } finally {
     editLoading.value = false
   }
 }
@@ -210,8 +236,7 @@ async function submitCode() {
     if (editingCode.value) {
       await codeActions.update(editingCode.value, { name: createForm.name.trim() })
       notifySuccess(`字典条目「${createForm.name.trim()}」已更新。`)
-    }
-    else {
+    } else {
       const body: BusinessConsoleCreateReferenceDataCodeRequest = {
         organizationId: createForm.organizationId.trim(),
         environmentId: createForm.environmentId.trim(),
@@ -227,8 +252,7 @@ async function submitCode() {
     editingCode.value = null
     createShowErrors.value = false
     createOpen.value = false
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -249,73 +273,131 @@ function isNonEmpty(value: string) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="数据字典" :breadcrumbs="[{ label: '基础数据' }]" :count="`${CODE_SETS.length} 个字典分组`">
+    <NvPageHeader
+      title="数据字典"
+      :breadcrumbs="[{ label: '基础数据' }]"
+      :count="`${CODE_SETS.length} 个字典分组`"
+    >
       <template #actions>
-        <ButtonPro size="sm" variant="outline" type="button" :disabled="codesPending" @click="refreshCodes">
+        <NvButton
+          size="sm"
+          variant="outline"
+          type="button"
+          :disabled="codesPending"
+          @click="refreshCodes"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <DialogPro v-model:open="createOpen" @update:open="syncFormOnOpen">
-          <DialogProTrigger as-child>
-            <ButtonPro size="sm" type="button" :disabled="!selectedCodeSetCanAdd" @click="openCreate">
+        </NvButton>
+        <NvDialog v-model:open="createOpen" @update:open="syncFormOnOpen">
+          <NvDialogTrigger as-child>
+            <NvButton
+              size="sm"
+              type="button"
+              :disabled="!selectedCodeSetCanAdd"
+              @click="openCreate"
+            >
               <PlusIcon aria-hidden="true" />
               新建字典条目
-            </ButtonPro>
-          </DialogProTrigger>
-          <DialogProContent class="sm:max-w-lg">
-            <DialogProHeader>
-              <DialogProTitle>{{ editingCode ? `编辑字典条目 · ${editingCode}` : '新建字典条目' }}</DialogProTitle>
-              <DialogProDescription>{{ editingCode ? '修改字典条目名称（所属字典与编码不可修改）。带 * 为必填项。' : '选择所属字典，填写编码与名称。带 * 为必填项。' }}</DialogProDescription>
-            </DialogProHeader>
+            </NvButton>
+          </NvDialogTrigger>
+          <NvDialogContent class="sm:max-w-lg">
+            <NvDialogHeader>
+              <NvDialogTitle>{{
+                editingCode ? `编辑字典条目 · ${editingCode}` : '新建字典条目'
+              }}</NvDialogTitle>
+              <NvDialogDescription>{{
+                editingCode
+                  ? '修改字典条目名称（所属字典与编码不可修改）。带 * 为必填项。'
+                  : '选择所属字典，填写编码与名称。带 * 为必填项。'
+              }}</NvDialogDescription>
+            </NvDialogHeader>
             <form class="grid gap-4" @submit.prevent="submitCode">
-              <p v-if="createShowErrors && !canSubmitCode" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
+              <p
+                v-if="createShowErrors && !canSubmitCode"
+                class="text-sm text-destructive"
+                role="alert"
+              >
+                请完整填写带 * 的必填项（已标红）。
+              </p>
 
-              <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.codeSet)">
-                <FieldProLabel for="ref-code-set">所属字典 <span class="text-destructive">*</span></FieldProLabel>
-                <SelectPro v-model="createForm.codeSet" :disabled="!!editingCode">
-                  <SelectProTrigger id="ref-code-set"><SelectProValue /></SelectProTrigger>
-                  <SelectProContent>
-                    <SelectProItem
+              <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.codeSet)">
+                <NvFieldLabel for="ref-code-set"
+                  >所属字典 <span class="text-destructive">*</span></NvFieldLabel
+                >
+                <NvSelect v-model="createForm.codeSet" :disabled="!!editingCode">
+                  <NvSelectTrigger id="ref-code-set"><NvSelectValue /></NvSelectTrigger>
+                  <NvSelectContent>
+                    <NvSelectItem
                       v-for="s in CODE_SETS"
                       :key="s.codeSet"
                       :value="s.codeSet"
                       :disabled="s.kind === 'system-enum'"
                     >
                       {{ s.label }}
-                    </SelectProItem>
-                  </SelectProContent>
-                </SelectPro>
-                <FieldProDescription>该条目归属的字典分组。</FieldProDescription>
-              </FieldPro>
+                    </NvSelectItem>
+                  </NvSelectContent>
+                </NvSelect>
+                <NvFieldDescription>该条目归属的字典分组。</NvFieldDescription>
+              </NvField>
 
-              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
-                  <FieldProLabel for="ref-code">编码 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="ref-code" v-model="createForm.code" autocomplete="off" aria-required="true" :disabled="!!editingCode" required />
-                </FieldPro>
-                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
-                  <FieldProLabel for="ref-name">名称 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="ref-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
-                </FieldPro>
-              </FieldProGroup>
+              <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
+                  <NvFieldLabel for="ref-code"
+                    >编码 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="ref-code"
+                    v-model="createForm.code"
+                    autocomplete="off"
+                    aria-required="true"
+                    :disabled="!!editingCode"
+                    required
+                  />
+                </NvField>
+                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
+                  <NvFieldLabel for="ref-name"
+                    >名称 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="ref-name"
+                    v-model="createForm.name"
+                    autocomplete="off"
+                    aria-required="true"
+                    required
+                  />
+                </NvField>
+              </NvFieldGroup>
 
-              <DialogProFooter>
-                <ButtonPro type="button" variant="outline" @click="createOpen = false">取消</ButtonPro>
-                <ButtonPro type="submit" :disabled="createCodePending || codeActions.updatePending.value || editLoading || !canSubmitCode">
-                  <Spinner v-if="createCodePending || codeActions.updatePending.value" aria-hidden="true" />
+              <NvDialogFooter>
+                <NvButton type="button" variant="outline" @click="createOpen = false"
+                  >取消</NvButton
+                >
+                <NvButton
+                  type="submit"
+                  :disabled="
+                    createCodePending ||
+                    codeActions.updatePending.value ||
+                    editLoading ||
+                    !canSubmitCode
+                  "
+                >
+                  <Spinner
+                    v-if="createCodePending || codeActions.updatePending.value"
+                    aria-hidden="true"
+                  />
                   {{ editingCode ? '保存修改' : '保存条目' }}
-                </ButtonPro>
-              </DialogProFooter>
+                </NvButton>
+              </NvDialogFooter>
             </form>
-          </DialogProContent>
-        </DialogPro>
+          </NvDialogContent>
+        </NvDialog>
       </template>
-    </PageHeader>
-
+    </NvPageHeader>
 
     <div class="grid items-start gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
       <nav class="grid h-fit gap-1 rounded-lg border p-2" aria-label="字典分组">
-        <ButtonPro
+        <NvButton
           v-for="s in CODE_SETS"
           :key="s.codeSet"
           type="button"
@@ -327,38 +409,53 @@ function isNonEmpty(value: string) {
           @click="selectCodeSet(s.codeSet)"
         >
           {{ s.label }}
-        </ButtonPro>
+        </NvButton>
       </nav>
 
       <div class="grid min-h-[32rem] content-start gap-4">
-        <Toolbar v-model:search="keyword" :search-placeholder="`在「${selectedLabel}」内筛选编码、名称`" />
+        <NvToolbar
+          v-model:search="keyword"
+          :search-placeholder="`在「${selectedLabel}」内筛选编码、名称`"
+        />
 
-        <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+        <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
+          {{ listErrorMessage }}
+        </p>
 
-        <DataTablePro
-      manual
-      :page="page"
-      :page-size="pageSize"
-      :total-items="codesTotal"
-      @update:page="page = $event"
-      @update:page-size="(v) => (pageSize = String(v))"
-          :searchable="false" :column-settings="false"
+        <NvDataTable
+          manual
+          :page="page"
+          :page-size="pageSize"
+          :total-items="codesTotal"
+          @update:page="page = $event"
+          @update:page-size="(v) => (pageSize = String(v))"
+          :searchable="false"
+          :column-settings="false"
           v-model:sort="sort"
           :columns="columns"
           :rows="pagedRows"
           :row-key="rowKey"
           :client-sort="false"
           :loading="codesPending"
-          :empty-message="selectedCodeSetCanAdd ? `「${selectedLabel}」暂无条目。可新建字典条目。` : `「${selectedLabel}」暂无条目。该分组由平台维护。`"
+          :empty-message="
+            selectedCodeSetCanAdd
+              ? `「${selectedLabel}」暂无条目。可新建字典条目。`
+              : `「${selectedLabel}」暂无条目。该分组由平台维护。`
+          "
         >
           <template #cell-active="{ row }">
-            <StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" />
+            <NvStatusBadge :value="row.active === false ? 'disabled' : 'active'" />
           </template>
           <template #cell-actions="{ row }">
-            <MasterDataRowActions :row="row" entity-label="字典条目" :detail-fields="codeDetailFields(row)" :actions="codeActions" @edit="openEdit" />
+            <MasterDataRowActions
+              :row="row"
+              entity-label="字典条目"
+              :detail-fields="codeDetailFields(row)"
+              :actions="codeActions"
+              @edit="openEdit"
+            />
           </template>
-        </DataTablePro>
-
+        </NvDataTable>
       </div>
     </div>
   </BusinessLayout>

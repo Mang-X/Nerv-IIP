@@ -6,7 +6,7 @@ import type {
   BusinessConsoleApprovalTaskItem,
   BusinessConsoleApprovalTemplateItem,
 } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useBusinessApproval } from '@/composables/useBusinessApproval'
@@ -14,36 +14,36 @@ import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProClose,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DropdownMenuProItem,
-  FieldPro,
-  FieldProError,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  RowActions,
-  SectionCard,
-  SectionCards,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogClose,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDropdownMenuItem,
+  NvField,
+  NvFieldError,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvRowActions,
+  NvSectionCard,
+  NvSectionCards,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
-  TabsPro,
-  TabsProContent,
-  TabsProList,
-  TabsProTrigger,
+  NvStatusBadge,
+  NvTabs,
+  NvTabsContent,
+  NvTabsList,
+  NvTabsTrigger,
 } from '@nerv-iip/ui'
 import {
   CheckCircle2Icon,
@@ -72,7 +72,11 @@ const { principal } = storeToRefs(auth)
 const permissionCodes = computed(() => principal.value?.permissionCodes ?? [])
 const actorRef = computed(() => principal.value?.principalId ?? principal.value?.loginName ?? '')
 const actor = computed(() => ({ actorType: 'user', actorRef: actorRef.value }))
-const canReadApprovals = computed(() => permissionCodes.value.includes(P.approvalsRead) || permissionCodes.value.includes(P.approvalsManage))
+const canReadApprovals = computed(
+  () =>
+    permissionCodes.value.includes(P.approvalsRead) ||
+    permissionCodes.value.includes(P.approvalsManage),
+)
 const canManageApprovals = computed(() => permissionCodes.value.includes(P.approvalsManage))
 
 const approval = useBusinessApproval(actor)
@@ -116,15 +120,19 @@ const templateForm = reactive({
 })
 const templateError = shallowRef('')
 
-const taskColumns: DataTableProColumn<BusinessConsoleApprovalTaskItem>[] = [
+const taskColumns: NvDataTableColumn<BusinessConsoleApprovalTaskItem>[] = [
   { key: 'documentId', header: '单据', cellClass: 'font-medium', accessor: documentLabel },
-  { key: 'stepName', header: '当前步骤', accessor: (row) => row.stepName ?? `第 ${row.stepNo ?? '—'} 步` },
+  {
+    key: 'stepName',
+    header: '当前步骤',
+    accessor: (row) => row.stepName ?? `第 ${row.stepNo ?? '—'} 步`,
+  },
   { key: 'documentType', header: '单据类型', accessor: (row) => row.documentType ?? '—' },
   { key: 'dueAtUtc', header: '到期时间', accessor: (row) => formatDateTime(row.dueAtUtc) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
-const chainColumns: DataTableProColumn<BusinessConsoleApprovalChainItem>[] = [
+const chainColumns: NvDataTableColumn<BusinessConsoleApprovalChainItem>[] = [
   { key: 'documentId', header: '单据', cellClass: 'font-medium', accessor: documentLabel },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'templateCode', header: '模板', accessor: (row) => row.templateCode ?? '—' },
@@ -133,7 +141,7 @@ const chainColumns: DataTableProColumn<BusinessConsoleApprovalChainItem>[] = [
   { key: 'actions', header: '步骤', align: 'end', width: 'w-12' },
 ]
 
-const decisionColumns: DataTableProColumn<BusinessConsoleApprovalDecisionListItem>[] = [
+const decisionColumns: NvDataTableColumn<BusinessConsoleApprovalDecisionListItem>[] = [
   { key: 'documentId', header: '单据', cellClass: 'font-medium', accessor: documentLabel },
   { key: 'decision', header: '决策', width: 'w-24' },
   { key: 'actorRef', header: '处理人', accessor: (row) => row.actorRef ?? '—' },
@@ -141,40 +149,70 @@ const decisionColumns: DataTableProColumn<BusinessConsoleApprovalDecisionListIte
   { key: 'decidedAtUtc', header: '处理时间', accessor: (row) => formatDateTime(row.decidedAtUtc) },
 ]
 
-const delegationColumns: DataTableProColumn<BusinessConsoleApprovalDelegationItem>[] = [
-  { key: 'delegatorActorRef', header: '委托人', cellClass: 'font-medium', accessor: (row) => row.delegatorActorRef ?? '—' },
+const delegationColumns: NvDataTableColumn<BusinessConsoleApprovalDelegationItem>[] = [
+  {
+    key: 'delegatorActorRef',
+    header: '委托人',
+    cellClass: 'font-medium',
+    accessor: (row) => row.delegatorActorRef ?? '—',
+  },
   { key: 'delegateActorRef', header: '代理人', accessor: (row) => row.delegateActorRef ?? '—' },
-  { key: 'documentType', header: '单据范围', accessor: (row) => row.documentType ?? '全部业务单据' },
+  {
+    key: 'documentType',
+    header: '单据范围',
+    accessor: (row) => row.documentType ?? '全部业务单据',
+  },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'effectiveToUtc', header: '截止时间', accessor: (row) => formatDateTime(row.effectiveToUtc) },
+  {
+    key: 'effectiveToUtc',
+    header: '截止时间',
+    accessor: (row) => formatDateTime(row.effectiveToUtc),
+  },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
-const templateColumns: DataTableProColumn<BusinessConsoleApprovalTemplateItem>[] = [
-  { key: 'templateCode', header: '模板', cellClass: 'font-medium', accessor: (row) => row.templateCode ?? '—' },
+const templateColumns: NvDataTableColumn<BusinessConsoleApprovalTemplateItem>[] = [
+  {
+    key: 'templateCode',
+    header: '模板',
+    cellClass: 'font-medium',
+    accessor: (row) => row.templateCode ?? '—',
+  },
   { key: 'documentType', header: '单据类型', accessor: (row) => row.documentType ?? '—' },
   { key: 'version', header: '版本', width: 'w-20', accessor: (row) => String(row.version ?? '—') },
   { key: 'isActive', header: '状态', width: 'w-24' },
   { key: 'steps', header: '步骤', accessor: (row) => `${row.steps?.length ?? 0} 步` },
 ]
 
-const activeDelegations = computed(() =>
-  approval.delegations.value.filter((item) => (item.status ?? '').toLowerCase() === 'active').length,
+const activeDelegations = computed(
+  () =>
+    approval.delegations.value.filter((item) => (item.status ?? '').toLowerCase() === 'active')
+      .length,
 )
 const pendingTasks = computed(() => approval.tasks.value.length)
-const runningChains = computed(() =>
-  approval.chains.value.filter((item) => ['running', 'pending', 'open'].includes((item.status ?? '').toLowerCase())).length,
+const runningChains = computed(
+  () =>
+    approval.chains.value.filter((item) =>
+      ['running', 'pending', 'open'].includes((item.status ?? '').toLowerCase()),
+    ).length,
 )
 
 applyRouteApprovalFilters()
 
-function documentLabel(row: { documentType?: string | null, documentId?: string | null }) {
+function documentLabel(row: { documentType?: string | null; documentId?: string | null }) {
   const id = row.documentId ?? ''
-  return id ? `${row.documentType ?? '业务单据'} · ${id}` : row.documentType ?? '业务单据'
+  return id ? `${row.documentType ?? '业务单据'} · ${id}` : (row.documentType ?? '业务单据')
 }
 
 function rowKey(row: Record<string, unknown>) {
-  return String(row.chainId ?? row.delegationId ?? row.templateId ?? row.decisionId ?? row.documentId ?? JSON.stringify(row))
+  return String(
+    row.chainId ??
+      row.delegationId ??
+      row.templateId ??
+      row.decisionId ??
+      row.documentId ??
+      JSON.stringify(row),
+  )
 }
 
 function formatDateTime(value?: string | null) {
@@ -282,8 +320,12 @@ async function submitDelegation() {
       delegateActorType: 'user',
       delegateActorRef: delegationForm.delegateActorRef.trim(),
       documentType: delegationForm.documentType,
-      effectiveFromUtc: delegationForm.effectiveFromUtc ? toIsoFromLocalInput(delegationForm.effectiveFromUtc) : undefined,
-      effectiveToUtc: delegationForm.effectiveToUtc ? toIsoFromLocalInput(delegationForm.effectiveToUtc) : undefined,
+      effectiveFromUtc: delegationForm.effectiveFromUtc
+        ? toIsoFromLocalInput(delegationForm.effectiveFromUtc)
+        : undefined,
+      effectiveToUtc: delegationForm.effectiveToUtc
+        ? toIsoFromLocalInput(delegationForm.effectiveToUtc)
+        : undefined,
       reason: delegationForm.reason,
     })
     delegationOpen.value = false
@@ -321,7 +363,12 @@ async function submitTemplate() {
   const version = Number(templateForm.version)
   const stepNo = Number(templateForm.stepNo)
   const dueInHours = templateForm.dueInHours.trim() ? Number(templateForm.dueInHours) : undefined
-  if (!templateForm.templateCode.trim() || !templateForm.documentType.trim() || !templateForm.stepName.trim() || !templateForm.approverRef.trim()) {
+  if (
+    !templateForm.templateCode.trim() ||
+    !templateForm.documentType.trim() ||
+    !templateForm.stepName.trim() ||
+    !templateForm.approverRef.trim()
+  ) {
     templateError.value = '请填写模板、单据类型、步骤和审批人。'
     return
   }
@@ -337,13 +384,15 @@ async function submitTemplate() {
       documentType: templateForm.documentType.trim(),
       version,
       isActive: templateForm.isActive === 'true',
-      steps: [{
-        stepNo,
-        stepName: templateForm.stepName.trim(),
-        approverType: templateForm.approverType,
-        approverRef: templateForm.approverRef.trim(),
-        dueInHours,
-      }],
+      steps: [
+        {
+          stepNo,
+          stepName: templateForm.stepName.trim(),
+          approverType: templateForm.approverType,
+          approverRef: templateForm.approverRef.trim(),
+          dueInHours,
+        },
+      ],
     })
     templateOpen.value = false
     notifySuccess('审批模板已保存')
@@ -360,41 +409,67 @@ function toIsoFromLocalInput(value: string) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="审批中心" :breadcrumbs="[{ label: '审批中心' }]" :count="`${approval.tasksTotal.value} 个待处理任务`">
+    <NvPageHeader
+      title="审批中心"
+      :breadcrumbs="[{ label: '审批中心' }]"
+      :count="`${approval.tasksTotal.value} 个待处理任务`"
+    >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" @click="approval.refreshAll">
+        <NvButton size="sm" type="button" variant="outline" @click="approval.refreshAll">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <div v-if="!canReadApprovals" class="rounded-md border bg-muted/40 p-6 text-sm text-muted-foreground" role="status">
+    <div
+      v-if="!canReadApprovals"
+      class="rounded-md border bg-muted/40 p-6 text-sm text-muted-foreground"
+      role="status"
+    >
       当前账号没有审批中心访问权限。
     </div>
 
     <template v-else>
-      <SectionCards :columns="3">
-        <SectionCard description="待处理任务" :value="pendingTasks" hint="当前账号可处理的审批步骤" />
-        <SectionCard description="进行中流程" :value="runningChains" hint="本页可见流程实例" />
-        <SectionCard description="有效委托" :value="activeDelegations" hint="当前范围仍在生效的委托" />
-      </SectionCards>
+      <NvSectionCards :columns="3">
+        <NvSectionCard
+          description="待处理任务"
+          :value="pendingTasks"
+          hint="当前账号可处理的审批步骤"
+        />
+        <NvSectionCard description="进行中流程" :value="runningChains" hint="本页可见流程实例" />
+        <NvSectionCard
+          description="有效委托"
+          :value="activeDelegations"
+          hint="当前范围仍在生效的委托"
+        />
+      </NvSectionCards>
 
-      <div v-if="!canManageApprovals" class="rounded-md border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground" role="status">
+      <div
+        v-if="!canManageApprovals"
+        class="rounded-md border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground"
+        role="status"
+      >
         没有审批处理权限；仅展示模板、流程、决策和委托记录。
       </div>
 
-      <TabsPro default-value="tasks">
-        <TabsProList>
-          <TabsProTrigger value="tasks">我的任务 ({{ approval.tasksTotal.value }})</TabsProTrigger>
-          <TabsProTrigger value="chains">流程实例 ({{ approval.chainsTotal.value }})</TabsProTrigger>
-          <TabsProTrigger value="decisions">决策记录 ({{ approval.decisionsTotal.value }})</TabsProTrigger>
-          <TabsProTrigger value="delegations">委托设置 ({{ approval.delegationsTotal.value }})</TabsProTrigger>
-          <TabsProTrigger value="templates">模板配置 ({{ approval.templatesTotal.value }})</TabsProTrigger>
-        </TabsProList>
+      <NvTabs default-value="tasks">
+        <NvTabsList>
+          <NvTabsTrigger value="tasks">我的任务 ({{ approval.tasksTotal.value }})</NvTabsTrigger>
+          <NvTabsTrigger value="chains">流程实例 ({{ approval.chainsTotal.value }})</NvTabsTrigger>
+          <NvTabsTrigger value="decisions"
+            >决策记录 ({{ approval.decisionsTotal.value }})</NvTabsTrigger
+          >
+          <NvTabsTrigger value="delegations"
+            >委托设置 ({{ approval.delegationsTotal.value }})</NvTabsTrigger
+          >
+          <NvTabsTrigger value="templates"
+            >模板配置 ({{ approval.templatesTotal.value }})</NvTabsTrigger
+          >
+        </NvTabsList>
 
-        <TabsProContent value="tasks" class="grid gap-3">
-          <DataTablePro
+        <NvTabsContent value="tasks" class="grid gap-3">
+          <NvDataTable
             manual
             :page="taskPager.page.value"
             :page-size="taskPager.pageSize.value"
@@ -410,30 +485,39 @@ function toIsoFromLocalInput(value: string) {
             @update:page-size="(v) => (taskPager.pageSize.value = String(v))"
           >
             <template #cell-actions="{ row }">
-              <RowActions :label="`审批任务 ${documentLabel(row)}`">
-                <DropdownMenuProItem @click="viewChain(row)">
+              <NvRowActions :label="`审批任务 ${documentLabel(row)}`">
+                <NvDropdownMenuItem @click="viewChain(row)">
                   <EyeIcon aria-hidden="true" />
                   查看步骤
-                </DropdownMenuProItem>
-                <DropdownMenuProItem v-if="canManageApprovals" @click="quickResolveTask(row, 'Approve')">
+                </NvDropdownMenuItem>
+                <NvDropdownMenuItem
+                  v-if="canManageApprovals"
+                  @click="quickResolveTask(row, 'Approve')"
+                >
                   <CheckCircle2Icon aria-hidden="true" />
                   通过
-                </DropdownMenuProItem>
-                <DropdownMenuProItem v-if="canManageApprovals" @click="openTaskDecision(row, 'Reject')">
+                </NvDropdownMenuItem>
+                <NvDropdownMenuItem
+                  v-if="canManageApprovals"
+                  @click="openTaskDecision(row, 'Reject')"
+                >
                   <XCircleIcon aria-hidden="true" />
                   驳回
-                </DropdownMenuProItem>
-                <DropdownMenuProItem v-if="canManageApprovals" @click="openTaskDecision(row, 'Resolve')">
+                </NvDropdownMenuItem>
+                <NvDropdownMenuItem
+                  v-if="canManageApprovals"
+                  @click="openTaskDecision(row, 'Resolve')"
+                >
                   <SendIcon aria-hidden="true" />
                   处理
-                </DropdownMenuProItem>
-              </RowActions>
+                </NvDropdownMenuItem>
+              </NvRowActions>
             </template>
-          </DataTablePro>
-        </TabsProContent>
+          </NvDataTable>
+        </NvTabsContent>
 
-        <TabsProContent value="chains" class="grid gap-3">
-          <DataTablePro
+        <NvTabsContent value="chains" class="grid gap-3">
+          <NvDataTable
             manual
             :page="chainPager.page.value"
             :page-size="chainPager.pageSize.value"
@@ -448,36 +532,43 @@ function toIsoFromLocalInput(value: string) {
             @update:page="chainPager.page.value = $event"
             @update:page-size="(v) => (chainPager.pageSize.value = String(v))"
           >
-            <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+            <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
             <template #cell-actions="{ row }">
-              <ButtonPro size="sm" type="button" variant="ghost" @click="viewChain(row)">
+              <NvButton size="sm" type="button" variant="ghost" @click="viewChain(row)">
                 <EyeIcon aria-hidden="true" />
                 步骤
-              </ButtonPro>
+              </NvButton>
             </template>
-          </DataTablePro>
+          </NvDataTable>
 
           <section v-if="approval.chainDetail.value" class="rounded-md border bg-card p-4">
             <div class="mb-3 flex items-center justify-between gap-3">
-              <h2 class="text-base font-semibold">流程步骤 · {{ approval.chainDetail.value.documentId }}</h2>
-              <StatusBadgePro :value="approval.chainDetail.value.status" />
+              <h2 class="text-base font-semibold">
+                流程步骤 · {{ approval.chainDetail.value.documentId }}
+              </h2>
+              <NvStatusBadge :value="approval.chainDetail.value.status" />
             </div>
             <ol class="grid gap-2">
-              <li v-for="step in approval.chainDetail.value.steps ?? []" :key="step.stepNo" class="rounded-md border bg-background p-3">
+              <li
+                v-for="step in approval.chainDetail.value.steps ?? []"
+                :key="step.stepNo"
+                class="rounded-md border bg-background p-3"
+              >
                 <div class="flex items-center justify-between gap-3">
                   <span class="font-medium">{{ step.stepName ?? `第 ${step.stepNo} 步` }}</span>
-                  <StatusBadgePro :value="step.status" />
+                  <NvStatusBadge :value="step.status" />
                 </div>
                 <p class="mt-1 text-sm text-muted-foreground">
-                  {{ step.approverType }} · {{ step.approverRef }} · 到期 {{ formatDateTime(step.dueAtUtc) }}
+                  {{ step.approverType }} · {{ step.approverRef }} · 到期
+                  {{ formatDateTime(step.dueAtUtc) }}
                 </p>
               </li>
             </ol>
           </section>
-        </TabsProContent>
+        </NvTabsContent>
 
-        <TabsProContent value="decisions" class="grid gap-3">
-          <DataTablePro
+        <NvTabsContent value="decisions" class="grid gap-3">
+          <NvDataTable
             manual
             :page="decisionPager.page.value"
             :page-size="decisionPager.pageSize.value"
@@ -492,18 +583,18 @@ function toIsoFromLocalInput(value: string) {
             @update:page="decisionPager.page.value = $event"
             @update:page-size="(v) => (decisionPager.pageSize.value = String(v))"
           >
-            <template #cell-decision="{ row }"><StatusBadgePro :value="row.decision" /></template>
-          </DataTablePro>
-        </TabsProContent>
+            <template #cell-decision="{ row }"><NvStatusBadge :value="row.decision" /></template>
+          </NvDataTable>
+        </NvTabsContent>
 
-        <TabsProContent value="delegations" class="grid gap-3">
+        <NvTabsContent value="delegations" class="grid gap-3">
           <div class="flex justify-end">
-            <ButtonPro v-if="canManageApprovals" size="sm" type="button" @click="openDelegation">
+            <NvButton v-if="canManageApprovals" size="sm" type="button" @click="openDelegation">
               <UserRoundPlusIcon aria-hidden="true" />
               新建委托
-            </ButtonPro>
+            </NvButton>
           </div>
-          <DataTablePro
+          <NvDataTable
             manual
             :page="delegationPager.page.value"
             :page-size="delegationPager.pageSize.value"
@@ -518,9 +609,9 @@ function toIsoFromLocalInput(value: string) {
             @update:page="delegationPager.page.value = $event"
             @update:page-size="(v) => (delegationPager.pageSize.value = String(v))"
           >
-            <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+            <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
             <template #cell-actions="{ row }">
-              <ButtonPro
+              <NvButton
                 v-if="canManageApprovals && (row.status ?? '').toLowerCase() === 'active'"
                 size="sm"
                 type="button"
@@ -529,19 +620,19 @@ function toIsoFromLocalInput(value: string) {
               >
                 <RotateCcwIcon aria-hidden="true" />
                 撤销
-              </ButtonPro>
+              </NvButton>
             </template>
-          </DataTablePro>
-        </TabsProContent>
+          </NvDataTable>
+        </NvTabsContent>
 
-        <TabsProContent value="templates" class="grid gap-3">
+        <NvTabsContent value="templates" class="grid gap-3">
           <div class="flex justify-end">
-            <ButtonPro v-if="canManageApprovals" size="sm" type="button" @click="openTemplate">
+            <NvButton v-if="canManageApprovals" size="sm" type="button" @click="openTemplate">
               <FilePlus2Icon aria-hidden="true" />
               维护模板
-            </ButtonPro>
+            </NvButton>
           </div>
-          <DataTablePro
+          <NvDataTable
             manual
             :page="templatePager.page.value"
             :page-size="templatePager.pageSize.value"
@@ -556,153 +647,223 @@ function toIsoFromLocalInput(value: string) {
             @update:page="templatePager.page.value = $event"
             @update:page-size="(v) => (templatePager.pageSize.value = String(v))"
           >
-            <template #cell-isActive="{ row }"><StatusBadgePro :value="formatStatus(row.isActive)" /></template>
-          </DataTablePro>
-        </TabsProContent>
-      </TabsPro>
+            <template #cell-isActive="{ row }"
+              ><NvStatusBadge :value="formatStatus(row.isActive)"
+            /></template>
+          </NvDataTable>
+        </NvTabsContent>
+      </NvTabs>
     </template>
 
-    <DialogPro v-model:open="taskDecisionOpen">
-      <DialogProContent>
-        <DialogProHeader>
-          <DialogProTitle>处理审批任务</DialogProTitle>
-          <DialogProDescription>{{ decisionLabel(decisionForm.decision) }}当前审批步骤，并记录处理意见。</DialogProDescription>
-        </DialogProHeader>
+    <NvDialog v-model:open="taskDecisionOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>处理审批任务</NvDialogTitle>
+          <NvDialogDescription
+            >{{
+              decisionLabel(decisionForm.decision)
+            }}当前审批步骤，并记录处理意见。</NvDialogDescription
+          >
+        </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitTaskDecision">
-          <FieldPro>
-            <FieldProLabel for="approval-comment">处理意见</FieldProLabel>
-            <InputPro id="approval-comment" v-model="decisionForm.comment" autocomplete="off" />
-          </FieldPro>
-          <DialogProFooter>
-            <DialogProClose as-child>
-              <ButtonPro type="button" variant="outline">取消</ButtonPro>
-            </DialogProClose>
-            <ButtonPro type="submit" :disabled="approval.resolveTaskPending.value">
+          <NvField>
+            <NvFieldLabel for="approval-comment">处理意见</NvFieldLabel>
+            <NvInput id="approval-comment" v-model="decisionForm.comment" autocomplete="off" />
+          </NvField>
+          <NvDialogFooter>
+            <NvDialogClose as-child>
+              <NvButton type="button" variant="outline">取消</NvButton>
+            </NvDialogClose>
+            <NvButton type="submit" :disabled="approval.resolveTaskPending.value">
               <Spinner v-if="approval.resolveTaskPending.value" aria-hidden="true" />
               提交处理
-            </ButtonPro>
-          </DialogProFooter>
+            </NvButton>
+          </NvDialogFooter>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
 
-    <DialogPro v-model:open="delegationOpen">
-      <DialogProContent>
-        <DialogProHeader>
-          <DialogProTitle>新建审批委托</DialogProTitle>
-          <DialogProDescription>把指定人员的审批任务临时委托给代理人。</DialogProDescription>
-        </DialogProHeader>
+    <NvDialog v-model:open="delegationOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>新建审批委托</NvDialogTitle>
+          <NvDialogDescription>把指定人员的审批任务临时委托给代理人。</NvDialogDescription>
+        </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitDelegation">
-          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-            <FieldPro>
-              <FieldProLabel for="approval-delegator">委托人</FieldProLabel>
-              <InputPro id="approval-delegator" v-model="delegationForm.delegatorActorRef" autocomplete="off" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="approval-delegate">代理人</FieldProLabel>
-              <InputPro id="approval-delegate" v-model="delegationForm.delegateActorRef" autocomplete="off" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="approval-delegation-doc">单据范围</FieldProLabel>
-              <InputPro id="approval-delegation-doc" v-model="delegationForm.documentType" autocomplete="off" placeholder="可选" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="approval-delegation-from">开始时间</FieldProLabel>
-              <InputPro id="approval-delegation-from" v-model="delegationForm.effectiveFromUtc" type="datetime-local" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="approval-delegation-to">截止时间</FieldProLabel>
-              <InputPro id="approval-delegation-to" v-model="delegationForm.effectiveToUtc" type="datetime-local" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="approval-delegation-reason">原因</FieldProLabel>
-              <InputPro id="approval-delegation-reason" v-model="delegationForm.reason" autocomplete="off" />
-            </FieldPro>
-          </FieldProGroup>
-          <FieldProError v-if="delegationError" :errors="[delegationError]" />
-          <DialogProFooter>
-            <DialogProClose as-child>
-              <ButtonPro type="button" variant="outline">取消</ButtonPro>
-            </DialogProClose>
-            <ButtonPro type="submit" :disabled="approval.createDelegationPending.value">
+          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+            <NvField>
+              <NvFieldLabel for="approval-delegator">委托人</NvFieldLabel>
+              <NvInput
+                id="approval-delegator"
+                v-model="delegationForm.delegatorActorRef"
+                autocomplete="off"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="approval-delegate">代理人</NvFieldLabel>
+              <NvInput
+                id="approval-delegate"
+                v-model="delegationForm.delegateActorRef"
+                autocomplete="off"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="approval-delegation-doc">单据范围</NvFieldLabel>
+              <NvInput
+                id="approval-delegation-doc"
+                v-model="delegationForm.documentType"
+                autocomplete="off"
+                placeholder="可选"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="approval-delegation-from">开始时间</NvFieldLabel>
+              <NvInput
+                id="approval-delegation-from"
+                v-model="delegationForm.effectiveFromUtc"
+                type="datetime-local"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="approval-delegation-to">截止时间</NvFieldLabel>
+              <NvInput
+                id="approval-delegation-to"
+                v-model="delegationForm.effectiveToUtc"
+                type="datetime-local"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="approval-delegation-reason">原因</NvFieldLabel>
+              <NvInput
+                id="approval-delegation-reason"
+                v-model="delegationForm.reason"
+                autocomplete="off"
+              />
+            </NvField>
+          </NvFieldGroup>
+          <NvFieldError v-if="delegationError" :errors="[delegationError]" />
+          <NvDialogFooter>
+            <NvDialogClose as-child>
+              <NvButton type="button" variant="outline">取消</NvButton>
+            </NvDialogClose>
+            <NvButton type="submit" :disabled="approval.createDelegationPending.value">
               <Spinner v-if="approval.createDelegationPending.value" aria-hidden="true" />
               保存委托
-            </ButtonPro>
-          </DialogProFooter>
+            </NvButton>
+          </NvDialogFooter>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
 
-    <DialogPro v-model:open="templateOpen">
-      <DialogProContent class="sm:max-w-2xl">
-        <DialogProHeader>
-          <DialogProTitle>维护审批模板</DialogProTitle>
-          <DialogProDescription>维护业务单据审批模板和首个步骤；复杂步骤继续由后端模板能力承载。</DialogProDescription>
-        </DialogProHeader>
+    <NvDialog v-model:open="templateOpen">
+      <NvDialogContent class="sm:max-w-2xl">
+        <NvDialogHeader>
+          <NvDialogTitle>维护审批模板</NvDialogTitle>
+          <NvDialogDescription
+            >维护业务单据审批模板和首个步骤；复杂步骤继续由后端模板能力承载。</NvDialogDescription
+          >
+        </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitTemplate">
-          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-            <FieldPro>
-              <FieldProLabel for="approval-template-code">模板</FieldProLabel>
-              <InputPro id="approval-template-code" v-model="templateForm.templateCode" autocomplete="off" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="approval-template-doc">单据类型</FieldProLabel>
-              <InputPro id="approval-template-doc" v-model="templateForm.documentType" autocomplete="off" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="approval-template-version">版本</FieldProLabel>
-              <InputPro id="approval-template-version" v-model="templateForm.version" type="number" min="1" step="1" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="approval-template-active">状态</FieldProLabel>
-              <SelectPro v-model="templateForm.isActive">
-                <SelectProTrigger id="approval-template-active"><SelectProValue /></SelectProTrigger>
-                <SelectProContent>
-                  <SelectProItem value="true">启用</SelectProItem>
-                  <SelectProItem value="false">停用</SelectProItem>
-                </SelectProContent>
-              </SelectPro>
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="approval-template-step-no">步骤序号</FieldProLabel>
-              <InputPro id="approval-template-step-no" v-model="templateForm.stepNo" type="number" min="1" step="1" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="approval-template-step-name">步骤名称</FieldProLabel>
-              <InputPro id="approval-template-step-name" v-model="templateForm.stepName" autocomplete="off" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="approval-template-actor-type">审批人类型</FieldProLabel>
-              <SelectPro v-model="templateForm.approverType">
-                <SelectProTrigger id="approval-template-actor-type"><SelectProValue /></SelectProTrigger>
-                <SelectProContent>
-                  <SelectProItem value="role">角色</SelectProItem>
-                  <SelectProItem value="user">人员</SelectProItem>
-                  <SelectProItem value="department">部门</SelectProItem>
-                </SelectProContent>
-              </SelectPro>
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="approval-template-actor-ref">审批人</FieldProLabel>
-              <InputPro id="approval-template-actor-ref" v-model="templateForm.approverRef" autocomplete="off" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="approval-template-due">处理时限（小时）</FieldProLabel>
-              <InputPro id="approval-template-due" v-model="templateForm.dueInHours" type="number" min="1" step="1" placeholder="可选" />
-            </FieldPro>
-          </FieldProGroup>
-          <FieldProError v-if="templateError" :errors="[templateError]" />
-          <DialogProFooter>
-            <DialogProClose as-child>
-              <ButtonPro type="button" variant="outline">取消</ButtonPro>
-            </DialogProClose>
-            <ButtonPro type="submit" :disabled="approval.saveTemplatePending.value">
+          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+            <NvField>
+              <NvFieldLabel for="approval-template-code">模板</NvFieldLabel>
+              <NvInput
+                id="approval-template-code"
+                v-model="templateForm.templateCode"
+                autocomplete="off"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="approval-template-doc">单据类型</NvFieldLabel>
+              <NvInput
+                id="approval-template-doc"
+                v-model="templateForm.documentType"
+                autocomplete="off"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="approval-template-version">版本</NvFieldLabel>
+              <NvInput
+                id="approval-template-version"
+                v-model="templateForm.version"
+                type="number"
+                min="1"
+                step="1"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="approval-template-active">状态</NvFieldLabel>
+              <NvSelect v-model="templateForm.isActive">
+                <NvSelectTrigger id="approval-template-active"><NvSelectValue /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem value="true">启用</NvSelectItem>
+                  <NvSelectItem value="false">停用</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="approval-template-step-no">步骤序号</NvFieldLabel>
+              <NvInput
+                id="approval-template-step-no"
+                v-model="templateForm.stepNo"
+                type="number"
+                min="1"
+                step="1"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="approval-template-step-name">步骤名称</NvFieldLabel>
+              <NvInput
+                id="approval-template-step-name"
+                v-model="templateForm.stepName"
+                autocomplete="off"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="approval-template-actor-type">审批人类型</NvFieldLabel>
+              <NvSelect v-model="templateForm.approverType">
+                <NvSelectTrigger id="approval-template-actor-type"
+                  ><NvSelectValue
+                /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem value="role">角色</NvSelectItem>
+                  <NvSelectItem value="user">人员</NvSelectItem>
+                  <NvSelectItem value="department">部门</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="approval-template-actor-ref">审批人</NvFieldLabel>
+              <NvInput
+                id="approval-template-actor-ref"
+                v-model="templateForm.approverRef"
+                autocomplete="off"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="approval-template-due">处理时限（小时）</NvFieldLabel>
+              <NvInput
+                id="approval-template-due"
+                v-model="templateForm.dueInHours"
+                type="number"
+                min="1"
+                step="1"
+                placeholder="可选"
+              />
+            </NvField>
+          </NvFieldGroup>
+          <NvFieldError v-if="templateError" :errors="[templateError]" />
+          <NvDialogFooter>
+            <NvDialogClose as-child>
+              <NvButton type="button" variant="outline">取消</NvButton>
+            </NvDialogClose>
+            <NvButton type="submit" :disabled="approval.saveTemplatePending.value">
               <Spinner v-if="approval.saveTemplatePending.value" aria-hidden="true" />
               保存模板
-            </ButtonPro>
-          </DialogProFooter>
+            </NvButton>
+          </NvDialogFooter>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>

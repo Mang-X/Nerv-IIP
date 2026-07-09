@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import type { InstanceDetailResponse } from '@nerv-iip/api-client'
-import { Card, CardContent, CardHeader, CardTitle, Separator, Skeleton, StatusBadge } from '@nerv-iip/ui'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Separator,
+  Skeleton,
+  NvStatusBadge,
+} from '@nerv-iip/ui'
 import { computed } from 'vue'
 import { instanceStatusLabel, instanceTone } from './instanceStatus'
 
@@ -44,30 +52,44 @@ function capabilityKey(capability: Capability, index: number) {
         <dl class="grid gap-3">
           <div class="grid gap-0.5">
             <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">应用</dt>
-            <dd class="break-anywhere text-sm">{{ instance.applicationName ?? instance.applicationKey ?? '未知' }}</dd>
+            <dd class="break-anywhere text-sm">
+              {{ instance.applicationName ?? instance.applicationKey ?? '未知' }}
+            </dd>
           </div>
           <div class="grid gap-0.5">
             <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">节点</dt>
-            <dd class="break-anywhere text-sm">{{ instance.nodeName ?? instance.nodeKey ?? '未分配' }}</dd>
+            <dd class="break-anywhere text-sm">
+              {{ instance.nodeName ?? instance.nodeKey ?? '未分配' }}
+            </dd>
           </div>
           <div class="grid gap-0.5">
             <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">状态</dt>
             <dd>
-              <StatusBadge :label="instanceStatusLabel(instance.reportedStatus)" :tone="instanceTone(instance.reportedStatus)" />
+              <NvStatusBadge
+                :label="instanceStatusLabel(instance.reportedStatus)"
+                :tone="instanceTone(instance.reportedStatus)"
+              />
             </dd>
           </div>
           <div class="grid gap-0.5">
             <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">健康</dt>
             <dd>
-              <StatusBadge :label="instanceStatusLabel(instance.healthStatus)" :tone="instanceTone(instance.healthStatus)" />
+              <NvStatusBadge
+                :label="instanceStatusLabel(instance.healthStatus)"
+                :tone="instanceTone(instance.healthStatus)"
+              />
             </dd>
           </div>
           <div class="grid gap-0.5">
-            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">最近心跳</dt>
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              最近心跳
+            </dt>
             <dd class="text-sm">{{ instance.lastHeartbeatAtUtc ?? '未上报' }}</dd>
           </div>
           <div class="grid gap-0.5">
-            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">最近状态</dt>
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              最近状态
+            </dt>
             <dd class="text-sm">{{ instance.lastStateObservedAtUtc ?? '未上报' }}</dd>
           </div>
         </dl>
@@ -85,7 +107,9 @@ function capabilityKey(capability: Capability, index: number) {
               <span class="break-anywhere text-sm font-semibold">
                 {{ capability.capabilityCode ?? '未知' }}
               </span>
-              <span class="text-xs text-muted-foreground">{{ capability.category ?? '未分类' }}</span>
+              <span class="text-xs text-muted-foreground">{{
+                capability.category ?? '未分类'
+              }}</span>
               <span class="text-xs text-muted-foreground">
                 {{ capability.supportedOperations?.join('、') ?? '无可用操作' }}
               </span>
@@ -99,12 +123,10 @@ function capabilityKey(capability: Capability, index: number) {
         <section aria-labelledby="metadata-title">
           <h3 id="metadata-title" class="mb-3 text-sm font-semibold">元数据</h3>
           <dl v-if="metadataEntries.length" class="flex flex-col gap-2 m-0">
-            <div
-              v-for="[key, value] in metadataEntries"
-              :key="key"
-              class="grid gap-0.5"
-            >
-              <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">{{ key }}</dt>
+            <div v-for="[key, value] in metadataEntries" :key="key" class="grid gap-0.5">
+              <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                {{ key }}
+              </dt>
               <dd class="break-anywhere text-sm m-0">{{ value }}</dd>
             </div>
           </dl>
@@ -112,9 +134,7 @@ function capabilityKey(capability: Capability, index: number) {
         </section>
       </template>
 
-      <p v-else class="text-sm text-muted-foreground">
-        选择一个实例以查看其运行时信息。
-      </p>
+      <p v-else class="text-sm text-muted-foreground">选择一个实例以查看其运行时信息。</p>
     </CardContent>
   </Card>
 </template>

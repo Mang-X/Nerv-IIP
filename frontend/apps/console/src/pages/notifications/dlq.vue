@@ -2,7 +2,7 @@
 import type { NotificationDeadLetterResponse } from '@nerv-iip/api-client'
 import { useNotificationDeadLetters } from '@/composables/useNotificationDeadLetters'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
-import { Button, PageHeader, SectionCard, SectionCards, toast } from '@nerv-iip/ui'
+import { Button, NvPageHeader, NvSectionCard, NvSectionCards, toast } from '@nerv-iip/ui'
 import { BanIcon, PlayIcon, RefreshCwIcon, RotateCwIcon } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 
@@ -40,26 +40,34 @@ const ignoreReason = ref('')
 const actionPending = computed(
   () => replayPending.value || replayBatchPending.value || ignorePending.value,
 )
-const refreshPending = computed(
-  () => listPending.value || metricsPending.value,
-)
+const refreshPending = computed(() => listPending.value || metricsPending.value)
 const errorMessage = computed(() => allError.value?.message ?? '')
 const canReplaySelected = computed(
   () => selectedDeadLetter.value && selectedDeadLetter.value.status !== 'Replayed',
 )
 const canIgnoreSelected = computed(
-  () => selectedDeadLetter.value && selectedDeadLetter.value.status !== 'Ignored' && ignoreReason.value.trim().length > 0,
+  () =>
+    selectedDeadLetter.value &&
+    selectedDeadLetter.value.status !== 'Ignored' &&
+    ignoreReason.value.trim().length > 0,
 )
 const ignoreHandledError = (_error: unknown) => {}
 
-watch(deadLetters, (items) => {
-  if (!selectedDeadLetterId.value && items[0]?.id) {
-    selectedDeadLetterId.value = items[0].id
-  }
-  if (selectedDeadLetterId.value && !items.some((item) => item.id === selectedDeadLetterId.value)) {
-    selectedDeadLetterId.value = items[0]?.id
-  }
-}, { immediate: true })
+watch(
+  deadLetters,
+  (items) => {
+    if (!selectedDeadLetterId.value && items[0]?.id) {
+      selectedDeadLetterId.value = items[0].id
+    }
+    if (
+      selectedDeadLetterId.value &&
+      !items.some((item) => item.id === selectedDeadLetterId.value)
+    ) {
+      selectedDeadLetterId.value = items[0]?.id
+    }
+  },
+  { immediate: true },
+)
 
 watch(selectedDeadLetterId, () => {
   ignoreReason.value = ''
@@ -138,7 +146,7 @@ function shortText(value: string | null | undefined, fallback = '-') {
 <template>
   <DefaultLayout>
     <section class="grid gap-6">
-      <PageHeader
+      <NvPageHeader
         title="死信队列"
         :breadcrumbs="[{ label: '通知' }]"
         :count="`${deadLetters.length} 条`"
@@ -166,14 +174,14 @@ function shortText(value: string | null | undefined, fallback = '-') {
             批量重放
           </Button>
         </template>
-      </PageHeader>
+      </NvPageHeader>
 
-      <SectionCards :columns="4">
-        <SectionCard description="当前筛选" :value="deadLetters.length" hint="列表结果" />
-        <SectionCard description="可处理积压" :value="actionableCount" hint="Pending + Failed" />
-        <SectionCard description="待重放" :value="pendingCount" hint="全局 Pending" />
-        <SectionCard description="重放失败" :value="failedCount" hint="全局 Failed" />
-      </SectionCards>
+      <NvSectionCards :columns="4">
+        <NvSectionCard description="当前筛选" :value="deadLetters.length" hint="列表结果" />
+        <NvSectionCard description="可处理积压" :value="actionableCount" hint="Pending + Failed" />
+        <NvSectionCard description="待重放" :value="pendingCount" hint="全局 Pending" />
+        <NvSectionCard description="重放失败" :value="failedCount" hint="全局 Failed" />
+      </NvSectionCards>
 
       <p v-if="errorMessage" class="text-sm text-destructive" role="alert">
         无法更新死信队列：{{ errorMessage }}
@@ -187,7 +195,7 @@ function shortText(value: string | null | undefined, fallback = '-') {
               v-model="eventTypeFilter"
               class="h-9 rounded-md border bg-background px-3 text-sm"
               placeholder="ops.OperationTaskFailed"
-            >
+            />
           </label>
           <label class="grid gap-1 text-sm font-medium">
             <span>消费者</span>
@@ -195,7 +203,7 @@ function shortText(value: string | null | undefined, fallback = '-') {
               v-model="consumerNameFilter"
               class="h-9 rounded-md border bg-background px-3 text-sm"
               placeholder="notification.operation-task-failed"
-            >
+            />
           </label>
           <label class="grid gap-1 text-sm font-medium">
             <span>状态</span>
@@ -226,9 +234,7 @@ function shortText(value: string | null | undefined, fallback = '-') {
               </thead>
               <tbody>
                 <tr v-if="listPending">
-                  <td class="px-3 py-6 text-center text-muted-foreground" colspan="6">
-                    正在加载
-                  </td>
+                  <td class="px-3 py-6 text-center text-muted-foreground" colspan="6">正在加载</td>
                 </tr>
                 <tr v-else-if="deadLetters.length === 0">
                   <td class="px-3 py-6 text-center text-muted-foreground" colspan="6">
@@ -301,9 +307,7 @@ function shortText(value: string | null | undefined, fallback = '-') {
             </p>
           </header>
 
-          <div v-if="detailPending" class="text-sm text-muted-foreground">
-            正在加载详情
-          </div>
+          <div v-if="detailPending" class="text-sm text-muted-foreground">正在加载详情</div>
           <div v-else-if="selectedDeadLetter" class="grid gap-3 text-sm">
             <dl class="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 gap-y-2">
               <dt class="text-muted-foreground">状态</dt>
@@ -320,7 +324,9 @@ function shortText(value: string | null | undefined, fallback = '-') {
               <dd>{{ formatDate(selectedDeadLetter.replayedAtUtc) }}</dd>
             </dl>
 
-            <pre class="max-h-72 overflow-auto rounded-md bg-muted p-3 text-xs leading-relaxed">{{ selectedDeadLetter.eventJson }}</pre>
+            <pre class="max-h-72 overflow-auto rounded-md bg-muted p-3 text-xs leading-relaxed">{{
+              selectedDeadLetter.eventJson
+            }}</pre>
 
             <div class="grid gap-2">
               <textarea
@@ -352,9 +358,7 @@ function shortText(value: string | null | undefined, fallback = '-') {
               </div>
             </div>
           </div>
-          <p v-else class="text-sm text-muted-foreground">
-            请选择一条死信消息。
-          </p>
+          <p v-else class="text-sm text-muted-foreground">请选择一条死信消息。</p>
         </aside>
       </div>
     </section>
