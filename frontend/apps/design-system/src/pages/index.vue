@@ -9,7 +9,7 @@ const surfaces = [
     to: '/design-system',
     tag: '桌面 PC',
     name: '桌面设计系统',
-    desc: '语义令牌 · 12 色板 · Pro 组件 · 图表 · DataTablePro · 描述/时间线 · 动效',
+    desc: '语义令牌 · 12 色板 · Nv 组件 · 图表 · NvDataTable · 描述/时间线 · 动效',
     icon: MonitorIcon,
   },
   {

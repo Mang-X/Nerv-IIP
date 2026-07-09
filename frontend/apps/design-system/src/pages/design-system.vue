@@ -388,7 +388,7 @@ const workOrders = [
   },
 ]
 
-// ---- DataTablePro (toolbar · filter · column settings · paginate) ----
+// ---- NvDataTable (toolbar · filter · column settings · paginate) ----
 interface WoRow {
   code: string
   product: string
@@ -1169,9 +1169,9 @@ const progress = computed(
             </Table>
           </div>
 
-          <!-- DataTablePro：完整数据表（工具栏 + 字段筛选 + 列设置 + 密度 + 行选择 + 页码分页） -->
+          <!-- NvDataTable：完整数据表（工具栏 + 字段筛选 + 列设置 + 密度 + 行选择 + 页码分页） -->
           <div class="mt-8 mb-3">
-            <h3 class="text-sm font-semibold">数据表格 DataTablePro</h3>
+            <h3 class="text-sm font-semibold">数据表格 NvDataTable</h3>
             <p class="mt-1 text-xs text-muted-foreground">
               工具栏 + 快捷筛选标签 + 字段筛选 + 列显隐 + 密度 + 行选择 + 可点击页码 —— 客户端处理
               {{ tableAll.length }} 条工单。

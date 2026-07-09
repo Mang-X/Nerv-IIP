@@ -108,7 +108,7 @@ function onGrid(item: GridItem) {
   messagePro.info(`打开「${item.text}」`)
 }
 
-// Fab 悬浮按钮
+// NvFab 悬浮按钮
 const fabActions: FabAction[] = [
   { key: 'scan', icon: ScanLineIcon, text: '扫码入库' },
   { key: 'wo', icon: ClipboardListIcon, text: '新建工单' },
@@ -275,7 +275,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
         <div class="space-y-7 py-4">
           <!-- 按钮 -->
           <section>
-            <p class="ds-m-eyebrow">按钮 MobileButton</p>
+            <p class="ds-m-eyebrow">按钮 NvMobileButton</p>
             <div class="space-y-3 px-3">
               <div class="flex flex-wrap items-center gap-2">
                 <NvMobileButton variant="primary">主操作</NvMobileButton>
@@ -295,7 +295,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 单元格 -->
           <section>
-            <p class="ds-m-eyebrow">单元格 Cell</p>
+            <p class="ds-m-eyebrow">单元格 NvCell</p>
             <div class="px-3">
               <NvCellGroup>
                 <NvCell title="工单号" value="WO-2406-0413" />
@@ -351,7 +351,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 通知条 -->
           <section>
-            <p class="ds-m-eyebrow">通知条 NoticeBar</p>
+            <p class="ds-m-eyebrow">通知条 NvNoticeBar</p>
             <div class="space-y-2">
               <NvNoticeBar tone="info">今日计划已重排，受影响工单 6 张</NvNoticeBar>
               <NvNoticeBar tone="warning">B 线物料不足：液压阀体 V3 缺口 452 件</NvNoticeBar>
@@ -361,7 +361,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 列表行 -->
           <section>
-            <p class="ds-m-eyebrow">列表行 ListRow</p>
+            <p class="ds-m-eyebrow">列表行 NvListRow</p>
             <div class="overflow-hidden border-y border-border">
               <NvListRow
                 title="齿轮箱端盖"
@@ -378,7 +378,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 标签栏 -->
           <section>
-            <p class="ds-m-eyebrow">标签栏 TabBar</p>
+            <p class="ds-m-eyebrow">标签栏 NvTabBar</p>
             <div class="mx-3 overflow-hidden rounded-xl border border-border bg-card">
               <NvTabBar v-model="tabDemo" :items="demoTabs" />
             </div>
@@ -423,7 +423,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 宫格 -->
           <section>
-            <p class="ds-m-eyebrow">宫格 MobileGrid</p>
+            <p class="ds-m-eyebrow">宫格 NvMobileGrid</p>
             <div class="mx-3 overflow-hidden rounded-xl border border-border bg-card">
               <NvMobileGrid :items="gridItems" :columns="4" @select="onGrid" />
             </div>
@@ -431,7 +431,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 悬浮按钮 -->
           <section>
-            <p class="ds-m-eyebrow">悬浮按钮 Fab</p>
+            <p class="ds-m-eyebrow">悬浮按钮 NvFab</p>
             <div
               class="relative mx-3 h-64 overflow-hidden rounded-xl border border-border bg-background"
             >
@@ -447,7 +447,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 居中提示 -->
           <section>
-            <p class="ds-m-eyebrow">居中提示 MobileToast</p>
+            <p class="ds-m-eyebrow">居中提示 NvMobileToast</p>
             <div class="grid grid-cols-2 gap-2 px-3">
               <NvMobileButton variant="default" size="md" @click="fireToast('text', '已复制单号')"
                 >文字</NvMobileButton
@@ -466,7 +466,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 结果页 -->
           <section>
-            <p class="ds-m-eyebrow">结果页 Result</p>
+            <p class="ds-m-eyebrow">结果页 NvMobileResult</p>
             <div class="mx-3 rounded-xl border border-border bg-card">
               <NvMobileResult
                 status="success"
@@ -478,7 +478,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 扫码 -->
           <section>
-            <p class="ds-m-eyebrow">扫码 ScanBar</p>
+            <p class="ds-m-eyebrow">扫码 NvScanBar</p>
             <div class="space-y-3 px-3">
               <NvScanBar :active="scanActive" placeholder="对准条码 / 二维码" @scan="onScan" />
               <NvCellGroup>
@@ -489,20 +489,20 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 搜索栏 -->
           <section>
-            <p class="ds-m-eyebrow">搜索栏 SearchBar</p>
+            <p class="ds-m-eyebrow">搜索栏 NvSearchBar</p>
             <NvSearchBar v-model="searchKw" cancelable placeholder="搜索工单 / 物料 / 设备" />
           </section>
 
           <!-- 顶部标签 -->
           <section>
-            <p class="ds-m-eyebrow">顶部标签 MobileTabs</p>
+            <p class="ds-m-eyebrow">顶部标签 NvMobileTabs</p>
             <NvMobileTabs v-model="topTab" :items="topTabs" />
             <p class="mt-3 px-4 text-sm text-muted-foreground">当前分类：{{ topTab }}</p>
           </section>
 
           <!-- 步骤条 -->
           <section>
-            <p class="ds-m-eyebrow">步骤条 Steps</p>
+            <p class="ds-m-eyebrow">步骤条 NvMobileSteps</p>
             <div class="px-3">
               <NvMobileSteps :steps="procSteps" :current="1" />
             </div>
@@ -510,7 +510,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 复选框 -->
           <section>
-            <p class="ds-m-eyebrow">复选框 MobileCheckbox</p>
+            <p class="ds-m-eyebrow">复选框 NvMobileCheckbox</p>
             <div class="px-4">
               <NvMobileCheckbox v-model="checkA">首检合格后转批量</NvMobileCheckbox>
               <NvMobileCheckbox v-model="checkB">完工自动生成入库单</NvMobileCheckbox>
@@ -519,7 +519,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 角标 -->
           <section>
-            <p class="ds-m-eyebrow">角标 Badge</p>
+            <p class="ds-m-eyebrow">角标 NvMobileBadge</p>
             <div class="flex items-center gap-7 px-5">
               <NvMobileBadge :count="5">
                 <BellIcon class="size-6 text-foreground" aria-hidden="true" />
@@ -535,7 +535,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 动作面板 -->
           <section>
-            <p class="ds-m-eyebrow">动作面板 ActionSheet</p>
+            <p class="ds-m-eyebrow">动作面板 NvActionSheet</p>
             <div class="px-3">
               <NvMobileButton variant="default" size="md" block @click="actionOpen = true">
                 打开动作面板
@@ -545,7 +545,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 折叠面板 -->
           <section>
-            <p class="ds-m-eyebrow">折叠面板 Collapse</p>
+            <p class="ds-m-eyebrow">折叠面板 NvMobileCollapse</p>
             <div
               class="mx-3 divide-y divide-border overflow-hidden rounded-xl border border-border"
             >
@@ -563,7 +563,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 侧滑操作 -->
           <section>
-            <p class="ds-m-eyebrow">侧滑操作 SwipeCell</p>
+            <p class="ds-m-eyebrow">侧滑操作 NvSwipeCell</p>
             <div class="mx-3 overflow-hidden rounded-xl border border-border">
               <NvSwipeCell
                 v-for="row in swipeRows"
@@ -585,7 +585,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 滚轮选择 -->
           <section>
-            <p class="ds-m-eyebrow">滚轮选择 Picker</p>
+            <p class="ds-m-eyebrow">滚轮选择 NvPicker</p>
             <div class="px-3">
               <NvCellGroup>
                 <NvCell title="目标产线" :value="pickerLabel" arrow @click="pickerOpen = true" />
@@ -596,7 +596,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 下拉刷新 -->
           <section>
-            <p class="ds-m-eyebrow">下拉刷新 PullRefresh</p>
+            <p class="ds-m-eyebrow">下拉刷新 NvPullRefresh</p>
             <div class="mx-3 overflow-hidden rounded-xl border border-border">
               <NvPullRefresh v-model="refreshing" class="h-56" @refresh="onRefresh">
                 <NvCell v-for="(item, i) in refreshList" :key="`${item}-${i}`" :title="item" />
@@ -609,7 +609,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 加载更多 -->
           <section>
-            <p class="ds-m-eyebrow">加载更多 InfiniteList</p>
+            <p class="ds-m-eyebrow">加载更多 NvInfiniteList</p>
             <div class="mx-3 overflow-hidden rounded-xl border border-border">
               <NvInfiniteList
                 v-model="infLoading"
@@ -629,7 +629,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 虚拟滚动 -->
           <section>
-            <p class="ds-m-eyebrow">虚拟滚动 VirtualList</p>
+            <p class="ds-m-eyebrow">虚拟滚动 NvVirtualList</p>
             <p class="mb-2 px-4 text-xs text-muted-foreground">2000 条数据，仅渲染可视区行。</p>
             <div class="mx-3 overflow-hidden rounded-xl border border-border">
               <NvVirtualList :items="bigList" :item-height="56" class="h-64">
@@ -645,7 +645,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 空状态 -->
           <section>
-            <p class="ds-m-eyebrow">空状态 Empty</p>
+            <p class="ds-m-eyebrow">空状态 NvMobileEmpty</p>
             <div class="mx-3 rounded-xl border border-border bg-card">
               <NvMobileEmpty description="暂无待处理工单">
                 <NvMobileButton variant="primary" size="sm">去接单</NvMobileButton>
