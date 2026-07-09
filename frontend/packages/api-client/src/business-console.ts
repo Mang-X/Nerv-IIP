@@ -285,6 +285,8 @@ export {
   listBusinessConsoleWmsReceivingQualityGatesQueryOptions,
   listBusinessConsoleWmsSupplierReturnRequestsQueryOptions,
   createBusinessConsoleTelemetryDeviceControlCommandMutationOptions,
+  getBusinessConsoleTelemetryDeviceControlCommandQueryOptions,
+  listBusinessConsoleTelemetryDeviceControlCommandsQueryOptions,
 } from './generated/business-console/@pinia/colada.gen'
 
 export {
@@ -516,6 +518,8 @@ export {
   listBusinessConsoleWmsReceivingQualityGates,
   listBusinessConsoleWmsSupplierReturnRequests,
   createBusinessConsoleTelemetryDeviceControlCommand,
+  getBusinessConsoleTelemetryDeviceControlCommand,
+  listBusinessConsoleTelemetryDeviceControlCommands,
 } from './generated/business-console/sdk.gen'
 
 import type {

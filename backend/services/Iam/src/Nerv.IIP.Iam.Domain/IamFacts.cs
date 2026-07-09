@@ -144,6 +144,7 @@ public static class NervIipSeedPermissions
         "business.iiot.telemetry.read",
         "business.iiot.telemetry.write",
         "business.iiot.device-control.write",
+        "business.iiot.device-control.read",
         "business.iiot.alarms.read",
         "business.iiot.alarms.write",
         "business.maintenance.work-orders.read",

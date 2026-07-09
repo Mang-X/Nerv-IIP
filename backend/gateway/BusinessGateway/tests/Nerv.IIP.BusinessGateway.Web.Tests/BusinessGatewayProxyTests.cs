@@ -2491,6 +2491,70 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Device_control_command_result_facade_proxies_by_command_id_with_internal_service_token()
+    {
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/telemetry/device-control-commands/op-task-001?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", industrialTelemetry.LastInternalToken);
+        Assert.Equal("op-task-001", industrialTelemetry.LastDeviceControlCommandId);
+        Assert.Equal(new BusinessConsoleTelemetryDeviceControlCommandContextRequest("org-001", "env-dev", "DEV-CNC-01"), industrialTelemetry.LastDeviceControlContextRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("op-task-001", data.GetProperty("commandId").GetString());
+        Assert.Equal("DEV-CNC-01", data.GetProperty("deviceAssetId").GetString());
+        Assert.Equal("write-tag", data.GetProperty("commandType").GetString());
+        Assert.Equal("completed", data.GetProperty("status").GetString());
+        Assert.True(data.GetProperty("statusFromLiveOps").GetBoolean());
+        var attempt = Assert.Single(data.GetProperty("attempts").EnumerateArray());
+        Assert.Equal("ok", attempt.GetProperty("output").GetProperty("result").GetString());
+    }
+
+    [Fact]
+    public async Task Device_control_command_history_facade_forwards_filters_with_internal_service_token()
+    {
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/telemetry/device-control-commands?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01&status=approval-pending&skip=0&take=25");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", industrialTelemetry.LastInternalToken);
+        var forwarded = industrialTelemetry.LastDeviceControlListRequest!;
+        Assert.Equal("org-001", forwarded.OrganizationId);
+        Assert.Equal("env-dev", forwarded.EnvironmentId);
+        Assert.Equal("DEV-CNC-01", forwarded.DeviceAssetId);
+        Assert.Equal("approval-pending", forwarded.Status);
+        Assert.Equal(0, forwarded.Skip);
+        Assert.Equal(25, forwarded.Take);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(1, data.GetProperty("total").GetInt32());
+        var item = Assert.Single(data.GetProperty("items").EnumerateArray());
+        Assert.Equal("op-task-001", item.GetProperty("commandId").GetString());
+        Assert.Equal("DEV-CNC-01", item.GetProperty("deviceAssetId").GetString());
+    }
+
+    [Fact]
     public async Task Equipment_overview_normalizes_device_scope_and_rejects_empty_or_excessive_scope()
     {
         var industrialTelemetry = new RecordingIndustrialTelemetryClient
@@ -8114,6 +8178,12 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
 
     public string? LastDeviceControlRequestedBy { get; private set; }
 
+    public string? LastDeviceControlCommandId { get; private set; }
+
+    public BusinessConsoleTelemetryDeviceControlCommandContextRequest? LastDeviceControlContextRequest { get; private set; }
+
+    public BusinessConsoleTelemetryDeviceControlCommandListRequest? LastDeviceControlListRequest { get; private set; }
+
     public EquipmentRuntimeAvailabilityResponse? RuntimeAvailabilityResponse { get; init; }
 
     public EquipmentRuntimeAvailabilityResponse? DeviceRuntimeAvailabilityResponse { get; init; }
@@ -8335,6 +8405,82 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
                 null,
                 null,
                 null)));
+    }
+
+    public Task<BusinessConsoleTelemetryDeviceControlCommandDetail> GetDeviceControlCommandAsync(
+        string internalBearerToken,
+        string commandId,
+        BusinessConsoleTelemetryDeviceControlCommandContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDeviceControlCommandId = commandId;
+        LastDeviceControlContextRequest = request;
+        return Task.FromResult(new BusinessConsoleTelemetryDeviceControlCommandDetail(
+            commandId,
+            commandId,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "connector-host-001",
+            "opcua-cell-01",
+            "DEV-CNC-01",
+            "write-tag",
+            "spindle.speed",
+            "80",
+            null,
+            "user-admin",
+            "speed adjustment",
+            "corr-device-control-001",
+            "idem-device-control-001",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            "completed",
+            true,
+            new BusinessConsoleTelemetryOperationApprovalSummary(
+                "approved",
+                "user-admin",
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+                "user-supervisor",
+                DateTimeOffset.Parse("2026-06-01T08:02:00Z", CultureInfo.InvariantCulture),
+                "approved"),
+            "attempt-001",
+            [
+                new BusinessConsoleTelemetryDeviceControlCommandAttempt(
+                    "attempt-001",
+                    "succeeded",
+                    DateTimeOffset.Parse("2026-06-01T08:03:00Z", CultureInfo.InvariantCulture),
+                    DateTimeOffset.Parse("2026-06-01T08:05:00Z", CultureInfo.InvariantCulture),
+                    null,
+                    new Dictionary<string, string> { ["result"] = "ok" }),
+            ]));
+    }
+
+    public Task<BusinessConsoleTelemetryDeviceControlCommandListResponse> ListDeviceControlCommandsAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryDeviceControlCommandListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDeviceControlListRequest = request;
+        return Task.FromResult(new BusinessConsoleTelemetryDeviceControlCommandListResponse(
+            [
+                new BusinessConsoleTelemetryDeviceControlCommandListItem(
+                    "op-task-001",
+                    "op-task-001",
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    "connector-host-001",
+                    request.DeviceAssetId ?? "DEV-CNC-01",
+                    "write-tag",
+                    "spindle.speed",
+                    "80",
+                    "user-admin",
+                    "speed adjustment",
+                    "approval-pending",
+                    "pending",
+                    "corr-device-control-001",
+                    DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture)),
+            ],
+            1));
     }
 }
 

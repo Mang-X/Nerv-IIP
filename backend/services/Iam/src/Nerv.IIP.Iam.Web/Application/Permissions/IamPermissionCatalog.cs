@@ -103,6 +103,7 @@ public static class IamPermissionCatalog
         ["business.iiot.telemetry.read"] = "Read IndustrialTelemetry device snapshots and summaries.",
         ["business.iiot.telemetry.write"] = "Write IndustrialTelemetry samples and device state snapshots.",
         ["business.iiot.device-control.write"] = "Submit approval-gated IndustrialTelemetry device control commands.",
+        ["business.iiot.device-control.read"] = "Read IndustrialTelemetry device control command result and history.",
         ["business.iiot.alarms.read"] = "Read IndustrialTelemetry alarm events.",
         ["business.iiot.alarms.write"] = "Raise and clear IndustrialTelemetry alarms.",
         ["business.maintenance.work-orders.read"] = "Read maintenance work orders and downtime facts.",

@@ -95,6 +95,76 @@ public sealed record BusinessConsoleTelemetryOperationApprovalSummary(
     DateTimeOffset? DecidedAtUtc,
     string? DecisionReason);
 
+// DeviceAssetId scopes the single-command read to a device resource: device control audit is a
+// device-resource surface, so the gateway authorizes on device-asset and the service verifies the
+// command belongs to that device rather than letting any org/env reader resolve it by command id.
+public sealed record BusinessConsoleTelemetryDeviceControlCommandContextRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId);
+
+public sealed record BusinessConsoleTelemetryDeviceControlCommandListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DeviceAssetId,
+    string? Status,
+    DateTimeOffset? FromUtc,
+    DateTimeOffset? ToUtc,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleTelemetryDeviceControlCommandListResponse(
+    IReadOnlyCollection<BusinessConsoleTelemetryDeviceControlCommandListItem> Items,
+    int Total = 0);
+
+public sealed record BusinessConsoleTelemetryDeviceControlCommandListItem(
+    string CommandId,
+    string OperationTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ConnectorHostId,
+    string DeviceAssetId,
+    string CommandType,
+    string? TagKey,
+    string? Value,
+    string RequestedBy,
+    string Reason,
+    string Status,
+    string? ApprovalStatus,
+    string CorrelationId,
+    DateTimeOffset RequestedAtUtc);
+
+public sealed record BusinessConsoleTelemetryDeviceControlCommandDetail(
+    string CommandId,
+    string OperationTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ConnectorHostId,
+    string InstanceKey,
+    string DeviceAssetId,
+    string CommandType,
+    string? TagKey,
+    string? Value,
+    IReadOnlyDictionary<string, string>? Parameters,
+    string RequestedBy,
+    string Reason,
+    string CorrelationId,
+    string IdempotencyKey,
+    DateTimeOffset RequestedAtUtc,
+    string Status,
+    bool StatusFromLiveOps,
+    BusinessConsoleTelemetryOperationApprovalSummary? Approval,
+    string? CurrentAttemptId,
+    IReadOnlyList<BusinessConsoleTelemetryDeviceControlCommandAttempt> Attempts);
+
+public sealed record BusinessConsoleTelemetryDeviceControlCommandAttempt(
+    string AttemptId,
+    string Status,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? FinishedAtUtc,
+    string? FailureCode,
+    IReadOnlyDictionary<string, string>? Output);
+
 public sealed record BusinessConsoleTelemetryAlarmListRequest(
     string OrganizationId,
     string EnvironmentId,

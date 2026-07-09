@@ -81,10 +81,12 @@ try
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)
     {
+        builder.Services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
         builder.Services.AddIntegrationEvents(typeof(Program));
     }
     else
     {
+        builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
         builder.Services.AddIntegrationEvents(typeof(Program))
             .UseCap<ApplicationDbContext>(b =>
             {
