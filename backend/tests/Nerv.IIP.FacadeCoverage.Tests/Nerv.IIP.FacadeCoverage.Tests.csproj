@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <!-- Authoritative registry + Gateway snapshots + governance doc, embedded so the
+       gate reads committed artifacts (no source-tree traversal at test time). -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\docs\architecture\facade-coverage-matrix.json">
+      <LogicalName>facade-coverage-matrix.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\..\docs\architecture\facade-coverage-matrix.md">
+      <LogicalName>facade-coverage-matrix.md</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\..\frontend\packages\api-client\openapi\business-gateway-console.v1.json">
+      <LogicalName>business-gateway-console.v1.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\..\frontend\packages\api-client\openapi\platform-gateway.v1.json">
+      <LogicalName>platform-gateway.v1.json</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- Every business service Web assembly whose *EndpointContracts.All registry is
+       reflected by the gate. Adding a new business service REQUIRES adding it here
+       and to BusinessWebAssemblyNames in FacadeCoverageMatrixTests. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\services\Business\Approval\src\Nerv.IIP.Business.Approval.Web\Nerv.IIP.Business.Approval.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\BarcodeLabel\src\Nerv.IIP.Business.BarcodeLabel.Web\Nerv.IIP.Business.BarcodeLabel.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\DemandPlanning\src\Nerv.IIP.Business.DemandPlanning.Web\Nerv.IIP.Business.DemandPlanning.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\Erp\src\Nerv.IIP.Business.Erp.Web\Nerv.IIP.Business.Erp.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\IndustrialTelemetry\src\Nerv.IIP.Business.IndustrialTelemetry.Web\Nerv.IIP.Business.IndustrialTelemetry.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\Inventory\src\Nerv.IIP.Business.Inventory.Web\Nerv.IIP.Business.Inventory.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\Maintenance\src\Nerv.IIP.Business.Maintenance.Web\Nerv.IIP.Business.Maintenance.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\MasterData\src\Nerv.IIP.Business.MasterData.Web\Nerv.IIP.Business.MasterData.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\Mes\src\Nerv.IIP.Business.Mes.Web\Nerv.IIP.Business.Mes.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\ProductEngineering\src\Nerv.IIP.Business.ProductEngineering.Web\Nerv.IIP.Business.ProductEngineering.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\Quality\src\Nerv.IIP.Business.Quality.Web\Nerv.IIP.Business.Quality.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\Scheduling\src\Nerv.IIP.Business.Scheduling.Web\Nerv.IIP.Business.Scheduling.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\Wms\src\Nerv.IIP.Business.Wms.Web\Nerv.IIP.Business.Wms.Web.csproj" />
+  </ItemGroup>
+
+</Project>

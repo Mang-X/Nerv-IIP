@@ -1,0 +1,3798 @@
+{
+  "description": "Authoritative machine-readable facade-coverage registry for MAN-475/#841. One row per business-service external HTTP endpoint, classified by Gateway exposure. The Nerv.IIP.FacadeCoverage.Tests gate reflects the live *EndpointContracts.All registries of every business service and fails CI if any live endpoint is missing here (unregistered) or if a row here no longer maps to a live endpoint (stale). See docs/architecture/facade-coverage-matrix.md for the governance narrative.",
+  "generatedFrom": [
+    "backend/services/Business/*/**/Endpoints/**/*EndpointContracts.All",
+    "frontend/packages/api-client/openapi/business-gateway-console.v1.json",
+    "frontend/packages/api-client/openapi/platform-gateway.v1.json"
+  ],
+  "classifications": {
+    "exposed": "Reachable through a Gateway facade (OpenAPI snapshot + api-client codegen + stable barrel).",
+    "deferred": "Service endpoint exists but no Gateway facade yet; a tracked gap that follows a frontend menu phase / issue.",
+    "internal": "Never exposed through a Gateway by design (service-to-service, scheduler, or connector/WCS callback)."
+  },
+  "key": [
+    "service",
+    "method",
+    "route"
+  ],
+  "endpoints": [
+    {
+      "service": "Approval",
+      "method": "GET",
+      "route": "/api/business/v1/approvals/chains",
+      "operationId": "listApprovalChains",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Approval",
+      "method": "POST",
+      "route": "/api/business/v1/approvals/chains",
+      "operationId": "startApprovalChain",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Approval",
+      "method": "GET",
+      "route": "/api/business/v1/approvals/chains/{chainId}",
+      "operationId": "getApprovalChain",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Approval",
+      "method": "POST",
+      "route": "/api/business/v1/approvals/chains/{chainId}/resubmit",
+      "operationId": "resubmitApprovalChain",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the approval-governance (withdraw/resubmit/add-signer/transfer) Business Console menu phase (#488)."
+    },
+    {
+      "service": "Approval",
+      "method": "POST",
+      "route": "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer",
+      "operationId": "addApprovalStepSigner",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the approval-governance Business Console menu phase (#488)."
+    },
+    {
+      "service": "Approval",
+      "method": "POST",
+      "route": "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/resolve",
+      "operationId": "resolveApprovalStep",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Approval",
+      "method": "POST",
+      "route": "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer",
+      "operationId": "transferApprovalStep",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the approval-governance Business Console menu phase (#488)."
+    },
+    {
+      "service": "Approval",
+      "method": "POST",
+      "route": "/api/business/v1/approvals/chains/{chainId}/withdraw",
+      "operationId": "withdrawApprovalChain",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the approval-governance Business Console menu phase (#488)."
+    },
+    {
+      "service": "Approval",
+      "method": "GET",
+      "route": "/api/business/v1/approvals/decisions",
+      "operationId": "listApprovalDecisions",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Approval",
+      "method": "GET",
+      "route": "/api/business/v1/approvals/delegations",
+      "operationId": "listApprovalDelegations",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Approval",
+      "method": "POST",
+      "route": "/api/business/v1/approvals/delegations",
+      "operationId": "createApprovalDelegation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Approval",
+      "method": "POST",
+      "route": "/api/business/v1/approvals/delegations/{delegationId}/revoke",
+      "operationId": "revokeApprovalDelegation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Approval",
+      "method": "GET",
+      "route": "/api/business/v1/approvals/tasks",
+      "operationId": "listPendingApprovalTasks",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Approval",
+      "method": "POST",
+      "route": "/api/business/v1/approvals/tasks/overdue/check",
+      "operationId": "checkOverdueApprovalSteps",
+      "classification": "internal",
+      "rationale": "Internal server-clock overdue scheduler endpoint invoked by the Approval OverdueCheck background scanner (#488); not a user action."
+    },
+    {
+      "service": "Approval",
+      "method": "GET",
+      "route": "/api/business/v1/approvals/templates",
+      "operationId": "listApprovalTemplates",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Approval",
+      "method": "POST",
+      "route": "/api/business/v1/approvals/templates",
+      "operationId": "createOrUpdateApprovalTemplate",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "GET",
+      "route": "/api/business/v1/barcodes/print-batches",
+      "operationId": "listBusinessBarcodePrintBatches",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/v1/barcodes/print-batches",
+      "operationId": "createBusinessBarcodePrintBatch",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "GET",
+      "route": "/api/business/v1/barcodes/print-batches/{printBatchId}",
+      "operationId": "getBusinessBarcodePrintBatch",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "GET",
+      "route": "/api/business/v1/barcodes/rules",
+      "operationId": "listBusinessBarcodeRules",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/v1/barcodes/rules",
+      "operationId": "createOrUpdateBusinessBarcodeRule",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "GET",
+      "route": "/api/business/v1/barcodes/scans",
+      "operationId": "listBusinessBarcodeScans",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/v1/barcodes/scans",
+      "operationId": "recordBusinessBarcodeScan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "GET",
+      "route": "/api/business/v1/barcodes/templates",
+      "operationId": "listBusinessBarcodeTemplates",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/v1/barcodes/templates",
+      "operationId": "createOrUpdateBusinessBarcodeTemplate",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "DemandPlanning",
+      "method": "GET",
+      "route": "/api/business/v1/planning/demands",
+      "operationId": "listPlanningDemands",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsolePlanningDemands"
+      ]
+    },
+    {
+      "service": "DemandPlanning",
+      "method": "POST",
+      "route": "/api/business/v1/planning/demands",
+      "operationId": "createOrUpdatePlanningDemand",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createOrUpdateBusinessConsolePlanningDemand"
+      ]
+    },
+    {
+      "service": "DemandPlanning",
+      "method": "POST",
+      "route": "/api/business/v1/planning/demands/{demandSourceId}/cancel",
+      "operationId": "cancelPlanningDemand",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "cancelBusinessConsolePlanningDemand"
+      ]
+    },
+    {
+      "service": "DemandPlanning",
+      "method": "GET",
+      "route": "/api/business/v1/planning/forecasts",
+      "operationId": "listPlanningForecasts",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsolePlanningForecasts"
+      ]
+    },
+    {
+      "service": "DemandPlanning",
+      "method": "POST",
+      "route": "/api/business/v1/planning/forecasts",
+      "operationId": "createOrUpdatePlanningForecast",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createOrUpdateBusinessConsolePlanningForecast"
+      ]
+    },
+    {
+      "service": "DemandPlanning",
+      "method": "GET",
+      "route": "/api/business/v1/planning/mps",
+      "operationId": "listPlanningMpsBuckets",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsolePlanningMpsBuckets"
+      ]
+    },
+    {
+      "service": "DemandPlanning",
+      "method": "POST",
+      "route": "/api/business/v1/planning/mps",
+      "operationId": "createPlanningMpsBucket",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsolePlanningMpsBucket"
+      ]
+    },
+    {
+      "service": "DemandPlanning",
+      "method": "PUT",
+      "route": "/api/business/v1/planning/mps/{mpsId}",
+      "operationId": "updatePlanningMpsBucket",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "updateBusinessConsolePlanningMpsBucket"
+      ]
+    },
+    {
+      "service": "DemandPlanning",
+      "method": "POST",
+      "route": "/api/business/v1/planning/mps/{mpsId}/release",
+      "operationId": "releasePlanningMpsBucket",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "releaseBusinessConsolePlanningMpsBucket"
+      ]
+    },
+    {
+      "service": "DemandPlanning",
+      "method": "POST",
+      "route": "/api/business/v1/planning/mps/{mpsId}/review",
+      "operationId": "reviewPlanningMpsBucket",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "reviewBusinessConsolePlanningMpsBucket"
+      ]
+    },
+    {
+      "service": "DemandPlanning",
+      "method": "GET",
+      "route": "/api/business/v1/planning/mrp-runs",
+      "operationId": "listPlanningMrpRuns",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsolePlanningMrpRuns"
+      ]
+    },
+    {
+      "service": "DemandPlanning",
+      "method": "POST",
+      "route": "/api/business/v1/planning/mrp-runs",
+      "operationId": "runPlanningMrp",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "runBusinessConsolePlanningMrp"
+      ]
+    },
+    {
+      "service": "DemandPlanning",
+      "method": "GET",
+      "route": "/api/business/v1/planning/mrp-runs/{runId}/pegging",
+      "operationId": "getPlanningMrpPegging",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsolePlanningMrpPegging"
+      ]
+    },
+    {
+      "service": "DemandPlanning",
+      "method": "GET",
+      "route": "/api/business/v1/planning/suggestions",
+      "operationId": "listPlanningSuggestions",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsolePlanningSuggestions"
+      ]
+    },
+    {
+      "service": "DemandPlanning",
+      "method": "POST",
+      "route": "/api/business/v1/planning/suggestions/{suggestionId}/accept",
+      "operationId": "acceptPlanningSuggestion",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "acceptBusinessConsolePlanningSuggestion"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/delivery-orders",
+      "operationId": "listErpDeliveryOrders",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/delivery-orders",
+      "operationId": "releaseErpDeliveryOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/accounting-periods",
+      "operationId": "openErpAccountingPeriod",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "openBusinessConsoleErpAccountingPeriod"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/accounting-periods/close",
+      "operationId": "closeErpAccountingPeriod",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "closeBusinessConsoleErpAccountingPeriod"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/accounting-periods/reopen",
+      "operationId": "reopenErpAccountingPeriod",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "reopenBusinessConsoleErpAccountingPeriod"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/cash-receipts",
+      "operationId": "registerErpCashReceipt",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "registerBusinessConsoleErpCashReceipt"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/cash-receipts/{cashReceiptNo}/match",
+      "operationId": "matchErpCashReceipt",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "matchBusinessConsoleErpCashReceipt"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/cost-candidates",
+      "operationId": "listErpCostCandidates",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpCostCandidates"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/cost-candidates",
+      "operationId": "createErpCostCandidate",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleErpCostCandidate"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/cost-candidates/by-source",
+      "operationId": "getErpCostCandidateBySourceDocument",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleErpCostCandidateBySourceDocument"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/month-end-checklist",
+      "operationId": "getErpMonthEndChecklist",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleErpMonthEndChecklist"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/payables",
+      "operationId": "listErpAccountPayables",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpPayables"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/payables",
+      "operationId": "createErpAccountPayable",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleErpAccountPayable"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/payables/by-source",
+      "operationId": "getErpPayableBySourceDocument",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleErpPayableBySourceDocument"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/payables/payment",
+      "operationId": "registerErpAccountPayablePayment",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the ERP finance Business Console menu phase (ERP menu is explicitly phased per readiness)."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/payment-executions",
+      "operationId": "approveErpPaymentExecution",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "approveBusinessConsoleErpPaymentExecution"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/payment-executions/{paymentExecutionNo}/execute",
+      "operationId": "executeErpPaymentExecution",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "executeBusinessConsoleErpPaymentExecution"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/receivables",
+      "operationId": "listErpAccountReceivables",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpReceivables"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/receivables",
+      "operationId": "createErpAccountReceivable",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleErpAccountReceivable"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/receivables/by-source",
+      "operationId": "getErpReceivableBySourceDocument",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleErpReceivableBySourceDocument"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/receivables/collection",
+      "operationId": "registerErpAccountReceivableCollection",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the ERP finance Business Console menu phase."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/summary",
+      "operationId": "getErpFinanceSummary",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleErpFinanceSummary"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/trial-balance",
+      "operationId": "getErpTrialBalance",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleErpTrialBalance"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/finance/vouchers",
+      "operationId": "listErpJournalVouchers",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpJournalVouchers"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/finance/vouchers",
+      "operationId": "postErpJournalVoucher",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "postBusinessConsoleErpJournalVoucher"
+      ]
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/opportunities",
+      "operationId": "listErpOpportunities",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/opportunities",
+      "operationId": "openErpOpportunity",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/purchase-orders",
+      "operationId": "listErpPurchaseOrders",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/purchase-orders",
+      "operationId": "createErpPurchaseOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/purchase-receipts",
+      "operationId": "recordErpPurchaseReceipt",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/purchase-receipts/{purchaseReceiptNo}/source-document",
+      "operationId": "getErpPurchaseReceiptSourceDocument",
+      "classification": "internal",
+      "rationale": "Service-to-service source-document read contract consumed by Quality to validate receipt line SKU/qty/UOM/lot (#77)."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/purchase-requisitions",
+      "operationId": "listErpPurchaseRequisitions",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/purchase-requisitions/convert-to-purchase-order",
+      "operationId": "convertErpPurchaseRequisitionsToPurchaseOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/purchase-requisitions/from-suggestion",
+      "operationId": "createErpPurchaseRequisitionFromSuggestion",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/quotations",
+      "operationId": "listErpQuotations",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/quotations",
+      "operationId": "createErpQuotation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/quotations/{quotationId}/approve",
+      "operationId": "approveErpQuotation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/rfqs",
+      "operationId": "listErpRequestsForQuotation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/rfqs",
+      "operationId": "createErpRequestForQuotation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/sales-orders",
+      "operationId": "listErpSalesOrders",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/sales-orders",
+      "operationId": "createErpSalesOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/supplier-invoices",
+      "operationId": "recordErpSupplierInvoice",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; supplier-invoice UI is a known ERP frontend gap (readiness)."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/supplier-invoices/{invoiceNo}/release-payment-hold",
+      "operationId": "releaseErpSupplierInvoicePaymentHold",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; supplier-invoice payment-hold UI is a known ERP frontend gap."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/supplier-invoices/{invoiceNo}/void-payment-hold",
+      "operationId": "voidErpSupplierInvoicePaymentHold",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; supplier-invoice payment-hold UI is a known ERP frontend gap."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/supplier-quotations",
+      "operationId": "receiveErpSupplierQuotation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/alarm-rules",
+      "operationId": "listBusinessIiotAlarmRules",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/alarm-rules",
+      "operationId": "createOrUpdateBusinessIiotAlarmRule",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/alarms",
+      "operationId": "listBusinessIiotAlarms",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/alarms",
+      "operationId": "raiseBusinessIiotAlarm",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/alarms/escalations/run",
+      "operationId": "runBusinessIiotAlarmEscalations",
+      "classification": "internal",
+      "rationale": "Internal alarm-escalation scheduler endpoint (IndustrialTelemetry:AlarmEscalation opt-in scanner, #686); not a user action."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/alarms/{alarmEventId}/acknowledge",
+      "operationId": "acknowledgeBusinessIiotAlarm",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/alarms/{alarmEventId}/shelve",
+      "operationId": "shelveBusinessIiotAlarm",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/alarms/{alarmEventId}/unshelve",
+      "operationId": "unshelveBusinessIiotAlarm",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/device-control-commands",
+      "operationId": "createBusinessIiotDeviceControlCommand",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/devices/{deviceAssetId}/current-state",
+      "operationId": "getBusinessIiotDeviceCurrentState",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/devices/{deviceAssetId}/runtime-availability",
+      "operationId": "getBusinessIiotDeviceRuntimeAvailability",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/devices/{deviceAssetId}/timeline",
+      "operationId": "queryBusinessIiotDeviceTimeline",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/oee",
+      "operationId": "queryBusinessIiotOee",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/runtime-availability",
+      "operationId": "queryBusinessIiotRuntimeAvailability",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/runtime-hours",
+      "operationId": "queryBusinessIiotRuntimeHours",
+      "classification": "internal",
+      "rationale": "By-design internal API consumed by Maintenance PM day-interval generation (#688). Canonical internal precedent - never a Console facade."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/samples",
+      "operationId": "recordBusinessIiotTelemetrySample",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/tags",
+      "operationId": "listBusinessIiotTelemetryTags",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/tags",
+      "operationId": "createBusinessIiotTelemetryTag",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Inventory",
+      "method": "GET",
+      "route": "/api/inventory/v1/availability",
+      "operationId": "getInventoryAvailability",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleInventoryAvailability"
+      ]
+    },
+    {
+      "service": "Inventory",
+      "method": "POST",
+      "route": "/api/inventory/v1/count-tasks",
+      "operationId": "createInventoryCountTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleInventoryCountTask"
+      ]
+    },
+    {
+      "service": "Inventory",
+      "method": "POST",
+      "route": "/api/inventory/v1/count-tasks/{countTaskId}/adjustments",
+      "operationId": "confirmInventoryCountAdjustment",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "confirmBusinessConsoleInventoryCountAdjustment"
+      ]
+    },
+    {
+      "service": "Inventory",
+      "method": "POST",
+      "route": "/api/inventory/v1/count-tasks/{countTaskId}/cancel",
+      "operationId": "cancelInventoryCountTask",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; count-task create/adjust are exposed, cancel follows the inventory count Business Console menu phase."
+    },
+    {
+      "service": "Inventory",
+      "method": "GET",
+      "route": "/api/inventory/v1/expiry-alerts",
+      "operationId": "listInventoryExpiryAlerts",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleInventoryExpiryAlerts"
+      ]
+    },
+    {
+      "service": "Inventory",
+      "method": "POST",
+      "route": "/api/inventory/v1/locations",
+      "operationId": "createOrUpdateInventoryLocation",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; inventory location master-setup UI is a later menu phase."
+    },
+    {
+      "service": "Inventory",
+      "method": "POST",
+      "route": "/api/inventory/v1/movements",
+      "operationId": "postInventoryMovement",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "postBusinessConsoleInventoryMovement"
+      ]
+    },
+    {
+      "service": "Inventory",
+      "method": "POST",
+      "route": "/api/inventory/v1/reservations",
+      "operationId": "reserveInventoryStock",
+      "classification": "internal",
+      "rationale": "Service-to-service reservation API consumed by WMS pick-task creation (#412)."
+    },
+    {
+      "service": "Inventory",
+      "method": "POST",
+      "route": "/api/inventory/v1/reservations/fefo",
+      "operationId": "reserveInventoryStockByFefo",
+      "classification": "internal",
+      "rationale": "Service-to-service FEFO reservation API consumed by WMS (#412)."
+    },
+    {
+      "service": "Inventory",
+      "method": "POST",
+      "route": "/api/inventory/v1/reservations/{reservationId}/release",
+      "operationId": "releaseInventoryReservation",
+      "classification": "internal",
+      "rationale": "Service-to-service reservation release API consumed by WMS outbound cancel (#412)."
+    },
+    {
+      "service": "Inventory",
+      "method": "POST",
+      "route": "/api/inventory/v1/status-transfers",
+      "operationId": "postInventoryStatusTransfer",
+      "classification": "internal",
+      "rationale": "Internal controlled-status transition driven by Quality inspection-result events; not a direct Console action."
+    },
+    {
+      "service": "Maintenance",
+      "method": "GET",
+      "route": "/api/business/v1/maintenance/assets/{deviceAssetId}/availability-windows",
+      "operationId": "getMaintenanceAssetAvailabilityWindows",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Maintenance",
+      "method": "GET",
+      "route": "/api/business/v1/maintenance/assets/{deviceAssetId}/reliability",
+      "operationId": "queryMaintenanceAssetReliability",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "queryBusinessConsoleMaintenanceAssetReliability"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "GET",
+      "route": "/api/business/v1/maintenance/availability-windows",
+      "operationId": "queryMaintenanceAvailabilityWindows",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "queryBusinessConsoleMaintenanceAvailabilityWindows"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "GET",
+      "route": "/api/business/v1/maintenance/downtime-reasons",
+      "operationId": "listMaintenanceDowntimeReasons",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; downtime-reason catalog config UI is a later Maintenance menu phase."
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v1/maintenance/downtime-reasons",
+      "operationId": "createMaintenanceDowntimeReason",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; downtime-reason catalog config UI is a later Maintenance menu phase."
+    },
+    {
+      "service": "Maintenance",
+      "method": "DELETE",
+      "route": "/api/business/v1/maintenance/downtime-reasons/{reasonCode}",
+      "operationId": "deleteMaintenanceDowntimeReason",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; downtime-reason catalog config UI is a later Maintenance menu phase."
+    },
+    {
+      "service": "Maintenance",
+      "method": "PUT",
+      "route": "/api/business/v1/maintenance/downtime-reasons/{reasonCode}",
+      "operationId": "updateMaintenanceDowntimeReason",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; downtime-reason catalog config UI is a later Maintenance menu phase."
+    },
+    {
+      "service": "Maintenance",
+      "method": "GET",
+      "route": "/api/business/v1/maintenance/inspection-measurements/trends",
+      "operationId": "queryMaintenanceInspectionMeasurementTrend",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "queryBusinessConsoleMaintenanceInspectionMeasurementTrend"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "GET",
+      "route": "/api/business/v1/maintenance/inspections",
+      "operationId": "listMaintenanceInspections",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMaintenanceInspections"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v1/maintenance/inspections",
+      "operationId": "recordMaintenanceInspection",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleMaintenanceInspection"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "GET",
+      "route": "/api/business/v1/maintenance/plans",
+      "operationId": "listMaintenancePlans",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMaintenancePlans"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v1/maintenance/plans",
+      "operationId": "createMaintenancePlan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleMaintenancePlan"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v1/maintenance/plans/generate-due",
+      "operationId": "generateDueMaintenanceWorkOrders",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "generateDueBusinessConsoleMaintenanceWorkOrders"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "GET",
+      "route": "/api/business/v1/maintenance/reliability/summary",
+      "operationId": "queryMaintenanceReliabilitySummary",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "queryBusinessConsoleMaintenanceReliabilitySummary"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "GET",
+      "route": "/api/business/v1/maintenance/spare-parts",
+      "operationId": "listMaintenanceSpareParts",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMaintenanceSpareParts"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v1/maintenance/spare-parts",
+      "operationId": "createMaintenanceSparePart",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleMaintenanceSparePart"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "GET",
+      "route": "/api/business/v1/maintenance/work-orders",
+      "operationId": "listMaintenanceWorkOrders",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMaintenanceWorkOrders"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v1/maintenance/work-orders",
+      "operationId": "createMaintenanceWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleMaintenanceWorkOrder"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v1/maintenance/work-orders/{workOrderId}/complete",
+      "operationId": "completeMaintenanceWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "completeBusinessConsoleMaintenanceWorkOrder"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started",
+      "operationId": "startMaintenanceRepair",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; repair-start action follows the CMMS execution Business Console menu phase."
+    },
+    {
+      "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/code-rules",
+      "operationId": "listBusinessMasterDataCodeRules",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleCodeRules"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/code-rules/{ruleKey}",
+      "operationId": "getBusinessMasterDataCodeRule",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleCodeRule"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/code-rules/{ruleKey}/preview",
+      "operationId": "previewBusinessMasterDataCodeRule",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "previewBusinessConsoleCodeRule"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/code-rules/{ruleKey}/versions",
+      "operationId": "createBusinessMasterDataCodeRuleVersion",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleCodeRuleVersion"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/departments",
+      "operationId": "createBusinessMasterDataDepartment",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleDepartment"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/device-assets",
+      "operationId": "registerBusinessMasterDataDeviceAsset",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "registerBusinessConsoleDeviceAsset"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/partners",
+      "operationId": "createBusinessMasterDataPartner",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/partners/{customerCode}/credit",
+      "operationId": "getBusinessMasterDataPartnerCredit",
+      "classification": "internal",
+      "rationale": "Service-to-service public credit read consumed by ERP sales-order credit check (#436)."
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/personnel-skills",
+      "operationId": "assignBusinessMasterDataPersonnelSkill",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsolePersonnelSkill"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/personnel-skills/matrix",
+      "operationId": "listBusinessMasterDataPersonnelSkillMatrix",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsolePersonnelSkillMatrix"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/product-categories",
+      "operationId": "listBusinessMasterDataProductCategories",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleProductCategories"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/product-categories",
+      "operationId": "createBusinessMasterDataProductCategory",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleProductCategory"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/product-categories/{categoryCode}",
+      "operationId": "getBusinessMasterDataProductCategory",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleProductCategory"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "PUT",
+      "route": "/api/business/v1/master-data/product-categories/{categoryCode}",
+      "operationId": "updateBusinessMasterDataProductCategory",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "updateBusinessConsoleProductCategory"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/product-categories/{categoryCode}/archive",
+      "operationId": "archiveBusinessMasterDataProductCategory",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "archiveBusinessConsoleProductCategory"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/production-lines",
+      "operationId": "createBusinessMasterDataProductionLine",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleProductionLine"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/reference-data",
+      "operationId": "createBusinessMasterDataReferenceDataCode",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleReferenceDataCode"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/references/resolve",
+      "operationId": "resolveBusinessMasterDataReferences",
+      "classification": "internal",
+      "rationale": "Service-to-service batch reference-data resolve consumed by other business services."
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/references/validate",
+      "operationId": "validateBusinessMasterDataReferences",
+      "classification": "internal",
+      "rationale": "Service-to-service batch reference-data validate consumed by other business services."
+    },
+    {
+      "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/resources",
+      "operationId": "listBusinessMasterDataResources",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMasterDataResources"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/resources/{ResourceType}/{Code}",
+      "operationId": "getBusinessMasterDataResourceDetail",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMasterDataResourceDetail"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "PATCH",
+      "route": "/api/business/v1/master-data/resources/{ResourceType}/{Code}",
+      "operationId": "updateBusinessMasterDataResource",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "updateBusinessConsoleMasterDataResource"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/resources/{ResourceType}/{Code}/disable",
+      "operationId": "disableBusinessMasterDataResource",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "disableBusinessConsoleMasterDataResource"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/resources/{ResourceType}/{Code}/enable",
+      "operationId": "enableBusinessMasterDataResource",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "enableBusinessConsoleMasterDataResource"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/shifts",
+      "operationId": "createBusinessMasterDataShift",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleShift"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/sites",
+      "operationId": "createBusinessMasterDataSite",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleSite"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/skills",
+      "operationId": "listBusinessMasterDataSkills",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleSkills"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/skills",
+      "operationId": "createBusinessMasterDataSkill",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleSkill"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/skills/{skillCode}",
+      "operationId": "getBusinessMasterDataSkill",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleSkill"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "PUT",
+      "route": "/api/business/v1/master-data/skills/{skillCode}",
+      "operationId": "updateBusinessMasterDataSkill",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "updateBusinessConsoleSkill"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/skills/{skillCode}/archive",
+      "operationId": "archiveBusinessMasterDataSkill",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "archiveBusinessConsoleSkill"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/skus",
+      "operationId": "createBusinessMasterDataSku",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleSku"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/teams",
+      "operationId": "createBusinessMasterDataTeam",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleTeam"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/teams/{teamCode}/members",
+      "operationId": "listBusinessMasterDataTeamMembers",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleTeamMembers"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/teams/{teamCode}/members",
+      "operationId": "addBusinessMasterDataTeamMember",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "addBusinessConsoleTeamMember"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "DELETE",
+      "route": "/api/business/v1/master-data/teams/{teamCode}/members/{userId}",
+      "operationId": "removeBusinessMasterDataTeamMember",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "removeBusinessConsoleTeamMember"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/units-of-measure",
+      "operationId": "createBusinessMasterDataUnitOfMeasure",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleUnitOfMeasure"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/uom-conversions",
+      "operationId": "createBusinessMasterDataUomConversion",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleUomConversion"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/work-calendars",
+      "operationId": "createBusinessMasterDataWorkCalendar",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleWorkCalendar"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/work-centers",
+      "operationId": "createBusinessMasterDataWorkCenter",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleWorkCenter"
+      ]
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/workshops",
+      "operationId": "createBusinessMasterDataWorkshop",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleWorkshop"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/capacity-impacts",
+      "operationId": "listBusinessMesCapacityImpacts",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesCapacityImpacts"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/defects",
+      "operationId": "recordBusinessMesDefect",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleMesDefect"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/dispatch-tasks",
+      "operationId": "listBusinessMesDispatchTasks",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesDispatchTasks"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/dispatch-tasks/{operationTaskId}/assign",
+      "operationId": "assignBusinessMesDispatchTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleMesDispatchTask"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/downtime-events",
+      "operationId": "listBusinessMesDowntimeEvents",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesDowntimeEvents"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/downtime-events",
+      "operationId": "recordBusinessMesDowntimeEvent",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleMesDowntimeEvent"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/downtime-events/{downtimeEventId}/recover",
+      "operationId": "confirmBusinessMesDowntimeRecovery",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "confirmBusinessConsoleMesDowntimeRecovery"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/finished-goods-receipt-requests",
+      "operationId": "listBusinessMesFinishedGoodsReceiptRequests",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesFinishedGoodsReceiptRequests"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/finished-goods-receipt-requests",
+      "operationId": "createBusinessMesFinishedGoodsReceiptRequest",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleMesFinishedGoodsReceiptRequest"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-posting/retry",
+      "operationId": "retryBusinessMesFinishedGoodsReceiptInventoryPosting",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "retryBusinessConsoleMesFinishedGoodsReceiptInventoryPosting"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/foundation-readiness/{areaCode}",
+      "operationId": "getBusinessMesFoundationReadinessArea",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/material-issue-requests",
+      "operationId": "listBusinessMesMaterialIssueRequests",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesMaterialIssueRequests"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/material-issue-requests/{requestId}/line-side-receipts",
+      "operationId": "confirmBusinessMesLineSideMaterialReceipt",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "confirmBusinessConsoleMesLineSideMaterialReceipt"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/material-issue-requests/{requestId}/line-side-returns",
+      "operationId": "returnBusinessMesLineSideMaterial",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; line-side return follows the MES material workbench menu phase."
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/operation-tasks",
+      "operationId": "listBusinessMesOperationTasks",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesOperationTasks"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/operation-tasks/{operationTaskId}/complete",
+      "operationId": "completeBusinessMesOperationTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "completeBusinessConsoleMesOperationTask"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/operation-tasks/{operationTaskId}/pause",
+      "operationId": "pauseBusinessMesOperationTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "pauseBusinessConsoleMesOperationTask"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/operation-tasks/{operationTaskId}/resume",
+      "operationId": "resumeBusinessMesOperationTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "resumeBusinessConsoleMesOperationTask"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/operation-tasks/{operationTaskId}/start",
+      "operationId": "startBusinessMesOperationTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "startBusinessConsoleMesOperationTask"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/overview",
+      "operationId": "getBusinessMesOverview",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesOverview"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/production-plans",
+      "operationId": "listBusinessMesProductionPlans",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesProductionPlans"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/production-plans/{productionPlanId}/readiness",
+      "operationId": "getBusinessMesProductionPlanReadiness",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesProductionPlanReadiness"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/production-plans/{productionPlanId}/work-orders",
+      "operationId": "convertBusinessMesPlanToWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "convertBusinessConsoleMesPlanToWorkOrder"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/production-reports",
+      "operationId": "listBusinessMesProductionReports",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesProductionReports"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/production-reports",
+      "operationId": "recordBusinessMesProductionReport",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleMesProductionReport"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/production-reports/{reportNo}/reverse",
+      "operationId": "reverseBusinessMesProductionReport",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "reverseBusinessConsoleMesProductionReport"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release",
+      "operationId": "forceReleaseBusinessMesQualityHold",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "forceReleaseBusinessConsoleMesQualityHold"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/related-quality-items",
+      "operationId": "listBusinessMesRelatedQualityItems",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesRelatedQualityItems"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/schedules/run",
+      "operationId": "runBusinessMesSchedule",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "runBusinessConsoleMesSchedule"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/shift-handovers",
+      "operationId": "listBusinessMesShiftHandovers",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesShiftHandovers"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/shift-handovers",
+      "operationId": "createBusinessMesShiftHandover",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleMesShiftHandover"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/shift-handovers/{handoverId}/accept",
+      "operationId": "acceptBusinessMesShiftHandover",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "acceptBusinessConsoleMesShiftHandover"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/traceability/batches/{batchOrSerial}",
+      "operationId": "getBusinessMesBatchTraceability",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesBatchTraceability"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/traceability/material-lots/{materialLotId}",
+      "operationId": "getBusinessMesMaterialLotTraceability",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesMaterialLotTraceability"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/traceability/work-orders/{workOrderId}",
+      "operationId": "getBusinessMesWorkOrderTraceability",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesWorkOrderTraceability"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/wip",
+      "operationId": "getBusinessMesWipSummary",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesWipSummary"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/work-orders",
+      "operationId": "listBusinessMesWorkOrders",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesWorkOrders"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/rush",
+      "operationId": "createBusinessMesRushWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleMesRushWorkOrder"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}",
+      "operationId": "getBusinessMesWorkOrderDetail",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesWorkOrderDetail"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/cancel",
+      "operationId": "cancelBusinessMesWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "cancelBusinessConsoleMesWorkOrder"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/close",
+      "operationId": "closeBusinessMesWorkOrder",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; MES work-order close follows the workbench close-action menu phase (hold/cancel already exposed via #833)."
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions",
+      "operationId": "recordBusinessMesEngineeringChangeDecision",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; work-order engineering-change-decision follows the ECO-on-workorder menu phase."
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/hold",
+      "operationId": "holdBusinessMesWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "holdBusinessConsoleMesWorkOrder"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/material-issue-requests",
+      "operationId": "createBusinessMesMaterialIssueRequest",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleMesMaterialIssueRequest"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness",
+      "operationId": "getBusinessMesMaterialReadiness",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesMaterialReadiness"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/release",
+      "operationId": "releaseBusinessMesWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "releaseBusinessConsoleMesWorkOrder"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/boms/diff",
+      "operationId": "getBusinessBomDiff",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleEngineeringBomDiff"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/documents",
+      "operationId": "listBusinessEngineeringDocuments",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleEngineeringDocuments"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "POST",
+      "route": "/api/business/v1/engineering/documents",
+      "operationId": "registerBusinessEngineeringDocument",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "registerBusinessConsoleEngineeringDocument"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/documents/{documentNumber}/{revision}",
+      "operationId": "getBusinessEngineeringDocument",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleEngineeringDocument"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/engineering-boms",
+      "operationId": "listBusinessEngineeringBoms",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleEngineeringBoms"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/engineering-boms/explosion",
+      "operationId": "getBusinessEngineeringBomExplosion",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleEngineeringBomExplosion"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "POST",
+      "route": "/api/business/v1/engineering/engineering-boms/release",
+      "operationId": "releaseBusinessEngineeringBom",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "releaseBusinessConsoleEngineeringBom"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/engineering-boms/where-used",
+      "operationId": "getBusinessEngineeringBomWhereUsed",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleEngineeringBomWhereUsed"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/engineering-boms/{bomCode}/{revision}",
+      "operationId": "getBusinessEngineeringBom",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleEngineeringBom"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/engineering-changes",
+      "operationId": "listBusinessEngineeringChanges",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleEngineeringChanges"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "POST",
+      "route": "/api/business/v1/engineering/engineering-changes/cancel-scheduled",
+      "operationId": "cancelScheduledBusinessEngineeringChange",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "cancelScheduledBusinessConsoleEngineeringChange"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "POST",
+      "route": "/api/business/v1/engineering/engineering-changes/impact-preview",
+      "operationId": "previewBusinessEngineeringChangeImpact",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "previewBusinessConsoleEngineeringChangeImpact"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "POST",
+      "route": "/api/business/v1/engineering/engineering-changes/release",
+      "operationId": "releaseBusinessEngineeringChange",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "releaseBusinessConsoleEngineeringChange"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "POST",
+      "route": "/api/business/v1/engineering/engineering-changes/reschedule",
+      "operationId": "rescheduleBusinessEngineeringChange",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "rescheduleBusinessConsoleEngineeringChange"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/engineering-changes/{changeNumber}",
+      "operationId": "getBusinessEngineeringChange",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleEngineeringChange"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/items",
+      "operationId": "listBusinessEngineeringItems",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleEngineeringItems"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "POST",
+      "route": "/api/business/v1/engineering/items",
+      "operationId": "createBusinessEngineeringItemRevision",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleEngineeringItemRevision"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/items/{itemCode}/{revision}",
+      "operationId": "getBusinessEngineeringItem",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleEngineeringItem"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/manufacturing-boms",
+      "operationId": "listBusinessManufacturingBoms",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleEngineeringManufacturingBoms"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/manufacturing-boms/explosion",
+      "operationId": "getBusinessManufacturingBomExplosion",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleEngineeringManufacturingBomExplosion"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "POST",
+      "route": "/api/business/v1/engineering/manufacturing-boms/release",
+      "operationId": "releaseBusinessManufacturingBom",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "releaseBusinessConsoleEngineeringManufacturingBom"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/manufacturing-boms/where-used",
+      "operationId": "getBusinessManufacturingBomWhereUsed",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleEngineeringManufacturingBomWhereUsed"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/manufacturing-boms/{bomCode}/{revision}",
+      "operationId": "getBusinessManufacturingBom",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleEngineeringManufacturingBom"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/production-versions",
+      "operationId": "listBusinessProductionVersions",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleEngineeringProductionVersions"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "POST",
+      "route": "/api/business/v1/engineering/production-versions",
+      "operationId": "createBusinessProductionVersion",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleEngineeringProductionVersion"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/production-versions/resolve",
+      "operationId": "resolveBusinessProductionVersion",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "resolveBusinessConsoleEngineeringProductionVersion"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "PUT",
+      "route": "/api/business/v1/engineering/production-versions/{productionVersionId}",
+      "operationId": "updateBusinessProductionVersion",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "updateBusinessConsoleEngineeringProductionVersion"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "POST",
+      "route": "/api/business/v1/engineering/production-versions/{productionVersionId}/archive",
+      "operationId": "archiveBusinessProductionVersion",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "archiveBusinessConsoleEngineeringProductionVersion"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/routings",
+      "operationId": "listBusinessRoutings",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleEngineeringRoutings"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "POST",
+      "route": "/api/business/v1/engineering/routings/release",
+      "operationId": "releaseBusinessRouting",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "releaseBusinessConsoleEngineeringRouting"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/routings/{routingCode}/{revision}",
+      "operationId": "getBusinessRouting",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleEngineeringRouting"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/sops/current",
+      "operationId": "getBusinessCurrentEngineeringSopDocuments",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleCurrentEngineeringSopDocuments"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "POST",
+      "route": "/api/business/v1/engineering/sops/publish",
+      "operationId": "publishBusinessEngineeringSopDocument",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "publishBusinessConsoleEngineeringSopDocument"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/standard-operations",
+      "operationId": "listBusinessStandardOperations",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleEngineeringStandardOperations"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "POST",
+      "route": "/api/business/v1/engineering/standard-operations",
+      "operationId": "createBusinessStandardOperation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleEngineeringStandardOperation"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "GET",
+      "route": "/api/business/v1/engineering/standard-operations/{operationCode}",
+      "operationId": "getBusinessStandardOperation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleEngineeringStandardOperation"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "PUT",
+      "route": "/api/business/v1/engineering/standard-operations/{operationCode}",
+      "operationId": "updateBusinessStandardOperation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "updateBusinessConsoleEngineeringStandardOperation"
+      ]
+    },
+    {
+      "service": "ProductEngineering",
+      "method": "POST",
+      "route": "/api/business/v1/engineering/standard-operations/{operationCode}/archive",
+      "operationId": "archiveBusinessStandardOperation",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "archiveBusinessConsoleEngineeringStandardOperation"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/capas",
+      "operationId": "openBusinessQualityCapa",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; CAPA management facade tracked by #677, unlocks frontend #804."
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/capas/{correctiveActionId}/actions",
+      "operationId": "addBusinessQualityCapaAction",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; CAPA management facade tracked by #677, unlocks frontend #804."
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/capas/{correctiveActionId}/actions/{correctiveActionItemId}/complete",
+      "operationId": "completeBusinessQualityCapaAction",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; CAPA management facade tracked by #677, unlocks frontend #804."
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/capas/{correctiveActionId}/close",
+      "operationId": "closeBusinessQualityCapa",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; CAPA management facade tracked by #677, unlocks frontend #804."
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/capas/{correctiveActionId}/effectiveness",
+      "operationId": "verifyBusinessQualityCapaEffectiveness",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; CAPA management facade tracked by #677, unlocks frontend #804."
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/inspection-plans",
+      "operationId": "listBusinessQualityInspectionPlans",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualityInspectionPlans"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/inspection-plans",
+      "operationId": "createBusinessQualityInspectionPlan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/inspection-plans/{inspectionPlanId}/activate",
+      "operationId": "activateBusinessQualityInspectionPlan",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; inspection-plan activation follows the Quality plan-lifecycle menu phase."
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/inspection-records",
+      "operationId": "listBusinessQualityInspectionRecords",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualityInspectionRecords"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/inspection-records",
+      "operationId": "createBusinessQualityInspectionRecord",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleQualityInspectionRecord"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr",
+      "operationId": "openBusinessQualityNcrFromInspection",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "openBusinessConsoleQualityNcrFromInspection"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/inspection-tasks",
+      "operationId": "listBusinessQualityInspectionTasks",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualityInspectionTasks"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record",
+      "operationId": "createBusinessQualityInspectionRecordFromTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleQualityInspectionRecordFromTask"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/ncrs",
+      "operationId": "listBusinessQualityNcrs",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualityNcrs"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/ncrs",
+      "operationId": "createBusinessQualityNcr",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "Proxied via BusinessGateway (aggregation or renamed facade path); no 1:1 snapshot route."
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/ncrs/{ncrId}",
+      "operationId": "getBusinessQualityNcr",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; NCR list/disposition/close are exposed, single-NCR detail-by-id follows the Quality NCR detail menu phase."
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/ncrs/{ncrId}/close",
+      "operationId": "closeBusinessQualityNcr",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "closeBusinessConsoleQualityNcr"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/ncrs/{ncrId}/disposition",
+      "operationId": "submitBusinessQualityNcrDisposition",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "submitBusinessConsoleQualityNcrDisposition"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/reason-codes",
+      "operationId": "listBusinessQualityReasonCodes",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualityReasonCodes"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/reason-codes",
+      "operationId": "createBusinessQualityReasonCode",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleQualityReasonCode"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/reason-codes/{reasonCode}",
+      "operationId": "getBusinessQualityReasonCode",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleQualityReasonCode"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "PUT",
+      "route": "/api/business/v1/quality/reason-codes/{reasonCode}",
+      "operationId": "updateBusinessQualityReasonCode",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "updateBusinessConsoleQualityReasonCode"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/reason-codes/{reasonCode}/archive",
+      "operationId": "archiveBusinessQualityReasonCode",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "archiveBusinessConsoleQualityReasonCode"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/spc/control-chart",
+      "operationId": "queryBusinessQualitySpcControlChart",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "queryBusinessConsoleQualitySpcControlChart"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/spc/control-chart/evaluate",
+      "operationId": "evaluateBusinessQualitySpcControlChart",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; SPC control-chart read is exposed, evaluate (write) follows the SPC analysis menu phase (#725)."
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/spc/control-chart/lock",
+      "operationId": "lockBusinessQualitySpcControlChart",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; SPC control-limit lock (write) follows the SPC analysis menu phase (#725)."
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/spc/process-capability",
+      "operationId": "queryBusinessQualityProcessCapability",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "queryBusinessConsoleQualityProcessCapability"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "GET",
+      "route": "/api/business/v1/scheduling/plans",
+      "operationId": "listSchedulingPlans",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleSchedulingPlans"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
+      "route": "/api/business/v1/scheduling/plans",
+      "operationId": "createSchedulingPlan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleSchedulingPlan"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
+      "route": "/api/business/v1/scheduling/plans/preview",
+      "operationId": "previewSchedulingPlan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "previewBusinessConsoleSchedulingPlan"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "GET",
+      "route": "/api/business/v1/scheduling/plans/{planId}",
+      "operationId": "getSchedulingPlan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleSchedulingPlan"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "GET",
+      "route": "/api/business/v1/scheduling/plans/{planId}/gantt",
+      "operationId": "getSchedulingPlanGantt",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleSchedulingPlanGantt"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
+      "route": "/api/business/v1/scheduling/plans/{planId}/release",
+      "operationId": "releaseSchedulingPlan",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "releaseBusinessConsoleSchedulingPlan"
+      ]
+    },
+    {
+      "service": "Scheduling",
+      "method": "POST",
+      "route": "/api/business/v1/scheduling/problems/assemble",
+      "operationId": "assembleSchedulingProblem",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; APS problem-assemble follows the scheduling workbench menu phase (preview/create/gantt/release already exposed)."
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/count-executions",
+      "operationId": "listWmsCountExecutions",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleWmsCountExecutions"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/count-executions",
+      "operationId": "createWmsCountExecution",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleWmsCountExecution"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/count-executions/{countExecutionId}/complete",
+      "operationId": "completeWmsCountExecution",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "completeBusinessConsoleWmsCountExecution"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/inbound-orders",
+      "operationId": "listWmsInboundOrders",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleWmsInboundOrders"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/inbound-orders",
+      "operationId": "createWmsInboundOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleWmsInboundOrder"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete",
+      "operationId": "completeWmsInboundOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "completeBusinessConsoleWmsInboundOrder"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry",
+      "operationId": "retryWmsInboundInventoryPosting",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; WMS inbound posting-retry follows the WMS operations menu phase (MES posting-retry already exposed via #833)."
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks",
+      "operationId": "createWmsPutawayTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleWmsPutawayTask"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/outbound-orders",
+      "operationId": "listWmsOutboundOrders",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleWmsOutboundOrders"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/outbound-orders",
+      "operationId": "createWmsOutboundOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleWmsOutboundOrder"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/outbound-orders/{outboundOrderId}/cancel",
+      "operationId": "cancelWmsOutboundOrder",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; WMS outbound cancel follows the WMS operations menu phase."
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/outbound-orders/{outboundOrderId}/complete",
+      "operationId": "completeWmsOutboundOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "completeBusinessConsoleWmsOutboundOrder"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry",
+      "operationId": "retryWmsOutboundInventoryPosting",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; WMS outbound posting-retry follows the WMS operations menu phase."
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks",
+      "operationId": "createWmsPickingTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createBusinessConsoleWmsPickingTask"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/picking-tasks",
+      "operationId": "listWmsPickingTasks",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleWmsPickingTasks"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/putaway-tasks",
+      "operationId": "listWmsPutawayTasks",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleWmsPutawayTasks"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/receiving-quality-gates",
+      "operationId": "listWmsReceivingQualityGates",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleWmsReceivingQualityGates"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/supplier-return-requests",
+      "operationId": "listWmsSupplierReturnRequests",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleWmsSupplierReturnRequests"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete",
+      "operationId": "completeWmsWarehouseTask",
+      "classification": "internal",
+      "rationale": "Internal warehouse-task completion endpoint consumed by the WCS adapter/callback boundary (#413)."
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/progress",
+      "operationId": "recordWmsWarehouseTaskProgress",
+      "classification": "internal",
+      "rationale": "Internal warehouse-task progress endpoint consumed by the WCS adapter/callback boundary (#413)."
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/wcs-tasks",
+      "operationId": "listWmsWcsTasks",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleWmsWcsTasks"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/wcs-tasks/{externalTaskId}/complete",
+      "operationId": "completeWmsWcsTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "completeBusinessConsoleWmsWcsTask"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/wcs-tasks/{externalTaskId}/fail",
+      "operationId": "failWmsWcsTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "failBusinessConsoleWmsWcsTask"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch",
+      "operationId": "dispatchWmsWcsTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "dispatchBusinessConsoleWmsWcsTask"
+      ]
+    }
+  ]
+}

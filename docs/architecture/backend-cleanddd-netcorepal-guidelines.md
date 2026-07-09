@@ -168,6 +168,7 @@ Endpoint：
 6. 只有当单个 Endpoint 同时需要复杂 metadata、特殊 Swagger 描述或其它高级 FastEndpoints 配置时，才把该 Endpoint 完整切换到 `Configure()`；切换后路由、鉴权和 metadata 都放在同一个 `Configure()` 中。
 7. 响应统一使用 `ResponseData<T>` 和 `.AsResponseData()`。
 8. 请求/响应类型可以直接使用强类型 ID，不解包 `.Value`。
+9. 新增或修改业务服务对外 HTTP Endpoint 时，必须在 issue/PR 声明该端点的 facade 消费面三选一（`exposed`/`deferred`/`internal`）并登记 `docs/architecture/facade-coverage-matrix.json`；详见 AGENTS.md「Facade Coverage Governance」与 `docs/architecture/facade-coverage-matrix.md`。
 
 ## 事务、领域事件与集成事件
 
@@ -281,6 +282,12 @@ Web 集成测试：
 1. DomainEventHandler 异常应导致命令事务回滚。
 2. IntegrationEventConverter 应只输出外部契约需要的字段。
 3. IntegrationEventHandler 按重复投递测试幂等性。
+
+Facade 消费面验收（强制三选一，无缺省）：
+
+1. 凡新增/修改业务服务对外 HTTP 端点，验收必须为每个端点声明其一：`exposed`（本 PR 同步交付 Gateway facade + OpenAPI 导出 + codegen + stable barrel）、`deferred`（显式后置，在 `docs/architecture/facade-coverage-matrix.json` 登记 `followUp` 待办与预期前端 issue/菜单分期）、`internal`（永不暴露，如 #688 运行小时先例，登记 `rationale`）。
+2. `backend/tests/Nerv.IIP.FacadeCoverage.Tests`（随 `dotnet test backend/Nerv.IIP.sln` 执行）反射各服务 `*EndpointContracts.All` 与矩阵比对：新增端点未登记即失败；`exposed` 但快照缺对应 facade 即失败；`deferred`/`internal` 被悄悄暴露即失败。
+3. 声明 `exposed` 的 focused verify 脚本应通过 `Assert-FacadeTypesGenExport`（`scripts/lib/ScriptAutomation.ps1`）断言对应类型已进入 `types.gen.ts` 且从 stable barrel 导出。
 
 首批提交前至少运行：
 

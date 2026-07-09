@@ -453,6 +453,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Contracts.DemandPl
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.Contracts.Erp", "common\Contracts\Nerv.IIP.Contracts.Erp\Nerv.IIP.Contracts.Erp.csproj", "{1F625B3A-1754-4443-A343-7079A5D6C1D6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nerv.IIP.FacadeCoverage.Tests", "tests\Nerv.IIP.FacadeCoverage.Tests\Nerv.IIP.FacadeCoverage.Tests.csproj", "{C39B8BC4-9574-43FE-99D5-D3FA3838AD5A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -2263,6 +2265,18 @@ Global
 		{1F625B3A-1754-4443-A343-7079A5D6C1D6}.Release|x64.Build.0 = Release|Any CPU
 		{1F625B3A-1754-4443-A343-7079A5D6C1D6}.Release|x86.ActiveCfg = Release|Any CPU
 		{1F625B3A-1754-4443-A343-7079A5D6C1D6}.Release|x86.Build.0 = Release|Any CPU
+		{C39B8BC4-9574-43FE-99D5-D3FA3838AD5A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C39B8BC4-9574-43FE-99D5-D3FA3838AD5A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C39B8BC4-9574-43FE-99D5-D3FA3838AD5A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C39B8BC4-9574-43FE-99D5-D3FA3838AD5A}.Debug|x64.Build.0 = Debug|Any CPU
+		{C39B8BC4-9574-43FE-99D5-D3FA3838AD5A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C39B8BC4-9574-43FE-99D5-D3FA3838AD5A}.Debug|x86.Build.0 = Debug|Any CPU
+		{C39B8BC4-9574-43FE-99D5-D3FA3838AD5A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C39B8BC4-9574-43FE-99D5-D3FA3838AD5A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C39B8BC4-9574-43FE-99D5-D3FA3838AD5A}.Release|x64.ActiveCfg = Release|Any CPU
+		{C39B8BC4-9574-43FE-99D5-D3FA3838AD5A}.Release|x64.Build.0 = Release|Any CPU
+		{C39B8BC4-9574-43FE-99D5-D3FA3838AD5A}.Release|x86.ActiveCfg = Release|Any CPU
+		{C39B8BC4-9574-43FE-99D5-D3FA3838AD5A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -2487,5 +2501,6 @@ Global
 		{D1647D0C-9F8D-4464-AD59-77BF646F91A6} = {56787BCC-1D17-4674-3EC8-20108B77A4E0}
 		{6E9B4D03-C631-4B84-B6F0-4D00A5FE17D3} = {56787BCC-1D17-4674-3EC8-20108B77A4E0}
 		{1F625B3A-1754-4443-A343-7079A5D6C1D6} = {56787BCC-1D17-4674-3EC8-20108B77A4E0}
+		{C39B8BC4-9574-43FE-99D5-D3FA3838AD5A} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal
