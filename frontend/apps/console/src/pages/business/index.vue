@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import {
   Card,
@@ -42,7 +42,7 @@ const businessServices: BusinessService[] = [
   { name: 'BusinessERP', scope: '采购、销售与财务 MVP 事实' },
 ]
 
-const columns: DataTableColumn<BusinessService>[] = [
+const columns: NvDataTableColumn<BusinessService>[] = [
   { key: 'name', header: '服务', cellClass: 'font-medium' },
   { key: 'scope', header: '能力范围', cellClass: 'text-muted-foreground' },
   { key: 'status', header: '状态', align: 'end', width: 'w-24' },

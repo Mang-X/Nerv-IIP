@@ -5,7 +5,7 @@ import type {
   ConsoleResetIamUserPasswordRequest,
   ConsoleUpdateIamUserRequest,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import UserCreateDialog from '@/components/iam/UserCreateDialog.vue'
 import UserEditDialog from '@/components/iam/UserEditDialog.vue'
 import UserResetPasswordDialog from '@/components/iam/UserResetPasswordDialog.vue'
@@ -126,7 +126,7 @@ const statusModel = computed({
   },
 })
 
-const columns: DataTableColumn<UserRow>[] = [
+const columns: NvDataTableColumn<UserRow>[] = [
   {
     key: 'loginName',
     header: '登录名',

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ConsoleIamRoleResponse } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import PermissionCodeBadge from '@/components/iam/PermissionCodeBadge.vue'
 import RoleCreateDialog from '@/components/iam/RoleCreateDialog.vue'
 import RolePermissionEditor from '@/components/iam/RolePermissionEditor.vue'
@@ -74,7 +74,7 @@ const pageSize = computed({
   },
 })
 
-const columns: DataTableColumn<RoleRow>[] = [
+const columns: NvDataTableColumn<RoleRow>[] = [
   {
     key: 'roleName',
     header: '角色名称',

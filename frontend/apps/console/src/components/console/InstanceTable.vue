@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { InstanceListItem } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { Button, NvDataTable, NvStatusBadge } from '@nerv-iip/ui'
 import { instanceStatusLabel, instanceTone } from './instanceStatus'
 
@@ -18,7 +18,7 @@ const emit = defineEmits<{
 
 type InstanceRow = InstanceListItem
 
-const columns: DataTableColumn<InstanceRow>[] = [
+const columns: NvDataTableColumn<InstanceRow>[] = [
   {
     key: 'app',
     header: '应用',

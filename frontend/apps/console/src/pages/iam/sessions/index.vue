@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ConsoleIamSessionResponse } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import RevokeSessionDialog from '@/components/iam/RevokeSessionDialog.vue'
 import { useIamSessions } from '@/composables/useIamAdmin'
 import { useHasPermission } from '@/composables/usePermissions'
@@ -70,7 +70,7 @@ const statusModel = computed({
   },
 })
 
-const columns: DataTableColumn<SessionRow>[] = [
+const columns: NvDataTableColumn<SessionRow>[] = [
   { key: 'sessionId', header: '会话 ID', cellClass: 'font-mono text-xs' },
   {
     key: 'userId',
