@@ -2,7 +2,13 @@
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useWmsInbound } from '@/composables/useBusinessWms'
 import { inboundOrderStatusLabel, inboundReceiveFlow } from '@nerv-iip/business-core'
-import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
+import {
+  NvAppShellMobile,
+  NvBottomSheet,
+  NvListRow,
+  NvMobileResult,
+  NvScanBar,
+} from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -93,7 +99,7 @@ function goHome() {
 </script>
 
 <template>
-  <AppShellMobile>
+  <NvAppShellMobile>
     <template #header>
       <div class="px-4 py-3">
         <h1 class="text-lg font-semibold text-foreground">收货入库</h1>
@@ -101,7 +107,7 @@ function goHome() {
     </template>
 
     <!-- 成功结果态 -->
-    <Result
+    <NvMobileResult
       v-if="completed"
       status="success"
       title="入库已完成"
@@ -123,14 +129,10 @@ function goHome() {
           返回
         </button>
       </template>
-    </Result>
+    </NvMobileResult>
 
     <div v-else class="space-y-4 p-4">
-      <ScanBar
-        placeholder="扫描收货单号"
-        :active="scanActive"
-        @scan="onScan"
-      />
+      <NvScanBar placeholder="扫描收货单号" :active="scanActive" @scan="onScan" />
 
       <p
         v-if="error"
@@ -148,7 +150,7 @@ function goHome() {
       </div>
 
       <div v-else class="overflow-hidden rounded-lg border border-border">
-        <ListRow
+        <NvListRow
           v-for="order in orders"
           :key="order.inboundOrderId"
           :title="order.inboundOrderNo ?? ''"
@@ -159,18 +161,12 @@ function goHome() {
     </div>
 
     <!-- 完成入库确认抽屉 -->
-    <BottomSheet
-      :open="sheetOpen"
-      title="完成收货入库"
-      @update:open="(v) => (sheetOpen = v)"
-    >
+    <NvBottomSheet :open="sheetOpen" title="完成收货入库" @update:open="(v) => (sheetOpen = v)">
       <div class="space-y-4">
         <p v-if="flowStep === 'complete'" class="text-xs text-muted-foreground">
           已选单，待完成入库
         </p>
-        <p class="text-base text-foreground">
-          确认完成收货入库？
-        </p>
+        <p class="text-base text-foreground">确认完成收货入库？</p>
         <p v-if="selectedOrderNo" class="text-sm text-muted-foreground">
           收货单 {{ selectedOrderNo }}
         </p>
@@ -196,6 +192,6 @@ function goHome() {
           </button>
         </div>
       </div>
-    </BottomSheet>
-  </AppShellMobile>
+    </NvBottomSheet>
+  </NvAppShellMobile>
 </template>

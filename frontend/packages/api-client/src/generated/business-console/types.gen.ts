@@ -606,6 +606,82 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     correlationId: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryDeviceControlCommandDetail = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlCommandDetail | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlCommandDetail = {
+    commandId?: string;
+    operationTaskId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    connectorHostId?: string;
+    instanceKey?: string;
+    deviceAssetId?: string;
+    commandType?: string;
+    tagKey?: string | null;
+    value?: string | null;
+    parameters?: {
+        [key: string]: string;
+    } | null;
+    requestedBy?: string;
+    reason?: string;
+    correlationId?: string;
+    idempotencyKey?: string;
+    requestedAtUtc?: string;
+    status?: string;
+    statusFromLiveOps?: boolean;
+    approval?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryOperationApprovalSummary | null;
+    currentAttemptId?: string | null;
+    attempts?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlCommandAttempt>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlCommandAttempt = {
+    attemptId?: string;
+    status?: string;
+    startedAtUtc?: string;
+    finishedAtUtc?: string | null;
+    failureCode?: string | null;
+    output?: {
+        [key: string]: string;
+    } | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlCommandContextRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryDeviceControlCommandListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlCommandListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlCommandListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlCommandListItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlCommandListItem = {
+    commandId?: string;
+    operationTaskId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    connectorHostId?: string;
+    deviceAssetId?: string;
+    commandType?: string;
+    tagKey?: string | null;
+    value?: string | null;
+    requestedBy?: string;
+    reason?: string;
+    status?: string;
+    approvalStatus?: string | null;
+    correlationId?: string;
+    requestedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlCommandListRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordTelemetrySampleResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordTelemetrySampleResponse | null;
 };
@@ -6492,6 +6568,48 @@ export type CreateOrUpdateBusinessConsoleTelemetryAlarmRuleResponses = {
 
 export type CreateOrUpdateBusinessConsoleTelemetryAlarmRuleResponse = CreateOrUpdateBusinessConsoleTelemetryAlarmRuleResponses[keyof CreateOrUpdateBusinessConsoleTelemetryAlarmRuleResponses];
 
+export type ListBusinessConsoleTelemetryDeviceControlCommandsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        deviceAssetId?: string | null;
+        status?: string | null;
+        fromUtc?: string | null;
+        toUtc?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/telemetry/device-control-commands';
+};
+
+export type ListBusinessConsoleTelemetryDeviceControlCommandsErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleTelemetryDeviceControlCommandsError = ListBusinessConsoleTelemetryDeviceControlCommandsErrors[keyof ListBusinessConsoleTelemetryDeviceControlCommandsErrors];
+
+export type ListBusinessConsoleTelemetryDeviceControlCommandsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryDeviceControlCommandListResponse;
+};
+
+export type ListBusinessConsoleTelemetryDeviceControlCommandsResponse = ListBusinessConsoleTelemetryDeviceControlCommandsResponses[keyof ListBusinessConsoleTelemetryDeviceControlCommandsResponses];
+
 export type CreateBusinessConsoleTelemetryDeviceControlCommandData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlCommandRequest;
     path?: never;
@@ -6524,6 +6642,45 @@ export type CreateBusinessConsoleTelemetryDeviceControlCommandResponses = {
 };
 
 export type CreateBusinessConsoleTelemetryDeviceControlCommandResponse = CreateBusinessConsoleTelemetryDeviceControlCommandResponses[keyof CreateBusinessConsoleTelemetryDeviceControlCommandResponses];
+
+export type GetBusinessConsoleTelemetryDeviceControlCommandData = {
+    body?: never;
+    path: {
+        commandId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        deviceAssetId: string;
+    };
+    url: '/api/business-console/v1/telemetry/device-control-commands/{commandId}';
+};
+
+export type GetBusinessConsoleTelemetryDeviceControlCommandErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleTelemetryDeviceControlCommandError = GetBusinessConsoleTelemetryDeviceControlCommandErrors[keyof GetBusinessConsoleTelemetryDeviceControlCommandErrors];
+
+export type GetBusinessConsoleTelemetryDeviceControlCommandResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryDeviceControlCommandDetail;
+};
+
+export type GetBusinessConsoleTelemetryDeviceControlCommandResponse = GetBusinessConsoleTelemetryDeviceControlCommandResponses[keyof GetBusinessConsoleTelemetryDeviceControlCommandResponses];
 
 export type RecordBusinessConsoleTelemetrySampleData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordTelemetrySampleRequest;

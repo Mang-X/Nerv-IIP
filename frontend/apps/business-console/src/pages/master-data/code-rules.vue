@@ -4,41 +4,47 @@ import type {
   BusinessConsoleCodeRuleSegment,
   BusinessConsoleCreateCodeRuleVersionRequest,
 } from '@nerv-iip/api-client'
-import type { DataTableProColumn, StatusTone } from '@nerv-iip/ui'
+import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useCodeRules } from '@/composables/useCodeRules'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  CheckboxPro,
-  DataTablePro,
-  DatePickerPro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DialogProTrigger,
-  FieldPro,
-  FieldProDescription,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvCheckbox,
+  NvDataTable,
+  NvDatePicker,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDialogTrigger,
+  NvField,
+  NvFieldDescription,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
+  NvStatusBadge,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '编码规则', requiredPermissions: ['business.masterdata.resources.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '编码规则',
+    requiredPermissions: ['business.masterdata.resources.read'],
+  },
+})
 
 const {
   filters,
@@ -86,26 +92,34 @@ const TRANSFORM_LABEL: Record<FieldTransform, string> = {
 const DATE_FORMAT_OPTIONS = ['yyyyMMdd', 'yyMMdd', 'yyyyMM', 'yyMM', 'yyyy', 'yy']
 const CHECKSUM_ALGORITHM_OPTIONS = ['hash-mod10', 'hash-mod11']
 
-const SEGMENT_TYPE_OPTIONS = (Object.keys(SEGMENT_TYPE_LABEL) as SegmentType[])
-  .map((value) => ({ value, label: SEGMENT_TYPE_LABEL[value] }))
-const SCOPE_OPTIONS = (Object.keys(SCOPE_LABEL) as ScopeDimension[])
-  .map((value) => ({ value, label: SCOPE_LABEL[value] }))
-const RESET_OPTIONS = (Object.keys(RESET_LABEL) as ResetPeriod[])
-  .map((value) => ({ value, label: RESET_LABEL[value] }))
-const TRANSFORM_OPTIONS = (Object.keys(TRANSFORM_LABEL) as FieldTransform[])
-  .map((value) => ({ value, label: TRANSFORM_LABEL[value] }))
+const SEGMENT_TYPE_OPTIONS = (Object.keys(SEGMENT_TYPE_LABEL) as SegmentType[]).map((value) => ({
+  value,
+  label: SEGMENT_TYPE_LABEL[value],
+}))
+const SCOPE_OPTIONS = (Object.keys(SCOPE_LABEL) as ScopeDimension[]).map((value) => ({
+  value,
+  label: SCOPE_LABEL[value],
+}))
+const RESET_OPTIONS = (Object.keys(RESET_LABEL) as ResetPeriod[]).map((value) => ({
+  value,
+  label: RESET_LABEL[value],
+}))
+const TRANSFORM_OPTIONS = (Object.keys(TRANSFORM_LABEL) as FieldTransform[]).map((value) => ({
+  value,
+  label: TRANSFORM_LABEL[value],
+}))
 
 function segmentTypeLabel(type?: SegmentType | null) {
-  return type ? SEGMENT_TYPE_LABEL[type] ?? type : '—'
+  return type ? (SEGMENT_TYPE_LABEL[type] ?? type) : '—'
 }
 function scopeLabel(scope?: ScopeDimension | null) {
-  return scope ? SCOPE_LABEL[scope] ?? scope : '—'
+  return scope ? (SCOPE_LABEL[scope] ?? scope) : '—'
 }
 function resetLabel(reset?: ResetPeriod | null) {
-  return reset ? RESET_LABEL[reset] ?? reset : '不重置'
+  return reset ? (RESET_LABEL[reset] ?? reset) : '不重置'
 }
 function transformLabel(transform?: FieldTransform | null) {
-  return transform ? TRANSFORM_LABEL[transform] ?? transform : '原样'
+  return transform ? (TRANSFORM_LABEL[transform] ?? transform) : '原样'
 }
 
 // 单段拼成可读串，如「常量(SKU)」「日期(yyMM)」「流水(4)」。
@@ -170,7 +184,7 @@ const pagedRules = computed(() => {
   return rules.value.slice(startIndex, startIndex + pageSizeNumber.value)
 })
 
-const columns: DataTableProColumn<BusinessConsoleCodeRuleItem>[] = [
+const columns: NvDataTableColumn<BusinessConsoleCodeRuleItem>[] = [
   { key: 'ruleKey', header: '规则键', width: 'w-48' },
   { key: 'displayName', header: '名称', cellClass: 'font-medium' },
   { key: 'appliesTo', header: '适用对象' },
@@ -213,11 +227,9 @@ async function openView(row: BusinessConsoleCodeRuleItem) {
     const detail = await fetchRuleDetail(row.ruleKey)
     if (detail?.rule) viewTarget.value = detail.rule
     versions.value = detail?.versions ?? []
-  }
-  catch (error) {
+  } catch (error) {
     versionsError.value = formatError(error) || '加载版本历史失败，请稍后重试。'
-  }
-  finally {
+  } finally {
     versionsPending.value = false
   }
 }
@@ -230,11 +242,9 @@ async function previewViewSample() {
   try {
     const sample = await previewCode(rule.ruleKey, rule.segments ?? [])
     viewPreview.value = sample ?? '（无返回）'
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
-  }
-  finally {
+  } finally {
     viewPreviewPending.value = false
   }
 }
@@ -335,9 +345,7 @@ function segmentError(row: SegmentRow): string | null {
     case 'constant':
       return row.value.trim() ? null : '常量段的常量值必填。'
     case 'date':
-      return DATE_FORMAT_OPTIONS.includes(row.format.trim())
-        ? null
-        : '请选择有效的日期格式。'
+      return DATE_FORMAT_OPTIONS.includes(row.format.trim()) ? null : '请选择有效的日期格式。'
     case 'sequence': {
       const width = parseNumber(row.width)
       const start = parseNumber(row.start)
@@ -368,13 +376,14 @@ const sequenceCountError = computed(() => {
   if (sequenceCount.value > 1) return '只能有 1 个流水段。'
   return ''
 })
-const segmentsValid = computed(() =>
-  form.segments.length > 0
-  && segmentErrors.value.every((e) => e === null)
-  && sequenceCountError.value === '',
+const segmentsValid = computed(
+  () =>
+    form.segments.length > 0 &&
+    segmentErrors.value.every((e) => e === null) &&
+    sequenceCountError.value === '',
 )
-const canSubmit = computed(() =>
-  displayNameValid.value && createdByValid.value && segmentsValid.value,
+const canSubmit = computed(
+  () => displayNameValid.value && createdByValid.value && segmentsValid.value,
 )
 
 // 把编辑行映射成契约段（number 空串转 undefined）。
@@ -445,11 +454,9 @@ async function previewFormSample() {
     const segments = form.segments.map(rowToSegment)
     const sample = await previewCode(editingRuleKey.value, segments)
     formPreview.value = sample ?? '（无返回）'
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
-  }
-  finally {
+  } finally {
     formPreviewPending.value = false
   }
 }
@@ -480,8 +487,7 @@ async function submitForm() {
     showErrors.value = false
     formOpen.value = false
     editingRuleKey.value = null
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -489,29 +495,38 @@ async function submitForm() {
 
 <template>
   <BusinessLayout>
-    <PageHeader
+    <NvPageHeader
       title="编码规则"
       :breadcrumbs="[{ label: '基础数据' }]"
       :count="`${rules.length} 条规则`"
     >
       <template #actions>
-        <ButtonPro size="sm" variant="outline" type="button" :disabled="rulesPending" @click="refresh">
+        <NvButton
+          size="sm"
+          variant="outline"
+          type="button"
+          :disabled="rulesPending"
+          @click="refresh"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
+      {{ listErrorMessage }}
+    </p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
       :total-items="rules.length"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
-      :searchable="false" :column-settings="false"
+      :searchable="false"
+      :column-settings="false"
       :columns="columns"
       :rows="pagedRules"
       row-key="ruleKey"
@@ -523,26 +538,27 @@ async function submitForm() {
         <span class="text-muted-foreground">{{ formatSegments(row.segments) }}</span>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadgePro :label="ruleStatusLabel(row)" :tone="ruleStatusTone(row)" />
+        <NvStatusBadge :label="ruleStatusLabel(row)" :tone="ruleStatusTone(row)" />
       </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-1">
-          <ButtonPro type="button" variant="ghost" size="sm" @click="openView(row)">查看</ButtonPro>
-          <ButtonPro type="button" variant="ghost" size="sm" @click="openCreate(row)">新建版本</ButtonPro>
+          <NvButton type="button" variant="ghost" size="sm" @click="openView(row)">查看</NvButton>
+          <NvButton type="button" variant="ghost" size="sm" @click="openCreate(row)"
+            >新建版本</NvButton
+          >
         </div>
       </template>
-    </DataTablePro>
-
+    </NvDataTable>
 
     <!-- 查看 Sheet 抽屉 -->
-    <DialogPro v-model:open="viewOpen">
-      <DialogProContent class="sm:max-w-4xl">
-        <DialogProHeader>
-          <DialogProTitle>编码规则 · 明细</DialogProTitle>
-          <DialogProDescription>
+    <NvDialog v-model:open="viewOpen">
+      <NvDialogContent class="sm:max-w-4xl">
+        <NvDialogHeader>
+          <NvDialogTitle>编码规则 · 明细</NvDialogTitle>
+          <NvDialogDescription>
             {{ viewTarget ? `${viewTarget.ruleKey} · ${viewTarget.displayName ?? ''}` : '' }}
-          </DialogProDescription>
-        </DialogProHeader>
+          </NvDialogDescription>
+        </NvDialogHeader>
         <div v-if="viewTarget" class="grid max-h-[70vh] content-start gap-4 overflow-y-auto px-1">
           <div class="grid gap-2 text-sm">
             <div class="flex justify-between gap-3">
@@ -567,7 +583,10 @@ async function submitForm() {
             </div>
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">状态</span>
-              <StatusBadgePro :label="ruleStatusLabel(viewTarget)" :tone="ruleStatusTone(viewTarget)" />
+              <NvStatusBadge
+                :label="ruleStatusLabel(viewTarget)"
+                :tone="ruleStatusTone(viewTarget)"
+              />
             </div>
           </div>
 
@@ -600,21 +619,36 @@ async function submitForm() {
 
           <div class="grid gap-2">
             <div class="flex items-center gap-2">
-              <ButtonPro type="button" variant="outline" size="sm" :disabled="viewPreviewPending" @click="previewViewSample">
+              <NvButton
+                type="button"
+                variant="outline"
+                size="sm"
+                :disabled="viewPreviewPending"
+                @click="previewViewSample"
+              >
                 <Spinner v-if="viewPreviewPending" aria-hidden="true" />
                 预览示例编码
-              </ButtonPro>
-              <code v-if="viewPreview" class="rounded bg-muted px-2 py-1 text-sm font-mono">{{ viewPreview }}</code>
+              </NvButton>
+              <code v-if="viewPreview" class="rounded bg-muted px-2 py-1 text-sm font-mono">{{
+                viewPreview
+              }}</code>
             </div>
           </div>
 
           <div>
             <FormSectionTitle>版本历史</FormSectionTitle>
-            <div v-if="versionsPending" class="mt-2 flex items-center gap-2 py-2 text-sm text-muted-foreground">
+            <div
+              v-if="versionsPending"
+              class="mt-2 flex items-center gap-2 py-2 text-sm text-muted-foreground"
+            >
               <Spinner aria-hidden="true" />
               加载版本历史…
             </div>
-            <p v-else-if="versionsError" class="mt-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+            <p
+              v-else-if="versionsError"
+              class="mt-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+              role="alert"
+            >
               {{ versionsError }}
             </p>
             <div v-else-if="versions.length" class="mt-2 overflow-x-auto rounded-md border">
@@ -646,63 +680,79 @@ async function submitForm() {
             </p>
           </div>
         </div>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
 
     <!-- 新建版本 Dialog -->
-    <DialogPro v-model:open="formOpen">
-      <DialogProContent class="sm:max-w-3xl">
-        <DialogProHeader>
-          <DialogProTitle>新建编码规则版本</DialogProTitle>
-          <DialogProDescription>
+    <NvDialog v-model:open="formOpen">
+      <NvDialogContent class="sm:max-w-3xl">
+        <NvDialogHeader>
+          <NvDialogTitle>新建编码规则版本</NvDialogTitle>
+          <NvDialogDescription>
             发布新版本会带入该规则当前值，不影响已分配的历史编码。带 * 为必填项。
-          </DialogProDescription>
-        </DialogProHeader>
+          </NvDialogDescription>
+        </NvDialogHeader>
         <form class="grid gap-5" @submit.prevent="submitForm">
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
             请填写带 * 的必填项（名称、创建人），并修正下方红字提示的段定义。
           </p>
 
           <FormSectionTitle>版本信息</FormSectionTitle>
-          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-            <FieldPro :data-invalid="showErrors && !displayNameValid">
-              <FieldProLabel for="cr-name">名称 <span class="text-destructive">*</span></FieldProLabel>
-              <InputPro id="cr-name" v-model="form.displayName" placeholder="规则名称" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="cr-applies">适用对象</FieldProLabel>
-              <InputPro id="cr-applies" v-model="form.appliesTo" placeholder="如 物料 / 工单" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="cr-scope">范围</FieldProLabel>
-              <SelectPro v-model="form.scope">
-                <SelectProTrigger id="cr-scope"><SelectProValue placeholder="选择范围" /></SelectProTrigger>
-                <SelectProContent>
-                  <SelectProItem v-for="o in SCOPE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                </SelectProContent>
-              </SelectPro>
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel>生效时间</FieldProLabel>
-              <DatePickerPro v-model="form.effectiveFromUtc" placeholder="留空即时生效" class="w-full" />
-              <FieldProDescription>留空即时生效。</FieldProDescription>
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="cr-reason">变更原因</FieldProLabel>
-              <InputPro id="cr-reason" v-model="form.changeReason" placeholder="可选，本次变更说明" />
-            </FieldPro>
-            <FieldPro :data-invalid="showErrors && !createdByValid">
-              <FieldProLabel for="cr-by">创建人 <span class="text-destructive">*</span></FieldProLabel>
-              <InputPro id="cr-by" v-model="form.createdBy" placeholder="你的账号/姓名" />
-            </FieldPro>
-          </FieldProGroup>
+          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+            <NvField :data-invalid="showErrors && !displayNameValid">
+              <NvFieldLabel for="cr-name"
+                >名称 <span class="text-destructive">*</span></NvFieldLabel
+              >
+              <NvInput id="cr-name" v-model="form.displayName" placeholder="规则名称" />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="cr-applies">适用对象</NvFieldLabel>
+              <NvInput id="cr-applies" v-model="form.appliesTo" placeholder="如 物料 / 工单" />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="cr-scope">范围</NvFieldLabel>
+              <NvSelect v-model="form.scope">
+                <NvSelectTrigger id="cr-scope"
+                  ><NvSelectValue placeholder="选择范围"
+                /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem v-for="o in SCOPE_OPTIONS" :key="o.value" :value="o.value">{{
+                    o.label
+                  }}</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+            </NvField>
+            <NvField>
+              <NvFieldLabel>生效时间</NvFieldLabel>
+              <NvDatePicker
+                v-model="form.effectiveFromUtc"
+                placeholder="留空即时生效"
+                class="w-full"
+              />
+              <NvFieldDescription>留空即时生效。</NvFieldDescription>
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="cr-reason">变更原因</NvFieldLabel>
+              <NvInput
+                id="cr-reason"
+                v-model="form.changeReason"
+                placeholder="可选，本次变更说明"
+              />
+            </NvField>
+            <NvField :data-invalid="showErrors && !createdByValid">
+              <NvFieldLabel for="cr-by"
+                >创建人 <span class="text-destructive">*</span></NvFieldLabel
+              >
+              <NvInput id="cr-by" v-model="form.createdBy" placeholder="你的账号/姓名" />
+            </NvField>
+          </NvFieldGroup>
 
           <div class="flex items-center justify-between">
             <FormSectionTitle>段定义</FormSectionTitle>
-            <ButtonPro type="button" variant="outline" size="sm" @click="addSegment">
+            <NvButton type="button" variant="outline" size="sm" @click="addSegment">
               <PlusIcon aria-hidden="true" />
               增加段
-            </ButtonPro>
+            </NvButton>
           </div>
 
           <p v-if="showErrors && sequenceCountError" class="text-sm text-destructive" role="alert">
@@ -716,93 +766,170 @@ async function submitForm() {
               class="grid gap-2 rounded-md border p-3"
             >
               <div class="grid grid-cols-[8rem_1fr_auto] items-end gap-2">
-                <FieldPro :data-invalid="showErrors && segment.type === ''">
-                  <FieldProLabel :for="`cr-type-${index}`">类型 <span class="text-destructive">*</span></FieldProLabel>
-                  <SelectPro v-model="segment.type">
-                    <SelectProTrigger :id="`cr-type-${index}`"><SelectProValue placeholder="选择类型" /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="o in SEGMENT_TYPE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                </FieldPro>
+                <NvField :data-invalid="showErrors && segment.type === ''">
+                  <NvFieldLabel :for="`cr-type-${index}`"
+                    >类型 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvSelect v-model="segment.type">
+                    <NvSelectTrigger :id="`cr-type-${index}`"
+                      ><NvSelectValue placeholder="选择类型"
+                    /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem
+                        v-for="o in SEGMENT_TYPE_OPTIONS"
+                        :key="o.value"
+                        :value="o.value"
+                        >{{ o.label }}</NvSelectItem
+                      >
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
 
                 <!-- 常量 -->
-                <FieldPro v-if="segment.type === 'constant'" :data-invalid="showErrors && !!segmentErrors[index]">
-                  <FieldProLabel :for="`cr-value-${index}`">常量值 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro :id="`cr-value-${index}`" v-model="segment.value" placeholder="如 SKU" />
-                </FieldPro>
+                <NvField
+                  v-if="segment.type === 'constant'"
+                  :data-invalid="showErrors && !!segmentErrors[index]"
+                >
+                  <NvFieldLabel :for="`cr-value-${index}`"
+                    >常量值 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput :id="`cr-value-${index}`" v-model="segment.value" placeholder="如 SKU" />
+                </NvField>
 
                 <!-- 日期 -->
-                <FieldPro v-else-if="segment.type === 'date'" :data-invalid="showErrors && !!segmentErrors[index]">
-                  <FieldProLabel :for="`cr-format-${index}`">日期格式 <span class="text-destructive">*</span></FieldProLabel>
-                  <SelectPro v-model="segment.format">
-                    <SelectProTrigger :id="`cr-format-${index}`"><SelectProValue placeholder="选择日期格式" /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="f in DATE_FORMAT_OPTIONS" :key="f" :value="f">{{ f }}</SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                </FieldPro>
+                <NvField
+                  v-else-if="segment.type === 'date'"
+                  :data-invalid="showErrors && !!segmentErrors[index]"
+                >
+                  <NvFieldLabel :for="`cr-format-${index}`"
+                    >日期格式 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvSelect v-model="segment.format">
+                    <NvSelectTrigger :id="`cr-format-${index}`"
+                      ><NvSelectValue placeholder="选择日期格式"
+                    /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem v-for="f in DATE_FORMAT_OPTIONS" :key="f" :value="f">{{
+                        f
+                      }}</NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
 
                 <!-- 流水号 -->
-                <div v-else-if="segment.type === 'sequence'" class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <FieldPro :data-invalid="showErrors && !!segmentErrors[index]">
-                    <FieldProLabel :for="`cr-width-${index}`">宽度 <span class="text-destructive">*</span></FieldProLabel>
-                    <InputPro :id="`cr-width-${index}`" v-model="segment.width" type="number" min="1" placeholder="4" />
-                  </FieldPro>
-                  <FieldPro :data-invalid="showErrors && !!segmentErrors[index]">
-                    <FieldProLabel :for="`cr-start-${index}`">起始 <span class="text-destructive">*</span></FieldProLabel>
-                    <InputPro :id="`cr-start-${index}`" v-model="segment.start" type="number" min="1" placeholder="1" />
-                  </FieldPro>
-                  <FieldPro>
-                    <FieldProLabel :for="`cr-pad-${index}`">补位字符</FieldProLabel>
-                    <InputPro :id="`cr-pad-${index}`" v-model="segment.padChar" placeholder="0" />
-                  </FieldPro>
-                  <FieldPro>
-                    <FieldProLabel :for="`cr-reset-${index}`">重置</FieldProLabel>
-                    <SelectPro v-model="segment.reset">
-                      <SelectProTrigger :id="`cr-reset-${index}`"><SelectProValue /></SelectProTrigger>
-                      <SelectProContent>
-                        <SelectProItem v-for="o in RESET_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                      </SelectProContent>
-                    </SelectPro>
-                  </FieldPro>
+                <div
+                  v-else-if="segment.type === 'sequence'"
+                  class="grid grid-cols-2 gap-2 sm:grid-cols-4"
+                >
+                  <NvField :data-invalid="showErrors && !!segmentErrors[index]">
+                    <NvFieldLabel :for="`cr-width-${index}`"
+                      >宽度 <span class="text-destructive">*</span></NvFieldLabel
+                    >
+                    <NvInput
+                      :id="`cr-width-${index}`"
+                      v-model="segment.width"
+                      type="number"
+                      min="1"
+                      placeholder="4"
+                    />
+                  </NvField>
+                  <NvField :data-invalid="showErrors && !!segmentErrors[index]">
+                    <NvFieldLabel :for="`cr-start-${index}`"
+                      >起始 <span class="text-destructive">*</span></NvFieldLabel
+                    >
+                    <NvInput
+                      :id="`cr-start-${index}`"
+                      v-model="segment.start"
+                      type="number"
+                      min="1"
+                      placeholder="1"
+                    />
+                  </NvField>
+                  <NvField>
+                    <NvFieldLabel :for="`cr-pad-${index}`">补位字符</NvFieldLabel>
+                    <NvInput :id="`cr-pad-${index}`" v-model="segment.padChar" placeholder="0" />
+                  </NvField>
+                  <NvField>
+                    <NvFieldLabel :for="`cr-reset-${index}`">重置</NvFieldLabel>
+                    <NvSelect v-model="segment.reset">
+                      <NvSelectTrigger :id="`cr-reset-${index}`"><NvSelectValue /></NvSelectTrigger>
+                      <NvSelectContent>
+                        <NvSelectItem v-for="o in RESET_OPTIONS" :key="o.value" :value="o.value">{{
+                          o.label
+                        }}</NvSelectItem>
+                      </NvSelectContent>
+                    </NvSelect>
+                  </NvField>
                 </div>
 
                 <!-- 字段 -->
-                <div v-else-if="segment.type === 'field'" class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  <FieldPro :data-invalid="showErrors && !!segmentErrors[index]">
-                    <FieldProLabel :for="`cr-source-${index}`">源 <span class="text-destructive">*</span></FieldProLabel>
-                    <InputPro :id="`cr-source-${index}`" v-model="segment.source" placeholder="如 categoryCode" />
-                  </FieldPro>
-                  <FieldPro>
-                    <FieldProLabel :for="`cr-transform-${index}`">变换</FieldProLabel>
-                    <SelectPro v-model="segment.transform">
-                      <SelectProTrigger :id="`cr-transform-${index}`"><SelectProValue /></SelectProTrigger>
-                      <SelectProContent>
-                        <SelectProItem v-for="o in TRANSFORM_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                      </SelectProContent>
-                    </SelectPro>
-                  </FieldPro>
-                  <FieldPro :data-invalid="showErrors && !!segmentErrors[index]">
-                    <FieldProLabel :for="`cr-maxlen-${index}`">上限 <span class="text-destructive">*</span></FieldProLabel>
-                    <InputPro :id="`cr-maxlen-${index}`" v-model="segment.maxLength" type="number" min="1" placeholder="如 8" />
-                  </FieldPro>
+                <div
+                  v-else-if="segment.type === 'field'"
+                  class="grid grid-cols-1 gap-2 sm:grid-cols-3"
+                >
+                  <NvField :data-invalid="showErrors && !!segmentErrors[index]">
+                    <NvFieldLabel :for="`cr-source-${index}`"
+                      >源 <span class="text-destructive">*</span></NvFieldLabel
+                    >
+                    <NvInput
+                      :id="`cr-source-${index}`"
+                      v-model="segment.source"
+                      placeholder="如 categoryCode"
+                    />
+                  </NvField>
+                  <NvField>
+                    <NvFieldLabel :for="`cr-transform-${index}`">变换</NvFieldLabel>
+                    <NvSelect v-model="segment.transform">
+                      <NvSelectTrigger :id="`cr-transform-${index}`"
+                        ><NvSelectValue
+                      /></NvSelectTrigger>
+                      <NvSelectContent>
+                        <NvSelectItem
+                          v-for="o in TRANSFORM_OPTIONS"
+                          :key="o.value"
+                          :value="o.value"
+                          >{{ o.label }}</NvSelectItem
+                        >
+                      </NvSelectContent>
+                    </NvSelect>
+                  </NvField>
+                  <NvField :data-invalid="showErrors && !!segmentErrors[index]">
+                    <NvFieldLabel :for="`cr-maxlen-${index}`"
+                      >上限 <span class="text-destructive">*</span></NvFieldLabel
+                    >
+                    <NvInput
+                      :id="`cr-maxlen-${index}`"
+                      v-model="segment.maxLength"
+                      type="number"
+                      min="1"
+                      placeholder="如 8"
+                    />
+                  </NvField>
                 </div>
 
                 <!-- 校验位 -->
-                <FieldPro v-else-if="segment.type === 'checksum'" :data-invalid="showErrors && !!segmentErrors[index]">
-                  <FieldProLabel :for="`cr-algo-${index}`">算法 <span class="text-destructive">*</span></FieldProLabel>
-                  <SelectPro v-model="segment.algorithm">
-                    <SelectProTrigger :id="`cr-algo-${index}`"><SelectProValue placeholder="选择校验算法" /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="a in CHECKSUM_ALGORITHM_OPTIONS" :key="a" :value="a">{{ a }}</SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                </FieldPro>
+                <NvField
+                  v-else-if="segment.type === 'checksum'"
+                  :data-invalid="showErrors && !!segmentErrors[index]"
+                >
+                  <NvFieldLabel :for="`cr-algo-${index}`"
+                    >算法 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvSelect v-model="segment.algorithm">
+                    <NvSelectTrigger :id="`cr-algo-${index}`"
+                      ><NvSelectValue placeholder="选择校验算法"
+                    /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem v-for="a in CHECKSUM_ALGORITHM_OPTIONS" :key="a" :value="a">{{
+                        a
+                      }}</NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
 
                 <div v-else />
 
-                <ButtonPro
+                <NvButton
                   type="button"
                   variant="ghost"
                   size="icon"
@@ -811,15 +938,22 @@ async function submitForm() {
                   @click="removeSegment(index)"
                 >
                   <Trash2Icon aria-hidden="true" />
-                </ButtonPro>
+                </NvButton>
               </div>
 
               <div class="flex items-center justify-between gap-3">
-                <label :for="`cr-required-${index}`" class="flex cursor-pointer select-none items-center gap-2 text-sm">
-                  <CheckboxPro :id="`cr-required-${index}`" v-model:checked="segment.required" />
+                <label
+                  :for="`cr-required-${index}`"
+                  class="flex cursor-pointer select-none items-center gap-2 text-sm"
+                >
+                  <NvCheckbox :id="`cr-required-${index}`" v-model:checked="segment.required" />
                   <span>必填</span>
                 </label>
-                <p v-if="showErrors && segmentErrors[index]" class="text-sm text-destructive" role="alert">
+                <p
+                  v-if="showErrors && segmentErrors[index]"
+                  class="text-sm text-destructive"
+                  role="alert"
+                >
                   {{ segmentErrors[index] }}
                 </p>
               </div>
@@ -827,22 +961,30 @@ async function submitForm() {
           </div>
 
           <div class="flex items-center gap-2">
-            <ButtonPro type="button" variant="outline" size="sm" :disabled="formPreviewPending" @click="previewFormSample">
+            <NvButton
+              type="button"
+              variant="outline"
+              size="sm"
+              :disabled="formPreviewPending"
+              @click="previewFormSample"
+            >
               <Spinner v-if="formPreviewPending" aria-hidden="true" />
               预览
-            </ButtonPro>
-            <code v-if="formPreview" class="rounded bg-muted px-2 py-1 text-sm font-mono">{{ formPreview }}</code>
+            </NvButton>
+            <code v-if="formPreview" class="rounded bg-muted px-2 py-1 text-sm font-mono">{{
+              formPreview
+            }}</code>
           </div>
 
-          <DialogProFooter>
-            <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
-            <ButtonPro type="submit" :disabled="createPending">
+          <NvDialogFooter>
+            <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
+            <NvButton type="submit" :disabled="createPending">
               <Spinner v-if="createPending" aria-hidden="true" />
               发布版本
-            </ButtonPro>
-          </DialogProFooter>
+            </NvButton>
+          </NvDialogFooter>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>

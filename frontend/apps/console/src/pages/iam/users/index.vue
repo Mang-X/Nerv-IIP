@@ -5,7 +5,7 @@ import type {
   ConsoleResetIamUserPasswordRequest,
   ConsoleUpdateIamUserRequest,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import UserCreateDialog from '@/components/iam/UserCreateDialog.vue'
 import UserEditDialog from '@/components/iam/UserEditDialog.vue'
 import UserResetPasswordDialog from '@/components/iam/UserResetPasswordDialog.vue'
@@ -21,16 +21,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Button,
-  DataTable,
-  DataTablePagination,
-  PageHeader,
+  NvDataTable,
+  NvDataTablePagination,
+  NvPageHeader,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  StatusBadge,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
   toast,
 } from '@nerv-iip/ui'
 import { computed, shallowRef, watch } from 'vue'
@@ -126,7 +126,7 @@ const statusModel = computed({
   },
 })
 
-const columns: DataTableColumn<UserRow>[] = [
+const columns: NvDataTableColumn<UserRow>[] = [
   {
     key: 'loginName',
     header: '登录名',
@@ -250,7 +250,7 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
 <template>
   <DefaultLayout>
     <section class="grid gap-6">
-      <PageHeader
+      <NvPageHeader
         title="用户"
         :breadcrumbs="[{ label: '身份与访问' }]"
         :count="`${totalCount} 个用户`"
@@ -260,9 +260,9 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
             >新建用户</Button
           >
         </template>
-      </PageHeader>
+      </NvPageHeader>
 
-      <Toolbar
+      <NvToolbar
         :search="search"
         search-label="搜索用户"
         search-placeholder="搜索用户"
@@ -280,11 +280,14 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
             </SelectContent>
           </Select>
         </template>
-      </Toolbar>
+      </NvToolbar>
 
       <p v-if="pageError" class="text-sm text-destructive" role="alert">{{ pageError.message }}</p>
 
-      <DataTable
+      <NvDataTable
+        :pagination="false"
+        :searchable="false"
+        :column-settings="false"
         :columns="columns"
         :rows="users"
         row-key="userId"
@@ -292,17 +295,13 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
         empty-message="没有符合当前条件的用户。"
       >
         <template #cell-status="{ row }">
-          <StatusBadge
+          <NvStatusBadge
             :label="row.enabled === false ? '禁用' : '启用'"
             :tone="row.enabled === false ? 'neutral' : 'success'"
           />
         </template>
         <template #cell-password="{ row }">
-          <StatusBadge
-            v-if="row.passwordChangeRequired"
-            label="需改密"
-            tone="warning"
-          />
+          <NvStatusBadge v-if="row.passwordChangeRequired" label="需改密" tone="warning" />
           <span v-else class="text-sm text-muted-foreground">
             {{ row.passwordExpiresAtUtc ? `至 ${formatDate(row.passwordExpiresAtUtc)}` : '—' }}
           </span>
@@ -353,9 +352,9 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
             </Button>
           </div>
         </template>
-      </DataTable>
+      </NvDataTable>
 
-      <DataTablePagination
+      <NvDataTablePagination
         v-model:page="page"
         v-model:page-size="pageSize"
         :total-items="totalCount"

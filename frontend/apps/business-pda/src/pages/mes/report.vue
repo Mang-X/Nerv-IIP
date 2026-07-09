@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import type { BusinessConsoleMesOperationTaskRow, BusinessConsoleMesWorkOrderItem } from '@nerv-iip/api-client'
+import type {
+  BusinessConsoleMesOperationTaskRow,
+  BusinessConsoleMesWorkOrderItem,
+} from '@nerv-iip/api-client'
 import {
   operationTaskStatusLabel,
   productionReportFlow,
@@ -7,7 +10,13 @@ import {
   workOrderSubtitle,
   workOrderTitle,
 } from '@nerv-iip/business-core'
-import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
+import {
+  NvAppShellMobile,
+  NvBottomSheet,
+  NvListRow,
+  NvMobileResult,
+  NvScanBar,
+} from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
@@ -75,10 +84,11 @@ const goodQuantity = ref(0)
 const scrapQuantity = ref(0)
 const completesOperation = ref(false)
 
-const quantityValid = computed(() =>
-  goodQuantity.value >= 0
-  && scrapQuantity.value >= 0
-  && goodQuantity.value + scrapQuantity.value > 0,
+const quantityValid = computed(
+  () =>
+    goodQuantity.value >= 0 &&
+    scrapQuantity.value >= 0 &&
+    goodQuantity.value + scrapQuantity.value > 0,
 )
 
 // 录数量面板：选中工序后打开
@@ -99,8 +109,9 @@ const submitting = ref(false)
 const operationKey = ref('')
 
 // ScanBar 仅在选工单步活跃；录数量/结果时不抢焦点
-const scanActive = computed(() =>
-  currentStep.value === 'selectWorkOrder' && result.value === null && selectedTask.value === null,
+const scanActive = computed(
+  () =>
+    currentStep.value === 'selectWorkOrder' && result.value === null && selectedTask.value === null,
 )
 
 // 可读中文状态标签 + 工单标题/副标题来自 @nerv-iip/business-core。
@@ -205,7 +216,8 @@ async function submit() {
       description: e instanceof Error ? e.message : '请检查网络后重试。',
     }
     // 失败保留工序选择以便重试
-    selectedTask.value = operationTasks.value.find((t) => t.operationTaskId === operationTaskId) ?? null
+    selectedTask.value =
+      operationTasks.value.find((t) => t.operationTaskId === operationTaskId) ?? null
   } finally {
     submitting.value = false
   }
@@ -229,7 +241,7 @@ function onScanWorkOrder(value: string) {
 </script>
 
 <template>
-  <AppShellMobile>
+  <NvAppShellMobile>
     <template #header>
       <div class="flex items-center gap-3 px-4 py-3">
         <button
@@ -242,13 +254,17 @@ function onScanWorkOrder(value: string) {
         </button>
         <h1 class="text-lg font-semibold text-foreground">报工</h1>
         <span class="ml-auto text-xs text-muted-foreground">
-          第 {{ progress.completed + 1 > progress.total ? progress.total : progress.completed + 1 }}/{{ progress.total }} 步
+          第
+          {{ progress.completed + 1 > progress.total ? progress.total : progress.completed + 1 }}/{{
+            progress.total
+          }}
+          步
         </span>
       </div>
     </template>
 
     <!-- 报工结果反馈 -->
-    <Result
+    <NvMobileResult
       v-if="result"
       :status="result.status"
       :title="result.title"
@@ -281,12 +297,12 @@ function onScanWorkOrder(value: string) {
           返回
         </button>
       </template>
-    </Result>
+    </NvMobileResult>
 
     <div v-else class="space-y-4 p-4">
       <!-- 步骤 1：选工单 -->
       <template v-if="currentStep === 'selectWorkOrder'">
-        <ScanBar placeholder="扫描工单号" :active="scanActive" @scan="onScanWorkOrder" />
+        <NvScanBar placeholder="扫描工单号" :active="scanActive" @scan="onScanWorkOrder" />
         <p class="text-sm text-muted-foreground">选择报工的工单（共 {{ workOrderTotal }} 张）</p>
         <p v-if="workOrdersErrorMessage" class="text-sm text-destructive" role="alert">
           {{ workOrdersErrorMessage }}
@@ -298,7 +314,7 @@ function onScanWorkOrder(value: string) {
           暂无可报工的工单
         </div>
         <div v-else class="overflow-hidden rounded-lg border border-border">
-          <ListRow
+          <NvListRow
             v-for="wo in workOrders"
             :key="wo.workOrderId"
             :title="workOrderTitle(wo)"
@@ -310,7 +326,9 @@ function onScanWorkOrder(value: string) {
 
       <!-- 步骤 2+：已选工单，选工序 -->
       <template v-else>
-        <div class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
+        <div
+          class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
+        >
           <div class="min-w-0">
             <p class="text-sm text-muted-foreground">当前工单</p>
             <p class="truncate text-base font-medium text-foreground">
@@ -338,7 +356,7 @@ function onScanWorkOrder(value: string) {
           该工单暂无工序
         </div>
         <div v-else class="overflow-hidden rounded-lg border border-border">
-          <ListRow
+          <NvListRow
             v-for="task in operationTasks"
             :key="task.operationTaskId ?? `${task.workOrderId}-${task.operationSequence}`"
             :title="taskTitle(task)"
@@ -350,7 +368,7 @@ function onScanWorkOrder(value: string) {
     </div>
 
     <!-- 步骤 3：录数量 -->
-    <BottomSheet
+    <NvBottomSheet
       :open="sheetOpen"
       :title="selectedTask ? taskTitle(selectedTask) : ''"
       @update:open="sheetOpen = $event"
@@ -384,7 +402,9 @@ function onScanWorkOrder(value: string) {
           />
         </label>
 
-        <label class="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-3">
+        <label
+          class="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-3"
+        >
           <span class="text-sm font-medium text-foreground">完工本工序</span>
           <input
             v-model="completesOperation"
@@ -416,6 +436,6 @@ function onScanWorkOrder(value: string) {
           改选工序
         </button>
       </div>
-    </BottomSheet>
-  </AppShellMobile>
+    </NvBottomSheet>
+  </NvAppShellMobile>
 </template>

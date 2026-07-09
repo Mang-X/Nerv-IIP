@@ -1064,4 +1064,44 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
             "pending-approval",
             Approval: null));
     }
+
+    public Task<BusinessConsoleTelemetryDeviceControlCommandDetail> GetDeviceControlCommandAsync(
+        string internalBearerToken,
+        string commandId,
+        BusinessConsoleTelemetryDeviceControlCommandContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryDeviceControlCommandDetail(
+            commandId,
+            commandId,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "connector-host-001",
+            "opcua-cell-01",
+            "DEV-CNC-01",
+            "write-tag",
+            "spindle.speed",
+            "80",
+            null,
+            "user-admin",
+            "speed adjustment",
+            "corr-device-control-001",
+            "idem-device-control-001",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            "approval-pending",
+            false,
+            Approval: null,
+            CurrentAttemptId: null,
+            Attempts: []));
+    }
+
+    public Task<BusinessConsoleTelemetryDeviceControlCommandListResponse> ListDeviceControlCommandsAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryDeviceControlCommandListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryDeviceControlCommandListResponse([], 0));
+    }
 }

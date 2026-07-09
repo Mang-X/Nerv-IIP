@@ -3,48 +3,54 @@ import type {
   CreateQualityReasonRequest,
   QualityReasonItem,
 } from '@/composables/usePromotedCatalogs'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useQualityReasonCodes } from '@/composables/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  AlertDialogPro,
-  AlertDialogProAction,
-  AlertDialogProCancel,
-  AlertDialogProContent,
-  AlertDialogProDescription,
-  AlertDialogProFooter,
-  AlertDialogProHeader,
-  AlertDialogProTitle,
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DialogProTrigger,
-  FieldPro,
-  FieldProDescription,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvAlertDialog,
+  NvAlertDialogAction,
+  NvAlertDialogCancel,
+  NvAlertDialogContent,
+  NvAlertDialogDescription,
+  NvAlertDialogFooter,
+  NvAlertDialogHeader,
+  NvAlertDialogTitle,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDialogTrigger,
+  NvField,
+  NvFieldDescription,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '原因码目录', requiredPermissions: ['business.quality.ncr.manage'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '原因码目录',
+    requiredPermissions: ['business.quality.ncr.manage'],
+  },
+})
 
 const {
   archiveReason,
@@ -81,22 +87,28 @@ function severityTone(value?: string | null) {
 // Toolbar 搜索绑定到 search 筛选（空串不污染查询）。
 const search = computed({
   get: () => filters.search ?? '',
-  set: (value: string) => { filters.search = value.trim() ? value : undefined },
+  set: (value: string) => {
+    filters.search = value.trim() ? value : undefined
+  },
 })
 
 const page = ref(1)
 const pageSize = ref('10')
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * pageSizeNumber.value
-  filters.take = pageSizeNumber.value
-}, { immediate: true })
+watch(
+  [page, pageSize],
+  () => {
+    filters.skip = (page.value - 1) * pageSizeNumber.value
+    filters.take = pageSizeNumber.value
+  },
+  { immediate: true },
+)
 
 const listErrorMessage = computed(() =>
   reasonsError.value instanceof Error ? reasonsError.value.message : '',
 )
 
-const columns: DataTableProColumn<QualityReasonItem>[] = [
+const columns: NvDataTableColumn<QualityReasonItem>[] = [
   { key: 'reasonCode', header: '编码', width: 'w-32' },
   { key: 'reasonName', header: '原因', cellClass: 'font-medium' },
   { key: 'groupName', header: '原因组' },
@@ -135,8 +147,8 @@ const codeValid = computed(() => !!editingCode.value || form.reasonCode.trim().l
 const nameValid = computed(() => form.reasonName.trim().length > 0)
 const groupValid = computed(() => form.groupName.trim().length > 0)
 const severityValid = computed(() => form.severity.trim().length > 0)
-const canSubmit = computed(() =>
-  codeValid.value && nameValid.value && groupValid.value && severityValid.value,
+const canSubmit = computed(
+  () => codeValid.value && nameValid.value && groupValid.value && severityValid.value,
 )
 
 function openCreate() {
@@ -174,8 +186,7 @@ async function submitForm() {
     if (editingCode.value) {
       await updateReason(editingCode.value, shared)
       notifySuccess(`原因「${shared.reasonName}」已更新。`)
-    }
-    else {
+    } else {
       const body: CreateQualityReasonRequest = {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -188,8 +199,7 @@ async function submitForm() {
     showErrors.value = false
     formOpen.value = false
     editingCode.value = null
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -210,8 +220,7 @@ async function confirmArchive() {
     notifySuccess(`原因「${target.reasonName}」已停用。`)
     archiveOpen.value = false
     archiveTarget.value = null
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -219,93 +228,128 @@ async function confirmArchive() {
 
 <template>
   <BusinessLayout>
-    <PageHeader
+    <NvPageHeader
       title="原因码目录"
       :breadcrumbs="[{ label: '质量管理' }]"
       :count="`${reasonsTotal} 个原因`"
     >
       <template #actions>
-        <ButtonPro size="sm" variant="outline" type="button" :disabled="reasonsPending" @click="refresh">
+        <NvButton
+          size="sm"
+          variant="outline"
+          type="button"
+          :disabled="reasonsPending"
+          @click="refresh"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <DialogPro v-model:open="formOpen">
-          <DialogProTrigger as-child>
-            <ButtonPro size="sm" type="button" @click="openCreate">
+        </NvButton>
+        <NvDialog v-model:open="formOpen">
+          <NvDialogTrigger as-child>
+            <NvButton size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建原因
-            </ButtonPro>
-          </DialogProTrigger>
-          <DialogProContent class="sm:max-w-2xl">
-            <DialogProHeader>
-              <DialogProTitle>{{ editingCode ? '编辑质量原因' : '新建质量原因' }}</DialogProTitle>
-              <DialogProDescription>
-                质量原因是可复用的质量主数据：按原因组归类，预设严重度与默认处置，供检验 / 不合格品记录引用。带 * 为必填项。
-              </DialogProDescription>
-            </DialogProHeader>
+            </NvButton>
+          </NvDialogTrigger>
+          <NvDialogContent class="sm:max-w-2xl">
+            <NvDialogHeader>
+              <NvDialogTitle>{{ editingCode ? '编辑质量原因' : '新建质量原因' }}</NvDialogTitle>
+              <NvDialogDescription>
+                质量原因是可复用的质量主数据：按原因组归类，预设严重度与默认处置，供检验 /
+                不合格品记录引用。带 * 为必填项。
+              </NvDialogDescription>
+            </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请填写带 * 的必填项（已标红）。
               </p>
 
               <FormSectionTitle>基本信息</FormSectionTitle>
-              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-                <FieldPro :data-invalid="showErrors && !codeValid">
-                  <FieldProLabel for="reason-code">原因编码 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro
+              <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+                <NvField :data-invalid="showErrors && !codeValid">
+                  <NvFieldLabel for="reason-code"
+                    >原因编码 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
                     v-if="!editingCode"
                     id="reason-code"
                     v-model="form.reasonCode"
                     placeholder="例如：DEF-SCRATCH"
                   />
-                  <InputPro v-else :model-value="editingCode" readonly disabled />
-                  <FieldProDescription>{{ editingCode ? '编码是原因身份，不可更改。' : '由工厂自定义、需唯一。' }}</FieldProDescription>
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !nameValid">
-                  <FieldProLabel for="reason-name">原因 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="reason-name" v-model="form.reasonName" placeholder="例如：尺寸超差" />
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !groupValid">
-                  <FieldProLabel for="reason-group">原因组 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="reason-group" v-model="form.groupName" placeholder="例如：外观缺陷" />
-                </FieldPro>
-                <FieldPro :data-invalid="showErrors && !severityValid">
-                  <FieldProLabel for="reason-severity">严重度 <span class="text-destructive">*</span></FieldProLabel>
-                  <SelectPro v-model="form.severity">
-                    <SelectProTrigger id="reason-severity"><SelectProValue placeholder="选择严重度" /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="o in severityOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                </FieldPro>
-              </FieldProGroup>
+                  <NvInput v-else :model-value="editingCode" readonly disabled />
+                  <NvFieldDescription>{{
+                    editingCode ? '编码是原因身份，不可更改。' : '由工厂自定义、需唯一。'
+                  }}</NvFieldDescription>
+                </NvField>
+                <NvField :data-invalid="showErrors && !nameValid">
+                  <NvFieldLabel for="reason-name"
+                    >原因 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="reason-name"
+                    v-model="form.reasonName"
+                    placeholder="例如：尺寸超差"
+                  />
+                </NvField>
+                <NvField :data-invalid="showErrors && !groupValid">
+                  <NvFieldLabel for="reason-group"
+                    >原因组 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="reason-group"
+                    v-model="form.groupName"
+                    placeholder="例如：外观缺陷"
+                  />
+                </NvField>
+                <NvField :data-invalid="showErrors && !severityValid">
+                  <NvFieldLabel for="reason-severity"
+                    >严重度 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvSelect v-model="form.severity">
+                    <NvSelectTrigger id="reason-severity"
+                      ><NvSelectValue placeholder="选择严重度"
+                    /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem v-for="o in severityOptions" :key="o.value" :value="o.value">{{
+                        o.label
+                      }}</NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+              </NvFieldGroup>
 
               <FormSectionTitle>处置</FormSectionTitle>
-              <FieldProGroup class="grid gap-3">
-                <FieldPro>
-                  <FieldProLabel for="reason-disposition">默认处置</FieldProLabel>
-                  <InputPro id="reason-disposition" v-model="form.defaultDisposition" placeholder="例如：返工 / 报废 / 让步接收" />
-                </FieldPro>
-              </FieldProGroup>
+              <NvFieldGroup class="grid gap-3">
+                <NvField>
+                  <NvFieldLabel for="reason-disposition">默认处置</NvFieldLabel>
+                  <NvInput
+                    id="reason-disposition"
+                    v-model="form.defaultDisposition"
+                    placeholder="例如：返工 / 报废 / 让步接收"
+                  />
+                </NvField>
+              </NvFieldGroup>
 
-              <DialogProFooter>
-                <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
-                <ButtonPro type="submit" :disabled="createPending || updatePending">
+              <NvDialogFooter>
+                <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
+                <NvButton type="submit" :disabled="createPending || updatePending">
                   <Spinner v-if="createPending || updatePending" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '创建原因' }}
-                </ButtonPro>
-              </DialogProFooter>
+                </NvButton>
+              </NvDialogFooter>
             </form>
-          </DialogProContent>
-        </DialogPro>
+          </NvDialogContent>
+        </NvDialog>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <Toolbar v-model:search="search" search-placeholder="按原因或编码筛选" />
+    <NvToolbar v-model:search="search" search-placeholder="按原因或编码筛选" />
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
+      {{ listErrorMessage }}
+    </p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -325,7 +369,11 @@ async function confirmArchive() {
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-severity="{ row }">
-        <StatusBadgePro v-if="row.severity" :label="severityLabel(row.severity)" :tone="severityTone(row.severity)" />
+        <NvStatusBadge
+          v-if="row.severity"
+          :label="severityLabel(row.severity)"
+          :tone="severityTone(row.severity)"
+        />
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-defaultDisposition="{ row }">
@@ -333,36 +381,43 @@ async function confirmArchive() {
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadgePro
+        <NvStatusBadge
           :label="row.enabled === false ? '停用' : '启用'"
           :tone="row.enabled === false ? 'neutral' : 'success'"
         />
       </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-1">
-          <ButtonPro type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</ButtonPro>
-          <ButtonPro type="button" variant="ghost" size="sm" :disabled="row.enabled === false" @click="openArchive(row)">停用</ButtonPro>
+          <NvButton type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</NvButton>
+          <NvButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            :disabled="row.enabled === false"
+            @click="openArchive(row)"
+            >停用</NvButton
+          >
         </div>
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
-
-    <AlertDialogPro v-model:open="archiveOpen">
-      <AlertDialogProContent>
-        <AlertDialogProHeader>
-          <AlertDialogProTitle>停用质量原因</AlertDialogProTitle>
-          <AlertDialogProDescription>
-            停用后原因「{{ archiveTarget?.reasonName }}」将不可在新的检验 / 不合格品记录中引用，历史记录不受影响。
-          </AlertDialogProDescription>
-        </AlertDialogProHeader>
-        <AlertDialogProFooter>
-          <AlertDialogProCancel>取消</AlertDialogProCancel>
-          <AlertDialogProAction :disabled="archivePending" @click="confirmArchive">
+    <NvAlertDialog v-model:open="archiveOpen">
+      <NvAlertDialogContent>
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>停用质量原因</NvAlertDialogTitle>
+          <NvAlertDialogDescription>
+            停用后原因「{{ archiveTarget?.reasonName }}」将不可在新的检验 /
+            不合格品记录中引用，历史记录不受影响。
+          </NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <NvAlertDialogFooter>
+          <NvAlertDialogCancel>取消</NvAlertDialogCancel>
+          <NvAlertDialogAction :disabled="archivePending" @click="confirmArchive">
             <Spinner v-if="archivePending" aria-hidden="true" />
             确认停用
-          </AlertDialogProAction>
-        </AlertDialogProFooter>
-      </AlertDialogProContent>
-    </AlertDialogPro>
+          </NvAlertDialogAction>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
   </BusinessLayout>
 </template>

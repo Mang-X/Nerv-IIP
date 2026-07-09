@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesCreateReceiptRequest } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { mesReceiptStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
@@ -8,35 +8,41 @@ import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DropdownMenuProItem,
-  FieldPro,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  RowActions,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDropdownMenuItem,
+  NvField,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvRowActions,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { EyeIcon, PackageCheckIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '完工入库', requiredPermissions: ['business.mes.receipts.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '完工入库',
+    requiredPermissions: ['business.mes.receipts.read'],
+  },
+})
 
 const {
   createReceiptRequest,
@@ -59,7 +65,9 @@ const quickViewWorkOrderId = ref<string | null>(null)
 
 const statusFilter = computed({
   get: () => filters.status || 'all',
-  set: (value: string) => { filters.status = value === 'all' ? undefined : value },
+  set: (value: string) => {
+    filters.status = value === 'all' ? undefined : value
+  },
 })
 const statusOptions = mesReceiptStatusOptions
 
@@ -123,8 +131,13 @@ watch(
 )
 
 type ReceiptRow = (typeof receiptRequests)['value'][number]
-const columns: DataTableProColumn<ReceiptRow>[] = [
-  { key: 'requestNo', header: '入库单', cellClass: 'font-medium', accessor: (r) => r.requestNo ?? r.receiptRequestId ?? '无' },
+const columns: NvDataTableColumn<ReceiptRow>[] = [
+  {
+    key: 'requestNo',
+    header: '入库单',
+    cellClass: 'font-medium',
+    accessor: (r) => r.requestNo ?? r.receiptRequestId ?? '无',
+  },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'skuId', header: '成品', accessor: (r) => resolveSku(r.skuCode ?? r.skuId) ?? '无' },
   { key: 'quantity', header: '入库数量', align: 'end', width: 'w-28' },
@@ -210,33 +223,52 @@ function isNonEmpty(value: string) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="完工入库" :breadcrumbs="[{ label: '制造执行' }]" :count="`${receiptRequestsTotal} 条入库登记`">
+    <NvPageHeader
+      title="完工入库"
+      :breadcrumbs="[{ label: '制造执行' }]"
+      :count="`${receiptRequestsTotal} 条入库登记`"
+    >
       <template #actions>
-        <ButtonPro size="sm" type="button" :disabled="!hasReceiptContext" @click="openReceiptSheet">
+        <NvButton size="sm" type="button" :disabled="!hasReceiptContext" @click="openReceiptSheet">
           <PackageCheckIcon aria-hidden="true" />
           {{ hasReceiptContext ? '登记完工入库' : '从工单详情发起' }}
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="receiptRequestsPending" @click="refreshReceiptRequests">
+        </NvButton>
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="receiptRequestsPending"
+          @click="refreshReceiptRequests"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <Toolbar :show-search="false">
+    <NvToolbar :show-search="false">
       <template #filters>
-        <SelectPro v-model="statusFilter">
-          <SelectProTrigger class="h-9 w-32" aria-label="按入库状态筛选"><SelectProValue /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+        <NvSelect v-model="statusFilter">
+          <NvSelectTrigger class="h-9 w-32" aria-label="按入库状态筛选"
+            ><NvSelectValue
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem
+              v-for="option in statusOptions"
+              :key="option.value"
+              :value="option.value"
+              >{{ option.label }}</NvSelectItem
+            >
+          </NvSelectContent>
+        </NvSelect>
       </template>
-    </Toolbar>
+    </NvToolbar>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
+      {{ listErrorMessage }}
+    </p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -270,71 +302,103 @@ function isNonEmpty(value: string) {
         <span v-if="row.skuId">{{ resolveSku(row.skuCode ?? row.skuId) }}</span>
         <span v-else class="text-muted-foreground">—</span>
       </template>
-      <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template>
-      <template #cell-unitCost="{ row }"><span class="tabular-nums">{{ formatUnitCost(row.unitCost) }}</span></template>
+      <template #cell-quantity="{ row }"
+        ><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template
+      >
+      <template #cell-unitCost="{ row }"
+        ><span class="tabular-nums">{{ formatUnitCost(row.unitCost) }}</span></template
+      >
       <template #cell-receiptStatus="{ row }">
-        <StatusBadgePro :value="row.receiptStatus" :label="receiptStatusLabel(row.receiptStatus)" />
+        <NvStatusBadge :value="row.receiptStatus" :label="receiptStatusLabel(row.receiptStatus)" />
       </template>
       <template #cell-requestedAtUtc="{ row }">{{ formatDateTime(row.requestedAtUtc) }}</template>
       <template #cell-actions="{ row }">
-        <RowActions :label="`入库登记操作 ${row.requestNo ?? row.workOrderId ?? ''}`">
-          <DropdownMenuProItem :disabled="!row.workOrderId" @click="openWorkOrder(row.workOrderId)">
+        <NvRowActions :label="`入库登记操作 ${row.requestNo ?? row.workOrderId ?? ''}`">
+          <NvDropdownMenuItem :disabled="!row.workOrderId" @click="openWorkOrder(row.workOrderId)">
             <EyeIcon aria-hidden="true" />
             查看工单
-          </DropdownMenuProItem>
-        </RowActions>
+          </NvDropdownMenuItem>
+        </NvRowActions>
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
-
-    <DialogPro v-model:open="receiptSheetOpen">
-      <DialogProContent>
-        <DialogProHeader>
-          <DialogProTitle>登记完工入库</DialogProTitle>
-          <DialogProDescription>把完工成品登记入库。工单与成品由报工完成或工单详情带出，只需确认入库数量、单位成本和单位。</DialogProDescription>
-        </DialogProHeader>
+    <NvDialog v-model:open="receiptSheetOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>登记完工入库</NvDialogTitle>
+          <NvDialogDescription
+            >把完工成品登记入库。工单与成品由报工完成或工单详情带出，只需确认入库数量、单位成本和单位。</NvDialogDescription
+          >
+        </NvDialogHeader>
         <form class="grid content-start gap-4" @submit.prevent="submitReceiptRequest">
-          <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
-          <p v-if="successMessage" class="text-sm text-success" role="status">{{ successMessage }}</p>
+          <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">
+            {{ createErrorMessage }}
+          </p>
+          <p v-if="successMessage" class="text-sm text-success" role="status">
+            {{ successMessage }}
+          </p>
 
-          <FieldProGroup class="grid gap-3">
-            <FieldPro>
-              <FieldProLabel for="receipt-work-order">工单号</FieldProLabel>
-              <InputPro id="receipt-work-order" v-model="form.workOrderId" readonly required />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="receipt-sku">成品</FieldProLabel>
-              <InputPro id="receipt-sku" v-model="form.skuId" readonly required />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="receipt-quantity">入库数量</FieldProLabel>
-              <InputPro id="receipt-quantity" v-model="form.quantity" inputmode="decimal" min="0.000001" step="0.000001" required type="number" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="receipt-unit-cost">单位成本</FieldProLabel>
-              <InputPro id="receipt-unit-cost" v-model="form.unitCost" inputmode="decimal" min="0.000001" step="0.000001" required type="number" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="receipt-uom">单位</FieldProLabel>
-              <InputPro id="receipt-uom" v-model="form.uomCode" required />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="receipt-requested-at">登记时间</FieldProLabel>
-              <InputPro id="receipt-requested-at" v-model="form.requestedAtUtc" required type="datetime-local" />
-            </FieldPro>
-          </FieldProGroup>
+          <NvFieldGroup class="grid gap-3">
+            <NvField>
+              <NvFieldLabel for="receipt-work-order">工单号</NvFieldLabel>
+              <NvInput id="receipt-work-order" v-model="form.workOrderId" readonly required />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="receipt-sku">成品</NvFieldLabel>
+              <NvInput id="receipt-sku" v-model="form.skuId" readonly required />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="receipt-quantity">入库数量</NvFieldLabel>
+              <NvInput
+                id="receipt-quantity"
+                v-model="form.quantity"
+                inputmode="decimal"
+                min="0.000001"
+                step="0.000001"
+                required
+                type="number"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="receipt-unit-cost">单位成本</NvFieldLabel>
+              <NvInput
+                id="receipt-unit-cost"
+                v-model="form.unitCost"
+                inputmode="decimal"
+                min="0.000001"
+                step="0.000001"
+                required
+                type="number"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="receipt-uom">单位</NvFieldLabel>
+              <NvInput id="receipt-uom" v-model="form.uomCode" required />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="receipt-requested-at">登记时间</NvFieldLabel>
+              <NvInput
+                id="receipt-requested-at"
+                v-model="form.requestedAtUtc"
+                required
+                type="datetime-local"
+              />
+            </NvField>
+          </NvFieldGroup>
 
-          <DialogProFooter>
-            <ButtonPro type="button" variant="outline" @click="receiptSheetOpen = false">取消</ButtonPro>
-            <ButtonPro type="submit" :disabled="createReceiptRequestPending || !canCreate">
+          <NvDialogFooter>
+            <NvButton type="button" variant="outline" @click="receiptSheetOpen = false"
+              >取消</NvButton
+            >
+            <NvButton type="submit" :disabled="createReceiptRequestPending || !canCreate">
               <Spinner v-if="createReceiptRequestPending" aria-hidden="true" />
               <PackageCheckIcon v-else aria-hidden="true" />
               提交入库登记
-            </ButtonPro>
-          </DialogProFooter>
+            </NvButton>
+          </NvDialogFooter>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
 
     <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>

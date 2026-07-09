@@ -1,39 +1,47 @@
 <script setup lang="ts">
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useErpPurchaseReceipts } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProClose,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  FieldPro,
-  FieldProError,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SectionCard,
-  SectionCards,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogClose,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvField,
+  NvFieldError,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSectionCard,
+  NvSectionCards,
   Spinner,
-  StatusBadgePro,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
   toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 import { formatError, formatQuantity } from '../shared'
 
-definePage({ meta: { requiresAuth: true, title: '采购收货', requiredPermissions: ['business.erp.procurement.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '采购收货',
+    requiredPermissions: ['business.erp.procurement.read'],
+  },
+})
 
 const receipts = useErpPurchaseReceipts()
-const { page, pageSize } = usePagedList(receipts.filters, { resetOn: [() => receipts.filters.keyword] })
+const { page, pageSize } = usePagedList(receipts.filters, {
+  resetOn: [() => receipts.filters.keyword],
+})
 
 const rows = computed(() =>
   receipts.items.value.flatMap((order) =>
@@ -51,7 +59,7 @@ const rows = computed(() =>
   ),
 )
 
-const columns: DataTableProColumn<(typeof rows.value)[number]>[] = [
+const columns: NvDataTableColumn<(typeof rows.value)[number]>[] = [
   { key: 'purchaseOrderNo', header: '采购单', cellClass: 'font-medium' },
   { key: 'supplierCode', header: '供应商' },
   { key: 'lineNo', header: '行号', width: 'w-20' },
@@ -67,12 +75,17 @@ const receivableLines = computed(() => rows.value.filter((row) => row.openQuanti
 const openQuantity = computed(() => rows.value.reduce((sum, row) => sum + row.openQuantity, 0))
 
 const open = shallowRef(false)
-const form = reactive({ purchaseOrderNo: '', lineNo: '', receivedQuantity: '1', purchaseReceiptNo: '' })
+const form = reactive({
+  purchaseOrderNo: '',
+  lineNo: '',
+  receivedQuantity: '1',
+  purchaseReceiptNo: '',
+})
 const formError = shallowRef('')
 
 function openDialog(row?: (typeof rows.value)[number]) {
-  form.purchaseOrderNo = row?.purchaseOrderNo === '-' ? '' : row?.purchaseOrderNo ?? ''
-  form.lineNo = row?.lineNo === '-' ? '' : row?.lineNo ?? ''
+  form.purchaseOrderNo = row?.purchaseOrderNo === '-' ? '' : (row?.purchaseOrderNo ?? '')
+  form.lineNo = row?.lineNo === '-' ? '' : (row?.lineNo ?? '')
   form.receivedQuantity = String(row?.openQuantity && row.openQuantity > 0 ? row.openQuantity : 1)
   form.purchaseReceiptNo = ''
   formError.value = ''
@@ -98,38 +111,58 @@ async function submit() {
     open.value = false
     toast.success('采购收货已记录')
   } catch {
-    formError.value = formatError(receipts.recordPurchaseReceiptError.value) || '收货失败，请稍后重试。'
+    formError.value =
+      formatError(receipts.recordPurchaseReceiptError.value) || '收货失败，请稍后重试。'
   }
 }
 </script>
 
 <template>
   <BusinessLayout>
-    <PageHeader title="采购收货" :breadcrumbs="[{ label: '经营管理' }, { label: '采购' }]" :count="`${receipts.total.value} 张采购单来源`">
+    <NvPageHeader
+      title="采购收货"
+      :breadcrumbs="[{ label: '经营管理' }, { label: '采购' }]"
+      :count="`${receipts.total.value} 张采购单来源`"
+    >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="receipts.pending.value" @click="receipts.refresh">
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="receipts.pending.value"
+          @click="receipts.refresh"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" @click="openDialog()">
+        </NvButton>
+        <NvButton size="sm" type="button" @click="openDialog()">
           <PlusIcon aria-hidden="true" />
           登记收货
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <SectionCards :columns="2">
-      <SectionCard description="可收货行" :value="receivableLines" hint="本页仍有待收数量" />
-      <SectionCard description="待收数量" :value="formatQuantity(openQuantity)" hint="本页未完成收货数量" />
-    </SectionCards>
+    <NvSectionCards :columns="2">
+      <NvSectionCard description="可收货行" :value="receivableLines" hint="本页仍有待收数量" />
+      <NvSectionCard
+        description="待收数量"
+        :value="formatQuantity(openQuantity)"
+        hint="本页未完成收货数量"
+      />
+    </NvSectionCards>
 
-    <Toolbar :show-search="false">
+    <NvToolbar :show-search="false">
       <template #filters>
-        <InputPro v-model="receipts.filters.keyword" class="h-9 w-64" placeholder="采购单 / 供应商 / 物料" aria-label="采购收货关键字" />
+        <NvInput
+          v-model="receipts.filters.keyword"
+          class="h-9 w-64"
+          placeholder="采购单 / 供应商 / 物料"
+          aria-label="采购收货关键字"
+        />
       </template>
-    </Toolbar>
+    </NvToolbar>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -144,38 +177,74 @@ async function submit() {
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
-      <template #cell-orderedQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.orderedQuantity) }}</span></template>
-      <template #cell-receivedQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.receivedQuantity) }}</span></template>
-      <template #cell-openQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.openQuantity) }}</span></template>
-      <template #cell-receiptReadiness="{ row }"><StatusBadgePro :value="row.receiptReadiness" /></template>
+      <template #cell-orderedQuantity="{ row }"
+        ><span class="tabular-nums">{{ formatQuantity(row.orderedQuantity) }}</span></template
+      >
+      <template #cell-receivedQuantity="{ row }"
+        ><span class="tabular-nums">{{ formatQuantity(row.receivedQuantity) }}</span></template
+      >
+      <template #cell-openQuantity="{ row }"
+        ><span class="tabular-nums">{{ formatQuantity(row.openQuantity) }}</span></template
+      >
+      <template #cell-receiptReadiness="{ row }"
+        ><NvStatusBadge :value="row.receiptReadiness"
+      /></template>
       <template #cell-actions="{ row }">
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="row.openQuantity <= 0" @click="openDialog(row)">登记收货</ButtonPro>
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="row.openQuantity <= 0"
+          @click="openDialog(row)"
+          >登记收货</NvButton
+        >
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
-    <DialogPro v-model:open="open">
-      <DialogProContent>
-        <DialogProHeader>
-          <DialogProTitle>登记采购收货</DialogProTitle>
-          <DialogProDescription>按采购订单行记录真实收货，后端负责暂估和后续库存/WMS 联动。</DialogProDescription>
-        </DialogProHeader>
+    <NvDialog v-model:open="open">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>登记采购收货</NvDialogTitle>
+          <NvDialogDescription
+            >按采购订单行记录真实收货，后端负责暂估和后续库存/WMS 联动。</NvDialogDescription
+          >
+        </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submit">
-          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-            <FieldPro><FieldProLabel for="erp-receipt-po">采购单</FieldProLabel><InputPro id="erp-receipt-po" v-model="form.purchaseOrderNo" autocomplete="off" /></FieldPro>
-            <FieldPro><FieldProLabel for="erp-receipt-line">采购行</FieldProLabel><InputPro id="erp-receipt-line" v-model="form.lineNo" autocomplete="off" /></FieldPro>
-            <FieldPro><FieldProLabel for="erp-receipt-qty">收货数量</FieldProLabel><InputPro id="erp-receipt-qty" v-model="form.receivedQuantity" type="number" min="1" step="1" /></FieldPro>
-            <FieldPro><FieldProLabel for="erp-receipt-no">收货单号（可选）</FieldProLabel><InputPro id="erp-receipt-no" v-model="form.purchaseReceiptNo" autocomplete="off" /></FieldPro>
-          </FieldProGroup>
-          <FieldProError v-if="formError" :errors="[formError]" />
-          <DialogProFooter>
-            <DialogProClose as-child><ButtonPro type="button" variant="outline">取消</ButtonPro></DialogProClose>
-            <ButtonPro type="submit" :disabled="receipts.recordPurchaseReceiptPending.value">
+          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+            <NvField
+              ><NvFieldLabel for="erp-receipt-po">采购单</NvFieldLabel
+              ><NvInput id="erp-receipt-po" v-model="form.purchaseOrderNo" autocomplete="off"
+            /></NvField>
+            <NvField
+              ><NvFieldLabel for="erp-receipt-line">采购行</NvFieldLabel
+              ><NvInput id="erp-receipt-line" v-model="form.lineNo" autocomplete="off"
+            /></NvField>
+            <NvField
+              ><NvFieldLabel for="erp-receipt-qty">收货数量</NvFieldLabel
+              ><NvInput
+                id="erp-receipt-qty"
+                v-model="form.receivedQuantity"
+                type="number"
+                min="1"
+                step="1"
+            /></NvField>
+            <NvField
+              ><NvFieldLabel for="erp-receipt-no">收货单号（可选）</NvFieldLabel
+              ><NvInput id="erp-receipt-no" v-model="form.purchaseReceiptNo" autocomplete="off"
+            /></NvField>
+          </NvFieldGroup>
+          <NvFieldError v-if="formError" :errors="[formError]" />
+          <NvDialogFooter>
+            <NvDialogClose as-child
+              ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
+            >
+            <NvButton type="submit" :disabled="receipts.recordPurchaseReceiptPending.value">
               <Spinner v-if="receipts.recordPurchaseReceiptPending.value" aria-hidden="true" />
               提交收货
-            </ButtonPro>
-          </DialogProFooter>
+            </NvButton>
+          </NvDialogFooter>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>

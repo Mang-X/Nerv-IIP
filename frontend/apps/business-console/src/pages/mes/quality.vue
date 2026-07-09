@@ -1,46 +1,68 @@
 <script setup lang="ts">
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { mesQualityStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesRelatedQualityItems } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  PageHeader,
-  SectionCard,
-  SectionCards,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
-  StatusBadgePro,
-  Toolbar,
+  NvButton,
+  NvDataTable,
+  NvPageHeader,
+  NvSectionCard,
+  NvSectionCards,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '质量与不良', requiredPermissions: ['business.mes.quality.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '质量与不良',
+    requiredPermissions: ['business.mes.quality.read'],
+  },
+})
 
 const route = useRoute()
-const { filters, qualityItems, qualityItemsError, qualityItemsPending, qualityItemsTotal, refreshQualityItems } = useMesRelatedQualityItems()
+const {
+  filters,
+  qualityItems,
+  qualityItemsError,
+  qualityItemsPending,
+  qualityItemsTotal,
+  refreshQualityItems,
+} = useMesRelatedQualityItems()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
 const statusFilter = computed({
   get: () => filters.status || 'all',
-  set: (value: string) => { filters.status = value === 'all' ? undefined : value },
+  set: (value: string) => {
+    filters.status = value === 'all' ? undefined : value
+  },
 })
 const errorMessage = computed(() => formatError(qualityItemsError.value))
 // 上下文穿透：从工单/工序带入时显示来源并提供返回链接。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
-const openCount = computed(() => qualityItems.value.filter((r) => (r.status ?? '').toLowerCase() !== 'closed').length)
+const openCount = computed(
+  () => qualityItems.value.filter((r) => (r.status ?? '').toLowerCase() !== 'closed').length,
+)
 const ncrCount = computed(() => qualityItems.value.filter((r) => r.ncrId).length)
 
 type QualityRow = (typeof qualityItems)['value'][number]
-const columns: DataTableProColumn<QualityRow>[] = [
-  { key: 'qualityItemId', header: '质量项', cellClass: 'font-medium', accessor: (r) => r.qualityItemId ?? '无' },
+const columns: NvDataTableColumn<QualityRow>[] = [
+  {
+    key: 'qualityItemId',
+    header: '质量项',
+    cellClass: 'font-medium',
+    accessor: (r) => r.qualityItemId ?? '无',
+  },
   { key: 'sourceType', header: '来源类型', accessor: (r) => r.sourceType ?? '未指定' },
   { key: 'sourceDocumentId', header: '来源单据', accessor: (r) => r.sourceDocumentId ?? '未指定' },
   { key: 'status', header: '状态', width: 'w-24' },
@@ -62,38 +84,57 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="质量与不良" :breadcrumbs="[{ label: '制造执行' }]" :count="`${qualityItemsTotal} 条质量项`">
+    <NvPageHeader
+      title="质量与不良"
+      :breadcrumbs="[{ label: '制造执行' }]"
+      :count="`${qualityItemsTotal} 条质量项`"
+    >
       <template #actions>
-        <ButtonPro v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
-          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`">返回工单 {{ contextWorkOrderId }}</RouterLink>
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="qualityItemsPending" @click="refreshQualityItems">
+        <NvButton v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`"
+            >返回工单 {{ contextWorkOrderId }}</RouterLink
+          >
+        </NvButton>
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="qualityItemsPending"
+          @click="refreshQualityItems"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <SectionCards :columns="3">
-      <SectionCard description="质量项" :value="qualityItemsTotal" hint="后端筛选总数" />
-      <SectionCard description="本页未关闭" :value="openCount" hint="当前页待处理" />
-      <SectionCard description="本页关联 NCR" :value="ncrCount" hint="当前页已开 NCR" />
-    </SectionCards>
+    <NvSectionCards :columns="3">
+      <NvSectionCard description="质量项" :value="qualityItemsTotal" hint="后端筛选总数" />
+      <NvSectionCard description="本页未关闭" :value="openCount" hint="当前页待处理" />
+      <NvSectionCard description="本页关联 NCR" :value="ncrCount" hint="当前页已开 NCR" />
+    </NvSectionCards>
 
-    <Toolbar :show-search="false">
+    <NvToolbar :show-search="false">
       <template #filters>
-        <SelectPro v-model="statusFilter">
-          <SelectProTrigger class="h-9 w-32" aria-label="质量状态"><SelectProValue /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem v-for="option in mesQualityStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+        <NvSelect v-model="statusFilter">
+          <NvSelectTrigger class="h-9 w-32" aria-label="质量状态"
+            ><NvSelectValue
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem
+              v-for="option in mesQualityStatusOptions"
+              :key="option.value"
+              :value="option.value"
+              >{{ option.label }}</NvSelectItem
+            >
+          </NvSelectContent>
+        </NvSelect>
       </template>
-    </Toolbar>
+    </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -118,18 +159,23 @@ function formatError(error: unknown) {
         </RouterLink>
         <span v-else>{{ row.sourceDocumentId ?? '未指定' }}</span>
       </template>
-      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-ncrId="{ row }">
         <RouterLink
           v-if="row.ncrId"
-          :to="{ path: '/quality/ncrs', query: { ncrId: row.ncrId, workOrderId: isWorkOrder(row.sourceDocumentId) ? row.sourceDocumentId : undefined } }"
+          :to="{
+            path: '/quality/ncrs',
+            query: {
+              ncrId: row.ncrId,
+              workOrderId: isWorkOrder(row.sourceDocumentId) ? row.sourceDocumentId : undefined,
+            },
+          }"
           class="text-brand underline-offset-4 hover:underline"
         >
           {{ row.ncrId }}
         </RouterLink>
         <span v-else class="text-muted-foreground">无</span>
       </template>
-    </DataTablePro>
-
+    </NvDataTable>
   </BusinessLayout>
 </template>

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import {
-  ButtonPro,
-  DropdownMenuPro,
-  DropdownMenuProContent,
-  DropdownMenuProTrigger,
+  NvButton,
+  NvDropdownMenu,
+  NvDropdownMenuContent,
+  NvDropdownMenuTrigger,
 } from '@nerv-iip/ui'
 import { MoreHorizontalIcon } from 'lucide-vue-next'
 
@@ -22,9 +22,9 @@ withDefaults(
 </script>
 
 <template>
-  <DropdownMenuPro>
-    <DropdownMenuProTrigger as-child>
-      <ButtonPro
+  <NvDropdownMenu>
+    <NvDropdownMenuTrigger as-child>
+      <NvButton
         class="h-8 w-8 rounded-md p-0"
         :disabled="disabled"
         size="sm"
@@ -34,10 +34,10 @@ withDefaults(
         :title="label"
       >
         <MoreHorizontalIcon class="h-4 w-4" />
-      </ButtonPro>
-    </DropdownMenuProTrigger>
-    <DropdownMenuProContent align="end" :class="[widthClass, 'max-w-72']">
+      </NvButton>
+    </NvDropdownMenuTrigger>
+    <NvDropdownMenuContent align="end" :class="[widthClass, 'max-w-72']">
       <slot />
-    </DropdownMenuProContent>
-  </DropdownMenuPro>
+    </NvDropdownMenuContent>
+  </NvDropdownMenu>
 </template>

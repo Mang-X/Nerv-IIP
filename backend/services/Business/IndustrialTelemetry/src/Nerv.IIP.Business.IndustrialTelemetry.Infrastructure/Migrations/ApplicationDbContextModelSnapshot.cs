@@ -338,6 +338,160 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlCommandAggregate.DeviceControlCommand", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Device control command ledger identifier.");
+
+                    b.Property<string>("ApprovalStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("approval_status")
+                        .HasComment("Dispatch-time Ops approval status snapshot when the command required approval.");
+
+                    b.Property<string>("CommandType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("command_type")
+                        .HasComment("Device control command type such as write-tag, start-stop or parameter-set.");
+
+                    b.Property<string>("ConnectorHostId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("connector_host_id")
+                        .HasComment("Connector host that owns the target device control channel.");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("correlation_id")
+                        .HasComment("Correlation identifier propagated to the Ops operation task.");
+
+                    b.Property<string>("DeviceAssetId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("device_asset_id")
+                        .HasComment("Referenced MasterData device asset identifier.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Owning environment identifier.");
+
+                    b.Property<string>("FailureCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("failure_code")
+                        .HasComment("Machine-readable failure code from Ops when the command failed; null otherwise.");
+
+                    b.Property<DateTimeOffset?>("FinishedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at_utc")
+                        .HasComment("UTC time the Ops task reached a terminal outcome (completed/failed/rejected); null while in flight.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Idempotency key bound to the Ops operation task creation.");
+
+                    b.Property<string>("InstanceKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("instance_key")
+                        .HasComment("Connector instance key routed by the Ops operation task.");
+
+                    b.Property<string>("OperationTaskId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_task_id")
+                        .HasComment("Ops operation task identifier; the external command id resolved by the read-face.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Owning organization identifier.");
+
+                    b.Property<string>("ParametersJson")
+                        .HasColumnType("text")
+                        .HasColumnName("parameters_json")
+                        .HasComment("JSON object of parameter-set command inputs (tag key to value); null for single-tag commands.");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason")
+                        .HasComment("Operator-supplied reason captured for the control command audit.");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recorded_at_utc")
+                        .HasComment("UTC time when the ledger row was recorded.");
+
+                    b.Property<long>("RequestedAtUnixTimeMilliseconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("requested_at_unix_time_milliseconds")
+                        .HasComment("Requested UTC time as Unix time milliseconds for provider-neutral history range filtering and ordering.");
+
+                    b.Property<DateTimeOffset>("RequestedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("requested_at_utc")
+                        .HasComment("UTC time when the command was dispatched to Ops.");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("requested_by")
+                        .HasComment("Authenticated principal recorded as the command requester.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("Dispatch-time Ops task status snapshot; the single-command read-face refreshes live status from Ops.");
+
+                    b.Property<string>("TagKey")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("tag_key")
+                        .HasComment("Telemetry tag key targeted by single-tag commands; null for parameter-set commands.");
+
+                    b.Property<string>("Value")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("value")
+                        .HasComment("Requested control value for single-tag commands; null for parameter-set commands.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperationTaskId")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "RequestedAtUnixTimeMilliseconds");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "RequestedAtUnixTimeMilliseconds");
+
+                    b.ToTable("device_control_commands", "industrial_telemetry", t =>
+                        {
+                            t.HasComment("BusinessIndustrialTelemetry device control command ledger projecting Ops operation tasks for result/history read-face.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate.DeviceStateSnapshot", b =>
                 {
                     b.Property<Guid>("Id")
@@ -673,14 +827,14 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "Grain", "DailyWindowStartUtc", "DeviceAssetId", "TagKey")
-                        .HasDatabaseName("IX_telemetry_rollups_daily_window");
-
                     b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "Grain", "WindowEndUnixTimeMilliseconds");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "Grain", "WindowStartUtc")
                         .IsUnique()
                         .HasDatabaseName("IX_telemetry_rollups_organization_id_environment_id_device_as~1");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Grain", "DailyWindowStartUtc", "DeviceAssetId", "TagKey")
+                        .HasDatabaseName("IX_telemetry_rollups_daily_window");
 
                     b.ToTable("telemetry_rollups", "industrial_telemetry", t =>
                         {
@@ -897,6 +1051,106 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                     b.ToTable("telemetry_tags", "industrial_telemetry", t =>
                         {
                             t.HasComment("BusinessIndustrialTelemetry telemetry tag mapping metadata.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Messaging.CAP.IntegrationEventDeadLetter", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Dead-letter message id.");
+
+                    b.Property<string>("ConsumerName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("consumer_name")
+                        .HasComment("Integration event consumer name that rejected the message.");
+
+                    b.Property<DateTimeOffset>("DeadLetteredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("dead_lettered_at_utc")
+                        .HasComment("UTC time when the service stored the dead-letter message.");
+
+                    b.Property<string>("EventClrType")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("event_clr_type")
+                        .HasComment("CLR contract type captured for replay diagnostics.");
+
+                    b.Property<string>("EventId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("event_id")
+                        .HasComment("Rejected integration event id when present.");
+
+                    b.Property<string>("EventJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("event_json")
+                        .HasComment("Serialized rejected integration event envelope and payload.");
+
+                    b.Property<string>("EventType")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("event_type")
+                        .HasComment("Rejected integration event type when present.");
+
+                    b.Property<int?>("EventVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("event_version")
+                        .HasComment("Rejected integration event envelope version when present.");
+
+                    b.Property<string>("FailureCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("failure_code")
+                        .HasComment("Machine-readable reason the consumer rejected the message.");
+
+                    b.Property<string>("FailureMessage")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("failure_message")
+                        .HasComment("Operator-readable rejection detail.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Rejected integration event idempotency key when present.");
+
+                    b.Property<DateTimeOffset?>("ReplayedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("replayed_at_utc")
+                        .HasComment("UTC time when the dead-letter message was marked replayed.");
+
+                    b.Property<string>("SourceService")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("source_service")
+                        .HasComment("Source service from the rejected event envelope when present.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("Dead-letter status: Pending, Replayed, Failed, or Ignored.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsumerName", "EventId");
+
+                    b.HasIndex("ConsumerName", "Status", "DeadLetteredAtUtc");
+
+                    b.ToTable("integration_event_dead_letters", "industrial_telemetry", t =>
+                        {
+                            t.HasComment("Integration events rejected before business handling and retained for replay triage.");
                         });
                 });
 

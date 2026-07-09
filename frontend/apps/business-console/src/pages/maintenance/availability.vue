@@ -1,39 +1,58 @@
 <script setup lang="ts">
 import type { EquipmentRuntimeAvailabilityWindow } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenanceAvailabilityWindows } from '@/composables/useBusinessMaintenance'
 import { describeEquipmentReason } from '@/composables/useBusinessEquipment'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  BadgePro,
-  ButtonPro,
-  DataTablePro,
-  FieldPro,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SectionCard,
-  SectionCards,
+  NvBadge,
+  NvButton,
+  NvDataTable,
+  NvField,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSectionCard,
+  NvSectionCards,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon, WrenchIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '可用窗口', requiredPermissions: ['business.maintenance.work-orders.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '可用窗口',
+    requiredPermissions: ['business.maintenance.work-orders.read'],
+  },
+})
 
 const route = useRoute()
-const initialDeviceAssetIds = typeof route.query.deviceAssetId === 'string' ? route.query.deviceAssetId : ''
-const { availabilityError, availabilityPending, availabilityWindows, filters, refreshAvailability } = useMaintenanceAvailabilityWindows({
+const initialDeviceAssetIds =
+  typeof route.query.deviceAssetId === 'string' ? route.query.deviceAssetId : ''
+const {
+  availabilityError,
+  availabilityPending,
+  availabilityWindows,
+  filters,
+  refreshAvailability,
+} = useMaintenanceAvailabilityWindows({
   deviceAssetIds: initialDeviceAssetIds,
 })
 
 const hasDeviceScope = computed(() => filters.deviceAssetIds.trim().length > 0)
-const unavailableCount = computed(() =>
-  availabilityWindows.value.filter((window) => (window.availabilityStatus ?? '').toLowerCase() === 'unavailable').length,
+const unavailableCount = computed(
+  () =>
+    availabilityWindows.value.filter(
+      (window) => (window.availabilityStatus ?? '').toLowerCase() === 'unavailable',
+    ).length,
 )
-const inspectionCount = computed(() =>
-  availabilityWindows.value.filter((window) => (window.reasonCode ?? '').trim().toLowerCase() === 'equipment.inspectionrequired').length,
+const inspectionCount = computed(
+  () =>
+    availabilityWindows.value.filter(
+      (window) => (window.reasonCode ?? '').trim().toLowerCase() === 'equipment.inspectionrequired',
+    ).length,
 )
 const errorMessage = computed(() => formatError(availabilityError.value))
 
@@ -50,8 +69,13 @@ const windowEndLocal = computed({
   },
 })
 
-const columns: DataTableProColumn<EquipmentRuntimeAvailabilityWindow>[] = [
-  { key: 'deviceAssetId', header: '设备', cellClass: 'font-medium', accessor: (r) => r.deviceAssetId ?? '未记录' },
+const columns: NvDataTableColumn<EquipmentRuntimeAvailabilityWindow>[] = [
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    cellClass: 'font-medium',
+    accessor: (r) => r.deviceAssetId ?? '未记录',
+  },
   { key: 'availabilityStatus', header: '状态', width: 'w-24' },
   { key: 'reasonCode', header: '原因' },
   { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '未绑定' },
@@ -61,7 +85,11 @@ const columns: DataTableProColumn<EquipmentRuntimeAvailabilityWindow>[] = [
 ]
 
 function availabilityLabel(value?: string | null) {
-  const labels: Record<string, string> = { available: '可用', unavailable: '不可用', unknown: '未知' }
+  const labels: Record<string, string> = {
+    available: '可用',
+    unavailable: '不可用',
+    unknown: '未知',
+  }
   return value ? (labels[value.toLowerCase()] ?? value) : '未知'
 }
 function availabilityVariant(value?: string | null) {
@@ -94,51 +122,82 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="可用窗口" :breadcrumbs="[{ label: '设备监控' }]" :count="hasDeviceScope ? `${availabilityWindows.length} 个窗口` : '选择设备后查询'">
+    <NvPageHeader
+      title="可用窗口"
+      :breadcrumbs="[{ label: '设备监控' }]"
+      :count="hasDeviceScope ? `${availabilityWindows.length} 个窗口` : '选择设备后查询'"
+    >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" as-child>
-          <RouterLink to="/maintenance/work-orders"><WrenchIcon aria-hidden="true" />维护工单</RouterLink>
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="!hasDeviceScope || availabilityPending" @click="refreshAvailability">
+        <NvButton size="sm" type="button" variant="outline" as-child>
+          <RouterLink to="/maintenance/work-orders"
+            ><WrenchIcon aria-hidden="true" />维护工单</RouterLink
+          >
+        </NvButton>
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="!hasDeviceScope || availabilityPending"
+          @click="refreshAvailability"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <FieldProGroup class="grid gap-3 rounded-lg border bg-card p-4 lg:grid-cols-[minmax(220px,1fr)_220px_220px_minmax(180px,0.8fr)]">
-      <FieldPro>
-        <FieldProLabel for="avail-devices">设备范围</FieldProLabel>
-        <InputPro id="avail-devices" v-model="filters.deviceAssetIds" autocomplete="off" placeholder="逗号分隔设备编号" />
-      </FieldPro>
-      <FieldPro>
-        <FieldProLabel for="avail-start">窗口开始</FieldProLabel>
-        <InputPro id="avail-start" v-model="windowStartLocal" type="datetime-local" />
-      </FieldPro>
-      <FieldPro>
-        <FieldProLabel for="avail-end">窗口结束</FieldProLabel>
-        <InputPro id="avail-end" v-model="windowEndLocal" type="datetime-local" />
-      </FieldPro>
-      <FieldPro>
-        <FieldProLabel for="avail-work-centers">工作中心</FieldProLabel>
-        <InputPro id="avail-work-centers" v-model="filters.workCenterIds" autocomplete="off" placeholder="可选，逗号分隔" />
-      </FieldPro>
-    </FieldProGroup>
+    <NvFieldGroup
+      class="grid gap-3 rounded-lg border bg-card p-4 lg:grid-cols-[minmax(220px,1fr)_220px_220px_minmax(180px,0.8fr)]"
+    >
+      <NvField>
+        <NvFieldLabel for="avail-devices">设备范围</NvFieldLabel>
+        <NvInput
+          id="avail-devices"
+          v-model="filters.deviceAssetIds"
+          autocomplete="off"
+          placeholder="逗号分隔设备编号"
+        />
+      </NvField>
+      <NvField>
+        <NvFieldLabel for="avail-start">窗口开始</NvFieldLabel>
+        <NvInput id="avail-start" v-model="windowStartLocal" type="datetime-local" />
+      </NvField>
+      <NvField>
+        <NvFieldLabel for="avail-end">窗口结束</NvFieldLabel>
+        <NvInput id="avail-end" v-model="windowEndLocal" type="datetime-local" />
+      </NvField>
+      <NvField>
+        <NvFieldLabel for="avail-work-centers">工作中心</NvFieldLabel>
+        <NvInput
+          id="avail-work-centers"
+          v-model="filters.workCenterIds"
+          autocomplete="off"
+          placeholder="可选，逗号分隔"
+        />
+      </NvField>
+    </NvFieldGroup>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <div v-if="!hasDeviceScope" class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+    <div
+      v-if="!hasDeviceScope"
+      class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
+    >
       请输入设备编号后查看维护占用、点检阻塞和其他可用性窗口。
     </div>
 
     <template v-else>
-      <SectionCards :columns="3">
-        <SectionCard description="窗口数量" :value="availabilityWindows.length" hint="当前查询范围" />
-        <SectionCard description="不可用窗口" :value="unavailableCount" hint="影响排程或执行" />
-        <SectionCard description="点检相关" :value="inspectionCount" hint="点检未通过或待处理" />
-      </SectionCards>
+      <NvSectionCards :columns="3">
+        <NvSectionCard
+          description="窗口数量"
+          :value="availabilityWindows.length"
+          hint="当前查询范围"
+        />
+        <NvSectionCard description="不可用窗口" :value="unavailableCount" hint="影响排程或执行" />
+        <NvSectionCard description="点检相关" :value="inspectionCount" hint="点检未通过或待处理" />
+      </NvSectionCards>
 
-      <DataTablePro
+      <NvDataTable
         :columns="columns"
         :rows="availabilityWindows"
         :row-key="rowKey"
@@ -148,20 +207,29 @@ function formatError(error: unknown) {
         empty-message="当前范围没有维护可用性窗口。"
       >
         <template #cell-deviceAssetId="{ row }">
-          <RouterLink :to="`/equipment/${row.deviceAssetId}`" class="text-brand underline-offset-4 hover:underline">
+          <RouterLink
+            :to="`/equipment/${row.deviceAssetId}`"
+            class="text-brand underline-offset-4 hover:underline"
+          >
             {{ row.deviceAssetId ?? '未记录' }}
           </RouterLink>
         </template>
         <template #cell-availabilityStatus="{ row }">
-          <BadgePro class="rounded-sm" :variant="availabilityVariant(row.availabilityStatus)">{{ availabilityLabel(row.availabilityStatus) }}</BadgePro>
+          <NvBadge class="rounded-sm" :variant="availabilityVariant(row.availabilityStatus)">{{
+            availabilityLabel(row.availabilityStatus)
+          }}</NvBadge>
         </template>
         <template #cell-reasonCode="{ row }">
           <div class="grid gap-1">
-            <span class="font-medium text-foreground">{{ describeEquipmentReason(row.reasonCode ?? '').label }}</span>
-            <span class="text-xs text-muted-foreground">{{ describeEquipmentReason(row.reasonCode ?? '').nextStep }}</span>
+            <span class="font-medium text-foreground">{{
+              describeEquipmentReason(row.reasonCode ?? '').label
+            }}</span>
+            <span class="text-xs text-muted-foreground">{{
+              describeEquipmentReason(row.reasonCode ?? '').nextStep
+            }}</span>
           </div>
         </template>
-      </DataTablePro>
+      </NvDataTable>
     </template>
   </BusinessLayout>
 </template>

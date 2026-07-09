@@ -3,48 +3,54 @@ import type {
   CreateProductCategoryRequest,
   ProductCategoryItem,
 } from '@/composables/usePromotedCatalogs'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useProductCategories } from '@/composables/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  AlertDialogPro,
-  AlertDialogProAction,
-  AlertDialogProCancel,
-  AlertDialogProContent,
-  AlertDialogProDescription,
-  AlertDialogProFooter,
-  AlertDialogProHeader,
-  AlertDialogProTitle,
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DialogProTrigger,
-  FieldPro,
-  FieldProDescription,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvAlertDialog,
+  NvAlertDialogAction,
+  NvAlertDialogCancel,
+  NvAlertDialogContent,
+  NvAlertDialogDescription,
+  NvAlertDialogFooter,
+  NvAlertDialogHeader,
+  NvAlertDialogTitle,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDialogTrigger,
+  NvField,
+  NvFieldDescription,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '产品分类', requiredPermissions: ['business.masterdata.products.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '产品分类',
+    requiredPermissions: ['business.masterdata.products.read'],
+  },
+})
 
 const {
   archiveCategory,
@@ -77,22 +83,28 @@ function parentLabel(row: ProductCategoryItem) {
 // Toolbar 搜索绑定到 search 筛选（空串不污染查询）。
 const search = computed({
   get: () => filters.search ?? '',
-  set: (value: string) => { filters.search = value.trim() ? value : undefined },
+  set: (value: string) => {
+    filters.search = value.trim() ? value : undefined
+  },
 })
 
 const page = ref(1)
 const pageSize = ref('10')
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-watch([page, pageSize], () => {
-  filters.skip = (page.value - 1) * pageSizeNumber.value
-  filters.take = pageSizeNumber.value
-}, { immediate: true })
+watch(
+  [page, pageSize],
+  () => {
+    filters.skip = (page.value - 1) * pageSizeNumber.value
+    filters.take = pageSizeNumber.value
+  },
+  { immediate: true },
+)
 
 const listErrorMessage = computed(() =>
   categoriesError.value instanceof Error ? categoriesError.value.message : '',
 )
 
-const columns: DataTableProColumn<ProductCategoryItem>[] = [
+const columns: NvDataTableColumn<ProductCategoryItem>[] = [
   { key: 'categoryCode', header: '编码', width: 'w-32' },
   { key: 'categoryName', header: '分类名', cellClass: 'font-medium' },
   { key: 'parent', header: '上级分类' },
@@ -167,8 +179,7 @@ async function submitForm() {
     if (editingCode.value) {
       await updateCategory(editingCode.value, payload)
       notifySuccess(`分类「${payload.categoryName}」已更新。`)
-    }
-    else {
+    } else {
       const body: CreateProductCategoryRequest = {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -180,8 +191,7 @@ async function submitForm() {
     showErrors.value = false
     formOpen.value = false
     editingCode.value = null
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -202,8 +212,7 @@ async function confirmArchive() {
     notifySuccess(`分类「${target.categoryName}」已停用。`)
     archiveOpen.value = false
     archiveTarget.value = null
-  }
-  catch (error) {
+  } catch (error) {
     notifyError(error)
   }
 }
@@ -211,84 +220,103 @@ async function confirmArchive() {
 
 <template>
   <BusinessLayout>
-    <PageHeader
+    <NvPageHeader
       title="产品分类"
       :breadcrumbs="[{ label: '基础数据' }]"
       :count="`${categoriesTotal} 个分类`"
     >
       <template #actions>
-        <ButtonPro size="sm" variant="outline" type="button" :disabled="categoriesPending" @click="refresh">
+        <NvButton
+          size="sm"
+          variant="outline"
+          type="button"
+          :disabled="categoriesPending"
+          @click="refresh"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <DialogPro v-model:open="formOpen">
-          <DialogProTrigger as-child>
-            <ButtonPro size="sm" type="button" @click="openCreate">
+        </NvButton>
+        <NvDialog v-model:open="formOpen">
+          <NvDialogTrigger as-child>
+            <NvButton size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建分类
-            </ButtonPro>
-          </DialogProTrigger>
-          <DialogProContent class="sm:max-w-2xl">
-            <DialogProHeader>
-              <DialogProTitle>{{ editingCode ? '编辑产品分类' : '新建产品分类' }}</DialogProTitle>
-              <DialogProDescription>
-                产品分类是物料与产品的归类主数据：维护层级（上级分类）后，可在选型与统计中按分类树聚合。带 * 为必填项。
-              </DialogProDescription>
-            </DialogProHeader>
+            </NvButton>
+          </NvDialogTrigger>
+          <NvDialogContent class="sm:max-w-2xl">
+            <NvDialogHeader>
+              <NvDialogTitle>{{ editingCode ? '编辑产品分类' : '新建产品分类' }}</NvDialogTitle>
+              <NvDialogDescription>
+                产品分类是物料与产品的归类主数据：维护层级（上级分类）后，可在选型与统计中按分类树聚合。带
+                * 为必填项。
+              </NvDialogDescription>
+            </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请填写分类名（已标红）。
               </p>
 
               <FormSectionTitle>基本信息</FormSectionTitle>
-              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-                <FieldPro :data-invalid="showErrors && !nameValid">
-                  <FieldProLabel for="cat-name">分类名 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="cat-name" v-model="form.categoryName" placeholder="例如：结构件" />
-                </FieldPro>
-                <FieldPro v-if="editingCode">
-                  <FieldProLabel>编码</FieldProLabel>
-                  <InputPro :model-value="editingCode" readonly disabled />
-                  <FieldProDescription>编码由系统自动生成，不可更改。</FieldProDescription>
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel for="cat-parent">上级分类</FieldProLabel>
-                  <SelectPro v-model="form.parentCode">
-                    <SelectProTrigger id="cat-parent"><SelectProValue placeholder="顶级分类（可空）" /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="o in parentOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                  <FieldProDescription>选择上级以形成分类树；留空为顶级分类。</FieldProDescription>
-                </FieldPro>
-              </FieldProGroup>
+              <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+                <NvField :data-invalid="showErrors && !nameValid">
+                  <NvFieldLabel for="cat-name"
+                    >分类名 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput id="cat-name" v-model="form.categoryName" placeholder="例如：结构件" />
+                </NvField>
+                <NvField v-if="editingCode">
+                  <NvFieldLabel>编码</NvFieldLabel>
+                  <NvInput :model-value="editingCode" readonly disabled />
+                  <NvFieldDescription>编码由系统自动生成，不可更改。</NvFieldDescription>
+                </NvField>
+                <NvField>
+                  <NvFieldLabel for="cat-parent">上级分类</NvFieldLabel>
+                  <NvSelect v-model="form.parentCode">
+                    <NvSelectTrigger id="cat-parent"
+                      ><NvSelectValue placeholder="顶级分类（可空）"
+                    /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem v-for="o in parentOptions" :key="o.value" :value="o.value">{{
+                        o.label
+                      }}</NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                  <NvFieldDescription>选择上级以形成分类树；留空为顶级分类。</NvFieldDescription>
+                </NvField>
+              </NvFieldGroup>
 
               <FormSectionTitle>其它</FormSectionTitle>
-              <FieldProGroup class="grid gap-3">
-                <FieldPro>
-                  <FieldProLabel for="cat-desc">说明</FieldProLabel>
-                  <InputPro id="cat-desc" v-model="form.description" placeholder="可选，分类用途或范围" />
-                </FieldPro>
-              </FieldProGroup>
+              <NvFieldGroup class="grid gap-3">
+                <NvField>
+                  <NvFieldLabel for="cat-desc">说明</NvFieldLabel>
+                  <NvInput
+                    id="cat-desc"
+                    v-model="form.description"
+                    placeholder="可选，分类用途或范围"
+                  />
+                </NvField>
+              </NvFieldGroup>
 
-              <DialogProFooter>
-                <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
-                <ButtonPro type="submit" :disabled="createPending || updatePending">
+              <NvDialogFooter>
+                <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
+                <NvButton type="submit" :disabled="createPending || updatePending">
                   <Spinner v-if="createPending || updatePending" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '创建分类' }}
-                </ButtonPro>
-              </DialogProFooter>
+                </NvButton>
+              </NvDialogFooter>
             </form>
-          </DialogProContent>
-        </DialogPro>
+          </NvDialogContent>
+        </NvDialog>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <Toolbar v-model:search="search" search-placeholder="按分类名或编码筛选" />
+    <NvToolbar v-model:search="search" search-placeholder="按分类名或编码筛选" />
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
+      {{ listErrorMessage }}
+    </p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -307,36 +335,44 @@ async function confirmArchive() {
         <span>{{ parentLabel(row) }}</span>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadgePro
+        <NvStatusBadge
           :label="row.enabled === false ? '停用' : '启用'"
           :tone="row.enabled === false ? 'neutral' : 'success'"
         />
       </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-1">
-          <ButtonPro type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</ButtonPro>
-          <ButtonPro type="button" variant="ghost" size="sm" :disabled="row.enabled === false" @click="openArchive(row)">停用</ButtonPro>
+          <NvButton type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</NvButton>
+          <NvButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            :disabled="row.enabled === false"
+            @click="openArchive(row)"
+            >停用</NvButton
+          >
         </div>
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
-
-    <AlertDialogPro v-model:open="archiveOpen">
-      <AlertDialogProContent>
-        <AlertDialogProHeader>
-          <AlertDialogProTitle>停用产品分类</AlertDialogProTitle>
-          <AlertDialogProDescription>
-            停用后分类「{{ archiveTarget?.categoryName }}」将不可在新的选型中使用，已有引用不受影响。
-          </AlertDialogProDescription>
-        </AlertDialogProHeader>
-        <AlertDialogProFooter>
-          <AlertDialogProCancel>取消</AlertDialogProCancel>
-          <AlertDialogProAction :disabled="archivePending" @click="confirmArchive">
+    <NvAlertDialog v-model:open="archiveOpen">
+      <NvAlertDialogContent>
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>停用产品分类</NvAlertDialogTitle>
+          <NvAlertDialogDescription>
+            停用后分类「{{
+              archiveTarget?.categoryName
+            }}」将不可在新的选型中使用，已有引用不受影响。
+          </NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <NvAlertDialogFooter>
+          <NvAlertDialogCancel>取消</NvAlertDialogCancel>
+          <NvAlertDialogAction :disabled="archivePending" @click="confirmArchive">
             <Spinner v-if="archivePending" aria-hidden="true" />
             确认停用
-          </AlertDialogProAction>
-        </AlertDialogProFooter>
-      </AlertDialogProContent>
-    </AlertDialogPro>
+          </NvAlertDialogAction>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
   </BusinessLayout>
 </template>

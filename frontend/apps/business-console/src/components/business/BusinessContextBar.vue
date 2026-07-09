@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { useBusinessContextStore, type BusinessContextState } from '@/stores/businessContext'
 import {
-  ButtonPro,
-  FieldPro,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvField,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
 } from '@nerv-iip/ui'
 import { computed, watch } from 'vue'
 
@@ -140,66 +140,77 @@ function clearExecutionScope() {
   <div class="grid gap-3 rounded-lg border bg-background p-4">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <h2 class="text-sm font-semibold text-foreground">{{ title }}</h2>
-      <ButtonPro size="sm" type="button" variant="ghost" @click="clearExecutionScope">清空范围</ButtonPro>
+      <NvButton size="sm" type="button" variant="ghost" @click="clearExecutionScope"
+        >清空范围</NvButton
+      >
     </div>
-    <FieldProGroup class="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
-      <FieldPro v-if="showSite">
-        <FieldProLabel for="business-context-site">工厂</FieldProLabel>
-        <SelectPro v-if="siteOptions.length" v-model="siteValue">
-          <SelectProTrigger id="business-context-site">
-            <SelectProValue placeholder="全部工厂" />
-          </SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem v-for="option in siteOptions" :key="option.value" :value="option.value">
+    <NvFieldGroup class="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
+      <NvField v-if="showSite">
+        <NvFieldLabel for="business-context-site">工厂</NvFieldLabel>
+        <NvSelect v-if="siteOptions.length" v-model="siteValue">
+          <NvSelectTrigger id="business-context-site">
+            <NvSelectValue placeholder="全部工厂" />
+          </NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem v-for="option in siteOptions" :key="option.value" :value="option.value">
               {{ option.label }}
-            </SelectProItem>
-          </SelectProContent>
-        </SelectPro>
-        <InputPro v-else id="business-context-site" v-model="siteValue" placeholder="可选" />
-      </FieldPro>
-      <FieldPro v-if="showLine">
-        <FieldProLabel for="business-context-line">产线</FieldProLabel>
-        <SelectPro v-if="lineOptions.length" v-model="lineValue">
-          <SelectProTrigger id="business-context-line">
-            <SelectProValue placeholder="全部产线" />
-          </SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem v-for="option in lineOptions" :key="option.value" :value="option.value">
+            </NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
+        <NvInput v-else id="business-context-site" v-model="siteValue" placeholder="可选" />
+      </NvField>
+      <NvField v-if="showLine">
+        <NvFieldLabel for="business-context-line">产线</NvFieldLabel>
+        <NvSelect v-if="lineOptions.length" v-model="lineValue">
+          <NvSelectTrigger id="business-context-line">
+            <NvSelectValue placeholder="全部产线" />
+          </NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem v-for="option in lineOptions" :key="option.value" :value="option.value">
               {{ option.label }}
-            </SelectProItem>
-          </SelectProContent>
-        </SelectPro>
-        <InputPro v-else id="business-context-line" v-model="lineValue" placeholder="可选" />
-      </FieldPro>
-      <FieldPro v-if="showWorkCenter">
-        <FieldProLabel for="business-context-work-center">工作中心</FieldProLabel>
-        <SelectPro v-if="workCenterOptions.length" v-model="workCenterValue">
-          <SelectProTrigger id="business-context-work-center">
-            <SelectProValue placeholder="全部工作中心" />
-          </SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem v-for="option in workCenterOptions" :key="option.value" :value="option.value">
+            </NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
+        <NvInput v-else id="business-context-line" v-model="lineValue" placeholder="可选" />
+      </NvField>
+      <NvField v-if="showWorkCenter">
+        <NvFieldLabel for="business-context-work-center">工作中心</NvFieldLabel>
+        <NvSelect v-if="workCenterOptions.length" v-model="workCenterValue">
+          <NvSelectTrigger id="business-context-work-center">
+            <NvSelectValue placeholder="全部工作中心" />
+          </NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem
+              v-for="option in workCenterOptions"
+              :key="option.value"
+              :value="option.value"
+            >
               {{ option.label }}
-            </SelectProItem>
-          </SelectProContent>
-        </SelectPro>
-        <InputPro v-else id="business-context-work-center" v-model="workCenterValue" placeholder="可选" />
-      </FieldPro>
-      <FieldPro v-if="showShift">
-        <FieldProLabel for="business-context-shift">班次</FieldProLabel>
-        <SelectPro v-if="shiftOptions.length" v-model="shiftValue">
-          <SelectProTrigger id="business-context-shift">
-            <SelectProValue placeholder="全部班次" />
-          </SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem v-for="option in shiftOptions" :key="option.value" :value="option.value">
+            </NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
+        <NvInput
+          v-else
+          id="business-context-work-center"
+          v-model="workCenterValue"
+          placeholder="可选"
+        />
+      </NvField>
+      <NvField v-if="showShift">
+        <NvFieldLabel for="business-context-shift">班次</NvFieldLabel>
+        <NvSelect v-if="shiftOptions.length" v-model="shiftValue">
+          <NvSelectTrigger id="business-context-shift">
+            <NvSelectValue placeholder="全部班次" />
+          </NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem v-for="option in shiftOptions" :key="option.value" :value="option.value">
               {{ option.label }}
-            </SelectProItem>
-          </SelectProContent>
-        </SelectPro>
-        <InputPro v-else id="business-context-shift" v-model="shiftValue" placeholder="可选" />
-      </FieldPro>
-    </FieldProGroup>
+            </NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
+        <NvInput v-else id="business-context-shift" v-model="shiftValue" placeholder="可选" />
+      </NvField>
+    </NvFieldGroup>
     <slot />
   </div>
 </template>

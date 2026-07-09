@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ConsoleIamRoleResponse } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import PermissionCodeBadge from '@/components/iam/PermissionCodeBadge.vue'
 import RoleCreateDialog from '@/components/iam/RoleCreateDialog.vue'
 import RolePermissionEditor from '@/components/iam/RolePermissionEditor.vue'
@@ -12,16 +12,16 @@ import {
   AlertDescription,
   AlertTitle,
   Button,
-  DataTable,
-  DataTablePagination,
+  NvDataTable,
+  NvDataTablePagination,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  PageHeader,
-  Toolbar,
+  NvPageHeader,
+  NvToolbar,
   toast,
 } from '@nerv-iip/ui'
 import { computed, shallowRef, watch } from 'vue'
@@ -74,7 +74,7 @@ const pageSize = computed({
   },
 })
 
-const columns: DataTableColumn<RoleRow>[] = [
+const columns: NvDataTableColumn<RoleRow>[] = [
   {
     key: 'roleName',
     header: '角色名称',
@@ -153,7 +153,7 @@ async function savePermissions() {
 <template>
   <DefaultLayout>
     <section class="grid gap-6">
-      <PageHeader
+      <NvPageHeader
         title="角色"
         :breadcrumbs="[{ label: '身份与访问' }]"
         :count="`${roles.totalCount.value} 个角色`"
@@ -163,9 +163,9 @@ async function savePermissions() {
             >新建角色</Button
           >
         </template>
-      </PageHeader>
+      </NvPageHeader>
 
-      <Toolbar
+      <NvToolbar
         :search="search"
         search-label="搜索角色"
         search-placeholder="搜索角色"
@@ -174,7 +174,10 @@ async function savePermissions() {
 
       <p v-if="pageError" class="text-sm text-destructive" role="alert">{{ pageError.message }}</p>
 
-      <DataTable
+      <NvDataTable
+        :pagination="false"
+        :searchable="false"
+        :column-settings="false"
         :columns="columns"
         :rows="roles.roles.value"
         row-key="roleId"
@@ -212,9 +215,9 @@ async function savePermissions() {
             </Button>
           </div>
         </template>
-      </DataTable>
+      </NvDataTable>
 
-      <DataTablePagination
+      <NvDataTablePagination
         v-model:page="page"
         v-model:page-size="pageSize"
         :total-items="roles.totalCount.value"
