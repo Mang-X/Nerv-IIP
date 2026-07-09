@@ -524,12 +524,8 @@ const wcsView = ref<'chart' | 'list'>('chart')
                       class="wa-donut"
                       :size="104"
                       :segments="[
-                        {
-                          label: '排队',
-                          value: wcs.counts.queued,
-                          color: 'rgba(160, 200, 245, 0.45)',
-                        },
                         { label: '执行中', value: wcs.counts.running, color: '#4aa6ee' },
+                        { label: '已完成', value: wcs.counts.completed, color: '#3fb37f' },
                         { label: '失败', value: wcs.counts.failed, color: '#ef5a63' },
                       ]"
                     >
