@@ -1182,6 +1182,32 @@
     {
       "service": "IndustrialTelemetry",
       "method": "GET",
+      "route": "/api/business/v1/iiot/device-control-commands",
+      "operationId": "listBusinessIiotDeviceControlCommands",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleTelemetryDeviceControlCommands"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/device-control-commands/{commandId}",
+      "operationId": "getBusinessIiotDeviceControlCommand",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleTelemetryDeviceControlCommand"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
       "route": "/api/business/v1/iiot/devices/{deviceAssetId}/current-state",
       "operationId": "getBusinessIiotDeviceCurrentState",
       "classification": "exposed",
