@@ -2,7 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
 import { cn } from '../../../lib/utils'
-import { TooltipPro, TooltipProContent, TooltipProProvider, TooltipProTrigger } from '../tooltip'
+import { NvTooltip, NvTooltipContent, NvTooltipProvider, NvTooltipTrigger } from '../tooltip'
 import type { DescriptionItem } from './types'
 
 /**
@@ -88,7 +88,7 @@ const labelStyle = computed(() => (props.labelWidth ? { width: props.labelWidth 
 </script>
 
 <template>
-  <TooltipProProvider :delay-duration="280">
+  <NvTooltipProvider :delay-duration="280">
     <div :class="cn('ds-desc', size === 'compact' && 'ds-desc-compact', props.class)">
       <div v-if="title || $slots.extra" class="ds-desc-header">
         <h3 v-if="title" class="text-sm font-semibold">{{ title }}</h3>
@@ -100,12 +100,12 @@ const labelStyle = computed(() => (props.labelWidth ? { width: props.labelWidth 
       <div v-if="bordered" class="ds-desc-bordered" :style="gridStyle">
         <template v-for="(row, ri) in rows" :key="ri">
           <template v-for="placed in row" :key="placed.item.key ?? placed.item.label">
-            <TooltipPro v-if="ellipsis">
-              <TooltipProTrigger as-child>
+            <NvTooltip v-if="ellipsis">
+              <NvTooltipTrigger as-child>
                 <div class="ds-desc-blabel ds-desc-clip">{{ placed.item.label }}</div>
-              </TooltipProTrigger>
-              <TooltipProContent>{{ placed.item.label }}</TooltipProContent>
-            </TooltipPro>
+              </NvTooltipTrigger>
+              <NvTooltipContent>{{ placed.item.label }}</NvTooltipContent>
+            </NvTooltip>
             <div v-else class="ds-desc-blabel">{{ placed.item.label }}</div>
             <div class="ds-desc-bvalue" :style="{ gridColumn: `span ${placed.span * 2 - 1}` }">
               <slot :name="placed.item.key ?? '__none__'" :item="placed.item">
@@ -127,16 +127,16 @@ const labelStyle = computed(() => (props.labelWidth ? { width: props.labelWidth 
           :class="layout === 'vertical' ? 'ds-desc-cell-v' : 'ds-desc-cell-h'"
           :style="{ gridColumn: `span ${spanOf(item)}` }"
         >
-          <TooltipPro v-if="ellipsis">
-            <TooltipProTrigger as-child>
+          <NvTooltip v-if="ellipsis">
+            <NvTooltipTrigger as-child>
               <span
                 class="ds-desc-label ds-desc-clip"
                 :style="layout === 'horizontal' ? labelStyle : undefined"
                 >{{ item.label }}</span
               >
-            </TooltipProTrigger>
-            <TooltipProContent>{{ item.label }}</TooltipProContent>
-          </TooltipPro>
+            </NvTooltipTrigger>
+            <NvTooltipContent>{{ item.label }}</NvTooltipContent>
+          </NvTooltip>
           <span
             v-else
             class="ds-desc-label"
@@ -153,7 +153,7 @@ const labelStyle = computed(() => (props.labelWidth ? { width: props.labelWidth 
         </div>
       </div>
     </div>
-  </TooltipProProvider>
+  </NvTooltipProvider>
 </template>
 
 <style scoped>

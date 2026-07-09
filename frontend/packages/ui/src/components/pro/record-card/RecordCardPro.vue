@@ -4,7 +4,7 @@ import { computed } from 'vue'
 import { cn } from '../../../lib/utils'
 import type { StatusTone } from '../../blocks/status-badge/statusMap'
 import CardPro from '../card/CardPro.vue'
-import { StatusBadgePro } from '../status'
+import { NvStatusBadge } from '../status'
 
 export interface RecordCardMeta {
   label: string
@@ -42,13 +42,19 @@ const progressPct = computed(() =>
 </script>
 
 <template>
-  <CardPro :interactive="interactive" :class="cn('flex flex-col gap-3 p-4', props.class)" data-slot="record-card-pro">
+  <CardPro
+    :interactive="interactive"
+    :class="cn('flex flex-col gap-3 p-4', props.class)"
+    data-slot="record-card-pro"
+  >
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
-        <p class="truncate font-mono text-sm font-medium tracking-tight tabular-nums">{{ recordNo }}</p>
+        <p class="truncate font-mono text-sm font-medium tracking-tight tabular-nums">
+          {{ recordNo }}
+        </p>
         <p v-if="title" class="mt-1 truncate text-sm text-muted-foreground">{{ title }}</p>
       </div>
-      <StatusBadgePro v-if="status" :label="status.label" :tone="status.tone" class="shrink-0" />
+      <NvStatusBadge v-if="status" :label="status.label" :tone="status.tone" class="shrink-0" />
     </div>
 
     <dl v-if="meta && meta.length" class="grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-3">

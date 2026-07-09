@@ -2,7 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { SearchIcon } from 'lucide-vue-next'
 import { cn } from '../../../lib/utils'
-import { InputPro } from '../../pro/input'
+import { NvInput } from '../../pro/input'
 
 withDefaults(
   defineProps<{
@@ -25,7 +25,7 @@ defineEmits<{ 'update:search': [value: string] }>()
 
 <template>
   <div :class="cn('flex flex-col gap-3 sm:flex-row sm:items-center', $props.class)">
-    <InputPro
+    <NvInput
       v-if="showSearch"
       :model-value="search"
       type="search"
@@ -35,7 +35,7 @@ defineEmits<{ 'update:search': [value: string] }>()
       @update:model-value="$emit('update:search', String($event))"
     >
       <template #leading><SearchIcon aria-hidden="true" /></template>
-    </InputPro>
+    </NvInput>
 
     <div v-if="$slots.filters" class="flex flex-wrap items-center gap-2">
       <slot name="filters" />

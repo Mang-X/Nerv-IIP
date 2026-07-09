@@ -1,8 +1,4 @@
-export {
-  default as NvNotifierHost,
-  /** @deprecated Use `NvNotifierHost` (ADR 0020 NvUI); alias removed after codemod #789. */
-  default as NotifierHost,
-} from './NotifierHost.vue'
+export { default as NvNotifierHost } from './NotifierHost.vue'
 export {
   dismissNotify,
   messagePro,

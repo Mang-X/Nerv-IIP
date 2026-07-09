@@ -2,8 +2,12 @@
 import type { HTMLAttributes } from 'vue'
 import { MoreHorizontalIcon } from 'lucide-vue-next'
 import { cn } from '../../../lib/utils'
-import { ButtonPro } from '../../pro/button'
-import { DropdownMenuPro, DropdownMenuProContent, DropdownMenuProTrigger } from '../../pro/dropdown-menu'
+import { NvButton } from '../../pro/button'
+import {
+  NvDropdownMenu,
+  NvDropdownMenuContent,
+  NvDropdownMenuTrigger,
+} from '../../pro/dropdown-menu'
 
 withDefaults(
   defineProps<{
@@ -22,9 +26,9 @@ withDefaults(
 </script>
 
 <template>
-  <DropdownMenuPro>
-    <DropdownMenuProTrigger as-child>
-      <ButtonPro
+  <NvDropdownMenu>
+    <NvDropdownMenuTrigger as-child>
+      <NvButton
         class="size-8 p-0"
         :disabled="disabled"
         size="icon"
@@ -34,10 +38,10 @@ withDefaults(
         :title="label"
       >
         <MoreHorizontalIcon class="size-4" aria-hidden="true" />
-      </ButtonPro>
-    </DropdownMenuProTrigger>
-    <DropdownMenuProContent :align="align" :class="cn('w-48 max-w-72', contentClass)">
+      </NvButton>
+    </NvDropdownMenuTrigger>
+    <NvDropdownMenuContent :align="align" :class="cn('w-48 max-w-72', contentClass)">
       <slot />
-    </DropdownMenuProContent>
-  </DropdownMenuPro>
+    </NvDropdownMenuContent>
+  </NvDropdownMenu>
 </template>

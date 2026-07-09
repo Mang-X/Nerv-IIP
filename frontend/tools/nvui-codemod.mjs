@@ -120,10 +120,32 @@ const uiBarrels = walk(resolve(FRONTEND, 'packages/ui/src/components'), (n) => n
 const uiMap = buildMap(uiBarrels)
 const mobileMap = buildMap([resolve(FRONTEND, 'packages/ui-mobile/src/index.ts')])
 
+// When set (closeout --path mode), this map is applied to the specifiers of EVERY
+// import — barrel OR relative — so library-internal components that import old names
+// through relative sub-barrel paths (`import { ButtonPro } from '../button'`) migrate
+// too. Only names actually in the map are touched (AST-scoped), so 原版/reka imports
+// are untouched.
+let FORCED_MAP = null
 function mapFor(spec) {
+  if (FORCED_MAP) return FORCED_MAP
   if (spec === UI) return uiMap
   if (spec === UI_MOBILE) return mobileMap
   return null
+}
+// A module is a "barrel" (its exports are the renamed Nv names post-closeout) if it is
+// the bare `@nerv-iip/ui|ui-mobile` specifier or a relative path resolving to a DIRECTORY
+// with an index.ts. Source-file imports (`./types`, `./Foo.vue`) keep their original
+// names (types.ts still defines `DataTableProDensity`), so force-map must skip them.
+function isBarrel(spec, fileDir) {
+  if (spec === UI || spec === UI_MOBILE) return true
+  if (!spec.startsWith('.') || !fileDir) return false
+  if (/\.(vue|ts|tsx|css|js|mjs|json)$/.test(spec)) return false
+  const resolved = resolve(fileDir, spec)
+  return (
+    existsSync(resolved) &&
+    statSync(resolved).isDirectory() &&
+    existsSync(join(resolved, 'index.ts'))
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -185,6 +207,7 @@ const isTestFile = (n) => /\.(test|spec)\./.test(n)
  */
 function transformScript(code, fileLabel, opts = {}) {
   const keyStringMap = opts.keyStringMap ?? null
+  const fileDir = opts.fileDir ?? null
   const sf = ts.createSourceFile(fileLabel, code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   /** @type {{start:number,end:number,text:string}[]} */
   const edits = []
@@ -194,6 +217,9 @@ function transformScript(code, fileLabel, opts = {}) {
   const rebuildClause = (node, moduleSpec) => {
     const m = mapFor(moduleSpec)
     if (!m) return
+    // Force-map mode only rewrites BARREL imports; source-file imports (`./types`,
+    // `./Foo.vue`) keep their original names.
+    if (FORCED_MAP && !isBarrel(moduleSpec, fileDir)) return
     // Handle import declarations
     if (ts.isImportDeclaration(node)) {
       const ic = node.importClause
@@ -481,7 +507,7 @@ function dynamicComponentWarnings(tpl, localRenames, rel) {
   return warns
 }
 
-function transformVue(source, rel) {
+function transformVue(source, rel, fileDir) {
   const { descriptor, errors } = parseSfc(source, { filename: rel })
   if (errors && errors.length) {
     // Non-fatal parse warnings can occur; only bail on hard errors.
@@ -490,7 +516,7 @@ function transformVue(source, rel) {
   const localRenames = new Map()
   const scriptBlocks = [descriptor.script, descriptor.scriptSetup].filter(Boolean)
   for (const blk of scriptBlocks) {
-    const r = transformScript(blk.content, rel)
+    const r = transformScript(blk.content, rel, { fileDir })
     for (const [k, v] of r.localRenames) localRenames.set(k, v)
     if (r.changed) {
       edits.push({ start: blk.loc.start.offset, end: blk.loc.end.offset, text: r.code })
@@ -514,13 +540,14 @@ function transformVue(source, rel) {
 
 function transformFile(absPath, rel, appMap) {
   const source = readFileSync(absPath, 'utf8')
-  if (absPath.endsWith('.vue')) return transformVue(source, rel)
+  const fileDir = dirname(absPath)
+  if (absPath.endsWith('.vue')) return transformVue(source, rel, fileDir)
   // Test files: rename barrel imports/refs + vi.mock(barrel) export keys. Static
   // source-reader tests (readFileSync a migrated SFC) additionally get old-name string
   // literals renamed. Non-test .ts get imports+refs only.
   const opts = isTestFile(absPath)
-    ? { keyStringMap: appMap, renameStrings: /readFileSync|readFile\s*\(/.test(source) }
-    : {}
+    ? { keyStringMap: appMap, renameStrings: /readFileSync|readFile\s*\(/.test(source), fileDir }
+    : { fileDir }
   const r = transformScript(source, rel, opts)
   return { code: r.code, changed: r.changed, warnings: [] }
 }
@@ -627,8 +654,50 @@ function main() {
     for (const [o, n] of rows) console.log(`  ${o}  →  ${n}`)
     return
   }
+  // Closeout mode: --path <dir-relative-to-frontend> [--force-map ui|mobile|both].
+  // Migrates old→new across arbitrary dirs (design-system, app-shell, and the
+  // library-internal components that import old names through relative paths).
+  // --force-map applies the map to EVERY import specifier (barrel + relative);
+  // without it, only the bare `@nerv-iip/ui|ui-mobile` barrels are scoped (safe for
+  // consumers that still import through the barrel). Excludes the guard + naming
+  // contract tests (their old-name fixtures are intentional). No baseline regen.
+  const pathIdx = args.indexOf('--path')
+  const pathArg = pathIdx >= 0 ? args[pathIdx + 1] : null
+  const forceIdx = args.indexOf('--force-map')
+  const forceArg = forceIdx >= 0 ? args[forceIdx + 1] : null
+  if (pathArg) {
+    if (forceArg === 'ui') FORCED_MAP = uiMap
+    else if (forceArg === 'mobile') FORCED_MAP = mobileMap
+    else if (forceArg === 'both') FORCED_MAP = new Map([...uiMap, ...mobileMap])
+    const root = resolve(FRONTEND, pathArg)
+    if (!existsSync(root)) {
+      console.error(`path not found: ${root}`)
+      process.exit(1)
+    }
+    const isFixtureTest = (n) => n.endsWith('nvui-naming.contract.test.ts')
+    const pfiles = walk(root, isCodemodTarget).filter((f) => !isGuardTest(f) && !isFixtureTest(f))
+    const fmap = FORCED_MAP ?? new Map([...uiMap, ...mobileMap])
+    let changed = 0
+    const changedList = []
+    for (const f of pfiles) {
+      const rel = relative(root, f).replace(/\\/g, '/')
+      const res = transformFile(f, rel, fmap)
+      if (res.changed) {
+        changed++
+        changedList.push(rel)
+        if (write) writeFileSync(f, res.code)
+      }
+    }
+    console.log(
+      `\n[path ${pathArg}] force-map=${forceArg || 'off'}; scanned ${pfiles.length}, ${write ? 'wrote' : 'would change'} ${changed}`,
+    )
+    for (const r of changedList) console.log('   ' + r)
+    return
+  }
   if (!app) {
-    console.log('\nSpecify --app <name>. Add --write to apply (default is dry-run).')
+    console.log(
+      '\nSpecify --app <name> or --path <dir>. Add --write to apply (default is dry-run).',
+    )
     return
   }
 

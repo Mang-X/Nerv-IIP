@@ -4,23 +4,19 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 /**
- * NvUI import-hygiene guard (ADR 0020 Decision 4.4 / issue #787 "四 app 合约守护铺满").
+ * NvUI import-hygiene guard (ADR 0020 Decision 4.4 / #789 closeout).
  *
- * Copy-adapted per app (companion to the business-console gold-standard contract).
- * The component library may be consumed ONLY through its stable package boundary —
- * the bare `@nerv-iip/ui` / `@nerv-iip/ui-mobile` specifiers, using the `Nv*` brand
- * names. Two enforcement layers:
+ * The component library is consumed ONLY through its stable package boundary — the
+ * bare `@nerv-iip/ui` / `@nerv-iip/ui-mobile` specifiers, using the `Nv*` brand names.
  *
  *  1. **Hard bans** (always fail): deep imports into `@nerv-iip/ui|ui-mobile/*`
  *     (except the `file-preview` sub-entry), direct `reka-ui`, direct `shadcn-vue`.
- *  2. **@deprecated old-name ratchet**: old names stay usable this batch
- *     (zero-breakage — see ADR 0020 S1), but a NEW old-name import is BLOCKED. A
- *     file/name pair not present in the checked-in baseline
- *     (`nvui-legacy-imports.baseline.json`, the #789 migration work-list) fails the
- *     build. The deprecated set is derived from the library barrels themselves, so
- *     the guard can never drift from the actual `@deprecated` aliases; it is
- *     barrel-aware (`Badge`/`Empty`/`DropdownMenu` are deprecated only from
- *     `@nerv-iip/ui-mobile`; from `@nerv-iip/ui` they are original primitives).
+ *  2. **Closeout invariant**: the codemod closeout (#789) removed every `@deprecated`
+ *     old-name alias from the library barrels, so an old name is no longer importable
+ *     at all — any attempt is now a hard typecheck error rather than a soft ratchet
+ *     warning (the per-app `nvui-legacy-imports.baseline.json` is retired). This test
+ *     asserts the library exposes zero `@deprecated` aliases, so a regression that
+ *     re-introduces one fails here.
  */
 
 const srcDir = dirname(fileURLToPath(import.meta.url))
@@ -41,8 +37,8 @@ function walk(dir: string, keep: (name: string) => boolean): string[] {
 const isSource = (n: string) =>
   /\.(vue|ts)$/.test(n) && !/\.(test|spec)\./.test(n) && !n.endsWith('.d.ts')
 
-// Deprecated old component names, derived from the `@deprecated` aliases in the
-// library barrels — single source of truth.
+// Deprecated old names, derived from the `@deprecated` aliases in the library barrels.
+// After the #789 closeout this set is empty — that is the invariant asserted below.
 function deriveDeprecated(files: string[]): Set<string> {
   const s = new Set<string>()
   const re = /@deprecated[^\n]*\n\s*(?:default|[A-Za-z0-9_]+)\s+as\s+([A-Za-z0-9_]+)/g
@@ -60,9 +56,6 @@ const UI_OLD = deriveDeprecated(
 const MOBILE_OLD = deriveDeprecated([resolve(frontendRoot, 'packages/ui-mobile/src/index.ts')])
 
 const MODULE_RE = /(?:from|import\(|\bimport)\s*['"]([^'"]+)['"]/g
-const BARREL_CLAUSE_RE =
-  /import\s+(?:[\w$]+\s*,\s*)?\{([^}]*)\}\s*from\s*['"](@nerv-iip\/ui(?:-mobile)?)['"]/g
-
 function modulesOf(src: string): string[] {
   const out: string[] = []
   let m: RegExpExecArray | null
@@ -71,33 +64,11 @@ function modulesOf(src: string): string[] {
   return out
 }
 
-function deprecatedOldNamesIn(src: string): Set<string> {
-  const found = new Set<string>()
-  let m: RegExpExecArray | null
-  BARREL_CLAUSE_RE.lastIndex = 0
-  while ((m = BARREL_CLAUSE_RE.exec(src))) {
-    const set = m[2].endsWith('mobile') ? MOBILE_OLD : UI_OLD
-    for (const raw of m[1].split(',')) {
-      const name = raw
-        .trim()
-        .replace(/^type\s+/, '')
-        .split(/\s+as\s+/)[0]
-        .trim()
-      if (set.has(name)) found.add(name)
-    }
-  }
-  return found
-}
-
 const files = walk(srcDir, isSource)
-const baseline: Record<string, string[]> = JSON.parse(
-  readFileSync(join(srcDir, 'nvui-legacy-imports.baseline.json'), 'utf8'),
-)
 
 describe('NvUI import hygiene (stable package boundary)', () => {
-  it('found app source files + a derived deprecated set to guard', () => {
+  it('found app source files to guard', () => {
     expect(files.length).toBeGreaterThan(0)
-    expect(UI_OLD.size).toBeGreaterThan(0)
   })
 
   for (const file of files) {
@@ -133,35 +104,14 @@ describe('NvUI import hygiene (stable package boundary)', () => {
     })
   }
 
-  // @deprecated old-name ratchet — NEW old-name imports FAIL; current usage is
-  // grandfathered by the baseline (the #789 migration work-list, shrink-only).
-  it('blocks NEW @deprecated old-name imports (ratchet vs baseline)', () => {
-    const offenders: string[] = []
-    for (const file of files) {
-      const rel = relative(srcDir, file).replace(/\\/g, '/')
-      const allowed = new Set(baseline[rel] ?? [])
-      for (const name of deprecatedOldNamesIn(readFileSync(file, 'utf8'))) {
-        if (!allowed.has(name)) offenders.push(`${rel}: ${name}`)
-      }
-    }
+  // #789 closeout: the library exposes NO `@deprecated` old-name aliases, so an old
+  // name (`ButtonPro`, `ScreenPanel`, `Badge` from ui-mobile, …) is no longer
+  // importable — the old-name ratchet + per-app baseline are retired and typecheck is
+  // the hard guard. This asserts the invariant so a regression re-adding an alias fails.
+  it('the library exposes no @deprecated old-name aliases (closeout done)', () => {
     expect(
-      offenders,
-      `New @deprecated old-name import(s) — use the Nv* brand names (ADR 0020 Appendix A / #789):\n${offenders.join('\n')}`,
+      [...UI_OLD, ...MOBILE_OLD].sort(),
+      'closeout removed every @deprecated alias — an old-name import is now a typecheck error',
     ).toEqual([])
-  })
-
-  // Proof the ratchet is a real block (not a warning): the detector flags old
-  // names from the right barrel and leaves Nv* / shadcn 原版 primitives alone.
-  it('actually intercepts a deprecated old-name import (not a warning)', () => {
-    expect(UI_OLD.has('ButtonPro'), 'derived set covers pro old names').toBe(true)
-    expect(UI_OLD.has('PageHeader'), 'derived set covers bare block old names').toBe(true)
-    expect([
-      ...deprecatedOldNamesIn("import { NvButton, ButtonPro } from '@nerv-iip/ui'"),
-    ]).toContain('ButtonPro')
-    expect([
-      ...deprecatedOldNamesIn("import { NvMobileBadge, Badge } from '@nerv-iip/ui-mobile'"),
-    ]).toContain('Badge')
-    // Nv* brand names and @nerv-iip/ui original primitives are NOT flagged.
-    expect([...deprecatedOldNamesIn("import { NvButton, Button } from '@nerv-iip/ui'")]).toEqual([])
   })
 })

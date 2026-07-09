@@ -8,13 +8,7 @@ import {
   ChevronsRightIcon,
 } from 'lucide-vue-next'
 import { cn } from '../../../lib/utils'
-import {
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
-} from '../select'
+import { NvSelect, NvSelectContent, NvSelectItem, NvSelectTrigger, NvSelectValue } from '../select'
 
 /**
  * Pro — premium pagination. Clickable numbered pages with ellipsis truncation,
@@ -116,16 +110,16 @@ function commitJump() {
       </p>
       <div class="hidden items-center gap-2 sm:flex">
         <span class="text-sm text-muted-foreground">每页</span>
-        <SelectPro :model-value="String(pageSize)" @update:model-value="onPageSize">
-          <SelectProTrigger class="h-8 w-[4.5rem]" aria-label="每页条数">
-            <SelectProValue />
-          </SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem v-for="opt in pageSizeOptions" :key="opt" :value="String(opt)">
+        <NvSelect :model-value="String(pageSize)" @update:model-value="onPageSize">
+          <NvSelectTrigger class="h-8 w-[4.5rem]" aria-label="每页条数">
+            <NvSelectValue />
+          </NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem v-for="opt in pageSizeOptions" :key="opt" :value="String(opt)">
               {{ opt }}
-            </SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+            </NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
       </div>
     </div>
 

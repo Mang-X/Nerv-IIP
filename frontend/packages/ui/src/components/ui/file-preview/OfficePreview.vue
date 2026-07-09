@@ -1,9 +1,21 @@
 <script setup lang="ts">
 import type { FilePreviewKind } from './filePreviewKind'
-import { ChevronLeftIcon, ChevronRightIcon, RotateCcwIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-vue-next'
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  RotateCcwIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
+} from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
-import { SelectPro, SelectProContent, SelectProItem, SelectProTrigger, SelectProValue } from '../../pro/select'
+import {
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
+} from '../../pro/select'
 import { Button } from '../button'
 
 type OfficeViewer = {
@@ -82,10 +94,16 @@ const indexLabel = computed(() => {
   return `${currentIndex.value + 1}/${total.value}`
 })
 const canGoPrevious = computed(() => currentIndex.value > 0 && !loading.value)
-const canGoNext = computed(() => total.value > 0 && currentIndex.value < total.value - 1 && !loading.value)
+const canGoNext = computed(
+  () => total.value > 0 && currentIndex.value < total.value - 1 && !loading.value,
+)
 const zoomPercent = computed(() => `${Math.round(zoomScale.value * 100)}%`)
-const canZoomOut = computed(() => usesCanvas.value && zoomScale.value > minimumZoomScale && !loading.value)
-const canZoomIn = computed(() => usesCanvas.value && zoomScale.value < maximumZoomScale && !loading.value)
+const canZoomOut = computed(
+  () => usesCanvas.value && zoomScale.value > minimumZoomScale && !loading.value,
+)
+const canZoomIn = computed(
+  () => usesCanvas.value && zoomScale.value < maximumZoomScale && !loading.value,
+)
 const navigationUnit = computed(() => {
   if (props.kind === 'office-pptx') {
     return 'slide'
@@ -146,8 +164,10 @@ function measureCanvasRenderWidth() {
   }
 
   const style = window.getComputedStyle(canvasStageRef.value)
-  const horizontalPadding = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight)
-  const contentWidth = canvasStageRef.value.clientWidth - (Number.isFinite(horizontalPadding) ? horizontalPadding : 0)
+  const horizontalPadding =
+    Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight)
+  const contentWidth =
+    canvasStageRef.value.clientWidth - (Number.isFinite(horizontalPadding) ? horizontalPadding : 0)
   return Math.max(minimumCanvasRenderWidth, Math.floor(contentWidth))
 }
 
@@ -172,7 +192,13 @@ function syncCanvasRenderWidth() {
 }
 
 function scheduleCanvasViewerRerender() {
-  if (!usesCanvas.value || !viewer.value || loading.value || errorMessage.value || !canvasRenderWidth.value) {
+  if (
+    !usesCanvas.value ||
+    !viewer.value ||
+    loading.value ||
+    errorMessage.value ||
+    !canvasRenderWidth.value
+  ) {
     return
   }
 
@@ -200,7 +226,14 @@ async function rerenderCanvasViewer() {
       const token = loadToken
       const width = canvasRenderWidth.value
 
-      if (!active || token !== loadToken || !usesCanvas.value || loading.value || errorMessage.value || !width) {
+      if (
+        !active ||
+        token !== loadToken ||
+        !usesCanvas.value ||
+        loading.value ||
+        errorMessage.value ||
+        !width
+      ) {
         return
       }
 
@@ -242,7 +275,10 @@ async function rerenderActiveCanvasViewer(active: CanvasOfficeViewer) {
 }
 
 function setZoomScale(nextScale: number) {
-  const clamped = Math.min(maximumZoomScale, Math.max(minimumZoomScale, Math.round(nextScale * 10) / 10))
+  const clamped = Math.min(
+    maximumZoomScale,
+    Math.max(minimumZoomScale, Math.round(nextScale * 10) / 10),
+  )
   if (Math.abs(clamped - zoomScale.value) < 0.001) {
     return
   }
@@ -469,11 +505,7 @@ async function stepToIndex(active: OfficeViewer, nextIndex: number) {
   }
 }
 
-watch(
-  () => [props.src, props.kind] as const,
-  loadViewer,
-  { immediate: true, flush: 'post' },
-)
+watch(() => [props.src, props.kind] as const, loadViewer, { immediate: true, flush: 'post' })
 
 watch(
   () => props.kind,
@@ -500,27 +532,29 @@ onBeforeUnmount(() => {
 
 <template>
   <div data-slot="file-preview-office" class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-    <div class="flex items-center justify-between gap-2 border-b border-border/70 bg-muted/35 px-2 py-1.5">
+    <div
+      class="flex items-center justify-between gap-2 border-b border-border/70 bg-muted/35 px-2 py-1.5"
+    >
       <div class="flex min-w-0 items-center gap-2">
-        <SelectPro
+        <NvSelect
           v-if="jumpOptions.length > 0"
           data-slot="file-preview-office-jump-select"
           :model-value="String(currentIndex)"
           @update:model-value="goToIndex"
         >
-          <SelectProTrigger
+          <NvSelectTrigger
             class="h-7 w-32 max-w-[42vw] font-mono text-xs"
             :aria-label="jumpSelectLabel"
             :disabled="loading"
           >
-            <SelectProValue />
-          </SelectProTrigger>
-          <SelectProContent class="max-h-64 min-w-32">
-            <SelectProItem v-for="option in jumpOptions" :key="option.value" :value="option.value">
+            <NvSelectValue />
+          </NvSelectTrigger>
+          <NvSelectContent class="max-h-64 min-w-32">
+            <NvSelectItem v-for="option in jumpOptions" :key="option.value" :value="option.value">
               {{ option.label }}
-            </SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+            </NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
         <div class="min-w-0 truncate font-mono text-xs text-muted-foreground">
           {{ indexLabel }}
         </div>
@@ -557,33 +591,39 @@ onBeforeUnmount(() => {
           </Button>
         </div>
         <div class="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          :aria-label="`Previous ${navigationUnit}`"
-          :disabled="!canGoPrevious"
-          @click="goPrevious"
-        >
-          <ChevronLeftIcon aria-hidden="true" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          :aria-label="`Next ${navigationUnit}`"
-          :disabled="!canGoNext"
-          @click="goNext"
-        >
-          <ChevronRightIcon aria-hidden="true" />
-        </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            :aria-label="`Previous ${navigationUnit}`"
+            :disabled="!canGoPrevious"
+            @click="goPrevious"
+          >
+            <ChevronLeftIcon aria-hidden="true" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            :aria-label="`Next ${navigationUnit}`"
+            :disabled="!canGoNext"
+            @click="goNext"
+          >
+            <ChevronRightIcon aria-hidden="true" />
+          </Button>
         </div>
       </div>
     </div>
 
     <div class="relative min-h-0 overflow-auto bg-muted/20 p-4">
-      <div v-if="loading" class="absolute inset-0 z-10 grid place-items-center bg-background/70 text-sm text-muted-foreground">
+      <div
+        v-if="loading"
+        class="absolute inset-0 z-10 grid place-items-center bg-background/70 text-sm text-muted-foreground"
+      >
         正在加载预览
       </div>
-      <div v-if="errorMessage" class="grid h-full min-h-64 place-items-center text-sm text-destructive">
+      <div
+        v-if="errorMessage"
+        class="grid h-full min-h-64 place-items-center text-sm text-destructive"
+      >
         {{ errorMessage }}
       </div>
       <div
