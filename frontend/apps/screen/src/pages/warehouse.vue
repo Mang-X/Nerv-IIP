@@ -1,13 +1,24 @@
 <script setup lang="ts">
-import { ScreenBarChart, ScreenDonut, ScreenPanel, ScreenScrollArea, ScrollBoard, StatusLight, StatusTag, useScreenData } from '@nerv-iip/ui'
+import {
+  ScreenBarChart,
+  ScreenDonut,
+  ScreenPanel,
+  ScreenScrollArea,
+  ScrollBoard,
+  StatusLight,
+  StatusTag,
+  useScreenData,
+} from '@nerv-iip/ui'
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Bot,
+  ChartPie,
   ClipboardCheck,
   Container,
   Forklift,
   GitFork,
+  LayoutList,
   MoveHorizontal,
   MoveVertical,
   OctagonAlert,
@@ -15,28 +26,57 @@ import {
   Scale,
   Shuffle,
 } from 'lucide-vue-next'
-import { type Component, computed, watch } from 'vue'
+import { type Component, computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
 import { useBackLink } from '@/composables/useBackLink'
-import type { WarehouseBoard, WarehouseOpsTick, WcsAdapterKind, WhTaskRow } from '@/data/contracts/warehouse'
+import { IS_REAL_DATA } from '@/data/config'
+import type {
+  WarehouseBoard,
+  WarehouseOpsTick,
+  WcsAdapterKind,
+  WhTaskRow,
+} from '@/data/contracts/warehouse'
 import { fetchWarehouseBoard, fetchWarehouseOpsTick } from '@/data/fetchers/warehouse'
+import { scopedOverride, type Scoped } from '@/data/scope'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
 // 仓储物流大屏（MAN-318）：WMS 作业指挥屏 —— 一眼掌握当日出入库进度、
 // 上架/拣货/盘点积压与流速、WCS 失败告警，调度人力补到积压环节。
-// 刷新分层：主数据（KPI/出入库进度）5s · 任务看板/WCS 3s（同源纯函数，口径一致）；
-// 页面隐藏时 useScreenData 统一暂停轮询。库存资产域无读面，一期不做（诚实定位）。
+// 刷新分层：主数据（KPI/出入库进度）10s · 任务看板/WCS 15s；真实模式由 WMS 分页 list 前端聚合，
+// 轮询降频兼顾 Gateway 限流（#734）。页面隐藏时 useScreenData 统一暂停轮询、断后端保留上次数据标 stale。
+// 库存水位/低库存预警半屏仍缺 Inventory 读面聚合（待 #570），一期不做（诚实定位）。
 const scope = useAccessScope()
 const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
-const { data: board, lastUpdated, refresh } = useScreenData<WarehouseBoard>(
-  () => fetchWarehouseBoard(scope.currentFactoryId),
-  { intervalMs: 5000 },
+// 两条流各自标记取数时的 scope，切换工厂/persona 时旧 scope 的 tick 不会覆盖新 board。
+const scopeKey = computed(() => `${scope.currentFactoryId}::${scope.personaId}`)
+const {
+  data: boardEnv,
+  lastUpdated,
+  isStale: boardStale,
+  refresh,
+} = useScreenData<Scoped<WarehouseBoard>>(
+  async () => ({
+    scopeKey: scopeKey.value,
+    data: await fetchWarehouseBoard(scope.currentFactoryId),
+  }),
+  { intervalMs: 10000 },
 )
-const { data: ops, refresh: refreshOps } = useScreenData<WarehouseOpsTick>(
-  () => fetchWarehouseOpsTick(scope.currentFactoryId),
-  { intervalMs: 3000 },
+const {
+  data: opsEnv,
+  isStale: opsStale,
+  refresh: refreshOps,
+} = useScreenData<Scoped<WarehouseOpsTick>>(
+  async () => ({
+    scopeKey: scopeKey.value,
+    data: await fetchWarehouseOpsTick(scope.currentFactoryId),
+  }),
+  { intervalMs: 15000 },
 )
+const board = computed(() => boardEnv.value?.data)
+// ops 仅在其 scope 与当前 board 一致时才优先（否则回退 board 完整快照）；页脚 stale 同时反映主板与 tick。
+const ops = computed(() => scopedOverride(opsEnv.value, boardEnv.value))
+const isStale = computed(() => Boolean(boardStale.value || opsStale.value))
 watch(
   () => [scope.currentFactoryId, scope.personaId],
   () => {
@@ -49,6 +89,8 @@ const factoryName = computed(
   () => scope.factories.find((f) => f.id === scope.currentFactoryId)?.name ?? '全部车间',
 )
 const nf = new Intl.NumberFormat('en-US')
+// 真实模式：入库/出库 facade 仅文档级（无行级数量），口径为「单」；mock 演示数据为「行」。
+const flowUnit = IS_REAL_DATA ? '单' : '行'
 
 /** 分钟 → 龄期短格式（45m / 1h 12m） */
 function fmtAge(min: number): string {
@@ -70,7 +112,9 @@ const heroKpi = computed(() => {
   if (!b) return null
   return {
     value: b.kpis.outboundPct,
-    sub: `${nf.format(b.outbound.linesDone)}/${nf.format(b.outbound.linesTotal)} 行 · 发运 ${b.outbound.docsDone}/${b.outbound.docsTotal} 单`,
+    sub: IS_REAL_DATA
+      ? `发运 ${b.outbound.docsDone}/${b.outbound.docsTotal} 单`
+      : `${nf.format(b.outbound.linesDone)}/${nf.format(b.outbound.linesTotal)} 行 · 发运 ${b.outbound.docsDone}/${b.outbound.docsTotal} 单`,
   }
 })
 interface BandCell {
@@ -93,7 +137,7 @@ const bandCells = computed<BandCell[]>(() => {
       label: '当日入库进度',
       value: String(b.kpis.inboundPct),
       unit: '%',
-      sub: `${nf.format(b.inbound.linesDone)}/${nf.format(b.inbound.linesTotal)} 行`,
+      sub: `${nf.format(b.inbound.linesDone)}/${nf.format(b.inbound.linesTotal)} ${flowUnit}`,
       tone: 'cyan',
     },
     {
@@ -216,6 +260,9 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   sorter: GitFork,
   hoist: MoveVertical,
 }
+
+// WCS 链路负载视图：环形图 ↔ 适配器明细列表，点击切换（同一空间内二选一，列表得满高）。
+const wcsView = ref<'chart' | 'list'>('chart')
 </script>
 
 <template>
@@ -229,21 +276,31 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
               <span class="wb-num">{{ heroKpi.value }}<small>%</small></span>
               <i class="wb-kpi-line cyan" aria-hidden="true" />
             </div>
-            <div class="wb-hero-l"><ArrowUpFromLine :size="17" :stroke-width="1.8" class="wb-kpi-ic" />当日出库进度</div>
+            <div class="wb-hero-l">
+              <ArrowUpFromLine :size="17" :stroke-width="1.8" class="wb-kpi-ic" />当日出库进度
+            </div>
             <span class="wb-hero-sub">{{ heroKpi.sub }}</span>
           </div>
           <div v-for="c in bandCells" :key="c.label" class="wb-kpi">
             <dt class="wb-kpi-t">
-              <component :is="c.icon" :size="17" :stroke-width="1.8" class="wb-kpi-ic" />{{ c.label }}
+              <component :is="c.icon" :size="17" :stroke-width="1.8" class="wb-kpi-ic" />{{
+                c.label
+              }}
             </dt>
             <dd class="wb-kpi-v" :class="c.tone">
-              <span class="wb-num">{{ c.value }}<small>{{ c.unit }}</small></span>
+              <span class="wb-num"
+                >{{ c.value }}<small>{{ c.unit }}</small></span
+              >
               <i class="wb-kpi-line" :class="c.tone" aria-hidden="true" />
             </dd>
             <span
               class="wb-kpi-sub"
-              :class="{ bad: (c.subTone ?? c.tone) === 'bad', warn: (c.subTone ?? c.tone) === 'warn' }"
-            >{{ c.sub }}</span>
+              :class="{
+                bad: (c.subTone ?? c.tone) === 'bad',
+                warn: (c.subTone ?? c.tone) === 'warn',
+              }"
+              >{{ c.sub }}</span
+            >
           </div>
         </div>
       </ScreenPanel>
@@ -253,18 +310,27 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
         <section class="wb-flows">
           <ScreenPanel title="当日入库 · ASN" class="wb-flow">
             <template #extra>
-              <span class="wb-flow-docs">收货单 {{ board.inbound.docsDone }}/{{ board.inbound.docsTotal }}</span>
+              <span class="wb-flow-docs"
+                >收货单 {{ board.inbound.docsDone }}/{{ board.inbound.docsTotal }}</span
+              >
             </template>
             <div class="wb-flow-hero">
               <span class="wb-flow-v">
-                {{ nf.format(board.inbound.linesDone) }}<small>/ {{ nf.format(board.inbound.linesTotal) }} 行</small>
+                {{ nf.format(board.inbound.linesDone)
+                }}<small>/ {{ nf.format(board.inbound.linesTotal) }} {{ flowUnit }}</small>
               </span>
             </div>
             <div class="wb-bar"><i :style="{ width: `${board.inbound.pct}%` }" /></div>
             <div class="wb-flow-meta">
               <span>
                 收货完成率
-                <b>{{ board.inbound.docsTotal > 0 ? Math.round((board.inbound.docsDone / board.inbound.docsTotal) * 100) : 0 }}%</b>
+                <b
+                  >{{
+                    board.inbound.docsTotal > 0
+                      ? Math.round((board.inbound.docsDone / board.inbound.docsTotal) * 100)
+                      : 0
+                  }}%</b
+                >
               </span>
               <span v-if="board.inbound.postFailedDocs > 0" class="wb-postfail">
                 过账失败 {{ board.inbound.postFailedDoc }}
@@ -274,7 +340,7 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
             <!-- 小时流量是离散量 —— 柱状比面积曲线更诚实（每小时一根柱） -->
             <div class="wb-flow-spark">
               <ScreenBarChart
-                :series="[{ label: '入库行', color: '#4aa6ee', data: board.inbound.hourly }]"
+                :series="[{ label: '入库', color: '#4aa6ee', data: board.inbound.hourly }]"
                 :hover-labels="board.inbound.hourLabels"
                 autoplay
               />
@@ -288,21 +354,28 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
 
           <ScreenPanel title="当日出库 · SO" class="wb-flow out">
             <template #extra>
-              <span class="wb-flow-docs">发运 {{ board.outbound.docsDone }}/{{ board.outbound.docsTotal }} 单</span>
+              <span class="wb-flow-docs"
+                >发运 {{ board.outbound.docsDone }}/{{ board.outbound.docsTotal }} 单</span
+              >
             </template>
             <div class="wb-flow-hero">
               <span class="wb-flow-v">
-                {{ nf.format(board.outbound.linesDone) }}<small>/ {{ nf.format(board.outbound.linesTotal) }} 行</small>
+                {{ nf.format(board.outbound.linesDone)
+                }}<small>/ {{ nf.format(board.outbound.linesTotal) }} {{ flowUnit }}</small>
               </span>
             </div>
             <div class="wb-bar"><i :style="{ width: `${board.outbound.pct}%` }" /></div>
             <div class="wb-flow-meta">
-              <span>客户 <b>{{ board.outbound.customers }}</b> 家</span>
-              <span v-if="board.outbound.latestShipment" class="wb-latest">最近发运 {{ board.outbound.latestShipment }}</span>
+              <span v-if="board.outbound.customers > 0"
+                >客户 <b>{{ board.outbound.customers }}</b> 家</span
+              >
+              <span v-if="board.outbound.latestShipment" class="wb-latest"
+                >最近发运 {{ board.outbound.latestShipment }}</span
+              >
             </div>
             <div class="wb-flow-spark">
               <ScreenBarChart
-                :series="[{ label: '出库行', color: '#8b9be6', data: board.outbound.hourly }]"
+                :series="[{ label: '出库', color: '#8b9be6', data: board.outbound.hourly }]"
                 :hover-labels="board.outbound.hourLabels"
                 autoplay
                 :autoplay-ms="2800"
@@ -332,7 +405,9 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
               <header class="tg-h">
                 <component :is="g.icon" :size="14" :stroke-width="1.8" class="tg-ic" />
                 <b class="tg-name">{{ g.title }}</b>
-                <span class="tg-cnt">{{ g.isCount ? '待盘' : '积压' }} <b>{{ g.backlog }}</b></span>
+                <span class="tg-cnt"
+                  >{{ g.isCount ? '待盘' : '积压' }} <b>{{ g.backlog }}</b></span
+                >
                 <em v-if="g.overdue > 0" class="tg-late">超时 {{ g.overdue }}</em>
                 <span v-if="g.isCount && count" class="tg-var" :class="{ on: count.variance > 0 }">
                   差异 {{ count.variance }} 位
@@ -342,10 +417,12 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
               </header>
               <div class="tg-cols" :class="{ count: g.isCount }">
                 <template v-if="!g.isCount">
-                  <span>单号</span><span>物料</span><span class="r">数量</span><span>库位流向</span><span>来源单</span><span class="r">龄期</span>
+                  <span>单号</span><span>物料</span><span class="r">数量</span><span>库位流向</span
+                  ><span>来源单</span><span class="r">龄期</span>
                 </template>
                 <template v-else>
-                  <span>单号</span><span>物料</span><span class="r">账面数量</span><span>待盘库位</span><span class="r">龄期</span>
+                  <span>单号</span><span>物料</span><span class="r">账面数量</span
+                  ><span>待盘库位</span><span class="r">龄期</span>
                 </template>
               </div>
               <div class="tg-list">
@@ -354,7 +431,9 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
                     <div class="tg-row" :class="{ count: g.isCount, late: item.overdue }">
                       <span class="tg-id">{{ item.id }}</span>
                       <span class="tg-sku">{{ item.sku }}</span>
-                      <span class="tg-qty r">{{ nf.format(item.qty) }}<small> {{ item.unit }}</small></span>
+                      <span class="tg-qty r"
+                        >{{ nf.format(item.qty) }}<small> {{ item.unit }}</small></span
+                      >
                       <span v-if="!g.isCount" class="tg-route">
                         <span class="tg-from">{{ item.from }}</span>
                         <i class="tg-arrow" aria-hidden="true">→</i>
@@ -373,69 +452,118 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
           </div>
         </ScreenPanel>
 
-        <!-- 右：WCS 自动化（失败告警榜 · 指令状态 · 任务超时榜） -->
+        <!-- 右：WCS 自动化（失败告警 + 指令状态合并为一块 —— 单一 flex 容器内动态共享
+             垂直空间：失败多则告警区滚动、不挤压下方；省一个面板头/间距给适配器行） · 任务超时榜 -->
         <section class="wb-wcs">
           <ScreenPanel
-            title="WCS 失败告警"
+            title="WCS 自动化"
             :accent="wcs && wcs.failures.length > 0 ? 'red' : undefined"
-            class="wb-fails"
+            class="wb-wcsboard"
           >
             <template #extra>
               <span class="wf-count" :class="{ calm: !wcs || wcs.failures.length === 0 }">
-                {{ wcs && wcs.failures.length > 0 ? `${wcs.failures.length} 条未恢复` : '链路正常' }}
+                {{
+                  wcs && wcs.failures.length > 0 ? `${wcs.failures.length} 条未恢复` : '链路正常'
+                }}
               </span>
             </template>
-            <ScreenScrollArea v-if="wcs" class="wf-list">
-              <div v-for="x in wcs.failures" :key="x.cmd" class="wf-row">
-                <i class="wf-dot" aria-hidden="true" />
-                <div class="wf-main">
-                  <div class="wf-top">
-                    <b class="wf-ad">{{ x.adapter }}</b>
-                    <span class="wf-cmd">{{ x.cmd }}</span>
-                    <span class="wf-since">{{ x.firstAt }} 起 · {{ x.sinceMin }} min</span>
-                  </div>
-                  <div class="wf-sub">
-                    <span class="wf-err">{{ x.error }}</span>
-                    <em class="wf-retry">重试 {{ x.retries }} 次</em>
+            <div v-if="wcs" class="wm">
+              <!-- ① 失败告警（异常优先置顶；约 3 条完整显示，更多滚动） -->
+              <ScreenScrollArea class="wf-list">
+                <div v-for="x in wcs.failures" :key="x.cmd" class="wf-row">
+                  <i class="wf-dot" aria-hidden="true" />
+                  <div class="wf-main">
+                    <div class="wf-top">
+                      <b class="wf-ad">{{ x.adapter }}</b>
+                      <span class="wf-cmd">{{ x.cmd }}</span>
+                      <span class="wf-since">{{ x.firstAt }} 起 · {{ x.sinceMin }} min</span>
+                    </div>
+                    <div class="wf-sub">
+                      <span class="wf-err">{{ x.error }}</span>
+                      <em class="wf-retry">重试 {{ x.retries }} 次</em>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div v-if="wcs.failures.length === 0" class="wf-empty">
-                <StatusLight tone="run" label="无失败指令" />
-              </div>
-            </ScreenScrollArea>
-          </ScreenPanel>
-
-          <ScreenPanel title="WCS 指令状态" class="wb-adapters">
-            <div v-if="wcs" class="wa">
-              <!-- 链路负载构成（排队/执行/失败 = 当前在链指令）环形，中心 = 今日吞吐 -->
-              <ScreenDonut
-                class="wa-donut"
-                :size="88"
-                :segments="[
-                  { label: '排队', value: wcs.counts.queued, color: 'rgba(160, 200, 245, 0.45)' },
-                  { label: '执行中', value: wcs.counts.running, color: '#4aa6ee' },
-                  { label: '失败', value: wcs.counts.failed, color: '#ef5a63' },
-                ]"
-              >
-                <b class="wa-dn-num">{{ nf.format(wcs.counts.completed) }}</b>
-                <span class="wa-dn-cap">今日完成</span>
-              </ScreenDonut>
-              <ScreenScrollArea class="wa-rows">
-                <div v-for="a in wcs.adapters" :key="a.kind" class="wa-row">
-                  <component :is="ADAPTER_ICONS[a.kind]" :size="14" :stroke-width="1.8" class="wa-ic" />
-                  <span class="wa-name">{{ a.label }}</span>
-                  <span class="wa-nums">执行 <b>{{ a.running }}</b> · 排队 <b>{{ a.queued }}</b></span>
-                  <span class="wa-done">完成 {{ nf.format(a.completed) }}</span>
-                  <b v-if="a.failed > 0" class="wa-fail">失败 {{ a.failed }}</b>
+                <div v-if="wcs.failures.length === 0" class="wf-empty">
+                  <StatusLight tone="run" label="无失败指令" />
                 </div>
               </ScreenScrollArea>
+              <!-- ② 链路负载：环形图 ↔ 适配器明细列表点击切换（同一区域二选一，列表得满高） -->
+              <div class="wm-toggle">
+                <span class="wm-toggle-t">链路负载</span>
+                <div class="wm-seg" role="tablist" aria-label="链路负载视图">
+                  <button
+                    type="button"
+                    class="wm-seg-b"
+                    :class="{ on: wcsView === 'chart' }"
+                    role="tab"
+                    :aria-selected="wcsView === 'chart'"
+                    aria-label="环形图"
+                    @click="wcsView = 'chart'"
+                  >
+                    <ChartPie :size="13" :stroke-width="1.9" />
+                  </button>
+                  <button
+                    type="button"
+                    class="wm-seg-b"
+                    :class="{ on: wcsView === 'list' }"
+                    role="tab"
+                    :aria-selected="wcsView === 'list'"
+                    aria-label="适配器明细"
+                    @click="wcsView = 'list'"
+                  >
+                    <LayoutList :size="13" :stroke-width="1.9" />
+                  </button>
+                </div>
+              </div>
+              <div class="wm-body">
+                <Transition name="wm-swap" mode="out-in">
+                  <!-- 环形：排队/执行/失败 = 当前在链指令，中心 = 今日完成 -->
+                  <div v-if="wcsView === 'chart'" key="chart" class="wm-chart">
+                    <ScreenDonut
+                      class="wa-donut"
+                      :size="104"
+                      :segments="[
+                        { label: '执行中', value: wcs.counts.running, color: '#4aa6ee' },
+                        { label: '已完成', value: wcs.counts.completed, color: '#3fb37f' },
+                        { label: '失败', value: wcs.counts.failed, color: '#ef5a63' },
+                      ]"
+                    >
+                      <b class="wa-dn-num">{{ nf.format(wcs.counts.completed) }}</b>
+                      <span class="wa-dn-cap">今日完成</span>
+                    </ScreenDonut>
+                  </div>
+                  <!-- 适配器明细（满高，超出滚动） -->
+                  <ScreenScrollArea v-else key="list" class="wa-rows">
+                    <div v-for="a in wcs.adapters" :key="a.kind" class="wa-row">
+                      <component
+                        :is="ADAPTER_ICONS[a.kind]"
+                        :size="14"
+                        :stroke-width="1.8"
+                        class="wa-ic"
+                      />
+                      <span class="wa-name">{{ a.label }}</span>
+                      <span class="wa-nums"
+                        >执行 <b>{{ a.running }}</b> · 排队 <b>{{ a.queued }}</b></span
+                      >
+                      <span class="wa-done">完成 {{ nf.format(a.completed) }}</span>
+                      <b v-if="a.failed > 0" class="wa-fail">失败 {{ a.failed }}</b>
+                    </div>
+                    <div v-if="wcs.adapters.length === 0" class="wf-empty">
+                      <StatusLight tone="run" label="无在链设备" />
+                    </div>
+                  </ScreenScrollArea>
+                </Transition>
+              </div>
             </div>
           </ScreenPanel>
 
           <ScreenPanel title="任务超时榜 · TOP5" class="wb-overdue">
             <template #extra>
-              <StatusTag tone="amber" label="龄期推算 · 待 #570" />
+              <StatusTag
+                tone="amber"
+                :label="IS_REAL_DATA ? '龄期按创建时刻推算' : '龄期推算 · 待 #570'"
+              />
             </template>
             <div class="wo-list">
               <div v-for="(r, i) in overdueTop" :key="r.id" class="wo-row">
@@ -456,12 +584,16 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
       <footer class="wb-foot">
         <span class="wb-foot-l">
           <RouterLink :to="backLink.to" class="wb-back">‹ {{ backLink.label }}</RouterLink>
-          <span>WMS 作业域演示数据 · 龄期 / 吞吐 / 适配器聚合为前端推算 · 库存资产读面 待 #570</span>
+          <span
+            >{{ IS_REAL_DATA ? 'WMS 作业域实时数据' : 'WMS 作业域演示数据' }} · 龄期 / 吞吐 /
+            适配器聚合为前端推算 · 库存半屏读面 待 #570</span
+          >
         </span>
         <span class="wb-foot-r">
-          当日吞吐 <b>{{ nf.format(board.kpis.throughputLines) }}</b> 行
-          （入 {{ nf.format(board.inbound.linesDone) }} · 出 {{ nf.format(board.outbound.linesDone) }}）
+          当日吞吐 <b>{{ nf.format(board.kpis.throughputLines) }}</b> {{ flowUnit }} （入
+          {{ nf.format(board.inbound.linesDone) }} · 出 {{ nf.format(board.outbound.linesDone) }}）
           · 更新 <b class="wb-foot-ts">{{ updatedAt }}</b>
+          <span v-if="isStale" class="wb-stale">· 数据暂未刷新</span>
         </span>
       </footer>
     </div>
@@ -825,13 +957,13 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
 .tg-cols,
 .tg-row {
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr) 84px 232px 92px 72px;
+  grid-template-columns: 104px minmax(0, 1fr) 80px 224px 88px 104px;
   gap: 10px;
   align-items: center;
 }
 .tg-cols.count,
 .tg-row.count {
-  grid-template-columns: 76px minmax(0, 1fr) 110px 150px 72px;
+  grid-template-columns: 104px minmax(0, 1fr) 104px 140px 104px;
 }
 .tg-cols {
   margin-top: 7px;
@@ -929,15 +1061,24 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   letter-spacing: 0.04em;
 }
 
-/* —— 右列：WCS 自动化 —— */
+/* —— 右列：WCS 自动化（合并面板：失败告警 + 环形 + 适配器行动态共享空间） —— */
 .wb-wcs {
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-height: 0;
 }
-.wb-fails {
-  flex: none;
+.wb-wcsboard {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.wm {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .wf-count {
   font-size: 13px;
@@ -947,8 +1088,9 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
 .wf-count.calm {
   color: var(--sb-green);
 }
-/* 失败榜：约 3 条完整显示，更多滚动（数据量变化不挤压下方面板） */
+/* 失败告警区：约 3 条完整显示，更多滚动（失败量增长不挤压下方环形/适配器行） */
 .wf-list {
+  flex: none;
   max-height: 156px;
 }
 .wf-row {
@@ -1038,24 +1180,81 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   justify-content: center;
 }
 
-/* WCS 指令状态：状态分布条 + 适配器行 */
-.wb-adapters {
+/* 链路负载视图切换：分段器 + 环形/列表二选一区域 */
+.wm-toggle {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 9px;
+  border-top: 1px solid var(--sb-divider);
+}
+.wm-toggle-t {
+  font-size: 12.5px;
+  color: var(--sb-muted);
+}
+.wm-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.wm-seg-b {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 20px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--sb-faint);
+  cursor: pointer;
+  transition:
+    background 0.2s var(--sb-ease-emphasized),
+    color 0.2s var(--sb-ease-emphasized);
+}
+.wm-seg-b:hover {
+  color: var(--sb-text-2);
+}
+.wm-seg-b.on {
+  background: rgba(74, 166, 238, 0.18);
+  color: var(--sb-cyan);
+}
+.wm-body {
   flex: 1;
   min-height: 0;
+  margin-top: 8px;
   display: flex;
   flex-direction: column;
 }
-.wa {
+/* 环形视图：区域内居中 */
+.wm-chart {
   flex: 1;
   min-height: 0;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 .wa-donut {
   flex: none;
-  padding: 0 4px 8px;
-  border-bottom: 1px solid var(--sb-divider);
-  margin-bottom: 4px;
+}
+/* 视图切换动效：淡入 + 轻微上滑（out-in 顺序切换，不叠加） */
+.wm-swap-enter-active,
+.wm-swap-leave-active {
+  transition:
+    opacity 0.22s var(--sb-ease-emphasized),
+    transform 0.22s var(--sb-ease-emphasized);
+}
+.wm-swap-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.wm-swap-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 .wa-dn-num {
   font-size: 21px;
@@ -1070,9 +1269,10 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   font-size: 10.5px;
   color: var(--sb-muted);
 }
+/* 适配器行占剩余空间；min-height 0 保证被压缩时内部滚动而非溢出容器 */
 .wa-rows {
   flex: 1;
-  min-height: 60px;
+  min-height: 0;
 }
 /* 环形区图例更紧凑（右列窄面板预算） */
 .wa-donut :deep(.sb-dn-legend) {
@@ -1203,6 +1403,10 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   color: var(--sb-text-2);
   font-weight: 700;
 }
+.wb-stale {
+  color: var(--sb-amber);
+  font-weight: 600;
+}
 .wb-foot-l {
   display: inline-flex;
   align-items: center;
@@ -1222,6 +1426,15 @@ const ADAPTER_ICONS: Record<WcsAdapterKind, Component> = {
   }
   .wb-bar i {
     transition: none;
+  }
+  .wm-swap-enter-active,
+  .wm-swap-leave-active,
+  .wm-seg-b {
+    transition: none;
+  }
+  .wm-swap-enter-from,
+  .wm-swap-leave-to {
+    transform: none;
   }
 }
 </style>
