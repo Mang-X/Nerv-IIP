@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { StatusLight } from '@nerv-iip/ui'
+import { NvScreenStatusLight } from '@nerv-iip/ui'
 import { ArrowRight } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import type { ScreenGlance } from '@/data/contracts/launcher'
@@ -25,7 +25,12 @@ defineProps<{
         <h3 class="lc-title">{{ title }}</h3>
         <p class="lc-desc">{{ desc }}</p>
       </div>
-      <StatusLight v-if="glance" :tone="glance.state" :label="glance.stateLabel" class="lc-state" />
+      <NvScreenStatusLight
+        v-if="glance"
+        :tone="glance.state"
+        :label="glance.stateLabel"
+        class="lc-state"
+      />
     </header>
 
     <dl v-if="glance" class="lc-stats">

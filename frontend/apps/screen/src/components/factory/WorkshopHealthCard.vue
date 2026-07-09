@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ScreenPanel, StatusLight } from '@nerv-iip/ui'
+import { NvScreenPanel, NvScreenStatusLight } from '@nerv-iip/ui'
 import { computed } from 'vue'
 import type { WorkshopCell } from '@/data/contracts/factory'
 
@@ -12,26 +12,35 @@ import type { WorkshopCell } from '@/data/contracts/factory'
 const props = defineProps<{ cell: WorkshopCell }>()
 
 const tone = computed(
-  () => ({ red: 'alarm', yellow: 'idle', green: 'run' })[props.cell.health] as 'alarm' | 'idle' | 'run',
+  () =>
+    ({ red: 'alarm', yellow: 'idle', green: 'run' })[props.cell.health] as 'alarm' | 'idle' | 'run',
 )
 const nf = new Intl.NumberFormat('en-US')
 </script>
 
 <template>
-  <ScreenPanel :accent="cell.health === 'red' ? 'red' : undefined" class="whc" :class="cell.health">
+  <NvScreenPanel
+    :accent="cell.health === 'red' ? 'red' : undefined"
+    class="whc"
+    :class="cell.health"
+  >
     <header class="whc-top">
       <div>
         <h4 class="whc-name">{{ cell.name }}</h4>
         <p class="whc-mgr">主管 {{ cell.manager }}</p>
       </div>
-      <StatusLight :tone="tone" :label="cell.stateLabel" />
+      <NvScreenStatusLight :tone="tone" :label="cell.stateLabel" />
     </header>
 
     <div class="whc-rate">
       <span class="whc-rate-v" :class="cell.health">{{ cell.rate }}<small>%</small></span>
       <span class="whc-rate-d">
-        <span>实际 <b>{{ nf.format(cell.actualQty) }}</b></span>
-        <span>计划 <b>{{ nf.format(cell.planQty) }}</b></span>
+        <span
+          >实际 <b>{{ nf.format(cell.actualQty) }}</b></span
+        >
+        <span
+          >计划 <b>{{ nf.format(cell.planQty) }}</b></span
+        >
       </span>
     </div>
 
@@ -57,7 +66,7 @@ const nf = new Intl.NumberFormat('en-US')
         <dd :class="{ warn: cell.openDowntime > 0 }">{{ cell.openDowntime }}</dd>
       </div>
     </dl>
-  </ScreenPanel>
+  </NvScreenPanel>
 </template>
 
 <style scoped>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ScreenHeader, ScreenScaler } from '@nerv-iip/ui'
+import { NvScreenHeader, NvScreenScaler } from '@nerv-iip/ui'
 import { useNow } from '@vueuse/core'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
@@ -76,7 +76,7 @@ function genBackdrop(seedStr: string): { paths: string[]; dots: AmbientDot[] } {
         x: Math.round(((gx + 0.15 + jx * 0.7) * 1920) / GX),
         y: Math.round(((gy + 0.15 + jy * 0.7) * 1080) / GY),
         r: +(1 + jr).toFixed(1),
-        b: jb < 0.45 ? 1 + Math.floor(jb * 6.66) % 3 : 0,
+        b: jb < 0.45 ? 1 + (Math.floor(jb * 6.66) % 3) : 0,
       })
     }
   }
@@ -117,7 +117,7 @@ const date = computed(() => WEEKDAYS[now.value.getDay()])
 </script>
 
 <template>
-  <ScreenScaler :design-width="1920" :design-height="1080">
+  <NvScreenScaler :design-width="1920" :design-height="1080">
     <div class="screen-layout">
       <!-- 舱底 v3：点阵粒子场（密度自顶向下渐隐）——现代、简洁，替代线网格 -->
       <div class="screen-layout__dots" aria-hidden="true" />
@@ -171,12 +171,19 @@ const date = computed(() => WEEKDAYS[now.value.getDay()])
           />
         </g>
       </svg>
-      <ScreenHeader class="screen-layout__chrome" :title="title" :time="time" :date="date" :line="line" :screen="screen" />
+      <NvScreenHeader
+        class="screen-layout__chrome"
+        :title="title"
+        :time="time"
+        :date="date"
+        :line="line"
+        :screen="screen"
+      />
       <main class="screen-layout__body">
         <slot />
       </main>
     </div>
-  </ScreenScaler>
+  </NvScreenScaler>
 </template>
 
 <style scoped>
@@ -192,8 +199,7 @@ const date = computed(() => WEEKDAYS[now.value.getDay()])
   /* 舱底：顶缘细灯带 + 底部收暗；氛围主体交给点阵场与光路 */
   background:
     linear-gradient(180deg, rgba(96, 180, 255, 0.045), transparent 30px),
-    linear-gradient(180deg, transparent 84%, rgba(0, 0, 0, 0.3)),
-    var(--sb-bg);
+    linear-gradient(180deg, transparent 84%, rgba(0, 0, 0, 0.3)), var(--sb-bg);
 }
 /* 点阵粒子场：1px 光点阵，顶部密亮、向下渐隐（mask 控密度） */
 .screen-layout__dots {
@@ -203,8 +209,18 @@ const date = computed(() => WEEKDAYS[now.value.getDay()])
   z-index: 0;
   background-image: radial-gradient(circle, rgba(150, 195, 255, 0.13) 1px, transparent 1.5px);
   background-size: 26px 26px;
-  -webkit-mask-image: radial-gradient(1300px 760px at 50% 0%, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.2) 58%, rgba(0, 0, 0, 0.08));
-  mask-image: radial-gradient(1300px 760px at 50% 0%, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.2) 58%, rgba(0, 0, 0, 0.08));
+  -webkit-mask-image: radial-gradient(
+    1300px 760px at 50% 0%,
+    rgba(0, 0, 0, 0.85),
+    rgba(0, 0, 0, 0.2) 58%,
+    rgba(0, 0, 0, 0.08)
+  );
+  mask-image: radial-gradient(
+    1300px 760px at 50% 0%,
+    rgba(0, 0, 0, 0.85),
+    rgba(0, 0, 0, 0.2) 58%,
+    rgba(0, 0, 0, 0.08)
+  );
 }
 .screen-layout__paths {
   position: absolute;

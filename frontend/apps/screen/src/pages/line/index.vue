@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { KpiBar, Sparkline, StatusLight, useScreenData } from '@nerv-iip/ui'
+import { NvKpiBar, NvSparkline, NvScreenStatusLight, useScreenData } from '@nerv-iip/ui'
 import { useVirtualList } from '@vueuse/core'
 import { Activity, AlertTriangle, Factory, PackageCheck, Workflow } from 'lucide-vue-next'
 import { type Component, computed, ref, watch } from 'vue'
@@ -42,7 +42,11 @@ const rowsSrc = computed(() => {
 // 行高：卡片自然高 ~258 + 行间距 16 → itemHeight 必须精确匹配，否则虚拟定位错位重叠
 const CARD_H = 258
 const ROW_GAP = 16
-const { list: vRows, containerProps, wrapperProps } = useVirtualList(rowsSrc, {
+const {
+  list: vRows,
+  containerProps,
+  wrapperProps,
+} = useVirtualList(rowsSrc, {
   itemHeight: CARD_H + ROW_GAP,
   overscan: 1,
 })
@@ -85,9 +89,23 @@ const kpiItems = computed<KpiCell[]>(() => {
   const plan = list.reduce((n, c) => n + c.output.plan, 0)
   const avg = plan > 0 ? Math.round((good / plan) * 100) : 0
   return [
-    { icon: Workflow, value: `${list.length - alarm - attention}/${list.length}`, label: '正常作业产线' },
-    { icon: AlertTriangle, value: String(alarm), label: '报警产线', tone: alarm > 0 ? 'amber' : undefined },
-    { icon: Activity, value: String(attention), label: '需关注产线', tone: attention > 0 ? 'amber' : undefined },
+    {
+      icon: Workflow,
+      value: `${list.length - alarm - attention}/${list.length}`,
+      label: '正常作业产线',
+    },
+    {
+      icon: AlertTriangle,
+      value: String(alarm),
+      label: '报警产线',
+      tone: alarm > 0 ? 'amber' : undefined,
+    },
+    {
+      icon: Activity,
+      value: String(attention),
+      label: '需关注产线',
+      tone: attention > 0 ? 'amber' : undefined,
+    },
     { icon: PackageCheck, value: nf.format(good), label: '当班总产量（件）' },
     { value: `${avg}%`, label: '当班平均达成', tone: 'cyan', ring: avg },
   ]
@@ -98,7 +116,7 @@ const kpiItems = computed<KpiCell[]>(() => {
   <ScreenLayout title="Nerv-IIP 产线监控大屏" :line="factoryName" screen="指挥中心大屏 03">
     <div v-if="cards" class="ls">
       <div class="ls-kpi">
-        <KpiBar v-if="kpiItems.length" :items="kpiItems" />
+        <NvKpiBar v-if="kpiItems.length" :items="kpiItems" />
       </div>
 
       <div class="sec-h">
@@ -114,34 +132,46 @@ const kpiItems = computed<KpiCell[]>(() => {
             <RouterLink v-for="c in row.data" :key="c.id" :to="`/line/${c.id}`" class="ls-link">
               <article class="ls-card" :class="c.state">
                 <header class="ls-top">
-                  <StatusLight :tone="toneOf(c.state)" :label="c.stateLabel" />
-                  <span v-if="c.offlineDevices > 0" class="ls-off">{{ c.offlineDevices }} 台失联</span>
+                  <NvScreenStatusLight :tone="toneOf(c.state)" :label="c.stateLabel" />
+                  <span v-if="c.offlineDevices > 0" class="ls-off"
+                    >{{ c.offlineDevices }} 台失联</span
+                  >
                 </header>
                 <h3 class="ls-name">
                   <span class="ls-ic"><Factory :size="19" :stroke-width="1.6" /></span>{{ c.name }}
                 </h3>
-                <p class="ls-ws">{{ c.workshopName }}<template v-if="c.currentWo"> · {{ c.currentWo }}</template></p>
-            <div class="ls-nums">
-              <div>
-                <dt>当班达成</dt>
-                <dd :class="{ bad: c.achievement < 85 }">{{ c.achievement }}<small>%</small></dd>
-              </div>
-              <div>
-                <dt>节拍偏差</dt>
-                <dd :class="{ bad: c.taktDeviationPct > 8, warn: c.taktDeviationPct > 0 && c.taktDeviationPct <= 8 }">
-                  {{ c.taktDeviationPct > 0 ? '+' : '' }}{{ c.taktDeviationPct }}<small>%</small>
-                </dd>
-              </div>
-              <div>
-                <dt>当班产量</dt>
-                <dd class="ls-out">
-                  {{ nf.format(c.output.good) }}<small>/ {{ nf.format(c.output.plan) }}</small>
-                </dd>
-              </div>
-            </div>
-            <div class="ls-spark">
-              <Sparkline :data="c.hourly" area :color="stateColor(c.state)" />
-            </div>
+                <p class="ls-ws">
+                  {{ c.workshopName }}<template v-if="c.currentWo"> · {{ c.currentWo }}</template>
+                </p>
+                <div class="ls-nums">
+                  <div>
+                    <dt>当班达成</dt>
+                    <dd :class="{ bad: c.achievement < 85 }">
+                      {{ c.achievement }}<small>%</small>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>节拍偏差</dt>
+                    <dd
+                      :class="{
+                        bad: c.taktDeviationPct > 8,
+                        warn: c.taktDeviationPct > 0 && c.taktDeviationPct <= 8,
+                      }"
+                    >
+                      {{ c.taktDeviationPct > 0 ? '+' : '' }}{{ c.taktDeviationPct
+                      }}<small>%</small>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>当班产量</dt>
+                    <dd class="ls-out">
+                      {{ nf.format(c.output.good) }}<small>/ {{ nf.format(c.output.plan) }}</small>
+                    </dd>
+                  </div>
+                </div>
+                <div class="ls-spark">
+                  <NvSparkline :data="c.hourly" area :color="stateColor(c.state)" />
+                </div>
                 <div class="ls-dots" :aria-label="`设备 ${c.deviceDots.length} 台`">
                   <i v-for="(d, i) in c.deviceDots" :key="i" class="ls-dot" :class="d" />
                   <span class="ls-dots-n">{{ c.deviceDots.length }} 台</span>
@@ -223,7 +253,12 @@ const kpiItems = computed<KpiCell[]>(() => {
   flex: 1;
   height: 1px;
   margin: 0 6px;
-  background: linear-gradient(90deg, rgba(135, 208, 255, 0.28), rgba(255, 255, 255, 0.05) 45%, transparent);
+  background: linear-gradient(
+    90deg,
+    rgba(135, 208, 255, 0.28),
+    rgba(255, 255, 255, 0.05) 45%,
+    transparent
+  );
 }
 .ls-meta {
   font-size: 13px;
@@ -310,7 +345,11 @@ const kpiItems = computed<KpiCell[]>(() => {
   padding: 2px 8px;
   border-radius: 5px;
   border: 1px dashed rgba(255, 255, 255, 0.24);
-  background: repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.04) 0 6px, transparent 6px 12px);
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.04) 0 6px,
+    transparent 6px 12px
+  );
   font-size: 11.5px;
   color: var(--sb-muted);
 }

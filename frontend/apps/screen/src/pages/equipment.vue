@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import {
-  RingGauge,
-  ScreenPanel,
-  ScreenScrollArea,
-  ScreenSegmented,
-  ScreenTabs,
-  StatusLight,
-  StatusTag,
+  NvRingGauge,
+  NvScreenPanel,
+  NvScreenScrollArea,
+  NvScreenSegmented,
+  NvScreenTabs,
+  NvScreenStatusLight,
+  NvScreenStatusTag,
   useScreenData,
 } from '@nerv-iip/ui'
 import { computed, ref, watch } from 'vue'
@@ -215,7 +215,7 @@ const freshness = computed<{ tone: 'live' | 'stale' | 'wait'; text: string }>(()
             <i class="sec-glyph" aria-hidden="true" />
             <span class="sec-t">设备状态全景墙</span>
             <span class="sec-rule" aria-hidden="true" />
-            <ScreenSegmented v-model="viewModel" :options="VIEW_OPTIONS" />
+            <NvScreenSegmented v-model="viewModel" :options="VIEW_OPTIONS" />
           </div>
           <DeviceStatusWall
             :devices="devicesLive"
@@ -230,12 +230,12 @@ const freshness = computed<{ tone: 'live' | 'stale' | 'wait'; text: string }>(()
 
         <!-- 右窄栏：可靠性 + 异常与待办（正常日寥寥数条，空即健康） -->
         <div class="side">
-          <ScreenPanel title="可靠性">
+          <NvScreenPanel title="可靠性">
             <template #extra>
-              <StatusTag tone="amber" label="≈ 可用率 · 待 #570" />
+              <NvScreenStatusTag tone="amber" label="≈ 可用率 · 待 #570" />
             </template>
             <div class="rel">
-              <RingGauge :value="ov.reliability.availability" label="时间稼动率" :size="104" />
+              <NvRingGauge :value="ov.reliability.availability" label="时间稼动率" :size="104" />
               <dl class="rel-grid">
                 <div v-for="c in relCells" :key="c.label">
                   <dt>{{ c.label }}</dt>
@@ -243,16 +243,16 @@ const freshness = computed<{ tone: 'live' | 'stale' | 'wait'; text: string }>(()
                 </div>
               </dl>
             </div>
-          </ScreenPanel>
+          </NvScreenPanel>
 
-          <ScreenPanel title="异常与待办" class="events">
+          <NvScreenPanel title="异常与待办" class="events">
             <template #extra>
               <span class="ev-count" :class="{ calm: events.length === 0 }">
                 {{ events.length === 0 ? '全部正常' : `${events.length} 项` }}
               </span>
             </template>
-            <ScreenTabs v-model="evTab" :items="evTabs" class="ev-tabs" />
-            <ScreenScrollArea class="ev-list">
+            <NvScreenTabs v-model="evTab" :items="evTabs" class="ev-tabs" />
+            <NvScreenScrollArea class="ev-list">
               <!-- 全部：合并流（严重度排序） -->
               <template v-if="evTab === 'all'">
                 <div v-for="e in events" :key="e.key" class="ev-row">
@@ -262,7 +262,7 @@ const freshness = computed<{ tone: 'live' | 'stale' | 'wait'; text: string }>(()
                   <span class="ev-tag" :class="{ late: e.late }">{{ e.tag }}</span>
                 </div>
                 <div v-if="events.length === 0" class="ev-empty">
-                  <StatusLight tone="run" label="设备运行平稳" />
+                  <NvScreenStatusLight tone="run" label="设备运行平稳" />
                   <p>无未恢复报警 · 无进行中维修 · 无到期保养</p>
                 </div>
               </template>
@@ -294,7 +294,7 @@ const freshness = computed<{ tone: 'live' | 'stale' | 'wait'; text: string }>(()
                   </div>
                 </div>
                 <div v-if="!openAlarms.length" class="ev-empty">
-                  <StatusLight tone="run" label="无未恢复报警" />
+                  <NvScreenStatusLight tone="run" label="无未恢复报警" />
                 </div>
               </template>
 
@@ -304,9 +304,9 @@ const freshness = computed<{ tone: 'live' | 'stale' | 'wait'; text: string }>(()
                   <div class="rp-top">
                     <span class="rp-wo">{{ r.wo }}</span>
                     <span class="rp-dev">{{ r.device }} · {{ r.issue }}</span>
-                    <StatusTag v-if="r.overdue" tone="red" label="超时" />
-                    <StatusTag v-else-if="r.blockedBy" tone="amber" label="待备件" />
-                    <StatusTag v-else-if="r.awaitingConfirm" tone="cyan" label="待确认" />
+                    <NvScreenStatusTag v-if="r.overdue" tone="red" label="超时" />
+                    <NvScreenStatusTag v-else-if="r.blockedBy" tone="amber" label="待备件" />
+                    <NvScreenStatusTag v-else-if="r.awaitingConfirm" tone="cyan" label="待确认" />
                   </div>
                   <div class="rp-meta">
                     <span class="rp-steps" :aria-label="`当前阶段 ${r.stage}`">
@@ -331,7 +331,7 @@ const freshness = computed<{ tone: 'live' | 'stale' | 'wait'; text: string }>(()
                   </div>
                 </div>
                 <div v-if="!activeRepairs.length" class="ev-empty">
-                  <StatusLight tone="run" label="无进行中维修" />
+                  <NvScreenStatusLight tone="run" label="无进行中维修" />
                 </div>
               </template>
 
@@ -349,9 +349,9 @@ const freshness = computed<{ tone: 'live' | 'stale' | 'wait'; text: string }>(()
                   <span class="insp-res" :class="{ bad: i.result === '异常' }">{{ i.result }}</span>
                 </div>
               </template>
-            </ScreenScrollArea>
+            </NvScreenScrollArea>
             <p class="ev-note">维修历史与参数趋势见设备详情 · 帕累托/备件联动 待 #570</p>
-          </ScreenPanel>
+          </NvScreenPanel>
         </div>
       </div>
 

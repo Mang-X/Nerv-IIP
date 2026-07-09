@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { RingGauge, ScreenPanel, ScrollBoard, StatusTag, useScreenData } from '@nerv-iip/ui'
+import {
+  NvRingGauge,
+  NvScreenPanel,
+  NvScrollBoard,
+  NvScreenStatusTag,
+  useScreenData,
+} from '@nerv-iip/ui'
 import {
   AlertTriangle,
   CalendarClock,
@@ -20,7 +26,11 @@ import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
 const scope = useAccessScope()
 const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
-const { data: ov, isStale, refresh } = useScreenData<FactoryOverview>(
+const {
+  data: ov,
+  isStale,
+  refresh,
+} = useScreenData<FactoryOverview>(
   () => fetchFactoryOverview(scope.currentFactoryId, scope.persona.workshopIds),
   { intervalMs: 4000 },
 )
@@ -87,9 +97,9 @@ const bandCells = computed<BandCell[]>(() => {
   <ScreenLayout title="Nerv-IIP 工厂运营大屏" :line="factoryName" screen="指挥中心大屏 01">
     <div v-if="ov" class="fx">
       <!-- 全厂 KPI 带：达成率大环（与 OEE 三环同款圆角弧）+ 七格语义数字 -->
-      <ScreenPanel class="band">
+      <NvScreenPanel class="band">
         <div class="band-in">
-          <RingGauge
+          <NvRingGauge
             class="band-hero"
             :value="ov.kpis.achievement"
             label="今日全厂达成率"
@@ -104,13 +114,14 @@ const bandCells = computed<BandCell[]>(() => {
               <div class="band-txt">
                 <div class="band-v" :class="c.tone">{{ c.value }}</div>
                 <div class="band-l">
-                  {{ c.label }}<span v-if="c.sub" class="band-sub" :class="c.tone">· {{ c.sub }}</span>
+                  {{ c.label
+                  }}<span v-if="c.sub" class="band-sub" :class="c.tone">· {{ c.sub }}</span>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </ScreenPanel>
+      </NvScreenPanel>
 
       <div class="main">
         <!-- 车间状态矩阵：无外壳（卡片直接浮在舱底上，不做卡套卡），红卡置顶 -->
@@ -120,8 +131,7 @@ const bandCells = computed<BandCell[]>(() => {
             <span class="sec-t">车间运行状态</span>
             <span class="sec-rule" aria-hidden="true" />
             <span class="legend">
-              <i class="lg green" />正常
-              <i class="lg yellow" />关注 · 停机/达成率低
+              <i class="lg green" />正常 <i class="lg yellow" />关注 · 停机/达成率低
               <i class="lg red" />异常 · 严重告警/超期
             </span>
           </div>
@@ -139,28 +149,34 @@ const bandCells = computed<BandCell[]>(() => {
             <div class="more-card">
               <span class="more-t">更多指标接入中</span>
               <span class="more-d">不良率 · 设备在线率 · 产出良率趋势</span>
-              <StatusTag tone="amber" label="待 #570" />
+              <NvScreenStatusTag tone="amber" label="待 #570" />
             </div>
           </div>
         </section>
 
         <div class="side">
-          <ScreenPanel title="综合效率 OEE">
+          <NvScreenPanel title="综合效率 OEE">
             <template #extra>
-              <StatusTag tone="amber" label="综合 ≈ 可用率 · 待 #570" />
+              <NvScreenStatusTag tone="amber" label="综合 ≈ 可用率 · 待 #570" />
             </template>
             <div class="rings">
-              <RingGauge v-for="o in ov.oee" :key="o.label" :value="o.value" :label="o.label" :size="106" />
+              <NvRingGauge
+                v-for="o in ov.oee"
+                :key="o.label"
+                :value="o.value"
+                :label="o.label"
+                :size="106"
+              />
             </div>
             <p class="oee-note">性能率 / 良品率为占位值，#570 接入后启用真实综合 OEE</p>
-          </ScreenPanel>
+          </NvScreenPanel>
 
-          <ScreenPanel title="实时告警" class="feed">
+          <NvScreenPanel title="实时告警" class="feed">
             <template #extra>
               <span :class="['live', { stale: isStale }]">{{ isStale ? '数据滞留' : '实时' }}</span>
             </template>
             <div class="feed-scroll">
-              <ScrollBoard :items="ov.alarms" :row-key="(a) => a.id" :speed="22">
+              <NvScrollBoard :items="ov.alarms" :row-key="(a) => a.id" :speed="22">
                 <template #row="{ item }">
                   <div class="row" :class="item.level">
                     <span class="dot" />
@@ -168,13 +184,13 @@ const bandCells = computed<BandCell[]>(() => {
                     <span class="time">{{ item.time }}</span>
                   </div>
                 </template>
-              </ScrollBoard>
+              </NvScrollBoard>
             </div>
-          </ScreenPanel>
+          </NvScreenPanel>
 
-          <ScreenPanel title="停机事件" class="feed">
+          <NvScreenPanel title="停机事件" class="feed">
             <div class="feed-scroll">
-              <ScrollBoard :items="ov.downtimes" :row-key="(a) => a.id" :speed="18">
+              <NvScrollBoard :items="ov.downtimes" :row-key="(a) => a.id" :speed="18">
                 <template #row="{ item }">
                   <div class="row" :class="item.level">
                     <span class="dot" />
@@ -182,9 +198,9 @@ const bandCells = computed<BandCell[]>(() => {
                     <span class="time">{{ item.time }}</span>
                   </div>
                 </template>
-              </ScrollBoard>
+              </NvScrollBoard>
             </div>
-          </ScreenPanel>
+          </NvScreenPanel>
         </div>
       </div>
 
@@ -390,7 +406,12 @@ const bandCells = computed<BandCell[]>(() => {
   flex: 1;
   height: 1px;
   margin: 0 6px;
-  background: linear-gradient(90deg, rgba(135, 208, 255, 0.28), rgba(255, 255, 255, 0.05) 45%, transparent);
+  background: linear-gradient(
+    90deg,
+    rgba(135, 208, 255, 0.28),
+    rgba(255, 255, 255, 0.05) 45%,
+    transparent
+  );
 }
 .legend {
   display: inline-flex;

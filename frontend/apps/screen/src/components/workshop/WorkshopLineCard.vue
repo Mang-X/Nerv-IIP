@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Sparkline, StatusLight } from '@nerv-iip/ui'
+import { NvSparkline, NvScreenStatusLight } from '@nerv-iip/ui'
 import { Factory } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -14,7 +14,11 @@ import type { LineSummaryCard } from '@/data/contracts/line'
 const props = defineProps<{ card: LineSummaryCard }>()
 
 const tone = computed(() =>
-  props.card.state === 'alarm' ? ('alarm' as const) : props.card.state === 'attention' ? ('idle' as const) : ('run' as const),
+  props.card.state === 'alarm'
+    ? ('alarm' as const)
+    : props.card.state === 'attention'
+      ? ('idle' as const)
+      : ('run' as const),
 )
 const sparkColor = computed(() =>
   props.card.state === 'alarm'
@@ -30,7 +34,7 @@ const nf = new Intl.NumberFormat('en-US')
   <RouterLink :to="`/line/${card.id}`" class="wlc-link">
     <article class="wlc" :class="card.state">
       <header class="wlc-top">
-        <StatusLight :tone="tone" :label="card.stateLabel" />
+        <NvScreenStatusLight :tone="tone" :label="card.stateLabel" />
         <span v-if="card.offlineDevices > 0" class="wlc-off">{{ card.offlineDevices }} 台失联</span>
         <span v-if="card.currentWo" class="wlc-wo">{{ card.currentWo }}</span>
       </header>
@@ -52,14 +56,19 @@ const nf = new Intl.NumberFormat('en-US')
         </div>
         <div>
           <dt>节拍偏差</dt>
-          <dd :class="{ bad: card.taktDeviationPct > 8, warn: card.taktDeviationPct > 0 && card.taktDeviationPct <= 8 }">
+          <dd
+            :class="{
+              bad: card.taktDeviationPct > 8,
+              warn: card.taktDeviationPct > 0 && card.taktDeviationPct <= 8,
+            }"
+          >
             {{ card.taktDeviationPct > 0 ? '+' : '' }}{{ card.taktDeviationPct }}<small>%</small>
           </dd>
         </div>
       </div>
 
       <div class="wlc-spark">
-        <Sparkline :data="card.hourly" area :color="sparkColor" />
+        <NvSparkline :data="card.hourly" area :color="sparkColor" />
       </div>
 
       <footer class="wlc-foot">
@@ -144,7 +153,11 @@ const nf = new Intl.NumberFormat('en-US')
   padding: 2px 8px;
   border-radius: 5px;
   border: 1px dashed rgba(255, 255, 255, 0.24);
-  background: repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.04) 0 6px, transparent 6px 12px);
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.04) 0 6px,
+    transparent 6px 12px
+  );
   font-size: 11.5px;
   color: var(--sb-muted);
 }

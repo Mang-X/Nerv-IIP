@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { ScreenPanel, ScreenPareto, ScreenScrollArea, Sparkline, TrendChart, useScreenData } from '@nerv-iip/ui'
+import {
+  NvScreenPanel,
+  NvScreenPareto,
+  NvScreenScrollArea,
+  NvSparkline,
+  NvScreenTrendChart,
+  useScreenData,
+} from '@nerv-iip/ui'
 import { ClipboardList, FileCheck2, FileWarning, Scale } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -86,7 +93,11 @@ const trendData = computed(() => {
         { label: '全厂', color: 'rgba(200, 214, 235, 0.65)', data: b.trend30.ratePct },
         ...b.layers
           .filter((l) => l.key !== 'ipqc')
-          .map((l) => ({ label: l.code, color: LAYER_COLORS[l.key] ?? '#8b9be6', data: l.trend30 })),
+          .map((l) => ({
+            label: l.code,
+            color: LAYER_COLORS[l.key] ?? '#8b9be6',
+            data: l.trend30,
+          })),
       ],
     }
   }
@@ -129,7 +140,7 @@ const trendPin = computed(() => {
   <ScreenLayout title="Nerv-IIP 质量看板大屏" :line="factoryName" screen="指挥中心大屏 06">
     <div v-if="board" class="qb">
       <!-- 顶部 KPI 带：双主角（批合格率 / 不良率-红线）+ 四格待办 -->
-      <ScreenPanel class="qb-band">
+      <NvScreenPanel class="qb-band">
         <div class="qb-band-in">
           <div class="qb-hero">
             <dt class="qb-hero-t">当日批次合格率</dt>
@@ -184,51 +195,68 @@ const trendPin = computed(() => {
             </div>
           </div>
         </div>
-      </ScreenPanel>
+      </NvScreenPanel>
 
       <div class="qb-main">
         <!-- 左：NCR 待处置看板（龄期降序，超期红呼吸置顶） -->
-        <ScreenPanel title="NCR 待处置" class="qb-ncr">
+        <NvScreenPanel title="NCR 待处置" class="qb-ncr">
           <template #extra>
             <span class="qb-cap">处置 SLA {{ NCR_SLA_HOURS }}h</span>
           </template>
-          <ScreenScrollArea class="qb-ncr-list">
-            <div v-for="r in board.ncrs" :key="r.code" class="qn-row" :class="{ overdue: r.overdue }">
+          <NvScreenScrollArea class="qb-ncr-list">
+            <div
+              v-for="r in board.ncrs"
+              :key="r.code"
+              class="qn-row"
+              :class="{ overdue: r.overdue }"
+            >
               <div class="qn-top">
                 <i v-if="r.overdue" class="qn-alert" aria-hidden="true" />
                 <span class="qn-code">{{ r.code }}</span>
-                <b class="qn-defect" :title="r.product ? `${r.product} · ${r.sourceDoc}` : r.sourceDoc">
+                <b
+                  class="qn-defect"
+                  :title="r.product ? `${r.product} · ${r.sourceDoc}` : r.sourceDoc"
+                >
                   {{ r.defect }}
                 </b>
                 <span class="qn-qty">×{{ nf.format(r.qty) }}</span>
               </div>
               <div class="qn-sub">
-                <span class="qn-src">{{ r.sourceType === 'supplier' ? '来料 · ' : '' }}{{ r.source }}</span>
+                <span class="qn-src"
+                  >{{ r.sourceType === 'supplier' ? '来料 · ' : '' }}{{ r.source }}</span
+                >
                 <span class="qn-doc">{{ r.sourceDoc }}</span>
                 <span class="qn-flex" />
                 <b class="qn-age" :class="{ bad: r.overdue }">
                   <em v-if="r.overdue">超期</em>{{ fmtAge(r.ageHours) }}
                 </b>
                 <span class="qn-status" :class="r.status">
-                  {{ r.statusLabel }}<template v-if="r.disposition"> · {{ r.disposition }}</template>
+                  {{ r.statusLabel
+                  }}<template v-if="r.disposition"> · {{ r.disposition }}</template>
                 </span>
               </div>
             </div>
-          </ScreenScrollArea>
+          </NvScreenScrollArea>
           <div class="qn-summary">
-            <span>待评审 <b class="amber">{{ statusCount.review }}</b></span>
-            <span>处置中 <b class="cyan">{{ statusCount.disposing }}</b></span>
-            <span>待验证 <b class="green">{{ statusCount.verify }}</b></span>
+            <span
+              >待评审 <b class="amber">{{ statusCount.review }}</b></span
+            >
+            <span
+              >处置中 <b class="cyan">{{ statusCount.disposing }}</b></span
+            >
+            <span
+              >待验证 <b class="green">{{ statusCount.verify }}</b></span
+            >
             <span class="qn-flex" />
             <span :class="{ 'qn-sla-bad': board.kpis.overdueNcr > 0 }">
               超期 &gt;{{ NCR_SLA_HOURS }}h · {{ board.kpis.overdueNcr }} 条
             </span>
           </div>
-        </ScreenPanel>
+        </NvScreenPanel>
 
         <!-- 中：不良率趋势（红线阈值）+ 三层合格率 -->
         <div class="qb-mid">
-          <TrendChart
+          <NvScreenTrendChart
             v-if="trendData"
             v-model:range="trendRange"
             class="qb-trend"
@@ -245,18 +273,22 @@ const trendPin = computed(() => {
             :ranges="TREND_RANGES"
           />
 
-          <ScreenPanel title="三层合格率" class="qb-tri">
+          <NvScreenPanel title="三层合格率" class="qb-tri">
             <template #extra>
               <span class="qb-cap">当日批次口径</span>
             </template>
             <div class="qb-tri-in">
               <div v-for="l in board.layers" :key="l.key" class="qt-cell">
-                <dt class="qt-t">{{ l.label }} <small>{{ l.code }}</small></dt>
+                <dt class="qt-t">
+                  {{ l.label }} <small>{{ l.code }}</small>
+                </dt>
                 <div class="qt-v" :class="worstLayerKey === l.key ? 'warn' : 'ok'">
                   <span class="qb-num">{{ l.passRate }}<small>%</small></span>
                   <i class="qb-score-line" aria-hidden="true" />
                 </div>
-                <p class="qt-sub">合格 <b>{{ l.lotsPassed }}</b> / {{ l.lotsDone }} 批</p>
+                <p class="qt-sub">
+                  合格 <b>{{ l.lotsPassed }}</b> / {{ l.lotsDone }} 批
+                </p>
                 <p class="qt-sub2">
                   件不良
                   <b class="qt-def" :class="{ bad: l.pieceDefectPct > l.limitPct }">
@@ -270,7 +302,7 @@ const trendPin = computed(() => {
                 <!-- 分层 30 天件不良率：全厂一条总曲线掩盖分层差异，
                      过程检的事故酝酿抬升在这里一眼可见 -->
                 <div class="qt-spark">
-                  <Sparkline
+                  <NvSparkline
                     :data="l.trend30"
                     area
                     :color="worstLayerKey === l.key ? 'var(--sb-amber)' : 'var(--sb-cyan)'"
@@ -279,45 +311,63 @@ const trendPin = computed(() => {
                 <p class="qt-spark-cap">近 30 天件不良率</p>
               </div>
             </div>
-          </ScreenPanel>
+          </NvScreenPanel>
         </div>
 
         <!-- 右：缺陷帕累托 TOP5 + 检验任务积压 -->
         <div class="qb-right">
-          <ScreenPanel title="缺陷帕累托 TOP5" class="qb-pareto">
+          <NvScreenPanel title="缺陷帕累托 TOP5" class="qb-pareto">
             <template #extra>
               <span class="qb-cap">近 7 天 · {{ nf.format(board.paretoTotal) }} 件</span>
             </template>
-            <ScreenPareto
-              :items="board.pareto.map((p) => ({ label: p.defect, sub: p.lineName, count: p.count, pct: p.pct }))"
+            <NvScreenPareto
+              :items="
+                board.pareto.map((p) => ({
+                  label: p.defect,
+                  sub: p.lineName,
+                  count: p.count,
+                  pct: p.pct,
+                }))
+              "
               :total="board.paretoTotal"
             />
-          </ScreenPanel>
+          </NvScreenPanel>
 
-          <ScreenPanel title="检验任务积压" class="qb-backlog">
+          <NvScreenPanel title="检验任务积压" class="qb-backlog">
             <template #extra>
               <span class="qb-cap">按来源分层</span>
             </template>
             <div class="qb-ib">
               <div v-for="l in board.layers" :key="l.key" class="ib-group">
                 <div class="ib-top">
-                  <span class="ib-label">{{ l.label }} <small>{{ l.code }}</small></span>
+                  <span class="ib-label"
+                    >{{ l.label }} <small>{{ l.code }}</small></span
+                  >
                   <b class="ib-n" :class="{ warn: hotBacklogKey === l.key && l.backlog > 0 }">
                     {{ l.backlog }}<small> 项</small>
                   </b>
                 </div>
                 <div class="ib-meta">
-                  <span>最老 <b :class="{ warn: l.oldestHours > 24 }">{{ fmtAge(l.oldestHours) }}</b></span>
-                  <span v-if="l.backlogTop" class="ib-topsrc">{{ l.backlogTop.name }} {{ l.backlogTop.count }} 项</span>
+                  <span
+                    >最老
+                    <b :class="{ warn: l.oldestHours > 24 }">{{ fmtAge(l.oldestHours) }}</b></span
+                  >
+                  <span v-if="l.backlogTop" class="ib-topsrc"
+                    >{{ l.backlogTop.name }} {{ l.backlogTop.count }} 项</span
+                  >
                   <span class="qn-flex" />
                   <span class="ib-today">今日 {{ l.lotsDone }} / {{ l.lotsDue }}</span>
                 </div>
                 <div class="ib-bar">
-                  <i :style="{ width: `${Math.min(100, (l.lotsDone / Math.max(1, l.lotsDue)) * 100)}%` }" />
+                  <i
+                    :style="{
+                      width: `${Math.min(100, (l.lotsDone / Math.max(1, l.lotsDue)) * 100)}%`,
+                    }"
+                  />
                 </div>
               </div>
             </div>
-          </ScreenPanel>
+          </NvScreenPanel>
         </div>
       </div>
 
