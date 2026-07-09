@@ -1,8 +1,10 @@
-// 真实取数适配勾稽测试（MAN-467，含 review 修正的完整闭包聚合）：打 business-console WMS
-// facade 契约桩，验证 facade 响应 → 大屏 WarehouseBoard/WarehouseOpsTick 契约的映射，重点覆盖：
-//   - 完整覆盖（非首页近似）：open 积压跨第二页不漏；未恢复 WCS 失败经 `failed:true` 隔离取尽；
-//     当日窗口按时刻降序翻页、命中昨日即早停（不误计跨日单据）。
-//   - 文档级出入库进度、盘点差异、WCS 状态分布、诚实占位、会话守卫、tick 子集。
+// 真实取数适配勾稽测试（MAN-467，含两轮 review 修正）：打 business-console WMS facade 契约桩，
+// 验证 facade 响应 → 大屏 WarehouseBoard/WarehouseOpsTick 契约的映射，重点覆盖：
+//   - 完整覆盖：open 积压跨第二页不漏；当日到货窗口早停排除昨日单。
+//   - review① WCS 当前失败用 `status:'Failed'`（重试后回 Dispatched 且 FailedAtUtc 保留的任务不算失败、
+//     不与在链双计）。
+//   - review② 今日完成走 `status:'Completed'` + completedAtUtc 落今日（捕获昨日创建今日完成）；
+//     超回溯窗（>7d 前创建今日才完工）的异常长尾按设计排除。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -23,7 +25,7 @@ function ok(items: unknown[]) {
   return { data: { success: true, data: { items } } } as never
 }
 
-// 固定系统时钟；单据时刻按「距 now N 分钟」；昨日项落在本地零点前 1min（任何 TZ 都属昨天）。
+// 固定系统时钟；单据时刻按「距 now N 分钟」；昨日/多日前项相对本地零点构造（任何 TZ 都属过去）。
 const NOW = new Date('2026-07-09T12:00:00Z').getTime()
 const iso = (minAgo: number) => new Date(NOW - minAgo * 60_000).toISOString()
 const localMidnight = (() => {
@@ -31,15 +33,15 @@ const localMidnight = (() => {
   d.setHours(0, 0, 0, 0)
   return d.getTime()
 })()
-const isoYesterday = new Date(localMidnight - 60_000).toISOString()
+const isoYesterday = new Date(localMidnight - 60_000).toISOString() // 本地零点前 1min → 昨天
+const isoDaysAgo = (days: number) => new Date(localMidnight - days * 24 * 3_600_000).toISOString()
 
-/** 模拟后端 list：按 query.status / query.failed 过滤，按 skip/take 分页（rows 须 newest-first）。 */
+/** 模拟后端 list：按 query.status 过滤，按 skip/take 分页（rows 须按后端排序键 newest-first）。 */
 function makeList<T extends { status?: string }>(rows: T[]) {
   return (opts: { query: Record<string, unknown> }) => {
     const q = opts.query
     let r = rows
     if (typeof q.status === 'string') r = r.filter((x) => x.status === q.status)
-    if (q.failed === true) r = r.filter((x) => x.status === 'Failed')
     const skip = (q.skip as number) ?? 0
     const take = (q.take as number) ?? r.length
     return Promise.resolve(ok(r.slice(skip, skip + take)))
@@ -86,7 +88,6 @@ function stubDefaults() {
       },
     ]) as never,
   )
-  // 出库单：在途 1（较新）/ 已发运 1（较旧），均今日。
   vi.mocked(api.listBusinessConsoleWmsOutboundOrders).mockImplementation(
     makeList([
       {
@@ -103,8 +104,8 @@ function stubDefaults() {
       },
     ]) as never,
   )
-  // 上架任务：**120 个 Open（跨第二页）**——末位是最老的超时单（200min），验证 open 积压不漏页；
-  //   另加 1 今日完成 + 1 取消。newest-first：前 119 个 10min、第 120 个 200min（最老在尾）。
+  // 上架：120 Open（跨第二页，末位 200min 最老超时）+ 今日完成 3 类：今日创建今日完成、
+  //   **昨日创建今日完成**（review② 应计入）、**10天前创建今日完成**（超 7d 回溯窗，应排除）+ 取消。
   const putawayOpen = Array.from({ length: 120 }, (_, i) => ({
     warehouseTaskId: `PT-${i}`,
     taskNo: `PT-${1000 + i}`,
@@ -120,6 +121,7 @@ function stubDefaults() {
   vi.mocked(api.listBusinessConsoleWmsPutawayTasks).mockImplementation(
     makeList([
       ...putawayOpen,
+      // status:'Completed' 按 createdAtUtc 降序：今日 → 昨日 → 10天前。
       {
         warehouseTaskId: 'PT-done',
         taskNo: 'PT-9',
@@ -129,10 +131,27 @@ function stubDefaults() {
         createdAtUtc: iso(120),
         completedAtUtc: iso(15),
       },
-      { warehouseTaskId: 'PT-cancel', taskNo: 'PT-8', status: 'Cancelled', createdAtUtc: iso(40) },
+      {
+        warehouseTaskId: 'PT-cross',
+        taskNo: 'PT-8',
+        skuCode: '隔夜料',
+        uomCode: '件',
+        status: 'Completed',
+        createdAtUtc: isoYesterday,
+        completedAtUtc: iso(30),
+      },
+      {
+        warehouseTaskId: 'PT-stale',
+        taskNo: 'PT-7',
+        skuCode: '陈年完工',
+        uomCode: '件',
+        status: 'Completed',
+        createdAtUtc: isoDaysAgo(10),
+        completedAtUtc: iso(40),
+      },
+      { warehouseTaskId: 'PT-cancel', taskNo: 'PT-6', status: 'Cancelled', createdAtUtc: iso(40) },
     ]) as never,
   )
-  // 拣货任务：超时 Open（90min，带 SO 来源）+ 今日完成。
   vi.mocked(api.listBusinessConsoleWmsPickingTasks).mockImplementation(
     makeList([
       {
@@ -158,7 +177,7 @@ function stubDefaults() {
       },
     ]) as never,
   )
-  // 盘点：Open（50min，超时）/ 今日完成有差异 / 今日完成无差异。
+  // 盘点：Open（50min 超时）+ 今日完成有差异 + **昨日创建今日完成**（应计入 counted）。
   vi.mocked(api.listBusinessConsoleWmsCountExecutions).mockImplementation(
     makeList([
       {
@@ -194,12 +213,13 @@ function stubDefaults() {
         countedQuantity: 80,
         varianceQuantity: 0,
         status: 'Completed',
-        createdAtUtc: iso(80),
+        createdAtUtc: isoYesterday,
         completedAtUtc: iso(25),
       },
     ]) as never,
   )
-  // WCS：5 在链(agv) + 1 今日完成(agv) + 1 失败堆垛机(重试3,12min) + 1 失败agv(重试1)。
+  // WCS：当前失败 2（堆垛机重试3、agv重试1）+ 在链 5 agv + **1 已重试回 Dispatched（FailedAtUtc 保留）**
+  //   + 今日完成 1 agv。review① 校验重试任务只算在链、不进失败榜。
   const wcsDispatched = Array.from({ length: 5 }, (_, i) => ({
     wcsTaskId: `W-d${i}`,
     adapterType: 'agv',
@@ -211,6 +231,16 @@ function stubDefaults() {
   vi.mocked(api.listBusinessConsoleWmsWcsTasks).mockImplementation(
     makeList([
       ...wcsDispatched,
+      // 已重试：状态回到 Dispatched，但 FailedAtUtc 仍有值——只应算在链，不进失败榜。
+      {
+        wcsTaskId: 'W-retried',
+        adapterType: 'agv',
+        externalTaskId: 'WCS-88150',
+        status: 'Dispatched',
+        attemptCount: 2,
+        failedAtUtc: iso(50),
+        dispatchedAtUtc: iso(3),
+      },
       {
         wcsTaskId: 'W-done',
         adapterType: 'agv',
@@ -248,33 +278,25 @@ function stubDefaults() {
 describe('fetchRealWarehouseBoard', () => {
   beforeEach(stubDefaults)
 
-  it('入库/出库文档级进度：当日窗口早停排除昨日、完成/失败按状态、行镜像单据、pct 勾稽', async () => {
+  it('入库/出库当日到货 cohort：早停排除昨日、完成/失败按状态、行镜像单据、pct 勾稽', async () => {
     const b = await fetchRealWarehouseBoard('F01')
-    expect(b.factoryId).toBe('F01')
-    // 昨日单被早停排除 → 当日 3 单
-    expect(b.inbound.docsTotal).toBe(3)
+    expect(b.inbound.docsTotal).toBe(3) // 昨日单被早停排除
     expect(b.inbound.docsDone).toBe(1)
     expect(b.inbound.postFailedDocs).toBe(1)
     expect(b.inbound.postFailedDoc).toBe('ASN-260703')
-    expect(b.inbound.linesDone).toBe(b.inbound.docsDone) // 行镜像单据（诚实占位）
-    expect(b.inbound.linesTotal).toBe(b.inbound.docsTotal)
-    expect(b.inbound.pct).toBe(33) // 1/3
-    expect(b.outbound.docsTotal).toBe(2)
+    expect(b.inbound.linesDone).toBe(b.inbound.docsDone)
+    expect(b.inbound.pct).toBe(33)
     expect(b.outbound.customers).toBe(0)
     expect(b.outbound.latestShipment).toBe('发运单 SO-9801')
   })
 
-  it('open 积压跨第二页完整覆盖（120 个 Open），末页最老超时单不漏、按龄期降序', async () => {
+  it('open 积压跨第二页完整覆盖（120 Open），末页最老超时单不漏、按龄期降序', async () => {
     const b = await fetchRealWarehouseBoard('F01')
-    // 120 个 Open 分两页(100+20)全部纳入
     expect(b.putaway.backlog).toBe(120)
     expect(b.putaway.rows).toHaveLength(120)
-    expect(b.putaway.doneToday).toBe(1)
-    // 末页那个 200min 老单排到最前（龄期降序），且被判超时——不因翻页漏掉
     expect(b.putaway.rows[0].sku).toBe('陈年超时料')
     expect(b.putaway.rows[0].overdue).toBe(true)
     expect(b.putaway.overdue).toBe(1)
-    // 请求了第二页
     const calls = vi.mocked(api.listBusinessConsoleWmsPutawayTasks).mock.calls
     expect(
       calls.some(
@@ -285,35 +307,41 @@ describe('fetchRealWarehouseBoard', () => {
     ).toBe(true)
   })
 
-  it('WCS 失败经 failed:true 隔离取尽（不被在链指令挤到次页而漏），失败榜按重试降序', async () => {
+  it('review②：今日完成走 status:Completed + completedAtUtc，含昨日创建今日完成；超 7d 回溯窗排除', async () => {
     const b = await fetchRealWarehouseBoard('F01')
-    expect(b.wcs.failures).toHaveLength(2)
-    expect(b.wcs.failures[0].retries).toBe(3) // 堆垛机在前
-    expect(b.wcs.failures[0].kind).toBe('stacker')
-    expect(b.wcs.failures[0].error).toBe('取货超时 · 货叉未到位')
-    expect(b.wcs.failures[0].sinceMin).toBe(12) // 真实 failedAtUtc 龄期
-    // 用 failed:true 查询而非首页全量
-    const calls = vi.mocked(api.listBusinessConsoleWmsWcsTasks).mock.calls
-    expect(calls.some((c) => (c[0] as { query: { failed?: boolean } }).query.failed === true)).toBe(
-      true,
-    )
-    // 状态分布：无排队态、在链取尽=5、失败=2
-    expect(b.wcs.counts.queued).toBe(0)
-    expect(b.wcs.counts.running).toBe(5)
-    expect(b.wcs.counts.failed).toBe(2)
-    const agv = b.wcs.adapters.find((a) => a.kind === 'agv')!
-    expect(agv.running).toBe(5)
-    expect(agv.failed).toBe(1)
-    expect(b.wcs.adapters.some((a) => a.kind === 'stacker')).toBe(true)
-  })
-
-  it('盘点：Open→未盘、今日完成→已盘、差异=非零差额、planned=已盘+未盘', async () => {
-    const b = await fetchRealWarehouseBoard('F01')
-    expect(b.count.rows).toHaveLength(1)
+    // PT-done(今日创建今日完成) + PT-cross(昨日创建今日完成) 计入；PT-stale(10天前创建) 超窗排除。
+    expect(b.putaway.doneToday).toBe(2)
+    // 用 status:'Completed' 查询（非 created 窗口早停近似）。
+    const calls = vi.mocked(api.listBusinessConsoleWmsPutawayTasks).mock.calls
+    expect(
+      calls.some((c) => (c[0] as { query: { status?: string } }).query.status === 'Completed'),
+    ).toBe(true)
+    // 盘点已盘同理含昨日创建今日完成。
     expect(b.count.counted).toBe(2)
     expect(b.count.variance).toBe(1)
-    expect(b.count.planned).toBe(3)
-    expect(b.count.rows[0].overdue).toBe(true)
+    expect(b.count.planned).toBe(3) // 2 已盘 + 1 未盘
+  })
+
+  it('review①：WCS 当前失败用 status:Failed，已重试回 Dispatched 的旧失败不进失败榜、不与在链双计', async () => {
+    const b = await fetchRealWarehouseBoard('F01')
+    expect(b.wcs.failures).toHaveLength(2) // 仅 W-f1 / W-f2，不含 W-retried
+    expect(b.wcs.failures.some((f) => f.cmd === 'WCS-88150')).toBe(false)
+    expect(b.wcs.failures[0].retries).toBe(3)
+    expect(b.wcs.failures[0].kind).toBe('stacker')
+    expect(b.wcs.failures[0].sinceMin).toBe(12)
+    // 已重试任务算在链（Dispatched=5+1=6），不算失败
+    expect(b.wcs.counts.running).toBe(6)
+    expect(b.wcs.counts.failed).toBe(2)
+    expect(b.wcs.counts.queued).toBe(0)
+    expect(b.wcs.counts.completed).toBe(1)
+    // 用 status:'Failed' 查询（非 failed:true）
+    const calls = vi.mocked(api.listBusinessConsoleWmsWcsTasks).mock.calls
+    expect(
+      calls.some((c) => (c[0] as { query: { status?: string } }).query.status === 'Failed'),
+    ).toBe(true)
+    expect(
+      calls.every((c) => (c[0] as { query: { failed?: boolean } }).query.failed !== true),
+    ).toBe(true)
   })
 
   it('KPI 勾稽、超时榜跨类合并按龄期降序', async () => {
@@ -323,7 +351,6 @@ describe('fetchRealWarehouseBoard', () => {
     expect(b.kpis.wcsFailed).toBe(b.wcs.failures.length)
     expect(b.kpis.countVariance).toBe(b.count.variance)
     expect(b.kpis.throughputLines).toBe(b.inbound.linesDone + b.outbound.linesDone)
-    // 拣货90 / 上架200 / 盘点50 → 降序，上架陈年单居首
     expect(b.overdueTop[0].ageMin).toBe(200)
     for (let i = 1; i < b.overdueTop.length; i++) {
       expect(b.overdueTop[i - 1].ageMin).toBeGreaterThanOrEqual(b.overdueTop[i].ageMin)
@@ -343,8 +370,8 @@ describe('fetchRealWarehouseBoard', () => {
     }
     const b = await fetchRealWarehouseBoard('F01')
     expect(b.inbound.docsTotal).toBe(0)
-    expect(b.inbound.pct).toBe(0)
     expect(b.putaway.backlog).toBe(0)
+    expect(b.putaway.doneToday).toBe(0)
     expect(b.wcs.failures).toHaveLength(0)
     expect(b.wcs.adapters).toHaveLength(0)
     expect(b.overdueTop).toHaveLength(0)
@@ -359,7 +386,7 @@ describe('fetchRealWarehouseOpsTick', () => {
     const b = await fetchRealWarehouseBoard('F01')
     const tick = await fetchRealWarehouseOpsTick('F01')
     expect(tick.pick.backlog).toBe(b.pick.backlog)
-    expect(tick.putaway.backlog).toBe(b.putaway.backlog)
+    expect(tick.putaway.doneToday).toBe(b.putaway.doneToday)
     expect(tick.count.rows).toEqual(b.count.rows)
     expect(tick.wcs.failures.length).toBe(b.wcs.failures.length)
     expect(tick.overdueTop).toEqual(b.overdueTop)
