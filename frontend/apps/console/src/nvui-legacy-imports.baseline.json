@@ -1,0 +1,33 @@
+{
+  "components/console/InstanceDetailPanel.vue": ["StatusBadge"],
+  "components/console/InstanceTable.vue": ["DataTable", "StatusBadge"],
+  "components/console/OperationTimeline.vue": ["StatusBadge"],
+  "components/notifications/NotificationMessageList.vue": ["StatusBadge"],
+  "components/notifications/NotificationTaskList.vue": ["StatusBadge"],
+  "pages/business/index.vue": [
+    "DataTable",
+    "PageHeader",
+    "SectionCard",
+    "SectionCards",
+    "StatusBadge"
+  ],
+  "pages/iam/roles/index.vue": ["DataTable", "DataTablePagination", "PageHeader", "Toolbar"],
+  "pages/iam/sessions/index.vue": [
+    "DataTable",
+    "DataTablePagination",
+    "PageHeader",
+    "StatusBadge",
+    "Toolbar"
+  ],
+  "pages/iam/users/index.vue": [
+    "DataTable",
+    "DataTablePagination",
+    "PageHeader",
+    "StatusBadge",
+    "Toolbar"
+  ],
+  "pages/index.vue": ["PageHeader"],
+  "pages/notifications/dlq.vue": ["PageHeader", "SectionCard", "SectionCards"],
+  "pages/notifications/index.vue": ["PageHeader", "SectionCard", "SectionCards"],
+  "pages/operations/[operationTaskId].vue": ["PageHeader"]
+}

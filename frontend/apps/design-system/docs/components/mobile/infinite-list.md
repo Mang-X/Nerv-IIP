@@ -1,11 +1,11 @@
 ---
 layout: page
-title: InfiniteList 无限滚动
+title: NvInfiniteList 无限滚动
 ---
 
 <script setup>
 import { ref } from 'vue'
-import { InfiniteList, Cell, Tag } from '@nerv-iip/ui-mobile'
+import { NvInfiniteList, NvCell, NvMobileTag } from '@nerv-iip/ui-mobile'
 
 const products = ['齿轮箱端盖', '液压阀体 V3', '主轴箱体', '法兰盘 D80', '伺服电机座', '导轨滑块']
 const stations = ['焊接 03', '装配 01', 'CNC 02', '热处理 01', '总装 02']
@@ -44,32 +44,33 @@ function onLoad() {
 <MobileDoc>
 
 <template #phone>
+
   <section>
     <p class="ds-mdoc-label">上拉加载更多 · 工单流水</p>
     <div class="overflow-hidden rounded-xl border border-border">
-      <InfiniteList
+      <NvInfiniteList
         v-model="loading"
         :finished="finished"
         finished-text="已加载全部工单"
         class="h-[460px]"
         @load="onLoad"
       >
-        <Cell
+        <NvCell
           v-for="o in orders"
           :key="o.code"
           :title="o.product"
           :note="`${o.code} · ${o.station}`"
         >
           <template #value>
-            <Tag :variant="o.variant" size="sm">{{ o.qty }}</Tag>
+            <NvMobileTag :variant="o.variant" size="sm">{{ o.qty }}</NvMobileTag>
           </template>
-        </Cell>
-      </InfiniteList>
+        </NvCell>
+      </NvInfiniteList>
     </div>
   </section>
 </template>
 
-# InfiniteList 无限滚动
+# NvInfiniteList 无限滚动
 
 滚动到接近底部时自动触发加载下一页（Vant List 风格）。底部会显示「加载中…」「上拉加载更多」或加载完毕的「没有更多了」文案。`v-model` 绑定加载中状态，加载逻辑由你在 `load` 事件里实现。
 
@@ -94,32 +95,32 @@ function onLoad() {
 </script>
 
 <template>
-  <InfiniteList v-model="loading" :finished="finished" class="h-[460px]" @load="onLoad">
-    <Cell v-for="o in orders" :key="o.code" :title="o.product" :note="o.code" />
-  </InfiniteList>
+  <NvInfiniteList v-model="loading" :finished="finished" class="h-[460px]" @load="onLoad">
+    <NvCell v-for="o in orders" :key="o.code" :title="o.product" :note="o.code" />
+  </NvInfiniteList>
 </template>
 ```
 
 ## 何时使用
 
-- **用 InfiniteList**：数据从后端分页拉取、总量未知、行高不固定。
-- **用 [VirtualList](/components/mobile/virtual-list)**：数据已在本地、行高一致、需要极致滚动性能。
+- **用 NvInfiniteList**：数据从后端分页拉取、总量未知、行高不固定。
+- **用 [NvVirtualList](/components/mobile/virtual-list)**：数据已在本地、行高一致、需要极致滚动性能。
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `v-model` | 加载中状态（触发时自动置 `true`，请求完成后自行置回 `false`） | `boolean` | `false` |
-| `finished` | 是否已全部加载完（为 `true` 时不再触发 `load`） | `boolean` | `false` |
-| `offset` | 距底部多少像素内触发加载 | `number` | `80` |
-| `finishedText` | 加载完毕时的底部文案 | `string` | `'没有更多了'` |
-| `class` | 根容器类（**须指定高度**） | `string` | — |
+| 属性           | 说明                                                          | 类型      | 默认           |
+| -------------- | ------------------------------------------------------------- | --------- | -------------- |
+| `v-model`      | 加载中状态（触发时自动置 `true`，请求完成后自行置回 `false`） | `boolean` | `false`        |
+| `finished`     | 是否已全部加载完（为 `true` 时不再触发 `load`）               | `boolean` | `false`        |
+| `offset`       | 距底部多少像素内触发加载                                      | `number`  | `80`           |
+| `finishedText` | 加载完毕时的底部文案                                          | `string`  | `'没有更多了'` |
+| `class`        | 根容器类（**须指定高度**）                                    | `string`  | —              |
 
 ## 事件
 
-| 事件 | 说明 | 回调参数 |
-|---|---|---|
-| `load` | 接近底部、需要加载下一页时触发 | — |
+| 事件   | 说明                           | 回调参数 |
+| ------ | ------------------------------ | -------- |
+| `load` | 接近底部、需要加载下一页时触发 | —        |
 
 ::: warning 注意
 首屏若内容不足以撑满滚动区，可能不会触发 `load`。建议初始就预置一批数据（如上例 `makeBatch(0)`），或在挂载后主动加载首页。
