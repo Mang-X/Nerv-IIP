@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { OperationTaskResponse } from '@nerv-iip/api-client'
 import type { StatusTone } from '@nerv-iip/ui'
-import { Card, CardContent, CardHeader, CardTitle, Separator, StatusBadge } from '@nerv-iip/ui'
+import { Card, CardContent, CardHeader, CardTitle, Separator, NvStatusBadge } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
 const props = defineProps<{
@@ -43,11 +43,15 @@ function statusLabel(status?: string | null) {
 }
 
 function attemptKey(attempt: OperationAttempt, index: number) {
-  return attempt.attemptId ?? `attempt:${attempt.startedAtUtc ?? attempt.status ?? 'unknown'}:${index}`
+  return (
+    attempt.attemptId ?? `attempt:${attempt.startedAtUtc ?? attempt.status ?? 'unknown'}:${index}`
+  )
 }
 
 function auditRecordKey(record: AuditRecord, index: number) {
-  return record.auditRecordId ?? `audit:${record.occurredAtUtc ?? record.action ?? 'unknown'}:${index}`
+  return (
+    record.auditRecordId ?? `audit:${record.occurredAtUtc ?? record.action ?? 'unknown'}:${index}`
+  )
 }
 </script>
 
@@ -61,7 +65,10 @@ function auditRecordKey(record: AuditRecord, index: number) {
             {{ operationTask?.operationCode ?? '任务' }}
           </CardTitle>
         </div>
-        <StatusBadge :label="statusLabel(operationTask?.status)" :tone="statusTone(operationTask?.status)" />
+        <NvStatusBadge
+          :label="statusLabel(operationTask?.status)"
+          :tone="statusTone(operationTask?.status)"
+        />
       </div>
     </CardHeader>
 
@@ -84,7 +91,9 @@ function auditRecordKey(record: AuditRecord, index: number) {
             :key="label"
             class="flex flex-col gap-0.5 rounded-md border bg-muted/40 p-3"
           >
-            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">{{ label }}</dt>
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              {{ label }}
+            </dt>
             <dd class="break-anywhere text-sm m-0">{{ value }}</dd>
           </div>
         </dl>
@@ -101,15 +110,24 @@ function auditRecordKey(record: AuditRecord, index: number) {
             >
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <strong class="text-sm">{{ attempt.attemptId ?? '尝试' }}</strong>
-                <StatusBadge :label="statusLabel(attempt.status)" :tone="statusTone(attempt.status)" />
+                <NvStatusBadge
+                  :label="statusLabel(attempt.status)"
+                  :tone="statusTone(attempt.status)"
+                />
               </div>
               <span class="text-xs text-muted-foreground break-anywhere">
                 {{ attempt.startedAtUtc ?? '无开始时间' }}
               </span>
-              <span v-if="attempt.finishedAtUtc" class="text-xs text-muted-foreground break-anywhere">
+              <span
+                v-if="attempt.finishedAtUtc"
+                class="text-xs text-muted-foreground break-anywhere"
+              >
                 {{ attempt.finishedAtUtc }}
               </span>
-              <span v-if="attempt.failureCode" class="text-xs font-semibold text-destructive break-anywhere">
+              <span
+                v-if="attempt.failureCode"
+                class="text-xs font-semibold text-destructive break-anywhere"
+              >
                 {{ attempt.failureCode }}
               </span>
             </li>

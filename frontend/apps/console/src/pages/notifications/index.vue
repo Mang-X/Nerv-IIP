@@ -3,7 +3,7 @@ import NotificationMessageList from '@/components/notifications/NotificationMess
 import NotificationTaskList from '@/components/notifications/NotificationTaskList.vue'
 import { useNotifications } from '@/composables/useNotifications'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
-import { Button, PageHeader, SectionCard, SectionCards, toast } from '@nerv-iip/ui'
+import { Button, NvPageHeader, NvSectionCard, NvSectionCards, toast } from '@nerv-iip/ui'
 import { CheckCheckIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 
@@ -65,7 +65,7 @@ async function handleMarkAllRead() {
 <template>
   <DefaultLayout>
     <section class="grid gap-6">
-      <PageHeader
+      <NvPageHeader
         title="通知"
         :breadcrumbs="[{ label: '平台' }]"
         :count="`${unreadMessages.length} 条未读`"
@@ -93,13 +93,13 @@ async function handleMarkAllRead() {
             全部已读
           </Button>
         </template>
-      </PageHeader>
+      </NvPageHeader>
 
-      <SectionCards :columns="3">
-        <SectionCard description="未读消息" :value="unreadMessages.length" hint="待处理通知" />
-        <SectionCard description="已读消息" :value="readMessages.length" hint="近期已读" />
-        <SectionCard description="待办任务" :value="openTasks.length" hint="需要跟进的通知任务" />
-      </SectionCards>
+      <NvSectionCards :columns="3">
+        <NvSectionCard description="未读消息" :value="unreadMessages.length" hint="待处理通知" />
+        <NvSectionCard description="已读消息" :value="readMessages.length" hint="近期已读" />
+        <NvSectionCard description="待办任务" :value="openTasks.length" hint="需要跟进的通知任务" />
+      </NvSectionCards>
 
       <p v-if="errorMessage" class="text-sm text-destructive" role="alert">
         无法更新通知：{{ errorMessage }}

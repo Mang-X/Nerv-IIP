@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { InstanceListItem } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
-import { Button, DataTable, StatusBadge } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
+import { Button, NvDataTable, NvStatusBadge } from '@nerv-iip/ui'
 import { instanceStatusLabel, instanceTone } from './instanceStatus'
 
 const props = defineProps<{
@@ -18,9 +18,17 @@ const emit = defineEmits<{
 
 type InstanceRow = InstanceListItem
 
-const columns: DataTableColumn<InstanceRow>[] = [
-  { key: 'app', header: '应用', accessor: (r) => r.applicationName ?? r.applicationKey ?? '未知应用' },
-  { key: 'instance', header: '实例', accessor: (r) => r.instanceName ?? r.instanceKey ?? '未知实例' },
+const columns: NvDataTableColumn<InstanceRow>[] = [
+  {
+    key: 'app',
+    header: '应用',
+    accessor: (r) => r.applicationName ?? r.applicationKey ?? '未知应用',
+  },
+  {
+    key: 'instance',
+    header: '实例',
+    accessor: (r) => r.instanceName ?? r.instanceKey ?? '未知实例',
+  },
   { key: 'node', header: '节点', accessor: (r) => r.nodeName ?? r.nodeKey ?? '未分配' },
   { key: 'reportedStatus', header: '状态', width: 'w-24' },
   { key: 'healthStatus', header: '健康', width: 'w-24' },
@@ -37,7 +45,10 @@ function rowKey(instance: InstanceListItem) {
 </script>
 
 <template>
-  <DataTable
+  <NvDataTable
+    :pagination="false"
+    :searchable="false"
+    :column-settings="false"
     :columns="columns"
     :rows="props.instances"
     :row-key="rowKey"
@@ -46,15 +57,23 @@ function rowKey(instance: InstanceListItem) {
   >
     <template #cell-app="{ row }">
       <div class="flex flex-col gap-0.5">
-        <span class="font-semibold">{{ row.applicationName ?? row.applicationKey ?? '未知应用' }}</span>
+        <span class="font-semibold">{{
+          row.applicationName ?? row.applicationKey ?? '未知应用'
+        }}</span>
         <span class="text-xs text-muted-foreground">{{ row.version ?? '无版本' }}</span>
       </div>
     </template>
     <template #cell-reportedStatus="{ row }">
-      <StatusBadge :label="instanceStatusLabel(row.reportedStatus)" :tone="instanceTone(row.reportedStatus)" />
+      <NvStatusBadge
+        :label="instanceStatusLabel(row.reportedStatus)"
+        :tone="instanceTone(row.reportedStatus)"
+      />
     </template>
     <template #cell-healthStatus="{ row }">
-      <StatusBadge :label="instanceStatusLabel(row.healthStatus)" :tone="instanceTone(row.healthStatus)" />
+      <NvStatusBadge
+        :label="instanceStatusLabel(row.healthStatus)"
+        :tone="instanceTone(row.healthStatus)"
+      />
     </template>
     <template #cell-actions="{ row }">
       <div class="flex items-center justify-end gap-2">
@@ -80,5 +99,5 @@ function rowKey(instance: InstanceListItem) {
         </Button>
       </div>
     </template>
-  </DataTable>
+  </NvDataTable>
 </template>

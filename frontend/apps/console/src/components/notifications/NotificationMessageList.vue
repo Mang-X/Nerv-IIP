@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { NotificationMessageResponse } from '@nerv-iip/api-client'
-import { Button, Skeleton, StatusBadge } from '@nerv-iip/ui'
+import { Button, Skeleton, NvStatusBadge } from '@nerv-iip/ui'
 import { CheckIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 import {
@@ -74,8 +74,14 @@ function rowKey(message: NotificationMessageResponse, index: number) {
         </div>
 
         <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <StatusBadge :label="notificationSeverityLabel(message.severity)" :tone="notificationTone(message.severity)" />
-          <StatusBadge :label="notificationStatusLabel(message.status)" :tone="notificationTone(message.status)" />
+          <NvStatusBadge
+            :label="notificationSeverityLabel(message.severity)"
+            :tone="notificationTone(message.severity)"
+          />
+          <NvStatusBadge
+            :label="notificationStatusLabel(message.status)"
+            :tone="notificationTone(message.status)"
+          />
           <span>{{ formatResource(message.resource) }}</span>
           <span>{{ formatNotificationDate(message.createdAtUtc) }}</span>
         </div>
