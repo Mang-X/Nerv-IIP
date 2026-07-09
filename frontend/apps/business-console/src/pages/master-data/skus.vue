@@ -3,7 +3,7 @@ import type {
   BusinessConsoleCreateSkuRequest,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import {
@@ -108,7 +108,7 @@ const editLoading = shallowRef(false)
 
 const keyword = ref('')
 const includeDisabled = ref(false)
-const sort = ref<DataTableSort | null>(null)
+const sort = ref<NvDataTableSort | null>(null)
 const page = ref(1)
 const pageSize = ref('10')
 

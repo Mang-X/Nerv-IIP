@@ -5,7 +5,7 @@ import type {
   BusinessConsoleRecordProductionReportRequest,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import { mesWorkOrderStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
@@ -181,7 +181,7 @@ const canRecordReport = computed(
 )
 
 // --- Sort (page-owned, before pagination) ---
-const sort = ref<DataTableSort | null>({ key: 'dueUtc', direction: 'asc' })
+const sort = ref<NvDataTableSort | null>({ key: 'dueUtc', direction: 'asc' })
 function sortValue(order: Row, key: string): string | number {
   if (key === 'quantity') return order.quantity ?? 0
   if (key === 'dueUtc') return order.dueUtc ? new Date(order.dueUtc).getTime() : 0

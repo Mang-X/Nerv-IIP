@@ -3,7 +3,7 @@ import type {
   BusinessConsoleMesOperationTaskRow,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import { openDownloadGrantBlob } from '@nerv-iip/business-core'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
@@ -111,7 +111,7 @@ const shiftOptions = computed(() => toResourceOptions(shiftResources.value))
 const visibleTasks = computed(() => operationTasks.value)
 
 // --- Sort (page-owned, before pagination) ---
-const sort = ref<DataTableSort | null>(null)
+const sort = ref<NvDataTableSort | null>(null)
 function sortValue(task: Row, key: string): string | number {
   if (key === 'operationSequence') return task.operationSequence ?? 0
   if (key === 'plannedStartUtc')

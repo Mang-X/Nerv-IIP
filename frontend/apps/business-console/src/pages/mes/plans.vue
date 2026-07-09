@@ -3,7 +3,7 @@ import type {
   BusinessConsoleMesProductionPlanRow,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, DataTableSort, StatusTone } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvDataTableSort, StatusTone } from '@nerv-iip/ui'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesProductionPlans } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
@@ -57,7 +57,7 @@ const { resources: workCenterResources } = useBusinessMasterDataResources('work-
 const keyword = ref('')
 const sourceFilter = ref(normalizeSourceQuery(route.query.source))
 const readinessFilter = ref('all')
-const sort = ref<DataTableSort | null>(null)
+const sort = ref<NvDataTableSort | null>(null)
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [keyword, sourceFilter, readinessFilter],
 })

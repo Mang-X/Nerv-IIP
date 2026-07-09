@@ -171,11 +171,17 @@ const isTestFile = (n) => /\.(test|spec)\./.test(n)
  * localRenames maps a (non-aliased) local binding name → new name so the template
  * pass can rewrite the corresponding component tags.
  *
- * opts.keyStringMap (test files only): also rename object-literal property KEYS and
- * string literals whose text is a deprecated old name — this migrates `vi.mock(...)`
- * factory keys, stub `name:` strings, and contract-test `toContain('DataTablePro')`
- * assertions to the Nv names the SFCs now import. Local stub *values* (identifiers)
- * are untouched, so `{ DataTablePro: DataTable }` → `{ NvDataTable: DataTable }`.
+ * Test-file options (a barrel import in a test that spells an old name is renamed by
+ * the normal import/ref passes above; these two only touch things those passes miss):
+ *  - opts.keyStringMap: rename the export KEYS inside a `vi.mock('@nerv-iip/ui'|
+ *    '@nerv-iip/ui-mobile', factory)` return object (the SFCs now `import { Nv* }`
+ *    from the mocked module). Local stub *values* stay, so `{ DataTablePro: DataTable }`
+ *    → `{ NvDataTable: DataTable }`. `global.stubs` keys, `findComponent({ name })`
+ *    and stub `name:` fields are deliberately NOT touched — they bind to the component
+ *    runtime `__name` (the unchanged `.vue` filename, e.g. `DataTablePaginationPro`).
+ *  - opts.renameStrings: for static source-reader tests (readFileSync a migrated SFC
+ *    then assert on it) rename every old-name string literal — e.g. goldStandardPages
+ *    `REQUIRED_BLOCKS`, erp-business-flow `toContain('DataTablePro')`.
  */
 function transformScript(code, fileLabel, opts = {}) {
   const keyStringMap = opts.keyStringMap ?? null

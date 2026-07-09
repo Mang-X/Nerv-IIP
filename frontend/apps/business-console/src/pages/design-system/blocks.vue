@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import {
   NvAppShellInset,
   Button,
@@ -43,7 +43,7 @@ const allRows: WorkOrderRow[] = [
 ]
 
 const search = ref('')
-const sort = ref<DataTableSort | null>({ key: 'code', direction: 'asc' })
+const sort = ref<NvDataTableSort | null>({ key: 'code', direction: 'asc' })
 const page = ref(1)
 const pageSize = ref('5')
 
@@ -58,7 +58,7 @@ const paged = computed(() => {
   return filtered.value.slice(start, start + pageSizeNum.value)
 })
 
-const columns: DataTableColumn<WorkOrderRow>[] = [
+const columns: NvDataTableColumn<WorkOrderRow>[] = [
   { key: 'code', header: '工单号', sortable: true, width: 'w-32', cellClass: 'font-medium' },
   { key: 'product', header: '产品', sortable: true },
   { key: 'qty', header: '数量', align: 'end', sortable: true, width: 'w-24' },
