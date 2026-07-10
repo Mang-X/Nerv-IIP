@@ -131,7 +131,12 @@ public sealed record ConfirmStockCountAdjustmentRequest(
     decimal CountedQuantity,
     string IdempotencyKey);
 
-public sealed record ConfirmStockCountAdjustmentResponse(string MovementId, decimal VarianceQuantity, decimal OnHandQuantity);
+public sealed record ConfirmStockCountAdjustmentResponse(
+    string? MovementId,
+    decimal VarianceQuantity,
+    decimal OnHandQuantity,
+    string Status,
+    string? ApprovalChainId);
 
 public sealed record CancelStockCountTaskRequest(StockCountTaskId CountTaskId, string Reason);
 
@@ -506,7 +511,14 @@ public sealed class ConfirmStockCountAdjustmentEndpoint(ISender sender)
             req.CountTaskId,
             req.CountedQuantity,
             req.IdempotencyKey), ct);
-        await Send.OkAsync(new ConfirmStockCountAdjustmentResponse(result.MovementId.ToString(), result.VarianceQuantity, result.OnHandQuantity).AsResponseData(), cancellation: ct);
+        await Send.OkAsync(
+            new ConfirmStockCountAdjustmentResponse(
+                result.MovementId?.ToString(),
+                result.VarianceQuantity,
+                result.OnHandQuantity,
+                result.Status,
+                result.ApprovalChainId).AsResponseData(),
+            cancellation: ct);
     }
 }
 

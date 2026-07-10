@@ -120,7 +120,9 @@ vi.mock('@/stores/auth', () => ({
 }))
 
 vi.mock('@/composables/useBusinessTelemetry', () => ({
-  describeTelemetryOeeLimitations: () => '当前 OEE 只按设备运行状态计算可用率，性能与质量不作为真实测量值。',
+  describeTelemetryOeeDegradation: (reason: string) => reason,
+  describeTelemetryOeeLimitations: () => 'OEE = 可用率 × 性能率 × 质量率。',
+  formatOeeQuantity: (value: number | null | undefined) => value == null ? '无数据' : `${value}`,
   formatOeeRate: (value: number | null | undefined) => value == null ? '无数据' : `${(value * 100).toFixed(1)}%`,
   useBusinessTelemetryHistory: () => ({
     filters: { deviceAssetId: 'DEV-OIL-01', tagKey: '', windowStartUtc: '2026-07-01T00:00:00Z', windowEndUtc: '2026-07-01T08:00:00Z' },
@@ -137,10 +139,9 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
       availabilityRate: 0.82,
       loadingRate: 0.91,
       oeeRate: 0.82,
-      performanceRate: 0,
-      performanceRateEstimated: true,
-      qualityRate: 0,
-      qualityRateEstimated: true,
+      performanceRate: 0.9,
+      qualityRate: 0.95,
+      isDegraded: false,
       stateSampleCount: 12,
     })),
     oeeError: shallowRef(),
@@ -232,7 +233,7 @@ describe('equipment pages', () => {
     const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
 
     expect(wrapper.text()).toContain('遥测深层上下文')
-    expect(wrapper.text()).toContain('当前 OEE 只按设备运行状态计算可用率')
+    expect(wrapper.text()).toContain('OEE = 可用率 × 性能率 × 质量率')
     expect(wrapper.text()).toContain('82.0%')
     expect(wrapper.text()).toContain('历史事件6')
     expect(wrapper.text()).toContain('temperature')

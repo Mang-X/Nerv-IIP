@@ -583,6 +583,98 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.OeeProductionFactAggregate.OeeProductionFact", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("OEE production fact aggregate id.");
+
+                    b.Property<string>("DeviceAssetId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("device_asset_id")
+                        .HasComment("MES assigned device asset used to scope OEE.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<decimal>("GoodQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("good_quantity")
+                        .HasComment("Reported accepted output quantity; reversals are negative.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<DateTimeOffset>("ReportedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reported_at_utc")
+                        .HasComment("UTC instant assigned to the production report.");
+
+                    b.Property<decimal>("ReworkQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("rework_quantity")
+                        .HasComment("Reported rework output quantity; reversals are negative.");
+
+                    b.Property<decimal>("ScrapQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("scrap_quantity")
+                        .HasComment("Reported scrap output quantity; reversals are negative.");
+
+                    b.Property<string>("SourceReportNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_report_no")
+                        .HasComment("MES production report number used as the idempotent projection key.");
+
+                    b.Property<decimal?>("TheoreticalRatePerHour")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("theoretical_rate_per_hour")
+                        .HasComment("Expected output per productive hour from the MES operation planning snapshot.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("uom_code")
+                        .HasComment("Output quantity unit copied from the MES operation snapshot.");
+
+                    b.Property<string>("WorkCenterId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("MES work center snapshot for the reported operation.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceReportNo")
+                        .IsUnique()
+                        .HasDatabaseName("ux_oee_production_facts_scope_source_report_no");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "ReportedAtUtc");
+
+                    b.ToTable("oee_production_facts", "industrial_telemetry", t =>
+                        {
+                            t.HasComment("MES production-report facts projected for explainable IndustrialTelemetry OEE calculations.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate.TelemetryRawSample", b =>
                 {
                     b.Property<Guid>("Id")

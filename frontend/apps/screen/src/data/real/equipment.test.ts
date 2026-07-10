@@ -12,6 +12,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleMaintenancePlans: vi.fn(),
   listBusinessConsoleMaintenanceInspections: vi.fn(),
   queryBusinessConsoleMaintenanceAssetReliability: vi.fn(),
+  queryBusinessConsoleTelemetryOee: vi.fn(),
 }))
 
 import * as api from '@nerv-iip/api-client'
@@ -346,6 +347,16 @@ describe('fetchRealDeviceDetail', () => {
         mttrMinutes: 42,
       }),
     )
+    vi.mocked(api.queryBusinessConsoleTelemetryOee).mockResolvedValue(
+      ok({
+        availabilityRate: 0.8,
+        performanceRate: 0.9,
+        qualityRate: 0.95,
+        oeeRate: 0.684,
+        isDegraded: false,
+        degradedReasons: [],
+      }),
+    )
     vi.mocked(api.listBusinessConsoleMaintenanceWorkOrders).mockResolvedValue(
       ok({
         items: [
@@ -370,6 +381,12 @@ describe('fetchRealDeviceDetail', () => {
     expect(det!.device.state).toBe('alarm') // 有 activeAlarms
     expect(det!.mtbfHours).toBe(76)
     expect(det!.mttrMinutes).toBe(42)
+    expect((det as unknown as { oee: { rate: number | null; availability: number | null } }).oee).toEqual(
+      expect.objectContaining({ rate: 0.684, availability: 0.8 }),
+    )
+    expect(api.queryBusinessConsoleTelemetryOee).toHaveBeenCalledWith(
+      expect.objectContaining({ query: expect.objectContaining({ deviceAssetId: 'DEV-OIL-02' }) }),
+    )
     expect(det!.repairs).toHaveLength(1)
     expect(det!.repairs[0].device).toBe('液压站')
     expect(det!.params).toEqual([]) // 趋势待 historian

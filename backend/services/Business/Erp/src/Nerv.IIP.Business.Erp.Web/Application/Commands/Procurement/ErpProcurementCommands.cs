@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
+using Nerv.IIP.Business.Erp.Web.Application.Wms;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 
@@ -1126,5 +1127,120 @@ public sealed class VoidSupplierInvoicePaymentHoldCommandHandler(ApplicationDbCo
         }
 
         return invoice.Id;
+    }
+}
+
+public sealed record RequestPurchaseOrderChangeCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string PurchaseOrderNo,
+    IReadOnlyCollection<PurchaseOrderLineChangeDraft> Lines,
+    string? Reason = null,
+    string StartedBy = "system:erp") : ICommand<string>;
+
+public sealed class RequestPurchaseOrderChangeCommandValidator : AbstractValidator<RequestPurchaseOrderChangeCommand>
+{
+    public RequestPurchaseOrderChangeCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.PurchaseOrderNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Lines).NotEmpty();
+        RuleForEach(x => x.Lines).ChildRules(line =>
+        {
+            line.RuleFor(x => x.LineNo).NotEmpty().MaximumLength(100);
+            line.RuleFor(x => x.OrderedQuantity).GreaterThan(0);
+            line.RuleFor(x => x.UnitPrice).GreaterThan(0);
+        });
+        RuleFor(x => x.Reason).MaximumLength(1000);
+        RuleFor(x => x.StartedBy).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class RequestPurchaseOrderChangeCommandHandler(
+    ApplicationDbContext dbContext,
+    IPurchaseOrderApprovalClient? approvalClient = null)
+    : ICommandHandler<RequestPurchaseOrderChangeCommand, string>
+{
+    private readonly IPurchaseOrderApprovalClient _approvalClient = approvalClient ?? new GeneratedPurchaseOrderApprovalClient();
+
+    public async Task<string> Handle(RequestPurchaseOrderChangeCommand request, CancellationToken cancellationToken)
+    {
+        var order = await dbContext.PurchaseOrders
+            .Include(x => x.Lines)
+            .Include(x => x.ChangeHistory)
+            .SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PurchaseOrderNo == request.PurchaseOrderNo, cancellationToken)
+            ?? throw new KnownException($"Purchase order '{request.PurchaseOrderNo}' was not found.");
+        try
+        {
+            var change = order.RequestChange(request.Lines, request.Reason);
+            var chainId = GeneratedPurchaseOrderApprovalClient.BuildChainId(
+                request.OrganizationId,
+                request.EnvironmentId,
+                $"{request.PurchaseOrderNo}:change:{Guid.CreateVersion7():N}");
+            var approval = await _approvalClient.StartApprovalAsync(
+                new PurchaseOrderApprovalRequest(request.OrganizationId, request.EnvironmentId, "erp-purchase-order-change", "business-erp", "purchase-order", request.PurchaseOrderNo, null, request.StartedBy, chainId),
+                cancellationToken);
+            change.AssignApprovalChain(approval.ChainId);
+            return approval.ChainId;
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+    }
+}
+
+public sealed record ClosePurchaseOrderLineCommand(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string LineNo, string Reason) : ICommand;
+
+public sealed class ClosePurchaseOrderLineCommandHandler(ApplicationDbContext dbContext) : ICommandHandler<ClosePurchaseOrderLineCommand>
+{
+    public async Task Handle(ClosePurchaseOrderLineCommand request, CancellationToken cancellationToken)
+    {
+        var order = await dbContext.PurchaseOrders.Include(x => x.Lines).Include(x => x.ChangeHistory).SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.PurchaseOrderNo == request.PurchaseOrderNo,
+            cancellationToken) ?? throw new KnownException($"Purchase order '{request.PurchaseOrderNo}' was not found.");
+        try { order.CloseRemainingLine(request.LineNo, request.Reason); }
+        catch (InvalidOperationException exception) { throw new KnownException(exception.Message, exception); }
+    }
+}
+
+public sealed record CancelPurchaseOrderCommand(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string Reason) : ICommand;
+
+public sealed class CancelPurchaseOrderCommandHandler(
+    ApplicationDbContext dbContext,
+    IWmsInboundCancellationClient wmsInboundCancellationClient) : ICommandHandler<CancelPurchaseOrderCommand>
+{
+    public async Task Handle(CancelPurchaseOrderCommand request, CancellationToken cancellationToken)
+    {
+        var order = await dbContext.PurchaseOrders.Include(x => x.Lines).Include(x => x.ChangeHistory).SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.PurchaseOrderNo == request.PurchaseOrderNo,
+            cancellationToken) ?? throw new KnownException($"Purchase order '{request.PurchaseOrderNo}' was not found.");
+        if (await dbContext.SupplierInvoices.AnyAsync(x => x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId && x.PurchaseOrderNo == request.PurchaseOrderNo, cancellationToken))
+        {
+            throw new KnownException("Purchase orders with supplier invoices cannot be cancelled.");
+        }
+
+        if (order.Status != PurchaseOrderStatus.Released)
+        {
+            throw new KnownException("Only released purchase orders can be cancelled.");
+        }
+
+        if (order.Lines.Any(x => x.ReceivedQuantity > 0m))
+        {
+            throw new KnownException("Purchase orders with received quantity cannot be cancelled.");
+        }
+
+        await wmsInboundCancellationClient.CancelOpenInboundOrdersForPurchaseOrderAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.PurchaseOrderNo,
+            request.Reason,
+            cancellationToken);
+        try { order.Cancel(request.Reason); }
+        catch (InvalidOperationException exception) { throw new KnownException(exception.Message, exception); }
     }
 }

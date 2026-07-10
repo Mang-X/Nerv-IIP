@@ -880,9 +880,11 @@ public sealed record BusinessConsoleConfirmStockCountAdjustmentRequest(
     string IdempotencyKey);
 
 public sealed record BusinessConsoleConfirmStockCountAdjustmentResponse(
-    string MovementId,
+    string? MovementId,
     decimal VarianceQuantity,
-    decimal OnHandQuantity);
+    decimal OnHandQuantity,
+    string Status,
+    string? ApprovalChainId);
 
 public sealed record BusinessConsoleQualityListRequest(
     string OrganizationId,
@@ -2293,6 +2295,8 @@ public sealed record BusinessConsoleErpPurchaseOrderLineItem(
     string UomCode,
     decimal OrderedQuantity,
     decimal ReceivedQuantity,
+    decimal OpenQuantity,
+    bool FinalDelivery,
     decimal UnitPrice,
     DateOnly PromisedDate,
     IReadOnlyCollection<BusinessConsoleErpPurchaseOrderLineSourceItem>? Sources = null);

@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
+using Nerv.IIP.Business.Inventory.Web.Application.Approval;
 using Nerv.IIP.Business.Inventory.Web.Application.Auth;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockLocations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
@@ -716,7 +717,7 @@ public sealed class InventoryEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new ConfirmStockCountAdjustmentCommandHandler(dbContext).Handle(
+            new ConfirmStockCountAdjustmentCommandHandler(dbContext, TestStockCountApprovalClient.Instance).Handle(
                 new ConfirmStockCountAdjustmentCommand(taskResult.CountTaskId, 9m, "idem-count-001"),
                 CancellationToken.None));
 
@@ -1325,14 +1326,14 @@ public sealed class InventoryEndpointContractTests
         var task = DomainCountTaskFactory.NewTask(ledger);
         dbContext.StockCountTasks.Add(task);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var handler = new ConfirmStockCountAdjustmentCommandHandler(dbContext);
+        var handler = new ConfirmStockCountAdjustmentCommandHandler(dbContext, TestStockCountApprovalClient.Instance);
         var command = new ConfirmStockCountAdjustmentCommand(task.Id, 7.5m, "idem-count-001");
         var first = await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         using var secondScope = provider.CreateScope();
         var secondDbContext = secondScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var second = await new ConfirmStockCountAdjustmentCommandHandler(secondDbContext).Handle(command, CancellationToken.None);
+        var second = await new ConfirmStockCountAdjustmentCommandHandler(secondDbContext, TestStockCountApprovalClient.Instance).Handle(command, CancellationToken.None);
 
         Assert.Equal(first.MovementId, second.MovementId);
         Assert.Equal(-2.5m, second.VarianceQuantity);
@@ -1357,7 +1358,7 @@ public sealed class InventoryEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new ConfirmStockCountAdjustmentCommandHandler(dbContext).Handle(
+            new ConfirmStockCountAdjustmentCommandHandler(dbContext, TestStockCountApprovalClient.Instance).Handle(
                 new ConfirmStockCountAdjustmentCommand(task.Id, 7m, "idem-count-reserved-001"),
                 CancellationToken.None));
 
@@ -1379,7 +1380,7 @@ public sealed class InventoryEndpointContractTests
         var task = DomainCountTaskFactory.NewTask(ledger);
         dbContext.StockCountTasks.Add(task);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new ConfirmStockCountAdjustmentCommandHandler(dbContext).Handle(
+        await new ConfirmStockCountAdjustmentCommandHandler(dbContext, TestStockCountApprovalClient.Instance).Handle(
             new ConfirmStockCountAdjustmentCommand(task.Id, 7.5m, "idem-count-001"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1387,7 +1388,7 @@ public sealed class InventoryEndpointContractTests
         using var secondScope = provider.CreateScope();
         var secondDbContext = secondScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new ConfirmStockCountAdjustmentCommandHandler(secondDbContext).Handle(
+            new ConfirmStockCountAdjustmentCommandHandler(secondDbContext, TestStockCountApprovalClient.Instance).Handle(
                 new ConfirmStockCountAdjustmentCommand(task.Id, 7m, "idem-count-001"),
                 CancellationToken.None));
 
@@ -1442,5 +1443,13 @@ public sealed class InventoryEndpointContractTests
             "company",
             "owner-001",
             idempotencyKey);
+    }
+
+    private sealed class TestStockCountApprovalClient : IStockCountApprovalClient
+    {
+        public static readonly TestStockCountApprovalClient Instance = new();
+
+        public Task<StockCountApprovalResult> StartApprovalAsync(StockCountApprovalRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(new StockCountApprovalResult("test-approval-chain"));
     }
 }

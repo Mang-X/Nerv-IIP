@@ -282,7 +282,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 设备监控（IoT） | `/equipment/telemetry/tags` | 已落地 | 采集标签正式 PC 页面，消费 BusinessGateway telemetry tags facade 和 `@nerv-iip/api-client` stable export；按设备筛选，行内跳设备详情、历史趋势和 OEE。 |
 | 设备监控（IoT） | `/equipment/telemetry/alarm-rules` | 已落地 | 报警规则正式 PC 页面，消费 alarm-rules list/create-or-update facade；列表按设备/启停筛选，维护动作使用 `business.iiot.alarm-rules.manage`，错误和保存结果有反馈。 |
 | 设备监控（IoT） | `/equipment/telemetry/history` | 已落地 | 历史趋势页面，按设备、采集标签和时间窗口查看真实 telemetry device history；不伪造实时曲线或独立大屏。 |
-| 设备监控（IoT） | `/equipment/telemetry/oee` | 已落地 | OEE/runtime availability 页面，消费 OEE 与 runtime-availability facade；P0 明确只把设备运行状态用于可用率，性能/质量不宣传为真实测量值。 |
+| 设备监控（IoT） | `/equipment/telemetry/oee` | 已落地 | OEE/runtime availability 页面，消费 OEE 与 runtime-availability facade；性能率由 MES 报工总产出与工序标准速率计算，质量率由良品/总产出计算，缺少状态、报工、单位或理论速率时显示明确的数据不完整原因而不伪造完整 OEE。 |
 | 系统管理 | `/mes/foundation` | 过渡/诊断 | 数据就绪检查只作为系统诊断，不是 MES 一线主菜单优先入口。 |
 
 ## Business Console 能力目录

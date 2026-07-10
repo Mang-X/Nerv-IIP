@@ -172,6 +172,27 @@ public sealed class ErpSchemaConventionTests
     }
 
     [Fact]
+    public void Order_revision_versions_are_optimistic_concurrency_tokens()
+    {
+        using var fixture = CreateFixture();
+
+        AssertVersionIsConcurrencyToken<PurchaseOrder>(fixture.DbContext.Model);
+        AssertVersionIsConcurrencyToken<SalesOrder>(fixture.DbContext.Model);
+    }
+
+    [Fact]
+    public void Order_revision_versions_are_optimistic_concurrency_tokens_in_migration_snapshot()
+    {
+        var snapshotType = typeof(ApplicationDbContext).Assembly.GetType(
+            "Nerv.IIP.Business.Erp.Infrastructure.Migrations.ApplicationDbContextModelSnapshot",
+            throwOnError: true);
+        var snapshot = Assert.IsAssignableFrom<ModelSnapshot>(Activator.CreateInstance(snapshotType!)!);
+
+        AssertVersionIsConcurrencyToken<PurchaseOrder>(snapshot.Model);
+        AssertVersionIsConcurrencyToken<SalesOrder>(snapshot.Model);
+    }
+
+    [Fact]
     public void Erp_procurement_schema_does_not_own_inventory_balance_or_warehouse_execution()
     {
         using var fixture = CreateFixture();
@@ -206,6 +227,18 @@ public sealed class ErpSchemaConventionTests
         return hasUniqueIndex
             ? []
             : [$"{ErpFacts.ServiceName}: processed integration event inbox requires a unique consumer/idempotency key index."];
+    }
+
+    private static void AssertVersionIsConcurrencyToken<TEntity>(IModel model)
+    {
+        var entity = model.FindEntityType(typeof(TEntity));
+        Assert.NotNull(entity);
+
+        var version = entity.FindProperty("Version");
+        Assert.NotNull(version);
+        Assert.True(
+            version.IsConcurrencyToken,
+            $"{typeof(TEntity).Name}.Version must be configured as an optimistic concurrency token.");
     }
 
     private static SchemaFixture CreateFixture()

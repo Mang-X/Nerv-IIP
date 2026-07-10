@@ -5509,6 +5509,8 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
                     line.UomCode,
                     line.OrderedQuantity,
                     line.ReceivedQuantity,
+                    line.OpenQuantity,
+                    line.FinalDelivery,
                     line.UnitPrice,
                     line.PromisedDate)).ToArray())).ToArray(),
             response.Total);
@@ -5521,7 +5523,7 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             return "no-lines";
         }
 
-        if (order.Lines.All(line => line.ReceivedQuantity >= line.OrderedQuantity))
+        if (order.Lines.All(line => line.OpenQuantity == 0m))
         {
             return "received";
         }
@@ -5566,6 +5568,8 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
         string UomCode,
         decimal OrderedQuantity,
         decimal ReceivedQuantity,
+        decimal OpenQuantity,
+        bool FinalDelivery,
         decimal UnitPrice,
         DateOnly PromisedDate);
 }

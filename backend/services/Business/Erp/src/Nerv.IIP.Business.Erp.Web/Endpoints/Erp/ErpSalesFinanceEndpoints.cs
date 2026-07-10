@@ -22,6 +22,8 @@ public sealed record CreateQuotationResponse(QuotationId QuotationId);
 public sealed record ApproveQuotationRequest(string OrganizationId, string EnvironmentId, string QuotationNo);
 public sealed record CreateSalesOrderRequest(string OrganizationId, string EnvironmentId, string? SalesOrderNo, string QuotationNo, string? IdempotencyKey = null);
 public sealed record CreateSalesOrderResponse(SalesOrderId SalesOrderId);
+public sealed record ChangeSalesOrderLineRequest(string OrganizationId, string EnvironmentId, string SalesOrderNo, string LineNo, decimal OrderedQuantity, decimal UnitPrice, DateOnly RequiredDate, string Reason);
+public sealed record CancelSalesOrderRequest(string OrganizationId, string EnvironmentId, string SalesOrderNo, string Reason);
 public sealed record ReleaseDeliveryOrderRequest(string OrganizationId, string EnvironmentId, string? DeliveryOrderNo, string SalesOrderNo, IReadOnlyCollection<DeliveryOrderCommandLine> Lines, string? IdempotencyKey = null);
 public sealed record ReleaseDeliveryOrderResponse(DeliveryOrderId DeliveryOrderId);
 public sealed record ListSalesOrdersRequest(
@@ -166,6 +168,28 @@ public sealed class CreateSalesOrderEndpoint(ISender sender) : ErpEndpoint<Creat
     {
         var id = await sender.Send(new CreateSalesOrderCommand(req.OrganizationId, req.EnvironmentId, req.SalesOrderNo, req.QuotationNo, req.IdempotencyKey), ct);
         await Send.OkAsync(new CreateSalesOrderResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ChangeSalesOrderLineEndpoint(ISender sender) : ErpEndpoint<ChangeSalesOrderLineRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpSalesEndpointContracts.Get<ChangeSalesOrderLineEndpoint>());
+
+    public override async Task HandleAsync(ChangeSalesOrderLineRequest req, CancellationToken ct)
+    {
+        await sender.Send(new ChangeSalesOrderLineCommand(req.OrganizationId, req.EnvironmentId, req.SalesOrderNo, req.LineNo, req.OrderedQuantity, req.UnitPrice, req.RequiredDate, req.Reason), ct);
+        await Send.OkAsync("changed".AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CancelSalesOrderEndpoint(ISender sender) : ErpEndpoint<CancelSalesOrderRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpSalesEndpointContracts.Get<CancelSalesOrderEndpoint>());
+
+    public override async Task HandleAsync(CancelSalesOrderRequest req, CancellationToken ct)
+    {
+        await sender.Send(new CancelSalesOrderCommand(req.OrganizationId, req.EnvironmentId, req.SalesOrderNo, req.Reason), ct);
+        await Send.OkAsync("cancelled".AsResponseData(), cancellation: ct);
     }
 }
 
@@ -467,6 +491,8 @@ public static class ErpSalesEndpointContracts
         new(typeof(ListQuotationsEndpoint), "GET", "/api/business/v1/erp/quotations", ErpPermissionCodes.SalesRead, InternalServiceAuthorizationPolicy.Name, "listErpQuotations"),
         new(typeof(ApproveQuotationEndpoint), "POST", "/api/business/v1/erp/quotations/{quotationId}/approve", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "approveErpQuotation"),
         new(typeof(CreateSalesOrderEndpoint), "POST", "/api/business/v1/erp/sales-orders", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "createErpSalesOrder"),
+        new(typeof(ChangeSalesOrderLineEndpoint), "POST", "/api/business/v1/erp/sales-orders/{salesOrderNo}/lines/{lineNo}", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "changeErpSalesOrderLine"),
+        new(typeof(CancelSalesOrderEndpoint), "POST", "/api/business/v1/erp/sales-orders/{salesOrderNo}/cancel", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "cancelErpSalesOrder"),
         new(typeof(ReleaseDeliveryOrderEndpoint), "POST", "/api/business/v1/erp/delivery-orders", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "releaseErpDeliveryOrder"),
         new(typeof(ListDeliveryOrdersEndpoint), "GET", "/api/business/v1/erp/delivery-orders", ErpPermissionCodes.SalesRead, InternalServiceAuthorizationPolicy.Name, "listErpDeliveryOrders"),
         new(typeof(ListSalesOrdersEndpoint), "GET", "/api/business/v1/erp/sales-orders", ErpPermissionCodes.SalesRead, InternalServiceAuthorizationPolicy.Name, "listErpSalesOrders"),

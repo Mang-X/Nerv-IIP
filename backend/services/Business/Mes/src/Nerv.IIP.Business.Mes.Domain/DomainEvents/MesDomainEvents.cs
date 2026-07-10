@@ -26,7 +26,15 @@ public sealed record WorkOrderCancelledDomainEvent(
     string Reason,
     IReadOnlyCollection<string> MaterialIssueRequestNos) : IDomainEvent;
 
-public sealed record ProductionReportRecordedDomainEvent(ProductionReport ProductionReport) : IDomainEvent;
+public sealed record ProductionReportOeeProjection(
+    string WorkCenterId,
+    string? DeviceAssetId,
+    string UomCode,
+    decimal? TheoreticalRatePerHour);
+
+public sealed record ProductionReportRecordedDomainEvent(
+    ProductionReport ProductionReport,
+    ProductionReportOeeProjection? OeeProjection = null) : IDomainEvent;
 
 public sealed record ProductionMaterialConsumedDomainEvent(ProductionReportMaterialConsumption MaterialConsumption) : IDomainEvent;
 

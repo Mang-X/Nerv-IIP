@@ -1090,6 +1090,12 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("total_amount")
                         .HasComment("Purchase order total amount.");
 
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("version")
+                        .HasComment("Monotonic purchase order revision number.");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "PurchaseOrderNo")
@@ -1098,6 +1104,117 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                     b.ToTable("purchase_orders", "erp", t =>
                         {
                             t.HasComment("ERP purchase order header.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderChange", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id")
+                        .HasComment("Purchase order change audit row id.");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ApprovalChainId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("approval_chain_id")
+                        .HasComment("BusinessApproval chain id for a pending purchase order amendment.");
+
+                    b.Property<string>("ChangeType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("change_type")
+                        .HasComment("Change category: amend, final-delivery, or cancel.");
+
+                    b.Property<Guid>("PurchaseOrderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("purchase_order_id")
+                        .HasComment("Owning purchase order id.");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("reason")
+                        .HasComment("Business reason for the order change.");
+
+                    b.Property<DateTime>("RequestedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("requested_at_utc")
+                        .HasComment("UTC time when the change was requested.");
+
+                    b.Property<DateTime?>("ResolvedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolved_at_utc")
+                        .HasComment("UTC time when the change was approved, rejected, or applied.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("Approval or application status for the purchase order change.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PurchaseOrderId", "ApprovalChainId")
+                        .IsUnique();
+
+                    b.ToTable("purchase_order_changes", "erp", t =>
+                        {
+                            t.HasComment("Auditable purchase order amendment, final-delivery, and cancellation records.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderChangeLine", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id")
+                        .HasComment("Purchase order change line audit row id.");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("LineNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("line_no")
+                        .HasComment("Purchase order line number being changed.");
+
+                    b.Property<decimal>("OrderedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("ordered_quantity")
+                        .HasComment("Approved target ordered quantity.");
+
+                    b.Property<DateOnly>("PromisedDate")
+                        .HasColumnType("date")
+                        .HasColumnName("promised_date")
+                        .HasComment("Approved target promised receipt date.");
+
+                    b.Property<long>("PurchaseOrderChangeId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("purchase_order_change_id")
+                        .HasComment("Owning purchase order change audit row id.");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("unit_price")
+                        .HasComment("Approved target unit price.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PurchaseOrderChangeId");
+
+                    b.ToTable("purchase_order_change_lines", "erp", t =>
+                        {
+                            t.HasComment("Auditable target values for a purchase order line amendment.");
                         });
                 });
 
@@ -1828,6 +1945,12 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("total_amount")
                         .HasComment("Sales order total amount.");
 
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("version")
+                        .HasComment("Monotonic sales order revision number.");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SalesOrderNo")
@@ -1839,12 +1962,67 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate.SalesOrderChange", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id")
+                        .HasComment("Sales order change audit row id.");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ChangeType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("change_type")
+                        .HasComment("Change category: amend, cancel-line, or cancel.");
+
+                    b.Property<DateTime>("ChangedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("changed_at_utc")
+                        .HasComment("UTC time when the sales order change was applied.");
+
+                    b.Property<string>("LineNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("line_no")
+                        .HasComment("Optional sales order line number affected by the change.");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("reason")
+                        .HasComment("Business reason for the sales order change.");
+
+                    b.Property<Guid>("SalesOrderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sales_order_id")
+                        .HasComment("Owning sales order id.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SalesOrderId");
+
+                    b.ToTable("sales_order_changes", "erp", t =>
+                        {
+                            t.HasComment("Auditable sales order amendment and cancellation records.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate.SalesOrderLine", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasComment("Sales order line id.");
+
+                    b.Property<bool>("Cancelled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("cancelled")
+                        .HasComment("Whether the unfulfilled sales order line was cancelled.");
 
                     b.Property<decimal>("DeliveredQuantity")
                         .HasPrecision(18, 6)
@@ -2632,6 +2810,24 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderChange", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrder", null)
+                        .WithMany("ChangeHistory")
+                        .HasForeignKey("PurchaseOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderChangeLine", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderChange", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("PurchaseOrderChangeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderLine", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrder", null)
@@ -2686,6 +2882,15 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate.SalesOrderChange", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate.SalesOrder", null)
+                        .WithMany("ChangeHistory")
+                        .HasForeignKey("SalesOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate.SalesOrderLine", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate.SalesOrder", null)
@@ -2735,6 +2940,13 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
 
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrder", b =>
                 {
+                    b.Navigation("ChangeHistory");
+
+                    b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderChange", b =>
+                {
                     b.Navigation("Lines");
                 });
 
@@ -2762,6 +2974,8 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
 
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate.SalesOrder", b =>
                 {
+                    b.Navigation("ChangeHistory");
+
                     b.Navigation("Lines");
                 });
 

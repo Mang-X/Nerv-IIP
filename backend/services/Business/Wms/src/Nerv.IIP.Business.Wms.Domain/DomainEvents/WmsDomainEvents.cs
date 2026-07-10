@@ -20,6 +20,8 @@ public sealed record WcsTaskDispatchedDomainEvent(WcsTask WcsTask) : IDomainEven
 
 public sealed record WcsTaskFailedDomainEvent(WcsTask WcsTask) : IDomainEvent;
 
+public sealed record WcsTaskRetryExhaustedDomainEvent(WcsTask WcsTask) : IDomainEvent;
+
 public sealed record WcsTaskCompletedDomainEvent(WcsTask WcsTask) : IDomainEvent;
 
 public sealed record WcsTaskCancelledDomainEvent(WcsTask WcsTask) : IDomainEvent;

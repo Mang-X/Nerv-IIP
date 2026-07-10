@@ -144,6 +144,36 @@ public sealed class ErpSalesFinanceAggregateTests
     }
 
     [Fact]
+    public void Sales_order_changes_and_cancellation_only_apply_to_unfulfilled_lines_and_release_open_exposure()
+    {
+        var quotation = Quotation.Create(
+            "org-001",
+            "env-dev",
+            "QT-CHANGE-001",
+            "CUST-001",
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10)),
+            [
+                new QuotationLineDraft("L1", "SKU-FG", "ea", 2m, 10m, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(20))),
+                new QuotationLineDraft("L2", "SKU-PKG", "ea", 3m, 4m, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(20))),
+            ]);
+        quotation.Approve();
+        var order = SalesOrder.CreateFromQuotation("SO-CHANGE-001", quotation);
+
+        order.ChangeLine("L1", 4m, 11m, new DateOnly(2026, 7, 1), "customer change");
+        order.CancelLine("L2", "customer removed line");
+
+        Assert.Equal(44m, order.OpenExposureAmount);
+        Assert.Equal(44m, order.TotalAmount);
+        Assert.Equal(3, order.Version);
+        Assert.Equal(2, order.ChangeHistory.Count);
+        Assert.True(order.Lines.Single(x => x.LineNo == "L2").Cancelled);
+
+        order.RegisterDelivery("L1", 1m);
+        Assert.Throws<InvalidOperationException>(() => order.ChangeLine("L1", 3m, 11m, new DateOnly(2026, 7, 2), "late change"));
+        Assert.Throws<InvalidOperationException>(() => order.Cancel("cannot cancel shipped order"));
+    }
+
+    [Fact]
     public void Delivery_order_lines_keep_wms_outbound_dimensions_from_sales_order()
     {
         var quotation = Quotation.Create(

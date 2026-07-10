@@ -227,6 +227,30 @@
     },
     {
       "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/v1/barcodes/print-batches/{printBatchId}/dispatch",
+      "operationId": "dispatchBusinessBarcodePrintBatch",
+      "classification": "internal",
+      "rationale": "Printer transport dispatch is a trusted printer-agent operation; the Business Console only observes lifecycle facts."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/reprint",
+      "operationId": "reprintBusinessBarcodeLabel",
+      "classification": "internal",
+      "rationale": "Reprint is executed by a trusted printer-agent after local printer selection and transport validation."
+    },
+    {
+      "service": "BarcodeLabel",
+      "method": "POST",
+      "route": "/api/business/v1/barcodes/print-batches/{printBatchId}/items/{sequenceNo}/void",
+      "operationId": "voidBusinessBarcodeLabel",
+      "classification": "internal",
+      "rationale": "Void is a label lifecycle command for trusted operational clients; existing facade read surfaces expose the resulting state."
+    },
+    {
+      "service": "BarcodeLabel",
       "method": "GET",
       "route": "/api/business/v1/barcodes/print-batches/{printBatchId}",
       "operationId": "getBusinessBarcodePrintBatch",
@@ -881,6 +905,30 @@
     {
       "service": "Erp",
       "method": "POST",
+      "route": "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/changes",
+      "operationId": "requestErpPurchaseOrderChange",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; purchase-order amendment approval follows the ERP order-management Business Console menu phase."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/final-delivery",
+      "operationId": "closeErpPurchaseOrderLineFinalDelivery",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; final-delivery closure follows the ERP order-management Business Console menu phase."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/cancel",
+      "operationId": "cancelErpPurchaseOrder",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; purchase-order cancellation follows the ERP order-management Business Console menu phase."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
       "route": "/api/business/v1/erp/purchase-receipts",
       "operationId": "recordErpPurchaseReceipt",
       "classification": "exposed",
@@ -1028,6 +1076,22 @@
       "gatewayOperationIds": [
         "createBusinessConsoleErpSalesOrder"
       ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/sales-orders/{salesOrderNo}/lines/{lineNo}",
+      "operationId": "changeErpSalesOrderLine",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; sales-order amendment follows the ERP order-management Business Console menu phase."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/sales-orders/{salesOrderNo}/cancel",
+      "operationId": "cancelErpSalesOrder",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; sales-order cancellation follows the ERP order-management Business Console menu phase."
     },
     {
       "service": "Erp",
@@ -3397,6 +3461,38 @@
     },
     {
       "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/measuring-devices",
+      "operationId": "createBusinessQualityMeasuringDevice",
+      "classification": "deferred",
+      "followUp": "BusinessGateway measuring-device management facade follows the Quality calibration workbench menu phase."
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/measuring-devices/{measuringDeviceId}/calibrations",
+      "operationId": "recordBusinessQualityMeasuringDeviceCalibration",
+      "classification": "deferred",
+      "followUp": "BusinessGateway calibration-record facade follows the Quality calibration workbench menu phase."
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/measuring-devices/{measuringDeviceId}/status",
+      "operationId": "changeBusinessQualityMeasuringDeviceStatus",
+      "classification": "deferred",
+      "followUp": "BusinessGateway measuring-device lifecycle facade follows the Quality calibration workbench menu phase."
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/measuring-devices/calibration-dashboard",
+      "operationId": "getBusinessQualityCalibrationDashboard",
+      "classification": "deferred",
+      "followUp": "BusinessGateway calibration dashboard facade follows the Quality calibration workbench menu phase."
+    },
+    {
+      "service": "Quality",
       "method": "GET",
       "route": "/api/business/v1/quality/ncrs",
       "operationId": "listBusinessQualityNcrs",
@@ -3711,6 +3807,14 @@
     {
       "service": "Wms",
       "method": "POST",
+      "route": "/api/business/v1/wms/inbound-orders/cancel-by-source",
+      "operationId": "cancelWmsInboundOrdersForSource",
+      "classification": "internal",
+      "rationale": "Service-to-service ERP purchase-order cancellation closes matching open WMS inbound expectations; it is not a direct console action."
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
       "route": "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete",
       "operationId": "completeWmsInboundOrder",
       "classification": "exposed",
@@ -3929,6 +4033,22 @@
       "gatewayOperationIds": [
         "dispatchBusinessConsoleWmsWcsTask"
       ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/wcs-dispatch-circuits",
+      "operationId": "listWmsWcsDispatchCircuits",
+      "classification": "internal",
+      "rationale": "WCS circuit diagnostics are an internal operations surface until a dedicated business-console reliability page is delivered."
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/wcs-dispatch-circuits/reset",
+      "operationId": "resetWmsWcsDispatchCircuit",
+      "classification": "internal",
+      "rationale": "Manual WCS circuit reset is an internal guarded operations action and is not exposed through the business-console facade."
     }
   ]
 }

@@ -205,6 +205,8 @@ public sealed record PurchaseOrderLineResponse(
     string UomCode,
     decimal OrderedQuantity,
     decimal ReceivedQuantity,
+    decimal OpenQuantity,
+    bool FinalDelivery,
     decimal UnitPrice,
     DateOnly PromisedDate,
     IReadOnlyCollection<PurchaseOrderLineSourceResponse> Sources);
@@ -264,6 +266,8 @@ public sealed class ListPurchaseOrdersQueryHandler(ApplicationDbContext dbContex
                         line.UomCode,
                         line.OrderedQuantity,
                         line.ReceivedQuantity,
+                        line.FinalDelivery ? 0m : Math.Max(line.OrderedQuantity - line.ReceivedQuantity, 0m),
+                        line.FinalDelivery,
                         line.UnitPrice,
                         line.PromisedDate,
                         line.SourceLinks

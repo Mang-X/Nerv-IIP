@@ -10,6 +10,7 @@ public static class MesIntegrationEventTypes
     public const string WorkOrderEngineeringChangeImpactDetected = "mes.WorkOrderEngineeringChangeImpactDetected";
     public const string OperationTaskCompleted = "mes.OperationTaskCompleted";
     public const string FinishedGoodsReceiptRequested = "mes.FinishedGoodsReceiptRequested";
+    public const string ProductionReportRecorded = "mes.ProductionReportRecorded";
 }
 
 public static class MesIntegrationEventVersions
@@ -162,6 +163,38 @@ public sealed record OperationTaskCompletedPayload(
     string UomCode,
     bool RequiresQualityInspection,
     DateTimeOffset CompletedAtUtc);
+
+public sealed record ProductionReportRecordedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    ProductionReportRecordedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record ProductionReportRecordedPayload(
+    string ReportNo,
+    string WorkOrderId,
+    string OperationTaskId,
+    string WorkCenterId,
+    string? DeviceAssetId,
+    decimal GoodQuantity,
+    decimal ScrapQuantity,
+    decimal ReworkQuantity,
+    string UomCode,
+    decimal? TheoreticalRatePerHour,
+    DateTimeOffset ReportedAtUtc,
+    bool IsReversal,
+    string? ReversedReportNo = null);
 
 public sealed record FinishedGoodsReceiptRequestedIntegrationEvent(
     string EventId,

@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
+using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.Messaging.CAP;
@@ -37,13 +38,14 @@ public sealed class WmsEndpointContractTests
     {
         var contracts = WmsEndpointContracts.All.ToArray();
 
-        Assert.Equal(24, contracts.Length);
+        Assert.Equal(27, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsInboundOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsPutawayTask");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/putaway-tasks" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsPutawayTasks");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "completeWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "retryWmsInboundInventoryPosting");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/cancel-by-source" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "cancelWmsInboundOrdersForSource");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "createWmsOutboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/outbound-orders" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "listWmsOutboundOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "createWmsPickingTask");
@@ -57,12 +59,39 @@ public sealed class WmsEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/count-executions" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsCountExecutions");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/count-executions/{countExecutionId}/complete" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "completeWmsCountExecution");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "dispatchWmsWcsTask");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/wcs-dispatch-circuits" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "listWmsWcsDispatchCircuits");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-dispatch-circuits/reset" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "resetWmsWcsDispatchCircuit");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-tasks/{externalTaskId}/complete" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "completeWmsWcsTask");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-tasks/{externalTaskId}/fail" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "failWmsWcsTask");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/wcs-tasks" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "listWmsWcsTasks");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/receiving-quality-gates" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsReceivingQualityGates");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/supplier-return-requests" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsSupplierReturnRequests");
         Assert.All(contracts, x => Assert.Equal(InternalServiceAuthorizationPolicy.Name, x.AuthorizationPolicy));
+    }
+
+    [Fact]
+    public async Task Cancelling_inbound_expectations_by_source_only_closes_matching_open_orders()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var matching = InboundOrder.Create(
+            "org-001", "env-dev", "IN-PO-001", "purchase-order", "PO-001", "SITE-01",
+            [new InboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "STAGE-01", null, null, "qualified", "company", null)]);
+        var unrelated = InboundOrder.Create(
+            "org-001", "env-dev", "IN-PO-002", "purchase-order", "PO-002", "SITE-01",
+            [new InboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "STAGE-01", null, null, "qualified", "company", null)]);
+        dbContext.InboundOrders.AddRange(matching, unrelated);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var cancelled = await new CancelInboundOrdersForSourceCommandHandler(dbContext).Handle(
+            new CancelInboundOrdersForSourceCommand("org-001", "env-dev", "purchase-order", "PO-001", "purchase-order-cancelled"),
+            CancellationToken.None);
+
+        Assert.Equal(1, cancelled);
+        Assert.Equal("Cancelled", matching.Status.ToString());
+        Assert.Equal("purchase-order-cancelled", matching.CancellationReason);
+        Assert.Equal("Open", unrelated.Status.ToString());
     }
 
     [Theory]
@@ -186,7 +215,7 @@ public sealed class WmsEndpointContractTests
         dbContext.WarehouseTasks.AddRange(warehouseTask, otherTenantTask);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var commandHandler = new Application.Commands.DispatchWcsTaskCommandHandler(dbContext);
+        var commandHandler = new Application.Commands.DispatchWcsTaskCommandHandler(dbContext, new WcsTestTimeProvider(DateTimeOffset.UtcNow.AddMinutes(2)));
         await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(warehouseTask.Id, "agv", "EXT-001", """{"step":1}"""), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new Application.Commands.FailWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.FailWcsTaskCommand("org-001", "env-dev", "EXT-001", "PLC_TIMEOUT", "PLC timeout"), CancellationToken.None);
@@ -569,6 +598,7 @@ public sealed class WmsEndpointContractTests
             builder.UseSetting("environment", "Testing");
             builder.UseSetting("InternalService:BearerToken", "test-internal-token");
             builder.UseSetting("Inventory:BaseUrl", "http://inventory.local");
+            builder.UseSetting("Wcs:Retry:InitialRetryBackoff", "00:00:00");
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<ApplicationDbContext>();

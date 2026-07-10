@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
+using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.WcsAdapters;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.Localization;
@@ -28,6 +29,8 @@ try
     builder.Services.AddNervIipObservability(builder.Configuration, "business-wms");
 
     builder.Services.AddHealthChecks();
+    builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.Configure<WcsRetryOptions>(builder.Configuration.GetSection("Wcs:Retry"));
     builder.Services.AddMvc();
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
