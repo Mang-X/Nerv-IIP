@@ -7536,6 +7536,8 @@ internal sealed class RecordingErpClient : IBusinessErpClient
                             "EA",
                             120m,
                             40m,
+                            80m,
+                            false,
                             20m,
                             DateOnly.Parse("2026-06-06")),
                     ]),
