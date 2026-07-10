@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
+using Nerv.IIP.Business.Erp.Web.Application.Wms;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 
@@ -1175,7 +1176,10 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
         try
         {
             var change = order.RequestChange(request.Lines, request.Reason);
-            var chainId = GeneratedPurchaseOrderApprovalClient.BuildChainId(request.OrganizationId, request.EnvironmentId, $"{request.PurchaseOrderNo}:change:{change.Id}");
+            var chainId = GeneratedPurchaseOrderApprovalClient.BuildChainId(
+                request.OrganizationId,
+                request.EnvironmentId,
+                $"{request.PurchaseOrderNo}:change:{Guid.CreateVersion7():N}");
             var approval = await _approvalClient.StartApprovalAsync(
                 new PurchaseOrderApprovalRequest(request.OrganizationId, request.EnvironmentId, "erp-purchase-order-change", "business-erp", "purchase-order", request.PurchaseOrderNo, null, request.StartedBy, chainId),
                 cancellationToken);
@@ -1205,7 +1209,9 @@ public sealed class ClosePurchaseOrderLineCommandHandler(ApplicationDbContext db
 
 public sealed record CancelPurchaseOrderCommand(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string Reason) : ICommand;
 
-public sealed class CancelPurchaseOrderCommandHandler(ApplicationDbContext dbContext) : ICommandHandler<CancelPurchaseOrderCommand>
+public sealed class CancelPurchaseOrderCommandHandler(
+    ApplicationDbContext dbContext,
+    IWmsInboundCancellationClient wmsInboundCancellationClient) : ICommandHandler<CancelPurchaseOrderCommand>
 {
     public async Task Handle(CancelPurchaseOrderCommand request, CancellationToken cancellationToken)
     {
@@ -1218,6 +1224,22 @@ public sealed class CancelPurchaseOrderCommandHandler(ApplicationDbContext dbCon
             throw new KnownException("Purchase orders with supplier invoices cannot be cancelled.");
         }
 
+        if (order.Status != PurchaseOrderStatus.Released)
+        {
+            throw new KnownException("Only released purchase orders can be cancelled.");
+        }
+
+        if (order.Lines.Any(x => x.ReceivedQuantity > 0m))
+        {
+            throw new KnownException("Purchase orders with received quantity cannot be cancelled.");
+        }
+
+        await wmsInboundCancellationClient.CancelOpenInboundOrdersForPurchaseOrderAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.PurchaseOrderNo,
+            request.Reason,
+            cancellationToken);
         try { order.Cancel(request.Reason); }
         catch (InvalidOperationException exception) { throw new KnownException(exception.Message, exception); }
     }

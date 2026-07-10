@@ -54,6 +54,8 @@ public sealed record CompleteWarehouseTaskRequest(WarehouseTaskId WarehouseTaskI
 public sealed record CompleteInboundOrderRequest(InboundOrderId InboundOrderId, string IdempotencyKey);
 public sealed record CompleteMovementResponse(InventoryMovementRequestId? RequestId, string? InventoryMovementId);
 public sealed record RetryInboundInventoryPostingRequest(InboundOrderId InboundOrderId, string IdempotencyKey);
+public sealed record CancelInboundOrdersForSourceRequest(string OrganizationId, string EnvironmentId, string SourceDocumentType, string SourceDocumentId, string Reason);
+public sealed record CancelInboundOrdersForSourceResponse(int CancelledCount);
 public sealed record CreateOutboundOrderRequest(string OrganizationId, string EnvironmentId, string OutboundOrderNo, string SourceDocumentType, string SourceDocumentId, string SiteCode, IReadOnlyCollection<WmsOutboundLineInput> Lines);
 public sealed record CreateOutboundOrderResponse(OutboundOrderId OutboundOrderId);
 public sealed record ListOutboundOrdersRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
@@ -147,6 +149,19 @@ public sealed class RetryInboundInventoryPostingEndpoint(ISender sender) : WmsEn
     {
         var result = await sender.Send(new RetryInboundInventoryPostingCommand(req.InboundOrderId, req.IdempotencyKey), ct);
         await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CancelInboundOrdersForSourceEndpoint(ISender sender) : WmsEndpoint<CancelInboundOrdersForSourceRequest, ResponseData<CancelInboundOrdersForSourceResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CancelInboundOrdersForSourceEndpoint>());
+
+    public override async Task HandleAsync(CancelInboundOrdersForSourceRequest req, CancellationToken ct)
+    {
+        var cancelledCount = await sender.Send(
+            new CancelInboundOrdersForSourceCommand(req.OrganizationId, req.EnvironmentId, req.SourceDocumentType, req.SourceDocumentId, req.Reason),
+            ct);
+        await Send.OkAsync(new CancelInboundOrdersForSourceResponse(cancelledCount).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -342,6 +357,7 @@ public static class WmsEndpointContracts
         new(typeof(ListPutawayTasksEndpoint), "GET", "/api/business/v1/wms/putaway-tasks", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsPutawayTasks"),
         new(typeof(CompleteInboundOrderEndpoint), "POST", "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsInboundOrder"),
         new(typeof(RetryInboundInventoryPostingEndpoint), "POST", "/api/business/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "retryWmsInboundInventoryPosting"),
+        new(typeof(CancelInboundOrdersForSourceEndpoint), "POST", "/api/business/v1/wms/inbound-orders/cancel-by-source", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "cancelWmsInboundOrdersForSource"),
         new(typeof(CreateOutboundOrderEndpoint), "POST", "/api/business/v1/wms/outbound-orders", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "createWmsOutboundOrder"),
         new(typeof(ListOutboundOrdersEndpoint), "GET", "/api/business/v1/wms/outbound-orders", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "listWmsOutboundOrders"),
         new(typeof(CreatePickingTaskEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "createWmsPickingTask"),

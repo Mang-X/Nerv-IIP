@@ -3751,6 +3751,14 @@
     {
       "service": "Wms",
       "method": "POST",
+      "route": "/api/business/v1/wms/inbound-orders/cancel-by-source",
+      "operationId": "cancelWmsInboundOrdersForSource",
+      "classification": "internal",
+      "rationale": "Service-to-service ERP purchase-order cancellation closes matching open WMS inbound expectations; it is not a direct console action."
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
       "route": "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete",
       "operationId": "completeWmsInboundOrder",
       "classification": "exposed",

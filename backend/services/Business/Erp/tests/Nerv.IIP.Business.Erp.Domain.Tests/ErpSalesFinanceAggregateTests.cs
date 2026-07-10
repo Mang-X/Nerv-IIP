@@ -163,6 +163,7 @@ public sealed class ErpSalesFinanceAggregateTests
         order.CancelLine("L2", "customer removed line");
 
         Assert.Equal(44m, order.OpenExposureAmount);
+        Assert.Equal(44m, order.TotalAmount);
         Assert.Equal(3, order.Version);
         Assert.Equal(2, order.ChangeHistory.Count);
         Assert.True(order.Lines.Single(x => x.LineNo == "L2").Cancelled);

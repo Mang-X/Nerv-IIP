@@ -45,6 +45,10 @@ try
     {
         client.BaseAddress = wmsBaseAddress;
     }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<IWmsInboundCancellationClient, HttpWmsInboundCancellationClient>(client =>
+    {
+        client.BaseAddress = wmsBaseAddress;
+    }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services
         .AddFastEndpoints(o => o.IncludeAbstractValidators = true)

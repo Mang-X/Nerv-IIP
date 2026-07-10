@@ -133,6 +133,22 @@ public sealed class ErpProcurementAggregateTests
     }
 
     [Fact]
+    public void Purchase_order_change_rejects_duplicate_line_numbers_with_domain_error()
+    {
+        var order = PurchaseOrder.Create("org-001", "env-dev", "PO-DUP-001", "SUP-001", "SITE-01", [NewPurchaseOrderLine(quantity: 10m)]);
+        order.MarkApprovalRequested("approval-dup");
+        order.ReleaseAfterApproval("approval-dup");
+
+        var exception = Assert.Throws<InvalidOperationException>(() => order.RequestChange(
+            [
+                new PurchaseOrderLineChangeDraft("LINE-001", 9m, 12.5m, new DateOnly(2026, 6, 4)),
+                new PurchaseOrderLineChangeDraft("LINE-001", 8m, 12.5m, new DateOnly(2026, 6, 5)),
+            ]));
+
+        Assert.Equal("Purchase order change cannot contain duplicate lines.", exception.Message);
+    }
+
+    [Fact]
     public void Purchase_order_final_delivery_closes_remaining_quantity_and_cancellation_rejects_received_orders()
     {
         var order = PurchaseOrder.Create(

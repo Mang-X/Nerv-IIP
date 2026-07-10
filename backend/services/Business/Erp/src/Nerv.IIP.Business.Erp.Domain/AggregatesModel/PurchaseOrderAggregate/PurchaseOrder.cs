@@ -198,11 +198,11 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
             throw new ArgumentException("At least one purchase order line change is required.", nameof(lineChanges));
         }
 
-        var normalized = lineChanges
-            .GroupBy(x => ErpText.Required(x.LineNo, nameof(x.LineNo)), StringComparer.Ordinal)
-            .Select(group => group.Single())
+        var normalized = lineChanges.ToArray();
+        var lineNumbers = normalized
+            .Select(change => ErpText.Required(change.LineNo, nameof(change.LineNo)))
             .ToArray();
-        if (normalized.Length != lineChanges.Count)
+        if (lineNumbers.Distinct(StringComparer.Ordinal).Count() != lineNumbers.Length)
         {
             throw new InvalidOperationException("Purchase order change cannot contain duplicate lines.");
         }

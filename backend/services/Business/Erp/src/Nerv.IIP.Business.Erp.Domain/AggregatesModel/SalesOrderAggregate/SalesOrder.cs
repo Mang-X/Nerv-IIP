@@ -100,6 +100,7 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
         var line = FindLine(lineNo);
         line.Change(orderedQuantity, unitPrice, requiredDate);
         changeHistory.Add(SalesOrderChange.Create("amend", line.LineNo, reason));
+        RecalculateTotalAmount();
         Version++;
     }
 
@@ -109,6 +110,7 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
         var line = FindLine(lineNo);
         line.Cancel();
         changeHistory.Add(SalesOrderChange.Create("cancel-line", line.LineNo, reason));
+        RecalculateTotalAmount();
         Version++;
         if (lines.All(x => x.Cancelled))
         {
@@ -129,6 +131,7 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
             line.Cancel();
         }
 
+        RecalculateTotalAmount();
         changeHistory.Add(SalesOrderChange.Create("cancel", null, reason));
         Version++;
         Status = "cancelled";
@@ -138,6 +141,13 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
     {
         return lines.SingleOrDefault(x => x.LineNo == ErpText.Required(lineNo, nameof(lineNo)))
             ?? throw new InvalidOperationException($"Sales order line '{lineNo}' was not found.");
+    }
+
+    private void RecalculateTotalAmount()
+    {
+        TotalAmount = lines
+            .Where(line => !line.Cancelled)
+            .Sum(line => line.LineAmount);
     }
 
     private void EnsureChangeable()
