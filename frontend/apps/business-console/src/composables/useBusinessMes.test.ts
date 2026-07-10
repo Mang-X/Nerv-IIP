@@ -3,6 +3,7 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
+  cancelBusinessConsoleMesWorkOrderMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
@@ -44,6 +45,7 @@ import {
   useMesShiftHandovers,
   useMesTraceability,
   useMesWipSummary,
+  useMesWorkOrderDetail,
   useMesWorkOrders,
 } from './useBusinessMes'
 import { useBusinessContextStore } from '@/stores/businessContext'
@@ -63,6 +65,12 @@ vi.mock('@nerv-iip/api-client', () => ({
     })),
   })),
   assignBusinessConsoleMesDispatchTaskMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  cancelBusinessConsoleMesWorkOrderMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
@@ -398,15 +406,29 @@ describe('business MES composables', () => {
     useMesWipSummary()
     useMesCapacityImpacts()
 
-    expect(coladaState.queryFactoriesById.get('listBusinessConsoleMesWorkOrders')?.()).toMatchObject({ enabled: false })
-    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesOverview')?.()).toMatchObject({ enabled: false })
-    expect(coladaState.queryFactoriesById.get('listBusinessConsoleMesProductionPlans')?.()).toMatchObject({ enabled: false })
-    expect(coladaState.queryFactoriesById.get('listBusinessConsoleMesOperationTasks')?.()).toMatchObject({ enabled: false })
+    expect(
+      coladaState.queryFactoriesById.get('listBusinessConsoleMesWorkOrders')?.(),
+    ).toMatchObject({ enabled: false })
+    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesOverview')?.()).toMatchObject({
+      enabled: false,
+    })
+    expect(
+      coladaState.queryFactoriesById.get('listBusinessConsoleMesProductionPlans')?.(),
+    ).toMatchObject({ enabled: false })
+    expect(
+      coladaState.queryFactoriesById.get('listBusinessConsoleMesOperationTasks')?.(),
+    ).toMatchObject({ enabled: false })
     const sops = useMesCurrentOperationSops()
-    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesCurrentOperationSops')?.()).toMatchObject({ enabled: false })
+    expect(
+      coladaState.queryFactoriesById.get('getBusinessConsoleMesCurrentOperationSops')?.(),
+    ).toMatchObject({ enabled: false })
     expect(sops.currentSops.value).toEqual([])
-    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesWipSummary')?.()).toMatchObject({ enabled: false })
-    expect(coladaState.queryFactoriesById.get('listBusinessConsoleMesCapacityImpacts')?.()).toMatchObject({ enabled: false })
+    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesWipSummary')?.()).toMatchObject(
+      { enabled: false },
+    )
+    expect(
+      coladaState.queryFactoriesById.get('listBusinessConsoleMesCapacityImpacts')?.(),
+    ).toMatchObject({ enabled: false })
   })
 
   it('does not refetch MES lists when business context is empty', async () => {
@@ -532,7 +554,14 @@ describe('business MES composables', () => {
     coladaState.queryDataById.set('getBusinessConsoleMesCurrentOperationSops', {
       success: true,
       data: {
-        items: [{ documentNumber: 'SOP-ASSY', revision: 'B', operationCode: 'OP-ASSY', fileId: 'file-sop-b' }],
+        items: [
+          {
+            documentNumber: 'SOP-ASSY',
+            revision: 'B',
+            operationCode: 'OP-ASSY',
+            fileId: 'file-sop-b',
+          },
+        ],
       },
     })
     const sops = useMesCurrentOperationSops()
@@ -549,7 +578,9 @@ describe('business MES composables', () => {
         workCenterCode: 'WC-A',
       },
     })
-    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesCurrentOperationSops')?.()).toMatchObject({ enabled: true })
+    expect(
+      coladaState.queryFactoriesById.get('getBusinessConsoleMesCurrentOperationSops')?.(),
+    ).toMatchObject({ enabled: true })
     expect(sops.currentSops.value[0]).toMatchObject({ revision: 'B', fileId: 'file-sop-b' })
   })
 
@@ -763,14 +794,17 @@ describe('business MES composables', () => {
   it('suppresses traceability queries when their required scope is empty', () => {
     const traceability = useMesTraceability()
 
-    const workOrderOptions = coladaState.queryFactoriesById
-      .get('getBusinessConsoleMesWorkOrderTraceability')?.()
+    const workOrderOptions = coladaState.queryFactoriesById.get(
+      'getBusinessConsoleMesWorkOrderTraceability',
+    )?.()
     traceability.filters.mode = 'batch'
-    const batchOptions = coladaState.queryFactoriesById
-      .get('getBusinessConsoleMesBatchTraceability')?.()
+    const batchOptions = coladaState.queryFactoriesById.get(
+      'getBusinessConsoleMesBatchTraceability',
+    )?.()
     traceability.filters.mode = 'material-lot'
-    const materialLotOptions = coladaState.queryFactoriesById
-      .get('getBusinessConsoleMesMaterialLotTraceability')?.()
+    const materialLotOptions = coladaState.queryFactoriesById.get(
+      'getBusinessConsoleMesMaterialLotTraceability',
+    )?.()
 
     expect(workOrderOptions).toMatchObject({ enabled: false })
     expect(batchOptions).toMatchObject({ enabled: false })
@@ -784,5 +818,44 @@ describe('business MES composables', () => {
     expect(getBusinessConsoleMesMaterialLotTraceabilityQueryOptions).not.toHaveBeenCalledWith(
       expect.objectContaining({ path: { materialLotId: 'LOT-001' } }),
     )
+  })
+
+  it('cancels a work order with the reason payload and invalidates MES + inventory queries', async () => {
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-CANCEL'
+
+    await detail.cancelWorkOrder('计划取消：产线调整')
+
+    expect(cancelBusinessConsoleMesWorkOrderMutationOptions).toHaveBeenCalled()
+    expect(
+      vi.mocked(cancelBusinessConsoleMesWorkOrderMutationOptions).mock.results[0]?.value.mutation,
+    ).toHaveBeenCalledWith({
+      path: { workOrderId: 'WO-CANCEL' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: { reason: '计划取消：产线调整' },
+    })
+    // 本域 9 键 + 跨域库存可用量 1 键（A1 §4.2 跨域刷新首个落地）
+    expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(10)
+  })
+
+  it('scopes the cancel compensation preview receipts to the current work order', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesFinishedGoodsReceiptRequests', {
+      success: true,
+      data: {
+        total: 2,
+        items: [
+          { receiptRequestId: 'fg-1', workOrderId: 'WO-CANCEL', receiptStatus: 'created' },
+          { receiptRequestId: 'fg-2', workOrderId: 'WO-OTHER', receiptStatus: 'created' },
+        ],
+      },
+    })
+
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-CANCEL'
+    detail.activateCancelPreview()
+
+    expect(detail.finishedGoodsReceiptRequests.value).toEqual([
+      { receiptRequestId: 'fg-1', workOrderId: 'WO-CANCEL', receiptStatus: 'created' },
+    ])
   })
 })
