@@ -344,6 +344,27 @@ public sealed class ErpSalesFinanceEndpointContractTests
     }
 
     [Fact]
+    public async Task Cancel_sales_order_rejects_a_delivery_when_wms_outbound_is_not_found()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await CreateReleasedSalesOrderAsync(dbContext, "SO-PENDING-WMS-001", "QUO-PENDING-WMS-001", "CUST-001", "SKU-FG-001");
+        await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
+            new ReleaseDeliveryOrderCommand("org-001", "env-dev", "DO-PENDING-WMS-001", "SO-PENDING-WMS-001", [new DeliveryOrderCommandLine("LINE-001", 1m)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new CancelSalesOrderCommandHandler(dbContext, new MissingWmsOutboundCancellationClient()).Handle(
+            new CancelSalesOrderCommand("org-001", "env-dev", "SO-PENDING-WMS-001", "customer withdrew order"),
+            CancellationToken.None));
+
+        Assert.Contains("could not be found", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("released", dbContext.SalesOrders.Single(x => x.SalesOrderNo == "SO-PENDING-WMS-001").Status);
+        Assert.Equal("released", dbContext.DeliveryOrders.Single(x => x.DeliveryOrderNo == "DO-PENDING-WMS-001").Status);
+    }
+
+    [Fact]
     public async Task Wms_outbound_cancellation_does_not_cancel_open_orders_when_batch_contains_non_cancellable_order()
     {
         var handler = new WmsOutboundCancellationHttpMessageHandler();
@@ -597,6 +618,16 @@ public sealed class ErpSalesFinanceEndpointContractTests
         {
             return Task.FromResult<IReadOnlyCollection<WmsOutboundCancellationResult>>(deliveryOrderNos
                 .Select(deliveryOrderNo => new WmsOutboundCancellationResult(deliveryOrderNo, WmsOutboundCancellationStatus.NotCancellable))
+                .ToArray());
+        }
+    }
+
+    private sealed class MissingWmsOutboundCancellationClient : IWmsOutboundCancellationClient
+    {
+        public Task<IReadOnlyCollection<WmsOutboundCancellationResult>> CancelForDeliveryOrdersAsync(string organizationId, string environmentId, IReadOnlyCollection<string> deliveryOrderNos, string reason, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyCollection<WmsOutboundCancellationResult>>(deliveryOrderNos
+                .Select(deliveryOrderNo => new WmsOutboundCancellationResult(deliveryOrderNo, WmsOutboundCancellationStatus.NotFound))
                 .ToArray());
         }
     }

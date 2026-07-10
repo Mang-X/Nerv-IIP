@@ -328,6 +328,15 @@ public sealed class CancelSalesOrderCommandHandler(
             && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == request.SalesOrderNo && x.Status == "released").ToArrayAsync(cancellationToken);
         var cancellationResults = await wmsOutboundCancellationClient.CancelForDeliveryOrdersAsync(
             request.OrganizationId, request.EnvironmentId, deliveries.Select(x => x.DeliveryOrderNo).ToArray(), request.Reason, cancellationToken);
+        var missingDeliveryOrderNos = cancellationResults
+            .Where(x => x.Status == WmsOutboundCancellationStatus.NotFound)
+            .Select(x => x.DeliveryOrderNo)
+            .ToArray();
+        if (missingDeliveryOrderNos.Length > 0)
+        {
+            throw new KnownException($"Sales order has WMS outbound orders that could not be found yet: {string.Join(", ", missingDeliveryOrderNos)}.");
+        }
+
         var notCancellableDeliveryOrderNos = cancellationResults
             .Where(x => x.Status == WmsOutboundCancellationStatus.NotCancellable)
             .Select(x => x.DeliveryOrderNo)
