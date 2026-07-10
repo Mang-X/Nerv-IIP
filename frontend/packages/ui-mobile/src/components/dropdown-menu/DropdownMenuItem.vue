@@ -47,7 +47,11 @@ function pick(value: string | number) {
 </script>
 
 <template>
-  <div data-slot="dropdown-menu-item" class="relative flex flex-1 items-stretch">
+  <!-- min-w-0 lets the flex-1 trigger shrink below its content width so the label
+       truncates and the filter bar never overflows (Arco equal-width behaviour);
+       without it the item keeps min-width:auto and long labels push the bar past
+       the viewport with no way to scroll. -->
+  <div data-slot="dropdown-menu-item" class="relative flex min-w-0 flex-1 items-stretch">
     <button
       type="button"
       class="ds-ddm-trigger flex h-full w-full min-w-0 items-center justify-center gap-1 px-3 text-[15px] transition-colors"

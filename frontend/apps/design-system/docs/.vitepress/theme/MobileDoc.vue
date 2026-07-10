@@ -125,6 +125,12 @@ provide(MOBILE_OVERLAY_TARGET, '.ds-mdoc-screen')
   overflow-y: auto;
   background: var(--background);
   scrollbar-width: thin;
+  /* Reserve the scrollbar gutter permanently. Bottom overlays (NvBottomSheet,
+     NvActionSheet, NvPicker, Dialog, Toast) teleport here and animate up from
+     translateY(100%); mid-animation they briefly extend past the bottom, which
+     would pop a scrollbar and squeeze the content width, then release it. A
+     stable gutter keeps the width fixed so there's no reflow flash. */
+  scrollbar-gutter: stable;
   /* containing block for overlays teleported here (MOBILE_OVERLAY_TARGET): a
      transform makes this element the containing block for `position: fixed`
      descendants, so sheets/dialogs/keypads/toasts anchor to the phone screen

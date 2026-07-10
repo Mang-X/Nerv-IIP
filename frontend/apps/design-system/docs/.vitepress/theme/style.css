@@ -3,8 +3,21 @@
  * and unlayered CSS beats Tailwind's normally-layered `@layer utilities` — which
  * shrinks our headings and strips component backgrounds inside the docs. Importing
  * utilities without a layer lets them win by specificity (.text-xl 0,1,0 > h2 0,0,1),
- * so embedded design-system components render exactly as in the apps. */
-@layer theme, base, components;
+ * so embedded design-system components render exactly as in the apps.
+ *
+ * The layered order below MUST include `nv-components` (and `nv-tokens`), and this
+ * statement MUST be the first thing in the theme's CSS so it fixes the layer order
+ * before any component `<style scoped> @layer nv-components {…}` tag is injected.
+ * Otherwise `nv-components` first appears in an injected SFC sheet and gets ordered
+ * BEFORE `base`, so Tailwind Preflight's `*{ padding: 0 }` (layer base) beats every
+ * component that styles itself via scoped CSS — collapsing NvMobileGrid / NvFab /
+ * bordered NvDescriptions / pagination / dialog padding to zero in the docs only
+ * (product apps declare the full order in their own main.css, so they're fine).
+ * Utilities + overrides stay UNLAYERED so they still win over VitePress's own
+ * unlayered resets; nv-components sits above base/components so scoped rules beat
+ * Preflight, exactly as in the apps' `theme, nv-tokens, base, components,
+ * nv-components, utilities, nv-overrides, app` order. */
+@layer theme, nv-tokens, base, components, nv-components;
 @import 'tailwindcss/theme.css' layer(theme);
 @import 'tailwindcss/preflight.css' layer(base);
 @import 'tailwindcss/utilities.css';
