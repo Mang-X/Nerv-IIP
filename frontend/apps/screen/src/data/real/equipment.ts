@@ -14,6 +14,7 @@ import {
   listBusinessConsoleMaintenancePlans,
   listBusinessConsoleMaintenanceWorkOrders,
   queryBusinessConsoleMaintenanceAssetReliability,
+  queryBusinessConsoleTelemetryOee,
   type BusinessConsoleMaintenanceInspectionItem,
   type BusinessConsoleMaintenancePlanItem,
   type BusinessConsoleMaintenanceWorkOrderItem,
@@ -393,7 +394,7 @@ export async function fetchRealEquipmentOverview(factoryId = 'F01'): Promise<Equ
     inspectionRow(i, roster, deviceByWorkOrder, deviceByPlan),
   )
 
-  // 聚合可靠性：可用率取"运行设备占比"（瞬时 ≈可用率，标注待 #570）；
+  // 聚合可靠性：运行设备占比仅作瞬时运行画像，不冒充 OEE 可用率；
   // 聚合 MTBF/MTTR 无单一端点 → null（单机值见设备详情）；故障=报警+停机台数，修复=进行中维修单数。
   const total = devices.length
   const reliability: Reliability = {
@@ -425,7 +426,7 @@ export async function fetchRealDeviceDetail(deviceId: string): Promise<DeviceDet
   const windowEndUtc = new Date(nowMs).toISOString()
   const windowStartUtc = new Date(nowMs - 30 * 24 * 60 * 60_000).toISOString()
 
-  const [devRes, relRes, woRes, planRes, inspRes] = await Promise.all([
+  const [devRes, relRes, woRes, planRes, inspRes, oeeRes] = await Promise.all([
     getBusinessConsoleEquipmentDevice({
       throwOnError: true,
       path: { deviceAssetId: deviceId },
@@ -439,6 +440,10 @@ export async function fetchRealDeviceDetail(deviceId: string): Promise<DeviceDet
     listBusinessConsoleMaintenanceWorkOrders({ throwOnError: true, query: listQuery }),
     listBusinessConsoleMaintenancePlans({ throwOnError: true, query: listQuery }),
     listBusinessConsoleMaintenanceInspections({ throwOnError: true, query: listQuery }),
+    queryBusinessConsoleTelemetryOee({
+      throwOnError: true,
+      query: { ...contextQuery, deviceAssetId: deviceId, windowStartUtc, windowEndUtc },
+    }),
   ])
 
   const detail = devRes?.data
@@ -467,6 +472,7 @@ export async function fetchRealDeviceDetail(deviceId: string): Promise<DeviceDet
   )
 
   const reliability = relRes?.data?.data
+  const oee = oeeRes?.data?.data
   const entry = roster.byId.get(deviceId)
   return {
     device,
@@ -479,5 +485,13 @@ export async function fetchRealDeviceDetail(deviceId: string): Promise<DeviceDet
     inspections: inspItems.map((i) => inspectionRow(i, roster, deviceByWorkOrder, deviceByPlan)),
     mtbfHours: reliability?.mtbfHours ?? null,
     mttrMinutes: reliability?.mttrMinutes ?? null,
+    oee: {
+      availability: oee?.availabilityRate ?? null,
+      performance: oee?.performanceRate ?? null,
+      quality: oee?.qualityRate ?? null,
+      rate: oee?.oeeRate ?? null,
+      isDegraded: oee?.isDegraded ?? true,
+      degradedReasons: oee?.degradedReasons ?? ['oee-facts-unavailable'],
+    },
   }
 }

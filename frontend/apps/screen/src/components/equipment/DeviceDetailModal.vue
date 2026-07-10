@@ -73,6 +73,10 @@ const infoRows = computed(() => {
   ]
 })
 
+function percent(value: number | null): string {
+  return value === null ? '—' : `${(value * 100).toFixed(1)}%`
+}
+
 // 参数类型 → 图标（配色走共享 paramColors）
 const KIND_ICON: Record<ParamKind, Component> = {
   temp: Thermometer,
@@ -188,6 +192,28 @@ function leaveSpark() {
                     <dd>{{ detail.mttrMinutes === null ? '—' : `${detail.mttrMinutes} min` }}</dd>
                   </div>
                 </div>
+                <h5 class="ddm-subtitle">单机 OEE（近 30 天）</h5>
+                <div class="ddm-rel ddm-oee">
+                  <div>
+                    <dt>可用率</dt>
+                    <dd>{{ percent(detail.oee.availability) }}</dd>
+                  </div>
+                  <div>
+                    <dt>性能率</dt>
+                    <dd>{{ percent(detail.oee.performance) }}</dd>
+                  </div>
+                  <div>
+                    <dt>质量率</dt>
+                    <dd>{{ percent(detail.oee.quality) }}</dd>
+                  </div>
+                  <div>
+                    <dt>OEE</dt>
+                    <dd>{{ percent(detail.oee.rate) }}</dd>
+                  </div>
+                </div>
+                <p v-if="detail.oee.isDegraded" class="ddm-note">
+                  OEE 数据不完整：{{ detail.oee.degradedReasons.join('、') }}
+                </p>
                 <div v-if="detail.repairs.length" class="ddm-repairs">
                   <div v-for="r in detail.repairs" :key="r.wo" class="ddm-repair">
                     <div class="ddm-repair-top">

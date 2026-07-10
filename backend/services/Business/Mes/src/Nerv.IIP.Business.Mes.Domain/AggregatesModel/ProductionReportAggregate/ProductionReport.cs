@@ -26,7 +26,8 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         string? producedLotNo,
         string? serialNo,
         string? reversedReportNo,
-        string? reversalReason)
+        string? reversalReason,
+        ProductionReportOeeProjection? oeeProjection)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -49,6 +50,10 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         SerialNo = string.IsNullOrWhiteSpace(serialNo) ? null : serialNo.Trim();
         ReversedReportNo = string.IsNullOrWhiteSpace(reversedReportNo) ? null : reversedReportNo.Trim();
         ReversalReason = string.IsNullOrWhiteSpace(reversalReason) ? null : reversalReason.Trim();
+        OeeWorkCenterId = string.IsNullOrWhiteSpace(oeeProjection?.WorkCenterId) ? null : oeeProjection.WorkCenterId.Trim();
+        OeeDeviceAssetId = string.IsNullOrWhiteSpace(oeeProjection?.DeviceAssetId) ? null : oeeProjection.DeviceAssetId.Trim();
+        OeeUomCode = string.IsNullOrWhiteSpace(oeeProjection?.UomCode) ? null : oeeProjection.UomCode.Trim();
+        OeeTheoreticalRatePerHour = oeeProjection?.TheoreticalRatePerHour;
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -65,10 +70,21 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     public string? SerialNo { get; private set; }
     public string? ReversedReportNo { get; private set; }
     public string? ReversalReason { get; private set; }
+    public string? OeeWorkCenterId { get; private set; }
+    public string? OeeDeviceAssetId { get; private set; }
+    public string? OeeUomCode { get; private set; }
+    public decimal? OeeTheoreticalRatePerHour { get; private set; }
     public bool CompletesOperation { get; private set; }
     public DateTimeOffset ReportedAtUtc { get; private set; }
 
     public bool IsReversal => !string.IsNullOrWhiteSpace(ReversedReportNo);
+
+    public ProductionReportOeeProjection? GetOeeProjection()
+    {
+        return string.IsNullOrWhiteSpace(OeeWorkCenterId) || string.IsNullOrWhiteSpace(OeeUomCode)
+            ? null
+            : new ProductionReportOeeProjection(OeeWorkCenterId, OeeDeviceAssetId, OeeUomCode, OeeTheoreticalRatePerHour);
+    }
 
     public static ProductionReport Record(
         string organizationId,
@@ -84,7 +100,8 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         string? scrapReasonCode = null,
         string? defectRecordNo = null,
         string? producedLotNo = null,
-        string? serialNo = null)
+        string? serialNo = null,
+        ProductionReportOeeProjection? oeeProjection = null)
     {
         DomainGuard.NonNegative(goodQuantity, nameof(goodQuantity));
         DomainGuard.NonNegative(scrapQuantity, nameof(scrapQuantity));
@@ -110,8 +127,9 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             producedLotNo,
             serialNo,
             null,
-            null);
-        report.AddDomainEvent(new ProductionReportRecordedDomainEvent(report));
+            null,
+            oeeProjection);
+        report.AddDomainEvent(new ProductionReportRecordedDomainEvent(report, report.GetOeeProjection()));
         return report;
     }
 
@@ -127,6 +145,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             throw new InvalidOperationException("Reversal production reports cannot be reversed.");
         }
 
+        var originalOeeProjection = original.GetOeeProjection();
         var report = new ProductionReport(
             original.OrganizationId,
             original.EnvironmentId,
@@ -143,8 +162,9 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             original.ProducedLotNo,
             original.SerialNo,
             original.ReportNo,
-            reason);
-        report.AddDomainEvent(new ProductionReportRecordedDomainEvent(report));
+            reason,
+            originalOeeProjection);
+        report.AddDomainEvent(new ProductionReportRecordedDomainEvent(report, report.GetOeeProjection()));
         return report;
     }
 }

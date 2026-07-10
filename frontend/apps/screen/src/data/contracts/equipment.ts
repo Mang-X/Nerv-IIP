@@ -96,7 +96,7 @@ export interface RepairOrder {
 }
 
 export interface Reliability {
-  /** 时间稼动率 0–100 —— 渲染必须标注「≈可用率 · 非完整 OEE」 */
+  /** 当前运行设备占比 0–100；不是 OEE 可用率。 */
   availability: number
   /** ✅ 无样本 null，页面显「—」 */
   mtbfHours: number | null
@@ -162,4 +162,13 @@ export interface DeviceDetail {
   /** 单机可靠性：无故障样本 → null 显「—」 */
   mtbfHours: number | null
   mttrMinutes: number | null
+  /** 单机 OEE 读面；任一源事实不足时对应因子为 null 并带降级原因。 */
+  oee: {
+    availability: number | null
+    performance: number | null
+    quality: number | null
+    rate: number | null
+    isDegraded: boolean
+    degradedReasons: string[]
+  }
 }

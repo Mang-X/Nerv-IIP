@@ -7,7 +7,9 @@ import {
   type EquipmentTone,
 } from '@/composables/useBusinessEquipment'
 import {
+  describeTelemetryOeeDegradation,
   describeTelemetryOeeLimitations,
+  formatOeeQuantity,
   formatOeeRate,
   useBusinessTelemetryHistory,
   useBusinessTelemetryOee,
@@ -112,6 +114,7 @@ const errorMessage = computed(() => formatError(deviceError.value))
 const telemetryErrorMessage = computed(() =>
   formatError(historyError.value || oeeError.value || runtimeAvailabilityError.value),
 )
+const oeeDegradedReasons = computed(() => (oee.value?.degradedReasons ?? []).map(describeTelemetryOeeDegradation))
 const maintenanceErrorMessage = computed(() =>
   formatError(
     maintenanceAvailabilityError.value ||
@@ -593,9 +596,19 @@ function formatError(error: unknown) {
             hint="排除计划停机窗口"
           />
           <NvSectionCard
-            description="OEE P0"
+            description="性能率"
+            :value="formatOeeRate(oee?.performanceRate)"
+            hint="实际产出 ÷ 理论产出"
+          />
+          <NvSectionCard
+            description="质量率"
+            :value="formatOeeRate(oee?.qualityRate)"
+            hint="良品 ÷ 总产出"
+          />
+          <NvSectionCard
+            description="OEE"
             :value="formatOeeRate(oee?.oeeRate)"
-            hint="不重算性能/质量"
+            hint="三项因子的乘积"
           />
           <NvSectionCard
             description="历史事件"
@@ -664,17 +677,25 @@ function formatError(error: unknown) {
               </div>
               <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
                 <span class="text-muted-foreground">性能因子</span>
-                <span>{{
-                  oee?.performanceRateEstimated
-                    ? '未测量，仅占位'
-                    : formatOeeRate(oee?.performanceRate)
-                }}</span>
+                <span>{{ formatOeeRate(oee?.performanceRate) }}</span>
               </div>
               <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
                 <span class="text-muted-foreground">质量因子</span>
-                <span>{{
-                  oee?.qualityRateEstimated ? '未测量，仅占位' : formatOeeRate(oee?.qualityRate)
-                }}</span>
+                <span>{{ formatOeeRate(oee?.qualityRate) }}</span>
+              </div>
+              <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
+                <span class="text-muted-foreground">MES 报工</span>
+                <span>{{ oee?.productionFactCount ?? 0 }} 条</span>
+              </div>
+              <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
+                <span class="text-muted-foreground">理论产出</span>
+                <span>{{ formatOeeQuantity(oee?.expectedOutputQuantity, oee?.outputUomCode) }}</span>
+              </div>
+              <div v-if="oee?.isDegraded" class="rounded-md bg-muted p-3 text-xs text-muted-foreground">
+                <p class="font-medium text-foreground">当前 OEE 数据不完整</p>
+                <ul class="mt-1 list-disc pl-4">
+                  <li v-for="reason in oeeDegradedReasons" :key="reason">{{ reason }}</li>
+                </ul>
               </div>
             </div>
           </div>

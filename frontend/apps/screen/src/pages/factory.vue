@@ -157,18 +157,10 @@ const bandCells = computed<BandCell[]>(() => {
         <div class="side">
           <NvScreenPanel title="综合效率 OEE">
             <template #extra>
-              <NvScreenStatusTag tone="amber" label="综合 ≈ 可用率 · 待 #570" />
+              <NvScreenStatusTag tone="cyan" label="单机真实口径" />
             </template>
-            <div class="rings">
-              <NvRingGauge
-                v-for="o in ov.oee"
-                :key="o.label"
-                :value="o.value"
-                :label="o.label"
-                :size="106"
-              />
-            </div>
-            <p class="oee-note">性能率 / 良品率为占位值，#570 接入后启用真实综合 OEE</p>
+            <p class="oee-note">请在设备详情查看由报工、运行时长和理论速率计算的真实单机 OEE。</p>
+            <p class="oee-note">全厂聚合仍需批量 OEE 读面，当前不以可用率或演示数据冒充综合 OEE。</p>
           </NvScreenPanel>
 
           <NvScreenPanel title="实时告警" class="feed">
