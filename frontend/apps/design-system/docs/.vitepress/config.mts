@@ -3,6 +3,32 @@ import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, postcssIsolateStyles } from 'vitepress'
 import wasm from 'vite-plugin-wasm'
 
+// 一体机 / 工位触控侧栏 —— 复用给 /components/touch 与 /components/board（工位看板完整示例）。
+const touchSidebar = [
+  {
+    text: '一体机 / 工位',
+    items: [
+      { text: '概览', link: '/components/touch/' },
+      { text: '工位看板完整示例', link: '/components/board' },
+    ],
+  },
+  {
+    text: '操作',
+    items: [
+      { text: 'TouchButton 触控按钮', link: '/components/touch/touch-button' },
+      { text: 'TouchSegmented 分段切换', link: '/components/touch/touch-segmented' },
+      { text: 'QtyStepper 数量步进', link: '/components/touch/qty-stepper' },
+    ],
+  },
+  {
+    text: '信息',
+    items: [
+      { text: 'StatTile 指标块', link: '/components/touch/stat-tile' },
+      { text: 'StationBar 工位栏', link: '/components/touch/station-bar' },
+    ],
+  },
+]
+
 // Nerv-IIP 设计系统文档 (VitePress).
 // Runs under the workspace's `vite → @voidzero-dev/vite-plus-core` override; the
 // docs app carries an `esbuild` devDep because Rolldown-Vite deprecated
@@ -33,7 +59,7 @@ export default defineConfig({
       { text: '模式', link: '/patterns/interaction-patterns', activeMatch: '/patterns/' },
       { text: '桌面 PC', link: '/components/desktop/', activeMatch: '/components/desktop' },
       { text: 'PDA 移动', link: '/components/mobile/', activeMatch: '/components/mobile' },
-      { text: '一体机看板', link: '/components/board', activeMatch: '/components/board' },
+      { text: '一体机', link: '/components/touch/', activeMatch: '/components/(touch|board)' },
       { text: '大屏', link: '/components/screen/', activeMatch: '/components/screen' },
     ],
     sidebar: {
@@ -247,12 +273,9 @@ export default defineConfig({
           ],
         },
       ],
-      '/components/board': [
-        {
-          text: '一体机看板',
-          items: [{ text: '工位看板', link: '/components/board' }],
-        },
-      ],
+      // 一体机 / 工位触控 —— 大触控 touch 层，每组件一页 + 工位看板完整示例
+      '/components/touch': touchSidebar,
+      '/components/board': touchSidebar,
       // 大屏 / 控制室 —— 独立 --nv-scr-* 工业蓝令牌层，每组件一页，按分类分组
       '/components/screen': [
         {

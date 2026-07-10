@@ -1,6 +1,6 @@
 ---
 layout: page
-title: 一体机看板组件
+title: 工位看板 · 完整示例
 ---
 
 <script setup>

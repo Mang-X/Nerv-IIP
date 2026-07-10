@@ -3,6 +3,7 @@ import DefaultTheme from 'vitepress/theme'
 import Demo from './Demo.vue'
 import Layout from './Layout.vue'
 import MobileDoc from './MobileDoc.vue'
+import SceneBadge from './SceneBadge.vue'
 import ScreenDemo from './ScreenDemo.vue'
 import ScreenGallery from './screen/ScreenGallery.vue'
 import './style.css'
@@ -17,6 +18,7 @@ export default {
   enhanceApp({ app }) {
     app.component('Demo', Demo)
     app.component('MobileDoc', MobileDoc)
+    app.component('SceneBadge', SceneBadge)
     app.component('ScreenDemo', ScreenDemo)
     app.component('ScreenGallery', ScreenGallery)
   },

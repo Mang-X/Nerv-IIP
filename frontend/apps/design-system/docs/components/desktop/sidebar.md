@@ -341,7 +341,7 @@ const todo = ref('待派工单')
 }
 
 /* Brand lockup / status dots / footer user / animated submenu now live in the
-   SidebarPro* components — NvSidebarBrand / NvSidebarDot / NvSidebarUser /
+   NvSidebar* components — NvSidebarBrand / NvSidebarDot / NvSidebarUser /
    NvSidebarSub — so this demo composes them instead of re-styling locally. */
 
 /* ── inset canvas (top bar + KPI tiles) ────────────────────────────────── */

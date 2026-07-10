@@ -8,6 +8,7 @@
 //   </MobileDoc>
 import { provide } from 'vue'
 import { MOBILE_OVERLAY_TARGET } from '@nerv-iip/ui-mobile'
+import SceneBadge from './SceneBadge.vue'
 
 // Keep mobile overlays (NvBottomSheet, NvPicker, DatePicker, NvActionSheet, Dialog,
 // NvNumberKeyboard, Toast) inside the phone frame instead of covering the page.
@@ -19,6 +20,10 @@ provide(MOBILE_OVERLAY_TARGET, '.ds-mdoc-screen')
 <template>
   <div class="ds-mdoc">
     <div class="ds-mdoc-main vp-doc">
+      <!-- PDA pages are `layout: page`, so the Layout `#doc-before` badge doesn't
+           fire here — render the scene-availability badge at the top of the prose
+           column instead. Auto-detects the mobile family from the route. -->
+      <SceneBadge />
       <slot />
     </div>
     <aside class="ds-mdoc-aside">
