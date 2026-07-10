@@ -6,7 +6,7 @@ namespace Nerv.IIP.Business.Erp.Web.Application.Wms;
 
 public interface IWmsOutboundCancellationClient
 {
-    Task CancelForDeliveryOrdersAsync(
+    Task<IReadOnlyCollection<WmsOutboundCancellationResult>> CancelForDeliveryOrdersAsync(
         string organizationId,
         string environmentId,
         IReadOnlyCollection<string> deliveryOrderNos,
@@ -14,22 +14,39 @@ public interface IWmsOutboundCancellationClient
         CancellationToken cancellationToken);
 }
 
+public sealed record WmsOutboundCancellationResult(string DeliveryOrderNo, WmsOutboundCancellationStatus Status);
+
+public enum WmsOutboundCancellationStatus
+{
+    Cancelled,
+    NotFound,
+    NotCancellable,
+}
+
 public sealed class HttpWmsOutboundCancellationClient(
     HttpClient httpClient,
     IInternalServiceTokenProvider internalTokenProvider) : IWmsOutboundCancellationClient
 {
-    public async Task CancelForDeliveryOrdersAsync(
+    public async Task<IReadOnlyCollection<WmsOutboundCancellationResult>> CancelForDeliveryOrdersAsync(
         string organizationId,
         string environmentId,
         IReadOnlyCollection<string> deliveryOrderNos,
         string reason,
         CancellationToken cancellationToken)
     {
+        var results = new List<WmsOutboundCancellationResult>();
         foreach (var deliveryOrderNo in deliveryOrderNos.Distinct(StringComparer.Ordinal))
         {
-            var item = await FindOpenOutboundOrderAsync(organizationId, environmentId, deliveryOrderNo, cancellationToken);
+            var item = await FindOutboundOrderAsync(organizationId, environmentId, deliveryOrderNo, cancellationToken);
             if (item is null)
             {
+                results.Add(new WmsOutboundCancellationResult(deliveryOrderNo, WmsOutboundCancellationStatus.NotFound));
+                continue;
+            }
+
+            if (!string.Equals(item.Status, "Open", StringComparison.OrdinalIgnoreCase))
+            {
+                results.Add(new WmsOutboundCancellationResult(deliveryOrderNo, WmsOutboundCancellationStatus.NotCancellable));
                 continue;
             }
 
@@ -40,16 +57,19 @@ public sealed class HttpWmsOutboundCancellationClient(
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
             using var response = await httpClient.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
+            results.Add(new WmsOutboundCancellationResult(deliveryOrderNo, WmsOutboundCancellationStatus.Cancelled));
         }
+
+        return results;
     }
 
-    private async Task<OutboundOrderItem?> FindOpenOutboundOrderAsync(
+    private async Task<OutboundOrderItem?> FindOutboundOrderAsync(
         string organizationId,
         string environmentId,
         string deliveryOrderNo,
         CancellationToken cancellationToken)
     {
-        var path = $"/api/business/v1/wms/outbound-orders?organizationId={Uri.EscapeDataString(organizationId)}&environmentId={Uri.EscapeDataString(environmentId)}&status=Open&keyword={Uri.EscapeDataString(deliveryOrderNo)}&skip=0&take=100";
+        var path = $"/api/business/v1/wms/outbound-orders?organizationId={Uri.EscapeDataString(organizationId)}&environmentId={Uri.EscapeDataString(environmentId)}&keyword={Uri.EscapeDataString(deliveryOrderNo)}&skip=0&take=100";
         using var request = new HttpRequestMessage(HttpMethod.Get, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
         using var response = await httpClient.SendAsync(request, cancellationToken);

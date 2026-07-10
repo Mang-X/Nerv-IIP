@@ -326,8 +326,12 @@ public sealed class CancelSalesOrderCommandHandler(
             cancellationToken) ?? throw new KnownException($"Sales order '{request.SalesOrderNo}' was not found.");
         var deliveries = await dbContext.DeliveryOrders.Include(x => x.Lines).Where(x => x.OrganizationId == request.OrganizationId
             && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == request.SalesOrderNo && x.Status == "released").ToArrayAsync(cancellationToken);
-        await wmsOutboundCancellationClient.CancelForDeliveryOrdersAsync(
+        var cancellationResults = await wmsOutboundCancellationClient.CancelForDeliveryOrdersAsync(
             request.OrganizationId, request.EnvironmentId, deliveries.Select(x => x.DeliveryOrderNo).ToArray(), request.Reason, cancellationToken);
+        if (cancellationResults.Any(x => x.Status == WmsOutboundCancellationStatus.NotCancellable))
+        {
+            throw new KnownException("Sales orders with WMS outbound orders that cannot be cancelled cannot be cancelled.");
+        }
         try
         {
             foreach (var delivery in deliveries)

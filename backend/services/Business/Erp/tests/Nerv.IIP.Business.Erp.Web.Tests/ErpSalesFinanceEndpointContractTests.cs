@@ -324,6 +324,26 @@ public sealed class ErpSalesFinanceEndpointContractTests
     }
 
     [Fact]
+    public async Task Cancel_sales_order_rejects_a_delivery_that_wms_did_not_cancel()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await CreateReleasedSalesOrderAsync(dbContext, "SO-SHIPPED-001", "QUO-SHIPPED-001", "CUST-001", "SKU-FG-001");
+        await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
+            new ReleaseDeliveryOrderCommand("org-001", "env-dev", "DO-SHIPPED-001", "SO-SHIPPED-001", [new DeliveryOrderCommandLine("LINE-001", 1m)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<KnownException>(() => new CancelSalesOrderCommandHandler(dbContext, new NonCancellingWmsOutboundCancellationClient()).Handle(
+            new CancelSalesOrderCommand("org-001", "env-dev", "SO-SHIPPED-001", "customer withdrew order"),
+            CancellationToken.None));
+
+        Assert.Equal("released", dbContext.SalesOrders.Single(x => x.SalesOrderNo == "SO-SHIPPED-001").Status);
+        Assert.Equal("released", dbContext.DeliveryOrders.Single(x => x.DeliveryOrderNo == "DO-SHIPPED-001").Status);
+    }
+
+    [Fact]
     public async Task Master_data_credit_reader_wraps_non_json_error_responses_as_known_exception()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(HttpStatusCode.BadGateway, "<html>bad gateway</html>", "text/html"))
@@ -540,10 +560,22 @@ public sealed class ErpSalesFinanceEndpointContractTests
     {
         public IReadOnlyCollection<string> DeliveryOrderNos { get; private set; } = [];
 
-        public Task CancelForDeliveryOrdersAsync(string organizationId, string environmentId, IReadOnlyCollection<string> deliveryOrderNos, string reason, CancellationToken cancellationToken)
+        public Task<IReadOnlyCollection<WmsOutboundCancellationResult>> CancelForDeliveryOrdersAsync(string organizationId, string environmentId, IReadOnlyCollection<string> deliveryOrderNos, string reason, CancellationToken cancellationToken)
         {
             DeliveryOrderNos = deliveryOrderNos;
-            return Task.CompletedTask;
+            return Task.FromResult<IReadOnlyCollection<WmsOutboundCancellationResult>>(deliveryOrderNos
+                .Select(deliveryOrderNo => new WmsOutboundCancellationResult(deliveryOrderNo, WmsOutboundCancellationStatus.Cancelled))
+                .ToArray());
+        }
+    }
+
+    private sealed class NonCancellingWmsOutboundCancellationClient : IWmsOutboundCancellationClient
+    {
+        public Task<IReadOnlyCollection<WmsOutboundCancellationResult>> CancelForDeliveryOrdersAsync(string organizationId, string environmentId, IReadOnlyCollection<string> deliveryOrderNos, string reason, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyCollection<WmsOutboundCancellationResult>>(deliveryOrderNos
+                .Select(deliveryOrderNo => new WmsOutboundCancellationResult(deliveryOrderNo, WmsOutboundCancellationStatus.NotCancellable))
+                .ToArray());
         }
     }
 }
