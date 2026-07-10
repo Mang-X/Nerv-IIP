@@ -73,6 +73,11 @@ public sealed class StockCountAdjustment : Entity<StockCountAdjustmentId>, IAggr
     {
         ArgumentNullException.ThrowIfNull(task);
         ArgumentNullException.ThrowIfNull(movement);
+        if (movement.Id is null)
+        {
+            throw new ArgumentException("Stock movement id must be assigned before recording a count adjustment.", nameof(movement));
+        }
+
         return new StockCountAdjustment(task, idempotencyKey, StockCountAdjustmentStatuses.Posted, null, movement, Math.Abs(movement.MovementAmount ?? 0m));
     }
 

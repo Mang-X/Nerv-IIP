@@ -76,11 +76,3 @@ public sealed class HttpStockCountApprovalClient(
     private sealed record StartApprovalChainHttpResponse(string ChainId);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 }
-
-internal sealed class GeneratedStockCountApprovalClient : IStockCountApprovalClient
-{
-    public Task<StockCountApprovalResult> StartApprovalAsync(StockCountApprovalRequest request, CancellationToken cancellationToken)
-    {
-        return Task.FromResult(new StockCountApprovalResult($"approval:{request.OrganizationId}:{request.EnvironmentId}:{request.DocumentId}"));
-    }
-}

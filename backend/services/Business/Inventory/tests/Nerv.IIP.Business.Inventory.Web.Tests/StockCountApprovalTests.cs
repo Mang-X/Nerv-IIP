@@ -35,12 +35,12 @@ public sealed class StockCountApprovalTests
 
             var result = await new ConfirmStockCountAdjustmentCommandHandler(
                 dbContext,
+                approvalClient,
                 Options.Create(new StockCountAdjustmentApprovalOptions
                 {
                     QuantityThreshold = 1m,
                     AmountThreshold = decimal.MaxValue,
-                }),
-                approvalClient).Handle(
+                })).Handle(
                     new ConfirmStockCountAdjustmentCommand(task.Id, 7m, "idem-count-approval-001"),
                     CancellationToken.None);
             await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -60,6 +60,18 @@ public sealed class StockCountApprovalTests
         Assert.Equal("inventory", approvalClient.Request.SourceService);
         Assert.Equal("inventory-count-variance", approvalClient.Request.DocumentType);
         Assert.Equal("COUNT-001", approvalClient.Request.DocumentId);
+    }
+
+    [Fact]
+    public void Approval_client_is_required_instead_of_fabricating_a_chain_id()
+    {
+        var options = CreateDbContextOptions($"inventory-count-approval-client-{Guid.CreateVersion7():N}", new InMemoryDatabaseRoot());
+        using var dbContext = CreateDbContext(options);
+
+        Assert.Throws<ArgumentNullException>(() => new ConfirmStockCountAdjustmentCommandHandler(
+            dbContext,
+            approvalClient: null!,
+            approvalOptions: Options.Create(new StockCountAdjustmentApprovalOptions())));
     }
 
     [Theory]
@@ -88,15 +100,15 @@ public sealed class StockCountApprovalTests
             await dbContext.SaveChangesAsync(CancellationToken.None);
 
             var handler = new ApprovalCompletedIntegrationEventHandlerForStockCountAdjustment(
-                dbContext,
+                new CommandExecutingSender(dbContext),
                 new InMemoryIntegrationEventDeadLetterStore());
             await handler.HandleAsync(ApprovalCompletedEvent(approvalResult), CancellationToken.None);
-            await dbContext.SaveChangesAsync(CancellationToken.None);
 
-            Assert.Equal(expectedOnHandQuantity, dbContext.StockLedgers.Single().OnHandQuantity);
-            Assert.Equal(expectedFreeze, dbContext.StockLedgers.Single().IsFrozenForCount);
-            Assert.Equal(expectedTaskStatus, dbContext.StockCountTasks.Single().Status);
-            var persistedAdjustment = dbContext.StockCountAdjustments.Single();
+            await using var verificationDbContext = CreateDbContext(options);
+            Assert.Equal(expectedOnHandQuantity, verificationDbContext.StockLedgers.Single().OnHandQuantity);
+            Assert.Equal(expectedFreeze, verificationDbContext.StockLedgers.Single().IsFrozenForCount);
+            Assert.Equal(expectedTaskStatus, verificationDbContext.StockCountTasks.Single().Status);
+            var persistedAdjustment = verificationDbContext.StockCountAdjustments.Single();
             Assert.Equal(expectedAdjustmentStatus, persistedAdjustment.Status);
             Assert.Equal(approvalResult == ApprovalResults.Approved, persistedAdjustment.MovementId is not null);
         }
@@ -138,6 +150,33 @@ public sealed class StockCountApprovalTests
             Request = request;
             return Task.FromResult(new StockCountApprovalResult(chainId));
         }
+    }
+
+    private sealed class CommandExecutingSender(ApplicationDbContext dbContext) : ISender
+    {
+        public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            if (request is CompleteStockCountAdjustmentApprovalCommand command)
+            {
+                var result = await new CompleteStockCountAdjustmentApprovalCommandHandler(dbContext).Handle(command, cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return (TResponse)(object)result;
+            }
+
+            throw new NotSupportedException($"Request type is not supported by this test sender: {request.GetType().FullName}");
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class NoopMediator : IMediator

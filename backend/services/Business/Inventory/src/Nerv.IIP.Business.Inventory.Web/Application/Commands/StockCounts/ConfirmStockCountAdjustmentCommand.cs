@@ -32,12 +32,12 @@ public sealed class ConfirmStockCountAdjustmentCommandValidator : AbstractValida
 
 public sealed class ConfirmStockCountAdjustmentCommandHandler(
     ApplicationDbContext dbContext,
-    IOptions<StockCountAdjustmentApprovalOptions>? approvalOptions = null,
-    IStockCountApprovalClient? approvalClient = null)
+    IStockCountApprovalClient approvalClient,
+    IOptions<StockCountAdjustmentApprovalOptions>? approvalOptions = null)
     : ICommandHandler<ConfirmStockCountAdjustmentCommand, ConfirmStockCountAdjustmentResult>
 {
     private readonly StockCountAdjustmentApprovalOptions approvalOptions = approvalOptions?.Value ?? new StockCountAdjustmentApprovalOptions();
-    private readonly IStockCountApprovalClient approvalClient = approvalClient ?? new GeneratedStockCountApprovalClient();
+    private readonly IStockCountApprovalClient approvalClient = approvalClient ?? throw new ArgumentNullException(nameof(approvalClient));
 
     public async Task<ConfirmStockCountAdjustmentResult> Handle(ConfirmStockCountAdjustmentCommand request, CancellationToken cancellationToken)
     {
