@@ -80,7 +80,7 @@ public sealed class SalesOrderEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.CustomerCode).HasColumnName("customer_code").IsRequired().HasMaxLength(100).HasComment("MasterData customer code.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(50).HasComment("Sales order lifecycle status.");
         builder.Property(x => x.TotalAmount).HasColumnName("total_amount").IsRequired().HasPrecision(18, 6).HasComment("Sales order total amount.");
-        builder.Property(x => x.Version).HasColumnName("version").IsRequired().HasComment("Monotonic sales order revision number.");
+        builder.Property(x => x.Version).HasColumnName("version").IsRequired().IsConcurrencyToken().HasComment("Monotonic sales order revision number.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("SalesOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.ChangeHistory).WithOne().HasForeignKey("SalesOrderId").OnDelete(DeleteBehavior.Cascade);
