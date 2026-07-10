@@ -145,13 +145,13 @@ onMounted(() => {
     touch-action: pan-y;
   }
   .ds-swipe-snap {
-    transition: transform 0.26s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+    transition: transform 0.26s var(--nv-ease-out-expo);
   }
   /* During a drag, opacity tracks the offset live (no transition). On release the
    snap class fades it with the SAME duration + easing as the content slide, so
    the colour and the position stay perfectly in step. */
   .ds-swipe-actions-snap {
-    transition: opacity 0.26s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+    transition: opacity 0.26s var(--nv-ease-out-expo);
   }
   @media (prefers-reduced-motion: reduce) {
     .ds-swipe-snap,

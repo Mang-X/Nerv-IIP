@@ -42,7 +42,7 @@ const forwarded = useForwardPropsEmits(reactiveOmit(props, 'class'), emits)
      back-ease spring on the glide unifies it with the mobile Switch. */
     transition:
       translate 0.22s var(--nv-ease-out-quart, ease-out),
-      transform 0.18s var(--nv-ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1)),
+      transform 0.18s var(--nv-ease-out-quart),
       box-shadow 0.2s ease;
   }
   /* Press: the thumb depresses while held, then decelerates back — a press

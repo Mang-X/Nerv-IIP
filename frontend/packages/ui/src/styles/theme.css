@@ -327,9 +327,9 @@
    (not unlayered) — utilities can still override, app layer stays sovereign. */
 @layer nv-components {
   .nv-overlay-content {
-    --nv-overlay-open-duration: var(--nv-duration-fast-invoke, 187ms);
-    --nv-overlay-close-duration: var(--nv-duration-fade, 83ms);
-    --nv-overlay-transform-ease: var(--nv-ease-fast-invoke, cubic-bezier(0, 0, 0, 1));
+    --nv-overlay-open-duration: var(--nv-duration-fast-invoke);
+    --nv-overlay-close-duration: var(--nv-duration-fade);
+    --nv-overlay-transform-ease: var(--nv-ease-fast-invoke);
     --nv-overlay-opacity-ease: linear;
     --nv-overlay-open-scale: 0.97;
     --nv-overlay-close-scale: 0.99;
@@ -365,8 +365,7 @@
     animation:
       nv-overlay-content-open-transform var(--nv-overlay-open-duration)
         var(--nv-overlay-transform-ease) both,
-      nv-overlay-content-open-opacity var(--nv-duration-fade, 83ms) var(--nv-overlay-opacity-ease)
-        both;
+      nv-overlay-content-open-opacity var(--nv-duration-fade) var(--nv-overlay-opacity-ease) both;
   }
 
   .nv-overlay-content[data-state='closed'] {

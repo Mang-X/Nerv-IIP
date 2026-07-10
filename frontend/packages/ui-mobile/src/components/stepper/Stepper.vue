@@ -89,7 +89,7 @@ function onBlur(e: Event) {
     transition: background-color 0.16s ease;
   }
   .ds-stepper-btn :deep(svg) {
-    transition: transform 0.18s var(--nv-ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
+    transition: transform 0.18s var(--nv-ease-out-quart);
   }
   .ds-stepper-btn:active:not(:disabled) {
     background: var(--muted);

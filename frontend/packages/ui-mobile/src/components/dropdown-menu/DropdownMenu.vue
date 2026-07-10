@@ -51,7 +51,7 @@ provide(dropdownMenuKey, { openId, toggle, close })
 @layer nv-components {
   .ds-ddm-scrim-enter-active,
   .ds-ddm-scrim-leave-active {
-    transition: opacity 0.22s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+    transition: opacity 0.22s var(--nv-ease-out-expo);
   }
   .ds-ddm-scrim-enter-from,
   .ds-ddm-scrim-leave-to {

@@ -178,7 +178,7 @@ watch(
     touch-action: none;
   }
   .ds-sheet-snap {
-    transition: transform 0.32s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+    transition: transform 0.32s var(--nv-ease-out-expo);
   }
   @media (prefers-reduced-motion: reduce) {
     .ds-sheet-snap {

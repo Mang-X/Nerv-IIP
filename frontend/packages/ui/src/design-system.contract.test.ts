@@ -198,45 +198,83 @@ describe('ADR 0020 §4 — cascade-layer isolation', () => {
     }
   })
 
-  it('layers EVERY self-owned SFC style, and keeps原版 primitives unbranded (§4.1/§4.4)', () => {
-    // Full recursive scan (not a hand-picked file list): any self-owned SFC that
-    // ships a <style> must wrap it in `@layer nv-components`; true原版 shadcn
-    // primitives must stay free of the `@layer nv-` marker. `file-preview/*` is a
-    // self-owned subsystem that happens to live under components/ui/, so it counts
-    // as self-owned (must be layered), not原版.
-    const uiSrc = resolve(srcDir) // packages/ui/src
-    const mobileSrc = resolve(srcDir, '../../ui-mobile/src')
-    const vueFiles = (root: string): string[] => {
-      const out: string[] = []
-      const walk = (d: string) => {
-        for (const e of readdirSync(d, { withFileTypes: true })) {
-          if (e.name === 'node_modules' || e.name === 'dist') continue
-          const p = join(d, e.name)
-          if (e.isDirectory()) walk(p)
-          else if (e.name.endsWith('.vue')) out.push(p)
-        }
+  const uiSrc = resolve(srcDir) // packages/ui/src
+  const mobileSrc = resolve(srcDir, '../../ui-mobile/src')
+  const vueFiles = (root: string): string[] => {
+    const out: string[] = []
+    const walk = (d: string) => {
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        if (e.name === 'node_modules' || e.name === 'dist') continue
+        const p = join(d, e.name)
+        if (e.isDirectory()) walk(p)
+        else if (e.name.endsWith('.vue')) out.push(p)
       }
-      walk(root)
-      return out
     }
-    const norm = (p: string) => relative(uiSrc, p).replace(/\\/g, '/')
-    // A path is原版 iff it's under components/ui/ but NOT the file-preview subsystem.
-    const isVendor = (p: string) => {
-      const r = norm(p)
-      return r.startsWith('components/ui/') && !r.includes('/file-preview/')
+    walk(root)
+    return out
+  }
+  const norm = (p: string) => relative(uiSrc, p).replace(/\\/g, '/')
+  // 原版 iff under components/ui/ but NOT the (self-owned) file-preview subsystem.
+  const isVendor = (p: string) => {
+    const r = norm(p)
+    return r.startsWith('components/ui/') && !r.includes('/file-preview/')
+  }
+  const styleBodies = (src: string): string[] =>
+    [...src.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1])
+  // True iff `body` (comments stripped) is EXACTLY one `@layer nv-components {…}`
+  // block whose closing brace is the last token — i.e. no rule sits outside the
+  // layer, and it is not an empty layer with sibling rules.
+  const isFullyLayered = (body: string): boolean => {
+    const s = body.replace(/\/\*[\s\S]*?\*\//g, '').trim()
+    if (!s) return true // empty style block: nothing to layer
+    if (!/^@layer\s+nv-components\s*\{/.test(s)) return false
+    const open = s.indexOf('{')
+    let depth = 0
+    for (let i = open; i < s.length; i++) {
+      if (s[i] === '{') depth++
+      else if (s[i] === '}' && --depth === 0) return i === s.length - 1
     }
+    return false
+  }
+  const allSfcs = [...vueFiles(resolve(uiSrc, 'components')), ...vueFiles(mobileSrc)]
 
-    const all = [...vueFiles(resolve(uiSrc, 'components')), ...vueFiles(mobileSrc)]
-    for (const file of all) {
-      const src = readFileSync(file, 'utf8')
-      const hasStyle = /<style\b/.test(src)
-      if (isVendor(file)) {
-        // 原版: never carries the nv-components layer marker.
-        expect.soft(src, `原版 ${norm(file)}`).not.toContain('@layer nv-')
-      } else if (hasStyle) {
-        // self-owned SFC with styles → must be layered into nv-components.
-        expect.soft(src, `self-owned ${norm(file)}`).toContain('@layer nv-components')
+  it('confines EVERY self-owned SFC style rule to @layer nv-components (§4.1)', () => {
+    // Recursive, and asserts CONTAINMENT (every rule inside the layer) — not merely
+    // that the marker appears. A rule added outside the wrapper, or an empty layer
+    // with sibling rules, fails here.
+    for (const file of allSfcs) {
+      if (isVendor(file)) continue
+      for (const body of styleBodies(readFileSync(file, 'utf8'))) {
+        expect
+          .soft(
+            isFullyLayered(body),
+            `self-owned ${norm(file)} — all rules must sit in @layer nv-components`,
+          )
+          .toBe(true)
       }
+    }
+  })
+
+  it('keeps true原版 shadcn primitives free of Nv / @layer nv- / --nv- markers (§4.4.5)', () => {
+    // file-preview/* is self-owned and excluded; the rest of components/ui/ is
+    // pristine shadcn and must carry none of the three brand markers.
+    for (const file of allSfcs) {
+      if (!isVendor(file)) continue
+      const src = readFileSync(file, 'utf8')
+      expect.soft(src, `原版 ${norm(file)} @layer`).not.toContain('@layer nv-')
+      expect.soft(src, `原版 ${norm(file)} --nv-`).not.toContain('--nv-')
+      expect.soft(src, `原版 ${norm(file)} Nv*`).not.toMatch(/\bNv[A-Z]/)
+    }
+  })
+
+  it('bans inline cubic-bezier literals in self-owned SFCs — curves come from Nv tokens only (§3.2)', () => {
+    // Curves are defined ONCE in theme.css (--nv-ease-*); components reference the
+    // token with no literal fallback. (theme.css/tokens.css are not .vue and hold
+    // the single source, so they are outside this scan.)
+    for (const file of allSfcs) {
+      expect
+        .soft(readFileSync(file, 'utf8'), `${norm(file)} inline cubic-bezier`)
+        .not.toMatch(/cubic-bezier/)
     }
   })
 })

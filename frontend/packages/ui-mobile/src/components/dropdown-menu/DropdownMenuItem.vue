@@ -96,8 +96,8 @@ function pick(value: string | number) {
   .ds-ddm-panel-enter-active,
   .ds-ddm-panel-leave-active {
     transition:
-      transform 0.26s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
-      opacity 0.26s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+      transform 0.26s var(--nv-ease-out-expo),
+      opacity 0.26s var(--nv-ease-out-expo);
   }
   .ds-ddm-panel-enter-from,
   .ds-ddm-panel-leave-to {

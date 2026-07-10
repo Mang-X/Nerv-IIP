@@ -75,7 +75,7 @@ withDefaults(
 <style scoped>
 @layer nv-components {
   .ds-step-fill {
-    transition: width 0.45s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+    transition: width 0.45s var(--nv-ease-out-expo);
   }
   .ds-step-node {
     transition:

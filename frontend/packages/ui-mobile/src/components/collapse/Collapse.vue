@@ -47,7 +47,7 @@ const open = defineModel<boolean>('open', { default: false })
     transition: transform 0.24s var(--nv-ease-out-quart, ease-out);
   }
   .ds-collapse-wrap {
-    transition: grid-template-rows 0.28s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+    transition: grid-template-rows 0.28s var(--nv-ease-out-expo);
   }
   @media (prefers-reduced-motion: reduce) {
     .ds-collapse-chevron,

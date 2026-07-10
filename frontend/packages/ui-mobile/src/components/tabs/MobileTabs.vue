@@ -85,8 +85,8 @@ onMounted(() => nextTick(measure))
     border-radius: 9999px;
     background: var(--nv-brand);
     transition:
-      left 0.28s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
-      width 0.28s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+      left 0.28s var(--nv-ease-out-expo),
+      width 0.28s var(--nv-ease-out-expo);
   }
   @media (prefers-reduced-motion: reduce) {
     .ds-mtab-bar {

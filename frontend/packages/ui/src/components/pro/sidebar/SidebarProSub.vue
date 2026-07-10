@@ -19,7 +19,7 @@ defineProps<{ open?: boolean }>()
   .nv-scr-pro-sub {
     display: grid;
     grid-template-rows: 0fr;
-    transition: grid-template-rows 0.26s var(--nv-ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
+    transition: grid-template-rows 0.26s var(--nv-ease-out-quart);
   }
   .nv-scr-pro-sub.is-open {
     grid-template-rows: 1fr;

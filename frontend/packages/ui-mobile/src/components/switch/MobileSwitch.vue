@@ -54,7 +54,7 @@ const pressed = ref(false)
      back-ease spring for the native iOS feel. */
     transition:
       translate 0.26s var(--nv-ease-out-quart),
-      transform 0.18s var(--nv-ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
+      transform 0.18s var(--nv-ease-out-quart);
   }
   .ds-mswitch-thumb.is-pressed {
     transform: scale(0.9);

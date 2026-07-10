@@ -152,7 +152,7 @@ function nudge(delta: number) {
    otherwise hover (still active while pressing) would keep it big. */
   .ds-slider-dot {
     transform: scale(0.92);
-    transition: transform 0.16s var(--nv-ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
+    transition: transform 0.16s var(--nv-ease-out-quart);
   }
   .ds-slider-thumb:hover .ds-slider-dot,
   .ds-slider-thumb:focus-visible .ds-slider-dot {

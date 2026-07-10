@@ -150,7 +150,7 @@ function confirm() {
   }
   .ds-nk-slide-enter-active,
   .ds-nk-slide-leave-active {
-    transition: transform 0.3s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+    transition: transform 0.3s var(--nv-ease-out-expo);
   }
   .ds-nk-slide-enter-from,
   .ds-nk-slide-leave-to {

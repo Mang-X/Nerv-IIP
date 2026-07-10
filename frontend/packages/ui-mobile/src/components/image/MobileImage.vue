@@ -96,7 +96,7 @@ const boxStyle = computed(() =>
       transparent 70%
     );
     background-size: 220% 100%;
-    animation: ds-mimg-shimmer 1.4s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)) infinite;
+    animation: ds-mimg-shimmer 1.4s var(--nv-ease-out-expo) infinite;
   }
   @keyframes ds-mimg-shimmer {
     from {

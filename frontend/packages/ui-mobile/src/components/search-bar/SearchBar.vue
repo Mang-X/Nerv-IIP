@@ -77,7 +77,7 @@ function cancel() {
     opacity: 0;
     overflow: hidden;
     transition:
-      max-width 0.28s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
+      max-width 0.28s var(--nv-ease-out-expo),
       opacity 0.2s ease;
   }
   .ds-sb-cancel.is-open {

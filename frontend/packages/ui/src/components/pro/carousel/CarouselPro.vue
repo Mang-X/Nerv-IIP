@@ -246,7 +246,7 @@ watch(() => props.autoplay, startAutoplay)
     cursor: grabbing;
   }
   .ds-carousel-snap {
-    transition: transform 0.34s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+    transition: transform 0.34s var(--nv-ease-out-expo);
   }
   .ds-carousel-arrow {
     position: absolute;
@@ -301,7 +301,7 @@ watch(() => props.autoplay, startAutoplay)
     background: color-mix(in oklch, var(--foreground) 38%, transparent);
     box-shadow: 0 0 2px color-mix(in oklch, var(--background) 55%, transparent);
     transition:
-      width 0.3s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
+      width 0.3s var(--nv-ease-out-expo),
       background-color 0.3s ease;
   }
   .ds-carousel-dot-active {

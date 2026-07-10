@@ -46,7 +46,7 @@ const toneVar = computed(
 @layer nv-components {
   .ds-dot-ping {
     background: var(--dot);
-    animation: ds-ping 1.6s var(--nv-ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)) infinite;
+    animation: ds-ping 1.6s var(--nv-ease-out-expo) infinite;
   }
   @keyframes ds-ping {
     0% {
