@@ -1,6 +1,6 @@
 import { fileURLToPath, URL } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
-import { defineConfig } from 'vitepress'
+import { defineConfig, postcssIsolateStyles } from 'vitepress'
 import wasm from 'vite-plugin-wasm'
 
 // Nerv-IIP 设计系统文档 (VitePress).
@@ -253,7 +253,7 @@ export default defineConfig({
           items: [{ text: '工位看板', link: '/components/board' }],
         },
       ],
-      // 大屏 / 控制室 —— 独立 --sb-* 工业蓝令牌层，每组件一页，按分类分组
+      // 大屏 / 控制室 —— 独立 --nv-scr-* 工业蓝令牌层，每组件一页，按分类分组
       '/components/screen': [
         {
           text: '大屏 / 控制室',
@@ -332,6 +332,19 @@ export default defineConfig({
 
   vite: {
     plugins: [wasm(), tailwindcss()],
+    css: {
+      // ADR 0020 §4.2 — official style isolation. `postcssIsolateStyles` appends
+      // `:not(:where(.vp-raw, .vp-raw *))` to VitePress's own reset selectors so
+      // they stop leaking into component demos. The default only isolates
+      // `base.css` (global `h1..h6`/`button` resets); we ADD `vp-doc.css` so the
+      // prose typography (`.vp-doc table` borders/zebra, heading margins, link
+      // colour) also stops bleeding onto demos wrapped in `.vp-raw`
+      // (`<Demo>`/`<ScreenDemo>`/`<MobileDoc>` roots). Replaces the old per-case
+      // `.vp-doc` counter-rules; the removed `revert-layer` hack stays removed.
+      postcss: {
+        plugins: [postcssIsolateStyles({ includeFiles: [/base\.css/, /vp-doc\.css/] })],
+      },
+    },
     resolve: {
       alias: {
         '@nerv-iip/ui/file-preview': fileURLToPath(

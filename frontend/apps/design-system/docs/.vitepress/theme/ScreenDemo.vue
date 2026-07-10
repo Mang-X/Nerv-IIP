@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Dark live-preview wrapper for the screen (big-board) layer — the counterpart of
- * `<Demo>`. The screen components carry their own `--sb-*` industrial-blue tokens
+ * `<Demo>`. The screen components carry their own `--nv-scr-*` industrial-blue tokens
  * and only read well on a dark surface, so this stage paints the control-room
  * backdrop (radial industrial-blue + faint grid) rather than the light card `<Demo>`
  * uses. Slotted content lays itself out; pass `wide` to stretch a single full-width
@@ -12,7 +12,9 @@ defineProps<{ wide?: boolean }>()
 
 <template>
   <ClientOnly>
-    <div class="ds-sd">
+    <!-- `vp-raw` isolates the screen demo from VitePress base/vp-doc resets
+         (ADR 0020 §4.2) — replaces the removed `.vp-doc .sb-tbl` counter-rules. -->
+    <div class="ds-sd vp-raw">
       <div class="ds-sd-grid" />
       <div class="ds-sd-body" :class="{ wide }">
         <slot />
@@ -27,17 +29,24 @@ defineProps<{ wide?: boolean }>()
   margin: 18px 0;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: radial-gradient(135% 130% at 50% -10%, #0a1830 0%, #07101f 38%, #050a14 68%, #03050b 100%);
+  background: radial-gradient(
+    135% 130% at 50% -10%,
+    #0a1830 0%,
+    #07101f 38%,
+    #050a14 68%,
+    #03050b 100%
+  );
   padding: 34px 32px;
   overflow: hidden;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  color: var(--sb-text, #fff);
+  color: var(--nv-scr-text, #fff);
   font-variant-numeric: tabular-nums;
 }
 .ds-sd-grid {
   position: absolute;
   inset: 0;
-  background-image: linear-gradient(rgba(125, 170, 255, 0.06) 1px, transparent 1px),
+  background-image:
+    linear-gradient(rgba(125, 170, 255, 0.06) 1px, transparent 1px),
     linear-gradient(90deg, rgba(125, 170, 255, 0.06) 1px, transparent 1px);
   background-size: 44px 44px;
   -webkit-mask-image: radial-gradient(90% 90% at 50% 30%, #000 30%, transparent 100%);

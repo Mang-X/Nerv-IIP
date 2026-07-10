@@ -195,23 +195,25 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKey))
 </template>
 
 <style scoped>
-.ds-cmd-item {
-  transition: background-color 0.12s var(--ease-out-quart, ease-out);
-}
-.ds-cmd-item[data-active] {
-  background: var(--accent);
-}
-.ds-cmd-kbd {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.25rem;
-  height: 1.25rem;
-  padding: 0 0.25rem;
-  border: 1px solid var(--border);
-  border-radius: 0.3rem;
-  background: var(--muted);
-  font-family: var(--font-sans);
-  font-size: 0.7rem;
+@layer nv-components {
+  .ds-cmd-item {
+    transition: background-color 0.12s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-cmd-item[data-active] {
+    background: var(--accent);
+  }
+  .ds-cmd-kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding: 0 0.25rem;
+    border: 1px solid var(--border);
+    border-radius: 0.3rem;
+    background: var(--muted);
+    font-family: var(--font-sans);
+    font-size: 0.7rem;
+  }
 }
 </style>

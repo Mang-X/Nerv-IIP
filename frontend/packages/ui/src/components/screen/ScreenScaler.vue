@@ -45,16 +45,18 @@ const stageStyle = computed(() => ({
 </template>
 
 <style scoped>
-.screen-scaler {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  background: var(--sb-bg, #03050b);
-}
-.screen-scaler__stage {
-  flex: none;
+@layer nv-components {
+  .screen-scaler {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: var(--nv-scr-bg, #03050b);
+  }
+  .screen-scaler__stage {
+    flex: none;
+  }
 }
 </style>

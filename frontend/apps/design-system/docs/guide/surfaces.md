@@ -57,14 +57,14 @@ import { MonitorIcon, SmartphoneIcon, LayoutDashboardIcon, ArrowRightIcon } from
   text-decoration: none !important;
   font-weight: inherit;
   transition:
-    border-color 0.2s var(--ease-out-quart, ease-out),
-    transform 0.2s var(--ease-out-quart, ease-out),
-    box-shadow 0.2s var(--ease-out-quart, ease-out);
+    border-color 0.2s var(--nv-ease-out-quart, ease-out),
+    transform 0.2s var(--nv-ease-out-quart, ease-out),
+    box-shadow 0.2s var(--nv-ease-out-quart, ease-out);
 }
 .ds-surface:hover {
-  border-color: color-mix(in oklch, var(--brand) 45%, var(--border));
+  border-color: color-mix(in oklch, var(--nv-brand) 45%, var(--border));
   transform: translateY(-2px);
-  box-shadow: 0 10px 30px -14px color-mix(in oklch, var(--brand) 50%, black 40%);
+  box-shadow: 0 10px 30px -14px color-mix(in oklch, var(--nv-brand) 50%, black 40%);
 }
 .ds-surface-icon {
   display: inline-flex;
@@ -73,8 +73,8 @@ import { MonitorIcon, SmartphoneIcon, LayoutDashboardIcon, ArrowRightIcon } from
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 11px;
-  background: color-mix(in oklch, var(--brand) 12%, transparent);
-  color: var(--brand-strong);
+  background: color-mix(in oklch, var(--nv-brand) 12%, transparent);
+  color: var(--nv-brand-strong);
 }
 .ds-surface-icon :deep(svg) { width: 1.35rem; height: 1.35rem; }
 .ds-surface-name { margin-top: 0.875rem; font-size: 1rem; font-weight: 600; }
@@ -91,12 +91,12 @@ import { MonitorIcon, SmartphoneIcon, LayoutDashboardIcon, ArrowRightIcon } from
   margin-top: 1rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--brand-strong);
+  color: var(--nv-brand-strong);
 }
 .ds-surface-go :deep(svg) {
   width: 0.9rem;
   height: 0.9rem;
-  transition: transform 0.2s var(--ease-out-quart, ease-out);
+  transition: transform 0.2s var(--nv-ease-out-quart, ease-out);
 }
 .ds-surface:hover .ds-surface-go :deep(svg) { transform: translateX(2px); }
 @media (prefers-reduced-motion: reduce) {

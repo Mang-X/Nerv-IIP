@@ -37,22 +37,24 @@ const tone = computed(() => (props.status === 'success' ? 'text-success' : 'text
 </template>
 
 <style scoped>
-.ds-result-icon {
-  animation: ds-result-pop 0.42s var(--ease-out-back, cubic-bezier(0.34, 1.4, 0.64, 1)) both;
-}
-@keyframes ds-result-pop {
-  from {
-    opacity: 0;
-    transform: scale(0.4);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
   .ds-result-icon {
-    animation: none;
+    animation: ds-result-pop 0.42s var(--nv-ease-out-quart) both;
+  }
+  @keyframes ds-result-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-result-icon {
+      animation: none;
+    }
   }
 }
 </style>

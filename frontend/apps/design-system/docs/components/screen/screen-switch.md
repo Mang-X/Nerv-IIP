@@ -12,7 +12,7 @@ const alarm = ref(false)
 
 # NvScreenSwitch 开关
 
-大屏开关:关态是一口下沉的细线轨道,开态填青色带柔光并把手柄滑到另一端。按下手柄微微压扁(无回弹)。状态同时由填充与手柄位置承载 —— 绝不只靠颜色,`aria-checked` 对辅助技术保持诚实。通过 `v-model`(布尔)绑定,基于独立的 `--sb-*` 令牌。
+大屏开关:关态是一口下沉的细线轨道,开态填青色带柔光并把手柄滑到另一端。按下手柄微微压扁(无回弹)。状态同时由填充与手柄位置承载 —— 绝不只靠颜色,`aria-checked` 对辅助技术保持诚实。通过 `v-model`(布尔)绑定,基于独立的 `--nv-scr-*` 令牌。
 
 ## 基础用法
 
@@ -20,10 +20,10 @@ const alarm = ref(false)
 
 <ScreenDemo>
   <div style="display:flex;align-items:center;gap:24px">
-    <label style="display:flex;align-items:center;gap:10px;color:var(--sb-text-2);font-size:14px">
+    <label style="display:flex;align-items:center;gap:10px;color:var(--nv-scr-text-2);font-size:14px">
       <NvScreenSwitch v-model="auto" /> 自动排产
     </label>
-    <label style="display:flex;align-items:center;gap:10px;color:var(--sb-text-2);font-size:14px">
+    <label style="display:flex;align-items:center;gap:10px;color:var(--nv-scr-text-2);font-size:14px">
       <NvScreenSwitch v-model="alarm" /> 声光报警
     </label>
   </div>

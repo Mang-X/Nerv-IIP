@@ -66,14 +66,14 @@ const hotBacklogKey = computed(() => {
   return ls.length ? ls.reduce((a, b) => (b.backlog > a.backlog ? b : a)).key : ''
 })
 
-// —— 不良率趋势（今日 12h / 近 30 天）：红色虚线为红线阈值（经 --sb-indigo 局部
+// —— 不良率趋势（今日 12h / 近 30 天）：红色虚线为红线阈值（经 --nv-scr-indigo 局部
 //    重映射复用 TrendChart 的 plan 线，组件零改动）——
 const trendRange = ref<string | number>('12h')
 const TREND_RANGES = [
   { label: '今日 12h', value: '12h' },
   { label: '近 30 天', value: '30d' },
 ]
-// 分层曲线用字面量色 —— --sb-indigo 在本页被局部重映射成红线色，变量会被污染
+// 分层曲线用字面量色 —— --nv-scr-indigo 在本页被局部重映射成红线色，变量会被污染
 const LAYER_COLORS: Record<string, string> = { iqc: '#5fbf7a', fqc: '#8b9be6' }
 const trendData = computed(() => {
   const b = board.value
@@ -305,7 +305,7 @@ const trendPin = computed(() => {
                   <NvSparkline
                     :data="l.trend30"
                     area
-                    :color="worstLayerKey === l.key ? 'var(--sb-amber)' : 'var(--sb-cyan)'"
+                    :color="worstLayerKey === l.key ? 'var(--nv-scr-amber)' : 'var(--nv-scr-cyan)'"
                   />
                 </div>
                 <p class="qt-spark-cap">近 30 天件不良率</p>
@@ -385,577 +385,579 @@ const trendPin = computed(() => {
 </template>
 
 <style scoped>
-.qb {
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.qb-loading {
-  height: 100%;
-  display: grid;
-  place-content: center;
-  color: var(--sb-muted);
-  font-size: 15px;
-}
-.qb-cap {
-  font-size: 12.5px;
-  color: var(--sb-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* 大数字 + 单位下标 + 语义色渐隐强调线（与产线屏同源语言） */
-.qb-num {
-  display: inline-flex;
-  align-items: flex-end;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-.qb-num small {
-  font-size: 0.42em;
-  font-weight: 600;
-  margin-left: 2px;
-  padding-bottom: 0.14em;
-}
-.qb-score-line {
-  width: 46px;
-  height: 2px;
-  margin-top: 10px;
-  border-radius: 1px;
-  background: linear-gradient(90deg, currentColor, transparent);
-  opacity: 0.75;
-}
-
-/* —— 顶部 KPI 带 —— */
-.qb-band-in {
-  display: flex;
-  align-items: center;
-  gap: 34px;
-}
-.qb-hero {
-  flex: none;
-  min-width: 218px;
-  position: relative;
-}
-.qb-hero + .qb-hero::before,
-.qb-cells::before {
-  content: '';
-  position: absolute;
-  left: -17px;
-  top: 6px;
-  bottom: 6px;
-  width: 1px;
-  background: var(--sb-divider);
-}
-.qb-hero-t {
-  font-size: 14.5px;
-  color: var(--sb-muted);
-  letter-spacing: 0.04em;
-}
-.qb-hero-v {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  margin-top: 9px;
-  font-size: 50px;
-  font-weight: 800;
-  color: var(--sb-text);
-  text-shadow: var(--sb-value-glow);
-}
-.qb-hero-v.ok {
-  color: var(--sb-text);
-}
-.qb-hero-v.ok .qb-score-line {
-  color: var(--sb-green);
-}
-.qb-hero-v.bad {
-  color: var(--sb-red);
-  text-shadow: 0 0 20px rgba(239, 90, 99, 0.4);
-}
-.qb-hero-sub {
-  margin: 9px 0 0;
-  font-size: 13px;
-  color: var(--sb-muted);
-  font-variant-numeric: tabular-nums;
-}
-.qb-hero-sub b {
-  color: var(--sb-text-2);
-  font-weight: 700;
-}
-.qb-over {
-  margin-left: 8px;
-  color: var(--sb-red);
-  font-weight: 700;
-}
-.qb-cells {
-  flex: 1;
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-width: 0;
-}
-.qb-cell {
-  flex: 1;
-  min-width: 0;
-  padding: 4px 20px;
-  position: relative;
-}
-.qb-cell + .qb-cell::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 1px;
-  background: var(--sb-divider);
-}
-/* 大屏远视距：KPI 标签 14px 起 */
-.qb-cell dt {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 14px;
-  color: var(--sb-muted);
-  white-space: nowrap;
-}
-.qb-cell-ic {
-  color: var(--sb-faint);
-  flex: none;
-}
-.qb-cell dd {
-  margin: 8px 0 0;
-  font-size: 31px;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--sb-text);
-  font-variant-numeric: tabular-nums;
-}
-.qb-cell dd.warn {
-  color: var(--sb-text);
-}
-.qb-cell-sub {
-  margin: 7px 0 0;
-  font-size: 12px;
-  color: var(--sb-faint);
-  font-variant-numeric: tabular-nums;
-}
-.qb-cell-sub.bad {
-  color: var(--sb-red);
-  font-weight: 600;
-}
-.qb-cell-sub.warn {
-  color: var(--sb-amber);
-}
-
-/* —— 主体三列 —— */
-/* fr 必须包 minmax(0,·)：裸 fr 的隐式 min-width = 内容宽，
-   多序列图例一长就把整列撑溢出（30 天 tab 宽度异常的根因） */
-.qb-main {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1.42fr) minmax(0, 1.18fr) minmax(0, 1fr);
-  gap: 16px;
-}
-.qb-mid,
-.qb-right {
-  display: grid;
-  gap: 14px;
-  min-height: 0;
-  min-width: 0;
-}
-.qb-mid {
-  grid-template-rows: 1fr auto;
-}
-.qb-right {
-  grid-template-rows: auto 1fr;
-}
-.qb-trend {
-  min-height: 0;
-  min-width: 0;
-}
-/* 红线阈值线：把 TrendChart 的 plan（indigo）在本面板内重映射为红（组件零改动） */
-.qb-trend {
-  --sb-indigo: rgba(239, 90, 99, 0.9);
-}
-
-/* —— NCR 看板 —— */
-.qb-ncr {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.qb-ncr-list {
-  flex: 1;
-  min-height: 0;
-}
-.qn-row {
-  padding: 7px 2px 8px;
-}
-.qn-row + .qn-row {
-  border-top: 1px solid var(--sb-divider);
-}
-.qn-row.overdue {
-  background: linear-gradient(90deg, rgba(239, 90, 99, 0.055), transparent 70%);
-  border-radius: 6px;
-}
-.qn-top {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  line-height: 1.4;
-}
-/* 超期红呼吸 —— 全屏唯一的呼吸元素，只给活异常 */
-.qn-alert {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--sb-red);
-  box-shadow: 0 0 8px var(--sb-red);
-  animation: qn-breathe 1.8s ease-in-out infinite;
-}
-@keyframes qn-breathe {
-  50% {
-    opacity: 0.35;
+@layer app {
+  .qb {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
   }
-}
-.qn-code {
-  flex: none;
-  font-family: ui-monospace, monospace;
-  font-size: 13px;
-  color: var(--sb-cyan);
-}
-.qn-defect {
-  flex: 1;
-  min-width: 0;
-  font-size: 14.5px;
-  font-weight: 600;
-  color: var(--sb-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.qn-qty {
-  flex: none;
-  font-size: 13px;
-  color: var(--sb-muted);
-  font-variant-numeric: tabular-nums;
-}
-.qn-sub {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-top: 3px;
-  padding-left: 2px;
-  font-size: 12.5px;
-  min-width: 0;
-  line-height: 1.35;
-}
-.qn-src {
-  flex: none;
-  color: var(--sb-text-2);
-}
-.qn-doc {
-  flex: none;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-  color: var(--sb-faint);
-}
-.qn-flex {
-  flex: 1;
-  min-width: 0;
-}
-.qn-age {
-  flex: none;
-  font-weight: 600;
-  color: var(--sb-muted);
-  font-variant-numeric: tabular-nums;
-}
-.qn-age.bad {
-  color: var(--sb-red);
-}
-.qn-age em {
-  font-style: normal;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  margin-right: 5px;
-}
-.qn-status {
-  flex: none;
-  min-width: 96px;
-  text-align: right;
-  font-size: 12.5px;
-  white-space: nowrap;
-}
-.qn-status.review {
-  color: var(--sb-amber);
-}
-.qn-status.disposing {
-  color: var(--sb-cyan);
-}
-.qn-status.verify {
-  color: var(--sb-green);
-}
-/* 状态机收口行：待评审 → 处置中 → 待验证 分布 + 超期合计 */
-.qn-summary {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  margin-top: 9px;
-  padding-top: 10px;
-  border-top: 1px solid var(--sb-divider);
-  font-size: 12.5px;
-  color: var(--sb-muted);
-  font-variant-numeric: tabular-nums;
-}
-.qn-summary b {
-  font-weight: 700;
-  margin-left: 2px;
-}
-.qn-summary b.amber {
-  color: var(--sb-amber);
-}
-.qn-summary b.cyan {
-  color: var(--sb-cyan);
-}
-.qn-summary b.green {
-  color: var(--sb-green);
-}
-.qn-sla-bad {
-  color: var(--sb-red);
-}
+  .qb-loading {
+    height: 100%;
+    display: grid;
+    place-content: center;
+    color: var(--nv-scr-muted);
+    font-size: 15px;
+  }
+  .qb-cap {
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
 
-/* —— 三层合格率 —— */
-.qb-tri {
-  min-height: 0;
-}
-.qb-tri-in {
-  display: flex;
-  align-items: stretch;
-}
-.qt-cell {
-  flex: 1;
-  min-width: 0;
-  padding: 2px 18px 0;
-  position: relative;
-}
-.qt-cell:first-child {
-  padding-left: 2px;
-}
-.qt-cell + .qt-cell::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 6px;
-  bottom: 6px;
-  width: 1px;
-  background: var(--sb-divider);
-}
-.qt-t {
-  font-size: 13px;
-  color: var(--sb-muted);
-  white-space: nowrap;
-}
-.qt-t small {
-  font-size: 11px;
-  color: var(--sb-faint);
-  letter-spacing: 0.06em;
-  margin-left: 3px;
-}
-.qt-v {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  margin-top: 9px;
-  font-size: 34px;
-  font-weight: 800;
-  line-height: 1;
-  color: var(--sb-text);
-}
-.qt-v.ok .qb-score-line {
-  color: var(--sb-green);
-}
-.qt-v.warn {
-  color: var(--sb-amber);
-}
-.qt-sub {
-  margin: 9px 0 0;
-  font-size: 12.5px;
-  color: var(--sb-muted);
-  font-variant-numeric: tabular-nums;
-}
-.qt-sub b {
-  color: var(--sb-text-2);
-  font-weight: 700;
-}
-.qt-sub2 {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: var(--sb-faint);
-  font-variant-numeric: tabular-nums;
-}
-/* 分层 30 天件不良率迷你趋势 */
-.qt-spark {
-  height: 30px;
-  margin-top: 9px;
-}
-.qt-spark-cap {
-  margin: 4px 0 0;
-  font-size: 11px;
-  color: var(--sb-faint);
-}
-.qt-def {
-  font-weight: 700;
-  color: var(--sb-text-2);
-}
-.qt-def.bad {
-  color: var(--sb-red);
-}
-.qt-limit {
-  color: var(--sb-faint);
-}
-/* 未过批次来源：独立一行，避免与件不良率挤压截断 */
-.qt-fail {
-  display: block;
-  margin-top: 3px;
-  font-weight: 600;
-  color: var(--sb-amber);
-}
+  /* 大数字 + 单位下标 + 语义色渐隐强调线（与产线屏同源语言） */
+  .qb-num {
+    display: inline-flex;
+    align-items: flex-end;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .qb-num small {
+    font-size: 0.42em;
+    font-weight: 600;
+    margin-left: 2px;
+    padding-bottom: 0.14em;
+  }
+  .qb-score-line {
+    width: 46px;
+    height: 2px;
+    margin-top: 10px;
+    border-radius: 1px;
+    background: linear-gradient(90deg, currentColor, transparent);
+    opacity: 0.75;
+  }
 
-/* —— 检验任务积压 —— */
-.qb-pareto {
-  min-height: 0;
-}
-.qb-backlog {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.qb-ib {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-evenly;
-  gap: 10px;
-}
-.ib-group {
-  padding: 2px 0;
-}
-.ib-top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-.ib-label {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--sb-text-2);
-}
-.ib-label small {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--sb-faint);
-  letter-spacing: 0.06em;
-  margin-left: 4px;
-}
-.ib-n {
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--sb-text);
-  font-variant-numeric: tabular-nums;
-}
-.ib-n small {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--sb-muted);
-}
-.ib-n.warn {
-  color: var(--sb-amber);
-}
-.ib-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-top: 6px;
-  font-size: 12.5px;
-  color: var(--sb-muted);
-  font-variant-numeric: tabular-nums;
-  min-width: 0;
-}
-.ib-meta b {
-  font-weight: 600;
-  color: var(--sb-text-2);
-}
-.ib-meta b.warn {
-  color: var(--sb-amber);
-}
-.ib-topsrc {
-  color: var(--sb-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ib-today {
-  flex: none;
-  color: var(--sb-muted);
-}
-/* 今日进度：发丝轨道 + 青色渐隐填充（静态不发光） */
-.ib-bar {
-  margin-top: 8px;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.045);
-  box-shadow: inset 0 0 0 1px var(--sb-line);
-  overflow: hidden;
-}
-.ib-bar i {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(74, 166, 238, 0.66), rgba(74, 166, 238, 0.16));
-  transition: width 0.6s var(--sb-ease-emphasized);
-}
+  /* —— 顶部 KPI 带 —— */
+  .qb-band-in {
+    display: flex;
+    align-items: center;
+    gap: 34px;
+  }
+  .qb-hero {
+    flex: none;
+    min-width: 218px;
+    position: relative;
+  }
+  .qb-hero + .qb-hero::before,
+  .qb-cells::before {
+    content: '';
+    position: absolute;
+    left: -17px;
+    top: 6px;
+    bottom: 6px;
+    width: 1px;
+    background: var(--nv-scr-divider);
+  }
+  .qb-hero-t {
+    font-size: 14.5px;
+    color: var(--nv-scr-muted);
+    letter-spacing: 0.04em;
+  }
+  .qb-hero-v {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-top: 9px;
+    font-size: 50px;
+    font-weight: 800;
+    color: var(--nv-scr-text);
+    text-shadow: var(--nv-scr-value-glow);
+  }
+  .qb-hero-v.ok {
+    color: var(--nv-scr-text);
+  }
+  .qb-hero-v.ok .qb-score-line {
+    color: var(--nv-scr-green);
+  }
+  .qb-hero-v.bad {
+    color: var(--nv-scr-red);
+    text-shadow: 0 0 20px rgba(239, 90, 99, 0.4);
+  }
+  .qb-hero-sub {
+    margin: 9px 0 0;
+    font-size: 13px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .qb-hero-sub b {
+    color: var(--nv-scr-text-2);
+    font-weight: 700;
+  }
+  .qb-over {
+    margin-left: 8px;
+    color: var(--nv-scr-red);
+    font-weight: 700;
+  }
+  .qb-cells {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  .qb-cell {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 20px;
+    position: relative;
+  }
+  .qb-cell + .qb-cell::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 1px;
+    background: var(--nv-scr-divider);
+  }
+  /* 大屏远视距：KPI 标签 14px 起 */
+  .qb-cell dt {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 14px;
+    color: var(--nv-scr-muted);
+    white-space: nowrap;
+  }
+  .qb-cell-ic {
+    color: var(--nv-scr-faint);
+    flex: none;
+  }
+  .qb-cell dd {
+    margin: 8px 0 0;
+    font-size: 31px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .qb-cell dd.warn {
+    color: var(--nv-scr-text);
+  }
+  .qb-cell-sub {
+    margin: 7px 0 0;
+    font-size: 12px;
+    color: var(--nv-scr-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .qb-cell-sub.bad {
+    color: var(--nv-scr-red);
+    font-weight: 600;
+  }
+  .qb-cell-sub.warn {
+    color: var(--nv-scr-amber);
+  }
 
-/* —— 页脚（诚实标注） —— */
-.qb-foot-l {
-  display: inline-flex;
-  align-items: center;
-  gap: 18px;
-  min-width: 0;
-}
-.qb-back {
-  color: var(--sb-cyan);
-  text-decoration: none;
-  font-size: 13.5px;
-  flex: none;
-}
-.qb-foot {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  font-size: 12.5px;
-  color: var(--sb-faint);
-  border-top: 1px solid var(--sb-divider);
-  padding-top: 11px;
-}
+  /* —— 主体三列 —— */
+  /* fr 必须包 minmax(0,·)：裸 fr 的隐式 min-width = 内容宽，
+   多序列图例一长就把整列撑溢出（30 天 tab 宽度异常的根因） */
+  .qb-main {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1.42fr) minmax(0, 1.18fr) minmax(0, 1fr);
+    gap: 16px;
+  }
+  .qb-mid,
+  .qb-right {
+    display: grid;
+    gap: 14px;
+    min-height: 0;
+    min-width: 0;
+  }
+  .qb-mid {
+    grid-template-rows: 1fr auto;
+  }
+  .qb-right {
+    grid-template-rows: auto 1fr;
+  }
+  .qb-trend {
+    min-height: 0;
+    min-width: 0;
+  }
+  /* 红线阈值线：把 TrendChart 的 plan（indigo）在本面板内重映射为红（组件零改动） */
+  .qb-trend {
+    --nv-scr-indigo: rgba(239, 90, 99, 0.9);
+  }
 
-@media (prefers-reduced-motion: reduce) {
+  /* —— NCR 看板 —— */
+  .qb-ncr {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .qb-ncr-list {
+    flex: 1;
+    min-height: 0;
+  }
+  .qn-row {
+    padding: 7px 2px 8px;
+  }
+  .qn-row + .qn-row {
+    border-top: 1px solid var(--nv-scr-divider);
+  }
+  .qn-row.overdue {
+    background: linear-gradient(90deg, rgba(239, 90, 99, 0.055), transparent 70%);
+    border-radius: 6px;
+  }
+  .qn-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    line-height: 1.4;
+  }
+  /* 超期红呼吸 —— 全屏唯一的呼吸元素，只给活异常 */
   .qn-alert {
-    animation: none;
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--nv-scr-red);
+    box-shadow: 0 0 8px var(--nv-scr-red);
+    animation: qn-breathe 1.8s ease-in-out infinite;
+  }
+  @keyframes qn-breathe {
+    50% {
+      opacity: 0.35;
+    }
+  }
+  .qn-code {
+    flex: none;
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+    color: var(--nv-scr-cyan);
+  }
+  .qn-defect {
+    flex: 1;
+    min-width: 0;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--nv-scr-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .qn-qty {
+    flex: none;
+    font-size: 13px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .qn-sub {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-top: 3px;
+    padding-left: 2px;
+    font-size: 12.5px;
+    min-width: 0;
+    line-height: 1.35;
+  }
+  .qn-src {
+    flex: none;
+    color: var(--nv-scr-text-2);
+  }
+  .qn-doc {
+    flex: none;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--nv-scr-faint);
+  }
+  .qn-flex {
+    flex: 1;
+    min-width: 0;
+  }
+  .qn-age {
+    flex: none;
+    font-weight: 600;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .qn-age.bad {
+    color: var(--nv-scr-red);
+  }
+  .qn-age em {
+    font-style: normal;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    margin-right: 5px;
+  }
+  .qn-status {
+    flex: none;
+    min-width: 96px;
+    text-align: right;
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+  .qn-status.review {
+    color: var(--nv-scr-amber);
+  }
+  .qn-status.disposing {
+    color: var(--nv-scr-cyan);
+  }
+  .qn-status.verify {
+    color: var(--nv-scr-green);
+  }
+  /* 状态机收口行：待评审 → 处置中 → 待验证 分布 + 超期合计 */
+  .qn-summary {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-top: 9px;
+    padding-top: 10px;
+    border-top: 1px solid var(--nv-scr-divider);
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .qn-summary b {
+    font-weight: 700;
+    margin-left: 2px;
+  }
+  .qn-summary b.amber {
+    color: var(--nv-scr-amber);
+  }
+  .qn-summary b.cyan {
+    color: var(--nv-scr-cyan);
+  }
+  .qn-summary b.green {
+    color: var(--nv-scr-green);
+  }
+  .qn-sla-bad {
+    color: var(--nv-scr-red);
+  }
+
+  /* —— 三层合格率 —— */
+  .qb-tri {
+    min-height: 0;
+  }
+  .qb-tri-in {
+    display: flex;
+    align-items: stretch;
+  }
+  .qt-cell {
+    flex: 1;
+    min-width: 0;
+    padding: 2px 18px 0;
+    position: relative;
+  }
+  .qt-cell:first-child {
+    padding-left: 2px;
+  }
+  .qt-cell + .qt-cell::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 1px;
+    background: var(--nv-scr-divider);
+  }
+  .qt-t {
+    font-size: 13px;
+    color: var(--nv-scr-muted);
+    white-space: nowrap;
+  }
+  .qt-t small {
+    font-size: 11px;
+    color: var(--nv-scr-faint);
+    letter-spacing: 0.06em;
+    margin-left: 3px;
+  }
+  .qt-v {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-top: 9px;
+    font-size: 34px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--nv-scr-text);
+  }
+  .qt-v.ok .qb-score-line {
+    color: var(--nv-scr-green);
+  }
+  .qt-v.warn {
+    color: var(--nv-scr-amber);
+  }
+  .qt-sub {
+    margin: 9px 0 0;
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .qt-sub b {
+    color: var(--nv-scr-text-2);
+    font-weight: 700;
+  }
+  .qt-sub2 {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--nv-scr-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  /* 分层 30 天件不良率迷你趋势 */
+  .qt-spark {
+    height: 30px;
+    margin-top: 9px;
+  }
+  .qt-spark-cap {
+    margin: 4px 0 0;
+    font-size: 11px;
+    color: var(--nv-scr-faint);
+  }
+  .qt-def {
+    font-weight: 700;
+    color: var(--nv-scr-text-2);
+  }
+  .qt-def.bad {
+    color: var(--nv-scr-red);
+  }
+  .qt-limit {
+    color: var(--nv-scr-faint);
+  }
+  /* 未过批次来源：独立一行，避免与件不良率挤压截断 */
+  .qt-fail {
+    display: block;
+    margin-top: 3px;
+    font-weight: 600;
+    color: var(--nv-scr-amber);
+  }
+
+  /* —— 检验任务积压 —— */
+  .qb-pareto {
+    min-height: 0;
+  }
+  .qb-backlog {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .qb-ib {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
+    gap: 10px;
+  }
+  .ib-group {
+    padding: 2px 0;
+  }
+  .ib-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .ib-label {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--nv-scr-text-2);
+  }
+  .ib-label small {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--nv-scr-faint);
+    letter-spacing: 0.06em;
+    margin-left: 4px;
+  }
+  .ib-n {
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .ib-n small {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--nv-scr-muted);
+  }
+  .ib-n.warn {
+    color: var(--nv-scr-amber);
+  }
+  .ib-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-top: 6px;
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 0;
+  }
+  .ib-meta b {
+    font-weight: 600;
+    color: var(--nv-scr-text-2);
+  }
+  .ib-meta b.warn {
+    color: var(--nv-scr-amber);
+  }
+  .ib-topsrc {
+    color: var(--nv-scr-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ib-today {
+    flex: none;
+    color: var(--nv-scr-muted);
+  }
+  /* 今日进度：发丝轨道 + 青色渐隐填充（静态不发光） */
+  .ib-bar {
+    margin-top: 8px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.045);
+    box-shadow: inset 0 0 0 1px var(--nv-scr-line);
+    overflow: hidden;
   }
   .ib-bar i {
-    transition: none;
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(74, 166, 238, 0.66), rgba(74, 166, 238, 0.16));
+    transition: width 0.6s var(--nv-scr-ease-emphasized);
+  }
+
+  /* —— 页脚（诚实标注） —— */
+  .qb-foot-l {
+    display: inline-flex;
+    align-items: center;
+    gap: 18px;
+    min-width: 0;
+  }
+  .qb-back {
+    color: var(--nv-scr-cyan);
+    text-decoration: none;
+    font-size: 13.5px;
+    flex: none;
+  }
+  .qb-foot {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    font-size: 12.5px;
+    color: var(--nv-scr-faint);
+    border-top: 1px solid var(--nv-scr-divider);
+    padding-top: 11px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .qn-alert {
+      animation: none;
+    }
+    .ib-bar i {
+      transition: none;
+    }
   }
 }
 </style>

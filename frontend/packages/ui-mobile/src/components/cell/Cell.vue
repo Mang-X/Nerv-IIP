@@ -55,19 +55,21 @@ const slots = useSlots()
 </template>
 
 <style scoped>
-/* Full-bleed hairline separator (consistent with ListRow / VirtualList / the
+@layer nv-components {
+  /* Full-bleed hairline separator (consistent with ListRow / VirtualList / the
    rest of the system); suppressed on the last row of a group. */
-.ds-cell::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 1px;
-  background: var(--border);
-  pointer-events: none;
-}
-.ds-cell:last-child::after {
-  display: none;
+  .ds-cell::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 1px;
+    background: var(--border);
+    pointer-events: none;
+  }
+  .ds-cell:last-child::after {
+    display: none;
+  }
 }
 </style>

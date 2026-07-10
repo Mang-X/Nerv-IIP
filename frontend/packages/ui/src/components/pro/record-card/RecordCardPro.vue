@@ -83,12 +83,14 @@ const progressPct = computed(() =>
 </template>
 
 <style scoped>
-.ds-rc-bar {
-  transition: width 0.4s var(--ease-out-quart, ease-out);
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
   .ds-rc-bar {
-    transition: none;
+    transition: width 0.4s var(--nv-ease-out-quart, ease-out);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-rc-bar {
+      transition: none;
+    }
   }
 }
 </style>

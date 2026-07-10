@@ -1,6 +1,6 @@
 /**
  * Screen — big-board (control-room) component layer. Independent dark
- * "industrial-blue" surface (its own `--sb-*` tokens, no light mode), decoupled
+ * "industrial-blue" surface (its own `--nv-scr-*` tokens, no light mode), decoupled
  * from the PC/mobile layers and following only the shared design philosophy.
  * Importing any screen component pulls in the token sheet via this barrel.
  */

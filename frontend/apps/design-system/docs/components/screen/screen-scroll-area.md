@@ -14,10 +14,10 @@ const rows = Array.from({ length: 14 }, (_, i) => ({
 
 # NvScreenScrollArea 滚动区
 
-shadcn / reka-ui ScrollArea 的**大屏重制版**(shadcn 原版零改动,按定制规矩复制重建):悬浮细滚动条——无轨道底色、发丝级圆角 thumb、hover / 滚动时才浮现;上下缘**渐隐遮罩 + 微呼吸箭头**提示还有内容可滑(挂墙远视距也能一眼看出列表未到底)。基于独立的 `--sb-*` 令牌。
+shadcn / reka-ui ScrollArea 的**大屏重制版**(shadcn 原版零改动,按定制规矩复制重建):悬浮细滚动条——无轨道底色、发丝级圆角 thumb、hover / 滚动时才浮现;上下缘**渐隐遮罩 + 微呼吸箭头**提示还有内容可滑(挂墙远视距也能一眼看出列表未到底)。基于独立的 `--nv-scr-*` 令牌。
 
 ::: warning 虚拟滚动容器不适用
-`useVirtualList` 需绑定原生滚动元素(`containerProps`),这类容器请保留原生滚动并使用全局 `.sb-scroll` 细滚条样式(视觉与本组件一致)。
+`useVirtualList` 需绑定原生滚动元素(`containerProps`),这类容器请保留原生滚动并使用全局 `.nv-scr-scroll` 细滚条样式(视觉与本组件一致)。
 :::
 
 ## 基础用法
@@ -26,9 +26,9 @@ shadcn / reka-ui ScrollArea 的**大屏重制版**(shadcn 原版零改动,按定
 
 <ScreenDemo>
   <NvScreenScrollArea style="max-height: 180px">
-    <div v-for="r in rows" :key="r.code" style="display: flex; gap: 10px; padding: 8px 2px; border-bottom: 1px solid var(--sb-divider); font-size: 13px">
-      <span style="font-family: ui-monospace, monospace; color: var(--sb-cyan)">{{ r.code }}</span>
-      <span style="flex: 1; color: var(--sb-text-2)">{{ r.line }} · {{ r.text }}</span>
+    <div v-for="r in rows" :key="r.code" style="display: flex; gap: 10px; padding: 8px 2px; border-bottom: 1px solid var(--nv-scr-divider); font-size: 13px">
+      <span style="font-family: ui-monospace, monospace; color: var(--nv-scr-cyan)">{{ r.code }}</span>
+      <span style="flex: 1; color: var(--nv-scr-text-2)">{{ r.line }} · {{ r.text }}</span>
     </div>
   </NvScreenScrollArea>
 </ScreenDemo>

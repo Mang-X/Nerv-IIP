@@ -72,93 +72,95 @@ onBeforeUnmount(clearTimer)
 </template>
 
 <style scoped>
-.ds-toast-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  pointer-events: none;
-}
-.ds-toast-blocking {
-  pointer-events: auto;
-}
-.ds-toast {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.625rem;
-  max-width: 16rem;
-  padding: 0.875rem 1rem;
-  border-radius: 14px;
-  background-color: oklch(0.21 0 0 / 0.92);
-  color: #fff;
-  text-align: center;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 12px 40px -12px rgb(0 0 0 / 0.6);
-}
-/* Text-only toasts are a compact single line. */
-.ds-toast-compact {
-  padding: 0.625rem 0.875rem;
-  border-radius: 10px;
-}
-.ds-toast-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.ds-toast-icon :deep(svg) {
-  width: 1.75rem;
-  height: 1.75rem;
-}
-.ds-toast-icon[data-type='success'] {
-  color: var(--success);
-}
-.ds-toast-icon[data-type='error'] {
-  color: var(--destructive);
-}
-.ds-toast-msg {
-  font-size: 0.875rem;
-  line-height: 1.4;
-}
-.ds-toast-spin {
-  animation: ds-toast-spin 0.8s linear infinite;
-}
-@keyframes ds-toast-spin {
-  to {
-    transform: rotate(360deg);
+@layer nv-components {
+  .ds-toast-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    pointer-events: none;
   }
-}
-
-.ds-toast-enter-active {
-  transition:
-    opacity 0.2s var(--ease-out-quart, ease-out),
-    transform 0.2s var(--ease-out-quart, ease-out);
-}
-.ds-toast-leave-active {
-  transition:
-    opacity 0.15s ease,
-    transform 0.15s ease;
-}
-.ds-toast-enter-from,
-.ds-toast-leave-to {
-  opacity: 0;
-  transform: scale(0.9);
-}
-
-@media (prefers-reduced-motion: reduce) {
+  .ds-toast-blocking {
+    pointer-events: auto;
+  }
+  .ds-toast {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.625rem;
+    max-width: 16rem;
+    padding: 0.875rem 1rem;
+    border-radius: 14px;
+    background-color: oklch(0.21 0 0 / 0.92);
+    color: #fff;
+    text-align: center;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 12px 40px -12px rgb(0 0 0 / 0.6);
+  }
+  /* Text-only toasts are a compact single line. */
+  .ds-toast-compact {
+    padding: 0.625rem 0.875rem;
+    border-radius: 10px;
+  }
+  .ds-toast-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ds-toast-icon :deep(svg) {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+  .ds-toast-icon[data-type='success'] {
+    color: var(--nv-success);
+  }
+  .ds-toast-icon[data-type='error'] {
+    color: var(--destructive);
+  }
+  .ds-toast-msg {
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
   .ds-toast-spin {
-    animation-duration: 1.4s;
+    animation: ds-toast-spin 0.8s linear infinite;
   }
-  .ds-toast-enter-active,
+  @keyframes ds-toast-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .ds-toast-enter-active {
+    transition:
+      opacity 0.2s var(--nv-ease-out-quart, ease-out),
+      transform 0.2s var(--nv-ease-out-quart, ease-out);
+  }
   .ds-toast-leave-active {
-    transition: opacity 0.15s linear;
+    transition:
+      opacity 0.15s ease,
+      transform 0.15s ease;
   }
   .ds-toast-enter-from,
   .ds-toast-leave-to {
-    transform: none;
+    opacity: 0;
+    transform: scale(0.9);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ds-toast-spin {
+      animation-duration: 1.4s;
+    }
+    .ds-toast-enter-active,
+    .ds-toast-leave-active {
+      transition: opacity 0.15s linear;
+    }
+    .ds-toast-enter-from,
+    .ds-toast-leave-to {
+      transform: none;
+    }
   }
 }
 </style>

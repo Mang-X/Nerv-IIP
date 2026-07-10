@@ -120,34 +120,36 @@ watch(open, (isOpen) => {
 </template>
 
 <style scoped>
-.ds-tp-col {
-  display: flex;
-  flex-direction: column;
-  height: 14rem;
-  width: 4rem;
-  overflow-y: auto;
-  padding: 0.25rem;
-  scrollbar-width: thin;
-}
-.ds-tp-cell {
-  flex-shrink: 0;
-  border-radius: var(--radius-md);
-  padding: 0.375rem 0;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  font-size: 0.875rem;
-  color: var(--foreground);
-  transition: background-color 0.12s var(--ease-out-quart, ease-out);
-}
-.ds-tp-cell:hover {
-  background: var(--accent);
-}
-.ds-tp-cell-active {
-  background: var(--brand);
-  color: var(--brand-foreground);
-  font-weight: 500;
-}
-.ds-tp-cell-active:hover {
-  background: var(--brand);
+@layer nv-components {
+  .ds-tp-col {
+    display: flex;
+    flex-direction: column;
+    height: 14rem;
+    width: 4rem;
+    overflow-y: auto;
+    padding: 0.25rem;
+    scrollbar-width: thin;
+  }
+  .ds-tp-cell {
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    padding: 0.375rem 0;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.875rem;
+    color: var(--foreground);
+    transition: background-color 0.12s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-tp-cell:hover {
+    background: var(--accent);
+  }
+  .ds-tp-cell-active {
+    background: var(--nv-brand);
+    color: var(--nv-brand-foreground);
+    font-weight: 500;
+  }
+  .ds-tp-cell-active:hover {
+    background: var(--nv-brand);
+  }
 }
 </style>

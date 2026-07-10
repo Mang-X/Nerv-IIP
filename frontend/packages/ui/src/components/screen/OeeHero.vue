@@ -5,7 +5,7 @@ import { computed } from 'vue'
  * Screen — hero KPI block: a big cyan glowing value with an optional unit, a
  * delta line (green when up, red when down) and a faint sparkline + area along
  * the bottom. Data-driven; the sparkline is normalised to its own min/max so any
- * series fills the band. Built on the independent `--sb-*` tokens.
+ * series fills the band. Built on the independent `--nv-scr-*` tokens.
  */
 const props = withDefaults(
   defineProps<{
@@ -51,70 +51,87 @@ const uid = `oeh-${Math.random().toString(36).slice(2, 8)}`
 </script>
 
 <template>
-  <div class="sb-oeh">
-    <div class="sb-oeh-cap">{{ label }}</div>
-    <div class="sb-oeh-row">
-      <div class="sb-oeh-val">
+  <div class="nv-scr-oeh">
+    <div class="nv-scr-oeh-cap">{{ label }}</div>
+    <div class="nv-scr-oeh-row">
+      <div class="nv-scr-oeh-val">
         {{ value }}<small v-if="unit">{{ unit }}</small>
       </div>
-      <div v-if="delta" class="sb-oeh-delta" :class="{ down: deltaDown }">{{ delta }}</div>
+      <div v-if="delta" class="nv-scr-oeh-delta" :class="{ down: deltaDown }">{{ delta }}</div>
     </div>
-    <svg v-if="geom" class="sb-oeh-spark" :viewBox="`0 0 ${W} ${H}`" preserveAspectRatio="none" aria-hidden="true">
+    <svg
+      v-if="geom"
+      class="nv-scr-oeh-spark"
+      :viewBox="`0 0 ${W} ${H}`"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
       <defs>
         <linearGradient :id="`${uid}-fill`" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="var(--sb-cyan)" stop-opacity=".25" />
-          <stop offset="1" stop-color="var(--sb-cyan)" stop-opacity="0" />
+          <stop offset="0" stop-color="var(--nv-scr-cyan)" stop-opacity=".25" />
+          <stop offset="1" stop-color="var(--nv-scr-cyan)" stop-opacity="0" />
         </linearGradient>
       </defs>
       <path :d="geom.area" :fill="`url(#${uid}-fill)`" />
-      <path class="sb-oeh-line" :d="geom.line" fill="none" stroke="var(--sb-cyan)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+      <path
+        class="nv-scr-oeh-line"
+        :d="geom.line"
+        fill="none"
+        stroke="var(--nv-scr-cyan)"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        vector-effect="non-scaling-stroke"
+      />
     </svg>
   </div>
 </template>
 
 <style scoped>
-.sb-oeh {
-  color: var(--sb-text);
-  font-variant-numeric: tabular-nums;
-}
-.sb-oeh-cap {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--sb-text-2);
-  margin-bottom: 12px;
-}
-.sb-oeh-row {
-  display: flex;
-  align-items: baseline;
-}
-.sb-oeh-val {
-  font-size: 54px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.01em;
-  /* white number with only a whisper of glow — accent stays off the big figure */
-  color: #fff;
-  text-shadow: var(--sb-value-glow);
-}
-.sb-oeh-val small {
-  font-size: 25px;
-  font-weight: 600;
-}
-.sb-oeh-delta {
-  margin-left: 13px;
-  font-size: 14px;
-  color: var(--sb-green);
-}
-.sb-oeh-delta.down {
-  color: var(--sb-red);
-}
-.sb-oeh-spark {
-  width: 100%;
-  height: 92px;
-  margin-top: 8px;
-  overflow: visible;
-}
-.sb-oeh-line {
-  filter: drop-shadow(0 0 3px var(--sb-cyan-dim));
+@layer nv-components {
+  .nv-scr-oeh {
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .nv-scr-oeh-cap {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--nv-scr-text-2);
+    margin-bottom: 12px;
+  }
+  .nv-scr-oeh-row {
+    display: flex;
+    align-items: baseline;
+  }
+  .nv-scr-oeh-val {
+    font-size: 54px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    /* white number with only a whisper of glow — accent stays off the big figure */
+    color: #fff;
+    text-shadow: var(--nv-scr-value-glow);
+  }
+  .nv-scr-oeh-val small {
+    font-size: 25px;
+    font-weight: 600;
+  }
+  .nv-scr-oeh-delta {
+    margin-left: 13px;
+    font-size: 14px;
+    color: var(--nv-scr-green);
+  }
+  .nv-scr-oeh-delta.down {
+    color: var(--nv-scr-red);
+  }
+  .nv-scr-oeh-spark {
+    width: 100%;
+    height: 92px;
+    margin-top: 8px;
+    overflow: visible;
+  }
+  .nv-scr-oeh-line {
+    filter: drop-shadow(0 0 3px var(--nv-scr-cyan-dim));
+  }
 }
 </style>

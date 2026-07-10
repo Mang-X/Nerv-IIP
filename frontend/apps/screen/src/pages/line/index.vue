@@ -69,7 +69,11 @@ const toneOf = (s: LineSummaryCard['state']) =>
   s === 'alarm' ? ('alarm' as const) : s === 'attention' ? ('idle' as const) : ('run' as const)
 
 const stateColor = (s: LineSummaryCard['state']) =>
-  s === 'alarm' ? 'var(--sb-red)' : s === 'attention' ? 'var(--sb-amber)' : 'var(--sb-cyan)'
+  s === 'alarm'
+    ? 'var(--nv-scr-red)'
+    : s === 'attention'
+      ? 'var(--nv-scr-amber)'
+      : 'var(--nv-scr-cyan)'
 
 // —— 顶部产线汇总带（卡片数据 rollup）——
 interface KpiCell {
@@ -126,7 +130,7 @@ const kpiItems = computed<KpiCell[]>(() => {
         <span class="ls-meta">{{ cards.length }} 条产线 · 点击进入单线大屏</span>
       </div>
 
-      <div v-bind="containerProps" class="ls-scroll sb-scroll">
+      <div v-bind="containerProps" class="ls-scroll nv-scr-scroll">
         <div v-bind="wrapperProps">
           <div v-for="row in vRows" :key="row.index" class="ls-row">
             <RouterLink v-for="c in row.data" :key="c.id" :to="`/line/${c.id}`" class="ls-link">
@@ -193,283 +197,285 @@ const kpiItems = computed<KpiCell[]>(() => {
 </template>
 
 <style scoped>
-.ls {
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.ls-loading {
-  height: 100%;
-  display: grid;
-  place-content: center;
-  color: var(--sb-muted);
-  font-size: 15px;
-}
-/* 统一页脚：按来路返回 + 口径注记 */
-.scr-foot {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-top: 1px solid var(--sb-divider);
-  padding-top: 10px;
-  margin-top: 12px;
-  font-size: 12.5px;
-  color: var(--sb-faint);
-}
-.scr-back {
-  color: var(--sb-cyan);
-  text-decoration: none;
-  font-size: 13.5px;
-  flex: none;
-}
-.sec-h {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  margin-bottom: 14px;
-  min-height: 24px;
-}
-.sec-glyph {
-  width: 8px;
-  height: 18px;
-  flex: none;
-  border-radius: 2px;
-  transform: skewX(-16deg);
-  background: linear-gradient(180deg, var(--sb-cyan), rgba(74, 166, 238, 0.25));
-  box-shadow: 0 0 11px rgba(74, 166, 238, 0.55);
-}
-.sec-t {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  color: #fff;
-  text-shadow: 0 0 16px rgba(96, 180, 255, 0.4);
-  white-space: nowrap;
-}
-.sec-rule {
-  flex: 1;
-  height: 1px;
-  margin: 0 6px;
-  background: linear-gradient(
-    90deg,
-    rgba(135, 208, 255, 0.28),
-    rgba(255, 255, 255, 0.05) 45%,
-    transparent
-  );
-}
-.ls-meta {
-  font-size: 13px;
-  color: var(--sb-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* 虚拟滚动容器：flex:1 + min-height:0 收进画布，仅此处滚动（修幽灵滚动条）；
-   overflow-x hidden + scrollbar-gutter stable 消除横/竖条抖动闪烁 */
-.ls-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-gutter: stable;
-}
-/* 行高 = CARD_H(258) + ROW_GAP(16)，与 itemHeight 精确一致 → 不重叠 */
-.ls-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
-  height: 258px;
-  margin-bottom: 16px;
-}
-.ls-link {
-  display: block;
-  min-width: 0;
-  text-decoration: none;
-  border-radius: var(--sb-radius);
-}
-.ls-link:focus-visible {
-  outline: none;
-  box-shadow:
-    0 0 0 2px var(--sb-bg),
-    0 0 0 4px var(--sb-cyan-dim);
-}
-.ls-card {
-  height: 100%;
-  box-sizing: border-box;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  padding: 14px 17px 12px;
-  border-radius: var(--sb-radius);
-  background: linear-gradient(180deg, var(--sb-panel-a), var(--sb-panel-b));
-  border: 1px solid var(--sb-line);
-  border-top-color: rgba(255, 255, 255, 0.09);
-  transition:
-    border-color 0.18s var(--sb-ease),
-    transform 0.12s var(--sb-ease);
-}
-.ls-link:hover .ls-card {
-  border-color: rgba(135, 208, 255, 0.3);
-}
-.ls-link:active .ls-card {
-  transform: scale(0.985);
-}
-.ls-card.alarm {
-  border-color: rgba(239, 90, 99, 0.4);
-  position: relative;
-}
-.ls-card.alarm::after {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  pointer-events: none;
-  box-shadow: 0 0 16px -4px rgba(239, 90, 99, 0.6);
-  animation: ls-alarm 1.8s ease-in-out infinite;
-}
-@keyframes ls-alarm {
-  50% {
-    opacity: 0.25;
+@layer app {
+  .ls {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
-}
+  .ls-loading {
+    height: 100%;
+    display: grid;
+    place-content: center;
+    color: var(--nv-scr-muted);
+    font-size: 15px;
+  }
+  /* 统一页脚：按来路返回 + 口径注记 */
+  .scr-foot {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border-top: 1px solid var(--nv-scr-divider);
+    padding-top: 10px;
+    margin-top: 12px;
+    font-size: 12.5px;
+    color: var(--nv-scr-faint);
+  }
+  .scr-back {
+    color: var(--nv-scr-cyan);
+    text-decoration: none;
+    font-size: 13.5px;
+    flex: none;
+  }
+  .sec-h {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    margin-bottom: 14px;
+    min-height: 24px;
+  }
+  .sec-glyph {
+    width: 8px;
+    height: 18px;
+    flex: none;
+    border-radius: 2px;
+    transform: skewX(-16deg);
+    background: linear-gradient(180deg, var(--nv-scr-cyan), rgba(74, 166, 238, 0.25));
+    box-shadow: 0 0 11px rgba(74, 166, 238, 0.55);
+  }
+  .sec-t {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #fff;
+    text-shadow: 0 0 16px rgba(96, 180, 255, 0.4);
+    white-space: nowrap;
+  }
+  .sec-rule {
+    flex: 1;
+    height: 1px;
+    margin: 0 6px;
+    background: linear-gradient(
+      90deg,
+      rgba(135, 208, 255, 0.28),
+      rgba(255, 255, 255, 0.05) 45%,
+      transparent
+    );
+  }
+  .ls-meta {
+    font-size: 13px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
 
-.ls-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.ls-off {
-  padding: 2px 8px;
-  border-radius: 5px;
-  border: 1px dashed rgba(255, 255, 255, 0.24);
-  background: repeating-linear-gradient(
-    -45deg,
-    rgba(255, 255, 255, 0.04) 0 6px,
-    transparent 6px 12px
-  );
-  font-size: 11.5px;
-  color: var(--sb-muted);
-}
-.ls-name {
-  margin: 8px 0 0;
-  font-size: 22px;
-  font-weight: 700;
-  color: #fff;
-  letter-spacing: 0.04em;
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-}
-/* 产线名 leading 图标：发丝级去饱和线性符号（无填充块/边框/发光）。
-   状态由状态灯 + 卡片边框 + 异常文案表达，图标只作类型标识、克制陪衬。 */
-.ls-ic {
-  flex: none;
-  display: inline-flex;
-  color: var(--sb-muted);
-}
-.ls-ws {
-  margin: 4px 0 0;
-  font-size: 12.5px;
-  color: var(--sb-muted);
-  font-variant-numeric: tabular-nums;
-}
-.ls-kpi {
-  flex: none;
-  margin-bottom: 14px;
-}
-.ls-nums {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1.3fr;
-  gap: 10px;
-  margin: 9px 0 0;
-}
-.ls-out small {
-  color: var(--sb-muted);
-}
-.ls-spark {
-  height: 26px;
-  margin: 8px 0 5px;
-}
-.ls-dots {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
-}
-.ls-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--sb-faint);
-}
-.ls-dot.run {
-  background: var(--sb-green);
-  box-shadow: 0 0 6px var(--sb-green);
-}
-.ls-dot.idle {
-  background: var(--sb-amber);
-  box-shadow: 0 0 6px var(--sb-amber);
-}
-.ls-dot.alarm {
-  background: var(--sb-red);
-  box-shadow: 0 0 6px var(--sb-red);
-}
-.ls-dot.down {
-  background: var(--sb-muted);
-}
-.ls-dots-n {
-  margin-left: 4px;
-  font-size: 11.5px;
-  color: var(--sb-faint);
-  font-variant-numeric: tabular-nums;
-}
-.ls-nums dt {
-  font-size: 12px;
-  color: var(--sb-muted);
-}
-.ls-nums dd {
-  margin: 3px 0 0;
-  font-size: 23px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--sb-text);
-}
-.ls-nums dd small {
-  font-size: 13px;
-  font-weight: 600;
-  margin-left: 1px;
-}
-.ls-nums dd.warn {
-  color: var(--sb-amber);
-}
-.ls-nums dd.bad {
-  color: var(--sb-red);
-}
-.ls-alert {
-  margin: auto 0 0;
-  padding-top: 6px;
-  font-size: 12.5px;
-  color: var(--sb-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ls-alert.alarm {
-  color: var(--sb-red);
-}
-.ls-alert.attention {
-  color: var(--sb-amber);
-}
-
-@media (prefers-reduced-motion: reduce) {
+  /* 虚拟滚动容器：flex:1 + min-height:0 收进画布，仅此处滚动（修幽灵滚动条）；
+   overflow-x hidden + scrollbar-gutter stable 消除横/竖条抖动闪烁 */
+  .ls-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
+  }
+  /* 行高 = CARD_H(258) + ROW_GAP(16)，与 itemHeight 精确一致 → 不重叠 */
+  .ls-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    height: 258px;
+    margin-bottom: 16px;
+  }
+  .ls-link {
+    display: block;
+    min-width: 0;
+    text-decoration: none;
+    border-radius: var(--nv-scr-radius);
+  }
+  .ls-link:focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px var(--nv-scr-bg),
+      0 0 0 4px var(--nv-scr-cyan-dim);
+  }
   .ls-card {
-    transition: none;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 14px 17px 12px;
+    border-radius: var(--nv-scr-radius);
+    background: linear-gradient(180deg, var(--nv-scr-panel-a), var(--nv-scr-panel-b));
+    border: 1px solid var(--nv-scr-line);
+    border-top-color: rgba(255, 255, 255, 0.09);
+    transition:
+      border-color 0.18s var(--nv-scr-ease),
+      transform 0.12s var(--nv-scr-ease);
+  }
+  .ls-link:hover .ls-card {
+    border-color: rgba(135, 208, 255, 0.3);
+  }
+  .ls-link:active .ls-card {
+    transform: scale(0.985);
+  }
+  .ls-card.alarm {
+    border-color: rgba(239, 90, 99, 0.4);
+    position: relative;
   }
   .ls-card.alarm::after {
-    animation: none;
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: 0 0 16px -4px rgba(239, 90, 99, 0.6);
+    animation: ls-alarm 1.8s ease-in-out infinite;
+  }
+  @keyframes ls-alarm {
+    50% {
+      opacity: 0.25;
+    }
+  }
+
+  .ls-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .ls-off {
+    padding: 2px 8px;
+    border-radius: 5px;
+    border: 1px dashed rgba(255, 255, 255, 0.24);
+    background: repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.04) 0 6px,
+      transparent 6px 12px
+    );
+    font-size: 11.5px;
+    color: var(--nv-scr-muted);
+  }
+  .ls-name {
+    margin: 8px 0 0;
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.04em;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+  }
+  /* 产线名 leading 图标：发丝级去饱和线性符号（无填充块/边框/发光）。
+   状态由状态灯 + 卡片边框 + 异常文案表达，图标只作类型标识、克制陪衬。 */
+  .ls-ic {
+    flex: none;
+    display: inline-flex;
+    color: var(--nv-scr-muted);
+  }
+  .ls-ws {
+    margin: 4px 0 0;
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .ls-kpi {
+    flex: none;
+    margin-bottom: 14px;
+  }
+  .ls-nums {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.3fr;
+    gap: 10px;
+    margin: 9px 0 0;
+  }
+  .ls-out small {
+    color: var(--nv-scr-muted);
+  }
+  .ls-spark {
+    height: 26px;
+    margin: 8px 0 5px;
+  }
+  .ls-dots {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+  .ls-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--nv-scr-faint);
+  }
+  .ls-dot.run {
+    background: var(--nv-scr-green);
+    box-shadow: 0 0 6px var(--nv-scr-green);
+  }
+  .ls-dot.idle {
+    background: var(--nv-scr-amber);
+    box-shadow: 0 0 6px var(--nv-scr-amber);
+  }
+  .ls-dot.alarm {
+    background: var(--nv-scr-red);
+    box-shadow: 0 0 6px var(--nv-scr-red);
+  }
+  .ls-dot.down {
+    background: var(--nv-scr-muted);
+  }
+  .ls-dots-n {
+    margin-left: 4px;
+    font-size: 11.5px;
+    color: var(--nv-scr-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .ls-nums dt {
+    font-size: 12px;
+    color: var(--nv-scr-muted);
+  }
+  .ls-nums dd {
+    margin: 3px 0 0;
+    font-size: 23px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--nv-scr-text);
+  }
+  .ls-nums dd small {
+    font-size: 13px;
+    font-weight: 600;
+    margin-left: 1px;
+  }
+  .ls-nums dd.warn {
+    color: var(--nv-scr-amber);
+  }
+  .ls-nums dd.bad {
+    color: var(--nv-scr-red);
+  }
+  .ls-alert {
+    margin: auto 0 0;
+    padding-top: 6px;
+    font-size: 12.5px;
+    color: var(--nv-scr-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ls-alert.alarm {
+    color: var(--nv-scr-red);
+  }
+  .ls-alert.attention {
+    color: var(--nv-scr-amber);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ls-card {
+      transition: none;
+    }
+    .ls-card.alarm::after {
+      animation: none;
+    }
   }
 }
 </style>

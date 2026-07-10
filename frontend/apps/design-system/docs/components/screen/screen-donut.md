@@ -20,7 +20,7 @@ const states = [
 
 # NvScreenDonut 环形占比
 
-环形占比图——**状态构成 / 分布**类数据的正确形态:发丝底环 + 语义色弧段(段间留缝),中心 slot 放主数字,右侧内置图例(色点 + 名 + 值)。弧段 `dashoffset` 缓动(轮询更新平滑再分配),静态不发光。基于独立的 `--sb-*` 令牌。
+环形占比图——**状态构成 / 分布**类数据的正确形态:发丝底环 + 语义色弧段(段间留缝),中心 slot 放主数字,右侧内置图例(色点 + 名 + 值)。弧段 `dashoffset` 缓动(轮询更新平滑再分配),静态不发光。基于独立的 `--nv-scr-*` 令牌。
 
 ## 基础用法
 
@@ -28,8 +28,8 @@ const states = [
 
 <ScreenDemo>
   <NvScreenDonut :segments="load">
-    <b style="font-size: 22px; font-weight: 800; color: var(--sb-text); font-variant-numeric: tabular-nums">532</b>
-    <span style="margin-top: 4px; font-size: 11px; color: var(--sb-muted)">今日完成</span>
+    <b style="font-size: 22px; font-weight: 800; color: var(--nv-scr-text); font-variant-numeric: tabular-nums">532</b>
+    <span style="margin-top: 4px; font-size: 11px; color: var(--nv-scr-muted)">今日完成</span>
   </NvScreenDonut>
 </ScreenDemo>
 
@@ -55,8 +55,8 @@ const states = [
 
 <ScreenDemo>
   <NvScreenDonut :segments="states" :size="132" :thickness="13">
-    <b style="font-size: 24px; font-weight: 800; color: var(--sb-text)">62</b>
-    <span style="margin-top: 4px; font-size: 11px; color: var(--sb-muted)">设备总数</span>
+    <b style="font-size: 24px; font-weight: 800; color: var(--nv-scr-text)">62</b>
+    <span style="margin-top: 4px; font-size: 11px; color: var(--nv-scr-muted)">设备总数</span>
   </NvScreenDonut>
 </ScreenDemo>
 
@@ -73,7 +73,7 @@ const states = [
 
 <ScreenDemo>
   <NvScreenDonut :segments="load" :legend="false" :size="96">
-    <b style="font-size: 19px; font-weight: 800; color: var(--sb-text)">71</b>
+    <b style="font-size: 19px; font-weight: 800; color: var(--nv-scr-text)">71</b>
   </NvScreenDonut>
 </ScreenDemo>
 

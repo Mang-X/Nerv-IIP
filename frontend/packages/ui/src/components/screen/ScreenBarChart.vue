@@ -93,10 +93,10 @@ const card = computed(() => {
 </script>
 
 <template>
-  <div class="sb-bc">
+  <div class="nv-scr-bc">
     <svg
       ref="svgEl"
-      class="sb-bc-svg"
+      class="nv-scr-bc-svg"
       :viewBox="`0 0 ${VB_W} ${VB_H}`"
       preserveAspectRatio="none"
       @mousemove="onMove"
@@ -116,13 +116,20 @@ const card = computed(() => {
           <stop offset="1" :stop-color="s.color" stop-opacity="0.16" />
         </linearGradient>
       </defs>
-      <g class="sb-bc-grid" stroke-dasharray="3 6">
-        <line v-for="gi in 3" :key="gi" :x1="0" :x2="VB_W" :y1="PAD_T + ((VB_H - PAD_T - PAD_B) * gi) / 3" :y2="PAD_T + ((VB_H - PAD_T - PAD_B) * gi) / 3" />
+      <g class="nv-scr-bc-grid" stroke-dasharray="3 6">
+        <line
+          v-for="gi in 3"
+          :key="gi"
+          :x1="0"
+          :x2="VB_W"
+          :y1="PAD_T + ((VB_H - PAD_T - PAD_B) * gi) / 3"
+          :y2="PAD_T + ((VB_H - PAD_T - PAD_B) * gi) / 3"
+        />
       </g>
       <rect
         v-for="(b, bi) in bars"
         :key="bi"
-        class="sb-bc-bar"
+        class="nv-scr-bc-bar"
         :class="{ dim: active != null && active !== b.i }"
         :x="b.x"
         :y="b.y"
@@ -135,101 +142,103 @@ const card = computed(() => {
     <!-- 悬停信息卡：HTML overlay，逐序列读数 -->
     <div
       v-if="card"
-      class="sb-bc-card"
+      class="nv-scr-bc-card"
       :class="{ flip: card.flip }"
       :style="{ left: `${card.cx}%` }"
     >
-      <span class="sb-bc-c-t">{{ card.label }}</span>
-      <span v-for="v in card.vals" :key="v.label" class="sb-bc-c-s">
+      <span class="nv-scr-bc-c-t">{{ card.label }}</span>
+      <span v-for="v in card.vals" :key="v.label" class="nv-scr-bc-c-s">
         <i :style="{ background: v.color }" aria-hidden="true" />{{ v.label }}<b>{{ v.val }}</b>
       </span>
     </div>
-    <div v-if="xLabels.length" class="sb-bc-x">
+    <div v-if="xLabels.length" class="nv-scr-bc-x">
       <span v-for="(x, i) in xLabels" :key="i">{{ x }}</span>
     </div>
   </div>
 </template>
 
 <style scoped>
-.sb-bc {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-.sb-bc-svg {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-}
-.sb-bc-grid line {
-  stroke: rgba(255, 255, 255, 0.055);
-}
-.sb-bc-bar {
-  transition:
-    height 0.5s var(--sb-ease-emphasized),
-    y 0.5s var(--sb-ease-emphasized),
-    opacity 0.18s var(--sb-ease);
-}
-.sb-bc-bar.dim {
-  opacity: 0.38;
-}
-.sb-bc-x {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 5px;
-  font-size: 11px;
-  color: var(--sb-faint);
-  font-variant-numeric: tabular-nums;
-}
-.sb-bc-card {
-  position: absolute;
-  top: 4px;
-  z-index: 1;
-  transform: translateX(10px);
-  min-width: 118px;
-  padding: 8px 12px 9px;
-  border-radius: 6px;
-  background: rgba(9, 13, 22, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  white-space: nowrap;
-  pointer-events: none;
-}
-.sb-bc-card.flip {
-  transform: translateX(calc(-100% - 10px));
-}
-.sb-bc-c-t {
-  font-size: 12px;
-  color: var(--sb-muted);
-  font-variant-numeric: tabular-nums;
-}
-.sb-bc-c-s {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
-  color: var(--sb-text-2);
-}
-.sb-bc-c-s i {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  flex: none;
-}
-.sb-bc-c-s b {
-  margin-left: auto;
-  padding-left: 10px;
-  font-weight: 700;
-  color: var(--sb-text);
-  font-variant-numeric: tabular-nums;
-}
-@media (prefers-reduced-motion: reduce) {
-  .sb-bc-bar {
-    transition: none;
+@layer nv-components {
+  .nv-scr-bc {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .nv-scr-bc-svg {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+  }
+  .nv-scr-bc-grid line {
+    stroke: rgba(255, 255, 255, 0.055);
+  }
+  .nv-scr-bc-bar {
+    transition:
+      height 0.5s var(--nv-scr-ease-emphasized),
+      y 0.5s var(--nv-scr-ease-emphasized),
+      opacity 0.18s var(--nv-scr-ease);
+  }
+  .nv-scr-bc-bar.dim {
+    opacity: 0.38;
+  }
+  .nv-scr-bc-x {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 5px;
+    font-size: 11px;
+    color: var(--nv-scr-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .nv-scr-bc-card {
+    position: absolute;
+    top: 4px;
+    z-index: 1;
+    transform: translateX(10px);
+    min-width: 118px;
+    padding: 8px 12px 9px;
+    border-radius: 6px;
+    background: rgba(9, 13, 22, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .nv-scr-bc-card.flip {
+    transform: translateX(calc(-100% - 10px));
+  }
+  .nv-scr-bc-c-t {
+    font-size: 12px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .nv-scr-bc-c-s {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--nv-scr-text-2);
+  }
+  .nv-scr-bc-c-s i {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex: none;
+  }
+  .nv-scr-bc-c-s b {
+    margin-left: auto;
+    padding-left: 10px;
+    font-weight: 700;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .nv-scr-bc-bar {
+      transition: none;
+    }
   }
 }
 </style>

@@ -15,9 +15,9 @@ import { NvGlowDivider } from '@nerv-iip/ui'
 横向占满整列,默认带流光。常用来把页头与下方内容、或两个分区隔开。
 
 <ScreenDemo wide>
-  <div style="font-size:14px;color:var(--sb-text-2)">焊接线 A · 实时产出</div>
+  <div style="font-size:14px;color:var(--nv-scr-text-2)">焊接线 A · 实时产出</div>
   <NvGlowDivider />
-  <div style="font-size:13px;color:var(--sb-muted);margin-top:4px">当班 934 / 1 200 件 · 节拍 48.2 s · 截至 2024-06-12 10:24</div>
+  <div style="font-size:13px;color:var(--nv-scr-muted);margin-top:4px">当班 934 / 1 200 件 · 节拍 48.2 s · 截至 2024-06-12 10:24</div>
 </ScreenDemo>
 
 ```vue

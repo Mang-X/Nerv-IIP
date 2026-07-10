@@ -41,26 +41,28 @@ const pressed = ref(false)
 </template>
 
 <style scoped>
-.ds-mswitch {
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-  transition: background-color 0.2s var(--ease-out-quart, ease-out);
-}
-.ds-mswitch-thumb {
-  /* Tailwind v4 glides the thumb via the `translate` property — name it in the
+@layer nv-components {
+  .ds-mswitch {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: background-color 0.2s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-mswitch-thumb {
+    /* Tailwind v4 glides the thumb via the `translate` property — name it in the
      transition (a `transform`-only transition never fires). `transform` carries
      the press depress (separate property, composes with `translate`). Slight
      back-ease spring for the native iOS feel. */
-  transition:
-    translate 0.26s var(--ease-out-back, cubic-bezier(0.34, 1.4, 0.64, 1)),
-    transform 0.18s var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
-}
-.ds-mswitch-thumb.is-pressed {
-  transform: scale(0.9);
-}
-@media (prefers-reduced-motion: reduce) {
-  .ds-mswitch-thumb {
-    transition: none;
+    transition:
+      translate 0.26s var(--nv-ease-out-quart),
+      transform 0.18s var(--nv-ease-out-quart);
+  }
+  .ds-mswitch-thumb.is-pressed {
+    transform: scale(0.9);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-mswitch-thumb {
+      transition: none;
+    }
   }
 }
 </style>

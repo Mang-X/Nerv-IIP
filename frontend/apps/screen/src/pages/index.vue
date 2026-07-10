@@ -172,203 +172,205 @@ const scopeCounts = computed(() => {
 </template>
 
 <style scoped>
-.hall {
-  width: 1920px;
-  height: 1080px;
-  box-sizing: border-box;
-  padding: 40px 64px 26px;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-  color: var(--sb-text);
-  /* 门厅底：顶部一层极淡的蓝色环境光 + 96px 对齐网格（耳语级），保持近黑 */
-  background:
-    radial-gradient(1100px 460px at 50% -6%, rgba(74, 166, 238, 0.06), transparent 70%),
-    linear-gradient(rgba(255, 255, 255, 0.013) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.013) 1px, transparent 1px), var(--sb-bg);
-  background-size:
-    auto,
-    96px 96px,
-    96px 96px,
-    auto;
-}
+@layer app {
+  .hall {
+    width: 1920px;
+    height: 1080px;
+    box-sizing: border-box;
+    padding: 40px 64px 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    color: var(--nv-scr-text);
+    /* 门厅底：顶部一层极淡的蓝色环境光 + 96px 对齐网格（耳语级），保持近黑 */
+    background:
+      radial-gradient(1100px 460px at 50% -6%, rgba(74, 166, 238, 0.06), transparent 70%),
+      linear-gradient(rgba(255, 255, 255, 0.013) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.013) 1px, transparent 1px), var(--nv-scr-bg);
+    background-size:
+      auto,
+      96px 96px,
+      96px 96px,
+      auto;
+  }
 
-.hall-top {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-}
-.hall-title {
-  margin: 0;
-  font-size: 34px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: #fff;
-}
-.hall-sub {
-  margin: 7px 0 0;
-  font-size: 15px;
-  letter-spacing: 0.18em;
-  color: var(--sb-muted);
-}
-.hall-clock {
-  text-align: right;
-}
-.hall-time {
-  font-size: 44px;
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  color: #fff;
-  text-shadow: var(--sb-value-glow);
-}
-.hall-meta {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 16px;
-  margin-top: 9px;
-  font-size: 13px;
-  color: var(--sb-muted);
-  font-variant-numeric: tabular-nums;
-}
+  .hall-top {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+  .hall-title {
+    margin: 0;
+    font-size: 34px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: #fff;
+  }
+  .hall-sub {
+    margin: 7px 0 0;
+    font-size: 15px;
+    letter-spacing: 0.18em;
+    color: var(--nv-scr-muted);
+  }
+  .hall-clock {
+    text-align: right;
+  }
+  .hall-time {
+    font-size: 44px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+    text-shadow: var(--nv-scr-value-glow);
+  }
+  .hall-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 16px;
+    margin-top: 9px;
+    font-size: 13px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
 
-.hall-ctx {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.hall-ctx-left {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.hall-counts {
-  font-size: 14px;
-  color: var(--sb-faint);
-  font-variant-numeric: tabular-nums;
-}
+  .hall-ctx {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .hall-ctx-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .hall-counts {
+    font-size: 14px;
+    color: var(--nv-scr-faint);
+    font-variant-numeric: tabular-nums;
+  }
 
-.hall-kpi {
-  min-height: 74px;
-}
-.hall-kpi-skl {
-  height: 74px;
-  border: 1px solid var(--sb-line);
-  border-radius: 8px;
-  background: linear-gradient(180deg, var(--sb-panel-a), var(--sb-panel-b));
-  opacity: 0.5;
-}
+  .hall-kpi {
+    min-height: 74px;
+  }
+  .hall-kpi-skl {
+    height: 74px;
+    border: 1px solid var(--nv-scr-line);
+    border-radius: 8px;
+    background: linear-gradient(180deg, var(--nv-scr-panel-a), var(--nv-scr-panel-b));
+    opacity: 0.5;
+  }
 
-.hall-cards {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  gap: 26px;
-  align-items: stretch;
-}
-.hall-cards.single {
-  justify-content: center;
-  align-items: center;
-}
-.hall-cards.single .hall-card-link {
-  flex: 0 1 620px;
-  height: min(600px, 100%);
-}
-/* 4+ 张卡（M2 后 6 屏）：3×2 网格 + 卡内密度收紧（页面级适配，组件原版不动） */
-.hall-cards.grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-auto-rows: minmax(0, 1fr);
-  gap: 18px;
-}
-/* grid 子项默认 min-height:auto 会被 chips 内容撑破行高 —— 强制可收缩，超出裁切 */
-.hall-cards.grid .hall-card-link {
-  min-height: 0;
-}
-.hall-cards.grid :deep(.lc) {
-  overflow: hidden;
-}
-.hall-cards.grid :deep(.lc) {
-  padding: 18px 22px 14px;
-}
-.hall-cards.grid :deep(.lc-ic) {
-  width: 38px;
-  height: 38px;
-}
-.hall-cards.grid :deep(.lc-ic svg) {
-  width: 22px;
-  height: 22px;
-}
-.hall-cards.grid :deep(.lc-title) {
-  font-size: 20px;
-}
-.hall-cards.grid :deep(.lc-desc) {
-  margin-top: 2px;
-  font-size: 12.5px;
-}
-.hall-cards.grid :deep(.lc-stats) {
-  margin-top: 6px;
-}
-.hall-cards.grid :deep(.lc-stat) {
-  padding: 6px 2px;
-}
-.hall-cards.grid :deep(.lc-stat dt) {
-  font-size: 13px;
-}
-.hall-cards.grid :deep(.lc-stat dd) {
-  font-size: 19px;
-}
-.hall-cards.grid :deep(.lc-zone) {
-  margin: 8px 0 6px;
-  padding-top: 8px;
-  gap: 6px;
-}
-.hall-cards.grid :deep(.lc-zone-t) {
-  font-size: 12px;
-}
-.hall-cards.grid :deep(.lc-chips) {
-  gap: 6px;
-  /* 一瞥只保完整首行：整行级裁切，绝不出现半截 chip 残影 */
-  max-height: 23px;
-  overflow: hidden;
-}
-.hall-cards.grid :deep(.lc-chip) {
-  height: 23px;
-  padding: 0 10px;
-  font-size: 12px;
-}
-.hall-cards.grid :deep(.lc-foot) {
-  padding-top: 8px;
-  font-size: 12.5px;
-}
-.hall-card-link {
-  flex: 1 1 0;
-  min-width: 0;
-  display: block;
-  text-decoration: none;
-  border-radius: var(--sb-radius);
-}
-.hall-card-link:focus-visible {
-  outline: none;
-  box-shadow:
-    0 0 0 2px var(--sb-bg),
-    0 0 0 4px var(--sb-cyan-dim);
-}
-.hall-empty {
-  margin: auto;
-  font-size: 16px;
-  color: var(--sb-faint);
-}
+  .hall-cards {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    gap: 26px;
+    align-items: stretch;
+  }
+  .hall-cards.single {
+    justify-content: center;
+    align-items: center;
+  }
+  .hall-cards.single .hall-card-link {
+    flex: 0 1 620px;
+    height: min(600px, 100%);
+  }
+  /* 4+ 张卡（M2 后 6 屏）：3×2 网格 + 卡内密度收紧（页面级适配，组件原版不动） */
+  .hall-cards.grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: minmax(0, 1fr);
+    gap: 18px;
+  }
+  /* grid 子项默认 min-height:auto 会被 chips 内容撑破行高 —— 强制可收缩，超出裁切 */
+  .hall-cards.grid .hall-card-link {
+    min-height: 0;
+  }
+  .hall-cards.grid :deep(.lc) {
+    overflow: hidden;
+  }
+  .hall-cards.grid :deep(.lc) {
+    padding: 18px 22px 14px;
+  }
+  .hall-cards.grid :deep(.lc-ic) {
+    width: 38px;
+    height: 38px;
+  }
+  .hall-cards.grid :deep(.lc-ic svg) {
+    width: 22px;
+    height: 22px;
+  }
+  .hall-cards.grid :deep(.lc-title) {
+    font-size: 20px;
+  }
+  .hall-cards.grid :deep(.lc-desc) {
+    margin-top: 2px;
+    font-size: 12.5px;
+  }
+  .hall-cards.grid :deep(.lc-stats) {
+    margin-top: 6px;
+  }
+  .hall-cards.grid :deep(.lc-stat) {
+    padding: 6px 2px;
+  }
+  .hall-cards.grid :deep(.lc-stat dt) {
+    font-size: 13px;
+  }
+  .hall-cards.grid :deep(.lc-stat dd) {
+    font-size: 19px;
+  }
+  .hall-cards.grid :deep(.lc-zone) {
+    margin: 8px 0 6px;
+    padding-top: 8px;
+    gap: 6px;
+  }
+  .hall-cards.grid :deep(.lc-zone-t) {
+    font-size: 12px;
+  }
+  .hall-cards.grid :deep(.lc-chips) {
+    gap: 6px;
+    /* 一瞥只保完整首行：整行级裁切，绝不出现半截 chip 残影 */
+    max-height: 23px;
+    overflow: hidden;
+  }
+  .hall-cards.grid :deep(.lc-chip) {
+    height: 23px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+  .hall-cards.grid :deep(.lc-foot) {
+    padding-top: 8px;
+    font-size: 12.5px;
+  }
+  .hall-card-link {
+    flex: 1 1 0;
+    min-width: 0;
+    display: block;
+    text-decoration: none;
+    border-radius: var(--nv-scr-radius);
+  }
+  .hall-card-link:focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px var(--nv-scr-bg),
+      0 0 0 4px var(--nv-scr-cyan-dim);
+  }
+  .hall-empty {
+    margin: auto;
+    font-size: 16px;
+    color: var(--nv-scr-faint);
+  }
 
-.hall-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-top: 1px solid var(--sb-divider);
-  padding-top: 14px;
-  font-size: 13px;
-  color: var(--sb-faint);
-  font-variant-numeric: tabular-nums;
+  .hall-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid var(--nv-scr-divider);
+    padding-top: 14px;
+    font-size: 13px;
+    color: var(--nv-scr-faint);
+    font-variant-numeric: tabular-nums;
+  }
 }
 </style>

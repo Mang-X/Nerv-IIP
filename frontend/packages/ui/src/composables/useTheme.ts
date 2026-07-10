@@ -21,7 +21,7 @@
  *     overrides so the page falls back to the near-black (light) / near-white
  *     (dark) values baked into theme.css — correct in each colour mode.
  *   - a colour preset: we inline `--primary` / `--primary-foreground` / `--ring`
- *     / `--sidebar-primary` (+ keep `--brand` in sync) on <html>.
+ *     / `--sidebar-primary` (+ keep `--nv-brand` in sync) on <html>.
  *
  * Both apps call `initTheme()` once in main.ts before mount so the persisted
  * choice is applied before first paint.
@@ -79,8 +79,17 @@ export const ACCENT_PRESETS: Record<string, string> = Object.fromEntries(
 )
 export const DEFAULT_ACCENT = THEME_PRESETS.blue.primary
 
-/** Inline custom properties we set on <html> for a coloured theme. */
-const PRIMARY_PROPS = ['--primary', '--primary-foreground', '--ring', '--sidebar-primary', '--brand'] as const
+/** Inline custom properties we set on <html> for a coloured theme.
+ *  The emphasis accent is the namespaced `--nv-brand` (ADR 0020 §3); the
+ *  one-cycle alias `--brand: var(--nv-brand)` in theme.css keeps legacy direct
+ *  `var(--brand)` refs tracking the runtime override. */
+const PRIMARY_PROPS = [
+  '--primary',
+  '--primary-foreground',
+  '--ring',
+  '--sidebar-primary',
+  '--nv-brand',
+] as const
 
 function hasDom(): boolean {
   return typeof document !== 'undefined'
@@ -131,9 +140,9 @@ function applyTheme(theme: ThemeName): void {
   style.setProperty('--primary-foreground', preset.foreground)
   style.setProperty('--ring', preset.primary)
   style.setProperty('--sidebar-primary', preset.primary)
-  // Keep the emphasis accent (`--brand`, used by e.g. active sidebar highlight,
-  // chart-1) in sync with the chosen theme colour.
-  style.setProperty('--brand', preset.primary)
+  // Keep the emphasis accent (`--nv-brand`, used by e.g. active sidebar
+  // highlight, chart-1, and the `--brand` alias) in sync with the theme colour.
+  style.setProperty('--nv-brand', preset.primary)
 }
 
 function preferredMode(): ColorMode {

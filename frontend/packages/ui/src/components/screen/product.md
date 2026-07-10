@@ -1,6 +1,6 @@
 # 大屏 / 控制室组件层 · 产品定位（product.md）
 
-> `@nerv-iip/ui` 的 `screen/` 层 —— 中央控制室、车间指挥大屏的组件库。独立深色「工业蓝」令牌（`--sb-*`），只遵循统一设计哲学，**不复用** PC/移动的浅色令牌。AI 编码与人工开发在改动本层前先读本文件。
+> `@nerv-iip/ui` 的 `screen/` 层 —— 中央控制室、车间指挥大屏的组件库。独立深色「工业蓝」令牌（`--nv-scr-*`），只遵循统一设计哲学，**不复用** PC/移动的浅色令牌。AI 编码与人工开发在改动本层前先读本文件。
 
 ## 一句话定位
 
@@ -17,8 +17,8 @@
 ## 设计原则
 
 1. **克制发光** —— cyan 辉光只给「活数据」（实时值、运行态）;标题、坐标轴、静态文字不发光。
-2. **远距可读** —— 关键数字大字号 + 克制 `text-shadow` 辉光;次要信息降噪（`--sb-muted` / `--sb-faint`）。
-3. **独立深色令牌** —— 只用 `--sb-*`，不混入共享 `--*`;无亮色模式。
+2. **远距可读** —— 关键数字大字号 + 克制 `text-shadow` 辉光;次要信息降噪（`--nv-scr-muted` / `--nv-scr-faint`）。
+3. **独立深色令牌** —— 只用 `--nv-scr-*`，不混入共享 `--*`;无亮色模式。
 4. **动效统一、减速无回弹** —— 见下方动效契约，手感与 PC/移动完全一致。
 5. **数据驱动** —— 组件零 props 可渲染示例，接真实数据只传值;严禁写死业务文案当占位。
 
@@ -26,10 +26,10 @@
 
 大屏视觉独立，但**动效语言必须和 PC/移动同源** —— 同一种「高级减速、绝不回弹」的手感（见 `theme.css`:_No bounce/elastic; premium motion decelerates_）。
 
-| 用途 | 令牌 | 值 | 对应系统令牌 |
-|---|---|---|---|
-| 日常过渡（颜色 / 边框 / 位移 / 勾选） | `--sb-ease` | `cubic-bezier(0.25, 1, 0.5, 1)` | `--ease-out-quart` |
-| 强调（大位移 / 数据增长 / 进出） | `--sb-ease-emphasized` | `cubic-bezier(0.16, 1, 0.3, 1)` | `--ease-out-expo` |
+| 用途                                  | 令牌                       | 值                              | 对应系统令牌          |
+| ------------------------------------- | -------------------------- | ------------------------------- | --------------------- |
+| 日常过渡（颜色 / 边框 / 位移 / 勾选） | `--nv-scr-ease`            | `cubic-bezier(0.25, 1, 0.5, 1)` | `--nv-ease-out-quart` |
+| 强调（大位移 / 数据增长 / 进出）      | `--nv-scr-ease-emphasized` | `cubic-bezier(0.16, 1, 0.3, 1)` | `--nv-ease-out-expo`  |
 
 **时长** —— 沿用 PC 层惯例，行内书写;**不引入 screen 专属时长令牌**，以免和 pro（同样行内）产生新的不一致:
 
@@ -41,7 +41,7 @@
 - 开关手柄 `:active` → `scale(0.86)`（同 `SwitchPro`，**收缩**而非膨胀）
 - 勾选类如有 → `scale(0.88)`（同 `CheckboxPro` / `RadioGroupProItem`）
 
-**滑动指示** —— 分段（`ScreenSegmented`）与标签（`ScreenTabs`）用滑动 thumb / 下划线（`--sb-ease-emphasized`），与 PC 的滑动语言一致;thumb 从激活项**实测宽度**定位,**不做**硬背景切换。
+**滑动指示** —— 分段（`ScreenSegmented`）与标签（`ScreenTabs`）用滑动 thumb / 下划线（`--nv-scr-ease-emphasized`），与 PC 的滑动语言一致;thumb 从激活项**实测宽度**定位,**不做**硬背景切换。
 
 **浮层** —— 下拉 / 弹层（`ScreenSelect` 等）必须 `Teleport` 到 `<body>` 并 `position:fixed` 锚定触发器,否则会被 `ScreenPanel` 的 `overflow:hidden` 裁掉。
 
@@ -50,30 +50,30 @@
 **铁律**
 
 - ❌ 不用 bounce / elastic / spring / overshoot —— 任何回弹。
-- ❌ 不自创第四条缓动曲线 —— 只 `--sb-ease` 与 `--sb-ease-emphasized`。
+- ❌ 不自创第四条缓动曲线 —— 只 `--nv-scr-ease` 与 `--nv-scr-ease-emphasized`。
 - ✅ 每个会动的元素都要有 `@media (prefers-reduced-motion: reduce)` 降级。
 
 ## 颜色语义
 
-| 令牌 | 值 | 用途 |
-|---|---|---|
-| `--sb-cyan` | `#00e5ff` | 活数据、主强调、运行辉光 |
-| `--sb-indigo` | `#a78bfa` | 计划值 / 次要序列 |
-| `--sb-green` | `#00e676` | 运行 / 达成 / 正常 |
-| `--sb-amber` | `#ffd600` | 待机 / 预警 |
-| `--sb-red` | `#ff1744` | 报警 / 异常 / 越限 |
-| `--sb-text` / `-2` / `-muted` / `-faint` | 白 → 灰阶 | 主 / 次 / 弱 / 极弱文字 |
+| 令牌                                         | 值        | 用途                     |
+| -------------------------------------------- | --------- | ------------------------ |
+| `--nv-scr-cyan`                              | `#00e5ff` | 活数据、主强调、运行辉光 |
+| `--nv-scr-indigo`                            | `#a78bfa` | 计划值 / 次要序列        |
+| `--nv-scr-green`                             | `#00e676` | 运行 / 达成 / 正常       |
+| `--nv-scr-amber`                             | `#ffd600` | 待机 / 预警              |
+| `--nv-scr-red`                               | `#ff1744` | 报警 / 异常 / 越限       |
+| `--nv-scr-text` / `-2` / `-muted` / `-faint` | 白 → 灰阶 | 主 / 次 / 弱 / 极弱文字  |
 
-底色:`--sb-bg #080c16`、`--sb-panel-a/b` 面板渐变、`--sb-line/-2` 发丝边、`--sb-divider` 分隔。
+底色:`--nv-scr-bg #080c16`、`--nv-scr-panel-a/b` 面板渐变、`--nv-scr-line/-2` 发丝边、`--nv-scr-divider` 分隔。
 
 ## 组件清单
 
-| 分类 | 组件 |
-|---|---|
-| 容器 / 外壳 | `ScreenPanel` · `BorderPanel` · `TechFrame` · `TitleBar` · `ScreenHeader` · `GlowDivider` |
-| 指标 / 图表 | `OeeHero` · `RingGauge` · `WaterLevel` · `CapsuleBar` · `DigitalFlop` · `Sparkline` · `TrendChart` · `TaktGantt` |
-| 数据 / 状态 | `StatusCard` · `KpiBar` · `AlarmTable` · `StatusLight` · `StatusTag` |
-| 控件 | `ScreenButton` · `ScreenInput` · `ScreenSelect` · `ScreenSearch` · `ScreenTable` · `ScreenTabs` · `ScreenSegmented` · `ScreenSwitch` |
+| 分类        | 组件                                                                                                                                 |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 容器 / 外壳 | `ScreenPanel` · `BorderPanel` · `TechFrame` · `TitleBar` · `ScreenHeader` · `GlowDivider`                                            |
+| 指标 / 图表 | `OeeHero` · `RingGauge` · `WaterLevel` · `CapsuleBar` · `DigitalFlop` · `Sparkline` · `TrendChart` · `TaktGantt`                     |
+| 数据 / 状态 | `StatusCard` · `KpiBar` · `AlarmTable` · `StatusLight` · `StatusTag`                                                                 |
+| 控件        | `ScreenButton` · `ScreenInput` · `ScreenSelect` · `ScreenSearch` · `ScreenTable` · `ScreenTabs` · `ScreenSegmented` · `ScreenSwitch` |
 
 **容器策略**:裸内容组件（`OeeHero` / `RingGauge` / `WaterLevel` / `CapsuleBar` / `DigitalFlop` / `Sparkline` / `KpiBar`）放进 `ScreenPanel`;自带容器组件（`TrendChart` / `TaktGantt` / `AlarmTable` / `StatusCard`）直接用。
 
@@ -83,7 +83,7 @@
 
 **Don't**
 
-- ❌ 别在 screen 用共享 `--*` 令牌 —— 一律 `--sb-*`。
+- ❌ 别在 screen 用共享 `--*` 令牌 —— 一律 `--nv-scr-*`。
 - ❌ 别给静态文字 / 标题 / 坐标轴加辉光 —— 辉光只属于活数据。
 - ❌ 别加亮色模式 —— 本层固定深色。
 - ❌ 别用回弹动效，别自创缓动曲线。
@@ -92,6 +92,6 @@
 
 **Do**
 
-- ✅ 数据增长 / 大位移用 `--sb-ease-emphasized`，其余用 `--sb-ease`。
+- ✅ 数据增长 / 大位移用 `--nv-scr-ease-emphasized`，其余用 `--nv-scr-ease`。
 - ✅ press 反馈对齐 pro 的 scale 体系（收缩、无回弹）。
 - ✅ 真实工厂数据看效果（产线名、`WO-` 工单、OEE / 节拍 / 达成率）。

@@ -187,92 +187,94 @@ const date = computed(() => WEEKDAYS[now.value.getDay()])
 </template>
 
 <style scoped>
-.screen-layout {
-  width: 1920px;
-  height: 1080px;
-  box-sizing: border-box;
-  padding: 22px 30px 26px;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  isolation: isolate;
-  /* 舱底：顶缘细灯带 + 底部收暗；氛围主体交给点阵场与光路 */
-  background:
-    linear-gradient(180deg, rgba(96, 180, 255, 0.045), transparent 30px),
-    linear-gradient(180deg, transparent 84%, rgba(0, 0, 0, 0.3)), var(--sb-bg);
-}
-/* 点阵粒子场：1px 光点阵，顶部密亮、向下渐隐（mask 控密度） */
-.screen-layout__dots {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background-image: radial-gradient(circle, rgba(150, 195, 255, 0.13) 1px, transparent 1.5px);
-  background-size: 26px 26px;
-  -webkit-mask-image: radial-gradient(
-    1300px 760px at 50% 0%,
-    rgba(0, 0, 0, 0.85),
-    rgba(0, 0, 0, 0.2) 58%,
-    rgba(0, 0, 0, 0.08)
-  );
-  mask-image: radial-gradient(
-    1300px 760px at 50% 0%,
-    rgba(0, 0, 0, 0.85),
-    rgba(0, 0, 0, 0.2) 58%,
-    rgba(0, 0, 0, 0.08)
-  );
-}
-.screen-layout__paths {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 0;
-}
-.screen-layout__paths .comet {
-  filter: drop-shadow(0 0 6px rgba(140, 205, 255, 0.85));
-}
-.screen-layout__paths .comet.dim {
-  opacity: 0.7;
-  filter: drop-shadow(0 0 5px rgba(150, 165, 235, 0.7));
-}
-.screen-layout__paths .sparks circle {
-  fill: rgba(165, 210, 255, 0.5);
-  filter: drop-shadow(0 0 4px rgba(140, 205, 255, 0.6));
-  animation: sl-spark 4.6s ease-in-out infinite;
-}
-.screen-layout__paths .sparks .still {
-  animation: none;
-  opacity: 0.55;
-}
-.screen-layout__paths .sparks .s2 {
-  animation-delay: 1.5s;
-}
-.screen-layout__paths .sparks .s3 {
-  animation-delay: 3.1s;
-}
-@keyframes sl-spark {
-  50% {
-    opacity: 0.15;
+@layer app {
+  .screen-layout {
+    width: 1920px;
+    height: 1080px;
+    box-sizing: border-box;
+    padding: 22px 30px 26px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    isolation: isolate;
+    /* 舱底：顶缘细灯带 + 底部收暗；氛围主体交给点阵场与光路 */
+    background:
+      linear-gradient(180deg, rgba(96, 180, 255, 0.045), transparent 30px),
+      linear-gradient(180deg, transparent 84%, rgba(0, 0, 0, 0.3)), var(--nv-scr-bg);
   }
-}
-.screen-layout__chrome,
-.screen-layout__body {
-  position: relative;
-  z-index: 1;
-}
-.screen-layout__body {
-  flex: 1;
-  min-height: 0;
-  margin-top: 16px;
-}
-@media (prefers-reduced-motion: reduce) {
+  /* 点阵粒子场：1px 光点阵，顶部密亮、向下渐隐（mask 控密度） */
+  .screen-layout__dots {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image: radial-gradient(circle, rgba(150, 195, 255, 0.13) 1px, transparent 1.5px);
+    background-size: 26px 26px;
+    -webkit-mask-image: radial-gradient(
+      1300px 760px at 50% 0%,
+      rgba(0, 0, 0, 0.85),
+      rgba(0, 0, 0, 0.2) 58%,
+      rgba(0, 0, 0, 0.08)
+    );
+    mask-image: radial-gradient(
+      1300px 760px at 50% 0%,
+      rgba(0, 0, 0, 0.85),
+      rgba(0, 0, 0, 0.2) 58%,
+      rgba(0, 0, 0, 0.08)
+    );
+  }
+  .screen-layout__paths {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 0;
+  }
   .screen-layout__paths .comet {
-    display: none;
+    filter: drop-shadow(0 0 6px rgba(140, 205, 255, 0.85));
+  }
+  .screen-layout__paths .comet.dim {
+    opacity: 0.7;
+    filter: drop-shadow(0 0 5px rgba(150, 165, 235, 0.7));
   }
   .screen-layout__paths .sparks circle {
+    fill: rgba(165, 210, 255, 0.5);
+    filter: drop-shadow(0 0 4px rgba(140, 205, 255, 0.6));
+    animation: sl-spark 4.6s ease-in-out infinite;
+  }
+  .screen-layout__paths .sparks .still {
     animation: none;
+    opacity: 0.55;
+  }
+  .screen-layout__paths .sparks .s2 {
+    animation-delay: 1.5s;
+  }
+  .screen-layout__paths .sparks .s3 {
+    animation-delay: 3.1s;
+  }
+  @keyframes sl-spark {
+    50% {
+      opacity: 0.15;
+    }
+  }
+  .screen-layout__chrome,
+  .screen-layout__body {
+    position: relative;
+    z-index: 1;
+  }
+  .screen-layout__body {
+    flex: 1;
+    min-height: 0;
+    margin-top: 16px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .screen-layout__paths .comet {
+      display: none;
+    }
+    .screen-layout__paths .sparks circle {
+      animation: none;
+    }
   }
 }
 </style>

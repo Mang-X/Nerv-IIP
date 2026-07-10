@@ -8,7 +8,7 @@ import { NvSwiper, NvMobileButton, NvMobileTag } from '@nerv-iip/ui-mobile'
 import { ref } from 'vue'
 
 const panels = [
-  { title: '产线 A 区', sub: '稼动率 92%', tone: 'var(--brand)' },
+  { title: '产线 A 区', sub: '稼动率 92%', tone: 'var(--nv-brand)' },
   { title: '产线 B 区', sub: '稼动率 78%', tone: 'oklch(0.62 0.15 150)' },
   { title: '产线 C 区', sub: '稼动率 64%', tone: 'oklch(0.65 0.15 40)' },
 ]

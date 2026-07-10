@@ -60,88 +60,90 @@ const emit = defineEmits<{ select: [item: GridItem, index: number] }>()
 </template>
 
 <style scoped>
-.ds-grid {
-  display: grid;
-  grid-template-columns: repeat(var(--ds-grid-cols), minmax(0, 1fr));
-}
-.ds-grid-bordered {
-  gap: 1px;
-  background-color: var(--border);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-}
+@layer nv-components {
+  .ds-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--ds-grid-cols), minmax(0, 1fr));
+  }
+  .ds-grid-bordered {
+    gap: 1px;
+    background-color: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
 
-.ds-grid-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.875rem 0.25rem;
-  background-color: var(--card);
-  outline: none;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-  /* Background-only feedback (no scale → no layout/icon shift); the tinted cell
+  .ds-grid-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.875rem 0.25rem;
+    background-color: var(--card);
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    /* Background-only feedback (no scale → no layout/icon shift); the tinted cell
      also makes the tap target obvious. Instant press-in, eased fade-out. */
-  transition: background-color 0.22s var(--ease-out-quart, ease-out);
-}
-.ds-grid:not(.ds-grid-bordered) .ds-grid-item {
-  background-color: transparent;
-}
-.ds-grid-item:active {
-  background-color: var(--muted);
-  transition-duration: 0s;
-}
-.ds-grid-item:active .ds-grid-icon {
-  color: var(--brand-strong);
-}
-.ds-grid-square {
-  aspect-ratio: 1;
-}
+    transition: background-color 0.22s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-grid:not(.ds-grid-bordered) .ds-grid-item {
+    background-color: transparent;
+  }
+  .ds-grid-item:active {
+    background-color: var(--muted);
+    transition-duration: 0s;
+  }
+  .ds-grid-item:active .ds-grid-icon {
+    color: var(--nv-brand-strong);
+  }
+  .ds-grid-square {
+    aspect-ratio: 1;
+  }
 
-.ds-grid-icon {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--foreground);
-}
-.ds-grid-icon :deep(svg) {
-  width: 1.625rem;
-  height: 1.625rem;
-}
-.ds-grid-text {
-  font-size: 0.75rem;
-  line-height: 1;
-  color: var(--muted-foreground);
-}
+  .ds-grid-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--foreground);
+  }
+  .ds-grid-icon :deep(svg) {
+    width: 1.625rem;
+    height: 1.625rem;
+  }
+  .ds-grid-text {
+    font-size: 0.75rem;
+    line-height: 1;
+    color: var(--muted-foreground);
+  }
 
-.ds-grid-badge {
-  position: absolute;
-  top: -0.375rem;
-  right: -0.5rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.0625rem;
-  height: 1.0625rem;
-  padding-inline: 0.25rem;
-  border-radius: 9999px;
-  background-color: var(--destructive);
-  color: #fff;
-  font-size: 0.625rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  box-shadow: 0 0 0 2px var(--card);
-}
-.ds-grid-badge[data-dot] {
-  top: -0.125rem;
-  right: -0.125rem;
-  min-width: 0.5rem;
-  width: 0.5rem;
-  height: 0.5rem;
-  padding: 0;
+  .ds-grid-badge {
+    position: absolute;
+    top: -0.375rem;
+    right: -0.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.0625rem;
+    height: 1.0625rem;
+    padding-inline: 0.25rem;
+    border-radius: 9999px;
+    background-color: var(--destructive);
+    color: #fff;
+    font-size: 0.625rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    box-shadow: 0 0 0 2px var(--card);
+  }
+  .ds-grid-badge[data-dot] {
+    top: -0.125rem;
+    right: -0.125rem;
+    min-width: 0.5rem;
+    width: 0.5rem;
+    height: 0.5rem;
+    padding: 0;
+  }
 }
 </style>

@@ -47,8 +47,10 @@ const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
 </template>
 
 <style scoped>
-.ds-seg {
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
+@layer nv-components {
+  .ds-seg {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
 }
 </style>

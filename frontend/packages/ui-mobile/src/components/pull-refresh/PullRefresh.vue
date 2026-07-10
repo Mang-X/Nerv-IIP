@@ -99,15 +99,17 @@ watch(loading, (v) => {
 </template>
 
 <style scoped>
-.ds-pr-scroll {
-  touch-action: pan-y;
-}
-.ds-pr-snap {
-  transition: transform 0.3s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
+  .ds-pr-scroll {
+    touch-action: pan-y;
+  }
   .ds-pr-snap {
-    transition: none;
+    transition: transform 0.3s var(--nv-ease-out-expo);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-pr-snap {
+      transition: none;
+    }
   }
 }
 </style>

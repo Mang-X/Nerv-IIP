@@ -58,48 +58,50 @@ const cubes = blocks.map(({ ix, iy, w, d, h }) => {
 </template>
 
 <style scoped>
-.iso {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-.grid line {
-  stroke: rgba(120, 160, 220, 0.05);
-  stroke-width: 1;
-}
-.face-t {
-  fill: rgba(74, 166, 238, 0.05);
-  stroke: rgba(120, 190, 245, 0.22);
-  stroke-width: 1;
-}
-.face-l {
-  fill: rgba(74, 166, 238, 0.022);
-  stroke: rgba(120, 160, 220, 0.12);
-  stroke-width: 1;
-}
-.face-r {
-  fill: rgba(74, 166, 238, 0.04);
-  stroke: rgba(120, 160, 220, 0.16);
-  stroke-width: 1;
-}
-.node {
-  fill: var(--sb-cyan);
-  filter: drop-shadow(0 0 5px var(--sb-cyan));
-  animation: iso-pulse 4s ease-in-out infinite;
-}
-@keyframes iso-pulse {
-  0%,
-  100% {
-    opacity: 0.35;
+@layer app {
+  .iso {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
   }
-  50% {
-    opacity: 1;
+  .grid line {
+    stroke: rgba(120, 160, 220, 0.05);
+    stroke-width: 1;
   }
-}
-@media (prefers-reduced-motion: reduce) {
+  .face-t {
+    fill: rgba(74, 166, 238, 0.05);
+    stroke: rgba(120, 190, 245, 0.22);
+    stroke-width: 1;
+  }
+  .face-l {
+    fill: rgba(74, 166, 238, 0.022);
+    stroke: rgba(120, 160, 220, 0.12);
+    stroke-width: 1;
+  }
+  .face-r {
+    fill: rgba(74, 166, 238, 0.04);
+    stroke: rgba(120, 160, 220, 0.16);
+    stroke-width: 1;
+  }
   .node {
-    animation: none;
+    fill: var(--nv-scr-cyan);
+    filter: drop-shadow(0 0 5px var(--nv-scr-cyan));
+    animation: iso-pulse 4s ease-in-out infinite;
+  }
+  @keyframes iso-pulse {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .node {
+      animation: none;
+    }
   }
 }
 </style>

@@ -63,7 +63,13 @@ function onWheel(e: WheelEvent) {
 </script>
 
 <template>
-  <div ref="viewport" class="scroll-board" @mouseenter="onEnter" @mouseleave="onLeave" @wheel="onWheel">
+  <div
+    ref="viewport"
+    class="scroll-board"
+    @mouseenter="onEnter"
+    @mouseleave="onLeave"
+    @wheel="onWheel"
+  >
     <div ref="track" class="scroll-board__track" :style="{ transform: `translateY(${offset}px)` }">
       <div v-for="(item, i) in items" :key="rowKeyFor(item, i)" class="scroll-board__row">
         <slot name="row" :item="item" :index="i">{{ item }}</slot>
@@ -81,12 +87,14 @@ function onWheel(e: WheelEvent) {
 </template>
 
 <style scoped>
-.scroll-board {
-  height: 100%;
-  overflow: hidden;
-  position: relative;
-}
-.scroll-board__track {
-  will-change: transform;
+@layer nv-components {
+  .scroll-board {
+    height: 100%;
+    overflow: hidden;
+    position: relative;
+  }
+  .scroll-board__track {
+    will-change: transform;
+  }
 }
 </style>

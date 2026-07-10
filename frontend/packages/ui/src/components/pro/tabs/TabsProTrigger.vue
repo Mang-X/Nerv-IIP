@@ -26,9 +26,11 @@ const forwarded = useForwardProps(delegated)
 </template>
 
 <style scoped>
-/* The active pill is the sliding TabsIndicator (in TabsProList); the trigger
+@layer nv-components {
+  /* The active pill is the sliding TabsIndicator (in TabsProList); the trigger
    only animates its text colour. */
-.ds-stab {
-  transition: color 0.18s var(--ease-out-quart, ease-out);
+  .ds-stab {
+    transition: color 0.18s var(--nv-ease-out-quart, ease-out);
+  }
 }
 </style>

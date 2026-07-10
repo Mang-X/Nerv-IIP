@@ -89,43 +89,45 @@ const triggers = { [Donut.selectors.segment]: segmentTooltip }
 </template>
 
 <style scoped>
-.ds-donut {
-  --vis-donut-central-label-text-color: var(--foreground);
-  --vis-donut-central-sub-label-text-color: var(--muted-foreground);
-  --vis-donut-central-label-font-family: var(--font-sans);
-  --vis-donut-central-sub-label-font-family: var(--font-sans);
-  /* Transparent background ring + gap strokes → works on any surface / theme
+@layer nv-components {
+  .ds-donut {
+    --vis-donut-central-label-text-color: var(--foreground);
+    --vis-donut-central-sub-label-text-color: var(--muted-foreground);
+    --vis-donut-central-label-font-family: var(--font-sans);
+    --vis-donut-central-sub-label-font-family: var(--font-sans);
+    /* Transparent background ring + gap strokes → works on any surface / theme
      (unovis' own dark-theme isn't wired to our .dark class). */
-  --vis-donut-background-color: transparent;
-  --vis-tooltip-background-color: color-mix(in oklch, var(--popover) 86%, transparent);
-  --vis-tooltip-text-color: var(--popover-foreground);
-  --vis-tooltip-border-color: color-mix(in oklch, var(--border) 80%, transparent);
-  --vis-tooltip-padding: 0;
-  --vis-tooltip-border-radius: 8px;
-}
-.ds-donut :deep([class*='-tooltip']) {
-  backdrop-filter: blur(8px) saturate(1.4);
-  -webkit-backdrop-filter: blur(8px) saturate(1.4);
-  box-shadow: 0 8px 28px -12px color-mix(in oklch, black 50%, transparent);
-}
-.ds-donut :deep(.ds-vis-card) {
-  min-width: 8rem;
-  padding: 8px 10px;
-  font-size: 12px;
-}
-.ds-donut :deep(.ds-vis-row) {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 0;
-}
-.ds-donut :deep(.ds-vis-row b) {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-}
-.ds-donut :deep(.ds-vis-dot) {
-  width: 8px;
-  height: 8px;
-  border-radius: 9999px;
+    --vis-donut-background-color: transparent;
+    --vis-tooltip-background-color: color-mix(in oklch, var(--popover) 86%, transparent);
+    --vis-tooltip-text-color: var(--popover-foreground);
+    --vis-tooltip-border-color: color-mix(in oklch, var(--border) 80%, transparent);
+    --vis-tooltip-padding: 0;
+    --vis-tooltip-border-radius: 8px;
+  }
+  .ds-donut :deep([class*='-tooltip']) {
+    backdrop-filter: blur(8px) saturate(1.4);
+    -webkit-backdrop-filter: blur(8px) saturate(1.4);
+    box-shadow: 0 8px 28px -12px color-mix(in oklch, black 50%, transparent);
+  }
+  .ds-donut :deep(.ds-vis-card) {
+    min-width: 8rem;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  .ds-donut :deep(.ds-vis-row) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 0;
+  }
+  .ds-donut :deep(.ds-vis-row b) {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+  }
+  .ds-donut :deep(.ds-vis-dot) {
+    width: 8px;
+    height: 8px;
+    border-radius: 9999px;
+  }
 }
 </style>

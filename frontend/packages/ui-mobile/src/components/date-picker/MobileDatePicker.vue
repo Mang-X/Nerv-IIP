@@ -112,41 +112,43 @@ watch(open, (isOpen) => {
 </template>
 
 <style scoped>
-.ds-mdp-wheel {
-  position: relative;
-  height: 200px;
-}
-.ds-mdp-band {
-  position: absolute;
-  top: 80px;
-  right: 0;
-  left: 0;
-  height: 40px;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  pointer-events: none;
-}
-.ds-mdp-scroll {
-  height: 100%;
-  flex: 1;
-  overflow-y: auto;
-  scroll-snap-type: y mandatory;
-  scrollbar-width: none;
-}
-.ds-mdp-scroll::-webkit-scrollbar {
-  display: none;
-}
-.ds-mdp-pad {
-  height: 80px;
-}
-.ds-mdp-item {
-  display: flex;
-  height: 40px;
-  align-items: center;
-  justify-content: center;
-  scroll-snap-align: center;
-  font-size: 1rem;
-  font-variant-numeric: tabular-nums;
-  transition: color 0.15s ease;
+@layer nv-components {
+  .ds-mdp-wheel {
+    position: relative;
+    height: 200px;
+  }
+  .ds-mdp-band {
+    position: absolute;
+    top: 80px;
+    right: 0;
+    left: 0;
+    height: 40px;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    pointer-events: none;
+  }
+  .ds-mdp-scroll {
+    height: 100%;
+    flex: 1;
+    overflow-y: auto;
+    scroll-snap-type: y mandatory;
+    scrollbar-width: none;
+  }
+  .ds-mdp-scroll::-webkit-scrollbar {
+    display: none;
+  }
+  .ds-mdp-pad {
+    height: 80px;
+  }
+  .ds-mdp-item {
+    display: flex;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    scroll-snap-align: center;
+    font-size: 1rem;
+    font-variant-numeric: tabular-nums;
+    transition: color 0.15s ease;
+  }
 }
 </style>

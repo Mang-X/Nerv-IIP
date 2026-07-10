@@ -31,11 +31,11 @@ const { data, lastUpdated, isStale, loading } = useScreenData(
 
 <ScreenDemo>
   <div style="display: flex; flex-direction: column; gap: 8px; font-size: 14px; font-variant-numeric: tabular-nums">
-    <div>data：<b style="color: var(--sb-text)">{{ data ?? '（取数中…）' }}</b></div>
-    <div style="color: var(--sb-muted)">
+    <div>data：<b style="color: var(--nv-scr-text)">{{ data ?? '（取数中…）' }}</b></div>
+    <div style="color: var(--nv-scr-muted)">
       lastUpdated：{{ lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : '—' }}
       · loading：{{ loading }}
-      · isStale：<b :style="{ color: isStale ? 'var(--sb-amber)' : 'var(--sb-green)' }">{{ isStale }}</b>
+      · isStale：<b :style="{ color: isStale ? 'var(--nv-scr-amber)' : 'var(--nv-scr-green)' }">{{ isStale }}</b>
     </div>
   </div>
 </ScreenDemo>
@@ -56,25 +56,28 @@ const { data, isStale, refresh } = useScreenData(
 ```ts
 const { data: board, refresh } = useScreenData(() => fetchBoard(id.value), { intervalMs: 5000 })
 const { data: tick } = useScreenData(() => fetchParamsTick(visibleIds.value), { intervalMs: 2000 })
-watch(() => id.value, () => void refresh())
+watch(
+  () => id.value,
+  () => void refresh(),
+)
 ```
 
 ## API
 
 **`useScreenData<T>(fetcher, options?) => UseScreenDataReturn<T>`**
 
-| Option | 类型 | 默认 | 说明 |
-| --- | --- | --- | --- |
-| `intervalMs` | `number` | `15000` | 轮询间隔 |
-| `immediate` | `boolean` | `true` | 挂载即取一次 |
-| `initialData` | `T` | — | 初始占位数据 |
+| Option        | 类型      | 默认    | 说明         |
+| ------------- | --------- | ------- | ------------ |
+| `intervalMs`  | `number`  | `15000` | 轮询间隔     |
+| `immediate`   | `boolean` | `true`  | 挂载即取一次 |
+| `initialData` | `T`       | —       | 初始占位数据 |
 
-| 返回 | 类型 | 说明 |
-| --- | --- | --- |
-| `data` | `Ref<T \| undefined>` | 最近一次成功数据(失败不清空) |
-| `error` | `Ref<unknown>` | 最近一次错误 |
-| `loading` | `Ref<boolean>` | 取数中 |
-| `lastUpdated` | `Ref<number \| undefined>` | 最近成功时间戳(ms) |
-| `isStale` | `Ref<boolean>` | 失败但保留旧数据时为 `true`(页面可据此亮「数据滞留」灯) |
-| `refresh()` | `() => Promise<void>` | 手动取一次(在途时跳过) |
-| `start()` / `stop()` | `() => void` | 手动启停(如弹窗打开时暂停墙面轮询) |
+| 返回                 | 类型                       | 说明                                                    |
+| -------------------- | -------------------------- | ------------------------------------------------------- |
+| `data`               | `Ref<T \| undefined>`      | 最近一次成功数据(失败不清空)                            |
+| `error`              | `Ref<unknown>`             | 最近一次错误                                            |
+| `loading`            | `Ref<boolean>`             | 取数中                                                  |
+| `lastUpdated`        | `Ref<number \| undefined>` | 最近成功时间戳(ms)                                      |
+| `isStale`            | `Ref<boolean>`             | 失败但保留旧数据时为 `true`(页面可据此亮「数据滞留」灯) |
+| `refresh()`          | `() => Promise<void>`      | 手动取一次(在途时跳过)                                  |
+| `start()` / `stop()` | `() => void`               | 手动启停(如弹窗打开时暂停墙面轮询)                      |

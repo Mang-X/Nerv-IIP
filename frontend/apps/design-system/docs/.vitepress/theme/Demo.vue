@@ -22,7 +22,9 @@ defineProps<{
 
 <template>
   <ClientOnly>
-    <div class="ds-demo" :class="{ 'ds-demo-popout-box': popout }">
+    <!-- `vp-raw` isolates this subtree from VitePress's base/vp-doc resets
+         (ADR 0020 §4.2, via postcssIsolateStyles in config.mts). -->
+    <div class="ds-demo vp-raw" :class="{ 'ds-demo-popout-box': popout }">
       <div v-if="title" class="ds-demo-title">
         {{ title }}
       </div>
@@ -40,30 +42,16 @@ defineProps<{
       </div>
     </div>
     <template #fallback>
-      <div class="ds-demo ds-demo-loading">预览加载中…</div>
+      <div class="ds-demo vp-raw ds-demo-loading">预览加载中…</div>
     </template>
   </ClientOnly>
 </template>
 
 <style>
-/* The demo lives inside VitePress's `.vp-doc`, whose prose typography would
-   inject article margins/borders/sizes onto any heading/paragraph/list in the
-   demo (e.g. `.vp-doc h3 { margin-top: 32px }`). Neutralise that bleed so demo
-   content is governed only by its own utilities — like Tailwind's `not-prose`.
-   High specificity (.vp-doc .ds-demo …) to beat VitePress's `.vp-doc h3` etc. */
-.vp-doc .ds-demo :is(h1, h2, h3, h4, h5, h6, p, ul, ol, li) {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  list-style: none;
-}
-/* Links inside a demo are component links (breadcrumb, nav, …), not prose links —
-   strip VitePress's brand-blue + underline so the component's own styling shows. */
-.vp-doc .ds-demo a {
-  color: inherit;
-  font-weight: inherit;
-  text-decoration: none;
-}
+/* Demo bleed from VitePress's `.vp-doc` prose typography (heading margins, list
+   markers, brand-blue links, table borders) is now neutralised at the source by
+   `postcssIsolateStyles` + the `vp-raw` class on the demo root (ADR 0020 §4.2) —
+   the old `.vp-doc .ds-demo …` counter-rules are no longer needed and were removed. */
 .ds-demo {
   margin: 1.25rem 0;
   border: 1px solid var(--border);

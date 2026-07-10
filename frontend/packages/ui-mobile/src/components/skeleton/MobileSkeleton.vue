@@ -33,31 +33,33 @@ const variantClass: Record<Variant, string> = {
 </template>
 
 <style scoped>
-.ds-skeleton {
-  position: relative;
-  overflow: hidden;
-}
-.ds-skeleton::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  transform: translateX(-100%);
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in oklab, var(--foreground) 8%, transparent),
-    transparent
-  );
-  animation: ds-skeleton-shimmer 1.4s var(--ease-out-quart, ease-out) infinite;
-}
-@keyframes ds-skeleton-shimmer {
-  100% {
-    transform: translateX(100%);
+@layer nv-components {
+  .ds-skeleton {
+    position: relative;
+    overflow: hidden;
   }
-}
-@media (prefers-reduced-motion: reduce) {
   .ds-skeleton::after {
-    animation: none;
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklab, var(--foreground) 8%, transparent),
+      transparent
+    );
+    animation: ds-skeleton-shimmer 1.4s var(--nv-ease-out-quart, ease-out) infinite;
+  }
+  @keyframes ds-skeleton-shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-skeleton::after {
+      animation: none;
+    }
   }
 }
 </style>

@@ -8,7 +8,7 @@ import { NvOeeHero, NvScreenPanel, NvRingGauge, NvScreenStatusTag, NvScreenStatu
 
 # 大屏 / 控制室组件
 
-面向中央控制室、车间指挥大屏(LED / 拼接屏)的组件层。与桌面 PC、PDA 移动两层**完全解耦**:独立的 `--sb-*` 深色工业蓝令牌(无亮色模式),只遵循统一的设计哲学 —— 克制、去装饰、动效减速无回弹。
+面向中央控制室、车间指挥大屏(LED / 拼接屏)的组件层。与桌面 PC、PDA 移动两层**完全解耦**:独立的 `--nv-scr-*` 深色工业蓝令牌(无亮色模式),只遵循统一的设计哲学 —— 克制、去装饰、动效减速无回弹。
 
 <ScreenDemo>
   <NvScreenPanel style="width: 360px">
@@ -28,7 +28,7 @@ import { NvOeeHero, NvScreenPanel, NvRingGauge, NvScreenStatusTag, NvScreenStatu
 
 - **固定深色**:深藏青底 + 青色主辉光,不跟随亮/暗切换;
 - **更大的字号与发光**:远距离可读,关键数字带 `text-shadow` 辉光;
-- **独立令牌前缀 `--sb-*`**:`--sb-bg / --sb-cyan / --sb-green / --sb-amber / --sb-red / --sb-panel-* …`,与共享层的 `--*` 不冲突;
+- **独立令牌前缀 `--nv-scr-*`**:`--nv-scr-bg / --nv-scr-cyan / --nv-scr-green / --nv-scr-amber / --nv-scr-red / --nv-scr-panel-* …`,与共享层的 `--*` 不冲突;
 - **数据驱动**:每个组件零 props 即可渲染示例,接真实数据只需传值。
 
 ## 组件分类

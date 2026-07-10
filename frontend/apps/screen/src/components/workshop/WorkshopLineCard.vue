@@ -22,10 +22,10 @@ const tone = computed(() =>
 )
 const sparkColor = computed(() =>
   props.card.state === 'alarm'
-    ? 'var(--sb-red)'
+    ? 'var(--nv-scr-red)'
     : props.card.state === 'attention'
-      ? 'var(--sb-amber)'
-      : 'var(--sb-cyan)',
+      ? 'var(--nv-scr-amber)'
+      : 'var(--nv-scr-cyan)',
 )
 const nf = new Intl.NumberFormat('en-US')
 </script>
@@ -83,201 +83,203 @@ const nf = new Intl.NumberFormat('en-US')
 </template>
 
 <style scoped>
-.wlc-link {
-  display: block;
-  min-width: 0;
-  min-height: 0;
-  flex: 1 1 0;
-  text-decoration: none;
-  border-radius: var(--sb-radius);
-}
-.wlc-link:focus-visible {
-  outline: none;
-  box-shadow:
-    0 0 0 2px var(--sb-bg),
-    0 0 0 4px var(--sb-cyan-dim);
-}
-.wlc {
-  height: 100%;
-  box-sizing: border-box;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  padding: 13px 17px 11px;
-  border-radius: var(--sb-radius);
-  background: linear-gradient(180deg, var(--sb-panel-a), var(--sb-panel-b));
-  border: 1px solid var(--sb-line);
-  border-top-color: rgba(255, 255, 255, 0.09);
-  transition:
-    border-color 0.18s var(--sb-ease),
-    transform 0.12s var(--sb-ease);
-}
-.wlc-link:hover .wlc {
-  border-color: rgba(135, 208, 255, 0.3);
-}
-.wlc-link:active .wlc {
-  transform: scale(0.985);
-}
-/* 报警卡：红发丝边 + 缓脉冲外辉（辉光只给活异常） */
-.wlc.alarm {
-  position: relative;
-  border-color: rgba(239, 90, 99, 0.4);
-}
-.wlc.alarm::after {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  pointer-events: none;
-  box-shadow: 0 0 16px -4px rgba(239, 90, 99, 0.6);
-  animation: wlc-alarm 1.8s ease-in-out infinite;
-}
-@keyframes wlc-alarm {
-  50% {
-    opacity: 0.25;
+@layer app {
+  .wlc-link {
+    display: block;
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 0;
+    text-decoration: none;
+    border-radius: var(--nv-scr-radius);
   }
-}
-
-.wlc-top {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.wlc-wo {
-  margin-left: auto;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-  color: var(--sb-muted);
-}
-.wlc-off {
-  padding: 2px 8px;
-  border-radius: 5px;
-  border: 1px dashed rgba(255, 255, 255, 0.24);
-  background: repeating-linear-gradient(
-    -45deg,
-    rgba(255, 255, 255, 0.04) 0 6px,
-    transparent 6px 12px
-  );
-  font-size: 11.5px;
-  color: var(--sb-muted);
-}
-.wlc-name {
-  margin: 7px 0 0;
-  font-size: 21px;
-  font-weight: 700;
-  color: #fff;
-  letter-spacing: 0.04em;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-/* 线名 leading 图标：发丝级去饱和线性符号（无填充块/边框/发光） */
-.wlc-ic {
-  flex: none;
-  display: inline-flex;
-  color: var(--sb-muted);
-}
-
-.wlc-nums {
-  display: grid;
-  grid-template-columns: 1.35fr 0.8fr 1fr;
-  gap: 10px;
-  margin: 8px 0 0;
-}
-.wlc-nums dt {
-  font-size: 12px;
-  color: var(--sb-muted);
-}
-.wlc-nums dd {
-  margin: 3px 0 0;
-  font-size: 23px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--sb-text);
-  line-height: 1;
-}
-.wlc-nums dd small {
-  font-size: 13px;
-  font-weight: 600;
-  margin-left: 2px;
-  color: var(--sb-muted);
-}
-.wlc-nums dd.warn {
-  color: var(--sb-amber);
-}
-.wlc-nums dd.bad {
-  color: var(--sb-red);
-}
-
-.wlc-spark {
-  flex: 1;
-  min-height: 22px;
-  margin: 8px 0 6px;
-}
-
-.wlc-foot {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-.wlc-dots {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: none;
-}
-.wlc-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--sb-faint);
-}
-.wlc-dot.run {
-  background: var(--sb-green);
-  box-shadow: 0 0 6px var(--sb-green);
-}
-.wlc-dot.idle {
-  background: var(--sb-amber);
-  box-shadow: 0 0 6px var(--sb-amber);
-}
-.wlc-dot.alarm {
-  background: var(--sb-red);
-  box-shadow: 0 0 6px var(--sb-red);
-}
-.wlc-dot.down {
-  background: var(--sb-muted);
-}
-.wlc-dots-n {
-  margin-left: 3px;
-  font-style: normal;
-  font-size: 11.5px;
-  color: var(--sb-faint);
-  font-variant-numeric: tabular-nums;
-}
-.wlc-alert {
-  flex: 1;
-  min-width: 0;
-  text-align: right;
-  font-size: 12.5px;
-  color: var(--sb-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.wlc-alert.alarm {
-  color: var(--sb-red);
-}
-.wlc-alert.attention {
-  color: var(--sb-amber);
-}
-
-@media (prefers-reduced-motion: reduce) {
+  .wlc-link:focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px var(--nv-scr-bg),
+      0 0 0 4px var(--nv-scr-cyan-dim);
+  }
   .wlc {
-    transition: none;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 13px 17px 11px;
+    border-radius: var(--nv-scr-radius);
+    background: linear-gradient(180deg, var(--nv-scr-panel-a), var(--nv-scr-panel-b));
+    border: 1px solid var(--nv-scr-line);
+    border-top-color: rgba(255, 255, 255, 0.09);
+    transition:
+      border-color 0.18s var(--nv-scr-ease),
+      transform 0.12s var(--nv-scr-ease);
+  }
+  .wlc-link:hover .wlc {
+    border-color: rgba(135, 208, 255, 0.3);
+  }
+  .wlc-link:active .wlc {
+    transform: scale(0.985);
+  }
+  /* 报警卡：红发丝边 + 缓脉冲外辉（辉光只给活异常） */
+  .wlc.alarm {
+    position: relative;
+    border-color: rgba(239, 90, 99, 0.4);
   }
   .wlc.alarm::after {
-    animation: none;
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: 0 0 16px -4px rgba(239, 90, 99, 0.6);
+    animation: wlc-alarm 1.8s ease-in-out infinite;
+  }
+  @keyframes wlc-alarm {
+    50% {
+      opacity: 0.25;
+    }
+  }
+
+  .wlc-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .wlc-wo {
+    margin-left: auto;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--nv-scr-muted);
+  }
+  .wlc-off {
+    padding: 2px 8px;
+    border-radius: 5px;
+    border: 1px dashed rgba(255, 255, 255, 0.24);
+    background: repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.04) 0 6px,
+      transparent 6px 12px
+    );
+    font-size: 11.5px;
+    color: var(--nv-scr-muted);
+  }
+  .wlc-name {
+    margin: 7px 0 0;
+    font-size: 21px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.04em;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  /* 线名 leading 图标：发丝级去饱和线性符号（无填充块/边框/发光） */
+  .wlc-ic {
+    flex: none;
+    display: inline-flex;
+    color: var(--nv-scr-muted);
+  }
+
+  .wlc-nums {
+    display: grid;
+    grid-template-columns: 1.35fr 0.8fr 1fr;
+    gap: 10px;
+    margin: 8px 0 0;
+  }
+  .wlc-nums dt {
+    font-size: 12px;
+    color: var(--nv-scr-muted);
+  }
+  .wlc-nums dd {
+    margin: 3px 0 0;
+    font-size: 23px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--nv-scr-text);
+    line-height: 1;
+  }
+  .wlc-nums dd small {
+    font-size: 13px;
+    font-weight: 600;
+    margin-left: 2px;
+    color: var(--nv-scr-muted);
+  }
+  .wlc-nums dd.warn {
+    color: var(--nv-scr-amber);
+  }
+  .wlc-nums dd.bad {
+    color: var(--nv-scr-red);
+  }
+
+  .wlc-spark {
+    flex: 1;
+    min-height: 22px;
+    margin: 8px 0 6px;
+  }
+
+  .wlc-foot {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+  .wlc-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex: none;
+  }
+  .wlc-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--nv-scr-faint);
+  }
+  .wlc-dot.run {
+    background: var(--nv-scr-green);
+    box-shadow: 0 0 6px var(--nv-scr-green);
+  }
+  .wlc-dot.idle {
+    background: var(--nv-scr-amber);
+    box-shadow: 0 0 6px var(--nv-scr-amber);
+  }
+  .wlc-dot.alarm {
+    background: var(--nv-scr-red);
+    box-shadow: 0 0 6px var(--nv-scr-red);
+  }
+  .wlc-dot.down {
+    background: var(--nv-scr-muted);
+  }
+  .wlc-dots-n {
+    margin-left: 3px;
+    font-style: normal;
+    font-size: 11.5px;
+    color: var(--nv-scr-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .wlc-alert {
+    flex: 1;
+    min-width: 0;
+    text-align: right;
+    font-size: 12.5px;
+    color: var(--nv-scr-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .wlc-alert.alarm {
+    color: var(--nv-scr-red);
+  }
+  .wlc-alert.attention {
+    color: var(--nv-scr-amber);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wlc {
+      transition: none;
+    }
+    .wlc.alarm::after {
+      animation: none;
+    }
   }
 }
 </style>

@@ -17,10 +17,10 @@ import { NvBorderPanel } from '@nerv-iip/ui'
 <ScreenDemo>
   <NvBorderPanel title="焊接线 A · 班次概览" style="width: 380px">
     <div style="display:flex;flex-direction:column;gap:8px;font-size:14px">
-      <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">当前工单</span><span>WO-2406-0312</span></div>
-      <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">稼动率</span><span style="color:var(--sb-cyan)">86.5%</span></div>
-      <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">节拍</span><span>42.0 s / 件</span></div>
-      <div style="display:flex;justify-content:space-between"><span style="color:var(--sb-muted)">良率</span><span>99.2%</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--nv-scr-muted)">当前工单</span><span>WO-2406-0312</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--nv-scr-muted)">稼动率</span><span style="color:var(--nv-scr-cyan)">86.5%</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--nv-scr-muted)">节拍</span><span>42.0 s / 件</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--nv-scr-muted)">良率</span><span>99.2%</span></div>
     </div>
   </NvBorderPanel>
 </ScreenDemo>
@@ -38,9 +38,9 @@ import { NvBorderPanel } from '@nerv-iip/ui'
 <ScreenDemo>
   <NvBorderPanel style="width: 320px">
     <div style="text-align:center">
-      <div style="font-size:13px;color:var(--sb-muted)">CNC 线 C · 在制数量</div>
-      <div style="font-size:40px;font-weight:600;color:var(--sb-cyan);margin-top:6px">128</div>
-      <div style="font-size:12px;color:var(--sb-muted);margin-top:4px">截至 2024-06-12 10:24</div>
+      <div style="font-size:13px;color:var(--nv-scr-muted)">CNC 线 C · 在制数量</div>
+      <div style="font-size:40px;font-weight:600;color:var(--nv-scr-cyan);margin-top:6px">128</div>
+      <div style="font-size:12px;color:var(--nv-scr-muted);margin-top:4px">截至 2024-06-12 10:24</div>
     </div>
   </NvBorderPanel>
 </ScreenDemo>

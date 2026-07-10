@@ -9,181 +9,255 @@
 /*
  * Nerv-IIP Design System v2 — shared token source of truth (@nerv-iip/ui).
  *
- * Single source for BOTH apps (console + business-console). App `main.css`
- * files import this file; tokens are NEVER duplicated per app.
+ * Single source for ALL product apps (console + business-console + …). App
+ * `main.css` files import this file; tokens are NEVER duplicated per app.
+ *
+ * Scene namespaces (ADR 0020 §3): the shadcn contract layer (`--background`,
+ * `--primary`, `--chart-*`, `--sidebar-*`, `--radius`, …) is FROZEN — those names
+ * are what原版 components bridge through Tailwind, so renaming them = editing原版
+ * (red line). The project's own semantics carry the `--nv-*` prefix; the screen
+ * scene lives in `components/screen/tokens.css` (`--nv-scr-*`). Old un-prefixed
+ * names (`--brand`/`--success`/`--shadow-*`/`--ease-*`/…) are kept as var-chain
+ * aliases for one migration cycle (ADR 0020 §5 S1) so in-flight直引 code and the
+ * runtime accent picker keep resolving; they are removed next cycle.
+ *
+ * Style isolation (ADR 0020 §4): the token table sits in `@layer nv-tokens`, the
+ * reset baseline in `@layer base`, and the portalled overlay motion in
+ * `@layer nv-components`. Host-only decorations that must beat Tailwind utilities
+ * (overlay glass, sidebar premium selected state) moved to `styles/overrides.css`
+ * (imported `layer(nv-overrides)` by apps).
  *
  * Constraints (epic #275 / FE-1 #276):
  *   1. primary = near-black; brand blue is emphasis only.
- *   2. runtime dynamic accent: `--brand` is overridable at runtime (see useTheme).
+ *   2. runtime dynamic accent: `--nv-brand` is overridable at runtime (see useTheme).
  *   3. light + dark are both first-class (.dark overrides below).
  *   4. never edit原版 shadcn-vue components — customization happens via tokens here
  *      and via copy-rebuilt block components (FE-2), not by patching primitives.
  *
  * Visual baseline = shadcn dashboard-01: page background ≠ card surface (inset
- * floating panels), `--shadow-*` elevation scale, and a usable
+ * floating panels), `--nv-shadow-*` elevation scale, and a usable
  * `bg-gradient-to-t from-primary/5 to-card` section-card gradient.
  */
 
 @custom-variant dark (&:is(.dark *));
 
-:root {
-  color-scheme: light;
+@layer nv-tokens {
+  :root {
+    color-scheme: light;
 
-  /* Surfaces — background ≠ card gives the inset floating-panel elevation */
-  --background: oklch(0.985 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+    /* ── Contract layer (FROZEN — shadcn official names, never prefixed) ── */
 
-  /* Primary = near-black (NOT the old blue oklch(0.49 0.17 255)) */
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+    /* Surfaces — background ≠ card gives the inset floating-panel elevation */
+    --background: oklch(0.985 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
 
-  /* Dynamic brand accent — refined indigo-blue, overridable at runtime (emphasis only) */
-  --brand: oklch(0.54 0.16 256);
-  --brand-foreground: oklch(0.985 0 0);
+    /* Primary = near-black (NOT the old blue oklch(0.49 0.17 255)) */
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
 
-  /* Status semantics — desaturated for a professional, non-garish read:
-     scarlet (not fire-engine red), jade (not primary green), deep amber. */
-  --destructive: oklch(0.55 0.2 25);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.6 0.12 160);
-  --success-foreground: oklch(0.985 0 0);
-  --warning: oklch(0.72 0.13 68);
-  --warning-foreground: oklch(0.205 0 0);
+    /* Destructive fill is a contract name (原版 destructive utilities bridge it) */
+    --destructive: oklch(0.55 0.2 25);
+    --destructive-foreground: oklch(0.985 0 0);
 
-  /* "Strong" text-role tints — darker than the fill so colored text on a 10%
-     tint clears WCAG AA (4.5:1). Use for small tonal text / icons; the fill
-     tokens above stay for solid surfaces & charts. */
-  --brand-strong: oklch(0.48 0.17 256);
-  --success-strong: oklch(0.45 0.13 160);
-  --warning-strong: oklch(0.45 0.1 70);
-  --destructive-strong: oklch(0.5 0.2 25);
+    /* Lines & focus */
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
 
-  /* Lines & focus */
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+    /* Charts — chart-1 tracks the dynamic brand, rest a harmonized categorical
+       ramp (teal · amber · coral · violet) at restrained chroma. */
+    --chart-1: var(--nv-brand);
+    --chart-2: oklch(0.64 0.11 200);
+    --chart-3: oklch(0.7 0.12 72);
+    --chart-4: oklch(0.62 0.15 14);
+    --chart-5: oklch(0.56 0.12 292);
 
-  /* Charts — chart-1 tracks the dynamic brand, rest a harmonized categorical
-     ramp (teal · amber · coral · violet) at restrained chroma. */
-  --chart-1: var(--brand);
-  --chart-2: oklch(0.64 0.11 200);
-  --chart-3: oklch(0.7 0.12 72);
-  --chart-4: oklch(0.62 0.15 14);
-  --chart-5: oklch(0.56 0.12 292);
+    --radius: 0.5rem;
 
-  --radius: 0.5rem;
+    /* Sidebar */
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: var(--primary);
+    --sidebar-primary-foreground: var(--primary-foreground);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
 
-  /* Motion — exponential ease-out curves + a calibrated duration scale.
-     Shared so components/pages reference one vocabulary instead of ad-hoc
-     cubic-beziers. No bounce/elastic; premium motion decelerates. */
-  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
-  --ease-fast-invoke: cubic-bezier(0, 0, 0, 1);
-  --ease-point-to-point: cubic-bezier(0.55, 0.55, 0, 1);
-  --duration-fast: 150ms;
-  --duration-base: 220ms;
-  --duration-slow: 320ms;
-  --duration-fast-invoke: 187ms;
-  --duration-fade: 83ms;
+    /* ── Nv semantic layer (--nv-*) — project self-owned extensions ── */
 
-  /* Brand-tinted glow for emphasis surfaces (focus halo, active hero card). */
-  --shadow-glow-brand:
-    0 0 0 1px color-mix(in oklch, var(--brand) 28%, transparent),
-    0 8px 28px -10px color-mix(in oklch, var(--brand) 45%, transparent);
+    /* Dynamic brand accent — refined indigo-blue, overridable at runtime (emphasis only) */
+    --nv-brand: oklch(0.54 0.16 256);
+    --nv-brand-foreground: oklch(0.985 0 0);
 
-  /* Sidebar */
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+    /* Status semantics — desaturated for a professional, non-garish read:
+       jade (not primary green), deep amber. (Scarlet destructive is a contract name.) */
+    --nv-success: oklch(0.6 0.12 160);
+    --nv-success-foreground: oklch(0.985 0 0);
+    --nv-warning: oklch(0.72 0.13 68);
+    --nv-warning-foreground: oklch(0.205 0 0);
 
-  /* Elevation scale */
-  --shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.04);
-  --shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 0.08), 0 1px 2px -1px oklch(0 0 0 / 0.06);
-  --shadow-md: 0 4px 8px -2px oklch(0 0 0 / 0.08), 0 2px 4px -2px oklch(0 0 0 / 0.05);
-  --shadow-lg: 0 12px 24px -6px oklch(0 0 0 / 0.1), 0 4px 8px -4px oklch(0 0 0 / 0.05);
+    /* "Strong" text-role tints — darker than the fill so colored text on a 10%
+       tint clears WCAG AA (4.5:1). Use for small tonal text / icons; the fill
+       tokens above stay for solid surfaces & charts. */
+    --nv-brand-strong: oklch(0.48 0.17 256);
+    --nv-success-strong: oklch(0.45 0.13 160);
+    --nv-warning-strong: oklch(0.45 0.1 70);
+    --nv-destructive-strong: oklch(0.5 0.2 25);
+
+    /* Motion — exponential ease-out curves + a calibrated duration scale.
+       Shared so components/pages/scenes reference one vocabulary instead of
+       ad-hoc cubic-beziers. No bounce/elastic; premium motion decelerates. */
+    --nv-ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+    --nv-ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --nv-ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
+    --nv-ease-fast-invoke: cubic-bezier(0, 0, 0, 1);
+    --nv-ease-point-to-point: cubic-bezier(0.55, 0.55, 0, 1);
+    --nv-duration-fast: 150ms;
+    --nv-duration-base: 220ms;
+    --nv-duration-slow: 320ms;
+    --nv-duration-fast-invoke: 187ms;
+    --nv-duration-fade: 83ms;
+
+    /* Elevation scale */
+    --nv-shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.04);
+    --nv-shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 0.08), 0 1px 2px -1px oklch(0 0 0 / 0.06);
+    --nv-shadow-md: 0 4px 8px -2px oklch(0 0 0 / 0.08), 0 2px 4px -2px oklch(0 0 0 / 0.05);
+    --nv-shadow-lg: 0 12px 24px -6px oklch(0 0 0 / 0.1), 0 4px 8px -4px oklch(0 0 0 / 0.05);
+
+    /* Brand-tinted glow for emphasis surfaces (focus halo, active hero card). */
+    --nv-shadow-glow-brand:
+      0 0 0 1px color-mix(in oklch, var(--nv-brand) 28%, transparent),
+      0 8px 28px -10px color-mix(in oklch, var(--nv-brand) 45%, transparent);
+
+    /* ── One-cycle aliases (ADR 0020 §5 S1) — old name → --nv-* new name.
+       Removed next cycle. Downstream direct `var(--brand)`/… refs ride these,
+       and the runtime accent picker sets `--nv-brand` inline (this alias keeps
+       `--brand` in sync). Reference the --nv-* value so light/dark flips carry. */
+    --brand: var(--nv-brand);
+    --brand-foreground: var(--nv-brand-foreground);
+    --brand-strong: var(--nv-brand-strong);
+    --success: var(--nv-success);
+    --success-foreground: var(--nv-success-foreground);
+    --success-strong: var(--nv-success-strong);
+    --warning: var(--nv-warning);
+    --warning-foreground: var(--nv-warning-foreground);
+    --warning-strong: var(--nv-warning-strong);
+    --destructive-strong: var(--nv-destructive-strong);
+    --ease-out-quart: var(--nv-ease-out-quart);
+    --ease-out-expo: var(--nv-ease-out-expo);
+    --ease-in-out-quart: var(--nv-ease-in-out-quart);
+    --ease-fast-invoke: var(--nv-ease-fast-invoke);
+    --ease-point-to-point: var(--nv-ease-point-to-point);
+    --duration-fast: var(--nv-duration-fast);
+    --duration-base: var(--nv-duration-base);
+    --duration-slow: var(--nv-duration-slow);
+    --duration-fast-invoke: var(--nv-duration-fast-invoke);
+    --duration-fade: var(--nv-duration-fade);
+    --shadow-xs: var(--nv-shadow-xs);
+    --shadow-sm: var(--nv-shadow-sm);
+    --shadow-md: var(--nv-shadow-md);
+    --shadow-lg: var(--nv-shadow-lg);
+    --shadow-glow-brand: var(--nv-shadow-glow-brand);
+  }
+
+  .dark {
+    color-scheme: dark;
+
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+
+    --destructive: oklch(0.66 0.18 25);
+    --destructive-foreground: oklch(0.985 0 0);
+
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+
+    --chart-1: var(--nv-brand);
+    --chart-2: oklch(0.72 0.11 200);
+    --chart-3: oklch(0.78 0.12 72);
+    --chart-4: oklch(0.68 0.15 14);
+    --chart-5: oklch(0.64 0.12 292);
+
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: var(--primary);
+    --sidebar-primary-foreground: var(--primary-foreground);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+
+    /* Nv semantic layer — dark values (aliases inherit from :root and re-resolve
+       against these via the var chain, so they need no redeclaration here). */
+    --nv-brand: oklch(0.64 0.15 256);
+    --nv-brand-foreground: oklch(0.985 0 0);
+    --nv-success: oklch(0.7 0.12 160);
+    --nv-success-foreground: oklch(0.205 0 0);
+    --nv-warning: oklch(0.79 0.12 70);
+    --nv-warning-foreground: oklch(0.205 0 0);
+
+    /* Strong text-role tints go lighter in dark mode (text on a dark 10% tint). */
+    --nv-brand-strong: oklch(0.74 0.15 256);
+    --nv-success-strong: oklch(0.8 0.13 160);
+    --nv-warning-strong: oklch(0.84 0.12 70);
+    --nv-destructive-strong: oklch(0.74 0.16 25);
+
+    --nv-shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.3);
+    --nv-shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 0.4), 0 1px 2px -1px oklch(0 0 0 / 0.4);
+    --nv-shadow-md: 0 4px 8px -2px oklch(0 0 0 / 0.45), 0 2px 4px -2px oklch(0 0 0 / 0.4);
+    --nv-shadow-lg: 0 12px 24px -6px oklch(0 0 0 / 0.5), 0 4px 8px -4px oklch(0 0 0 / 0.4);
+  }
 }
 
-.dark {
-  color-scheme: dark;
-
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-
-  --brand: oklch(0.64 0.15 256);
-  --brand-foreground: oklch(0.985 0 0);
-
-  --destructive: oklch(0.66 0.18 25);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.7 0.12 160);
-  --success-foreground: oklch(0.205 0 0);
-  --warning: oklch(0.79 0.12 70);
-  --warning-foreground: oklch(0.205 0 0);
-
-  /* Strong text-role tints go lighter in dark mode (text on a dark 10% tint). */
-  --brand-strong: oklch(0.74 0.15 256);
-  --success-strong: oklch(0.8 0.13 160);
-  --warning-strong: oklch(0.84 0.12 70);
-  --destructive-strong: oklch(0.74 0.16 25);
-
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-
-  --chart-1: var(--brand);
-  --chart-2: oklch(0.72 0.11 200);
-  --chart-3: oklch(0.78 0.12 72);
-  --chart-4: oklch(0.68 0.15 14);
-  --chart-5: oklch(0.64 0.12 292);
-
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-
-  --shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.3);
-  --shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 0.4), 0 1px 2px -1px oklch(0 0 0 / 0.4);
-  --shadow-md: 0 4px 8px -2px oklch(0 0 0 / 0.45), 0 2px 4px -2px oklch(0 0 0 / 0.4);
-  --shadow-lg: 0 12px 24px -6px oklch(0 0 0 / 0.5), 0 4px 8px -4px oklch(0 0 0 / 0.4);
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    margin: 0;
+    @apply bg-background text-foreground;
+    @apply font-sans;
+    /* Crisp text rendering — kills the soft/blurry look on Win + macOS. */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-synthesis-weight: none;
+  }
 }
 
 @theme inline {
   --font-sans:
-    'Inter Variable', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑',
-    'Helvetica Neue', Arial, sans-serif;
+    'Inter Variable', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑', 'Helvetica Neue',
+    Arial, sans-serif;
   --font-heading: var(--font-sans);
 
   --color-background: var(--background);
@@ -200,18 +274,18 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
-  --color-brand: var(--brand);
-  --color-brand-foreground: var(--brand-foreground);
+  --color-brand: var(--nv-brand);
+  --color-brand-foreground: var(--nv-brand-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
-  --color-success: var(--success);
-  --color-success-foreground: var(--success-foreground);
-  --color-warning: var(--warning);
-  --color-warning-foreground: var(--warning-foreground);
-  --color-brand-strong: var(--brand-strong);
-  --color-success-strong: var(--success-strong);
-  --color-warning-strong: var(--warning-strong);
-  --color-destructive-strong: var(--destructive-strong);
+  --color-success: var(--nv-success);
+  --color-success-foreground: var(--nv-success-foreground);
+  --color-warning: var(--nv-warning);
+  --color-warning-foreground: var(--nv-warning-foreground);
+  --color-brand-strong: var(--nv-brand-strong);
+  --color-success-strong: var(--nv-success-strong);
+  --color-warning-strong: var(--nv-warning-strong);
+  --color-destructive-strong: var(--nv-destructive-strong);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -236,146 +310,97 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  --shadow-xs: var(--shadow-xs);
-  --shadow-sm: var(--shadow-sm);
-  --shadow-md: var(--shadow-md);
-  --shadow-lg: var(--shadow-lg);
+  --shadow-xs: var(--nv-shadow-xs);
+  --shadow-sm: var(--nv-shadow-sm);
+  --shadow-md: var(--nv-shadow-md);
+  --shadow-lg: var(--nv-shadow-lg);
 
-  /* Expose motion curves as Tailwind `ease-*` + `duration-*` utilities. */
-  --ease-out-quart: var(--ease-out-quart);
-  --ease-out-expo: var(--ease-out-expo);
-  --ease-in-out-quart: var(--ease-in-out-quart);
+  /* Expose motion curves as Tailwind `ease-*` utilities (right value → --nv-*). */
+  --ease-out-quart: var(--nv-ease-out-quart);
+  --ease-out-expo: var(--nv-ease-out-expo);
+  --ease-in-out-quart: var(--nv-ease-in-out-quart);
 }
 
-@layer base {
-  * {
-    box-sizing: border-box;
+/* ── Portalled overlay motion (nv-components layer) ──
+   Select and Dropdown are portalled, so scoped SFC styles can't reach them; they
+   share one global, tokenized animation vocabulary here. Lives in nv-components
+   (not unlayered) — utilities can still override, app layer stays sovereign. */
+@layer nv-components {
+  .nv-overlay-content {
+    --nv-overlay-open-duration: var(--nv-duration-fast-invoke);
+    --nv-overlay-close-duration: var(--nv-duration-fade);
+    --nv-overlay-transform-ease: var(--nv-ease-fast-invoke);
+    --nv-overlay-opacity-ease: linear;
+    --nv-overlay-open-scale: 0.97;
+    --nv-overlay-close-scale: 0.99;
+    --nv-overlay-offset-x: 0;
+    --nv-overlay-offset-y: -2px;
+    transform-origin: var(--nv-overlay-transform-origin);
+    will-change: transform, opacity;
   }
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    margin: 0;
-    @apply bg-background text-foreground;
-    @apply font-sans;
-    /* Crisp text rendering — kills the soft/blurry look on Win + macOS. */
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
-    font-synthesis-weight: none;
-  }
-}
 
-/* ── Floating overlay glass ──
-   Translucent fill + backdrop blur on portalled surfaces so they read as
-   layered glass over any content. Kept restrained (high opacity → text stays
-   crisp). These rules are intentionally UNLAYERED so they win over the utility
-   `bg-*` classes without `!important`, and apply to原版 overlays without editing
-   their component files. `@supports` so non-blur browsers keep the opaque fill. */
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  [data-slot='popover-content'],
-  [data-slot='dropdown-menu-content'],
-  [data-slot='dropdown-menu-sub-content'],
-  [data-slot='dropdown-menu-pro-content'],
-  [data-slot='dropdown-menu-pro-sub-content'],
-  [data-slot='select-content'],
-  [data-slot='select-pro-content'],
-  [data-slot='command-dialog'] {
-    background-color: color-mix(in oklch, var(--popover) 76%, transparent);
-    -webkit-backdrop-filter: blur(16px) saturate(1.6);
-    backdrop-filter: blur(16px) saturate(1.6);
+  .nv-select-content {
+    --nv-overlay-transform-origin: var(--reka-select-content-transform-origin);
   }
-  [data-slot='dialog-content'],
-  [data-slot='dialog-pro-content'],
-  [data-slot='alert-dialog-content'],
-  [data-slot='alert-dialog-pro-content'],
-  [data-slot='sheet-content'],
-  [data-slot='sheet-pro-content'] {
-    background-color: color-mix(in oklch, var(--card) 82%, transparent);
-    -webkit-backdrop-filter: blur(16px) saturate(1.6);
-    backdrop-filter: blur(16px) saturate(1.6);
+
+  .nv-dropdown-menu-content {
+    --nv-overlay-transform-origin: var(--reka-dropdown-menu-content-transform-origin);
   }
-  /* Mobile overlay surfaces (bottom sheet, centred dialog) — sit over a frosted
-     scrim, so a touch more blur/translucency reads as proper glass. */
-  [data-slot='mobile-sheet-content'],
-  [data-slot='mobile-dialog-content'] {
-    background-color: color-mix(in oklch, var(--card) 80%, transparent);
-    -webkit-backdrop-filter: blur(20px) saturate(1.7);
-    backdrop-filter: blur(20px) saturate(1.7);
+
+  .nv-overlay-content[data-side='top'] {
+    --nv-overlay-offset-y: 2px;
   }
-  /* Inverted tooltip glass (dark-on-light / light-on-dark). */
-  [data-slot='tooltip-content'],
-  [data-slot='tooltip-pro-content'] {
-    background-color: color-mix(in oklch, var(--foreground) 84%, transparent);
-    -webkit-backdrop-filter: blur(10px) saturate(1.4);
-    backdrop-filter: blur(10px) saturate(1.4);
+
+  .nv-overlay-content[data-side='left'] {
+    --nv-overlay-offset-x: 2px;
+    --nv-overlay-offset-y: 0;
+  }
+
+  .nv-overlay-content[data-side='right'] {
+    --nv-overlay-offset-x: -2px;
+    --nv-overlay-offset-y: 0;
+  }
+
+  .nv-overlay-content[data-state='open'] {
+    animation:
+      nv-overlay-content-open-transform var(--nv-overlay-open-duration)
+        var(--nv-overlay-transform-ease) both,
+      nv-overlay-content-open-opacity var(--nv-duration-fade) var(--nv-overlay-opacity-ease) both;
+  }
+
+  .nv-overlay-content[data-state='closed'] {
+    animation:
+      nv-overlay-content-close-transform var(--nv-overlay-close-duration)
+        var(--nv-overlay-transform-ease) both,
+      nv-overlay-content-close-opacity var(--nv-overlay-close-duration)
+        var(--nv-overlay-opacity-ease) both;
+  }
+
+  .nv-overlay-content[data-align-trigger='true'] {
+    animation: none;
+    will-change: auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nv-overlay-content {
+      animation: none !important;
+    }
   }
 }
 
-/* Shared overlay motion. Portalled content cannot rely on scoped SFC styles, so
-   Select and Dropdown share one global, tokenized animation vocabulary here. */
-.ds-overlay-content {
-  --ds-overlay-open-duration: var(--duration-fast-invoke, 187ms);
-  --ds-overlay-close-duration: var(--duration-fade, 83ms);
-  --ds-overlay-transform-ease: var(--ease-fast-invoke, cubic-bezier(0, 0, 0, 1));
-  --ds-overlay-opacity-ease: linear;
-  --ds-overlay-open-scale: 0.97;
-  --ds-overlay-close-scale: 0.99;
-  --ds-overlay-offset-x: 0;
-  --ds-overlay-offset-y: -2px;
-  transform-origin: var(--ds-overlay-transform-origin);
-  will-change: transform, opacity;
-}
-
-.ds-select-content {
-  --ds-overlay-transform-origin: var(--reka-select-content-transform-origin);
-}
-
-.ds-dropdown-menu-content {
-  --ds-overlay-transform-origin: var(--reka-dropdown-menu-content-transform-origin);
-}
-
-.ds-overlay-content[data-side='top'] {
-  --ds-overlay-offset-y: 2px;
-}
-
-.ds-overlay-content[data-side='left'] {
-  --ds-overlay-offset-x: 2px;
-  --ds-overlay-offset-y: 0;
-}
-
-.ds-overlay-content[data-side='right'] {
-  --ds-overlay-offset-x: -2px;
-  --ds-overlay-offset-y: 0;
-}
-
-.ds-overlay-content[data-state='open'] {
-  animation:
-    ds-overlay-content-open-transform var(--ds-overlay-open-duration) var(--ds-overlay-transform-ease) both,
-    ds-overlay-content-open-opacity var(--duration-fade, 83ms) var(--ds-overlay-opacity-ease) both;
-}
-
-.ds-overlay-content[data-state='closed'] {
-  animation:
-    ds-overlay-content-close-transform var(--ds-overlay-close-duration) var(--ds-overlay-transform-ease) both,
-    ds-overlay-content-close-opacity var(--ds-overlay-close-duration) var(--ds-overlay-opacity-ease) both;
-}
-
-.ds-overlay-content[data-align-trigger='true'] {
-  animation: none;
-  will-change: auto;
-}
-
-@keyframes ds-overlay-content-open-transform {
+/* @keyframes are not subject to layering; kept top-level (whitelisted) so the
+   nv-components animations above can reference them. */
+@keyframes nv-overlay-content-open-transform {
   from {
-    transform: translate(var(--ds-overlay-offset-x), var(--ds-overlay-offset-y)) scale(var(--ds-overlay-open-scale));
+    transform: translate(var(--nv-overlay-offset-x), var(--nv-overlay-offset-y))
+      scale(var(--nv-overlay-open-scale));
   }
   to {
     transform: translate(0, 0) scale(1);
   }
 }
 
-@keyframes ds-overlay-content-open-opacity {
+@keyframes nv-overlay-content-open-opacity {
   from {
     opacity: 0;
   }
@@ -384,61 +409,21 @@
   }
 }
 
-@keyframes ds-overlay-content-close-transform {
+@keyframes nv-overlay-content-close-transform {
   from {
     transform: translate(0, 0) scale(1);
   }
   to {
-    transform: translate(var(--ds-overlay-offset-x), var(--ds-overlay-offset-y)) scale(var(--ds-overlay-close-scale));
+    transform: translate(var(--nv-overlay-offset-x), var(--nv-overlay-offset-y))
+      scale(var(--nv-overlay-close-scale));
   }
 }
 
-@keyframes ds-overlay-content-close-opacity {
+@keyframes nv-overlay-content-close-opacity {
   from {
     opacity: 1;
   }
   to {
     opacity: 0;
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ds-overlay-content {
-    animation: none !important;
-  }
-}
-
-/* ----------------------------------------------------------------------------
- * Sidebar — unified PREMIUM selected state (Linear / Vercel form), applied
- * system-wide so every app-shell / page sidebar reads premium instead of
- * shadcn's gray default: hover is a clean neutral wash, the selected row is a
- * neutral *elevated* fill (no hue — a tinted fill reads muddy at any accent),
- * foreground text, and the glyph carries identity in the brand accent.
- *
- * UNLAYERED on purpose and qualified to (0,3,0) so it out-ranks the
- * same-specificity `data-active:bg-sidebar-accent` utilities on
- * SidebarMenuButton regardless of import order. This polish was previously
- * trapped in the Sidebar doc page's `.ds-sb` block; promoting it here makes the
- * real product chrome match the docs. (The doc's `.ds-sb`-scoped copy keeps an
- * even higher specificity, so those demos render exactly as authored.)
- * ------------------------------------------------------------------------- */
-[data-slot='sidebar-menu'] {
-  gap: 0.1875rem;
-}
-[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button']:hover,
-[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button']:hover {
-  background-color: color-mix(in oklch, var(--sidebar-foreground) 6%, transparent);
-  color: var(--sidebar-foreground);
-}
-[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button'][data-active='true'],
-[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button'][data-active='true'],
-[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button'][data-active='true']:hover,
-[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button'][data-active='true']:hover {
-  background-color: color-mix(in oklch, var(--sidebar-foreground) 12%, transparent);
-  color: var(--sidebar-foreground);
-  font-weight: 500;
-}
-[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button'][data-active='true'] svg,
-[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button'][data-active='true'] svg {
-  color: var(--brand-strong);
 }

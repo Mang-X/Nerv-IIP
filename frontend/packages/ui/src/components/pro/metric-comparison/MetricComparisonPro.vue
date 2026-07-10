@@ -61,12 +61,12 @@ const barPct = computed(() => {
   return Math.max(0, Math.min(100, attainment.value))
 })
 
-const barTone = computed(() =>
-  isFavorable.value === false ? 'bg-destructive' : 'bg-success',
-)
+const barTone = computed(() => (isFavorable.value === false ? 'bg-destructive' : 'bg-success'))
 
 const numberFmt = (v: number) =>
-  Number.isInteger(v) ? v.toLocaleString('en-US') : v.toLocaleString('en-US', { maximumFractionDigits: 2 })
+  Number.isInteger(v)
+    ? v.toLocaleString('en-US')
+    : v.toLocaleString('en-US', { maximumFractionDigits: 2 })
 
 const deltaLabel = computed(() => {
   const sign = delta.value > 0 ? '+' : ''
@@ -100,7 +100,10 @@ const attainmentLabel = computed(() =>
       <div class="min-w-0 text-right">
         <p class="truncate text-xs text-muted-foreground">{{ actual.label }}</p>
         <p class="mt-0.5 text-2xl font-semibold tabular-nums tracking-tight">
-          {{ numberFmt(actual.value) }}<span v-if="unit" class="ml-0.5 text-sm font-normal text-muted-foreground">{{ unit }}</span>
+          {{ numberFmt(actual.value)
+          }}<span v-if="unit" class="ml-0.5 text-sm font-normal text-muted-foreground">{{
+            unit
+          }}</span>
         </p>
       </div>
     </div>
@@ -121,12 +124,14 @@ const attainmentLabel = computed(() =>
 </template>
 
 <style scoped>
-.ds-mc-bar {
-  transition: width 0.4s var(--ease-out-quart, ease-out);
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
   .ds-mc-bar {
-    transition: none;
+    transition: width 0.4s var(--nv-ease-out-quart, ease-out);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-mc-bar {
+      transition: none;
+    }
   }
 }
 </style>

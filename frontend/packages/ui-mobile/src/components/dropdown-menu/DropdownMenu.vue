@@ -28,7 +28,10 @@ provide(dropdownMenuKey, { openId, toggle, close })
   <div
     data-slot="dropdown-menu"
     :class="
-      cn('ds-ddm relative z-10 flex h-11 items-stretch border-b border-border bg-card', $props.class)
+      cn(
+        'ds-ddm relative z-10 flex h-11 items-stretch border-b border-border bg-card',
+        $props.class,
+      )
     "
   >
     <slot />
@@ -45,18 +48,20 @@ provide(dropdownMenuKey, { openId, toggle, close })
 </template>
 
 <style scoped>
-.ds-ddm-scrim-enter-active,
-.ds-ddm-scrim-leave-active {
-  transition: opacity 0.22s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
-}
-.ds-ddm-scrim-enter-from,
-.ds-ddm-scrim-leave-to {
-  opacity: 0;
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
   .ds-ddm-scrim-enter-active,
   .ds-ddm-scrim-leave-active {
-    transition: none;
+    transition: opacity 0.22s var(--nv-ease-out-expo);
+  }
+  .ds-ddm-scrim-enter-from,
+  .ds-ddm-scrim-leave-to {
+    opacity: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-ddm-scrim-enter-active,
+    .ds-ddm-scrim-leave-active {
+      transition: none;
+    }
   }
 }
 </style>

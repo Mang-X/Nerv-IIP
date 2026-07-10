@@ -21,7 +21,7 @@ const props = withDefaults(
 const color = computed(
   () =>
     (
-      {
+      ({
         run: 'green',
         idle: 'amber',
         alarm: 'red',
@@ -29,61 +29,63 @@ const color = computed(
         green: 'green',
         amber: 'amber',
         red: 'red',
-      } as const
+      }) as const
     )[props.tone],
 )
 </script>
 
 <template>
-  <span class="sb-tag" :class="color">
-    <i class="sb-tag-dot" />
-    <span class="sb-tag-label">{{ label }}</span>
+  <span class="nv-scr-tag" :class="color">
+    <i class="nv-scr-tag-dot" />
+    <span class="nv-scr-tag-label">{{ label }}</span>
   </span>
 </template>
 
 <style scoped>
-.sb-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 22px;
-  padding: 0 9px;
-  border-radius: 999px;
-  font-size: 12px;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  border: 1px solid currentColor;
-  /* color drives border + dot + text via currentColor; bg stays a faint wash */
-}
-.sb-tag-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 6px currentColor;
-  flex: none;
-}
-.sb-tag-label {
-  color: var(--sb-text-2);
-}
-.sb-tag.cyan {
-  color: var(--sb-cyan);
-  border-color: rgba(0, 229, 255, 0.4);
-  background: rgba(0, 229, 255, 0.08);
-}
-.sb-tag.green {
-  color: var(--sb-green);
-  border-color: rgba(0, 230, 118, 0.4);
-  background: rgba(0, 230, 118, 0.08);
-}
-.sb-tag.amber {
-  color: var(--sb-amber);
-  border-color: rgba(255, 214, 0, 0.4);
-  background: rgba(255, 214, 0, 0.08);
-}
-.sb-tag.red {
-  color: var(--sb-red);
-  border-color: rgba(255, 23, 68, 0.4);
-  background: rgba(255, 23, 68, 0.08);
+@layer nv-components {
+  .nv-scr-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 22px;
+    padding: 0 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    border: 1px solid currentColor;
+    /* color drives border + dot + text via currentColor; bg stays a faint wash */
+  }
+  .nv-scr-tag-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 6px currentColor;
+    flex: none;
+  }
+  .nv-scr-tag-label {
+    color: var(--nv-scr-text-2);
+  }
+  .nv-scr-tag.cyan {
+    color: var(--nv-scr-cyan);
+    border-color: rgba(0, 229, 255, 0.4);
+    background: rgba(0, 229, 255, 0.08);
+  }
+  .nv-scr-tag.green {
+    color: var(--nv-scr-green);
+    border-color: rgba(0, 230, 118, 0.4);
+    background: rgba(0, 230, 118, 0.08);
+  }
+  .nv-scr-tag.amber {
+    color: var(--nv-scr-amber);
+    border-color: rgba(255, 214, 0, 0.4);
+    background: rgba(255, 214, 0, 0.08);
+  }
+  .nv-scr-tag.red {
+    color: var(--nv-scr-red);
+    border-color: rgba(255, 23, 68, 0.4);
+    background: rgba(255, 23, 68, 0.08);
+  }
 }
 </style>

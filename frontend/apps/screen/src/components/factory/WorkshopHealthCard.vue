@@ -70,141 +70,143 @@ const nf = new Intl.NumberFormat('en-US')
 </template>
 
 <style scoped>
-.whc {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  min-height: 0;
-  height: 100%;
-  box-sizing: border-box;
-}
-/* 红卡：向外缓呼吸辉光（reduced-motion 静止） */
-.whc.red::after {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  pointer-events: none;
-  box-shadow: 0 0 18px -6px rgba(239, 90, 99, 0.55);
-  animation: whc-pulse 2.6s ease-in-out infinite;
-}
-@keyframes whc-pulse {
-  50% {
-    opacity: 0.35;
+@layer app {
+  .whc {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 0;
+    height: 100%;
+    box-sizing: border-box;
   }
-}
-
-.whc-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-.whc-name {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #fff;
-}
-.whc-mgr {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: var(--sb-muted);
-}
-
-/* 主数与实际/计划垂直居中对齐（生产走查：baseline 对不齐、右侧字太小） */
-.whc-rate {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin: 12px 0 10px;
-}
-.whc-rate-v {
-  font-size: 46px;
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  color: var(--sb-text);
-}
-.whc-rate-v small {
-  font-size: 20px;
-  font-weight: 600;
-  margin-left: 1px;
-}
-.whc-rate-v.yellow {
-  color: var(--sb-amber);
-}
-.whc-rate-v.red {
-  color: var(--sb-red);
-}
-.whc-rate-d {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 5px;
-  font-size: 14px;
-  color: var(--sb-muted);
-  font-variant-numeric: tabular-nums;
-}
-.whc-rate-d b {
-  font-weight: 600;
-  color: var(--sb-text-2);
-}
-
-/* 达成率进度条：健康色随卡（绿卡走数据青色，黄/红卡语义色） */
-.whc-bar {
-  height: 6px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.07);
-  overflow: hidden;
-  margin: 0 0 10px;
-}
-.whc-bar i {
-  display: block;
-  height: 100%;
-  border-radius: 3px;
-  background: var(--sb-cyan);
-  transition: width 0.6s var(--sb-ease-emphasized);
-}
-.whc-bar i.yellow {
-  background: var(--sb-amber);
-}
-.whc-bar i.red {
-  background: var(--sb-red);
-}
-
-.whc-minis {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  margin: 0;
-  padding-top: 11px;
-  border-top: 1px solid var(--sb-divider);
-}
-.whc-minis dt {
-  font-size: 12.5px;
-  color: var(--sb-muted);
-}
-.whc-minis dd {
-  margin: 3px 0 0;
-  font-size: 19px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--sb-text);
-}
-.whc-minis dd.bad {
-  color: var(--sb-red);
-}
-.whc-minis dd.warn {
-  color: var(--sb-amber);
-}
-
-@media (prefers-reduced-motion: reduce) {
+  /* 红卡：向外缓呼吸辉光（reduced-motion 静止） */
   .whc.red::after {
-    animation: none;
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: 0 0 18px -6px rgba(239, 90, 99, 0.55);
+    animation: whc-pulse 2.6s ease-in-out infinite;
+  }
+  @keyframes whc-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  .whc-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .whc-name {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #fff;
+  }
+  .whc-mgr {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--nv-scr-muted);
+  }
+
+  /* 主数与实际/计划垂直居中对齐（生产走查：baseline 对不齐、右侧字太小） */
+  .whc-rate {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 12px 0 10px;
+  }
+  .whc-rate-v {
+    font-size: 46px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--nv-scr-text);
+  }
+  .whc-rate-v small {
+    font-size: 20px;
+    font-weight: 600;
+    margin-left: 1px;
+  }
+  .whc-rate-v.yellow {
+    color: var(--nv-scr-amber);
+  }
+  .whc-rate-v.red {
+    color: var(--nv-scr-red);
+  }
+  .whc-rate-d {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    font-size: 14px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .whc-rate-d b {
+    font-weight: 600;
+    color: var(--nv-scr-text-2);
+  }
+
+  /* 达成率进度条：健康色随卡（绿卡走数据青色，黄/红卡语义色） */
+  .whc-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.07);
+    overflow: hidden;
+    margin: 0 0 10px;
   }
   .whc-bar i {
-    transition: none;
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: var(--nv-scr-cyan);
+    transition: width 0.6s var(--nv-scr-ease-emphasized);
+  }
+  .whc-bar i.yellow {
+    background: var(--nv-scr-amber);
+  }
+  .whc-bar i.red {
+    background: var(--nv-scr-red);
+  }
+
+  .whc-minis {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin: 0;
+    padding-top: 11px;
+    border-top: 1px solid var(--nv-scr-divider);
+  }
+  .whc-minis dt {
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+  }
+  .whc-minis dd {
+    margin: 3px 0 0;
+    font-size: 19px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--nv-scr-text);
+  }
+  .whc-minis dd.bad {
+    color: var(--nv-scr-red);
+  }
+  .whc-minis dd.warn {
+    color: var(--nv-scr-amber);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .whc.red::after {
+      animation: none;
+    }
+    .whc-bar i {
+      transition: none;
+    }
   }
 }
 </style>
