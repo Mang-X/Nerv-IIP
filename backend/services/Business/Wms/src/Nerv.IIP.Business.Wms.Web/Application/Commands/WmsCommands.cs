@@ -307,14 +307,39 @@ public sealed record PickingReservationResult(string ReservationId, string Locat
 
 public sealed record RecordWarehouseTaskProgressCommand(WarehouseTaskId WarehouseTaskId, decimal ExecutedQuantity) : ICommand;
 
-public sealed class RecordWarehouseTaskProgressCommandHandler(ApplicationDbContext dbContext)
+public sealed class RecordWarehouseTaskProgressCommandHandler(
+    ApplicationDbContext dbContext,
+    IWmsInventoryReservationClient? inventoryReservationClient = null)
     : ICommandHandler<RecordWarehouseTaskProgressCommand>
 {
     public async Task Handle(RecordWarehouseTaskProgressCommand request, CancellationToken cancellationToken)
     {
         var task = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == request.WarehouseTaskId, cancellationToken)
             ?? throw new KnownException($"Warehouse task was not found: {request.WarehouseTaskId}");
+        var previouslyExecutedQuantity = task.ExecutedQuantity;
         task.RecordProgress(request.ExecutedQuantity);
+        if (inventoryReservationClient is null ||
+            task.TaskType != WarehouseTaskType.Picking ||
+            task.Status != WarehouseTaskStatus.Open ||
+            task.ExecutedQuantity <= previouslyExecutedQuantity)
+        {
+            return;
+        }
+
+        var reservationId = await dbContext.OutboundOrders
+            .Where(x => x.OrganizationId == task.OrganizationId
+                && x.EnvironmentId == task.EnvironmentId
+                && x.OutboundOrderNo == task.SourceOrderNo)
+            .SelectMany(x => x.Lines)
+            .Where(x => x.LineNo == task.SourceOrderLineNo)
+            .Select(x => x.InventoryReservationId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(reservationId))
+        {
+            await inventoryReservationClient.RenewAsync(
+                new WmsInventoryReservationRenewalRequest(reservationId),
+                cancellationToken);
+        }
     }
 }
 

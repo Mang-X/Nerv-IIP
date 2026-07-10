@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
+using Nerv.IIP.Business.Inventory.Domain.DomainEvents;
 
 namespace Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 
@@ -16,7 +17,8 @@ public sealed class StockReservation : Entity<StockReservationId>, IAggregateRoo
         string sourceDocumentId,
         string? sourceDocumentLineId,
         string idempotencyKey,
-        decimal quantity)
+        decimal quantity,
+        DateTime? expiresAtUtc)
     {
         ArgumentNullException.ThrowIfNull(ledger);
 
@@ -42,6 +44,7 @@ public sealed class StockReservation : Entity<StockReservationId>, IAggregateRoo
         Status = "open";
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
+        ExpiresAtUtc = NormalizeFutureUtc(expiresAtUtc ?? CreatedAtUtc.AddHours(4), nameof(expiresAtUtc));
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -68,6 +71,8 @@ public sealed class StockReservation : Entity<StockReservationId>, IAggregateRoo
     public string Status { get; private set; } = string.Empty;
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
+    public DateTime ExpiresAtUtc { get; private set; }
+    public RowVersion RowVersion { get; private set; } = new(0);
 
     public static StockReservation Reserve(
         StockLedger ledger,
@@ -75,9 +80,10 @@ public sealed class StockReservation : Entity<StockReservationId>, IAggregateRoo
         string sourceDocumentId,
         string? sourceDocumentLineId,
         string idempotencyKey,
-        decimal quantity)
+        decimal quantity,
+        DateTime? expiresAtUtc = null)
     {
-        return new StockReservation(ledger, sourceService, sourceDocumentId, sourceDocumentLineId, idempotencyKey, quantity);
+        return new StockReservation(ledger, sourceService, sourceDocumentId, sourceDocumentLineId, idempotencyKey, quantity, expiresAtUtc);
     }
 
     public void Release(decimal quantity)
@@ -112,6 +118,50 @@ public sealed class StockReservation : Entity<StockReservationId>, IAggregateRoo
         UpdatedAtUtc = DateTime.UtcNow;
     }
 
+    public void Renew(DateTime expiresAtUtc, DateTime renewedAtUtc)
+    {
+        if (OpenQuantity <= 0m)
+        {
+            throw new InventoryDomainException(
+                InventoryDomainFailureReason.ReservationAllocationRejected,
+                "Only an open reservation can be renewed.");
+        }
+
+        var normalizedRenewedAtUtc = NormalizeUtc(renewedAtUtc, nameof(renewedAtUtc));
+        if (ExpiresAtUtc <= normalizedRenewedAtUtc)
+        {
+            throw new InventoryDomainException(
+                InventoryDomainFailureReason.ReservationAllocationRejected,
+                "An expired reservation cannot be renewed.");
+        }
+
+        var normalizedExpiryUtc = NormalizeFutureUtc(expiresAtUtc, nameof(expiresAtUtc));
+        if (normalizedExpiryUtc <= ExpiresAtUtc)
+        {
+            return;
+        }
+
+        ExpiresAtUtc = normalizedExpiryUtc;
+        UpdatedAtUtc = normalizedRenewedAtUtc;
+    }
+
+    public decimal Expire(DateTime expiredAtUtc)
+    {
+        var normalizedExpiredAtUtc = NormalizeUtc(expiredAtUtc, nameof(expiredAtUtc));
+        if (OpenQuantity <= 0m || ExpiresAtUtc > normalizedExpiredAtUtc)
+        {
+            return 0m;
+        }
+
+        var expiredQuantity = OpenQuantity;
+        ReleasedQuantity += expiredQuantity;
+        OpenQuantity = 0m;
+        Status = "expired";
+        UpdatedAtUtc = normalizedExpiredAtUtc;
+        this.AddDomainEvent(new StockReservationExpiredDomainEvent(this, expiredQuantity, normalizedExpiredAtUtc));
+        return expiredQuantity;
+    }
+
     public bool HasSamePayload(StockReservation other)
     {
         return OrganizationId == other.OrganizationId
@@ -137,5 +187,27 @@ public sealed class StockReservation : Entity<StockReservationId>, IAggregateRoo
     private static decimal Positive(decimal value, string parameterName)
     {
         return value <= 0 ? throw new ArgumentOutOfRangeException(parameterName, "Reservation quantity must be positive.") : value;
+    }
+
+    private static DateTime NormalizeFutureUtc(DateTime value, string parameterName)
+    {
+        var normalized = NormalizeUtc(value, parameterName);
+        if (normalized <= DateTime.UtcNow)
+        {
+            throw new ArgumentOutOfRangeException(parameterName, "Reservation expiration must be in the future.");
+        }
+
+        return normalized;
+    }
+
+    private static DateTime NormalizeUtc(DateTime value, string parameterName)
+    {
+        _ = parameterName;
+        return value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+        };
     }
 }

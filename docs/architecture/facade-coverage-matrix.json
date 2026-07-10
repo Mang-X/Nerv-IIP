@@ -1487,6 +1487,14 @@
     {
       "service": "Inventory",
       "method": "POST",
+      "route": "/api/inventory/v1/reservations/{reservationId}/renew",
+      "operationId": "renewInventoryReservation",
+      "classification": "internal",
+      "rationale": "Service-to-service reservation renewal API consumed by active WMS picking progress; callers cannot renew after expiration (#703)."
+    },
+    {
+      "service": "Inventory",
+      "method": "POST",
       "route": "/api/inventory/v1/status-transfers",
       "operationId": "postInventoryStatusTransfer",
       "classification": "internal",

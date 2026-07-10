@@ -59,10 +59,14 @@ try
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
     builder.Services.Configure<ExpiredStockBlockingOptions>(builder.Configuration.GetSection("Inventory:ExpiredStockBlocking"));
+    builder.Services.Configure<StockReservationExpirationOptions>(builder.Configuration.GetSection("Inventory:ReservationExpiration"));
     builder.Services.Configure<StockCountAdjustmentApprovalOptions>(builder.Configuration.GetSection(StockCountAdjustmentApprovalOptions.SectionName));
     builder.Services.Configure<InventoryForwardedPermissionOptions>(builder.Configuration.GetSection("Inventory:ForwardedPermissions"));
     builder.Services.AddScoped<ExpiredStockBlockingService>();
+    builder.Services.AddScoped<ExpiredStockReservationService>();
+    builder.Services.AddSingleton<InventoryReservationMetrics>();
     builder.Services.AddHostedService<ExpiredStockBlockingHostedService>();
+    builder.Services.AddHostedService<ExpiredStockReservationHostedService>();
     var approvalBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
     builder.Services.AddHttpClient<IStockCountApprovalClient, HttpStockCountApprovalClient>(client =>
     {
