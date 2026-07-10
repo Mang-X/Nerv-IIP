@@ -68,7 +68,7 @@ export default defineConfig({
           text: '开始',
           items: [
             { text: '介绍', link: '/guide/introduction' },
-            { text: '三个表面', link: '/guide/surfaces' },
+            { text: '四个表面', link: '/guide/surfaces' },
             { text: '组件概览', link: '/components/overview' },
           ],
         },

@@ -25,6 +25,23 @@
 @source '../../../../../packages/ui/src';
 @source '../../../../../packages/ui-mobile/src';
 
+/* Reserve the scrollbar gutter permanently so opening any reka overlay (Select /
+   Dialog / Dropdown / Popover / Sheet) doesn't reflow the page. reka's scroll
+   lock sets `body { overflow: hidden }` to stop background scroll; without a
+   stable gutter that removes the scrollbar and the fixed nav bar + content jump
+   left. Paired with `<ConfigProvider :scroll-body="false">` (theme/Layout.vue) so
+   reka does NOT also add its own body padding-right — the stable gutter already
+   holds the width, and letting reka pad too would over-compensate the other way. */
+html {
+  /* `overflow-y: auto` is required for `scrollbar-gutter` to take effect on the
+     root — with the default `overflow: visible` the gutter is ignored and the
+     scrollbar's width is only reclaimed on lock, still shifting content 15px.
+     auto keeps the scrollbar hidden on short pages; stable reserves its gutter so
+     the width never changes when reka locks the body. (Verified: shift 0.) */
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
 @import 'tw-animate-css';
 
 @import 'shadcn-vue/tailwind.css';

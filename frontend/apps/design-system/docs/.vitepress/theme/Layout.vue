@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, NvThemePicker } from '@nerv-iip/ui'
+import { Button, ConfigProvider, NvThemePicker } from '@nerv-iip/ui'
 import { Moon, Search, Sun } from 'lucide-vue-next'
 import { useData } from 'vitepress'
 import DefaultTheme from 'vitepress/theme'
@@ -36,53 +36,58 @@ function toggleAppearance() {
 </script>
 
 <template>
-  <Layout>
-    <!-- Scene-availability badge above the article title for doc-layout surfaces
+  <!-- scroll-body="false": with `html { scrollbar-gutter: stable }` (style.css) the
+       gutter is always reserved, so reka must NOT add its own body padding-right on
+       overlay open — otherwise the two compensations stack and shift content. -->
+  <ConfigProvider :scroll-body="false">
+    <Layout>
+      <!-- Scene-availability badge above the article title for doc-layout surfaces
          (desktop / touch / screen). PDA pages use `layout: page` + MobileDoc, which
          injects its own <SceneBadge>. Renders nothing on non-component pages. -->
-    <template #doc-before>
-      <SceneBadge />
-    </template>
+      <template #doc-before>
+        <SceneBadge />
+      </template>
 
-    <template #nav-bar-content-before>
-      <ClientOnly>
-        <div class="ds-doc-search-slot">
-          <Button
-            variant="outline"
-            size="lg"
-            class="ds-doc-search h-9 text-muted-foreground md:w-56 md:justify-between"
-            aria-label="搜索文档"
-            @click="openSearch"
-          >
-            <span class="flex items-center gap-1.5">
-              <Search class="size-4" />
-              <span class="ds-doc-search-text hidden md:inline">搜索文档…</span>
-            </span>
-            <kbd class="ds-doc-kbd hidden md:inline-flex">{{ isMac ? '⌘' : 'Ctrl' }} K</kbd>
-          </Button>
-        </div>
-      </ClientOnly>
-    </template>
+      <template #nav-bar-content-before>
+        <ClientOnly>
+          <div class="ds-doc-search-slot">
+            <Button
+              variant="outline"
+              size="lg"
+              class="ds-doc-search h-9 text-muted-foreground md:w-56 md:justify-between"
+              aria-label="搜索文档"
+              @click="openSearch"
+            >
+              <span class="flex items-center gap-1.5">
+                <Search class="size-4" />
+                <span class="ds-doc-search-text hidden md:inline">搜索文档…</span>
+              </span>
+              <kbd class="ds-doc-kbd hidden md:inline-flex">{{ isMac ? '⌘' : 'Ctrl' }} K</kbd>
+            </Button>
+          </div>
+        </ClientOnly>
+      </template>
 
-    <template #nav-bar-content-after>
-      <ClientOnly>
-        <div class="ds-doc-controls">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            class="ds-doc-appearance"
-            :aria-label="isDark ? '切换到亮色主题' : '切换到暗色主题'"
-            :title="isDark ? '切换到亮色主题' : '切换到暗色主题'"
-            @click="toggleAppearance"
-          >
-            <Moon v-if="isDark" class="size-4" />
-            <Sun v-else class="size-4" />
-          </Button>
-          <NvThemePicker class="ds-doc-accent" />
-        </div>
-      </ClientOnly>
-    </template>
-  </Layout>
+      <template #nav-bar-content-after>
+        <ClientOnly>
+          <div class="ds-doc-controls">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              class="ds-doc-appearance"
+              :aria-label="isDark ? '切换到亮色主题' : '切换到暗色主题'"
+              :title="isDark ? '切换到亮色主题' : '切换到暗色主题'"
+              @click="toggleAppearance"
+            >
+              <Moon v-if="isDark" class="size-4" />
+              <Sun v-else class="size-4" />
+            </Button>
+            <NvThemePicker class="ds-doc-accent" />
+          </div>
+        </ClientOnly>
+      </template>
+    </Layout>
+  </ConfigProvider>
 </template>
 
 <style>

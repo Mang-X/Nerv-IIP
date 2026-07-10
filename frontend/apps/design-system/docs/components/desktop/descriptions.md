@@ -1,7 +1,6 @@
 ---
 title: NvDescriptions 描述列表
 pageClass: ds-wide
-aside: false
 ---
 
 <script setup>

@@ -126,9 +126,14 @@ const exclusive = computed(() => scene.value && !scene.value.family)
   width: 0.9rem;
   height: 0.9rem;
 }
+/* Mix the brand accent with the neutral surfaces in oklab, NOT oklch: mixing a
+   blue (hue 256°) with an achromatic --border/--card in oklch interpolates the
+   hue on the shortest arc toward 0°, which passes through purple (~300°) and
+   tints the chip magenta. oklab is rectangular (no hue channel), so the mix just
+   desaturates toward the neutral while keeping the true blue hue. */
 .ds-scene-chip.is-current {
-  border-color: color-mix(in oklch, var(--nv-brand) 55%, var(--border));
-  background: color-mix(in oklch, var(--nv-brand) 14%, var(--card));
+  border-color: color-mix(in oklab, var(--nv-brand) 55%, var(--border));
+  background: color-mix(in oklab, var(--nv-brand) 14%, var(--card));
   color: var(--nv-brand-strong);
   font-weight: 600;
 }
@@ -139,7 +144,7 @@ const exclusive = computed(() => scene.value && !scene.value.family)
     color 0.15s var(--nv-ease-out-quart, ease-out);
 }
 .ds-scene-chip.is-link:hover {
-  border-color: color-mix(in oklch, var(--nv-brand) 45%, var(--border));
+  border-color: color-mix(in oklab, var(--nv-brand) 45%, var(--border));
   color: var(--nv-brand-strong);
 }
 .ds-scene-chip.is-off {

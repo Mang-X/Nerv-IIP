@@ -75,9 +75,11 @@ import { MonitorIcon, SmartphoneIcon, TabletIcon, PresentationIcon, ArrowRightIc
     box-shadow 0.2s var(--nv-ease-out-quart, ease-out);
 }
 .ds-surface:hover {
-  border-color: color-mix(in oklch, var(--nv-brand) 45%, var(--border));
+  /* oklab (not oklch): mixing the blue brand with a neutral in oklch drifts the
+     hue through purple; oklab desaturates without shifting the hue. */
+  border-color: color-mix(in oklab, var(--nv-brand) 45%, var(--border));
   transform: translateY(-2px);
-  box-shadow: 0 10px 30px -14px color-mix(in oklch, var(--nv-brand) 50%, black 40%);
+  box-shadow: 0 10px 30px -14px color-mix(in oklab, var(--nv-brand) 50%, black 40%);
 }
 .ds-surface-icon {
   display: inline-flex;
