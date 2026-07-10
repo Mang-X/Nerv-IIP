@@ -89,9 +89,10 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
             return existing.Id;
         }
 
-        var isVoidedLabel = await dbContext.LabelPrintItems.AnyAsync(x =>
-            x.LabelValue == request.ScannedValue
-            && x.Status == "voided",
+        var isVoidedLabel = await dbContext.LabelPrintBatches.AnyAsync(batch =>
+            batch.OrganizationId == request.OrganizationId
+            && batch.EnvironmentId == request.EnvironmentId
+            && batch.Items.Any(item => item.LabelValue == request.ScannedValue && item.Status == "voided"),
             cancellationToken);
         var result = isVoidedLabel ? "rejected" : request.Result;
         var rejectionReason = isVoidedLabel ? "label-voided" : request.RejectionReason;
@@ -160,10 +161,25 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
 
         if (string.Equals(candidate.Result, "accepted", StringComparison.Ordinal))
         {
+            var matchingItemId = await (from item in dbContext.LabelPrintItems
+                                        join batch in dbContext.LabelPrintBatches on item.LabelPrintBatchId equals batch.Id
+                                        where batch.OrganizationId == candidate.OrganizationId
+                                            && batch.EnvironmentId == candidate.EnvironmentId
+                                            && item.LabelValue == candidate.ScannedValue
+                                        select item.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (matchingItemId is null)
+            {
+                dbContext.ScanRecords.Add(candidate);
+                return candidate.Id;
+            }
+
             var owningBatch = await dbContext.LabelPrintBatches
                 .Include(x => x.Items)
-                .SingleOrDefaultAsync(x => x.Items.Any(item => item.LabelValue == candidate.ScannedValue), cancellationToken);
-            owningBatch?.ConsumeItem(candidate.ScannedValue);
+                .SingleAsync(x => x.OrganizationId == candidate.OrganizationId
+                    && x.EnvironmentId == candidate.EnvironmentId
+                    && x.Items.Any(item => item.Id == matchingItemId), cancellationToken);
+            owningBatch.ConsumeItem(matchingItemId);
         }
 
         dbContext.ScanRecords.Add(candidate);

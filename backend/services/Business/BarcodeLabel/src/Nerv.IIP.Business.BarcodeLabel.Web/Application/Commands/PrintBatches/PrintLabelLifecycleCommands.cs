@@ -60,7 +60,6 @@ public sealed class ReprintLabelCommandHandler(ApplicationDbContext dbContext, I
         var item = batch.Items.SingleOrDefault(x => x.SequenceNo == request.SequenceNo)
             ?? throw new KnownException($"Print item not found, SequenceNo = {request.SequenceNo}");
         var result = await LabelPrintLifecycle.DispatchAsync(printer, request.PrinterId, [item.LabelValue], cancellationToken);
-        LabelPrintLifecycle.ApplyResult(batch, request.PrinterId, result);
         if (result.Status == "printed")
         {
             batch.ReprintItem(request.SequenceNo);

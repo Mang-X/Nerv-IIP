@@ -150,7 +150,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 
     public void RecordPrintFailed(string failureReason)
     {
-        if (Status is not (Pending or SentToPrinter or Printed))
+        if (Status is not (Pending or SentToPrinter))
         {
             throw new InvalidOperationException($"Print batch in status '{Status}' cannot be marked failed.");
         }
@@ -174,6 +174,11 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
     {
         var item = Items.SingleOrDefault(x => x.LabelValue == BarcodeLabelText.Required(labelValue, nameof(labelValue)));
         item?.Consume();
+    }
+
+    public void ConsumeItem(LabelPrintItemId itemId)
+    {
+        Items.SingleOrDefault(x => x.Id == itemId)?.Consume();
     }
 
     private LabelPrintItem FindItem(int sequenceNo)
@@ -237,7 +242,7 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
     {
         if (Status == Voided)
         {
-            throw new InvalidOperationException("Voided labels cannot be printed.");
+            return;
         }
 
         if (Status != Created)
