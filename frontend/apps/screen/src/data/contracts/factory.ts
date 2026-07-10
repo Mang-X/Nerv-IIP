@@ -64,7 +64,7 @@ export interface FactoryOverview {
   kpis: FactoryKpis
   /** 健康度红卡在前 */
   workshops: WorkshopCell[]
-  /** 可用率（≈实测）+ 性能率/良品率（🟠 占位）；综合 OEE ≈ 可用率，渲染必须诚实标注 */
+  /** mock 预览用的工厂聚合 OEE；真实模式不渲染，避免将演示值当作生产指标。 */
   oee: OeeItem[]
   /** 实时告警流 */
   alarms: FeedItem[]

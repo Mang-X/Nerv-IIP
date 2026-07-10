@@ -739,7 +739,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
         var data = document.RootElement.GetProperty("data");
         Assert.Equal("DEV-OEE-NO-DATA", data.GetProperty("deviceAssetId").GetString());
         Assert.Equal(0, data.GetProperty("stateSampleCount").GetInt32());
-        Assert.Equal(0m, data.GetProperty("availabilityRate").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("availabilityRate").ValueKind);
         Assert.Equal(JsonValueKind.Null, data.GetProperty("performanceRate").ValueKind);
         Assert.Equal(JsonValueKind.Null, data.GetProperty("qualityRate").ValueKind);
         Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);

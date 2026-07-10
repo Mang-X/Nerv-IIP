@@ -269,7 +269,7 @@ public sealed record OeeResponse(
     DateTimeOffset WindowStartUtc,
     DateTimeOffset WindowEndUtc,
     int StateSampleCount,
-    decimal AvailabilityRate,
+    decimal? AvailabilityRate,
     decimal LoadingRate,
     int ProductionFactCount,
     decimal? GoodQuantity,
@@ -370,6 +370,7 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             .ToArrayAsync(cancellationToken);
         var factors = CalculateProductionFactors(productionFacts, runtimeRates.ProductiveRuntimeHours, states.Length > 0);
 
+        decimal? availabilityRate = states.Length > 0 ? Math.Round(runtimeRates.AvailabilityRate, 6) : null;
         return new OeeResponse(
             request.OrganizationId,
             request.EnvironmentId,
@@ -377,7 +378,7 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             request.WindowStartUtc,
             request.WindowEndUtc,
             states.Length,
-            Math.Round(runtimeRates.AvailabilityRate, 6),
+            availabilityRate,
             Math.Round(runtimeRates.LoadingRate, 6),
             productionFacts.Length,
             RoundNullable(factors.GoodQuantity),
@@ -388,8 +389,8 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             RoundNullable(factors.ExpectedOutputQuantity),
             RoundNullable(factors.PerformanceRate),
             RoundNullable(factors.QualityRate),
-            factors.PerformanceRate is not null && factors.QualityRate is not null
-                ? Math.Round(runtimeRates.AvailabilityRate * factors.PerformanceRate.Value * factors.QualityRate.Value, 6)
+            availabilityRate is not null && factors.PerformanceRate is not null && factors.QualityRate is not null
+                ? Math.Round(availabilityRate.Value * factors.PerformanceRate.Value * factors.QualityRate.Value, 6)
                 : null,
             factors.DegradedReasons.Count > 0,
             factors.DegradedReasons);

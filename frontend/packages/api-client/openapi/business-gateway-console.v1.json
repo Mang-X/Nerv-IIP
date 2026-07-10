@@ -24557,7 +24557,8 @@
           },
           "availabilityRate": {
             "type": "number",
-            "format": "decimal"
+            "format": "decimal",
+            "nullable": true
           },
           "loadingRate": {
             "type": "number",

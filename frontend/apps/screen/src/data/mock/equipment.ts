@@ -577,6 +577,14 @@ export function buildDeviceDetail(
     inspections: ov.inspections.filter((i) => i.device === device.name),
     mtbfHours: hasIssue ? clamp(jitter(52, 10), 24, 90) : null,
     mttrMinutes: hasIssue ? clamp(jitter(45, 10), 20, 80) : null,
+    oee: {
+      availability: null,
+      performance: null,
+      quality: null,
+      rate: null,
+      isDegraded: true,
+      degradedReasons: ['mock-data'],
+    },
   }
 }
 

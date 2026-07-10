@@ -263,7 +263,7 @@ public sealed record BusinessConsoleTelemetryOeeResponse(
     DateTimeOffset WindowStartUtc,
     DateTimeOffset WindowEndUtc,
     int StateSampleCount,
-    decimal AvailabilityRate,
+    decimal? AvailabilityRate,
     decimal LoadingRate,
     int ProductionFactCount,
     decimal? GoodQuantity,

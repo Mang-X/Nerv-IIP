@@ -798,7 +798,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     windowStartUtc?: string;
     windowEndUtc?: string;
     stateSampleCount?: number;
-    availabilityRate?: number;
+    availabilityRate?: number | null;
     loadingRate?: number;
     productionFactCount?: number;
     goodQuantity?: number | null;
