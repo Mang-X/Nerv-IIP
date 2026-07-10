@@ -39,7 +39,7 @@ const tone = computed(() => (props.status === 'success' ? 'text-success' : 'text
 <style scoped>
 @layer nv-components {
   .ds-result-icon {
-    animation: ds-result-pop 0.42s var(--ease-out-back, cubic-bezier(0.34, 1.4, 0.64, 1)) both;
+    animation: ds-result-pop 0.42s var(--nv-ease-out-quart) both;
   }
   @keyframes ds-result-pop {
     from {

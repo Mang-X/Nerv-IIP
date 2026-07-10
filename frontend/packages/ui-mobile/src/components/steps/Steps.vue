@@ -87,7 +87,7 @@ withDefaults(
   .ds-step-check-leave-active {
     transition:
       opacity 0.18s ease,
-      transform 0.18s var(--ease-out-back, cubic-bezier(0.34, 1.4, 0.64, 1));
+      transform 0.18s var(--nv-ease-out-quart);
   }
   .ds-step-check-enter-from,
   .ds-step-check-leave-to {

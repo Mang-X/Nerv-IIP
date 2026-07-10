@@ -35,7 +35,7 @@ const forwarded = useForwardProps(reactiveOmit(props, 'class'))
 <style scoped>
 @layer nv-components {
   .ds-mradio-tick {
-    animation: ds-mradio-pop 0.2s var(--ease-out-back, cubic-bezier(0.34, 1.4, 0.64, 1));
+    animation: ds-mradio-pop 0.2s var(--nv-ease-out-quart);
   }
   @keyframes ds-mradio-pop {
     from {

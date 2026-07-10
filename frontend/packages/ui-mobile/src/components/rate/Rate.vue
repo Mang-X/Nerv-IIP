@@ -81,7 +81,7 @@ function pick(index: number, ev: PointerEvent | MouseEvent) {
     touch-action: manipulation;
   }
   .ds-rate-star:active:not(:disabled) .ds-rate-glyph {
-    animation: ds-rate-pop 0.26s var(--ease-out-back, cubic-bezier(0.34, 1.4, 0.64, 1));
+    animation: ds-rate-pop 0.26s var(--nv-ease-out-quart);
   }
   @keyframes ds-rate-pop {
     0% {

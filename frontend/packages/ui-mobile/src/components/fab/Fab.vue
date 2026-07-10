@@ -184,7 +184,7 @@ function onSelect(action: FabAction, index: number) {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
     transition:
-      transform 0.18s var(--ease-out-back, cubic-bezier(0.34, 1.4, 0.64, 1)),
+      transform 0.18s var(--nv-ease-out-quart),
       box-shadow 0.18s ease,
       filter 0.15s ease;
   }
@@ -231,7 +231,7 @@ function onSelect(action: FabAction, index: number) {
   .ds-fab-act-enter-active {
     transition:
       opacity 0.22s var(--nv-ease-out-quart, ease-out),
-      transform 0.22s var(--ease-out-back, cubic-bezier(0.34, 1.4, 0.64, 1));
+      transform 0.22s var(--nv-ease-out-quart);
     transition-delay: calc(var(--i) * 40ms);
   }
   .ds-fab-act-leave-active {

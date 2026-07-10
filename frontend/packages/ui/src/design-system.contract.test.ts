@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { readdirSync, readFileSync } from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
@@ -198,21 +198,46 @@ describe('ADR 0020 §4 — cascade-layer isolation', () => {
     }
   })
 
-  it('keeps原版 shadcn primitives free of injected @layer nv- branding (§4.4.5)', () => {
-    // We never wrap原版 SFC <style> into nv-components; guard against regressions.
-    // (file-preview/* is a custom subsystem that legitimately wraps Nv components,
-    //  so this checks the @layer marker, not component identifiers.)
-    const uiDir = resolve(srcDir, 'components/ui')
-    // Cheap file-content scan via the two customized overlay primitives + the
-    // office preview (the only原版-dir SFC with a <style> block).
-    for (const f of [
-      'components/ui/select/SelectContent.vue',
-      'components/ui/dropdown-menu/DropdownMenuContent.vue',
-      'components/ui/file-preview/OfficePreview.vue',
-    ]) {
-      expect.soft(read(f), f).not.toContain('@layer nv-')
+  it('layers EVERY self-owned SFC style, and keeps原版 primitives unbranded (§4.1/§4.4)', () => {
+    // Full recursive scan (not a hand-picked file list): any self-owned SFC that
+    // ships a <style> must wrap it in `@layer nv-components`; true原版 shadcn
+    // primitives must stay free of the `@layer nv-` marker. `file-preview/*` is a
+    // self-owned subsystem that happens to live under components/ui/, so it counts
+    // as self-owned (must be layered), not原版.
+    const uiSrc = resolve(srcDir) // packages/ui/src
+    const mobileSrc = resolve(srcDir, '../../ui-mobile/src')
+    const vueFiles = (root: string): string[] => {
+      const out: string[] = []
+      const walk = (d: string) => {
+        for (const e of readdirSync(d, { withFileTypes: true })) {
+          if (e.name === 'node_modules' || e.name === 'dist') continue
+          const p = join(d, e.name)
+          if (e.isDirectory()) walk(p)
+          else if (e.name.endsWith('.vue')) out.push(p)
+        }
+      }
+      walk(root)
+      return out
     }
-    expect(uiDir).toBeTruthy()
+    const norm = (p: string) => relative(uiSrc, p).replace(/\\/g, '/')
+    // A path is原版 iff it's under components/ui/ but NOT the file-preview subsystem.
+    const isVendor = (p: string) => {
+      const r = norm(p)
+      return r.startsWith('components/ui/') && !r.includes('/file-preview/')
+    }
+
+    const all = [...vueFiles(resolve(uiSrc, 'components')), ...vueFiles(mobileSrc)]
+    for (const file of all) {
+      const src = readFileSync(file, 'utf8')
+      const hasStyle = /<style\b/.test(src)
+      if (isVendor(file)) {
+        // 原版: never carries the nv-components layer marker.
+        expect.soft(src, `原版 ${norm(file)}`).not.toContain('@layer nv-')
+      } else if (hasStyle) {
+        // self-owned SFC with styles → must be layered into nv-components.
+        expect.soft(src, `self-owned ${norm(file)}`).toContain('@layer nv-components')
+      }
+    }
   })
 })
 

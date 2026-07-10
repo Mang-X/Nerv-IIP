@@ -650,11 +650,17 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.file-preview-spreadsheet-host :deep(> div) {
-  border: 0 !important;
-}
+/* file-preview is a self-owned subsystem (not原版 shadcn), so its styles belong
+   in the library component layer (ADR 0020 §4.1). The `!important` still wins:
+   for important declarations layer order is reversed, so a layered important
+   out-ranks the embedded viewer's unlayered rules. */
+@layer nv-components {
+  .file-preview-spreadsheet-host :deep(> div) {
+    border: 0 !important;
+  }
 
-.file-preview-spreadsheet-host :deep(> div > div:last-child) {
-  display: none !important;
+  .file-preview-spreadsheet-host :deep(> div > div:last-child) {
+    display: none !important;
+  }
 }
 </style>
