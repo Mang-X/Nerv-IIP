@@ -47,6 +47,8 @@ public sealed class ProductionReportRecordedIntegrationEventConverter
                 projection?.UomCode ?? "UNSPECIFIED",
                 projection?.TheoreticalRatePerHour,
                 report.ReportedAtUtc,
+                // OEE nets reversals through their negative quantities and distinct report number;
+                // retain correction lineage for audit and downstream projections that need it.
                 report.IsReversal,
                 report.ReversedReportNo));
     }

@@ -441,6 +441,46 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
+    public async Task Production_report_event_consumer_ignores_incomplete_assignment_snapshot_without_poisoning_delivery()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetterStore = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        var handler = new ProductionReportOeeProjectionHandler(dbContext, deadLetterStore);
+        var reportedAtUtc = new DateTimeOffset(2026, 7, 10, 8, 45, 0, TimeSpan.Zero);
+        var integrationEvent = new ProductionReportRecordedIntegrationEvent(
+            "evt-prpt-oee-missing-work-center-001",
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1,
+            reportedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            "PRPT-OEE-MISSING-WORK-CENTER-001",
+            "PRPT-OEE-MISSING-WORK-CENTER-001",
+            "org-001",
+            "env-dev",
+            "system:mes",
+            "production-report-recorded:org-001:env-dev:PRPT-OEE-MISSING-WORK-CENTER-001",
+            new ProductionReportRecordedPayload(
+                "PRPT-OEE-MISSING-WORK-CENTER-001",
+                "WO-001",
+                "OP-10",
+                string.Empty,
+                "DEV-PACK-01",
+                80m,
+                10m,
+                10m,
+                "PCS",
+                100m,
+                reportedAtUtc,
+                false));
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        Assert.Empty(dbContext.OeeProductionFacts);
+    }
+
+    [Fact]
     public async Task Runtime_hours_endpoint_splits_productive_runtime_by_utc_day_and_excludes_planned_down_time()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();

@@ -35,11 +35,16 @@ public sealed class ProductionReportOeeProjectionHandler(
     private async Task HandleValidEventAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
-        if (string.IsNullOrWhiteSpace(payload.DeviceAssetId))
+        if (string.IsNullOrWhiteSpace(payload.DeviceAssetId) || string.IsNullOrWhiteSpace(payload.WorkCenterId))
         {
+            // A device-level OEE fact requires the MES assignment snapshot; skipping incomplete input
+            // leaves the read model explicitly degraded instead of turning a malformed event into poison.
             return;
         }
 
+        // MES allocates one immutable report number per production-report fact. The converter's
+        // idempotency key deterministically includes this scoped report number; retain the business
+        // identity here so the materialized fact remains traceable to the source report.
         var alreadyProjected = await dbContext.OeeProductionFacts.AnyAsync(
             x => x.OrganizationId == integrationEvent.OrganizationId &&
                 x.EnvironmentId == integrationEvent.EnvironmentId &&
