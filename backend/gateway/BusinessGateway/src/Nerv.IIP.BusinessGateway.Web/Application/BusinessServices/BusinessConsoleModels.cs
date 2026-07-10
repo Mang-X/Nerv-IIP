@@ -880,9 +880,11 @@ public sealed record BusinessConsoleConfirmStockCountAdjustmentRequest(
     string IdempotencyKey);
 
 public sealed record BusinessConsoleConfirmStockCountAdjustmentResponse(
-    string MovementId,
+    string? MovementId,
     decimal VarianceQuantity,
-    decimal OnHandQuantity);
+    decimal OnHandQuantity,
+    string Status,
+    string? ApprovalChainId);
 
 public sealed record BusinessConsoleQualityListRequest(
     string OrganizationId,

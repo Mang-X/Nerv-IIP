@@ -8,7 +8,7 @@ public sealed class StockCountTaskEntityTypeConfiguration : IEntityTypeConfigura
     {
         builder.ToTable("stock_count_tasks", tableBuilder =>
         {
-            tableBuilder.HasComment("Inventory stock count tasks, expected ledger version snapshots and confirmed variances.");
+            tableBuilder.HasComment("Inventory stock count tasks, expected ledger version snapshots, approval state and confirmed variances.");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_count_tasks_location_code_format", "location_code");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_count_tasks_sku_code_format", "sku_code");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_count_tasks_site_code_format", "site_code");
