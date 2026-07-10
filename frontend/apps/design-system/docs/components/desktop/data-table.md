@@ -1,7 +1,6 @@
 ---
 title: NvDataTable 数据表格
 pageClass: ds-wide
-aside: false
 ---
 
 <script setup>

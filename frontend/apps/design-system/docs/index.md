@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Nerv-IIP 设计系统
   text: 数字工厂控制平面的统一设计语言
-  tagline: 一套语义令牌与组件库，覆盖桌面 PC、车间一体机、移动 PDA 三个表面。黑主题 · 动态色 · 亮暗自适应。
+  tagline: 一套语义令牌与组件库，覆盖桌面 PC、移动 PDA、车间一体机、挂墙大屏四个表面。黑主题 · 动态色 · 亮暗自适应。
   actions:
     - theme: brand
       text: 阅读设计哲学
@@ -19,7 +19,7 @@ hero:
 
 <script setup>
 import {
-  MonitorIcon, SmartphoneIcon, LayoutDashboardIcon, ArrowRightIcon,
+  MonitorIcon, SmartphoneIcon, TabletIcon, PresentationIcon, ArrowRightIcon,
   PaletteIcon, GaugeIcon, LayersIcon, AccessibilityIcon,
 } from 'lucide-vue-next'
 </script>
@@ -27,26 +27,32 @@ import {
 <div class="ds-home">
 
 <section class="ds-home-section">
-  <p class="ds-home-eyebrow">三个表面</p>
-  <h2 class="ds-home-h2">一套语言，三种原生形态</h2>
+  <p class="ds-home-eyebrow">四个表面</p>
+  <h2 class="ds-home-h2">一套语言，四种原生形态</h2>
   <div class="ds-home-surfaces">
     <a class="ds-home-surface" href="/components/desktop/">
       <span class="ds-home-ic"><MonitorIcon /></span>
       <span class="ds-home-name">桌面 PC</span>
-      <span class="ds-home-desc">语义令牌 · 12 色动态板 · Pro 组件 · DataTable · 描述 / 时间线 · 图表。</span>
+      <span class="ds-home-desc">语义令牌 · 12 色动态板 · Pro 组件 · DataTable · 描述 / 时间线 · 图表。紧凑 36–40px。</span>
       <span class="ds-home-go">桌面组件 <ArrowRightIcon /></span>
     </a>
     <a class="ds-home-surface" href="/components/mobile/">
       <span class="ds-home-ic"><SmartphoneIcon /></span>
       <span class="ds-home-name">移动 PDA</span>
-      <span class="ds-home-desc">原生质感控件 · 手势(侧滑 / 下拉刷新 / 抽屉) · 宫格 / 悬浮按钮 · 玻璃覆盖层。</span>
+      <span class="ds-home-desc">原生质感控件 · 手势(侧滑 / 下拉刷新 / 抽屉) · 宫格 / 悬浮按钮 · 玻璃覆盖层。40–48px。</span>
       <span class="ds-home-go">移动控件 <ArrowRightIcon /></span>
     </a>
-    <a class="ds-home-surface" href="/components/board">
-      <span class="ds-home-ic"><LayoutDashboardIcon /></span>
-      <span class="ds-home-name">一体机看板</span>
-      <span class="ds-home-desc">大屏触控 · 减少操作路径 · 工单大卡 · 报工步进 · 节拍图。</span>
-      <span class="ds-home-go">看板组件 <ArrowRightIcon /></span>
+    <a class="ds-home-surface" href="/components/touch/">
+      <span class="ds-home-ic"><TabletIcon /></span>
+      <span class="ds-home-name">一体机 / 工位</span>
+      <span class="ds-home-desc">大触控 · 减少操作路径 · 工单大卡 · 报工步进 · 节拍图。56–72px。</span>
+      <span class="ds-home-go">一体机组件 <ArrowRightIcon /></span>
+    </a>
+    <a class="ds-home-surface" href="/components/screen/">
+      <span class="ds-home-ic"><PresentationIcon /></span>
+      <span class="ds-home-name">大屏 / 控制室</span>
+      <span class="ds-home-desc">独立 --nv-scr-* 工业蓝令牌 · OEE 核心指标 · 节拍甘特 · 告警表 · 舞台缩放。远读。</span>
+      <span class="ds-home-go">大屏组件 <ArrowRightIcon /></span>
     </a>
   </div>
 </section>
@@ -104,10 +110,11 @@ import {
   gap: 1rem;
 }
 @media (min-width: 768px) {
-  .ds-home-surfaces { grid-template-columns: repeat(3, 1fr); }
+  .ds-home-surfaces { grid-template-columns: repeat(2, 1fr); }
   .ds-home-features { grid-template-columns: repeat(2, 1fr); }
 }
 @media (min-width: 1100px) {
+  .ds-home-surfaces { grid-template-columns: repeat(4, 1fr); }
   .ds-home-features { grid-template-columns: repeat(4, 1fr); }
 }
 .ds-home-surface, .ds-home-feat {
@@ -125,9 +132,11 @@ import {
     box-shadow 0.2s var(--nv-ease-out-quart, ease-out);
 }
 .ds-home-surface:hover {
-  border-color: color-mix(in oklch, var(--nv-brand) 45%, var(--border));
+  /* oklab (not oklch): oklch hue-interpolates the blue brand through purple when
+     mixed with a neutral; oklab keeps the hue and just desaturates. */
+  border-color: color-mix(in oklab, var(--nv-brand) 45%, var(--border));
   transform: translateY(-3px);
-  box-shadow: 0 12px 32px -16px color-mix(in oklch, var(--nv-brand) 55%, black 40%);
+  box-shadow: 0 12px 32px -16px color-mix(in oklab, var(--nv-brand) 55%, black 40%);
 }
 .ds-home-ic, .ds-home-fic {
   display: inline-flex;

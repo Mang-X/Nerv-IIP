@@ -46,6 +46,15 @@ const emit = defineEmits<{
 
 // Normalise to a number — pageSize may arrive as a string (e.g. from usePagedList).
 const size = computed(() => Number(props.pageSize) || 10)
+
+// Always keep the active size selectable. reka's SelectValue shows nothing when
+// the bound value has no matching SelectItem, so a pageSize outside the provided
+// options (e.g. 8 with the default [10,20,50,100]) would leave the trigger blank.
+const sizeOptions = computed(() =>
+  props.pageSizeOptions.includes(size.value)
+    ? props.pageSizeOptions
+    : [...props.pageSizeOptions, size.value].sort((a, b) => a - b),
+)
 const totalPages = computed(() => Math.max(1, Math.ceil(props.totalItems / size.value)))
 const currentPage = computed(() => Math.min(Math.max(1, props.page), totalPages.value))
 
@@ -115,7 +124,7 @@ function commitJump() {
             <NvSelectValue />
           </NvSelectTrigger>
           <NvSelectContent>
-            <NvSelectItem v-for="opt in pageSizeOptions" :key="opt" :value="String(opt)">
+            <NvSelectItem v-for="opt in sizeOptions" :key="opt" :value="String(opt)">
               {{ opt }}
             </NvSelectItem>
           </NvSelectContent>

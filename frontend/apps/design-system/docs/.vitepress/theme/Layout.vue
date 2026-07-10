@@ -4,6 +4,7 @@ import { Moon, Search, Sun } from 'lucide-vue-next'
 import { useData } from 'vitepress'
 import DefaultTheme from 'vitepress/theme'
 import { onMounted, ref } from 'vue'
+import SceneBadge from './SceneBadge.vue'
 
 // Wrap the default layout and swap VitePress's built-in nav controls for our own
 // @nerv-iip/ui components, so the docs chrome matches the system it documents:
@@ -36,6 +37,13 @@ function toggleAppearance() {
 
 <template>
   <Layout>
+    <!-- Scene-availability badge above the article title for doc-layout surfaces
+         (desktop / touch / screen). PDA pages use `layout: page` + MobileDoc, which
+         injects its own <SceneBadge>. Renders nothing on non-component pages. -->
+    <template #doc-before>
+      <SceneBadge />
+    </template>
+
     <template #nav-bar-content-before>
       <ClientOnly>
         <div class="ds-doc-search-slot">
