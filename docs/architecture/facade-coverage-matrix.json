@@ -1272,6 +1272,45 @@
     {
       "service": "IndustrialTelemetry",
       "method": "GET",
+      "route": "/api/business/v1/iiot/device-control-bindings",
+      "operationId": "listBusinessIiotDeviceControlBindings",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleTelemetryDeviceControlBindings"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/device-control-bindings",
+      "operationId": "createOrUpdateBusinessIiotDeviceControlBinding",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createOrUpdateBusinessConsoleTelemetryDeviceControlBinding"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/device-control-bindings/{deviceAssetId}/disable",
+      "operationId": "disableBusinessIiotDeviceControlBinding",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "disableBusinessConsoleTelemetryDeviceControlBinding"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
       "route": "/api/business/v1/iiot/devices/{deviceAssetId}/current-state",
       "operationId": "getBusinessIiotDeviceCurrentState",
       "classification": "exposed",

@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlChannelBindingAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
@@ -7,6 +8,8 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagA
 namespace Nerv.IIP.Business.IndustrialTelemetry.Domain.DomainEvents;
 
 public sealed record TelemetryTagCreatedDomainEvent(TelemetryTag TelemetryTag) : IDomainEvent;
+
+public sealed record DeviceControlChannelBindingConfiguredDomainEvent(DeviceControlChannelBinding DeviceControlChannelBinding) : IDomainEvent;
 
 public sealed record AlarmRuleConfiguredDomainEvent(AlarmRule AlarmRule) : IDomainEvent;
 

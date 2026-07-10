@@ -1021,6 +1021,22 @@ public interface IBusinessIndustrialTelemetryClient
         string internalBearerToken,
         BusinessConsoleTelemetryDeviceControlCommandListRequest request,
         CancellationToken cancellationToken);
+
+    Task<BusinessConsoleTelemetryDeviceControlBindingListResponse> ListDeviceControlBindingsAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryDeviceControlBindingListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse> CreateOrUpdateDeviceControlBindingAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleDisableTelemetryDeviceControlBindingResponse> DisableDeviceControlBindingAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleDisableTelemetryDeviceControlBindingRequest request,
+        CancellationToken cancellationToken);
 }
 
 public interface IBusinessMaintenanceClient
@@ -4142,7 +4158,11 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 tag.TagKey,
                 tag.ValueType,
                 tag.UnitCode,
-                tag.SamplingPolicy)).ToArray(), page.Total);
+                tag.SamplingPolicy,
+                tag.IsWritable,
+                tag.ControlMinValue,
+                tag.ControlMaxValue,
+                tag.ControlAllowedValues ?? [])).ToArray(), page.Total);
     }
 
     public async Task<BusinessConsoleTelemetryAlarmRuleListResponse> ListAlarmRulesAsync(
@@ -4206,8 +4226,6 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             new DownstreamCreateDeviceControlCommandRequest(
                 request.OrganizationId,
                 request.EnvironmentId,
-                request.ConnectorHostId,
-                request.InstanceKey,
                 request.DeviceAssetId,
                 request.CommandType,
                 request.TagKey,
@@ -4265,6 +4283,65 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 ("take", request.Take)),
             null,
             cancellationToken);
+
+    public async Task<BusinessConsoleTelemetryDeviceControlBindingListResponse> ListDeviceControlBindingsAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryDeviceControlBindingListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var page = await SendAsync<DownstreamListResponse<DownstreamDeviceControlBindingListItem>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/iiot/device-control-bindings?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("deviceAssetId", request.DeviceAssetId),
+                ("isActive", request.IsActive),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+        return new BusinessConsoleTelemetryDeviceControlBindingListResponse(page.Items.Select(binding =>
+            new BusinessConsoleTelemetryDeviceControlBindingItem(
+                FormatJsonScalar(binding.DeviceControlChannelBindingId),
+                binding.OrganizationId,
+                binding.EnvironmentId,
+                binding.DeviceAssetId,
+                binding.ConnectorHostId,
+                binding.InstanceKey,
+                binding.IsActive,
+                binding.DisabledReason,
+                binding.UpdatedAtUtc)).ToArray(), page.Total);
+    }
+
+    public async Task<BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse> CreateOrUpdateDeviceControlBindingAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamCreateOrUpdateDeviceControlBindingResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/iiot/device-control-bindings",
+            request,
+            cancellationToken);
+        return new BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse(FormatJsonScalar(response.DeviceControlChannelBindingId));
+    }
+
+    public async Task<BusinessConsoleDisableTelemetryDeviceControlBindingResponse> DisableDeviceControlBindingAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleDisableTelemetryDeviceControlBindingRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamCreateOrUpdateDeviceControlBindingResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/iiot/device-control-bindings/{Uri.EscapeDataString(deviceAssetId)}/disable",
+            request,
+            cancellationToken);
+        return new BusinessConsoleDisableTelemetryDeviceControlBindingResponse(FormatJsonScalar(response.DeviceControlChannelBindingId));
+    }
 
     public async Task<BusinessConsoleRecordTelemetrySampleResponse> RecordSampleAsync(
         string internalBearerToken,
@@ -4538,7 +4615,11 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         string TagKey,
         string ValueType,
         string UnitCode,
-        string SamplingPolicy);
+        string SamplingPolicy,
+        bool IsWritable = false,
+        decimal? ControlMinValue = null,
+        decimal? ControlMaxValue = null,
+        IReadOnlyCollection<string>? ControlAllowedValues = null);
 
     private sealed record DownstreamAlarmRuleListItem(
         JsonElement AlarmRuleId,
@@ -4568,8 +4649,6 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
     private sealed record DownstreamCreateDeviceControlCommandRequest(
         string OrganizationId,
         string EnvironmentId,
-        string ConnectorHostId,
-        string InstanceKey,
         string DeviceAssetId,
         string CommandType,
         string? TagKey,
@@ -4592,6 +4671,19 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         string? DecidedBy,
         DateTimeOffset? DecidedAtUtc,
         string? DecisionReason);
+
+    private sealed record DownstreamDeviceControlBindingListItem(
+        JsonElement DeviceControlChannelBindingId,
+        string OrganizationId,
+        string EnvironmentId,
+        string DeviceAssetId,
+        string ConnectorHostId,
+        string InstanceKey,
+        bool IsActive,
+        string? DisabledReason,
+        DateTimeOffset UpdatedAtUtc);
+
+    private sealed record DownstreamCreateOrUpdateDeviceControlBindingResponse(JsonElement DeviceControlChannelBindingId);
 }
 
 public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)

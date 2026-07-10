@@ -155,6 +155,9 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/telemetry/device-control-commands", "post", "createBusinessConsoleTelemetryDeviceControlCommand");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/device-control-commands", "get", "listBusinessConsoleTelemetryDeviceControlCommands");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/device-control-commands/{commandId}", "get", "getBusinessConsoleTelemetryDeviceControlCommand");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/device-control-bindings", "get", "listBusinessConsoleTelemetryDeviceControlBindings");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/device-control-bindings", "post", "createOrUpdateBusinessConsoleTelemetryDeviceControlBinding");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/device-control-bindings/{deviceAssetId}/disable", "post", "disableBusinessConsoleTelemetryDeviceControlBinding");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/samples", "post", "recordBusinessConsoleTelemetrySample");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarms", "post", "postBusinessConsoleTelemetryAlarm");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarms", "get", "listBusinessConsoleTelemetryAlarms");

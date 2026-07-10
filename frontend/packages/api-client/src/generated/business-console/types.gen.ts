@@ -513,6 +513,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     valueType?: string;
     unitCode?: string;
     samplingPolicy?: string;
+    isWritable?: boolean;
+    controlMinValue?: number | null;
+    controlMaxValue?: number | null;
+    controlAllowedValues?: Array<string> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryTagListRequest = {
@@ -592,8 +596,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlCommandRequest = {
     organizationId: string;
     environmentId: string;
-    connectorHostId: string;
-    instanceKey: string;
     deviceAssetId: string;
     commandType: string;
     tagKey: string;
@@ -680,6 +682,61 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlCommandListRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryDeviceControlBindingListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlBindingListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlBindingListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlBindingItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlBindingItem = {
+    deviceControlChannelBindingId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    deviceAssetId?: string;
+    connectorHostId?: string;
+    instanceKey?: string;
+    isActive?: boolean;
+    disabledReason?: string | null;
+    updatedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryDeviceControlBindingListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse = {
+    deviceControlChannelBindingId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest = {
+    organizationId: string;
+    environmentId: string;
+    deviceAssetId: string;
+    connectorHostId: string;
+    instanceKey: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDisableTelemetryDeviceControlBindingResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDisableTelemetryDeviceControlBindingResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDisableTelemetryDeviceControlBindingResponse = {
+    deviceControlChannelBindingId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDisableTelemetryDeviceControlBindingRequest = {
+    organizationId: string;
+    environmentId: string;
+    reason?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordTelemetrySampleResponse = NetCorePalExtensionsDtoResponseData & {
@@ -6692,6 +6749,114 @@ export type GetBusinessConsoleTelemetryDeviceControlCommandResponses = {
 };
 
 export type GetBusinessConsoleTelemetryDeviceControlCommandResponse = GetBusinessConsoleTelemetryDeviceControlCommandResponses[keyof GetBusinessConsoleTelemetryDeviceControlCommandResponses];
+
+export type ListBusinessConsoleTelemetryDeviceControlBindingsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        deviceAssetId?: string | null;
+        isActive?: boolean | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/telemetry/device-control-bindings';
+};
+
+export type ListBusinessConsoleTelemetryDeviceControlBindingsErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleTelemetryDeviceControlBindingsError = ListBusinessConsoleTelemetryDeviceControlBindingsErrors[keyof ListBusinessConsoleTelemetryDeviceControlBindingsErrors];
+
+export type ListBusinessConsoleTelemetryDeviceControlBindingsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryDeviceControlBindingListResponse;
+};
+
+export type ListBusinessConsoleTelemetryDeviceControlBindingsResponse = ListBusinessConsoleTelemetryDeviceControlBindingsResponses[keyof ListBusinessConsoleTelemetryDeviceControlBindingsResponses];
+
+export type CreateOrUpdateBusinessConsoleTelemetryDeviceControlBindingData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/telemetry/device-control-bindings';
+};
+
+export type CreateOrUpdateBusinessConsoleTelemetryDeviceControlBindingErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateOrUpdateBusinessConsoleTelemetryDeviceControlBindingError = CreateOrUpdateBusinessConsoleTelemetryDeviceControlBindingErrors[keyof CreateOrUpdateBusinessConsoleTelemetryDeviceControlBindingErrors];
+
+export type CreateOrUpdateBusinessConsoleTelemetryDeviceControlBindingResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse;
+};
+
+export type CreateOrUpdateBusinessConsoleTelemetryDeviceControlBindingResponse = CreateOrUpdateBusinessConsoleTelemetryDeviceControlBindingResponses[keyof CreateOrUpdateBusinessConsoleTelemetryDeviceControlBindingResponses];
+
+export type DisableBusinessConsoleTelemetryDeviceControlBindingData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDisableTelemetryDeviceControlBindingRequest;
+    path: {
+        deviceAssetId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/telemetry/device-control-bindings/{deviceAssetId}/disable';
+};
+
+export type DisableBusinessConsoleTelemetryDeviceControlBindingErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type DisableBusinessConsoleTelemetryDeviceControlBindingError = DisableBusinessConsoleTelemetryDeviceControlBindingErrors[keyof DisableBusinessConsoleTelemetryDeviceControlBindingErrors];
+
+export type DisableBusinessConsoleTelemetryDeviceControlBindingResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDisableTelemetryDeviceControlBindingResponse;
+};
+
+export type DisableBusinessConsoleTelemetryDeviceControlBindingResponse = DisableBusinessConsoleTelemetryDeviceControlBindingResponses[keyof DisableBusinessConsoleTelemetryDeviceControlBindingResponses];
 
 export type RecordBusinessConsoleTelemetrySampleData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordTelemetrySampleRequest;

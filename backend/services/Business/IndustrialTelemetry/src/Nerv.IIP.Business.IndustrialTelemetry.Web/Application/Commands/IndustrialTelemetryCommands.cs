@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlChannelBindingAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlCommandAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
@@ -110,8 +111,6 @@ public sealed class DeviceControlOpsClient(IOpsClient opsClient) : IDeviceContro
 public sealed record CreateDeviceControlCommandCommand(
     string OrganizationId,
     string EnvironmentId,
-    string ConnectorHostId,
-    string InstanceKey,
     string DeviceAssetId,
     string CommandType,
     string? TagKey,
@@ -157,8 +156,6 @@ public sealed class CreateDeviceControlCommandCommandValidator : AbstractValidat
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.ConnectorHostId).NotEmpty().MaximumLength(128);
-        RuleFor(x => x.InstanceKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.CommandType)
             .NotEmpty()
@@ -193,7 +190,6 @@ public sealed class CreateDeviceControlCommandCommandHandler(
         var commandType = IndustrialTelemetryText.RequiredLower(request.CommandType, nameof(request.CommandType));
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["connectorHostId"] = request.ConnectorHostId.Trim(),
             ["commandType"] = commandType,
             ["deviceAssetId"] = request.DeviceAssetId.Trim()
         };
@@ -222,10 +218,15 @@ public sealed class CreateDeviceControlCommandCommandHandler(
                 throw new KnownException($"Unsupported device control command type: {request.CommandType}");
         }
 
+        // Resolve the connector host + instance from the device's explicit control channel binding only
+        // after the tag/value has been validated, so out-of-range writes are rejected before this lookup.
+        var (connectorHostId, instanceKey) = await ResolveControlChannelAsync(request, cancellationToken);
+        parameters["connectorHostId"] = connectorHostId;
+
         var taskRequest = new CreateOperationTaskRequest(
             request.OrganizationId,
             request.EnvironmentId,
-            request.InstanceKey,
+            instanceKey,
             "device.control.command",
             request.IdempotencyKey,
             request.RequestedBy,
@@ -233,13 +234,36 @@ public sealed class CreateDeviceControlCommandCommandHandler(
             request.CorrelationId,
             parameters);
         var response = await opsClient.CreateDeviceControlTaskAsync(taskRequest, cancellationToken);
-        await RecordCommandLedgerAsync(request, response, commandType, ledgerTagKey, ledgerValue, ledgerParametersJson, cancellationToken);
+        await RecordCommandLedgerAsync(request, response, connectorHostId, instanceKey, commandType, ledgerTagKey, ledgerValue, ledgerParametersJson, cancellationToken);
         return response;
+    }
+
+    // Resolves the connector host + instance that own the device's control channel from the explicit
+    // DeviceControlChannelBinding. Operators never supply these infrastructure identifiers; dispatch is
+    // blocked when the device has no active binding.
+    private async Task<(string ConnectorHostId, string InstanceKey)> ResolveControlChannelAsync(
+        CreateDeviceControlCommandCommand request,
+        CancellationToken cancellationToken)
+    {
+        var binding = await dbContext.DeviceControlChannelBindings.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId,
+            cancellationToken)
+            ?? throw new KnownException($"Device control channel binding was not configured for device: {request.DeviceAssetId}. Configure a control channel binding before dispatching commands.");
+        if (!binding.IsActive)
+        {
+            throw new KnownException($"Device control channel binding is disabled for device: {request.DeviceAssetId}.");
+        }
+
+        return (binding.ConnectorHostId, binding.InstanceKey);
     }
 
     private async Task RecordCommandLedgerAsync(
         CreateDeviceControlCommandCommand request,
         OperationTaskResponse response,
+        string connectorHostId,
+        string instanceKey,
         string commandType,
         string? tagKey,
         string? value,
@@ -259,8 +283,8 @@ public sealed class CreateDeviceControlCommandCommandHandler(
             response.OperationTaskId,
             request.OrganizationId,
             request.EnvironmentId,
-            request.ConnectorHostId,
-            request.InstanceKey,
+            connectorHostId,
+            instanceKey,
             request.DeviceAssetId,
             commandType,
             tagKey,

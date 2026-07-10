@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
+using System.Text.Json;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
@@ -14,7 +15,19 @@ public sealed record PagedListResponse<T>(IReadOnlyCollection<T> Items, int Tota
 
 public sealed record ListTelemetryTagsQuery(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, int Skip = 0, int Take = 100) : IQuery<PagedListResponse<TelemetryTagListItem>>;
 
-public sealed record TelemetryTagListItem(TelemetryTagId TelemetryTagId, string OrganizationId, string EnvironmentId, string DeviceAssetId, string TagKey, string ValueType, string UnitCode, string SamplingPolicy);
+public sealed record TelemetryTagListItem(
+    TelemetryTagId TelemetryTagId,
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string TagKey,
+    string ValueType,
+    string UnitCode,
+    string SamplingPolicy,
+    bool IsWritable,
+    decimal? ControlMinValue,
+    decimal? ControlMaxValue,
+    IReadOnlyCollection<string> ControlAllowedValues);
 
 public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListTelemetryTagsQuery, PagedListResponse<TelemetryTagListItem>>
@@ -27,15 +40,56 @@ public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
             .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId);
         var total = await query.CountAsync(cancellationToken);
-        var items = await query
+        // Project the raw allowed-values JSON column (ControlAllowedValues is a computed property that is
+        // not translatable in LINQ) and deserialize after materialization.
+        var projected = await query
             .OrderBy(x => x.DeviceAssetId)
             .ThenBy(x => x.TagKey)
-            .Select(x => new TelemetryTagListItem(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.ValueType, x.UnitCode, x.SamplingPolicy))
+            .Select(x => new TelemetryTagProjection(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.ValueType, x.UnitCode, x.SamplingPolicy, x.IsWritable, x.ControlMinValue, x.ControlMaxValue, x.ControlAllowedValuesJson))
             .Skip(request.Skip)
             .Take(request.Take)
             .ToArrayAsync(cancellationToken);
+        var items = projected
+            .Select(x => new TelemetryTagListItem(
+                x.TelemetryTagId,
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.DeviceAssetId,
+                x.TagKey,
+                x.ValueType,
+                x.UnitCode,
+                x.SamplingPolicy,
+                x.IsWritable,
+                x.ControlMinValue,
+                x.ControlMaxValue,
+                DeserializeAllowedValues(x.ControlAllowedValuesJson)))
+            .ToArray();
         return new PagedListResponse<TelemetryTagListItem>(items, total);
     }
+
+    private static IReadOnlyCollection<string> DeserializeAllowedValues(string controlAllowedValuesJson)
+    {
+        if (string.IsNullOrWhiteSpace(controlAllowedValuesJson))
+        {
+            return [];
+        }
+
+        return JsonSerializer.Deserialize<IReadOnlyCollection<string>>(controlAllowedValuesJson) ?? [];
+    }
+
+    private sealed record TelemetryTagProjection(
+        TelemetryTagId TelemetryTagId,
+        string OrganizationId,
+        string EnvironmentId,
+        string DeviceAssetId,
+        string TagKey,
+        string ValueType,
+        string UnitCode,
+        string SamplingPolicy,
+        bool IsWritable,
+        decimal? ControlMinValue,
+        decimal? ControlMaxValue,
+        string ControlAllowedValuesJson);
 }
 
 public sealed record ListAlarmRulesQuery(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, bool? IsEnabled, int Skip = 0, int Take = 100) : IQuery<PagedListResponse<AlarmRuleListItem>>;
