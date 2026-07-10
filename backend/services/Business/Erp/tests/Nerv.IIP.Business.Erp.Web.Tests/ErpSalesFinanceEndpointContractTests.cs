@@ -387,6 +387,28 @@ public sealed class ErpSalesFinanceEndpointContractTests
     }
 
     [Fact]
+    public async Task Wms_outbound_cancellation_does_not_cancel_open_orders_when_batch_contains_not_found_order()
+    {
+        var handler = new WmsOutboundCancellationHttpMessageHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://wms.test"),
+        };
+        var client = new HttpWmsOutboundCancellationClient(httpClient, new TestInternalServiceTokenProvider());
+
+        var results = await client.CancelForDeliveryOrdersAsync(
+            "org-001",
+            "env-dev",
+            ["DO-OPEN-001", "DO-MISSING-001"],
+            "customer withdrew order",
+            CancellationToken.None);
+
+        Assert.Empty(handler.CancelledOutboundOrderIds);
+        Assert.Contains(results, x => x.DeliveryOrderNo == "DO-OPEN-001" && x.Status == WmsOutboundCancellationStatus.Cancellable);
+        Assert.Contains(results, x => x.DeliveryOrderNo == "DO-MISSING-001" && x.Status == WmsOutboundCancellationStatus.NotFound);
+    }
+
+    [Fact]
     public async Task Master_data_credit_reader_wraps_non_json_error_responses_as_known_exception()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(HttpStatusCode.BadGateway, "<html>bad gateway</html>", "text/html"))
@@ -688,6 +710,13 @@ internal sealed class WmsOutboundCancellationHttpMessageHandler : HttpMessageHan
         {
             return Task.FromResult(JsonResponse("""
                 {"data":{"items":[{"outboundOrderId":"WMS-SHIPPED-ID","outboundOrderNo":"DO-SHIPPED-001","status":"Completed","createdAtUtc":"2026-07-10T00:00:00Z"}],"total":1},"success":true,"message":"","code":0}
+                """));
+        }
+
+        if (request.Method == HttpMethod.Get && request.RequestUri?.Query.Contains("DO-MISSING-001", StringComparison.Ordinal) == true)
+        {
+            return Task.FromResult(JsonResponse("""
+                {"data":{"items":[],"total":0},"success":true,"message":"","code":0}
                 """));
         }
 

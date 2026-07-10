@@ -42,7 +42,7 @@ public sealed class HttpWmsOutboundCancellationClient(
             candidates.Add(new WmsOutboundCancellationCandidate(deliveryOrderNo, item));
         }
 
-        if (candidates.Any(x => x.Item is not null && !IsOpen(x.Item.Status)))
+        if (candidates.Any(x => x.Item is null || !IsOpen(x.Item.Status)))
         {
             return candidates.Select(ToPreflightResult).ToArray();
         }
