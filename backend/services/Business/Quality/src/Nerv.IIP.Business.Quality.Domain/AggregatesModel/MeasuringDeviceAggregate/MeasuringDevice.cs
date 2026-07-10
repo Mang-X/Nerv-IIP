@@ -36,7 +36,7 @@ public sealed class MeasuringDevice : Entity<MeasuringDeviceId>, IAggregateRoot
     public static MeasuringDevice Create(string organizationId, string environmentId, string deviceCode, string deviceType, string accuracy, int calibrationIntervalDays, DateTimeOffset calibratedAtUtc)
         => new(organizationId, environmentId, deviceCode, deviceType, accuracy, calibrationIntervalDays, calibratedAtUtc);
 
-    public string EvaluateCalibration(DateTimeOffset nowUtc)
+    public string ComputeCalibrationState(DateTimeOffset nowUtc, int warningDays = 7)
     {
         if (Status is MeasuringDeviceStatuses.Retired or MeasuringDeviceStatuses.Disabled)
         {
@@ -45,23 +45,47 @@ public sealed class MeasuringDevice : Entity<MeasuringDeviceId>, IAggregateRoot
 
         if (CalibrationDueAtUtc < nowUtc)
         {
-            Status = MeasuringDeviceStatuses.Calibration;
             return MeasuringDeviceCalibrationStates.Overdue;
         }
 
-        return CalibrationDueAtUtc <= nowUtc.AddDays(7)
+        return CalibrationDueAtUtc <= nowUtc.AddDays(Math.Max(0, warningDays))
             ? MeasuringDeviceCalibrationStates.Warning
             : MeasuringDeviceCalibrationStates.Current;
     }
 
-    public void RecordCalibration(string calibrationNo, DateTimeOffset calibratedAtUtc, string calibratedBy, string? certificateFileId)
+    public bool MoveToCalibrationIfOverdue(DateTimeOffset nowUtc)
+    {
+        if (Status != MeasuringDeviceStatuses.InUse || ComputeCalibrationState(nowUtc) != MeasuringDeviceCalibrationStates.Overdue)
+        {
+            return false;
+        }
+
+        Status = MeasuringDeviceStatuses.Calibration;
+        return true;
+    }
+
+    public void Disable()
+    {
+        if (Status == MeasuringDeviceStatuses.Retired) throw new InvalidOperationException("Retired devices cannot be disabled.");
+        Status = MeasuringDeviceStatuses.Disabled;
+    }
+
+    public void Enable()
+    {
+        if (Status == MeasuringDeviceStatuses.Retired) throw new InvalidOperationException("Retired devices cannot be reactivated.");
+        Status = MeasuringDeviceStatuses.InUse;
+    }
+
+    public void Retire() => Status = MeasuringDeviceStatuses.Retired;
+
+    public void RecordCalibration(string calibrationNo, DateTimeOffset calibratedAtUtc, string calibrationProvider, string? certificateFileId)
     {
         if (Status is MeasuringDeviceStatuses.Retired or MeasuringDeviceStatuses.Disabled)
         {
             throw new InvalidOperationException("Retired or disabled devices cannot be calibrated.");
         }
 
-        CalibrationRecords.Add(new CalibrationRecord(calibrationNo, calibratedAtUtc, calibratedBy, certificateFileId));
+        CalibrationRecords.Add(new CalibrationRecord(calibrationNo, calibratedAtUtc, calibrationProvider, certificateFileId));
         LastCalibratedAtUtc = calibratedAtUtc;
         CalibrationDueAtUtc = calibratedAtUtc.AddDays(CalibrationIntervalDays);
         Status = MeasuringDeviceStatuses.InUse;
@@ -74,19 +98,19 @@ public sealed class MeasuringDevice : Entity<MeasuringDeviceId>, IAggregateRoot
 public sealed class CalibrationRecord : Entity<CalibrationRecordId>
 {
     private CalibrationRecord() { }
-    internal CalibrationRecord(string calibrationNo, DateTimeOffset calibratedAtUtc, string calibratedBy, string? certificateFileId)
+    internal CalibrationRecord(string calibrationNo, DateTimeOffset calibratedAtUtc, string calibrationProvider, string? certificateFileId)
     {
         Id = new CalibrationRecordId(Guid.CreateVersion7());
         CalibrationNo = string.IsNullOrWhiteSpace(calibrationNo) ? throw new ArgumentException("Value cannot be blank.", nameof(calibrationNo)) : calibrationNo.Trim();
         CalibratedAtUtc = calibratedAtUtc;
-        CalibratedBy = string.IsNullOrWhiteSpace(calibratedBy) ? throw new ArgumentException("Value cannot be blank.", nameof(calibratedBy)) : calibratedBy.Trim();
+        CalibrationProvider = string.IsNullOrWhiteSpace(calibrationProvider) ? throw new ArgumentException("Value cannot be blank.", nameof(calibrationProvider)) : calibrationProvider.Trim();
         CertificateFileId = string.IsNullOrWhiteSpace(certificateFileId) ? null : certificateFileId.Trim();
     }
 
     public MeasuringDeviceId MeasuringDeviceId { get; private set; } = null!;
     public string CalibrationNo { get; private set; } = string.Empty;
     public DateTimeOffset CalibratedAtUtc { get; private set; }
-    public string CalibratedBy { get; private set; } = string.Empty;
+    public string CalibrationProvider { get; private set; } = string.Empty;
     public string? CertificateFileId { get; private set; }
 }
 

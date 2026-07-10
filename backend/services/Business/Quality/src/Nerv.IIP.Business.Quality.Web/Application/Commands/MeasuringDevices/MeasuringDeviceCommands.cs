@@ -20,12 +20,28 @@ public sealed class CreateMeasuringDeviceCommandHandler(ApplicationDbContext dbC
     }
 }
 
-public sealed record RecordMeasuringDeviceCalibrationCommand(MeasuringDeviceId MeasuringDeviceId, string CalibrationNo, DateTimeOffset CalibratedAtUtc, string CalibratedBy, string? CertificateFileId) : ICommand;
+public sealed record RecordMeasuringDeviceCalibrationCommand(MeasuringDeviceId MeasuringDeviceId, string CalibrationNo, DateTimeOffset CalibratedAtUtc, string CalibrationProvider, string? CertificateFileId) : ICommand;
 public sealed class RecordMeasuringDeviceCalibrationCommandHandler(ApplicationDbContext dbContext) : ICommandHandler<RecordMeasuringDeviceCalibrationCommand>
 {
     public async Task Handle(RecordMeasuringDeviceCalibrationCommand request, CancellationToken cancellationToken)
     {
         var device = await dbContext.MeasuringDevices.Include(x => x.CalibrationRecords).SingleOrDefaultAsync(x => x.Id == request.MeasuringDeviceId, cancellationToken) ?? throw new KnownException("Measuring device was not found.");
-        device.RecordCalibration(request.CalibrationNo, request.CalibratedAtUtc, request.CalibratedBy, request.CertificateFileId);
+        device.RecordCalibration(request.CalibrationNo, request.CalibratedAtUtc, request.CalibrationProvider, request.CertificateFileId);
+    }
+}
+
+public sealed record ChangeMeasuringDeviceStatusCommand(MeasuringDeviceId MeasuringDeviceId, string Status) : ICommand;
+public sealed class ChangeMeasuringDeviceStatusCommandHandler(ApplicationDbContext dbContext) : ICommandHandler<ChangeMeasuringDeviceStatusCommand>
+{
+    public async Task Handle(ChangeMeasuringDeviceStatusCommand request, CancellationToken cancellationToken)
+    {
+        var device = await dbContext.MeasuringDevices.SingleOrDefaultAsync(x => x.Id == request.MeasuringDeviceId, cancellationToken) ?? throw new KnownException("Measuring device was not found.");
+        switch (request.Status.Trim().ToLowerInvariant())
+        {
+            case MeasuringDeviceStatuses.InUse: device.Enable(); break;
+            case MeasuringDeviceStatuses.Disabled: device.Disable(); break;
+            case MeasuringDeviceStatuses.Retired: device.Retire(); break;
+            default: throw new KnownException("Measuring device status must be in-use, disabled, or retired.");
+        }
     }
 }

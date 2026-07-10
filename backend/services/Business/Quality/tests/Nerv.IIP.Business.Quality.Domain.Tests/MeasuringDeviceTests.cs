@@ -10,11 +10,13 @@ public sealed class MeasuringDeviceTests
     {
         var device = MeasuringDevice.Create("org-001", "env-dev", "MD-001", "Micrometer", "0.001mm", 30, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
 
-        var state = device.EvaluateCalibration(new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero));
+        var state = device.ComputeCalibrationState(new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero), 7);
 
-        Assert.Equal(MeasuringDeviceStatuses.Calibration, device.Status);
+        Assert.Equal(MeasuringDeviceStatuses.InUse, device.Status);
         Assert.Equal(MeasuringDeviceCalibrationStates.Overdue, state);
         Assert.True(MeasuringDeviceInspectionPolicy.Blocks("block", state));
+        Assert.True(device.MoveToCalibrationIfOverdue(new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero)));
+        Assert.Equal(MeasuringDeviceStatuses.Calibration, device.Status);
     }
 
     [Fact]
@@ -40,5 +42,17 @@ public sealed class MeasuringDeviceTests
         Assert.Equal(device.Id, usage.MeasuringDeviceId);
         Assert.Equal("MD-003", usage.MeasuringDeviceCode);
         Assert.Equal(MeasuringDeviceCalibrationStates.Overdue, usage.CalibrationState);
+    }
+
+    [Fact]
+    public void Device_can_be_disabled_or_retired_but_retired_device_cannot_be_reactivated()
+    {
+        var device = MeasuringDevice.Create("org-001", "env-dev", "MD-004", "Gauge", "0.01mm", 30, new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+
+        device.Disable();
+        Assert.Equal(MeasuringDeviceStatuses.Disabled, device.Status);
+        device.Retire();
+        Assert.Equal(MeasuringDeviceStatuses.Retired, device.Status);
+        Assert.Throws<InvalidOperationException>(() => device.Enable());
     }
 }

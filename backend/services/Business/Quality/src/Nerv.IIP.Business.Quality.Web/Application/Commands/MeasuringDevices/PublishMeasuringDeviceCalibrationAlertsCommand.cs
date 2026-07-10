@@ -16,7 +16,8 @@ public sealed class PublishMeasuringDeviceCalibrationAlertsCommandHandler(Applic
         var devices = await dbContext.MeasuringDevices.Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Status != MeasuringDeviceStatuses.Retired && x.Status != MeasuringDeviceStatuses.Disabled && x.CalibrationDueAtUtc <= request.NowUtc.AddDays(7)).ToArrayAsync(cancellationToken);
         foreach (var device in devices)
         {
-            var state = device.EvaluateCalibration(request.NowUtc);
+            var state = device.ComputeCalibrationState(request.NowUtc);
+            device.MoveToCalibrationIfOverdue(request.NowUtc);
             await publisher.PublishAsync(new MeasuringDeviceCalibrationDueIntegrationEvent(
                 $"evt-{Guid.CreateVersion7():N}", QualityIntegrationEventTypes.MeasuringDeviceCalibrationDue, QualityIntegrationEventVersions.V1, request.NowUtc,
                 QualityIntegrationEventSources.BusinessQuality, $"quality:calibration:{device.Id}", device.Id.ToString(), device.OrganizationId, device.EnvironmentId,

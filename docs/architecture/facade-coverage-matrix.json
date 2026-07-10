@@ -3437,6 +3437,14 @@
     },
     {
       "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/measuring-devices/{measuringDeviceId}/status",
+      "operationId": "changeBusinessQualityMeasuringDeviceStatus",
+      "classification": "deferred",
+      "followUp": "BusinessGateway measuring-device lifecycle facade follows the Quality calibration workbench menu phase."
+    },
+    {
+      "service": "Quality",
       "method": "GET",
       "route": "/api/business/v1/quality/measuring-devices/calibration-dashboard",
       "operationId": "getBusinessQualityCalibrationDashboard",

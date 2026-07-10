@@ -869,19 +869,19 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("calibrated_at_utc")
                         .HasComment("UTC time calibration was accepted.");
 
-                    b.Property<string>("CalibratedBy")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)")
-                        .HasColumnName("calibrated_by")
-                        .HasComment("Calibration operator or external provider reference.");
-
                     b.Property<string>("CalibrationNo")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
                         .HasColumnName("calibration_no")
                         .HasComment("Calibration record business code.");
+
+                    b.Property<string>("CalibrationProvider")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("calibration_provider")
+                        .HasComment("External calibration laboratory or service provider reference, not the application audit actor.");
 
                     b.Property<string>("CertificateFileId")
                         .HasMaxLength(150)

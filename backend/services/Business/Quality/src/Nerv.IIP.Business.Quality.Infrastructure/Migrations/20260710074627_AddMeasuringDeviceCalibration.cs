@@ -76,7 +76,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     measuring_device_id = table.Column<Guid>(type: "uuid", nullable: false, comment: "Owning measuring device id."),
                     calibration_no = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, comment: "Calibration record business code."),
                     calibrated_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "UTC time calibration was accepted."),
-                    calibrated_by = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: false, comment: "Calibration operator or external provider reference."),
+                    calibration_provider = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: false, comment: "External calibration laboratory or service provider reference, not the application audit actor."),
                     certificate_file_id = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: true, comment: "Optional File Storage certificate reference.")
                 },
                 constraints: table =>

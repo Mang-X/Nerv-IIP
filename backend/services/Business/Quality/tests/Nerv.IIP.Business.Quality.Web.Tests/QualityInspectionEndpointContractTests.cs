@@ -45,7 +45,7 @@ public sealed class QualityInspectionEndpointContractTests
     {
         var contracts = QualityInspectionEndpointContracts.All;
 
-        Assert.Equal(15, contracts.Count);
+        Assert.Equal(16, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/quality/measuring-devices"
             && x.PermissionCode == BusinessPermissionCodes.QualityMeasuringDevicesManage

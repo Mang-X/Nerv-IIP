@@ -20,7 +20,7 @@ public sealed record InspectionMeasuringDeviceUsage(
         return new InspectionMeasuringDeviceUsage(
             device.Id,
             device.DeviceCode,
-            device.EvaluateCalibration(usedAtUtc),
+            device.ComputeCalibrationState(usedAtUtc),
             device.CalibrationDueAtUtc);
     }
 }

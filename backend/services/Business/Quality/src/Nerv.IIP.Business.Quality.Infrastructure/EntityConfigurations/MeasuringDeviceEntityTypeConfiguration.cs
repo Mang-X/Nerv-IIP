@@ -35,7 +35,7 @@ public sealed class CalibrationRecordEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.MeasuringDeviceId).HasColumnName("measuring_device_id").IsRequired().HasComment("Owning measuring device id.");
         builder.Property(x => x.CalibrationNo).HasColumnName("calibration_no").IsRequired().HasMaxLength(128).HasComment("Calibration record business code.");
         builder.Property(x => x.CalibratedAtUtc).HasColumnName("calibrated_at_utc").IsRequired().HasComment("UTC time calibration was accepted.");
-        builder.Property(x => x.CalibratedBy).HasColumnName("calibrated_by").IsRequired().HasMaxLength(150).HasComment("Calibration operator or external provider reference.");
+        builder.Property(x => x.CalibrationProvider).HasColumnName("calibration_provider").IsRequired().HasMaxLength(150).HasComment("External calibration laboratory or service provider reference, not the application audit actor.");
         builder.Property(x => x.CertificateFileId).HasColumnName("certificate_file_id").HasMaxLength(150).HasComment("Optional File Storage certificate reference.");
         builder.HasIndex(x => new { x.MeasuringDeviceId, x.CalibrationNo }).IsUnique();
     }
