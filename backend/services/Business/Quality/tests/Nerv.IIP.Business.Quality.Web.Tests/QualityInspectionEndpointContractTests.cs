@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Domain.DomainEvents;
 using Nerv.IIP.Business.Quality.Infrastructure;
@@ -44,7 +45,15 @@ public sealed class QualityInspectionEndpointContractTests
     {
         var contracts = QualityInspectionEndpointContracts.All;
 
-        Assert.Equal(12, contracts.Count);
+        Assert.Equal(15, contracts.Count);
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/quality/measuring-devices"
+            && x.PermissionCode == BusinessPermissionCodes.QualityMeasuringDevicesManage
+            && x.OperationId == "createBusinessQualityMeasuringDevice");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/measuring-devices/calibration-dashboard"
+            && x.PermissionCode == BusinessPermissionCodes.QualityMeasuringDevicesRead
+            && x.OperationId == "getBusinessQualityCalibrationDashboard");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/quality/inspection-plans"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionPlansManage
@@ -302,6 +311,30 @@ public sealed class QualityInspectionEndpointContractTests
         Assert.Equal("quality", record.SourceQualityStatus);
         Assert.Equal("supplier", record.OwnerType);
         Assert.Equal("supplier-001", record.OwnerId);
+    }
+
+    [Fact]
+    public async Task Create_inspection_record_blocks_expired_measuring_device_when_configured()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var device = MeasuringDevice.Create("org-001", "env-dev", "MD-001", "Micrometer", "0.001mm", 30, DateTimeOffset.Parse("2026-01-01T00:00:00Z"));
+        dbContext.MeasuringDevices.Add(device);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Quality:MeasuringDevice:ExpiredInspectionPolicy"] = "block",
+        }).Build();
+        var handler = new CreateInspectionRecordCommandHandler(
+            new InspectionRecordRepository(dbContext), new InspectionPlanRepository(dbContext), new InspectionTaskRepository(dbContext),
+            dbContext: dbContext, configuration: configuration);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateInspectionRecordCommand("org-001", "env-dev", null, "receiving", "purchase-receipt", "RCV-MD-001", "SKU-RM-1000", 1m, null, null,
+                [new InspectionResultLineCommandInput("appearance", "ok", null, InspectionLineResults.Passed, null, null, [])], null, [], MeasuringDeviceId: device.Id), CancellationToken.None));
+
+        Assert.Contains("expired", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

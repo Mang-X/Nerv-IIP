@@ -38,6 +38,7 @@ public static class StandardCodeRules
         Material(),
         SimpleResource("standard-operation", "Standard operation", "OP", 4, separator: "-"),
         SimpleResource("quality-reason", "Quality reason", "QR", 4, separator: "-"),
+        SimpleResource("measuring-device", "Measuring device", "MD", 4, separator: "-"),
         SimpleResource("maintenance-plan", "Maintenance plan", "PM", 4, separator: "-"),
         SimpleResource("product-category", "Product category", "PCAT", 4, separator: "-"),
         SimpleResource("skill", "Skill", "SK", 4, separator: "-"),

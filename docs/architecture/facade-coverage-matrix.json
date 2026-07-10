@@ -3421,6 +3421,30 @@
     },
     {
       "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/measuring-devices",
+      "operationId": "createBusinessQualityMeasuringDevice",
+      "classification": "deferred",
+      "followUp": "BusinessGateway measuring-device management facade follows the Quality calibration workbench menu phase."
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/measuring-devices/{measuringDeviceId}/calibrations",
+      "operationId": "recordBusinessQualityMeasuringDeviceCalibration",
+      "classification": "deferred",
+      "followUp": "BusinessGateway calibration-record facade follows the Quality calibration workbench menu phase."
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/measuring-devices/calibration-dashboard",
+      "operationId": "getBusinessQualityCalibrationDashboard",
+      "classification": "deferred",
+      "followUp": "BusinessGateway calibration dashboard facade follows the Quality calibration workbench menu phase."
+    },
+    {
+      "service": "Quality",
       "method": "GET",
       "route": "/api/business/v1/quality/ncrs",
       "operationId": "listBusinessQualityNcrs",

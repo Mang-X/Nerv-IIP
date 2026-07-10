@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionRecords;
@@ -22,7 +23,8 @@ public sealed record CreateInspectionRecordRequest(
     StockReleaseDimensionCommandInput? StockRelease,
     IReadOnlyCollection<InspectionResultLineCommandInput>? ResultLines,
     string? DispositionReason,
-    IReadOnlyCollection<string>? DispositionAttachmentFileIds);
+    IReadOnlyCollection<string>? DispositionAttachmentFileIds,
+    MeasuringDeviceId? MeasuringDeviceId = null);
 
 public sealed record CreateInspectionRecordResponse(InspectionRecordId InspectionRecordId);
 
@@ -70,7 +72,8 @@ public sealed class CreateInspectionRecordEndpoint(ISender sender)
             req.ResultLines ?? [],
             req.DispositionReason,
             req.DispositionAttachmentFileIds ?? [],
-            req.StockRelease), ct);
+            req.StockRelease,
+            req.MeasuringDeviceId), ct);
         await Send.OkAsync(new CreateInspectionRecordResponse(id).AsResponseData(), cancellation: ct);
     }
 }
