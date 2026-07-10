@@ -1,6 +1,9 @@
+using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate;
+using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.InspectionRecords;
 
@@ -38,7 +41,8 @@ public sealed record CreateInspectionRecordCommand(
     IReadOnlyCollection<InspectionResultLineCommandInput> ResultLines,
     string? DispositionReason,
     IReadOnlyCollection<string> DispositionAttachmentFileIds,
-    StockReleaseDimensionCommandInput? StockRelease = null) : ICommand<InspectionRecordId>;
+    StockReleaseDimensionCommandInput? StockRelease = null,
+    MeasuringDeviceId? MeasuringDeviceId = null) : ICommand<InspectionRecordId>;
 
 public sealed class CreateInspectionRecordCommandValidator : AbstractValidator<CreateInspectionRecordCommand>
 {
@@ -70,11 +74,15 @@ public sealed class CreateInspectionRecordCommandHandler(
     IInspectionPlanRepository inspectionPlanRepository,
     IInspectionTaskRepository inspectionTaskRepository,
     IInspectionUomConversionClient? uomConversionClient = null,
-    IInspectionSourceDocumentVerifier? sourceDocumentVerifier = null)
+    IInspectionSourceDocumentVerifier? sourceDocumentVerifier = null,
+    ApplicationDbContext? dbContext = null,
+    IConfiguration? configuration = null,
+    TimeProvider? timeProvider = null)
     : ICommandHandler<CreateInspectionRecordCommand, InspectionRecordId>
 {
     private readonly IInspectionUomConversionClient uomConversionClient = uomConversionClient ?? NullInspectionUomConversionClient.Instance;
     private readonly IInspectionSourceDocumentVerifier sourceDocumentVerifier = sourceDocumentVerifier ?? NullInspectionSourceDocumentVerifier.Instance;
+    private readonly TimeProvider timeProvider = timeProvider ?? TimeProvider.System;
 
     public async Task<InspectionRecordId> Handle(CreateInspectionRecordCommand request, CancellationToken cancellationToken)
     {
@@ -98,6 +106,7 @@ public sealed class CreateInspectionRecordCommandHandler(
         }
 
         await VerifySourceDocumentAsync(request, cancellationToken);
+        var measuringDeviceUsage = await ResolveMeasuringDeviceUsageAsync(request, cancellationToken);
 
         var lines = request.ResultLines.Select(x => new InspectionResultLineInput(
             x.CharacteristicCode,
@@ -143,7 +152,8 @@ public sealed class CreateInspectionRecordCommandHandler(
                 lines,
                 request.DispositionReason,
                 request.DispositionAttachmentFileIds,
-                uomConversions);
+                uomConversions,
+                measuringDeviceUsage);
         }
         else
         {
@@ -161,12 +171,28 @@ public sealed class CreateInspectionRecordCommandHandler(
                 lines,
                 request.DispositionReason,
                 request.DispositionAttachmentFileIds,
-                stockRelease);
+                stockRelease,
+                measuringDeviceUsage);
         }
 
         await repository.AddAsync(record, cancellationToken);
         await CompleteMatchingTaskAsync(request, record.Id, cancellationToken);
         return record.Id;
+    }
+
+    private async Task<InspectionMeasuringDeviceUsage?> ResolveMeasuringDeviceUsageAsync(CreateInspectionRecordCommand request, CancellationToken cancellationToken)
+    {
+        if (request.MeasuringDeviceId is null) return null;
+        if (dbContext is null) throw new KnownException("Measuring-device traceability is unavailable.");
+        var device = await dbContext.MeasuringDevices.SingleOrDefaultAsync(x => x.Id == request.MeasuringDeviceId, cancellationToken)
+            ?? throw new KnownException("Measuring device was not found.");
+        if (device.OrganizationId != request.OrganizationId || device.EnvironmentId != request.EnvironmentId)
+            throw new KnownException("Measuring device does not belong to the inspection scope.");
+        var usage = InspectionMeasuringDeviceUsage.Create(device, timeProvider.GetUtcNow());
+        var policy = configuration?["Quality:MeasuringDevice:ExpiredInspectionPolicy"] ?? "warn";
+        if (MeasuringDeviceInspectionPolicy.Blocks(policy, usage.CalibrationState))
+            throw new KnownException("The selected measuring device has expired calibration and inspection entry is blocked.");
+        return usage;
     }
 
     private async Task CompleteMatchingTaskAsync(

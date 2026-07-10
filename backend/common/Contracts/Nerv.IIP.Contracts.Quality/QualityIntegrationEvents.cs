@@ -16,6 +16,7 @@ public static class QualityIntegrationEventTypes
     public const string CapaEffectivenessVerified = "quality.CapaEffectivenessVerified";
     public const string CapaClosed = "quality.CapaClosed";
     public const string SpcAlertRaised = "quality.SpcAlertRaised";
+    public const string MeasuringDeviceCalibrationDue = "quality.MeasuringDeviceCalibrationDue";
 }
 
 public static class QualityIntegrationEventVersions
@@ -214,6 +215,18 @@ public sealed record InspectionTaskOverdueIntegrationEvent(
 {
     object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }
+
+public sealed record MeasuringDeviceCalibrationDueIntegrationEvent(
+    string EventId, string EventType, int EventVersion, DateTimeOffset OccurredAtUtc,
+    string SourceService, string CorrelationId, string CausationId, string OrganizationId,
+    string EnvironmentId, string Actor, string IdempotencyKey, MeasuringDeviceCalibrationDuePayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record MeasuringDeviceCalibrationDuePayload(
+    string MeasuringDeviceId, string DeviceCode, string DeviceType, string CalibrationState,
+    DateTimeOffset CalibrationDueAtUtc, DateTimeOffset EvaluatedAtUtc);
 
 public sealed record SpcAlertRaisedIntegrationEvent(
     string EventId,
