@@ -73,7 +73,12 @@ export const FAMILIES: Family[] = [
   },
   {
     desktop: { slug: 'select', name: 'NvSelect' },
+    mobile: { slug: 'picker', name: 'NvPicker' },
     screen: { slug: 'screen-select', name: 'NvScreenSelect' },
+  },
+  {
+    desktop: { slug: 'badge', name: 'NvBadge' },
+    mobile: { slug: 'badge', name: 'NvMobileBadge' },
   },
   {
     desktop: { slug: 'data-table', name: 'NvDataTable' },
@@ -108,6 +113,7 @@ export const FAMILIES: Family[] = [
     mobile: { slug: 'bottom-sheet', name: 'NvBottomSheet' },
   },
   {
+    desktop: { slug: 'command', name: 'NvCommand' },
     mobile: { slug: 'search-bar', name: 'NvSearchBar' },
     screen: { slug: 'screen-search', name: 'NvScreenSearch' },
   },
