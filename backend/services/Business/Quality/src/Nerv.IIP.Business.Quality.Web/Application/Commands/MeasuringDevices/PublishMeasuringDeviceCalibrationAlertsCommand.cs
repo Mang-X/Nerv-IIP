@@ -13,7 +13,7 @@ public sealed class PublishMeasuringDeviceCalibrationAlertsCommandHandler(Applic
 {
     public async Task<int> Handle(PublishMeasuringDeviceCalibrationAlertsCommand request, CancellationToken cancellationToken)
     {
-        var devices = await dbContext.MeasuringDevices.Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Status != MeasuringDeviceStatuses.Retired && x.Status != MeasuringDeviceStatuses.Disabled && x.CalibrationDueAtUtc <= request.NowUtc.AddDays(7)).ToArrayAsync(cancellationToken);
+        var devices = await dbContext.MeasuringDevices.Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Status == MeasuringDeviceStatuses.InUse && x.CalibrationDueAtUtc <= request.NowUtc.AddDays(7)).ToArrayAsync(cancellationToken);
         foreach (var device in devices)
         {
             var state = device.ComputeCalibrationState(request.NowUtc);

@@ -292,6 +292,24 @@ public sealed class QualityInspectionTaskWorkflowTests
         Assert.Equal("calibration", Assert.Single(dbContext.MeasuringDevices).Status);
     }
 
+    [Fact]
+    public async Task Calibration_check_does_not_republish_for_device_already_in_calibration()
+    {
+        await using var dbContext = CreateDbContext(nameof(Calibration_check_does_not_republish_for_device_already_in_calibration));
+        var device = MeasuringDevice.Create("org-001", "env-dev", "MD-002", "Micrometer", "0.001mm", 30, DateTimeOffset.Parse("2026-01-01T00:00:00Z"));
+        device.MoveToCalibrationIfOverdue(DateTimeOffset.Parse("2026-02-01T00:00:00Z"));
+        dbContext.MeasuringDevices.Add(device);
+        await dbContext.SaveChangesAsync();
+        var publisher = new RecordingIntegrationEventPublisher();
+
+        var published = await new PublishMeasuringDeviceCalibrationAlertsCommandHandler(dbContext, publisher).Handle(
+            new PublishMeasuringDeviceCalibrationAlertsCommand("org-001", "env-dev", DateTimeOffset.Parse("2026-02-02T00:00:00Z")),
+            CancellationToken.None);
+
+        Assert.Equal(0, published);
+        Assert.Empty(publisher.Published);
+    }
+
     private static WmsInboundOrderCompletedIntegrationEventHandlerForCreateInspectionTasks CreateWmsHandler(ApplicationDbContext dbContext)
     {
         return new WmsInboundOrderCompletedIntegrationEventHandlerForCreateInspectionTasks(
