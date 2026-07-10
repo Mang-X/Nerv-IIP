@@ -2293,6 +2293,8 @@ public sealed record BusinessConsoleErpPurchaseOrderLineItem(
     string UomCode,
     decimal OrderedQuantity,
     decimal ReceivedQuantity,
+    decimal OpenQuantity,
+    bool FinalDelivery,
     decimal UnitPrice,
     DateOnly PromisedDate,
     IReadOnlyCollection<BusinessConsoleErpPurchaseOrderLineSourceItem>? Sources = null);

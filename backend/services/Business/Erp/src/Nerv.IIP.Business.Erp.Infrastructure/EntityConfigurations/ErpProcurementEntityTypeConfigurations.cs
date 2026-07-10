@@ -135,11 +135,49 @@ public sealed class PurchaseOrderEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Purchase order currency code.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Purchase order status.");
         builder.Property(x => x.TotalAmount).HasColumnName("total_amount").IsRequired().HasPrecision(18, 6).HasComment("Purchase order total amount.");
+        builder.Property(x => x.Version).HasColumnName("version").IsRequired().HasComment("Monotonic purchase order revision number.");
         builder.Property(x => x.ApprovalChainId).HasColumnName("approval_chain_id").HasMaxLength(150).HasComment("BusinessApproval chain id that gates purchase order release.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("PurchaseOrderId").OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.ChangeHistory).WithOne().HasForeignKey("PurchaseOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.Navigation(x => x.ChangeHistory).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.PurchaseOrderNo }).IsUnique();
+    }
+}
+
+public sealed class PurchaseOrderChangeEntityTypeConfiguration : IEntityTypeConfiguration<PurchaseOrderChange>
+{
+    public void Configure(EntityTypeBuilder<PurchaseOrderChange> builder)
+    {
+        builder.ToTable("purchase_order_changes", table => table.HasComment("Auditable purchase order amendment, final-delivery, and cancellation records."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseIdentityByDefaultColumn().HasComment("Purchase order change audit row id.");
+        builder.Property<PurchaseOrderId>("PurchaseOrderId").HasColumnName("purchase_order_id").IsRequired().HasComment("Owning purchase order id.");
+        builder.Property(x => x.ChangeType).HasColumnName("change_type").IsRequired().HasMaxLength(50).HasComment("Change category: amend, final-delivery, or cancel.");
+        builder.Property(x => x.Reason).HasColumnName("reason").HasMaxLength(1000).HasComment("Business reason for the order change.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Approval or application status for the purchase order change.");
+        builder.Property(x => x.ApprovalChainId).HasColumnName("approval_chain_id").HasMaxLength(150).HasComment("BusinessApproval chain id for a pending purchase order amendment.");
+        builder.Property(x => x.RequestedAtUtc).HasColumnName("requested_at_utc").IsRequired().HasComment("UTC time when the change was requested.");
+        builder.Property(x => x.ResolvedAtUtc).HasColumnName("resolved_at_utc").HasComment("UTC time when the change was approved, rejected, or applied.");
+        builder.HasMany(x => x.Lines).WithOne().HasForeignKey("PurchaseOrderChangeId").OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.HasIndex("PurchaseOrderId", nameof(PurchaseOrderChange.ApprovalChainId)).IsUnique();
+    }
+}
+
+public sealed class PurchaseOrderChangeLineEntityTypeConfiguration : IEntityTypeConfiguration<PurchaseOrderChangeLine>
+{
+    public void Configure(EntityTypeBuilder<PurchaseOrderChangeLine> builder)
+    {
+        builder.ToTable("purchase_order_change_lines", table => table.HasComment("Auditable target values for a purchase order line amendment."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseIdentityByDefaultColumn().HasComment("Purchase order change line audit row id.");
+        builder.Property<long>("PurchaseOrderChangeId").HasColumnName("purchase_order_change_id").IsRequired().HasComment("Owning purchase order change audit row id.");
+        builder.Property(x => x.LineNo).HasColumnName("line_no").IsRequired().HasMaxLength(100).HasComment("Purchase order line number being changed.");
+        builder.Property(x => x.OrderedQuantity).HasColumnName("ordered_quantity").IsRequired().HasPrecision(18, 6).HasComment("Approved target ordered quantity.");
+        builder.Property(x => x.UnitPrice).HasColumnName("unit_price").IsRequired().HasPrecision(18, 6).HasComment("Approved target unit price.");
+        builder.Property(x => x.PromisedDate).HasColumnName("promised_date").IsRequired().HasComment("Approved target promised receipt date.");
     }
 }
 

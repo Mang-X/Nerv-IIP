@@ -20,7 +20,7 @@ public sealed class ErpProcurementEndpointContractTests
     {
         var contracts = ErpProcurementEndpointContracts.All.ToArray();
 
-        Assert.Equal(13, contracts.Length);
+        Assert.Equal(16, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/purchase-requisitions/from-suggestion"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
@@ -51,6 +51,9 @@ public sealed class ErpProcurementEndpointContractTests
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "createErpPurchaseOrder");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/changes" && x.OperationId == "requestErpPurchaseOrderChange");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/final-delivery" && x.OperationId == "closeErpPurchaseOrderLineFinalDelivery");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/cancel" && x.OperationId == "cancelErpPurchaseOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/purchase-receipts"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage

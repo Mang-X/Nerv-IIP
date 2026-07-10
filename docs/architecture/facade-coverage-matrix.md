@@ -92,7 +92,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Approval | 16 | 11 | 4 | 1 |
 | BarcodeLabel | 9 | 9 | 0 | 0 |
 | DemandPlanning | 15 | 15 | 0 | 0 |
-| Erp | 45 | 39 | 5 | 1 |
+| Erp | 50 | 39 | 10 | 1 |
 | IndustrialTelemetry | 20 | 17 | 1 | 2 |
 | Inventory | 11 | 5 | 2 | 4 |
 | Maintenance | 20 | 15 | 5 | 0 |
@@ -102,7 +102,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Quality | 27 | 16 | 11 | 0 |
 | Scheduling | 7 | 6 | 1 | 0 |
 | Wms | 24 | 19 | 3 | 2 |
-| **Total** | **319** | **271** | **35** | **13** |
+| **Total** | **324** | **271** | **40** | **13** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
 The `exposed` rows (271) — each with its verified facade `gatewayOperationIds` — are
@@ -117,6 +117,11 @@ governance decisions, are listed in full below.
 | Approval | POST | `/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer` | BusinessGateway facade pending; follows the approval-governance Business Console menu phase (#488). |
 | Approval | POST | `/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer` | BusinessGateway facade pending; follows the approval-governance Business Console menu phase (#488). |
 | Approval | POST | `/api/business/v1/approvals/chains/{chainId}/withdraw` | BusinessGateway facade pending; follows the approval-governance Business Console menu phase (#488). |
+| Erp | POST | `/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/changes` | BusinessGateway facade pending; purchase-order amendment approval follows the ERP order-management Business Console menu phase. |
+| Erp | POST | `/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/final-delivery` | BusinessGateway facade pending; final-delivery closure follows the ERP order-management Business Console menu phase. |
+| Erp | POST | `/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/cancel` | BusinessGateway facade pending; purchase-order cancellation follows the ERP order-management Business Console menu phase. |
+| Erp | POST | `/api/business/v1/erp/sales-orders/{salesOrderNo}/lines/{lineNo}` | BusinessGateway facade pending; sales-order amendment follows the ERP order-management Business Console menu phase. |
+| Erp | POST | `/api/business/v1/erp/sales-orders/{salesOrderNo}/cancel` | BusinessGateway facade pending; sales-order cancellation follows the ERP order-management Business Console menu phase. |
 | Erp | POST | `/api/business/v1/erp/finance/payables/payment` | BusinessGateway facade pending; follows the ERP finance Business Console menu phase (ERP menu is explicitly phased per readiness). |
 | Erp | POST | `/api/business/v1/erp/finance/receivables/collection` | BusinessGateway facade pending; follows the ERP finance Business Console menu phase. |
 | Erp | POST | `/api/business/v1/erp/supplier-invoices` | BusinessGateway facade pending; supplier-invoice UI is a known ERP frontend gap (readiness). |

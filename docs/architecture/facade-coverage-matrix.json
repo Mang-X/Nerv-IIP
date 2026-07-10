@@ -881,6 +881,30 @@
     {
       "service": "Erp",
       "method": "POST",
+      "route": "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/changes",
+      "operationId": "requestErpPurchaseOrderChange",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; purchase-order amendment approval follows the ERP order-management Business Console menu phase."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/final-delivery",
+      "operationId": "closeErpPurchaseOrderLineFinalDelivery",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; final-delivery closure follows the ERP order-management Business Console menu phase."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/cancel",
+      "operationId": "cancelErpPurchaseOrder",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; purchase-order cancellation follows the ERP order-management Business Console menu phase."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
       "route": "/api/business/v1/erp/purchase-receipts",
       "operationId": "recordErpPurchaseReceipt",
       "classification": "exposed",
@@ -1028,6 +1052,22 @@
       "gatewayOperationIds": [
         "createBusinessConsoleErpSalesOrder"
       ]
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/sales-orders/{salesOrderNo}/lines/{lineNo}",
+      "operationId": "changeErpSalesOrderLine",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; sales-order amendment follows the ERP order-management Business Console menu phase."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/sales-orders/{salesOrderNo}/cancel",
+      "operationId": "cancelErpSalesOrder",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; sales-order cancellation follows the ERP order-management Business Console menu phase."
     },
     {
       "service": "Erp",

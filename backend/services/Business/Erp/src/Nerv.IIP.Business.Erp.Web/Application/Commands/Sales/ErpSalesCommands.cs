@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.MasterData;
+using Nerv.IIP.Business.Erp.Web.Application.Wms;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
 
@@ -287,5 +288,64 @@ public sealed class ReleaseDeliveryOrderCommandHandler(ApplicationDbContext dbCo
 
         dbContext.DeliveryOrders.Add(delivery);
         return delivery.Id;
+    }
+}
+
+public sealed record ChangeSalesOrderLineCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string SalesOrderNo,
+    string LineNo,
+    decimal OrderedQuantity,
+    decimal UnitPrice,
+    DateOnly RequiredDate,
+    string Reason) : ICommand;
+
+public sealed class ChangeSalesOrderLineCommandHandler(ApplicationDbContext dbContext) : ICommandHandler<ChangeSalesOrderLineCommand>
+{
+    public async Task Handle(ChangeSalesOrderLineCommand request, CancellationToken cancellationToken)
+    {
+        var order = await dbContext.SalesOrders.Include(x => x.Lines).Include(x => x.ChangeHistory).SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == request.SalesOrderNo,
+            cancellationToken) ?? throw new KnownException($"Sales order '{request.SalesOrderNo}' was not found.");
+        try { order.ChangeLine(request.LineNo, request.OrderedQuantity, request.UnitPrice, request.RequiredDate, request.Reason); }
+        catch (InvalidOperationException exception) { throw new KnownException(exception.Message, exception); }
+    }
+}
+
+public sealed record CancelSalesOrderCommand(string OrganizationId, string EnvironmentId, string SalesOrderNo, string Reason) : ICommand;
+
+public sealed class CancelSalesOrderCommandHandler(
+    ApplicationDbContext dbContext,
+    IWmsOutboundCancellationClient wmsOutboundCancellationClient) : ICommandHandler<CancelSalesOrderCommand>
+{
+    public async Task Handle(CancelSalesOrderCommand request, CancellationToken cancellationToken)
+    {
+        var order = await dbContext.SalesOrders.Include(x => x.Lines).Include(x => x.ChangeHistory).SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == request.SalesOrderNo,
+            cancellationToken) ?? throw new KnownException($"Sales order '{request.SalesOrderNo}' was not found.");
+        var deliveries = await dbContext.DeliveryOrders.Include(x => x.Lines).Where(x => x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == request.SalesOrderNo && x.Status == "released").ToArrayAsync(cancellationToken);
+        await wmsOutboundCancellationClient.CancelForDeliveryOrdersAsync(
+            request.OrganizationId, request.EnvironmentId, deliveries.Select(x => x.DeliveryOrderNo).ToArray(), request.Reason, cancellationToken);
+        try
+        {
+            foreach (var delivery in deliveries)
+            {
+                if (delivery.Cancel(request.Reason, DateTime.UtcNow))
+                {
+                    foreach (var line in delivery.Lines)
+                    {
+                        order.ReleaseDelivery(line.SalesOrderLineNo, line.Quantity);
+                    }
+                }
+            }
+
+            order.Cancel(request.Reason);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
     }
 }

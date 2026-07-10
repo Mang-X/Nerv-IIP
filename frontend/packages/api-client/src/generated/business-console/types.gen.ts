@@ -4362,6 +4362,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     uomCode?: string;
     orderedQuantity?: number;
     receivedQuantity?: number;
+    openQuantity?: number;
+    finalDelivery?: boolean;
     unitPrice?: number;
     promisedDate?: string;
     sources?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderLineSourceItem> | null;

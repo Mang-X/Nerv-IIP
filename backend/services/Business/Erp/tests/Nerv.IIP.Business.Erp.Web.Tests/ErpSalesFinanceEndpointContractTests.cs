@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.MasterData;
+using Nerv.IIP.Business.Erp.Web.Application.Wms;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.ServiceAuth;
@@ -21,13 +22,15 @@ public sealed class ErpSalesFinanceEndpointContractTests
     {
         var contracts = ErpSalesEndpointContracts.All.ToArray();
 
-        Assert.Equal(9, contracts.Length);
+        Assert.Equal(11, contracts.Length);
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/opportunities" && x.PermissionCode == ErpPermissionCodes.SalesManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "openErpOpportunity");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/opportunities" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.SalesRead && x.OperationId == "listErpOpportunities");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/quotations" && x.OperationId == "createErpQuotation");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/quotations" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.SalesRead && x.OperationId == "listErpQuotations");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/quotations/{quotationId}/approve" && x.OperationId == "approveErpQuotation");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/sales-orders" && x.OperationId == "createErpSalesOrder");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/sales-orders/{salesOrderNo}/lines/{lineNo}" && x.OperationId == "changeErpSalesOrderLine");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/sales-orders/{salesOrderNo}/cancel" && x.OperationId == "cancelErpSalesOrder");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/delivery-orders" && x.OperationId == "releaseErpDeliveryOrder");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/delivery-orders" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.SalesRead && x.OperationId == "listErpDeliveryOrders");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/sales-orders" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.SalesRead && x.OperationId == "listErpSalesOrders");
@@ -299,6 +302,28 @@ public sealed class ErpSalesFinanceEndpointContractTests
     }
 
     [Fact]
+    public async Task Cancel_sales_order_closes_released_wms_delivery_before_releasing_credit_exposure()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await CreateReleasedSalesOrderAsync(dbContext, "SO-CANCEL-001", "QUO-CANCEL-001", "CUST-001", "SKU-FG-001");
+        await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
+            new ReleaseDeliveryOrderCommand("org-001", "env-dev", "DO-CANCEL-001", "SO-CANCEL-001", [new DeliveryOrderCommandLine("LINE-001", 1m)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var wms = new CapturingWmsOutboundCancellationClient();
+
+        await new CancelSalesOrderCommandHandler(dbContext, wms).Handle(
+            new CancelSalesOrderCommand("org-001", "env-dev", "SO-CANCEL-001", "customer withdrew order"),
+            CancellationToken.None);
+
+        Assert.Equal(["DO-CANCEL-001"], wms.DeliveryOrderNos);
+        Assert.Equal("cancelled", dbContext.SalesOrders.Single(x => x.SalesOrderNo == "SO-CANCEL-001").Status);
+        Assert.Equal("cancelled", dbContext.DeliveryOrders.Single(x => x.DeliveryOrderNo == "DO-CANCEL-001").Status);
+    }
+
+    [Fact]
     public async Task Master_data_credit_reader_wraps_non_json_error_responses_as_known_exception()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(HttpStatusCode.BadGateway, "<html>bad gateway</html>", "text/html"))
@@ -509,6 +534,17 @@ public sealed class ErpSalesFinanceEndpointContractTests
     {
         var quotation = dbContext.Quotations.Single(x => x.QuotationNo == quotationNo);
         dbContext.Entry(quotation).Property(x => x.CreatedAtUtc).CurrentValue = createdAtUtc;
+    }
+
+    private sealed class CapturingWmsOutboundCancellationClient : IWmsOutboundCancellationClient
+    {
+        public IReadOnlyCollection<string> DeliveryOrderNos { get; private set; } = [];
+
+        public Task CancelForDeliveryOrdersAsync(string organizationId, string environmentId, IReadOnlyCollection<string> deliveryOrderNos, string reason, CancellationToken cancellationToken)
+        {
+            DeliveryOrderNos = deliveryOrderNos;
+            return Task.CompletedTask;
+        }
     }
 }
 
