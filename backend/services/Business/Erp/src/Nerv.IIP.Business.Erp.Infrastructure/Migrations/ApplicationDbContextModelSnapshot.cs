@@ -1091,6 +1091,7 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasComment("Purchase order total amount.");
 
                     b.Property<int>("Version")
+                        .IsConcurrencyToken()
                         .HasColumnType("integer")
                         .HasColumnName("version")
                         .HasComment("Monotonic purchase order revision number.");
@@ -1945,6 +1946,7 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasComment("Sales order total amount.");
 
                     b.Property<int>("Version")
+                        .IsConcurrencyToken()
                         .HasColumnType("integer")
                         .HasColumnName("version")
                         .HasComment("Monotonic sales order revision number.");

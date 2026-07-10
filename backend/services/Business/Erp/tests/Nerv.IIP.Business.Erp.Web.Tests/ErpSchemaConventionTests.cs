@@ -181,6 +181,18 @@ public sealed class ErpSchemaConventionTests
     }
 
     [Fact]
+    public void Order_revision_versions_are_optimistic_concurrency_tokens_in_migration_snapshot()
+    {
+        var snapshotType = typeof(ApplicationDbContext).Assembly.GetType(
+            "Nerv.IIP.Business.Erp.Infrastructure.Migrations.ApplicationDbContextModelSnapshot",
+            throwOnError: true);
+        var snapshot = Assert.IsAssignableFrom<ModelSnapshot>(Activator.CreateInstance(snapshotType!)!);
+
+        AssertVersionIsConcurrencyToken<PurchaseOrder>(snapshot.Model);
+        AssertVersionIsConcurrencyToken<SalesOrder>(snapshot.Model);
+    }
+
+    [Fact]
     public void Erp_procurement_schema_does_not_own_inventory_balance_or_warehouse_execution()
     {
         using var fixture = CreateFixture();
