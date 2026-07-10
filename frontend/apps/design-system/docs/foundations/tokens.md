@@ -98,38 +98,38 @@ token 名称按场景命名空间隔离，看名字即知归属。规则见 [ADR
 
 大屏是唯一拥有独立场景令牌层的表面——一套**固定**的近黑工业蓝，不随动态色/亮暗切换。真源是 `@nerv-iip/ui` 的 `components/screen/tokens.css`；动效名 var 链指向共享 Nv 曲线（值只在 `theme.css` 定义一次）。
 
-| 分组 | 令牌                       | 值                                                              | 用途                           |
-| ---- | -------------------------- | --------------------------------------------------------------- | ------------------------------ |
-| 表面 | `--nv-scr-bg`              | `#03050b`                                                       | 舞台底                         |
-| 表面 | `--nv-scr-bg-accent`       | `#081020`                                                       | 次级底                         |
-| 表面 | `--nv-scr-panel-a`         | `rgba(22,34,60,.5)`                                             | 面板渐变起（半透，透出底纹）   |
-| 表面 | `--nv-scr-panel-b`         | `rgba(10,16,30,.38)`                                            | 面板渐变止                     |
-| 表面 | `--nv-scr-line`            | `rgba(255,255,255,.06)`                                         | 发丝分隔线                     |
-| 表面 | `--nv-scr-line-2`          | `rgba(255,255,255,.1)`                                          | 略强分隔线                     |
-| 表面 | `--nv-scr-divider`         | `rgba(255,255,255,.055)`                                        | 分割线                         |
-| 强调 | `--nv-scr-cyan`            | `#4aa6ee`                                                       | 唯一动作 / 数据蓝              |
-| 强调 | `--nv-scr-cyan-dim`        | `rgba(74,166,238,.45)`                                          | 弱化青                         |
-| 强调 | `--nv-scr-accent-from`     | `#4aa6ee`                                                       | "选中填充"渐变起               |
-| 强调 | `--nv-scr-accent-to`       | `#2a72cc`                                                       | "选中填充"渐变止               |
-| 强调 | `--nv-scr-accent-fill`     | `linear-gradient(180deg,#4aa6ee,#2a72cc)`                       | 统一选中填充（按钮/分段/开关） |
-| 强调 | `--nv-scr-accent-edge`     | `rgba(90,165,240,.5)`                                           | 选中描边                       |
-| 强调 | `--nv-scr-indigo`          | `#8b9be6`                                                       | 次强调靛                       |
-| 强调 | `--nv-scr-green`           | `#45d089`                                                       | 成功 / 良好                    |
-| 强调 | `--nv-scr-amber`           | `#f2c14e`                                                       | 警告                           |
-| 强调 | `--nv-scr-red`             | `#ef5a63`                                                       | 危险 / 告警                    |
-| 文字 | `--nv-scr-text`            | `#f2f5fa`                                                       | 主文字（近白，远读向白收拢）   |
-| 文字 | `--nv-scr-text-2`          | `#e2e9f2`                                                       | 次文字                         |
-| 文字 | `--nv-scr-muted`           | `#c3cdda`                                                       | 弱文字                         |
-| 文字 | `--nv-scr-faint`           | `#98a3b3`                                                       | 最弱文字                       |
-| 效果 | `--nv-scr-highlight`       | `rgba(255,255,255,.09)`                                         | 顶部高光发丝                   |
-| 效果 | `--nv-scr-edge-gradient`   | `linear-gradient(90deg, rgba(135,208,255,.28) → .08 → .18)`     | 面板边框渐变（两侧略亮）       |
-| 效果 | `--nv-scr-value-glow`      | `0 0 12px rgba(150,190,235,.18)`                                | 大数值白蓝辉光                 |
-| 效果 | `--nv-scr-edge-glow`       | `rgba(95,170,230,.3)`                                           | 边角微辉光                     |
-| 效果 | `--nv-scr-glow`            | `0 0 8px rgba(95,170,230,.28)`                                  | 通用微辉光                     |
-| 效果 | `--nv-scr-sheen`           | `inset 0 1px 0 rgba(255,255,255,.06), 0 1px 3px rgba(0,0,0,.5)` | 控件高光 + 投影                |
-| 尺寸 | `--nv-scr-radius`          | `8px`                                                           | 面板 / 控件圆角                |
-| 动效 | `--nv-scr-ease`            | `var(--nv-ease-out-quart)`                                      | 通用缓动（引用共享）           |
-| 动效 | `--nv-scr-ease-emphasized` | `var(--nv-ease-out-expo)`                                       | 强调缓动（引用共享）           |
+| 分组 | 令牌                       | 值                                                                                                                           | 用途                           |
+| ---- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| 表面 | `--nv-scr-bg`              | `#03050b`                                                                                                                    | 舞台底                         |
+| 表面 | `--nv-scr-bg-accent`       | `#081020`                                                                                                                    | 次级底                         |
+| 表面 | `--nv-scr-panel-a`         | `rgba(22,34,60,.5)`                                                                                                          | 面板渐变起（半透，透出底纹）   |
+| 表面 | `--nv-scr-panel-b`         | `rgba(10,16,30,.38)`                                                                                                         | 面板渐变止                     |
+| 表面 | `--nv-scr-line`            | `rgba(255,255,255,.06)`                                                                                                      | 发丝分隔线                     |
+| 表面 | `--nv-scr-line-2`          | `rgba(255,255,255,.1)`                                                                                                       | 略强分隔线                     |
+| 表面 | `--nv-scr-divider`         | `rgba(255,255,255,.055)`                                                                                                     | 分割线                         |
+| 强调 | `--nv-scr-cyan`            | `#4aa6ee`                                                                                                                    | 唯一动作 / 数据蓝              |
+| 强调 | `--nv-scr-cyan-dim`        | `rgba(74,166,238,.45)`                                                                                                       | 弱化青                         |
+| 强调 | `--nv-scr-accent-from`     | `#4aa6ee`                                                                                                                    | "选中填充"渐变起               |
+| 强调 | `--nv-scr-accent-to`       | `#2a72cc`                                                                                                                    | "选中填充"渐变止               |
+| 强调 | `--nv-scr-accent-fill`     | `linear-gradient(180deg,#4aa6ee,#2a72cc)`                                                                                    | 统一选中填充（按钮/分段/开关） |
+| 强调 | `--nv-scr-accent-edge`     | `rgba(90,165,240,.5)`                                                                                                        | 选中描边                       |
+| 强调 | `--nv-scr-indigo`          | `#8b9be6`                                                                                                                    | 次强调靛                       |
+| 强调 | `--nv-scr-green`           | `#45d089`                                                                                                                    | 成功 / 良好                    |
+| 强调 | `--nv-scr-amber`           | `#f2c14e`                                                                                                                    | 警告                           |
+| 强调 | `--nv-scr-red`             | `#ef5a63`                                                                                                                    | 危险 / 告警                    |
+| 文字 | `--nv-scr-text`            | `#f2f5fa`                                                                                                                    | 主文字（近白，远读向白收拢）   |
+| 文字 | `--nv-scr-text-2`          | `#e2e9f2`                                                                                                                    | 次文字                         |
+| 文字 | `--nv-scr-muted`           | `#c3cdda`                                                                                                                    | 弱文字                         |
+| 文字 | `--nv-scr-faint`           | `#98a3b3`                                                                                                                    | 最弱文字                       |
+| 效果 | `--nv-scr-highlight`       | `rgba(255,255,255,.09)`                                                                                                      | 顶部高光发丝                   |
+| 效果 | `--nv-scr-edge-gradient`   | `linear-gradient(90deg, rgba(135,208,255,.28), rgba(135,208,255,.08) 16%, rgba(135,208,255,.08) 84%, rgba(135,208,255,.18))` | 面板边框渐变（两侧略亮）       |
+| 效果 | `--nv-scr-value-glow`      | `0 0 12px rgba(150,190,235,.18)`                                                                                             | 大数值白蓝辉光                 |
+| 效果 | `--nv-scr-edge-glow`       | `rgba(95,170,230,.3)`                                                                                                        | 边角微辉光                     |
+| 效果 | `--nv-scr-glow`            | `0 0 8px rgba(95,170,230,.28)`                                                                                               | 通用微辉光                     |
+| 效果 | `--nv-scr-sheen`           | `inset 0 1px 0 rgba(255,255,255,.06), 0 1px 3px rgba(0,0,0,.5)`                                                              | 控件高光 + 投影                |
+| 尺寸 | `--nv-scr-radius`          | `8px`                                                                                                                        | 面板 / 控件圆角                |
+| 动效 | `--nv-scr-ease`            | `var(--nv-ease-out-quart)`                                                                                                   | 通用缓动（引用共享）           |
+| 动效 | `--nv-scr-ease-emphasized` | `var(--nv-ease-out-expo)`                                                                                                    | 强调缓动（引用共享）           |
 
 ## 圆角
 

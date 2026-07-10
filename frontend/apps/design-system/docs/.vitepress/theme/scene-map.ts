@@ -37,6 +37,14 @@ export interface FamilyMember {
   slug: string
   /** canonical Nv* component name — shown as the chip tooltip on counterpart chips */
   name?: string
+  /**
+   * Link-only cross-reference: this family should LINK to the page, but the page's
+   * OWN family (for its badge) lives elsewhere. Used when one component realizes two
+   * concepts on different surfaces — e.g. `NvTabs` is the PC "标签页" AND the PC way to
+   * do "分段切换" (touch/screen use a dedicated Segmented). `ref` members are excluded
+   * from the reverse index so the shared page keeps its primary family.
+   */
+  ref?: boolean
 }
 
 export type Family = Partial<Record<Surface, FamilyMember>>
@@ -67,8 +75,13 @@ export const FAMILIES: Family[] = [
     screen: { slug: 'screen-switch', name: 'NvScreenSwitch' },
   },
   {
+    // 标签页 / 分段切换 is one cross-surface concept split across two components:
+    // Tabs on PC/mobile, a dedicated Segmented on touch, and BOTH on screen. Each
+    // component keeps its own page/family; the two families cross-link via `ref` so
+    // every page shows all four surfaces (touch's counterpart is the Segmented control).
     desktop: { slug: 'tabs', name: 'NvTabs' },
     mobile: { slug: 'tabs', name: 'NvMobileTabs' },
+    touch: { slug: 'touch-segmented', name: 'NvTouchSegmented', ref: true },
     screen: { slug: 'screen-tabs', name: 'NvScreenTabs' },
   },
   {
@@ -118,6 +131,11 @@ export const FAMILIES: Family[] = [
     screen: { slug: 'screen-search', name: 'NvScreenSearch' },
   },
   {
+    // Dedicated segmented control (touch/screen). PC/mobile realize 分段切换 with Tabs,
+    // linked here via `ref` (Tabs' own family is 标签页 above) so these pages no longer
+    // show PC/mobile as "暂无对应件".
+    desktop: { slug: 'tabs', name: 'NvTabs', ref: true },
+    mobile: { slug: 'tabs', name: 'NvMobileTabs', ref: true },
     touch: { slug: 'touch-segmented', name: 'NvTouchSegmented' },
     screen: { slug: 'screen-segmented', name: 'NvScreenSegmented' },
   },
@@ -172,7 +190,9 @@ const reverse = new Map<string, Family>()
 for (const fam of FAMILIES) {
   for (const s of SURFACES) {
     const m = fam[s]
-    if (m) reverse.set(`${s}/${m.slug}`, fam)
+    // Skip `ref` (link-only) members: the page belongs to its primary family, not
+    // this one, so it must not be overwritten in the page→family reverse index.
+    if (m && !m.ref) reverse.set(`${s}/${m.slug}`, fam)
   }
 }
 
