@@ -34,8 +34,7 @@ public sealed class ExpiredStockReservationHostedService(
             var expirationService = scope.ServiceProvider.GetRequiredService<ExpiredStockReservationService>();
             var metrics = scope.ServiceProvider.GetRequiredService<InventoryReservationMetrics>();
             var expiredCount = await expirationService.ExpireOpenReservationsAsync(DateTime.UtcNow, cancellationToken);
-            await dbContext.SaveChangesAsync(cancellationToken);
-            await metrics.RefreshOpenReservationsAsync(dbContext, cancellationToken);
+            await metrics.RefreshHangingReservationsAsync(dbContext, cancellationToken);
             metrics.RecordExpiration(expiredCount);
             if (expiredCount > 0)
             {

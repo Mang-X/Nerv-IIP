@@ -50,44 +50,38 @@ public sealed class InventoryReservationExpiredIntegrationEventHandlerForCancelW
                 && x.EnvironmentId == integrationEvent.EnvironmentId
                 && x.OutboundOrderNo == payload.SourceDocumentId,
             cancellationToken);
-        if (outbound is null)
+        if (outbound is not null
+            && outbound.Lines.Any(x => x.LineNo == payload.SourceDocumentLineId
+                && string.Equals(x.InventoryReservationId, payload.ReservationId, StringComparison.Ordinal)))
         {
-            return;
+            outbound.MarkInventoryReservationReleased(payload.ReservationId);
+            var openPickingTasks = await dbContext.WarehouseTasks
+                .Where(x => x.OrganizationId == integrationEvent.OrganizationId
+                    && x.EnvironmentId == integrationEvent.EnvironmentId
+                    && x.TaskType == WarehouseTaskType.Picking
+                    && x.SourceOrderNo == payload.SourceDocumentId
+                    && x.SourceOrderLineNo == payload.SourceDocumentLineId
+                    && x.Status == WarehouseTaskStatus.Open)
+                .ToArrayAsync(cancellationToken);
+            foreach (var task in openPickingTasks)
+            {
+                task.Cancel();
+            }
+
+            var taskIds = openPickingTasks.Select(x => x.Id).ToArray();
+            if (taskIds.Length > 0)
+            {
+                var openWcsTasks = await dbContext.WcsTasks
+                    .Where(x => taskIds.Contains(x.WarehouseTaskId) && x.Status != WcsTaskStatus.Completed)
+                    .ToArrayAsync(cancellationToken);
+                foreach (var task in openWcsTasks)
+                {
+                    task.Cancel();
+                }
+            }
         }
 
-        if (!outbound.Lines.Any(x => x.LineNo == payload.SourceDocumentLineId
-            && string.Equals(x.InventoryReservationId, payload.ReservationId, StringComparison.Ordinal)))
-        {
-            return;
-        }
-
-        outbound.MarkInventoryReservationReleased(payload.ReservationId);
-        var openPickingTasks = await dbContext.WarehouseTasks
-            .Where(x => x.OrganizationId == integrationEvent.OrganizationId
-                && x.EnvironmentId == integrationEvent.EnvironmentId
-                && x.TaskType == WarehouseTaskType.Picking
-                && x.SourceOrderNo == payload.SourceDocumentId
-                && x.SourceOrderLineNo == payload.SourceDocumentLineId
-                && x.Status == WarehouseTaskStatus.Open)
-            .ToArrayAsync(cancellationToken);
-        foreach (var task in openPickingTasks)
-        {
-            task.Cancel();
-        }
-
-        var taskIds = openPickingTasks.Select(x => x.Id).ToArray();
-        if (taskIds.Length == 0)
-        {
-            return;
-        }
-
-        var openWcsTasks = await dbContext.WcsTasks
-            .Where(x => taskIds.Contains(x.WarehouseTaskId) && x.Status != WcsTaskStatus.Completed)
-            .ToArrayAsync(cancellationToken);
-        foreach (var task in openWcsTasks)
-        {
-            task.Cancel();
-        }
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static bool IsWmsReservation(string sourceService) =>

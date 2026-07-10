@@ -309,7 +309,8 @@ public sealed record RecordWarehouseTaskProgressCommand(WarehouseTaskId Warehous
 
 public sealed class RecordWarehouseTaskProgressCommandHandler(
     ApplicationDbContext dbContext,
-    IWmsInventoryReservationClient? inventoryReservationClient = null)
+    IWmsInventoryReservationClient? inventoryReservationClient = null,
+    ILogger<RecordWarehouseTaskProgressCommandHandler>? logger = null)
     : ICommandHandler<RecordWarehouseTaskProgressCommand>
 {
     public async Task Handle(RecordWarehouseTaskProgressCommand request, CancellationToken cancellationToken)
@@ -336,9 +337,25 @@ public sealed class RecordWarehouseTaskProgressCommandHandler(
             .SingleOrDefaultAsync(cancellationToken);
         if (!string.IsNullOrWhiteSpace(reservationId))
         {
-            await inventoryReservationClient.RenewAsync(
-                new WmsInventoryReservationRenewalRequest(reservationId),
-                cancellationToken);
+            try
+            {
+                await inventoryReservationClient.RenewAsync(
+                    new WmsInventoryReservationRenewalRequest(reservationId),
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                logger?.LogWarning(
+                    "Inventory reservation renewal timed out for open WMS picking task {WarehouseTaskId}; preserving recorded task progress.",
+                    task.Id);
+            }
+            catch (Exception exception) when (exception is HttpRequestException or KnownException)
+            {
+                logger?.LogWarning(
+                    exception,
+                    "Inventory reservation renewal failed for open WMS picking task {WarehouseTaskId}; preserving recorded task progress.",
+                    task.Id);
+            }
         }
     }
 }

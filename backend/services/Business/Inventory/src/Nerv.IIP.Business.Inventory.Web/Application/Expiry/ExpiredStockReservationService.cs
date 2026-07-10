@@ -39,6 +39,11 @@ public sealed class ExpiredStockReservationService(
             }
         }
 
+        if (expiredCount > 0)
+        {
+            await dbContext.SaveEntitiesAsync(cancellationToken);
+        }
+
         return expiredCount;
     }
 }

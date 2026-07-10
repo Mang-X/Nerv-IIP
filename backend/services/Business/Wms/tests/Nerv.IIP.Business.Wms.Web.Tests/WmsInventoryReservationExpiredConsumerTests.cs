@@ -14,7 +14,8 @@ public sealed class WmsInventoryReservationExpiredConsumerTests
     [Fact]
     public async Task Expired_reservation_cancels_the_open_picking_and_wcs_tasks_and_clears_the_public_reservation_id()
     {
-        await using var dbContext = CreateContext();
+        var options = CreateOptions();
+        await using var dbContext = CreateContext(options);
         var outbound = OutboundOrder.Create(
             "org-001",
             "env-dev",
@@ -49,18 +50,22 @@ public sealed class WmsInventoryReservationExpiredConsumerTests
             new InMemoryIntegrationEventDeadLetterStore());
 
         await handler.HandleAsync(CreateExpiredEvent(), CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await using var persistedDbContext = CreateContext(options);
+        var persistedOutbound = await persistedDbContext.OutboundOrders.Include(x => x.Lines).SingleAsync(CancellationToken.None);
+        var persistedPickingTask = await persistedDbContext.WarehouseTasks.SingleAsync(CancellationToken.None);
+        var persistedWcsTask = await persistedDbContext.WcsTasks.SingleAsync(CancellationToken.None);
 
-        Assert.Null(outbound.Lines.Single().InventoryReservationId);
-        Assert.Equal(WarehouseTaskStatus.Cancelled, pickingTask.Status);
-        Assert.Equal(WcsTaskStatus.Cancelled, wcsTask.Status);
-        Assert.Single(dbContext.ProcessedIntegrationEvents);
+        Assert.Null(persistedOutbound.Lines.Single().InventoryReservationId);
+        Assert.Equal(WarehouseTaskStatus.Cancelled, persistedPickingTask.Status);
+        Assert.Equal(WcsTaskStatus.Cancelled, persistedWcsTask.Status);
+        Assert.Single(persistedDbContext.ProcessedIntegrationEvents);
     }
 
     [Fact]
     public async Task Stale_expiration_event_does_not_cancel_a_picking_task_replaced_by_a_new_reservation()
     {
-        await using var dbContext = CreateContext();
+        var options = CreateOptions();
+        await using var dbContext = CreateContext(options);
         var outbound = OutboundOrder.Create(
             "org-001",
             "env-dev",
@@ -85,10 +90,13 @@ public sealed class WmsInventoryReservationExpiredConsumerTests
             new InMemoryIntegrationEventDeadLetterStore());
 
         await handler.HandleAsync(CreateExpiredEvent("reservation-expired-001"), CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await using var persistedDbContext = CreateContext(options);
+        var persistedOutbound = await persistedDbContext.OutboundOrders.Include(x => x.Lines).SingleAsync(CancellationToken.None);
+        var persistedPickingTask = await persistedDbContext.WarehouseTasks.SingleAsync(CancellationToken.None);
 
-        Assert.Equal("reservation-current-001", outbound.Lines.Single().InventoryReservationId);
-        Assert.Equal(WarehouseTaskStatus.Open, pickingTask.Status);
+        Assert.Equal("reservation-current-001", persistedOutbound.Lines.Single().InventoryReservationId);
+        Assert.Equal(WarehouseTaskStatus.Open, persistedPickingTask.Status);
+        Assert.Single(persistedDbContext.ProcessedIntegrationEvents);
     }
 
     private static InventoryReservationExpiredIntegrationEvent CreateExpiredEvent(string reservationId = "reservation-expired-001") => new(
@@ -111,11 +119,13 @@ public sealed class WmsInventoryReservationExpiredConsumerTests
             4m,
             DateTimeOffset.UtcNow));
 
-    private static ApplicationDbContext CreateContext()
+    private static DbContextOptions<ApplicationDbContext> CreateOptions()
     {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+        return new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"wms-reservation-expired-{Guid.NewGuid():N}")
             .Options;
-        return new ApplicationDbContext(options, new NoopMediator());
     }
+
+    private static ApplicationDbContext CreateContext(DbContextOptions<ApplicationDbContext> options) =>
+        new(options, new NoopMediator());
 }

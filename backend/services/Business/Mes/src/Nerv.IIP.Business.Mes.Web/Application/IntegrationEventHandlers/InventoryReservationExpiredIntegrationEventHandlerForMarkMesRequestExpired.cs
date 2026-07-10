@@ -54,6 +54,7 @@ public sealed class InventoryReservationExpiredIntegrationEventHandlerForMarkMes
                 && sourceDocumentIds.Contains(x.RequestNo),
             cancellationToken);
         request?.MarkInventoryReservationExpired(payload.ExpiresAtUtc);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static bool IsMesReservation(string sourceService) =>

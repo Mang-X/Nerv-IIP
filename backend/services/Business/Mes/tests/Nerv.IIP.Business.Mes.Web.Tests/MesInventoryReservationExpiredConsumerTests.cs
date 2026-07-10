@@ -12,7 +12,8 @@ public sealed class MesInventoryReservationExpiredConsumerTests
     [Fact]
     public async Task Expired_mes_reservation_marks_the_matching_material_issue_request_expired_once()
     {
-        await using var dbContext = CreateContext();
+        var options = CreateOptions();
+        await using var dbContext = CreateContext(options);
         var materialRequest = MaterialIssueRequest.Create(
             "org-001",
             "env-dev",
@@ -49,19 +50,21 @@ public sealed class MesInventoryReservationExpiredConsumerTests
                 DateTimeOffset.UtcNow));
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await using var persistedDbContext = CreateContext(options);
+        var persistedMaterialRequest = await persistedDbContext.MaterialIssueRequests.SingleAsync(CancellationToken.None);
 
-        Assert.Equal(MaterialIssueRequest.ReservationExpiredStatus, materialRequest.Status);
-        Assert.Single(dbContext.ProcessedIntegrationEvents);
+        Assert.Equal(MaterialIssueRequest.ReservationExpiredStatus, persistedMaterialRequest.Status);
+        Assert.Single(persistedDbContext.ProcessedIntegrationEvents);
     }
 
-    private static ApplicationDbContext CreateContext()
+    private static DbContextOptions<ApplicationDbContext> CreateOptions()
     {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+        return new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"mes-reservation-expired-{Guid.NewGuid():N}")
             .Options;
-        return new ApplicationDbContext(options, new NoopMediator());
     }
+
+    private static ApplicationDbContext CreateContext(DbContextOptions<ApplicationDbContext> options) =>
+        new(options, new NoopMediator());
 }
