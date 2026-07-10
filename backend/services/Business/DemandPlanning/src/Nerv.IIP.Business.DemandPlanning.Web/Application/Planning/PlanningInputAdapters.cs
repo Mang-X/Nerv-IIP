@@ -824,7 +824,9 @@ public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient htt
                     line.LineNo,
                     line.SkuCode,
                     line.UomCode,
-                    Quantity = line.OrderedQuantity - line.ReceivedQuantity,
+                    Quantity = line.FinalDelivery ? 0m : line.OpenQuantity > 0m
+                        ? line.OpenQuantity
+                        : Math.Max(line.OrderedQuantity - line.ReceivedQuantity, 0m),
                     line.PromisedDate,
                 }))
             .Where(x => x.Quantity > 0)
@@ -1347,6 +1349,8 @@ internal sealed record ErpPurchaseOrderLineItem(
     string UomCode,
     decimal OrderedQuantity,
     decimal ReceivedQuantity,
+    decimal OpenQuantity,
+    bool FinalDelivery,
     decimal UnitPrice,
     DateOnly PromisedDate);
 

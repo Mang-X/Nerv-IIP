@@ -2,14 +2,17 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Procurement;
+using Nerv.IIP.Business.Erp.Web.Application.Wms;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.ServiceAuth;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
@@ -20,7 +23,7 @@ public sealed class ErpProcurementEndpointContractTests
     {
         var contracts = ErpProcurementEndpointContracts.All.ToArray();
 
-        Assert.Equal(13, contracts.Length);
+        Assert.Equal(16, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/purchase-requisitions/from-suggestion"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
@@ -51,6 +54,9 @@ public sealed class ErpProcurementEndpointContractTests
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "createErpPurchaseOrder");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/changes" && x.OperationId == "requestErpPurchaseOrderChange");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/final-delivery" && x.OperationId == "closeErpPurchaseOrderLineFinalDelivery");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/cancel" && x.OperationId == "cancelErpPurchaseOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/purchase-receipts"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
@@ -609,6 +615,89 @@ public sealed class ErpProcurementEndpointContractTests
     }
 
     [Fact]
+    public async Task Purchase_order_changes_use_distinct_approval_chains_before_change_history_is_persisted()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-CHANGE-001",
+            "SUP-001",
+            "SITE-01",
+            [new PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 3m, 12m, new DateOnly(2026, 6, 5))]);
+        order.MarkApprovalRequested("approval-create-001");
+        order.ReleaseAfterApproval("approval-create-001");
+        dbContext.PurchaseOrders.Add(order);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new RequestPurchaseOrderChangeCommandHandler(dbContext, new CapturingPurchaseOrderApprovalClient());
+        var command = new RequestPurchaseOrderChangeCommand(
+            "org-001",
+            "env-dev",
+            "PO-CHANGE-001",
+            [new PurchaseOrderLineChangeDraft("LINE-001", 4m, 12m, new DateOnly(2026, 6, 7))]);
+
+        var firstChainId = await handler.Handle(command, CancellationToken.None);
+        var secondChainId = await handler.Handle(command, CancellationToken.None);
+
+        Assert.NotEqual(firstChainId, secondChainId);
+    }
+
+    [Fact]
+    public async Task Cancelling_a_purchase_order_closes_its_open_wms_inbound_expectations_first()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-CANCEL-001",
+            "SUP-001",
+            "SITE-01",
+            [new PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 3m, 12m, new DateOnly(2026, 6, 5))]);
+        order.MarkApprovalRequested("approval-create-001");
+        order.ReleaseAfterApproval("approval-create-001");
+        dbContext.PurchaseOrders.Add(order);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var wms = new CapturingWmsInboundCancellationClient();
+
+        await new CancelPurchaseOrderCommandHandler(dbContext, wms).Handle(
+            new CancelPurchaseOrderCommand("org-001", "env-dev", "PO-CANCEL-001", "supplier withdrew order"),
+            CancellationToken.None);
+
+        Assert.Equal("PO-CANCEL-001", wms.PurchaseOrderNo);
+        Assert.Equal("supplier withdrew order", wms.Reason);
+        Assert.Equal(PurchaseOrderStatus.Cancelled, order.Status);
+    }
+
+    [Fact]
+    public async Task Purchase_order_cancellation_does_not_close_wms_expectations_when_receipts_already_exist()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = PurchaseOrder.Create(
+            "org-001", "env-dev", "PO-RECEIVED-001", "SUP-001", "SITE-01",
+            [new PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 3m, 12m, new DateOnly(2026, 6, 5))]);
+        order.MarkApprovalRequested("approval-create-001");
+        order.ReleaseAfterApproval("approval-create-001");
+        order.RegisterReceipt("LINE-001", 1m);
+        dbContext.PurchaseOrders.Add(order);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var wms = new CapturingWmsInboundCancellationClient();
+
+        await Assert.ThrowsAsync<KnownException>(() => new CancelPurchaseOrderCommandHandler(dbContext, wms).Handle(
+            new CancelPurchaseOrderCommand("org-001", "env-dev", "PO-RECEIVED-001", "supplier withdrew order"),
+            CancellationToken.None));
+
+        Assert.Null(wms.PurchaseOrderNo);
+        Assert.Equal(PurchaseOrderStatus.Released, order.Status);
+    }
+
+    [Fact]
     public async Task Convert_purchase_requisitions_without_price_source_creates_rfq_and_keeps_requisitions_open()
     {
         await using var provider = CreateInMemoryProvider();
@@ -675,6 +764,24 @@ public sealed class ErpProcurementEndpointContractTests
         {
             LastRequest = request;
             return Task.FromResult(new PurchaseOrderApprovalResult(request.ChainId));
+        }
+    }
+
+    private sealed class CapturingWmsInboundCancellationClient : IWmsInboundCancellationClient
+    {
+        public string? PurchaseOrderNo { get; private set; }
+        public string? Reason { get; private set; }
+
+        public Task CancelOpenInboundOrdersForPurchaseOrderAsync(
+            string organizationId,
+            string environmentId,
+            string purchaseOrderNo,
+            string reason,
+            CancellationToken cancellationToken)
+        {
+            PurchaseOrderNo = purchaseOrderNo;
+            Reason = reason;
+            return Task.CompletedTask;
         }
     }
 

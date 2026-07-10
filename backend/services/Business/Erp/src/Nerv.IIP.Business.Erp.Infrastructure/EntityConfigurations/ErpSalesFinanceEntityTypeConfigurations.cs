@@ -80,9 +80,12 @@ public sealed class SalesOrderEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.CustomerCode).HasColumnName("customer_code").IsRequired().HasMaxLength(100).HasComment("MasterData customer code.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(50).HasComment("Sales order lifecycle status.");
         builder.Property(x => x.TotalAmount).HasColumnName("total_amount").IsRequired().HasPrecision(18, 6).HasComment("Sales order total amount.");
+        builder.Property(x => x.Version).HasColumnName("version").IsRequired().IsConcurrencyToken().HasComment("Monotonic sales order revision number.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("SalesOrderId").OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.ChangeHistory).WithOne().HasForeignKey("SalesOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.Navigation(x => x.ChangeHistory).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SalesOrderNo }).IsUnique();
     }
 }
@@ -102,8 +105,24 @@ public sealed class SalesOrderLineEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.DeliveredQuantity).HasColumnName("delivered_quantity").IsRequired().HasPrecision(18, 6).HasComment("Released delivery quantity.");
         builder.Property(x => x.UnitPrice).HasColumnName("unit_price").IsRequired().HasPrecision(18, 6).HasComment("Sales unit price.");
         builder.Property(x => x.RequiredDate).HasColumnName("required_date").IsRequired().HasComment("Customer required date.");
+        builder.Property(x => x.Cancelled).HasColumnName("cancelled").IsRequired().HasComment("Whether the unfulfilled sales order line was cancelled.");
         builder.Ignore(x => x.OpenQuantity);
         builder.Ignore(x => x.LineAmount);
+    }
+}
+
+public sealed class SalesOrderChangeEntityTypeConfiguration : IEntityTypeConfiguration<SalesOrderChange>
+{
+    public void Configure(EntityTypeBuilder<SalesOrderChange> builder)
+    {
+        builder.ToTable("sales_order_changes", table => table.HasComment("Auditable sales order amendment and cancellation records."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseIdentityByDefaultColumn().HasComment("Sales order change audit row id.");
+        builder.Property<SalesOrderId>("SalesOrderId").HasColumnName("sales_order_id").IsRequired().HasComment("Owning sales order id.");
+        builder.Property(x => x.ChangeType).HasColumnName("change_type").IsRequired().HasMaxLength(50).HasComment("Change category: amend, cancel-line, or cancel.");
+        builder.Property(x => x.LineNo).HasColumnName("line_no").HasMaxLength(100).HasComment("Optional sales order line number affected by the change.");
+        builder.Property(x => x.Reason).HasColumnName("reason").IsRequired().HasMaxLength(1000).HasComment("Business reason for the sales order change.");
+        builder.Property(x => x.ChangedAtUtc).HasColumnName("changed_at_utc").IsRequired().HasComment("UTC time when the sales order change was applied.");
     }
 }
 

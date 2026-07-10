@@ -60,16 +60,17 @@ public sealed class DeliveryOrder : Entity<DeliveryOrderId>, IAggregateRoot
         return new DeliveryOrder(order, deliveryOrderNo, lines);
     }
 
-    public void Cancel(string reason, DateTime cancelledAtUtc)
+    public bool Cancel(string reason, DateTime cancelledAtUtc)
     {
         if (string.Equals(Status, "cancelled", StringComparison.Ordinal))
         {
-            return;
+            return false;
         }
 
         Status = "cancelled";
         CancelledAtUtc = cancelledAtUtc;
         CancellationReason = ErpText.Required(reason, nameof(reason));
+        return true;
     }
 }
 

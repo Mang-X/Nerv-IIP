@@ -16,6 +16,7 @@ public enum InboundOrderStatus
     Completed = 1,
     InventoryPostingFailed = 2,
     PendingQualityCheck = 3,
+    Cancelled = 4,
 }
 
 public sealed record InboundOrderLineDraft(
@@ -77,6 +78,8 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
     public InboundOrderStatus Status { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
+    public DateTime? CancelledAtUtc { get; private set; }
+    public string? CancellationReason { get; private set; }
     public IReadOnlyCollection<InboundOrderLine> Lines => lines;
 
     public static InboundOrder Create(
@@ -89,6 +92,14 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         IEnumerable<InboundOrderLineDraft> lines)
     {
         return new InboundOrder(organizationId, environmentId, inboundOrderNo, sourceDocumentType, sourceDocumentId, siteCode, lines);
+    }
+
+    public void Cancel(string reason)
+    {
+        EnsureOpen();
+        CancellationReason = WmsText.Required(reason, nameof(reason));
+        CancelledAtUtc = DateTime.UtcNow;
+        Status = InboundOrderStatus.Cancelled;
     }
 
     public WarehouseTask CreatePutawayTask(

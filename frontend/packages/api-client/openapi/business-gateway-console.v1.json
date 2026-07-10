@@ -38011,6 +38011,13 @@
             "type": "number",
             "format": "decimal"
           },
+          "openQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "finalDelivery": {
+            "type": "boolean"
+          },
           "unitPrice": {
             "type": "number",
             "format": "decimal"

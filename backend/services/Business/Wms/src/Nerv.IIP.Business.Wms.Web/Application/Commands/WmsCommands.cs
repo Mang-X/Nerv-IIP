@@ -464,6 +464,72 @@ public sealed class CancelOutboundOrderCommandHandler(
     }
 }
 
+public sealed record CancelInboundOrdersForSourceCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string SourceDocumentType,
+    string SourceDocumentId,
+    string Reason) : ICommand<int>;
+
+public sealed class CancelInboundOrdersForSourceCommandValidator : AbstractValidator<CancelInboundOrdersForSourceCommand>
+{
+    public CancelInboundOrdersForSourceCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SourceDocumentType).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(1000);
+    }
+}
+
+public sealed class CancelInboundOrdersForSourceCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CancelInboundOrdersForSourceCommand, int>
+{
+    public async Task<int> Handle(CancelInboundOrdersForSourceCommand request, CancellationToken cancellationToken)
+    {
+        var sourceDocumentType = WmsText.Required(request.SourceDocumentType, nameof(request.SourceDocumentType));
+        var sourceDocumentId = WmsText.Required(request.SourceDocumentId, nameof(request.SourceDocumentId));
+        var reason = WmsText.Required(request.Reason, nameof(request.Reason));
+        var inboundOrders = await dbContext.InboundOrders
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.SourceDocumentType == sourceDocumentType
+                && x.SourceDocumentId == sourceDocumentId
+                && x.Status == InboundOrderStatus.Open)
+            .ToArrayAsync(cancellationToken);
+        var inboundOrderNos = inboundOrders.Select(x => x.InboundOrderNo).ToArray();
+        var openPutawayTasks = await dbContext.WarehouseTasks
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.TaskType == WarehouseTaskType.Putaway
+                && inboundOrderNos.Contains(x.SourceOrderNo)
+                && x.Status == WarehouseTaskStatus.Open)
+            .ToArrayAsync(cancellationToken);
+        var openPutawayTaskIds = openPutawayTasks.Select(x => x.Id).ToArray();
+        var cancellableWcsTasks = await dbContext.WcsTasks
+            .Where(x => openPutawayTaskIds.Contains(x.WarehouseTaskId) && x.Status != WcsTaskStatus.Completed)
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var inboundOrder in inboundOrders)
+        {
+            inboundOrder.Cancel(reason);
+        }
+
+        foreach (var task in openPutawayTasks)
+        {
+            task.Cancel();
+        }
+
+        foreach (var task in cancellableWcsTasks)
+        {
+            task.Cancel();
+        }
+
+        return inboundOrders.Length;
+    }
+}
+
 public sealed record RetryOutboundInventoryPostingCommand(OutboundOrderId OutboundOrderId, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
 
 public sealed class RetryOutboundInventoryPostingCommandValidator : AbstractValidator<RetryOutboundInventoryPostingCommand>

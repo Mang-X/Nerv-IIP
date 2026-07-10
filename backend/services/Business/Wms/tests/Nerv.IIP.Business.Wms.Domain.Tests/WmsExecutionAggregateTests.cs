@@ -10,6 +10,18 @@ namespace Nerv.IIP.Business.Wms.Domain.Tests;
 public sealed class WmsExecutionAggregateTests
 {
     [Fact]
+    public void Open_inbound_expectation_can_be_cancelled_with_an_audit_reason()
+    {
+        var inbound = DomainWmsFactory.InboundOrder();
+
+        inbound.Cancel("purchase-order-cancelled");
+
+        Assert.Equal(InboundOrderStatus.Cancelled, inbound.Status);
+        Assert.Equal("purchase-order-cancelled", inbound.CancellationReason);
+        Assert.NotNull(inbound.CancelledAtUtc);
+    }
+
+    [Fact]
     public void Inbound_completion_requires_idempotency_key_and_creates_inventory_request()
     {
         var inbound = DomainWmsFactory.InspectionExemptInboundOrder();

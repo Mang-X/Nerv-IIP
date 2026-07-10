@@ -62,7 +62,10 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
             return;
         }
 
-        var order = await dbContext.PurchaseOrders.SingleOrDefaultAsync(x =>
+        var order = await dbContext.PurchaseOrders
+            .Include(x => x.Lines)
+            .Include(x => x.ChangeHistory)
+            .SingleOrDefaultAsync(x =>
             x.OrganizationId == integrationEvent.OrganizationId
             && x.EnvironmentId == integrationEvent.EnvironmentId
             && x.PurchaseOrderNo == integrationEvent.Payload.DocumentReference.DocumentId,
@@ -81,12 +84,26 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
         {
             if (string.Equals(integrationEvent.Payload.Result, ApprovalResults.Approved, StringComparison.OrdinalIgnoreCase))
             {
-                order.ReleaseAfterApproval(integrationEvent.Payload.ChainId);
+                if (order.Status == Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderStatus.PendingApproval)
+                {
+                    order.ReleaseAfterApproval(integrationEvent.Payload.ChainId);
+                }
+                else
+                {
+                    order.ApplyApprovedChange(integrationEvent.Payload.ChainId);
+                }
             }
             else if (string.Equals(integrationEvent.Payload.Result, ApprovalResults.Rejected, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(integrationEvent.Payload.Result, ApprovalResults.Returned, StringComparison.OrdinalIgnoreCase))
             {
-                order.CancelAfterApprovalRejected(integrationEvent.Payload.ChainId);
+                if (order.Status == Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderStatus.PendingApproval)
+                {
+                    order.CancelAfterApprovalRejected(integrationEvent.Payload.ChainId);
+                }
+                else
+                {
+                    order.RejectChange(integrationEvent.Payload.ChainId);
+                }
             }
         }
         catch (InvalidOperationException exception)
