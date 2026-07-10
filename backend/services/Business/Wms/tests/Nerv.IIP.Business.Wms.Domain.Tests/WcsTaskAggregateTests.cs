@@ -39,7 +39,7 @@ public sealed class WcsTaskAggregateTests
         var task = WcsTask.Dispatch("org-001", "env-dev", warehouseTaskId, "agv", "EXT-001", "{}");
 
         task.Fail("E001", "blocked aisle");
-        task.Retry("EXT-002", "{\"retry\":true}");
+        task.Retry("EXT-002", "{\"retry\":true}", task.NextRetryAtUtc!.Value);
 
         Assert.Equal(WcsTaskStatus.Dispatched, task.Status);
         Assert.Equal(2, task.AttemptCount);
@@ -47,6 +47,46 @@ public sealed class WcsTaskAggregateTests
         Assert.Equal("E001", task.FailureCode);
         Assert.Equal("blocked aisle", task.FailureMessage);
         Assert.Contains(task.GetDomainEvents(), x => x is WcsTaskFailedDomainEvent);
+    }
+
+    [Fact]
+    public void Retry_is_rejected_until_exponential_backoff_has_elapsed()
+    {
+        var failedAtUtc = new DateTime(2026, 7, 10, 0, 0, 0, DateTimeKind.Utc);
+        var task = WcsTask.Dispatch("org-001", "env-dev", new WarehouseTaskId(Guid.CreateVersion7()), "agv", "EXT-001", "{}", deviceId: "AGV-01");
+
+        task.Fail("E001", "blocked aisle", failedAtUtc);
+
+        Assert.Equal(failedAtUtc.AddMinutes(1), task.NextRetryAtUtc);
+        var exception = Assert.Throws<InvalidOperationException>(() => task.Retry("EXT-002", "{\"retry\":true}", failedAtUtc.AddSeconds(59)));
+        Assert.Contains("retry", exception.Message, StringComparison.OrdinalIgnoreCase);
+
+        task.Retry("EXT-002", "{\"retry\":true}", failedAtUtc.AddMinutes(1));
+
+        Assert.Equal(WcsTaskStatus.Dispatched, task.Status);
+        Assert.Equal(2, task.AttemptCount);
+        Assert.Null(task.NextRetryAtUtc);
+    }
+
+    [Fact]
+    public void Circuit_opens_after_threshold_failures_and_manual_reset_closes_it()
+    {
+        var openedAtUtc = new DateTime(2026, 7, 10, 0, 0, 0, DateTimeKind.Utc);
+        var circuit = WcsDispatchCircuit.Create("org-001", "env-dev", "agv", "AGV-01");
+
+        circuit.RecordFailure(openedAtUtc, failureThreshold: 3);
+        circuit.RecordFailure(openedAtUtc.AddMinutes(1), failureThreshold: 3);
+        circuit.RecordFailure(openedAtUtc.AddMinutes(2), failureThreshold: 3);
+
+        Assert.True(circuit.IsOpen);
+        Assert.Equal(openedAtUtc.AddMinutes(2), circuit.OpenedAtUtc);
+        Assert.Contains("open", circuit.RejectionReason!, StringComparison.OrdinalIgnoreCase);
+
+        circuit.Reset(openedAtUtc.AddMinutes(3));
+
+        Assert.False(circuit.IsOpen);
+        Assert.Equal(0, circuit.ConsecutiveFailureCount);
+        Assert.Null(circuit.OpenedAtUtc);
     }
 
     [Fact]
