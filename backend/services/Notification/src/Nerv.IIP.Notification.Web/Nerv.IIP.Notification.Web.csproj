@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Wms\Nerv.IIP.Contracts.Wms.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Notification.Domain\Nerv.IIP.Notification.Domain.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Notification.Infrastructure\Nerv.IIP.Notification.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Notification\Nerv.IIP.Contracts.Notification.csproj" />
