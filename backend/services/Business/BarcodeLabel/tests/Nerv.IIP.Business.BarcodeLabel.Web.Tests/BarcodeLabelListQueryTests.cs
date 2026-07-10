@@ -37,7 +37,7 @@ public sealed class BarcodeLabelListQueryTests
         var templates = await new ListLabelTemplatesQueryHandler(dbContext)
             .Handle(new ListLabelTemplatesQuery("org-001", "env-dev", "active", 1, 1), CancellationToken.None);
         var batches = await new ListLabelPrintBatchesQueryHandler(dbContext)
-            .Handle(new ListLabelPrintBatchesQuery("org-001", "env-dev", "work-order", null, "completed", 1, 1), CancellationToken.None);
+            .Handle(new ListLabelPrintBatchesQuery("org-001", "env-dev", "work-order", null, "pending", 1, 1), CancellationToken.None);
         var scans = await new ListScansQueryHandler(dbContext)
             .Handle(new ListScansQuery("org-001", "env-dev", "PDA-01", null, "wms.receiving", null, 1, 1), CancellationToken.None);
 

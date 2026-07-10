@@ -90,7 +90,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Service | Total | exposed | deferred | internal |
 | --- | ---: | ---: | ---: | ---: |
 | Approval | 16 | 11 | 4 | 1 |
-| BarcodeLabel | 9 | 9 | 0 | 0 |
+| BarcodeLabel | 12 | 9 | 0 | 3 |
 | DemandPlanning | 15 | 15 | 0 | 0 |
 | Erp | 45 | 39 | 5 | 1 |
 | IndustrialTelemetry | 20 | 17 | 1 | 2 |

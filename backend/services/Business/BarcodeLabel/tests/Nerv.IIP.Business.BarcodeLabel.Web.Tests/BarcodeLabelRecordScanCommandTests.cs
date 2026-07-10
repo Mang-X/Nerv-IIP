@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.Scans;
 
@@ -137,6 +140,38 @@ public sealed class BarcodeLabelRecordScanCommandTests
     }
 
     [Fact]
+    public async Task Record_scan_rejects_voided_label_before_requesting_inventory_movement()
+    {
+        await using var dbContext = CreateDbContext();
+        var rule = BarcodeRule.Create("org-001", "env-dev", "FG", "code128", "FG", 13, "none", ["wms.inbound"], "active");
+        var batch = LabelPrintBatch.Create(
+            "org-001",
+            "env-dev",
+            rule,
+            new LabelTemplateId(Guid.CreateVersion7()),
+            "wms.inbound",
+            "ASN-001",
+            "idem-print-voided-001",
+            """{"sku":"SKU-FG-1000"}""",
+            1);
+        var labelValue = batch.Items.Single().LabelValue;
+        batch.VoidItem(1, "damaged");
+        dbContext.LabelPrintBatches.Add(batch);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var handler = new RecordScanCommandHandler(dbContext);
+        var scanId = await handler.Handle(NewInventoryScanCommand("idem-scan-voided-001", scannedValue: labelValue), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var scan = await dbContext.ScanRecords.SingleAsync(x => x.Id == scanId);
+        Assert.Equal("rejected", scan.Result);
+        Assert.Equal("label-voided", scan.RejectionReason);
+        Assert.Equal("not-required", scan.DownstreamProcessingStatus);
+        Assert.Null(scan.DownstreamEventId);
+    }
+
+    [Fact]
     public async Task Scan_record_natural_key_unique_index_rejects_same_accepted_scan_with_business_message()
     {
         await using var database = await BarcodeLabelSqliteDatabase.CreateAsync();
@@ -247,13 +282,13 @@ public sealed class BarcodeLabelRecordScanCommandTests
         }
     }
 
-    private static RecordScanCommand NewInventoryScanCommand(string idempotencyKey, string sourceDocumentId = "ASN-001")
+    private static RecordScanCommand NewInventoryScanCommand(string idempotencyKey, string sourceDocumentId = "ASN-001", string scannedValue = "(01)09506000134352(10)LOT-A(21)SN-0001(30)2")
     {
         return new RecordScanCommand(
             "org-001",
             "env-dev",
             "PDA-01",
-            "(01)09506000134352(10)LOT-A(21)SN-0001(30)2",
+            scannedValue,
             "inventory.receipt",
             sourceDocumentId,
             idempotencyKey,
