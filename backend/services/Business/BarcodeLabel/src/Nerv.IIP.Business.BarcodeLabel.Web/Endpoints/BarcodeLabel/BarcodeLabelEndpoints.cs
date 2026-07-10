@@ -100,6 +100,8 @@ public sealed record DispatchLabelPrintBatchRequest(LabelPrintBatchId PrintBatch
 
 public sealed record ReprintLabelRequest(LabelPrintBatchId PrintBatchId, int SequenceNo, string PrinterId);
 
+public sealed record ReprintLabelResponse(LabelPrintBatchId PrintBatchId, string Status, string? PrintJobId, string? FailureReason);
+
 public sealed record VoidLabelRequest(LabelPrintBatchId PrintBatchId, int SequenceNo, string Reason);
 
 public sealed record LabelPrintLifecycleResponse(LabelPrintBatchId PrintBatchId);
@@ -287,14 +289,14 @@ public sealed class DispatchLabelPrintBatchEndpoint(ISender sender)
 }
 
 public sealed class ReprintLabelEndpoint(ISender sender)
-    : BarcodeLabelEndpoint<ReprintLabelRequest, ResponseData<LabelPrintLifecycleResponse>>
+    : BarcodeLabelEndpoint<ReprintLabelRequest, ResponseData<ReprintLabelResponse>>
 {
     public override void Configure() => ConfigureBarcodeLabelContract(BarcodeLabelEndpointContracts.Get<ReprintLabelEndpoint>());
 
     public override async Task HandleAsync(ReprintLabelRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new ReprintLabelCommand(req.PrintBatchId, req.SequenceNo, req.PrinterId), ct);
-        await Send.OkAsync(new LabelPrintLifecycleResponse(id).AsResponseData(), cancellation: ct);
+        var result = await sender.Send(new ReprintLabelCommand(req.PrintBatchId, req.SequenceNo, req.PrinterId), ct);
+        await Send.OkAsync(new ReprintLabelResponse(req.PrintBatchId, result.Status, result.PrintJobId, result.FailureReason).AsResponseData(), cancellation: ct);
     }
 }
 

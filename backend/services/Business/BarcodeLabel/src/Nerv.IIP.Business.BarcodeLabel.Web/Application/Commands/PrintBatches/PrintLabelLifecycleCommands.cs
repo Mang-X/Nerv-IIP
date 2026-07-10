@@ -6,7 +6,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 
 public sealed record DispatchLabelPrintBatchCommand(LabelPrintBatchId PrintBatchId, string PrinterId) : ICommand<LabelPrintBatchId>;
 
-public sealed record ReprintLabelCommand(LabelPrintBatchId PrintBatchId, int SequenceNo, string PrinterId) : ICommand<LabelPrintBatchId>;
+public sealed record ReprintLabelCommand(LabelPrintBatchId PrintBatchId, int SequenceNo, string PrinterId) : ICommand<LabelPrinterDispatchResult>;
 
 public sealed record VoidLabelCommand(LabelPrintBatchId PrintBatchId, int SequenceNo, string Reason) : ICommand<LabelPrintBatchId>;
 
@@ -52,9 +52,9 @@ public sealed class DispatchLabelPrintBatchCommandHandler(ApplicationDbContext d
 }
 
 public sealed class ReprintLabelCommandHandler(ApplicationDbContext dbContext, ILabelPrinter printer)
-    : ICommandHandler<ReprintLabelCommand, LabelPrintBatchId>
+    : ICommandHandler<ReprintLabelCommand, LabelPrinterDispatchResult>
 {
-    public async Task<LabelPrintBatchId> Handle(ReprintLabelCommand request, CancellationToken cancellationToken)
+    public async Task<LabelPrinterDispatchResult> Handle(ReprintLabelCommand request, CancellationToken cancellationToken)
     {
         var batch = await LabelPrintLifecycle.LoadBatchAsync(dbContext, request.PrintBatchId, cancellationToken);
         var item = batch.Items.SingleOrDefault(x => x.SequenceNo == request.SequenceNo)
@@ -65,7 +65,7 @@ public sealed class ReprintLabelCommandHandler(ApplicationDbContext dbContext, I
             batch.ReprintItem(request.SequenceNo);
         }
 
-        return batch.Id;
+        return result;
     }
 }
 
