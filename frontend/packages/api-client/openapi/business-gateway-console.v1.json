@@ -24563,23 +24563,62 @@
             "type": "number",
             "format": "decimal"
           },
+          "productionFactCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "goodQuantity": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "scrapQuantity": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "reworkQuantity": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "outputUomCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "theoreticalRatePerHour": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "expectedOutputQuantity": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
           "performanceRate": {
             "type": "number",
-            "format": "decimal"
+            "format": "decimal",
+            "nullable": true
           },
           "qualityRate": {
             "type": "number",
-            "format": "decimal"
+            "format": "decimal",
+            "nullable": true
           },
           "oeeRate": {
             "type": "number",
-            "format": "decimal"
+            "format": "decimal",
+            "nullable": true
           },
-          "performanceRateEstimated": {
+          "isDegraded": {
             "type": "boolean"
           },
-          "qualityRateEstimated": {
-            "type": "boolean"
+          "degradedReasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

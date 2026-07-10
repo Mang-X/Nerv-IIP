@@ -15,14 +15,18 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.OeeProductionFactAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Auth;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
+using Nerv.IIP.Contracts.Mes;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.DistributedLocks;
@@ -298,7 +302,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
-    public async Task Oee_endpoint_aggregates_state_samples_for_window()
+    public async Task Oee_endpoint_marks_result_degraded_when_mes_production_facts_are_absent()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
         using var client = factory.CreateClient();
@@ -316,11 +320,124 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal("DEV-OEE-01", data.GetProperty("deviceAssetId").GetString());
         Assert.Equal(2, data.GetProperty("stateSampleCount").GetInt32());
         Assert.Equal(0.5m, data.GetProperty("availabilityRate").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("performanceRate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("qualityRate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
+        Assert.True(data.GetProperty("isDegraded").GetBoolean());
+        Assert.Contains("production-facts-missing", data.GetProperty("degradedReasons").EnumerateArray().Select(x => x.GetString()));
+    }
+
+    [Fact]
+    public async Task Oee_endpoint_calculates_explainable_factors_from_mes_projection_and_productive_runtime()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-OEE-FACTS-01", "running", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-facts-state-001");
+        await PostSampleAsync(client, "DEV-OEE-FACTS-01", "stopped", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-facts-state-002");
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.OeeProductionFacts.Add(OeeProductionFact.Project(
+                "org-001",
+                "env-dev",
+                "PRPT-OEE-001",
+                "WC-PACK-01",
+                "DEV-OEE-FACTS-01",
+                80m,
+                10m,
+                10m,
+                "PCS",
+                100m,
+                new DateTimeOffset(2026, 6, 1, 8, 45, 0, TimeSpan.Zero)));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var response = await client.GetAsync("/api/business/v1/iiot/oee?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OEE-FACTS-01&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T10:00:00Z");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, data.GetProperty("productionFactCount").GetInt32());
+        Assert.Equal(100m, data.GetProperty("expectedOutputQuantity").GetDecimal());
         Assert.Equal(1m, data.GetProperty("performanceRate").GetDecimal());
-        Assert.Equal(1m, data.GetProperty("qualityRate").GetDecimal());
-        Assert.Equal(0.5m, data.GetProperty("oeeRate").GetDecimal());
-        Assert.True(data.GetProperty("performanceRateEstimated").GetBoolean());
-        Assert.True(data.GetProperty("qualityRateEstimated").GetBoolean());
+        Assert.Equal(0.8m, data.GetProperty("qualityRate").GetDecimal());
+        Assert.Equal(0.4m, data.GetProperty("oeeRate").GetDecimal());
+        Assert.False(data.GetProperty("isDegraded").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Oee_endpoint_marks_quality_and_oee_unavailable_when_reported_units_are_mixed()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-OEE-MIXED-UOM-01", "running", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-mixed-uom-state-001");
+        await PostSampleAsync(client, "DEV-OEE-MIXED-UOM-01", "stopped", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-mixed-uom-state-002");
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var reportedAtUtc = new DateTimeOffset(2026, 6, 1, 8, 30, 0, TimeSpan.Zero);
+            dbContext.OeeProductionFacts.AddRange(
+                OeeProductionFact.Project("org-001", "env-dev", "PRPT-OEE-MIXED-UOM-001", "WC-PACK-01", "DEV-OEE-MIXED-UOM-01", 80m, 10m, 10m, "PCS", 100m, reportedAtUtc),
+                OeeProductionFact.Project("org-001", "env-dev", "PRPT-OEE-MIXED-UOM-002", "WC-PACK-01", "DEV-OEE-MIXED-UOM-01", 1m, 0m, 0m, "KG", 100m, reportedAtUtc));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var response = await client.GetAsync("/api/business/v1/iiot/oee?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OEE-MIXED-UOM-01&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T10:00:00Z");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("qualityRate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
+        Assert.Contains("production-uom-ambiguous", data.GetProperty("degradedReasons").EnumerateArray().Select(x => x.GetString()));
+    }
+
+    [Fact]
+    public async Task Production_report_event_consumer_projects_each_mes_report_once_for_device_oee()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetterStore = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        var handler = new ProductionReportOeeProjectionHandler(dbContext, deadLetterStore);
+        var reportedAtUtc = new DateTimeOffset(2026, 7, 10, 8, 45, 0, TimeSpan.Zero);
+        var integrationEvent = new ProductionReportRecordedIntegrationEvent(
+            "evt-prpt-oee-001",
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1,
+            reportedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            "PRPT-OEE-001",
+            "PRPT-OEE-001",
+            "org-001",
+            "env-dev",
+            "system:mes",
+            "production-report-recorded:org-001:env-dev:PRPT-OEE-001",
+            new ProductionReportRecordedPayload(
+                "PRPT-OEE-001",
+                "WO-001",
+                "OP-10",
+                "WC-PACK-01",
+                "DEV-PACK-01",
+                80m,
+                10m,
+                10m,
+                "PCS",
+                100m,
+                reportedAtUtc,
+                false));
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        var fact = Assert.Single(dbContext.OeeProductionFacts);
+        Assert.Equal("PRPT-OEE-001", fact.SourceReportNo);
+        Assert.Equal("DEV-PACK-01", fact.DeviceAssetId);
+        Assert.Equal(100m, fact.TheoreticalRatePerHour);
     }
 
     [Fact]
@@ -469,7 +586,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
         using var document = JsonDocument.Parse(oeeBody);
         var data = document.RootElement.GetProperty("data");
         Assert.Equal(0.5m, data.GetProperty("availabilityRate").GetDecimal());
-        Assert.Equal(0.5m, data.GetProperty("oeeRate").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
+        Assert.True(data.GetProperty("isDegraded").GetBoolean());
         Assert.NotNull(availability?.Data);
         Assert.DoesNotContain(availability.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable);
     }
@@ -495,7 +613,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal(4, data.GetProperty("stateSampleCount").GetInt32());
         Assert.Equal(0.5m, data.GetProperty("availabilityRate").GetDecimal());
         Assert.Equal(0.5m, data.GetProperty("loadingRate").GetDecimal());
-        Assert.Equal(0.5m, data.GetProperty("oeeRate").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
+        Assert.True(data.GetProperty("isDegraded").GetBoolean());
     }
 
     [Fact]
@@ -515,7 +634,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
         var data = document.RootElement.GetProperty("data");
         Assert.Equal(1, data.GetProperty("stateSampleCount").GetInt32());
         Assert.Equal(0m, data.GetProperty("availabilityRate").GetDecimal());
-        Assert.Equal(0m, data.GetProperty("oeeRate").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
+        Assert.True(data.GetProperty("isDegraded").GetBoolean());
     }
 
     [Fact]
@@ -556,7 +676,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal(4, data.GetProperty("stateSampleCount").GetInt32());
         Assert.Equal(0.333333m, data.GetProperty("availabilityRate").GetDecimal());
         Assert.Equal(0.75m, data.GetProperty("loadingRate").GetDecimal());
-        Assert.Equal(0.333333m, data.GetProperty("oeeRate").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
+        Assert.True(data.GetProperty("isDegraded").GetBoolean());
         Assert.NotNull(availability?.Data);
         Assert.Contains(availability.Data.Items, x =>
             x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable
@@ -564,7 +685,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
-    public async Task Oee_endpoint_marks_performance_quality_estimated_when_state_facts_are_missing()
+    public async Task Oee_endpoint_marks_result_degraded_when_all_oee_input_facts_are_missing()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
         using var client = factory.CreateClient();
@@ -579,11 +700,13 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal("DEV-OEE-NO-DATA", data.GetProperty("deviceAssetId").GetString());
         Assert.Equal(0, data.GetProperty("stateSampleCount").GetInt32());
         Assert.Equal(0m, data.GetProperty("availabilityRate").GetDecimal());
-        Assert.Equal(0m, data.GetProperty("performanceRate").GetDecimal());
-        Assert.Equal(0m, data.GetProperty("qualityRate").GetDecimal());
-        Assert.Equal(0m, data.GetProperty("oeeRate").GetDecimal());
-        Assert.True(data.GetProperty("performanceRateEstimated").GetBoolean());
-        Assert.True(data.GetProperty("qualityRateEstimated").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("performanceRate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("qualityRate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
+        Assert.True(data.GetProperty("isDegraded").GetBoolean());
+        var reasons = data.GetProperty("degradedReasons").EnumerateArray().Select(x => x.GetString()).ToArray();
+        Assert.Contains("runtime-state-facts-missing", reasons);
+        Assert.Contains("production-facts-missing", reasons);
     }
 
     [Theory]

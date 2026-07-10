@@ -800,11 +800,18 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     stateSampleCount?: number;
     availabilityRate?: number;
     loadingRate?: number;
-    performanceRate?: number;
-    qualityRate?: number;
-    oeeRate?: number;
-    performanceRateEstimated?: boolean;
-    qualityRateEstimated?: boolean;
+    productionFactCount?: number;
+    goodQuantity?: number | null;
+    scrapQuantity?: number | null;
+    reworkQuantity?: number | null;
+    outputUomCode?: string | null;
+    theoreticalRatePerHour?: number | null;
+    expectedOutputQuantity?: number | null;
+    performanceRate?: number | null;
+    qualityRate?: number | null;
+    oeeRate?: number | null;
+    isDegraded?: boolean;
+    degradedReasons?: Array<string>;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryOeeRequest = {

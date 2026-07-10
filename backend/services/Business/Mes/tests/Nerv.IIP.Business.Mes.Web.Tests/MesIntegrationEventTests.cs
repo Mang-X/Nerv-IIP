@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.Inventory;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -222,5 +223,66 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("WO-001", integrationEvent.Payload.WorkOrderId);
         Assert.Equal("SURFACE", integrationEvent.Payload.DefectCode);
         Assert.Equal(1m, integrationEvent.Payload.Quantity);
+    }
+
+    [Fact]
+    public void Production_report_converter_emits_oee_projection_fact_with_standard_rate_snapshot()
+    {
+        var reportedAtUtc = DateTimeOffset.Parse("2026-07-10T08:45:00Z");
+        var report = ProductionReport.Record(
+            "org-001",
+            "env-dev",
+            "PRPT-OEE-001",
+            "WO-001",
+            "OP-10",
+            80m,
+            10m,
+            false,
+            reportedAtUtc,
+            10m,
+            oeeProjection: new ProductionReportOeeProjection("WC-PACK-01", "DEV-PACK-01", "PCS", 100m));
+
+        var domainEvent = Assert.IsType<ProductionReportRecordedDomainEvent>(report.GetDomainEvents().Single());
+        var integrationEvent = new ProductionReportRecordedIntegrationEventConverter().Convert(domainEvent);
+
+        Assert.Equal(MesIntegrationEventTypes.ProductionReportRecorded, integrationEvent.EventType);
+        Assert.Equal("DEV-PACK-01", integrationEvent.Payload.DeviceAssetId);
+        Assert.Equal("WC-PACK-01", integrationEvent.Payload.WorkCenterId);
+        Assert.Equal(100m, integrationEvent.Payload.TheoreticalRatePerHour);
+        Assert.Equal(80m, integrationEvent.Payload.GoodQuantity);
+        Assert.Equal(10m, integrationEvent.Payload.ScrapQuantity);
+        Assert.Equal(10m, integrationEvent.Payload.ReworkQuantity);
+    }
+
+    [Fact]
+    public void Production_report_reversal_converter_reuses_the_original_oee_snapshot()
+    {
+        var original = ProductionReport.Record(
+            "org-001",
+            "env-dev",
+            "PRPT-OEE-ORIGINAL-001",
+            "WO-001",
+            "OP-10",
+            80m,
+            10m,
+            false,
+            DateTimeOffset.Parse("2026-07-10T08:45:00Z"),
+            10m,
+            oeeProjection: new ProductionReportOeeProjection("WC-PACK-01", "DEV-PACK-01", "PCS", 100m));
+        var reversal = ProductionReport.Reverse(
+            original,
+            "PRPT-OEE-REVERSAL-001",
+            DateTimeOffset.Parse("2026-07-10T09:00:00Z"),
+            "operator correction");
+
+        var domainEvent = Assert.IsType<ProductionReportRecordedDomainEvent>(reversal.GetDomainEvents().Single());
+        var integrationEvent = new ProductionReportRecordedIntegrationEventConverter().Convert(domainEvent);
+
+        Assert.True(integrationEvent.Payload.IsReversal);
+        Assert.Equal(original.ReportNo, integrationEvent.Payload.ReversedReportNo);
+        Assert.Equal("WC-PACK-01", integrationEvent.Payload.WorkCenterId);
+        Assert.Equal("DEV-PACK-01", integrationEvent.Payload.DeviceAssetId);
+        Assert.Equal("PCS", integrationEvent.Payload.UomCode);
+        Assert.Equal(100m, integrationEvent.Payload.TheoreticalRatePerHour);
     }
 }
