@@ -82,6 +82,30 @@ public sealed class WcsRetryCircuitCommandTests
         Assert.False(circuit.IsOpen);
     }
 
+    [Fact]
+    public async Task Repeated_failure_callback_does_not_increment_the_device_circuit_twice()
+    {
+        var now = new DateTimeOffset(2026, 7, 10, 0, 0, 0, TimeSpan.Zero);
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = CreateWarehouseTask("WT-FAIL-IDEMPOTENT-001");
+        dbContext.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var wcsTask = WcsTask.Dispatch("org-001", "env-dev", warehouseTask.Id, "agv", "EXT-FAIL-IDEMPOTENT-001", "{}", "AGV-01");
+        dbContext.Add(wcsTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new FailWcsTaskCommandHandler(dbContext, new WcsTestTimeProvider(now));
+        var command = new FailWcsTaskCommand("org-001", "env-dev", "EXT-FAIL-IDEMPOTENT-001", "E001", "blocked aisle");
+
+        await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
+
+        var circuit = Assert.Single(dbContext.WcsDispatchCircuits.Local);
+        Assert.Equal(1, circuit.ConsecutiveFailureCount);
+    }
+
     private static WarehouseTask CreateWarehouseTask(string taskNo) =>
         WarehouseTask.CreatePutaway("org-001", "env-dev", taskNo, "IN-001", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "STAGE-01", 3m);
 

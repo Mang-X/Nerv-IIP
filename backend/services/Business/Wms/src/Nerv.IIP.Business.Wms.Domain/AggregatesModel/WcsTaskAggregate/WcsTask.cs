@@ -79,13 +79,18 @@ public sealed class WcsTask : Entity<WcsTaskId>, IAggregateRoot
         this.AddDomainEvent(new WcsTaskCompletedDomainEvent(this));
     }
 
-    public void Fail(
+    public bool Fail(
         string failureCode,
         string failureMessage,
         DateTime? failedAtUtc = null,
         int maxRetryAttempts = MaxRetryAttempts,
         TimeSpan? initialRetryDelay = null)
     {
+        if (maxRetryAttempts <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxRetryAttempts));
+        }
+
         if (Status == WcsTaskStatus.Completed)
         {
             throw new InvalidOperationException("Completed WCS tasks cannot later fail.");
@@ -93,18 +98,13 @@ public sealed class WcsTask : Entity<WcsTaskId>, IAggregateRoot
 
         if (Status == WcsTaskStatus.Failed)
         {
-            return;
+            return false;
         }
 
         FailureCode = WmsText.Required(failureCode, nameof(failureCode));
         FailureMessage = WmsText.Required(failureMessage, nameof(failureMessage));
         Status = WcsTaskStatus.Failed;
         FailedAtUtc = EnsureUtc(failedAtUtc ?? DateTime.UtcNow);
-        if (maxRetryAttempts <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maxRetryAttempts));
-        }
-
         IsTerminalFailure = AttemptCount >= maxRetryAttempts;
         NextRetryAtUtc = IsTerminalFailure ? null : FailedAtUtc.Value.Add(BackoffFor(AttemptCount, initialRetryDelay ?? InitialRetryDelay));
         this.AddDomainEvent(new WcsTaskFailedDomainEvent(this));
@@ -112,6 +112,8 @@ public sealed class WcsTask : Entity<WcsTaskId>, IAggregateRoot
         {
             this.AddDomainEvent(new WcsTaskRetryExhaustedDomainEvent(this));
         }
+
+        return true;
     }
 
     public void Retry(string externalTaskId, string payloadJson, DateTime? retriedAtUtc = null)

@@ -891,7 +891,10 @@ public sealed class FailWcsTaskCommandHandler(
             ?? throw new KnownException($"WCS task was not found: {request.ExternalTaskId}");
         var now = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
         var options = retryOptions?.Value ?? new WcsRetryOptions();
-        task.Fail(request.FailureCode, request.FailureMessage, now, options.MaxRetryAttempts, options.InitialRetryBackoff);
+        if (!task.Fail(request.FailureCode, request.FailureMessage, now, options.MaxRetryAttempts, options.InitialRetryBackoff))
+        {
+            return;
+        }
         var circuit = await dbContext.WcsDispatchCircuits.SingleOrDefaultAsync(
             x => x.OrganizationId == task.OrganizationId
                 && x.EnvironmentId == task.EnvironmentId
