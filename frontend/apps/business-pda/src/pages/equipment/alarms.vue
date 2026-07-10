@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { describeRequestError } from '@/api/request-timeout'
 import { useBusinessEquipmentAlarms } from '@/composables/useBusinessEquipmentAlarms'
 import { alarmSeverityLabel } from '@nerv-iip/business-core'
 import { NvAppShellMobile, NvListRow, NvScanBar } from '@nerv-iip/ui-mobile'
@@ -14,7 +15,10 @@ definePage({
 
 const router = useRouter()
 
-const { filters, alarms, pending, error } = useBusinessEquipmentAlarms()
+const { filters, alarms, pending, error, refresh } = useBusinessEquipmentAlarms()
+const listErrorMessage = computed(
+  () => describeRequestError(error.value, '报警加载失败，请稍后重试。').message,
+)
 
 // 当前是否按设备过滤（用于展示/清除过滤）。
 const filteredDevice = computed(() => filters.deviceAssetId)
@@ -88,13 +92,22 @@ function goRepair(item: { deviceAssetId?: string; alarmEventId?: string }) {
       <section class="space-y-2">
         <h2 class="text-sm font-medium text-muted-foreground">设备报警</h2>
 
-        <p
+        <div
           v-if="error"
           data-testid="alarms-error"
-          class="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          class="space-y-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
         >
-          报警加载失败，请稍后重试。
-        </p>
+          <p class="text-destructive">{{ listErrorMessage }}</p>
+          <button
+            type="button"
+            data-testid="alarms-retry"
+            :disabled="pending"
+            class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground disabled:opacity-60"
+            @click="() => refresh()"
+          >
+            重试
+          </button>
+        </div>
 
         <div v-else-if="pending" class="px-4 py-6 text-center text-sm text-muted-foreground">
           加载中…

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { describeRequestError } from '@/api/request-timeout'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useWmsInbound } from '@/composables/useBusinessWms'
 import { inboundOrderStatusLabel, inboundReceiveFlow } from '@nerv-iip/business-core'
@@ -20,7 +21,11 @@ definePage({
 })
 
 const router = useRouter()
-const { filters, orders, pending, error, completeInbound, completePending } = useWmsInbound()
+const { filters, orders, pending, error, refresh, completeInbound, completePending } =
+  useWmsInbound()
+const listErrorMessage = computed(
+  () => describeRequestError(error.value, '单据加载失败，请下拉重试或检查网络。').message,
+)
 
 // 选中的收货单号 + GUID（GUID 仅用于 complete 调用与 :key，绝不展示）。
 const selectedOrderId = ref('')
@@ -134,13 +139,22 @@ function goHome() {
     <div v-else class="space-y-4 p-4">
       <NvScanBar placeholder="扫描收货单号" :active="scanActive" @scan="onScan" />
 
-      <p
+      <div
         v-if="error"
         data-testid="error-banner"
-        class="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        class="space-y-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
       >
-        单据加载失败，请下拉重试或检查网络。
-      </p>
+        <p class="text-destructive">{{ listErrorMessage }}</p>
+        <button
+          type="button"
+          data-testid="retry-list"
+          :disabled="pending"
+          class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground disabled:opacity-60"
+          @click="() => refresh()"
+        >
+          重试
+        </button>
+      </div>
 
       <div
         v-if="showEmpty"

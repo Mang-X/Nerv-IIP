@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { describeRequestError } from '@/api/request-timeout'
 import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
 import {
   inspectionFlow,
@@ -62,10 +63,12 @@ const {
   plansError,
   plansTotal,
   loadMorePlans,
+  refreshPlans,
   recordInspection,
   recordPending,
   inspectionsPending,
   inspectionsError,
+  refreshInspections,
 } = maintenance
 
 // plans/inspections 收窄为业务行类型。
@@ -139,7 +142,21 @@ const valid = computed(
 
 type Phase = 'form' | 'success' | 'error'
 const phase = ref<Phase>('form')
-const submitError = ref('')
+// 保留原始错误对象，分类为"结果不确定（超时/离线/网络）"或"确定失败（服务端已响应）"。
+const lastError = ref<unknown>(null)
+const errorInfo = computed(() => describeRequestError(lastError.value, '点检记录失败'))
+// 点检端点无服务端幂等键：结果不确定时重试会重复记录点检 → 不给重试，改引导去列表核实。
+const errorDescription = computed(() =>
+  errorInfo.value.indeterminate
+    ? `${errorInfo.value.message}。请勿重复提交，返回后在"近期点检记录"中核实是否已记录。`
+    : errorInfo.value.message,
+)
+const plansErrorMessage = computed(
+  () => describeRequestError(plansError.value, '保养计划加载失败，请稍后重试。').message,
+)
+const inspectionsErrorMessage = computed(
+  () => describeRequestError(inspectionsError.value, '点检记录加载失败，请稍后重试。').message,
+)
 
 // ScanBar 在浮层（成功/失败 Result）展示时停止抢焦。
 const scanActive = computed(() => phase.value === 'form')
@@ -218,7 +235,7 @@ function removeMeasurementRow(rowId: number) {
 
 async function submit() {
   if (!valid.value || recordPending.value) return
-  submitError.value = ''
+  lastError.value = null
   try {
     await recordInspection({
       planId: form.planId as string,
@@ -227,7 +244,7 @@ async function submit() {
     })
     phase.value = 'success'
   } catch (e) {
-    submitError.value = e instanceof Error ? e.message : '点检记录失败'
+    lastError.value = e
     phase.value = 'error'
   }
 }
@@ -237,7 +254,7 @@ function resetForm() {
   form.planId = ''
   form.result = ''
   measurementRows.splice(0, measurementRows.length, createMeasurementRow())
-  submitError.value = ''
+  lastError.value = null
   phase.value = 'form'
 }
 
@@ -245,7 +262,16 @@ function goBack() {
   router.push('/').catch(() => {})
 }
 
+// 确定失败（服务端已响应错误、无副作用）：可安全回表单重试。
 function retry() {
+  lastError.value = null
+  phase.value = 'form'
+}
+
+// 结果不确定（超时/离线/网络中断，点检可能已记录）：刷新列表回表单让用户核实，绝不自动重提。
+function verifyList() {
+  void refreshInspections()
+  lastError.value = null
   phase.value = 'form'
 }
 
@@ -318,16 +344,28 @@ function inspectionSubtitle(item: {
     <NvMobileResult
       v-else-if="phase === 'error'"
       status="error"
-      title="点检记录失败"
-      :description="submitError"
+      :title="errorInfo.indeterminate ? '提交结果未知' : '点检记录失败'"
+      :description="errorDescription"
     >
       <template #actions>
+        <!-- 确定失败（服务端已响应、无副作用）→ 安全重试；结果不确定 → 只给核实入口，不重试。 -->
         <button
+          v-if="!errorInfo.indeterminate"
           type="button"
+          data-testid="retry"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
           @click="retry"
         >
           重试
+        </button>
+        <button
+          v-else
+          type="button"
+          data-testid="verify-list"
+          class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
+          @click="verifyList"
+        >
+          查看点检记录
         </button>
         <button
           type="button"
@@ -350,13 +388,22 @@ function inspectionSubtitle(item: {
         <div class="space-y-2">
           <p class="text-sm text-foreground">选择保养计划</p>
 
-          <p
+          <div
             v-if="plansError"
             data-testid="plans-error"
-            class="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+            class="space-y-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
           >
-            保养计划加载失败，请稍后重试。
-          </p>
+            <p class="text-destructive">{{ plansErrorMessage }}</p>
+            <button
+              type="button"
+              data-testid="plans-retry"
+              :disabled="plansPending"
+              class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground disabled:opacity-60"
+              @click="refreshPlans"
+            >
+              重试
+            </button>
+          </div>
 
           <div v-else-if="plansPending" class="px-4 py-6 text-center text-sm text-muted-foreground">
             加载中…
@@ -535,13 +582,22 @@ function inspectionSubtitle(item: {
       <section class="space-y-2">
         <h2 class="text-sm font-medium text-muted-foreground">近期点检记录</h2>
 
-        <p
+        <div
           v-if="inspectionsError"
           data-testid="inspections-error"
-          class="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          class="space-y-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
         >
-          点检记录加载失败，请稍后重试。
-        </p>
+          <p class="text-destructive">{{ inspectionsErrorMessage }}</p>
+          <button
+            type="button"
+            data-testid="inspections-retry"
+            :disabled="inspectionsPending"
+            class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground disabled:opacity-60"
+            @click="refreshInspections"
+          >
+            重试
+          </button>
+        </div>
 
         <div
           v-else-if="inspectionsPending"

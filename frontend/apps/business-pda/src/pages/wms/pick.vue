@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { describeRequestError } from '@/api/request-timeout'
 import { useWmsPicking } from '@/composables/useBusinessWms'
 import { warehouseTaskStatusLabel } from '@nerv-iip/business-core'
 import { NvAppShellMobile, NvListRow, NvScanBar } from '@nerv-iip/ui-mobile'
@@ -12,7 +13,10 @@ definePage({
 })
 
 // 只读任务清单：拣货无逐任务 complete 端点，写闭环经父单复核发货过账。
-const { filters, tasks, pending, error } = useWmsPicking()
+const { filters, tasks, pending, error, refresh } = useWmsPicking()
+const listErrorMessage = computed(
+  () => describeRequestError(error.value, '任务加载失败，请下拉重试或检查网络。').message,
+)
 
 // 空态仅在「无任务且无加载/错误」时出现，避免与错误/加载态打架。
 const showEmpty = computed(() => !pending.value && !error.value && tasks.value.length === 0)
@@ -78,13 +82,22 @@ function rowSubtitle(task: {
 
       <p class="text-xs text-muted-foreground">拣货完成经复核发货过账</p>
 
-      <p
+      <div
         v-if="error"
         data-testid="error-banner"
-        class="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        class="space-y-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
       >
-        任务加载失败，请下拉重试或检查网络。
-      </p>
+        <p class="text-destructive">{{ listErrorMessage }}</p>
+        <button
+          type="button"
+          data-testid="retry-list"
+          :disabled="pending"
+          class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground disabled:opacity-60"
+          @click="() => refresh()"
+        >
+          重试
+        </button>
+      </div>
 
       <div
         v-if="showEmpty"

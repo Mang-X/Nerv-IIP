@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createTimeoutFetch,
+  describeRequestError,
+  isIndeterminateError,
   OfflineError,
   REQUEST_TIMEOUT_MS,
   RequestTimeoutError,
@@ -108,5 +110,55 @@ describe('typed request errors', () => {
 
   it('exposes a 30s default ceiling', () => {
     expect(REQUEST_TIMEOUT_MS).toBe(30_000)
+  })
+})
+
+describe('describeRequestError', () => {
+  it('classifies offline/timeout/network as INDETERMINATE (result unknown, non-idempotent retry unsafe)', () => {
+    expect(describeRequestError(new OfflineError())).toMatchObject({
+      kind: 'offline',
+      indeterminate: true,
+      message: '当前离线，请检查网络连接后重试',
+    })
+    expect(describeRequestError(new RequestTimeoutError())).toMatchObject({
+      kind: 'timeout',
+      indeterminate: true,
+      message: '网络超时，请检查连接后重试',
+    })
+    expect(describeRequestError(new TypeError('Failed to fetch'))).toMatchObject({
+      kind: 'network',
+      indeterminate: true,
+      message: '网络连接失败，请检查网络后重试',
+    })
+  })
+
+  it('treats a gateway business error as DETERMINATE and surfaces the server message', () => {
+    expect(describeRequestError({ success: false, message: '工序状态非法' })).toMatchObject({
+      kind: 'business',
+      indeterminate: false,
+      message: '工序状态非法',
+    })
+    // problem-details fall back to detail/title when message is absent.
+    expect(describeRequestError({ detail: '库存不足' }).message).toBe('库存不足')
+    expect(describeRequestError({ title: '请求无效' }).message).toBe('请求无效')
+  })
+
+  it('uses the caller fallback for a business error without a usable message', () => {
+    expect(describeRequestError({}, '提交失败').message).toBe('提交失败')
+    expect(describeRequestError({}, '提交失败').indeterminate).toBe(false)
+  })
+
+  it('treats a plain Error as a determinate unknown failure', () => {
+    expect(describeRequestError(new Error('boom'))).toMatchObject({
+      kind: 'unknown',
+      indeterminate: false,
+      message: 'boom',
+    })
+  })
+
+  it('isIndeterminateError is true only for transport failures, not business ones', () => {
+    expect(isIndeterminateError(new RequestTimeoutError())).toBe(true)
+    expect(isIndeterminateError(new OfflineError())).toBe(true)
+    expect(isIndeterminateError({ message: '业务失败' })).toBe(false)
   })
 })

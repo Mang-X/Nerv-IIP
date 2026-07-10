@@ -9,16 +9,19 @@
  * composable re-implementing an AbortController. Do NOT add per-page timeout logic;
  * this is the one place it lives.
  *
- * Failure surfaces as a typed `Error` whose `.message` is the user-facing copy. Every
- * PDA page already renders errors as `e instanceof Error ? e.message : '<fallback>'`
- * (list inline messages + `NvMobileResult` error states), so timeouts and offline
- * states show the right copy and their existing retry buttons "just work". Retries are
- * safe because pages reuse a stable idempotency key per action — this layer never
- * touches it.
+ * Failure surfaces as a typed `Error` whose `.message` is the user-facing copy. Pages
+ * classify the error via {@link describeRequestError} to decide both the copy AND
+ * whether a retry is safe:
+ *  - read-list pages show the copy + a refetch retry (GET retries are always safe);
+ *  - write pages with a stable per-action idempotency key (MES/WMS) keep their retry —
+ *    a lost response never double-applies;
+ *  - write pages WITHOUT server-side idempotency (Maintenance report/inspect) must NOT
+ *    offer a blind retry on an `indeterminate` failure (timeout/offline/network), since
+ *    the write may already have taken effect server-side; they steer the user to the
+ *    list to verify instead.
  *
- * Business errors thrown by the gateway are plain objects/strings (not `Error`), so
- * they keep falling through to each page's own fallback copy — distinct from the
- * timeout/offline messages defined here.
+ * Business errors thrown by the gateway are plain objects/strings (not `Error`) → a
+ * determinate failure the server actually responded to, so retrying them is safe.
  */
 
 /** Hard ceiling for any single facade request. 车间 WiFi hangs must not block forever. */
@@ -126,4 +129,78 @@ export function createTimeoutFetch(config: TimeoutFetchConfig = {}): typeof fetc
       callerSignal?.removeEventListener('abort', onCallerAbort)
     }
   }
+}
+
+export type RequestErrorKind = 'timeout' | 'offline' | 'network' | 'business' | 'unknown'
+
+export interface DescribedRequestError {
+  kind: RequestErrorKind
+  /** User-facing copy — the typed-error message for transport failures, else the server message. */
+  message: string
+  /**
+   * The request may have taken effect server-side even though the client saw a failure
+   * (offline pre-check, 30s timeout, or a mid-flight network drop). A blind retry of a
+   * NON-idempotent write can therefore duplicate the business fact. `false` means the
+   * server actually responded with an error, so no side effect happened — a retry is safe.
+   */
+  indeterminate: boolean
+}
+
+function extractServerMessage(error: unknown): string | undefined {
+  if (typeof error === 'string') {
+    return error.trim() || undefined
+  }
+  if (typeof error === 'object' && error !== null) {
+    const record = error as Record<string, unknown>
+    for (const key of ['message', 'detail', 'title', 'error']) {
+      const value = record[key]
+      if (typeof value === 'string' && value.trim()) {
+        return value
+      }
+    }
+  }
+  return undefined
+}
+
+/**
+ * Classify any error thrown by a facade call into a display message + a retry-safety
+ * verdict. This is what lets pages tell timeout/offline (indeterminate — a
+ * non-idempotent write must NOT auto-retry) apart from a definite server-side business
+ * failure (safe to retry).
+ *
+ * `fallback` is the page's existing generic copy, kept for business errors without a
+ * usable server message and for the unknown case.
+ */
+export function describeRequestError(
+  error: unknown,
+  fallback = '操作失败，请重试',
+): DescribedRequestError {
+  if (error instanceof OfflineError) {
+    return { kind: 'offline', message: error.message, indeterminate: true }
+  }
+  if (error instanceof RequestTimeoutError) {
+    return { kind: 'timeout', message: error.message, indeterminate: true }
+  }
+  // A raw fetch network failure (DNS, refused connection, mid-flight drop) throws a
+  // TypeError — the request may still have reached the server, so treat as indeterminate.
+  if (error instanceof TypeError) {
+    return { kind: 'network', message: '网络连接失败，请检查网络后重试', indeterminate: true }
+  }
+  // Any other Error: unknown shape, but it carries a stack → the request reached code,
+  // not a transport hang; treat as a determinate failure.
+  if (error instanceof Error) {
+    return { kind: 'unknown', message: error.message || fallback, indeterminate: false }
+  }
+  // Non-Error thrown value = the gateway's business/HTTP error body (object or string).
+  // The server responded, so no side effect is pending — safe to retry.
+  return {
+    kind: 'business',
+    message: extractServerMessage(error) ?? fallback,
+    indeterminate: false,
+  }
+}
+
+/** True when a failure leaves the write's server-side outcome unknown (see {@link DescribedRequestError.indeterminate}). */
+export function isIndeterminateError(error: unknown): boolean {
+  return describeRequestError(error).indeterminate
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { describeRequestError } from '@/api/request-timeout'
 import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
 import {
   maintenancePriorityLabel,
@@ -21,8 +22,14 @@ definePage({
 const route = useRoute()
 const router = useRouter()
 
-const { workOrders, workOrdersPending, workOrdersError, createWorkOrder, createPending } =
-  useBusinessMaintenance()
+const {
+  workOrders,
+  workOrdersPending,
+  workOrdersError,
+  refreshWorkOrders,
+  createWorkOrder,
+  createPending,
+} = useBusinessMaintenance()
 
 // ---- 设备上下文来源优先级：route query 预填 > 扫码 > 手输 -------------------------
 const queryDeviceAssetId = computed(() => {
@@ -49,7 +56,18 @@ const valid = computed(() => repairOrderFlow.progress(form).completed >= 2)
 
 type Phase = 'form' | 'success' | 'error'
 const phase = ref<Phase>('form')
-const submitError = ref('')
+// 保留原始错误对象，分类为"结果不确定（超时/离线/网络）"或"确定失败（服务端已响应）"。
+const lastError = ref<unknown>(null)
+const errorInfo = computed(() => describeRequestError(lastError.value, '报修提交失败'))
+// 报修端点无服务端幂等键：结果不确定时重试会重复创建工单 → 不给重试，改引导去列表核实。
+const errorDescription = computed(() =>
+  errorInfo.value.indeterminate
+    ? `${errorInfo.value.message}。请勿重复提交，返回后在"近期维修工单"中核实是否已创建。`
+    : errorInfo.value.message,
+)
+const workOrdersErrorMessage = computed(
+  () => describeRequestError(workOrdersError.value, '维修工单加载失败，请稍后重试。').message,
+)
 
 // ScanBar 在浮层（成功/失败 Result）展示时停止抢焦。
 const scanActive = computed(() => phase.value === 'form')
@@ -60,7 +78,7 @@ function onScan(value: string) {
 
 async function submit() {
   if (!valid.value || createPending.value) return
-  submitError.value = ''
+  lastError.value = null
   try {
     await createWorkOrder({
       deviceAssetId: form.deviceAssetId as string,
@@ -70,7 +88,7 @@ async function submit() {
     })
     phase.value = 'success'
   } catch (e) {
-    submitError.value = e instanceof Error ? e.message : '报修提交失败'
+    lastError.value = e
     phase.value = 'error'
   }
 }
@@ -80,7 +98,7 @@ function resetForm() {
   form.deviceAssetId = queryDeviceAssetId.value
   form.priority = ''
   form.assetUnavailableReason = ''
-  submitError.value = ''
+  lastError.value = null
   phase.value = 'form'
 }
 
@@ -88,7 +106,16 @@ function goBack() {
   router.push('/').catch(() => {})
 }
 
+// 确定失败（服务端已响应错误、无副作用）：可安全回表单重试。
 function retry() {
+  lastError.value = null
+  phase.value = 'form'
+}
+
+// 结果不确定（超时/离线/网络中断，工单可能已创建）：刷新列表回表单让用户核实，绝不自动重提。
+function verifyList() {
+  void refreshWorkOrders()
+  lastError.value = null
   phase.value = 'form'
 }
 
@@ -140,16 +167,28 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
     <NvMobileResult
       v-else-if="phase === 'error'"
       status="error"
-      title="报修提交失败"
-      :description="submitError"
+      :title="errorInfo.indeterminate ? '提交结果未知' : '报修提交失败'"
+      :description="errorDescription"
     >
       <template #actions>
+        <!-- 确定失败（服务端已响应、无副作用）→ 安全重试；结果不确定 → 只给核实入口，不重试。 -->
         <button
+          v-if="!errorInfo.indeterminate"
           type="button"
+          data-testid="retry"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
           @click="retry"
         >
           重试
+        </button>
+        <button
+          v-else
+          type="button"
+          data-testid="verify-list"
+          class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
+          @click="verifyList"
+        >
+          查看维修工单
         </button>
         <button
           type="button"
@@ -220,13 +259,22 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
       <section class="space-y-2">
         <h2 class="text-sm font-medium text-muted-foreground">近期维修工单</h2>
 
-        <p
+        <div
           v-if="workOrdersError"
           data-testid="work-orders-error"
-          class="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          class="space-y-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
         >
-          维修工单加载失败，请稍后重试。
-        </p>
+          <p class="text-destructive">{{ workOrdersErrorMessage }}</p>
+          <button
+            type="button"
+            data-testid="work-orders-retry"
+            :disabled="workOrdersPending"
+            class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground disabled:opacity-60"
+            @click="refreshWorkOrders"
+          >
+            重试
+          </button>
+        </div>
 
         <div
           v-else-if="workOrdersPending"

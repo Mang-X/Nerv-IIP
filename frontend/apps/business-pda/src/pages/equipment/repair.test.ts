@@ -1,3 +1,4 @@
+import { RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
@@ -110,7 +111,9 @@ describe('PDA equipment repair page', () => {
     await scanInput.setValue('DEV-SCAN-7')
     await scanInput.trigger('keydown.enter')
 
-    expect((wrapper.get('[data-testid="device-input"]').element as HTMLInputElement).value).toBe('DEV-SCAN-7')
+    expect((wrapper.get('[data-testid="device-input"]').element as HTMLInputElement).value).toBe(
+      'DEV-SCAN-7',
+    )
   })
 
   it('disables submit while createPending (double-submit guard)', async () => {
@@ -153,10 +156,48 @@ describe('PDA equipment repair page', () => {
     expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
   })
 
+  // P1-2：报修端点无服务端幂等键。超时/离线后结果不确定，服务端可能已创建工单，
+  // 盲目重试会重复报修 → 不给"重试"，改引导去列表核实。
+  it('超时（结果不确定）时不给危险重试，改引导核实且绝不自动重提', async () => {
+    createWorkOrder.mockRejectedValueOnce(new RequestTimeoutError())
+    const wrapper = mount(RepairPage)
+    await wrapper.get('[data-testid="device-input"]').setValue('DEV-9')
+    await wrapper.get('[data-testid="priority-select"]').setValue('high')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('网络超时，请检查连接后重试')
+    expect(wrapper.text()).toContain('请勿重复提交')
+    // 无"重试"，只有"查看维修工单"核实入口。
+    expect(wrapper.find('[data-testid="retry"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="verify-list"]').trigger('click')
+    expect(refreshWorkOrders).toHaveBeenCalled()
+    // 关键：核实动作不会重提 → createWorkOrder 仍只调用一次。
+    expect(createWorkOrder).toHaveBeenCalledTimes(1)
+  })
+
+  it('确定业务失败（服务端已响应、无副作用）时仍可安全重试', async () => {
+    createWorkOrder.mockRejectedValueOnce({ success: false, message: '设备不存在' })
+    const wrapper = mount(RepairPage)
+    await wrapper.get('[data-testid="device-input"]').setValue('DEV-9')
+    await wrapper.get('[data-testid="priority-select"]').setValue('high')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('设备不存在')
+    // 服务端已明确失败、无副作用 → 给"重试"，不给"核实"入口。
+    expect(wrapper.find('[data-testid="verify-list"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="retry"]').exists()).toBe(true)
+  })
+
   it('prefills deviceAssetId + sourceAlarmId from the route query (from alarms page)', async () => {
     route.query = { deviceAssetId: 'DEV-1', sourceAlarmId: 'ALM-9' }
     const wrapper = mount(RepairPage)
-    expect((wrapper.get('[data-testid="device-input"]').element as HTMLInputElement).value).toBe('DEV-1')
+    expect((wrapper.get('[data-testid="device-input"]').element as HTMLInputElement).value).toBe(
+      'DEV-1',
+    )
     // sourceAlarmId is carried through to the submit body
     await wrapper.get('[data-testid="priority-select"]').setValue('high')
     await wrapper.get('[data-testid="submit"]').trigger('click')
