@@ -76,8 +76,9 @@ vi.mock('vue-router', async (importOriginal) => {
 })
 
 vi.mock('@/composables/useBusinessTelemetry', () => ({
-  describeTelemetryOeeLimitations: () =>
-    '当前 OEE 只按设备运行状态计算可用率，性能与质量不作为真实测量值；P0 仅用于判断设备运行事实覆盖和停机影响。',
+  describeTelemetryOeeDegradation: (reason: string) => reason,
+  describeTelemetryOeeLimitations: () => 'OEE = 可用率 × 性能率 × 质量率。',
+  formatOeeQuantity: (value?: number) => value === undefined ? '无数据' : `${value}`,
   formatOeeRate: (value?: number) =>
     value === undefined ? '无数据' : `${(value * 100).toFixed(1)}%`,
   useBusinessTelemetryAlarmRules: () => ({
@@ -155,11 +156,10 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
       stateSampleCount: 10,
       availabilityRate: 0.82,
       loadingRate: 0.9,
-      performanceRate: 0,
-      qualityRate: 0,
-      oeeRate: 0,
-      performanceRateEstimated: true,
-      qualityRateEstimated: true,
+      performanceRate: 0.9,
+      qualityRate: 0.95,
+      oeeRate: 0.7,
+      isDegraded: false,
     })),
     oeeError: shallowRef(),
     oeePending: shallowRef(false),
@@ -257,14 +257,15 @@ describe('equipment telemetry pages', () => {
     }
   })
 
-  it('shows real tag, rule, history, and OEE fields without claiming estimated factors are measured', () => {
+  it('shows real tag, rule, history, and explainable OEE fields', () => {
     expect(mount(TelemetryTagsPage, { global: { stubs } }).text()).toContain('temperature')
     expect(mount(TelemetryAlarmRulesPage, { global: { stubs } }).text()).toContain('TEMP_HIGH')
     expect(mount(TelemetryHistoryPage, { global: { stubs } }).text()).toContain('87.5')
 
     const oeeText = mount(TelemetryOeePage, { global: { stubs } }).text()
     expect(oeeText).toContain('82.0%')
-    expect(oeeText).toContain('性能与质量不作为真实测量值')
+    expect(oeeText).toContain('性能率')
+    expect(oeeText).toContain('质量率')
   })
 
   it('counts only unavailable runtime windows as unavailable windows', () => {

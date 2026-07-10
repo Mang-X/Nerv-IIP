@@ -104,8 +104,25 @@ export function formatOeeRate(value: number | null | undefined) {
   return `${(value * 100).toFixed(1)}%`
 }
 
+export function formatOeeQuantity(value: number | null | undefined, uomCode?: string | null) {
+  if (value === null || value === undefined) return '无数据'
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: 3 })}${uomCode ? ` ${uomCode}` : ''}`
+}
+
 export function describeTelemetryOeeLimitations() {
-  return '当前 OEE 只按设备运行状态计算可用率，性能与质量不作为真实测量值；P0 仅用于判断设备运行事实覆盖和停机影响。'
+  return 'OEE = 可用率 × 性能率 × 质量率。性能率使用 MES 报工总产出与工序标准速率计算，质量率使用良品 ÷（良品 + 报废 + 返工）计算；任一来源不足时明确标记为数据不完整，不以 1 替代。'
+}
+
+export function describeTelemetryOeeDegradation(reason: string) {
+  const labels: Record<string, string> = {
+    'runtime-state-facts-missing': '缺少设备运行状态事实',
+    'production-facts-missing': '缺少 MES 报工事实',
+    'production-uom-ambiguous': '报工单位不一致，无法合并',
+    'production-output-missing': '报工总产出不为正，无法计算质量率',
+    'theoretical-rate-missing-or-ambiguous': '缺少或存在冲突的工序标准速率',
+    'productive-runtime-missing': '当前窗口没有有效的生产运行时长',
+  }
+  return labels[reason] ?? reason
 }
 
 export function useBusinessTelemetryTags(initialFilters: Partial<TelemetryListFilters> = {}) {

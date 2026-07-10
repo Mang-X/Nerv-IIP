@@ -20,6 +20,10 @@ public sealed class InspectionRecordEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.InspectedQuantity).HasColumnName("inspected_quantity").IsRequired().HasPrecision(18, 6).HasComment("Quantity inspected.");
         builder.Property(x => x.BatchNo).HasColumnName("batch_no").HasMaxLength(100).HasComment("Optional batch number reference.");
         builder.Property(x => x.SerialNo).HasColumnName("serial_no").HasMaxLength(100).HasComment("Optional serial number reference.");
+        builder.Property(x => x.MeasuringDeviceId).HasColumnName("measuring_device_id").HasComment("Optional measuring device used for this inspection.");
+        builder.Property(x => x.MeasuringDeviceCode).HasColumnName("measuring_device_code").HasMaxLength(128).HasComment("Snapshot of the measuring device business code used at inspection entry.");
+        builder.Property(x => x.MeasuringDeviceCalibrationState).HasColumnName("measuring_device_calibration_state").HasMaxLength(50).HasComment("Snapshot of the device calibration state at inspection entry.");
+        builder.Property(x => x.MeasuringDeviceCalibrationDueAtUtc).HasColumnName("measuring_device_calibration_due_at_utc").HasComment("Snapshot of the device calibration due UTC time at inspection entry.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").HasMaxLength(50).HasComment("Optional stock release UOM code for Inventory quality-status transfer.");
         builder.Property(x => x.SiteCode).HasColumnName("site_code").HasMaxLength(100).HasComment("Optional stock release site code for Inventory quality-status transfer.");
         builder.Property(x => x.LocationCode).HasColumnName("location_code").HasMaxLength(100).HasComment("Optional stock release location code for Inventory quality-status transfer.");
@@ -36,6 +40,7 @@ public sealed class InspectionRecordEntityTypeConfiguration : IEntityTypeConfigu
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceService, x.SourceDocumentId, x.SkuCode }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.Result });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Result });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.MeasuringDeviceId });
         builder.HasMany(x => x.ResultLines)
             .WithOne()
             .HasForeignKey(x => x.InspectionRecordId)

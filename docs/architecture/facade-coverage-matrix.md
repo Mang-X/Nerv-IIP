@@ -90,7 +90,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Service | Total | exposed | deferred | internal |
 | --- | ---: | ---: | ---: | ---: |
 | Approval | 16 | 11 | 4 | 1 |
-| BarcodeLabel | 9 | 9 | 0 | 0 |
+| BarcodeLabel | 12 | 9 | 0 | 3 |
 | DemandPlanning | 15 | 15 | 0 | 0 |
 | Erp | 45 | 39 | 5 | 1 |
 | IndustrialTelemetry | 20 | 17 | 1 | 2 |
@@ -99,10 +99,10 @@ declaration against what actually shipped (facade + codegen + barrel for
 | MasterData | 41 | 38 | 0 | 3 |
 | Mes | 46 | 43 | 3 | 0 |
 | ProductEngineering | 38 | 38 | 0 | 0 |
-| Quality | 27 | 16 | 11 | 0 |
+| Quality | 31 | 16 | 15 | 0 |
 | Scheduling | 7 | 6 | 1 | 0 |
-| Wms | 24 | 19 | 3 | 2 |
-| **Total** | **319** | **271** | **35** | **13** |
+| Wms | 26 | 19 | 3 | 4 |
+| **Total** | **325** | **271** | **39** | **15** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
 The `exposed` rows (271) — each with its verified facade `gatewayOperationIds` — are
@@ -144,6 +144,10 @@ governance decisions, are listed in full below.
 | Quality | GET | `/api/business/v1/quality/ncrs/{ncrId}` | BusinessGateway facade pending; NCR list/disposition/close are exposed, single-NCR detail-by-id follows the Quality NCR detail menu phase. |
 | Quality | POST | `/api/business/v1/quality/spc/control-chart/evaluate` | BusinessGateway facade pending; SPC control-chart read is exposed, evaluate (write) follows the SPC analysis menu phase (#725). |
 | Quality | POST | `/api/business/v1/quality/spc/control-chart/lock` | BusinessGateway facade pending; SPC control-limit lock (write) follows the SPC analysis menu phase (#725). |
+| Quality | POST | `/api/business/v1/quality/measuring-devices` | BusinessGateway measuring-device management facade follows the Quality calibration workbench menu phase. |
+| Quality | POST | `/api/business/v1/quality/measuring-devices/{measuringDeviceId}/calibrations` | BusinessGateway calibration-record facade follows the Quality calibration workbench menu phase. |
+| Quality | POST | `/api/business/v1/quality/measuring-devices/{measuringDeviceId}/status` | BusinessGateway measuring-device lifecycle facade follows the Quality calibration workbench menu phase. |
+| Quality | GET | `/api/business/v1/quality/measuring-devices/calibration-dashboard` | BusinessGateway calibration dashboard facade follows the Quality calibration workbench menu phase. |
 | Scheduling | POST | `/api/business/v1/scheduling/problems/assemble` | BusinessGateway facade pending; APS problem-assemble follows the scheduling workbench menu phase (preview/create/gantt/release already exposed). |
 | Wms | POST | `/api/business/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry` | BusinessGateway facade pending; WMS inbound posting-retry follows the WMS operations menu phase (MES posting-retry already exposed via #833). |
 | Wms | POST | `/api/business/v1/wms/outbound-orders/{outboundOrderId}/cancel` | BusinessGateway facade pending; WMS outbound cancel follows the WMS operations menu phase. |
@@ -166,6 +170,8 @@ governance decisions, are listed in full below.
 | MasterData | POST | `/api/business/v1/master-data/references/validate` | Service-to-service batch reference-data validate consumed by other business services. |
 | Wms | POST | `/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete` | Internal warehouse-task completion endpoint consumed by the WCS adapter/callback boundary (#413). |
 | Wms | POST | `/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/progress` | Internal warehouse-task progress endpoint consumed by the WCS adapter/callback boundary (#413). |
+| Wms | GET | `/api/business/v1/wms/wcs-dispatch-circuits` | Internal operational visibility for per-adapter/device WCS circuit state. |
+| Wms | POST | `/api/business/v1/wms/wcs-dispatch-circuits/reset` | Internal guarded manual recovery action for an open WCS circuit. |
 
 ## Relationship to #842 (device-control read-face)
 

@@ -11,6 +11,49 @@ using System.Globalization;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 
+public sealed class ProductionReportRecordedIntegrationEventConverter
+    : IIntegrationEventConverter<ProductionReportRecordedDomainEvent, ProductionReportRecordedIntegrationEvent>
+{
+    public ProductionReportRecordedIntegrationEvent Convert(ProductionReportRecordedDomainEvent domainEvent)
+    {
+        var report = domainEvent.ProductionReport;
+        var projection = domainEvent.OeeProjection;
+        var idempotencyKey = EventIds.Idempotency(
+            "production-report-recorded",
+            report.OrganizationId,
+            report.EnvironmentId,
+            report.ReportNo);
+        return new ProductionReportRecordedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1,
+            report.ReportedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            report.ReportNo,
+            report.ReportNo,
+            report.OrganizationId,
+            report.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new ProductionReportRecordedPayload(
+                report.ReportNo,
+                report.WorkOrderId,
+                report.OperationTaskId,
+                projection?.WorkCenterId ?? string.Empty,
+                projection?.DeviceAssetId,
+                report.GoodQuantity,
+                report.ScrapQuantity,
+                report.ReworkQuantity,
+                projection?.UomCode ?? "UNSPECIFIED",
+                projection?.TheoreticalRatePerHour,
+                report.ReportedAtUtc,
+                // OEE nets reversals through their negative quantities and distinct report number;
+                // retain correction lineage for audit and downstream projections that need it.
+                report.IsReversal,
+                report.ReversedReportNo));
+    }
+}
+
 public sealed class ProductionMaterialConsumedIntegrationEventConverter
     : IIntegrationEventConverter<ProductionMaterialConsumedDomainEvent, InventoryMovementRequestedIntegrationEvent>
 {

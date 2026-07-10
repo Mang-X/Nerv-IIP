@@ -146,6 +146,12 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id where the print batch was created.");
 
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("failure_reason")
+                        .HasComment("Latest printer transport or device failure reason.");
+
                     b.Property<string>("IdempotencyKey")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -171,6 +177,18 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id that owns the print batch.");
 
+                    b.Property<string>("PrintJobId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("print_job_id")
+                        .HasComment("Printer or transport job identifier for the latest attempt.");
+
+                    b.Property<string>("PrinterId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("printer_id")
+                        .HasComment("Configured printer identity selected for the transport attempt.");
+
                     b.Property<int>("RequestedQuantity")
                         .HasColumnType("integer")
                         .HasColumnName("requested_quantity")
@@ -195,7 +213,7 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("status")
-                        .HasComment("Print batch status such as completed.");
+                        .HasComment("Truthful print batch lifecycle status: pending, sent-to-printer, printed or failed.");
 
                     b.HasKey("Id");
 
@@ -216,6 +234,11 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasComment("Label print item id.");
+
+                    b.Property<DateTimeOffset?>("ConsumedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consumed_at_utc")
+                        .HasComment("UTC time when a printed label was accepted by scanner consumption.");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -268,6 +291,24 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnType("character varying(150)")
                         .HasColumnName("serial_number")
                         .HasComment("Serialized unit identifier encoded in the generated GS1 label.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("status")
+                        .HasComment("Label lifecycle status: created, printed, reprinted, voided or consumed.");
+
+                    b.Property<string>("VoidReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("void_reason")
+                        .HasComment("Reason captured when the label is voided.");
+
+                    b.Property<DateTimeOffset?>("VoidedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("voided_at_utc")
+                        .HasComment("UTC time when the label became unusable.");
 
                     b.HasKey("Id");
 

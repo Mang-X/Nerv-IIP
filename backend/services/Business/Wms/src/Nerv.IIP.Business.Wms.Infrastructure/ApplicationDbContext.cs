@@ -24,6 +24,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<SupplierReturnRequest> SupplierReturnRequests => Set<SupplierReturnRequest>();
     public DbSet<CountExecution> CountExecutions => Set<CountExecution>();
     public DbSet<WcsTask> WcsTasks => Set<WcsTask>();
+    public DbSet<WcsDispatchCircuit> WcsDispatchCircuits => Set<WcsDispatchCircuit>();
     public DbSet<InventoryMovementRequest> InventoryMovementRequests => Set<InventoryMovementRequest>();
     public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
 

@@ -232,10 +232,10 @@ const freshness = computed<{ tone: 'live' | 'stale' | 'wait'; text: string }>(()
         <div class="side">
           <NvScreenPanel title="可靠性">
             <template #extra>
-              <NvScreenStatusTag tone="amber" label="≈ 可用率 · 待 #570" />
+              <NvScreenStatusTag tone="amber" label="运行设备占比（瞬时）" />
             </template>
             <div class="rel">
-              <NvRingGauge :value="ov.reliability.availability" label="时间稼动率" :size="104" />
+              <NvRingGauge :value="ov.reliability.availability" label="运行设备占比" :size="104" />
               <dl class="rel-grid">
                 <div v-for="c in relCells" :key="c.label">
                   <dt>{{ c.label }}</dt>
@@ -361,7 +361,7 @@ const freshness = computed<{ tone: 'live' | 'stale' | 'wait'; text: string }>(()
           <span class="scr-fresh" :class="freshness.tone"
             ><i aria-hidden="true" />{{ freshness.text }}</span
           >
-          <span>实时参数与趋势待 historian · #570 · OEE 性能率/良品率占位 · #738</span>
+          <span>实时参数与趋势待 historian · #570 · 单机 OEE 已接入真实读面 · #738</span>
         </div>
       </footer>
     </div>

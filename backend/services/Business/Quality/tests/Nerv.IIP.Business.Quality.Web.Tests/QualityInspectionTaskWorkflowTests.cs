@@ -4,10 +4,12 @@ using NetCorePal.Extensions.DistributedTransactions;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.MeasuringDevices;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
 using Nerv.IIP.Contracts.Erp;
@@ -271,6 +273,41 @@ public sealed class QualityInspectionTaskWorkflowTests
         var integrationEvent = Assert.IsType<InspectionTaskOverdueIntegrationEvent>(Assert.Single(publisher.Published));
         Assert.Equal(QualityIntegrationEventTypes.InspectionTaskOverdue, integrationEvent.EventType);
         Assert.Equal("SKU-RM-1000", integrationEvent.Payload.SkuCode);
+    }
+
+    [Fact]
+    public async Task Calibration_check_publishes_overdue_device_event_and_moves_device_to_calibration()
+    {
+        await using var dbContext = CreateDbContext(nameof(Calibration_check_publishes_overdue_device_event_and_moves_device_to_calibration));
+        dbContext.MeasuringDevices.Add(MeasuringDevice.Create("org-001", "env-dev", "MD-001", "Micrometer", "0.001mm", 30, DateTimeOffset.Parse("2026-01-01T00:00:00Z")));
+        await dbContext.SaveChangesAsync();
+        var publisher = new RecordingIntegrationEventPublisher();
+
+        await new PublishMeasuringDeviceCalibrationAlertsCommandHandler(dbContext, publisher).Handle(
+            new PublishMeasuringDeviceCalibrationAlertsCommand("org-001", "env-dev", DateTimeOffset.Parse("2026-02-01T00:00:00Z")),
+            CancellationToken.None);
+
+        var integrationEvent = Assert.IsType<MeasuringDeviceCalibrationDueIntegrationEvent>(Assert.Single(publisher.Published));
+        Assert.Equal("overdue", integrationEvent.Payload.CalibrationState);
+        Assert.Equal("calibration", Assert.Single(dbContext.MeasuringDevices).Status);
+    }
+
+    [Fact]
+    public async Task Calibration_check_does_not_republish_for_device_already_in_calibration()
+    {
+        await using var dbContext = CreateDbContext(nameof(Calibration_check_does_not_republish_for_device_already_in_calibration));
+        var device = MeasuringDevice.Create("org-001", "env-dev", "MD-002", "Micrometer", "0.001mm", 30, DateTimeOffset.Parse("2026-01-01T00:00:00Z"));
+        device.MoveToCalibrationIfOverdue(DateTimeOffset.Parse("2026-02-01T00:00:00Z"));
+        dbContext.MeasuringDevices.Add(device);
+        await dbContext.SaveChangesAsync();
+        var publisher = new RecordingIntegrationEventPublisher();
+
+        var published = await new PublishMeasuringDeviceCalibrationAlertsCommandHandler(dbContext, publisher).Handle(
+            new PublishMeasuringDeviceCalibrationAlertsCommand("org-001", "env-dev", DateTimeOffset.Parse("2026-02-02T00:00:00Z")),
+            CancellationToken.None);
+
+        Assert.Equal(0, published);
+        Assert.Empty(publisher.Published);
     }
 
     private static WmsInboundOrderCompletedIntegrationEventHandlerForCreateInspectionTasks CreateWmsHandler(ApplicationDbContext dbContext)

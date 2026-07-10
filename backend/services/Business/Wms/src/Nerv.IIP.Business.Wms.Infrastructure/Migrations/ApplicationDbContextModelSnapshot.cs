@@ -267,9 +267,10 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 
                     b.Property<string>("QualityGateStatus")
                         .IsRequired()
+                        .ValueGeneratedOnAdd()
                         .HasMaxLength(50)
-                        .HasDefaultValue("not-required")
                         .HasColumnType("character varying(50)")
+                        .HasDefaultValue("not-required")
                         .HasColumnName("quality_gate_status")
                         .HasComment("WMS inbound quality gate state: pending, passed, conditional-release, rejected or not-required.");
 
@@ -980,6 +981,72 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate.WcsDispatchCircuit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("WCS dispatch circuit id.");
+
+                    b.Property<string>("AdapterType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("adapter_type")
+                        .HasComment("WCS adapter type.");
+
+                    b.Property<int>("ConsecutiveFailureCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("consecutive_failure_count")
+                        .HasComment("Consecutive failed dispatch count.");
+
+                    b.Property<string>("DeviceId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("device_id")
+                        .HasComment("WCS device identifier.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<DateTime?>("LastFailureAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_failure_at_utc")
+                        .HasComment("UTC time of the most recent failure.");
+
+                    b.Property<DateTime?>("OpenedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("opened_at_utc")
+                        .HasComment("UTC time the circuit opened.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<DateTime?>("ResetAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reset_at_utc")
+                        .HasComment("UTC time of the latest manual reset.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "AdapterType", "DeviceId")
+                        .IsUnique();
+
+                    b.ToTable("wcs_dispatch_circuits", "wms", t =>
+                        {
+                            t.HasComment("Per adapter and device WCS dispatch circuit state.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate.WcsTask", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1008,6 +1075,13 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("completion_payload_json")
                         .HasComment("Completion callback payload JSON.");
+
+                    b.Property<string>("DeviceId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("device_id")
+                        .HasComment("WCS adapter-scoped device identifier used by retry and circuit controls.");
 
                     b.Property<DateTime>("DispatchedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -1044,6 +1118,18 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("failure_message")
                         .HasComment("WCS failure diagnostic message.");
+
+                    b.Property<bool>("IsTerminalFailure")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_terminal_failure")
+                        .HasComment("Whether bounded WCS retry attempts have been exhausted.");
+
+                    b.Property<DateTime?>("NextRetryAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_retry_at_utc")
+                        .HasComment("Earliest UTC time at which a failed WCS task may be dispatched again.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()

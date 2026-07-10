@@ -4,6 +4,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAgg
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlCommandAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.OeeProductionFactAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
@@ -20,6 +21,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<DeviceControlCommand> DeviceControlCommands => Set<DeviceControlCommand>();
     public DbSet<TelemetryTag> TelemetryTags => Set<TelemetryTag>();
     public DbSet<DeviceStateSnapshot> DeviceStateSnapshots => Set<DeviceStateSnapshot>();
+    public DbSet<OeeProductionFact> OeeProductionFacts => Set<OeeProductionFact>();
     public DbSet<AlarmEvent> AlarmEvents => Set<AlarmEvent>();
     public DbSet<TelemetryRawSample> TelemetryRawSamples => Set<TelemetryRawSample>();
     public DbSet<TelemetryRollup> TelemetryRollups => Set<TelemetryRollup>();

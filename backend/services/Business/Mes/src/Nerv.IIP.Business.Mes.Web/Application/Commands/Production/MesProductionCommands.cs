@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
@@ -147,7 +149,8 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             request.ScrapReasonCode,
             request.DefectRecordNo,
             producedLotNo,
-            request.SerialNo);
+            request.SerialNo,
+            ProductionReportOeeProjectionFactory.Create(operationTask));
 
         var duplicateLot = consumedMaterialLots
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId.ToUpperInvariant()}", StringComparer.Ordinal)
@@ -416,7 +419,11 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
             operationTask.ReopenAfterReportReversal();
         }
 
-        var reversal = ProductionReport.Reverse(original, allocation.Code, request.ReversedAtUtc, request.Reason);
+        var reversal = ProductionReport.Reverse(
+            original,
+            allocation.Code,
+            request.ReversedAtUtc,
+            request.Reason);
         var originalConsumptions = await dbContext.ProductionReportMaterialConsumptions
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
@@ -438,6 +445,23 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
         dbContext.ProductionReportMaterialConsumptions.AddRange(reversalConsumptions);
         dbContext.OutputLotGenealogies.RemoveRange(originalOutputLots);
         return new ReverseProductionReportCommandResult(reversal.Id, reversal.ReportNo, original.ReportNo);
+    }
+}
+
+internal static class ProductionReportOeeProjectionFactory
+{
+    public static ProductionReportOeeProjection Create(OperationTask operationTask)
+    {
+        ArgumentNullException.ThrowIfNull(operationTask);
+        var durationHours = decimal.Divide(operationTask.DurationTicks, TimeSpan.TicksPerHour);
+        decimal? theoreticalRatePerHour = operationTask.PlannedQuantity > 0m && durationHours > 0m
+            ? decimal.Divide(operationTask.PlannedQuantity, durationHours)
+            : null;
+        return new ProductionReportOeeProjection(
+            operationTask.WorkCenterId,
+            operationTask.DeviceAssetId,
+            operationTask.UomCode,
+            theoreticalRatePerHour);
     }
 }
 

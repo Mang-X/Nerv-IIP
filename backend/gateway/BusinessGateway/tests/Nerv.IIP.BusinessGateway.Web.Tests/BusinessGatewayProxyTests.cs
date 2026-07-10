@@ -2758,8 +2758,8 @@ public sealed class BusinessGatewayProxyTests
         using var oeeDocument = JsonDocument.Parse(await oeeResponse.Content.ReadAsStringAsync());
         var oee = oeeDocument.RootElement.GetProperty("data");
         Assert.Equal(0.75m, oee.GetProperty("loadingRate").GetDecimal());
-        Assert.True(oee.GetProperty("performanceRateEstimated").GetBoolean());
-        Assert.True(oee.GetProperty("qualityRateEstimated").GetBoolean());
+        Assert.Equal(0.8m, oee.GetProperty("qualityRate").GetDecimal());
+        Assert.False(oee.GetProperty("isDegraded").GetBoolean());
     }
 
     [Fact]
@@ -8272,11 +8272,18 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
             2,
             0.5m,
             0.75m,
+            1,
+            80m,
+            10m,
+            10m,
+            "PCS",
+            100m,
+            100m,
             1m,
-            1m,
-            0.5m,
-            true,
-            true));
+            0.8m,
+            0.4m,
+            false,
+            []));
     }
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(

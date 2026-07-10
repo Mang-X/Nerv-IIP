@@ -87,6 +87,8 @@ public sealed record ListWcsTasksRequest(
     string? Status = null,
     bool? Failed = null,
     string? Keyword = null);
+public sealed record ListWcsDispatchCircuitsRequest(string OrganizationId, string EnvironmentId);
+public sealed record ResetWcsDispatchCircuitRequest(string OrganizationId, string EnvironmentId, string AdapterType, string DeviceId);
 public sealed record ListReceivingQualityGatesRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? GateStatus = null, string? Keyword = null);
 public sealed record ListSupplierReturnRequestsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
 
@@ -310,6 +312,23 @@ public sealed class ListWcsTasksEndpoint(ISender sender) : WmsEndpoint<ListWcsTa
     }
 }
 
+public sealed class ListWcsDispatchCircuitsEndpoint(ISender sender) : WmsEndpoint<ListWcsDispatchCircuitsRequest, ResponseData<IReadOnlyCollection<WcsDispatchCircuitFact>>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListWcsDispatchCircuitsEndpoint>());
+    public override async Task HandleAsync(ListWcsDispatchCircuitsRequest req, CancellationToken ct) =>
+        await Send.OkAsync((await sender.Send(new ListWcsDispatchCircuitsQuery(req.OrganizationId, req.EnvironmentId), ct)).AsResponseData(), cancellation: ct);
+}
+
+public sealed class ResetWcsDispatchCircuitEndpoint(ISender sender) : WmsEndpoint<ResetWcsDispatchCircuitRequest, ResponseData<object>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ResetWcsDispatchCircuitEndpoint>());
+    public override async Task HandleAsync(ResetWcsDispatchCircuitRequest req, CancellationToken ct)
+    {
+        await sender.Send(new ResetWcsDispatchCircuitCommand(req.OrganizationId, req.EnvironmentId, req.AdapterType, req.DeviceId), ct);
+        await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class ListReceivingQualityGatesEndpoint(ISender sender) : WmsEndpoint<ListReceivingQualityGatesRequest, ResponseData<ListReceivingQualityGatesResponse>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListReceivingQualityGatesEndpoint>());
@@ -358,6 +377,8 @@ public static class WmsEndpointContracts
         new(typeof(CompleteWcsTaskEndpoint), "POST", "/api/business/v1/wms/wcs-tasks/{externalTaskId}/complete", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "completeWmsWcsTask"),
         new(typeof(FailWcsTaskEndpoint), "POST", "/api/business/v1/wms/wcs-tasks/{externalTaskId}/fail", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "failWmsWcsTask"),
         new(typeof(ListWcsTasksEndpoint), "GET", "/api/business/v1/wms/wcs-tasks", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "listWmsWcsTasks"),
+        new(typeof(ListWcsDispatchCircuitsEndpoint), "GET", "/api/business/v1/wms/wcs-dispatch-circuits", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "listWmsWcsDispatchCircuits"),
+        new(typeof(ResetWcsDispatchCircuitEndpoint), "POST", "/api/business/v1/wms/wcs-dispatch-circuits/reset", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "resetWmsWcsDispatchCircuit"),
         new(typeof(ListReceivingQualityGatesEndpoint), "GET", "/api/business/v1/wms/receiving-quality-gates", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsReceivingQualityGates"),
         new(typeof(ListSupplierReturnRequestsEndpoint), "GET", "/api/business/v1/wms/supplier-return-requests", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsSupplierReturnRequests"),
     ];

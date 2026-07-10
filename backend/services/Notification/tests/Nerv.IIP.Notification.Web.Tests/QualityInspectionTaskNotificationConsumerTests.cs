@@ -69,6 +69,25 @@ public sealed class QualityInspectionTaskNotificationConsumerTests
         }
     }
 
+    [Fact]
+    public async Task Overdue_measuring_device_creates_quality_calibration_task_notification()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var handler = ActivatorUtilities.CreateInstance<MeasuringDeviceCalibrationNotificationConsumer>(scope.ServiceProvider);
+            await ((IIntegrationEventHandler<MeasuringDeviceCalibrationDueIntegrationEvent>)handler).HandleAsync(CreateCalibrationEvent(), CancellationToken.None);
+        }
+        using (var scope = factory.Services.CreateScope())
+        {
+            var intent = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().NotificationIntents.Include(x => x.Tasks).SingleAsync();
+            Assert.Equal(NotificationIntentTypes.Task, intent.IntentType);
+            Assert.Equal("measuring-device", intent.ResourceType);
+            Assert.Equal("MD-001", intent.ResourceId);
+            Assert.Single(intent.Tasks);
+        }
+    }
+
     private static InspectionTaskOverdueIntegrationEvent CreateEvent(string? skuCode = "SKU-RM-1000")
     {
         return new InspectionTaskOverdueIntegrationEvent(
@@ -93,6 +112,12 @@ public sealed class QualityInspectionTaskNotificationConsumerTests
                 DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
                 DateTimeOffset.Parse("2026-07-05T09:00:00Z")));
     }
+
+    private static MeasuringDeviceCalibrationDueIntegrationEvent CreateCalibrationEvent() => new(
+        "evt-device-calibration-001", QualityIntegrationEventTypes.MeasuringDeviceCalibrationDue, QualityIntegrationEventVersions.V1,
+        DateTimeOffset.Parse("2026-07-05T09:00:00Z"), QualityIntegrationEventSources.BusinessQuality, "corr-device-001", "MD-001",
+        "org-001", "env-dev", "system:quality", "quality:calibration:MD-001:overdue",
+        new MeasuringDeviceCalibrationDuePayload("MD-001", "MD-0001", "Micrometer", "overdue", DateTimeOffset.Parse("2026-07-01T00:00:00Z"), DateTimeOffset.Parse("2026-07-05T09:00:00Z")));
 
     private sealed class NotificationConsumerWebApplicationFactory(IReadOnlyDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>
     {
