@@ -26,6 +26,10 @@ public sealed class ProductionReportEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.SerialNo).HasColumnName("serial_no").HasMaxLength(100).HasComment("Optional produced serial number for genealogy.");
         builder.Property(x => x.ReversedReportNo).HasColumnName("reversed_report_no").HasMaxLength(100).HasComment("Original MES production report number reversed by this negative correction report.");
         builder.Property(x => x.ReversalReason).HasColumnName("reversal_reason").HasMaxLength(500).HasComment("Operator or system reason captured when this report reverses an original production report.");
+        builder.Property(x => x.OeeWorkCenterId).HasColumnName("oee_work_center_id").HasMaxLength(100).HasComment("Work center snapshot carried with the report for OEE projection and reversal consistency.");
+        builder.Property(x => x.OeeDeviceAssetId).HasColumnName("oee_device_asset_id").HasMaxLength(150).HasComment("Assigned device snapshot carried with the report for OEE projection and reversal consistency.");
+        builder.Property(x => x.OeeUomCode).HasColumnName("oee_uom_code").HasMaxLength(30).HasComment("Output unit snapshot carried with the report for OEE projection and reversal consistency.");
+        builder.Property(x => x.OeeTheoreticalRatePerHour).HasColumnName("oee_theoretical_rate_per_hour").HasPrecision(18, 6).HasComment("Theoretical output-rate snapshot carried with the report for OEE projection and reversal consistency.");
         builder.Property(x => x.CompletesOperation).HasColumnName("completes_operation").IsRequired().HasComment("Whether this report marks the operation as completed.");
         builder.Property(x => x.ReportedAtUtc).HasColumnName("reported_at_utc").IsRequired().HasComment("UTC time when production was reported.");
         builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo })

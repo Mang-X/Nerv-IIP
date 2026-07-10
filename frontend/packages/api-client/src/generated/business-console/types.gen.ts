@@ -798,13 +798,20 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     windowStartUtc?: string;
     windowEndUtc?: string;
     stateSampleCount?: number;
-    availabilityRate?: number;
+    availabilityRate?: number | null;
     loadingRate?: number;
-    performanceRate?: number;
-    qualityRate?: number;
-    oeeRate?: number;
-    performanceRateEstimated?: boolean;
-    qualityRateEstimated?: boolean;
+    productionFactCount?: number;
+    goodQuantity?: number | null;
+    scrapQuantity?: number | null;
+    reworkQuantity?: number | null;
+    outputUomCode?: string | null;
+    theoreticalRatePerHour?: number | null;
+    expectedOutputQuantity?: number | null;
+    performanceRate?: number | null;
+    qualityRate?: number | null;
+    oeeRate?: number | null;
+    isDegraded?: boolean;
+    degradedReasons?: Array<string>;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryOeeRequest = {
@@ -4309,9 +4316,11 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfirmStockCoun
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmStockCountAdjustmentResponse = {
-    movementId?: string;
+    movementId?: string | null;
     varianceQuantity?: number;
     onHandQuantity?: number;
+    status?: string;
+    approvalChainId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmStockCountAdjustmentRequest = {

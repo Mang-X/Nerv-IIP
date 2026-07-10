@@ -14,9 +14,12 @@ public sealed record LabelPrintBatchDetail(
     string IdempotencyKey,
     int RequestedQuantity,
     string Status,
+    string? PrinterId,
+    string? PrintJobId,
+    string? FailureReason,
     IReadOnlyCollection<LabelPrintItemDetail> Items);
 
-public sealed record LabelPrintItemDetail(int SequenceNo, string LabelValue, string? FileId);
+public sealed record LabelPrintItemDetail(int SequenceNo, string LabelValue, string? FileId, string Status, string? VoidReason);
 
 public sealed class GetLabelPrintBatchQueryValidator : AbstractValidator<GetLabelPrintBatchQuery>
 {
@@ -41,7 +44,10 @@ public sealed class GetLabelPrintBatchQueryHandler(ApplicationDbContext dbContex
                 x.IdempotencyKey,
                 x.RequestedQuantity,
                 x.Status,
-                x.Items.OrderBy(item => item.SequenceNo).Select(item => new LabelPrintItemDetail(item.SequenceNo, item.LabelValue, item.FileId)).ToArray()))
+                x.PrinterId,
+                x.PrintJobId,
+                x.FailureReason,
+                x.Items.OrderBy(item => item.SequenceNo).Select(item => new LabelPrintItemDetail(item.SequenceNo, item.LabelValue, item.FileId, item.Status, item.VoidReason)).ToArray()))
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"Print batch not found, PrintBatchId = {request.PrintBatchId}");
     }

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
@@ -10,6 +11,13 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Commands;
+
+public sealed class WcsRetryOptions
+{
+    public int MaxRetryAttempts { get; init; } = WcsTask.MaxRetryAttempts;
+    public TimeSpan InitialRetryBackoff { get; init; } = TimeSpan.FromMinutes(1);
+    public int CircuitFailureThreshold { get; init; } = WcsTask.MaxRetryAttempts;
+}
 
 public sealed record WmsInboundLineInput(
     string LineNo,
@@ -811,9 +819,9 @@ internal static class WmsInventoryReservationIdempotencyKeys
     }
 }
 
-public sealed record DispatchWcsTaskCommand(WarehouseTaskId WarehouseTaskId, string AdapterType, string ExternalTaskId, string PayloadJson) : ICommand<WcsTaskId>;
+public sealed record DispatchWcsTaskCommand(WarehouseTaskId WarehouseTaskId, string AdapterType, string ExternalTaskId, string PayloadJson, string? DeviceId = null) : ICommand<WcsTaskId>;
 
-public sealed class DispatchWcsTaskCommandHandler(ApplicationDbContext dbContext)
+public sealed class DispatchWcsTaskCommandHandler(ApplicationDbContext dbContext, TimeProvider? timeProvider = null)
     : ICommandHandler<DispatchWcsTaskCommand, WcsTaskId>
 {
     public async Task<WcsTaskId> Handle(DispatchWcsTaskCommand request, CancellationToken cancellationToken)
@@ -821,18 +829,37 @@ public sealed class DispatchWcsTaskCommandHandler(ApplicationDbContext dbContext
         var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == request.WarehouseTaskId, cancellationToken)
             ?? throw new KnownException($"Warehouse task was not found: {request.WarehouseTaskId}");
         var adapterType = request.AdapterType.ToLowerInvariant();
+        var deviceId = string.IsNullOrWhiteSpace(request.DeviceId) ? adapterType : request.DeviceId.Trim();
+        var circuit = await dbContext.WcsDispatchCircuits.SingleOrDefaultAsync(
+            x => x.OrganizationId == warehouseTask.OrganizationId
+                && x.EnvironmentId == warehouseTask.EnvironmentId
+                && x.AdapterType == adapterType
+                && x.DeviceId == deviceId,
+            cancellationToken);
+        if (circuit?.IsOpen is true)
+        {
+            throw new KnownException(circuit.RejectionReason!);
+        }
+
         var existing = await dbContext.WcsTasks.SingleOrDefaultAsync(x => x.WarehouseTaskId == request.WarehouseTaskId && x.AdapterType == adapterType, cancellationToken);
         if (existing is not null)
         {
             if (existing.Status == WcsTaskStatus.Failed)
             {
-                existing.Retry(request.ExternalTaskId, request.PayloadJson);
+                try
+                {
+                    existing.Retry(request.ExternalTaskId, request.PayloadJson, (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime);
+                }
+                catch (InvalidOperationException exception)
+                {
+                    throw new KnownException(exception.Message);
+                }
             }
 
             return existing.Id;
         }
 
-        var task = WcsTask.Dispatch(warehouseTask.OrganizationId, warehouseTask.EnvironmentId, request.WarehouseTaskId, adapterType, request.ExternalTaskId, request.PayloadJson);
+        var task = WcsTask.Dispatch(warehouseTask.OrganizationId, warehouseTask.EnvironmentId, request.WarehouseTaskId, adapterType, request.ExternalTaskId, request.PayloadJson, deviceId);
         dbContext.WcsTasks.Add(task);
         return task.Id;
     }
@@ -860,6 +887,13 @@ public sealed class CompleteWcsTaskCommandHandler(
 
         var executedQuantity = ExtractExecutedQuantity(request.CompletionPayloadJson, out var diagnosticMessage);
         task.Complete(request.CompletionPayloadJson);
+        var circuit = await dbContext.WcsDispatchCircuits.SingleOrDefaultAsync(
+            x => x.OrganizationId == task.OrganizationId
+                && x.EnvironmentId == task.EnvironmentId
+                && x.AdapterType == task.AdapterType
+                && x.DeviceId == task.DeviceId,
+            cancellationToken);
+        circuit?.RecordSuccess();
         var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == task.WarehouseTaskId, cancellationToken)
             ?? throw new KnownException($"Warehouse task was not found: {task.WarehouseTaskId}");
         if (executedQuantity is null)
@@ -907,7 +941,10 @@ public sealed class CompleteWcsTaskCommandHandler(
 
 public sealed record FailWcsTaskCommand(string OrganizationId, string EnvironmentId, string ExternalTaskId, string FailureCode, string FailureMessage) : ICommand;
 
-public sealed class FailWcsTaskCommandHandler(ApplicationDbContext dbContext)
+public sealed class FailWcsTaskCommandHandler(
+    ApplicationDbContext dbContext,
+    TimeProvider? timeProvider = null,
+    IOptions<WcsRetryOptions>? retryOptions = null)
     : ICommandHandler<FailWcsTaskCommand>
 {
     public async Task Handle(FailWcsTaskCommand request, CancellationToken cancellationToken)
@@ -918,6 +955,37 @@ public sealed class FailWcsTaskCommandHandler(ApplicationDbContext dbContext)
                     && x.ExternalTaskId == request.ExternalTaskId,
                 cancellationToken)
             ?? throw new KnownException($"WCS task was not found: {request.ExternalTaskId}");
-        task.Fail(request.FailureCode, request.FailureMessage);
+        var now = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
+        var options = retryOptions?.Value ?? new WcsRetryOptions();
+        if (!task.Fail(request.FailureCode, request.FailureMessage, now, options.MaxRetryAttempts, options.InitialRetryBackoff))
+        {
+            return;
+        }
+        var circuit = await dbContext.WcsDispatchCircuits.SingleOrDefaultAsync(
+            x => x.OrganizationId == task.OrganizationId
+                && x.EnvironmentId == task.EnvironmentId
+                && x.AdapterType == task.AdapterType
+                && x.DeviceId == task.DeviceId,
+            cancellationToken);
+        if (circuit is null)
+        {
+            circuit = WcsDispatchCircuit.Create(task.OrganizationId, task.EnvironmentId, task.AdapterType, task.DeviceId);
+            dbContext.WcsDispatchCircuits.Add(circuit);
+        }
+
+        circuit.RecordFailure(now, options.CircuitFailureThreshold);
+    }
+}
+
+public sealed record ResetWcsDispatchCircuitCommand(string OrganizationId, string EnvironmentId, string AdapterType, string DeviceId) : ICommand;
+
+public sealed class ResetWcsDispatchCircuitCommandHandler(ApplicationDbContext dbContext, TimeProvider? timeProvider = null)
+    : ICommandHandler<ResetWcsDispatchCircuitCommand>
+{
+    public async Task Handle(ResetWcsDispatchCircuitCommand request, CancellationToken cancellationToken)
+    {
+        var circuit = await dbContext.WcsDispatchCircuits.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.AdapterType == request.AdapterType.ToLowerInvariant() && x.DeviceId == request.DeviceId, cancellationToken)
+            ?? throw new KnownException($"WCS dispatch circuit was not found for adapter '{request.AdapterType}' and device '{request.DeviceId}'.");
+        circuit.Reset((timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime);
     }
 }

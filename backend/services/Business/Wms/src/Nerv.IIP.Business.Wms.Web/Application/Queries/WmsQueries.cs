@@ -327,6 +327,19 @@ public sealed record WcsTaskFact(
     DateTime? FailedAtUtc,
     DateTime? CompletedAtUtc);
 
+public sealed record ListWcsDispatchCircuitsQuery(string OrganizationId, string EnvironmentId) : IQuery<IReadOnlyCollection<WcsDispatchCircuitFact>>;
+
+public sealed record WcsDispatchCircuitFact(string AdapterType, string DeviceId, int ConsecutiveFailureCount, bool IsOpen, DateTime? OpenedAtUtc, DateTime? LastFailureAtUtc, DateTime? ResetAtUtc);
+
+public sealed class ListWcsDispatchCircuitsQueryHandler(ApplicationDbContext dbContext) : IQueryHandler<ListWcsDispatchCircuitsQuery, IReadOnlyCollection<WcsDispatchCircuitFact>>
+{
+    public async Task<IReadOnlyCollection<WcsDispatchCircuitFact>> Handle(ListWcsDispatchCircuitsQuery request, CancellationToken cancellationToken) =>
+        await dbContext.WcsDispatchCircuits.AsNoTracking().Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .OrderBy(x => x.AdapterType).ThenBy(x => x.DeviceId)
+            .Select(x => new WcsDispatchCircuitFact(x.AdapterType, x.DeviceId, x.ConsecutiveFailureCount, x.OpenedAtUtc != null, x.OpenedAtUtc, x.LastFailureAtUtc, x.ResetAtUtc))
+            .ToArrayAsync(cancellationToken);
+}
+
 public sealed class ListWcsTasksQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListWcsTasksQuery, ListWcsTasksResponse>
 {

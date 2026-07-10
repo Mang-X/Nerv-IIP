@@ -3,7 +3,9 @@ import type { EquipmentRuntimeAvailabilityWindow } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { describeEquipmentReason } from '@/composables/useBusinessEquipment'
 import {
+  describeTelemetryOeeDegradation,
   describeTelemetryOeeLimitations,
+  formatOeeQuantity,
   formatOeeRate,
   useBusinessTelemetryOee,
 } from '@/composables/useBusinessTelemetry'
@@ -45,6 +47,7 @@ const {
 
 const errorMessage = computed(() => formatError(oeeError.value || runtimeAvailabilityError.value))
 const limitation = describeTelemetryOeeLimitations()
+const oeeDegradedReasons = computed(() => (oee.value?.degradedReasons ?? []).map(describeTelemetryOeeDegradation))
 const blockedWindowCount = computed(
   () =>
     availabilityWindows.value.filter((w) => w.availabilityStatus?.toLowerCase() === 'unavailable')
@@ -95,6 +98,9 @@ function severityVariant(value?: string | null) {
   if (severity === 'critical' || severity === 'blocked') return 'danger'
   if (severity === 'warning') return 'warning'
   return 'neutral'
+}
+function factorVariant(value?: number | null) {
+  return value === null || value === undefined ? 'warning' : 'success'
 }
 function formatDateTime(value?: string | null) {
   if (!value) return '无'
@@ -183,9 +189,19 @@ function formatError(error: unknown) {
         hint="排除计划停机窗口"
       />
       <NvSectionCard
-        description="OEE P0"
+        description="性能率"
+        :value="formatOeeRate(oee?.performanceRate)"
+        hint="实际产出 ÷ 理论产出"
+      />
+      <NvSectionCard
+        description="质量率"
+        :value="formatOeeRate(oee?.qualityRate)"
+        hint="良品 ÷ 总产出"
+      />
+      <NvSectionCard
+        description="OEE"
         :value="formatOeeRate(oee?.oeeRate)"
-        hint="仅用于设备运行事实覆盖判断"
+        hint="三项因子的乘积"
       />
       <NvSectionCard
         description="状态样本"
@@ -196,24 +212,40 @@ function formatError(error: unknown) {
 
     <div class="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
       <div class="rounded-lg border bg-card p-4">
-        <h2 class="text-sm font-semibold text-foreground">P0 口径</h2>
+        <h2 class="text-sm font-semibold text-foreground">计算依据</h2>
         <div class="mt-4 grid gap-3 text-sm">
           <div class="flex items-center justify-between gap-3">
             <span class="text-muted-foreground">性能系数</span>
-            <NvBadge class="rounded-sm" variant="warning">{{
-              oee?.performanceRateEstimated ? '未测量' : formatOeeRate(oee?.performanceRate)
+            <NvBadge class="rounded-sm" :variant="factorVariant(oee?.performanceRate)">{{
+              formatOeeRate(oee?.performanceRate)
             }}</NvBadge>
           </div>
           <div class="flex items-center justify-between gap-3">
             <span class="text-muted-foreground">质量系数</span>
-            <NvBadge class="rounded-sm" variant="warning">{{
-              oee?.qualityRateEstimated ? '未测量' : formatOeeRate(oee?.qualityRate)
+            <NvBadge class="rounded-sm" :variant="factorVariant(oee?.qualityRate)">{{
+              formatOeeRate(oee?.qualityRate)
             }}</NvBadge>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-muted-foreground">MES 报工</span>
+            <span class="font-medium text-foreground">{{ oee?.productionFactCount ?? 0 }} 条</span>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-muted-foreground">理论产出</span>
+            <span class="font-medium text-foreground">{{
+              formatOeeQuantity(oee?.expectedOutputQuantity, oee?.outputUomCode)
+            }}</span>
           </div>
           <div class="flex items-center justify-between gap-3">
             <span class="text-muted-foreground">不可用窗口</span>
             <span class="font-medium text-foreground">{{ blockedWindowCount }}</span>
           </div>
+        </div>
+        <div v-if="oee?.isDegraded" class="mt-4 rounded-md bg-muted p-3 text-xs text-muted-foreground">
+          <p class="font-medium text-foreground">当前 OEE 数据不完整</p>
+          <ul class="mt-1 list-disc pl-4">
+            <li v-for="reason in oeeDegradedReasons" :key="reason">{{ reason }}</li>
+          </ul>
         </div>
       </div>
 

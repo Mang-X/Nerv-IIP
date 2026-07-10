@@ -971,11 +971,18 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
             0,
             0m,
             0m,
-            0m,
-            0m,
-            0m,
-            false,
-            false));
+            0,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            true,
+            ["production-facts-missing"]));
     }
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(

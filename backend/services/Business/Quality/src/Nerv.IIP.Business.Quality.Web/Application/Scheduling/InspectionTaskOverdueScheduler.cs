@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.MeasuringDevices;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Scheduling;
 
@@ -13,7 +14,8 @@ public sealed class InspectionTaskOverdueScheduler(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!configuration.GetValue<bool>("Quality:InspectionTaskOverdue:Enabled"))
+        if (!configuration.GetValue<bool>("Quality:InspectionTaskOverdue:Enabled")
+            && !configuration.GetValue<bool>("Quality:MeasuringDevice:CalibrationScanEnabled"))
         {
             return;
         }
@@ -79,14 +81,31 @@ public sealed class InspectionTaskOverdueScheduler(
         {
             using var scope = scopeFactory.CreateScope();
             var sender = scope.ServiceProvider.GetRequiredService<ISender>();
-            var published = await sender.Send(
-                new PublishOverdueInspectionTaskRemindersCommand(organizationId, environmentId, timeProvider.GetUtcNow()),
-                cancellationToken);
+            var published = configuration.GetValue<bool>("Quality:InspectionTaskOverdue:Enabled")
+                ? await sender.Send(
+                    new PublishOverdueInspectionTaskRemindersCommand(organizationId, environmentId, timeProvider.GetUtcNow()),
+                    cancellationToken)
+                : 0;
+            var calibrationPublished = 0;
+            if (configuration.GetValue<bool>("Quality:MeasuringDevice:CalibrationScanEnabled"))
+            {
+                calibrationPublished = await sender.Send(
+                    new PublishMeasuringDeviceCalibrationAlertsCommand(organizationId, environmentId, timeProvider.GetUtcNow()),
+                    cancellationToken);
+            }
             if (published > 0)
             {
                 logger.LogInformation(
                     "Published {PublishedCount} overdue quality inspection task reminders for {OrganizationId}/{EnvironmentId}.",
                     published,
+                    organizationId,
+                    environmentId);
+            }
+            if (calibrationPublished > 0)
+            {
+                logger.LogInformation(
+                    "Published {PublishedCount} measuring-device calibration alerts for {OrganizationId}/{EnvironmentId}.",
+                    calibrationPublished,
                     organizationId,
                     environmentId);
             }

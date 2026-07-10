@@ -214,6 +214,20 @@ public sealed class WcsTaskCompletedIntegrationEventConverter
     }
 }
 
+public sealed class WcsTaskRetryExhaustedIntegrationEventConverter
+    : IIntegrationEventConverter<WcsTaskRetryExhaustedDomainEvent, WmsIntegrationEvent>
+{
+    public WmsIntegrationEvent Convert(WcsTaskRetryExhaustedDomainEvent domainEvent)
+    {
+        var task = domainEvent.WcsTask;
+        return WmsIntegrationEventFactory.NewEvent(
+            WmsIntegrationEventTypes.WcsTaskRetryExhausted,
+            task.OrganizationId, task.EnvironmentId,
+            $"wms:wcs-retry-exhausted:{task.OrganizationId}:{task.EnvironmentId}:{task.AdapterType}:{task.DeviceId}:{task.ExternalTaskId}",
+            new WmsIntegrationPayload(task.ExternalTaskId, null, null, null, null, null, null, task.Status.ToString(), task.FailureCode, task.FailureMessage, AdapterType: task.AdapterType));
+    }
+}
+
 public sealed class WcsTaskCancelledIntegrationEventConverter
     : IIntegrationEventConverter<WcsTaskCancelledDomainEvent, WmsIntegrationEvent>
 {

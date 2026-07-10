@@ -203,6 +203,7 @@ public sealed class WcsTaskEntityTypeConfiguration : IEntityTypeConfiguration<Wc
         InboundOrderEntityTypeConfiguration.AddTenantColumns(builder);
         builder.Property(x => x.WarehouseTaskId).HasColumnName("warehouse_task_id").IsRequired().HasComment("WMS warehouse task id.");
         builder.Property(x => x.AdapterType).HasColumnName("adapter_type").IsRequired().HasMaxLength(100).HasComment("WCS adapter type.");
+        builder.Property(x => x.DeviceId).HasColumnName("device_id").IsRequired().HasMaxLength(150).HasComment("WCS adapter-scoped device identifier used by retry and circuit controls.");
         builder.Property(x => x.ExternalTaskId).HasColumnName("external_task_id").IsRequired().HasMaxLength(150).HasComment("External WCS task id.");
         builder.Property(x => x.PayloadJson).HasColumnName("payload_json").IsRequired().HasComment("Outbound adapter payload JSON.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("WCS task status.");
@@ -213,8 +214,28 @@ public sealed class WcsTaskEntityTypeConfiguration : IEntityTypeConfiguration<Wc
         builder.Property(x => x.DispatchedAtUtc).HasColumnName("dispatched_at_utc").IsRequired().HasComment("UTC dispatch time.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
         builder.Property(x => x.FailedAtUtc).HasColumnName("failed_at_utc").HasComment("UTC failure time.");
+        builder.Property(x => x.NextRetryAtUtc).HasColumnName("next_retry_at_utc").HasComment("Earliest UTC time at which a failed WCS task may be dispatched again.");
+        builder.Property(x => x.IsTerminalFailure).HasColumnName("is_terminal_failure").IsRequired().HasDefaultValue(false).HasComment("Whether bounded WCS retry attempts have been exhausted.");
         builder.HasIndex(x => new { x.WarehouseTaskId, x.AdapterType }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ExternalTaskId }).IsUnique();
+    }
+}
+
+public sealed class WcsDispatchCircuitEntityTypeConfiguration : IEntityTypeConfiguration<WcsDispatchCircuit>
+{
+    public void Configure(EntityTypeBuilder<WcsDispatchCircuit> builder)
+    {
+        builder.ToTable("wcs_dispatch_circuits", table => table.HasComment("Per adapter and device WCS dispatch circuit state."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("WCS dispatch circuit id.");
+        InboundOrderEntityTypeConfiguration.AddTenantColumns(builder);
+        builder.Property(x => x.AdapterType).HasColumnName("adapter_type").IsRequired().HasMaxLength(100).HasComment("WCS adapter type.");
+        builder.Property(x => x.DeviceId).HasColumnName("device_id").IsRequired().HasMaxLength(150).HasComment("WCS device identifier.");
+        builder.Property(x => x.ConsecutiveFailureCount).HasColumnName("consecutive_failure_count").IsRequired().HasComment("Consecutive failed dispatch count.");
+        builder.Property(x => x.OpenedAtUtc).HasColumnName("opened_at_utc").HasComment("UTC time the circuit opened.");
+        builder.Property(x => x.LastFailureAtUtc).HasColumnName("last_failure_at_utc").HasComment("UTC time of the most recent failure.");
+        builder.Property(x => x.ResetAtUtc).HasColumnName("reset_at_utc").HasComment("UTC time of the latest manual reset.");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.AdapterType, x.DeviceId }).IsUnique();
     }
 }
 

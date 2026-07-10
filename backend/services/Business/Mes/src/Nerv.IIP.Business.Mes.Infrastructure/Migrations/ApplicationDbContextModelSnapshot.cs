@@ -830,6 +830,30 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("good_quantity")
                         .HasComment("Good quantity reported for the operation.");
 
+                    b.Property<string>("OeeDeviceAssetId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("oee_device_asset_id")
+                        .HasComment("Assigned device snapshot carried with the report for OEE projection and reversal consistency.");
+
+                    b.Property<decimal?>("OeeTheoreticalRatePerHour")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("oee_theoretical_rate_per_hour")
+                        .HasComment("Theoretical output-rate snapshot carried with the report for OEE projection and reversal consistency.");
+
+                    b.Property<string>("OeeUomCode")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("oee_uom_code")
+                        .HasComment("Output unit snapshot carried with the report for OEE projection and reversal consistency.");
+
+                    b.Property<string>("OeeWorkCenterId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("oee_work_center_id")
+                        .HasComment("Work center snapshot carried with the report for OEE projection and reversal consistency.");
+
                     b.Property<string>("OperationTaskId")
                         .IsRequired()
                         .HasMaxLength(100)

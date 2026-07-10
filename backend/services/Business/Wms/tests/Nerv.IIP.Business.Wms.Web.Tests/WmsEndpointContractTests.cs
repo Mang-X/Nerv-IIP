@@ -38,7 +38,7 @@ public sealed class WmsEndpointContractTests
     {
         var contracts = WmsEndpointContracts.All.ToArray();
 
-        Assert.Equal(25, contracts.Length);
+        Assert.Equal(27, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsInboundOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsPutawayTask");
@@ -59,6 +59,8 @@ public sealed class WmsEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/count-executions" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsCountExecutions");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/count-executions/{countExecutionId}/complete" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "completeWmsCountExecution");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "dispatchWmsWcsTask");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/wcs-dispatch-circuits" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "listWmsWcsDispatchCircuits");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-dispatch-circuits/reset" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "resetWmsWcsDispatchCircuit");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-tasks/{externalTaskId}/complete" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "completeWmsWcsTask");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-tasks/{externalTaskId}/fail" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "failWmsWcsTask");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/wcs-tasks" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "listWmsWcsTasks");
@@ -213,7 +215,7 @@ public sealed class WmsEndpointContractTests
         dbContext.WarehouseTasks.AddRange(warehouseTask, otherTenantTask);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var commandHandler = new Application.Commands.DispatchWcsTaskCommandHandler(dbContext);
+        var commandHandler = new Application.Commands.DispatchWcsTaskCommandHandler(dbContext, new WcsTestTimeProvider(DateTimeOffset.UtcNow.AddMinutes(2)));
         await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(warehouseTask.Id, "agv", "EXT-001", """{"step":1}"""), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new Application.Commands.FailWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.FailWcsTaskCommand("org-001", "env-dev", "EXT-001", "PLC_TIMEOUT", "PLC timeout"), CancellationToken.None);
@@ -596,6 +598,7 @@ public sealed class WmsEndpointContractTests
             builder.UseSetting("environment", "Testing");
             builder.UseSetting("InternalService:BearerToken", "test-internal-token");
             builder.UseSetting("Inventory:BaseUrl", "http://inventory.local");
+            builder.UseSetting("Wcs:Retry:InitialRetryBackoff", "00:00:00");
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<ApplicationDbContext>();

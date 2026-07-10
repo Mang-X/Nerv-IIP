@@ -3,11 +3,15 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Contracts.Mes;
+using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.Primitives;
 using Npgsql;
 
@@ -118,6 +122,29 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
 
         await using var assertionContext = database.CreateContext();
         Assert.Equal(1, await assertionContext.AlarmEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Concurrent_production_report_projection_ignores_unique_projection_conflict()
+    {
+        await using var database = await IndustrialTelemetrySqliteDatabase.CreateAsync();
+        await using var winningContext = database.CreateContext();
+        var integrationEvent = CreateProductionReportRecordedEvent("PRPT-RACE-001");
+        var winningHandler = new ProductionReportOeeProjectionHandler(winningContext, new InMemoryIntegrationEventDeadLetterStore());
+        var winnerSaved = false;
+        var saveInterceptor = new BeforeFirstSaveInterceptor(async cancellationToken =>
+        {
+            winnerSaved = true;
+            await winningHandler.HandleAsync(integrationEvent, cancellationToken);
+        });
+        await using var racingContext = database.CreateContext(saveInterceptor);
+        var racingHandler = new ProductionReportOeeProjectionHandler(racingContext, new InMemoryIntegrationEventDeadLetterStore());
+
+        await racingHandler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        Assert.True(winnerSaved);
+        await using var assertionContext = database.CreateContext();
+        Assert.Equal(1, await assertionContext.OeeProductionFacts.CountAsync());
     }
 
     [Fact]
@@ -403,6 +430,36 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
             "opc-ua-cell-race");
     }
 
+    private static ProductionReportRecordedIntegrationEvent CreateProductionReportRecordedEvent(string reportNo)
+    {
+        var reportedAtUtc = new DateTimeOffset(2026, 7, 10, 8, 45, 0, TimeSpan.Zero);
+        return new ProductionReportRecordedIntegrationEvent(
+            $"evt-{reportNo}",
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1,
+            reportedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            reportNo,
+            reportNo,
+            "org-001",
+            "env-dev",
+            "system:mes",
+            $"production-report-recorded:org-001:env-dev:{reportNo}",
+            new ProductionReportRecordedPayload(
+                reportNo,
+                "WO-001",
+                "OP-10",
+                "WC-PACK-01",
+                "DEV-PACK-01",
+                80m,
+                10m,
+                10m,
+                "PCS",
+                100m,
+                reportedAtUtc,
+                false));
+    }
+
     private sealed class IndustrialTelemetrySqliteDatabase : IAsyncDisposable
     {
         private readonly string connectionString = $"Data Source=file:industrial-telemetry-race-{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
@@ -422,17 +479,40 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
             return database;
         }
 
-        public ApplicationDbContext CreateContext()
+        public ApplicationDbContext CreateContext(params IInterceptor[] interceptors)
         {
-            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-                .UseSqlite(connectionString)
-                .Options;
+            var optionsBuilder = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseSqlite(connectionString);
+            if (interceptors.Length > 0)
+            {
+                optionsBuilder.AddInterceptors(interceptors);
+            }
+
+            var options = optionsBuilder.Options;
             return new ApplicationDbContext(options, new NoopMediator());
         }
 
         public async ValueTask DisposeAsync()
         {
             await keepAliveConnection.DisposeAsync();
+        }
+    }
+
+    private sealed class BeforeFirstSaveInterceptor(Func<CancellationToken, Task> beforeFirstSave) : SaveChangesInterceptor
+    {
+        private int wasInvoked;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Exchange(ref wasInvoked, 1) == 0)
+            {
+                await beforeFirstSave(cancellationToken);
+            }
+
+            return result;
         }
     }
 
