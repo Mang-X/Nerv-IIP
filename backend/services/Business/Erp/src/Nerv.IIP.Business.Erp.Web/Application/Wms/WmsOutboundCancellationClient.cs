@@ -18,6 +18,7 @@ public sealed record WmsOutboundCancellationResult(string DeliveryOrderNo, WmsOu
 
 public enum WmsOutboundCancellationStatus
 {
+    Cancellable,
     Cancelled,
     NotFound,
     NotCancellable,
@@ -34,19 +35,25 @@ public sealed class HttpWmsOutboundCancellationClient(
         string reason,
         CancellationToken cancellationToken)
     {
-        var results = new List<WmsOutboundCancellationResult>();
+        var candidates = new List<WmsOutboundCancellationCandidate>();
         foreach (var deliveryOrderNo in deliveryOrderNos.Distinct(StringComparer.Ordinal))
         {
             var item = await FindOutboundOrderAsync(organizationId, environmentId, deliveryOrderNo, cancellationToken);
+            candidates.Add(new WmsOutboundCancellationCandidate(deliveryOrderNo, item));
+        }
+
+        if (candidates.Any(x => x.Item is not null && !IsOpen(x.Item.Status)))
+        {
+            return candidates.Select(ToPreflightResult).ToArray();
+        }
+
+        var results = new List<WmsOutboundCancellationResult>();
+        foreach (var candidate in candidates)
+        {
+            var item = candidate.Item;
             if (item is null)
             {
-                results.Add(new WmsOutboundCancellationResult(deliveryOrderNo, WmsOutboundCancellationStatus.NotFound));
-                continue;
-            }
-
-            if (!string.Equals(item.Status, "Open", StringComparison.OrdinalIgnoreCase))
-            {
-                results.Add(new WmsOutboundCancellationResult(deliveryOrderNo, WmsOutboundCancellationStatus.NotCancellable));
+                results.Add(new WmsOutboundCancellationResult(candidate.DeliveryOrderNo, WmsOutboundCancellationStatus.NotFound));
                 continue;
             }
 
@@ -57,10 +64,27 @@ public sealed class HttpWmsOutboundCancellationClient(
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
             using var response = await httpClient.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
-            results.Add(new WmsOutboundCancellationResult(deliveryOrderNo, WmsOutboundCancellationStatus.Cancelled));
+            results.Add(new WmsOutboundCancellationResult(candidate.DeliveryOrderNo, WmsOutboundCancellationStatus.Cancelled));
         }
 
         return results;
+    }
+
+    private static WmsOutboundCancellationResult ToPreflightResult(WmsOutboundCancellationCandidate candidate)
+    {
+        if (candidate.Item is null)
+        {
+            return new WmsOutboundCancellationResult(candidate.DeliveryOrderNo, WmsOutboundCancellationStatus.NotFound);
+        }
+
+        return new WmsOutboundCancellationResult(
+            candidate.DeliveryOrderNo,
+            IsOpen(candidate.Item.Status) ? WmsOutboundCancellationStatus.Cancellable : WmsOutboundCancellationStatus.NotCancellable);
+    }
+
+    private static bool IsOpen(string status)
+    {
+        return string.Equals(status, "Open", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<OutboundOrderItem?> FindOutboundOrderAsync(
@@ -84,6 +108,7 @@ public sealed class HttpWmsOutboundCancellationClient(
     }
 
     private sealed record CancelOutboundOrderHttpRequest(string OutboundOrderId, string Reason);
+    private sealed record WmsOutboundCancellationCandidate(string DeliveryOrderNo, OutboundOrderItem? Item);
     private sealed record OutboundOrderItem(string OutboundOrderId, string OutboundOrderNo, string Status, DateTime CreatedAtUtc);
     private sealed record OutboundOrderListResponse(IReadOnlyCollection<OutboundOrderItem> Items, int Total);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);

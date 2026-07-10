@@ -328,9 +328,13 @@ public sealed class CancelSalesOrderCommandHandler(
             && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == request.SalesOrderNo && x.Status == "released").ToArrayAsync(cancellationToken);
         var cancellationResults = await wmsOutboundCancellationClient.CancelForDeliveryOrdersAsync(
             request.OrganizationId, request.EnvironmentId, deliveries.Select(x => x.DeliveryOrderNo).ToArray(), request.Reason, cancellationToken);
-        if (cancellationResults.Any(x => x.Status == WmsOutboundCancellationStatus.NotCancellable))
+        var notCancellableDeliveryOrderNos = cancellationResults
+            .Where(x => x.Status == WmsOutboundCancellationStatus.NotCancellable)
+            .Select(x => x.DeliveryOrderNo)
+            .ToArray();
+        if (notCancellableDeliveryOrderNos.Length > 0)
         {
-            throw new KnownException("Sales orders with WMS outbound orders that cannot be cancelled cannot be cancelled.");
+            throw new KnownException($"Sales order has WMS outbound orders that are already in a non-cancellable state: {string.Join(", ", notCancellableDeliveryOrderNos)}.");
         }
         try
         {
