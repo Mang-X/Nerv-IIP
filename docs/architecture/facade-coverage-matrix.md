@@ -101,8 +101,8 @@ declaration against what actually shipped (facade + codegen + barrel for
 | ProductEngineering | 38 | 38 | 0 | 0 |
 | Quality | 27 | 16 | 11 | 0 |
 | Scheduling | 7 | 6 | 1 | 0 |
-| Wms | 24 | 19 | 3 | 2 |
-| **Total** | **319** | **271** | **35** | **13** |
+| Wms | 26 | 19 | 3 | 4 |
+| **Total** | **321** | **271** | **35** | **15** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
 The `exposed` rows (271) — each with its verified facade `gatewayOperationIds` — are
@@ -166,6 +166,8 @@ governance decisions, are listed in full below.
 | MasterData | POST | `/api/business/v1/master-data/references/validate` | Service-to-service batch reference-data validate consumed by other business services. |
 | Wms | POST | `/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete` | Internal warehouse-task completion endpoint consumed by the WCS adapter/callback boundary (#413). |
 | Wms | POST | `/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/progress` | Internal warehouse-task progress endpoint consumed by the WCS adapter/callback boundary (#413). |
+| Wms | GET | `/api/business/v1/wms/wcs-dispatch-circuits` | Internal operational visibility for per-adapter/device WCS circuit state. |
+| Wms | POST | `/api/business/v1/wms/wcs-dispatch-circuits/reset` | Internal guarded manual recovery action for an open WCS circuit. |
 
 ## Relationship to #842 (device-control read-face)
 

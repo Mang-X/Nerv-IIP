@@ -11,6 +11,7 @@ public static class WmsIntegrationEventTypes
     public const string CountExecutionCompleted = "wms.CountExecutionCompleted";
     public const string WcsTaskDispatched = "wms.WcsTaskDispatched";
     public const string WcsTaskFailed = "wms.WcsTaskFailed";
+    public const string WcsTaskRetryExhausted = "wms.WcsTaskRetryExhausted";
     public const string WcsTaskCompleted = "wms.WcsTaskCompleted";
     public const string WcsTaskCancelled = "wms.WcsTaskCancelled";
 }

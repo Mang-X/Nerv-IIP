@@ -3953,6 +3953,22 @@
       "gatewayOperationIds": [
         "dispatchBusinessConsoleWmsWcsTask"
       ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/wcs-dispatch-circuits",
+      "operationId": "listWmsWcsDispatchCircuits",
+      "classification": "internal",
+      "rationale": "WCS circuit diagnostics are an internal operations surface until a dedicated business-console reliability page is delivered."
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/wcs-dispatch-circuits/reset",
+      "operationId": "resetWmsWcsDispatchCircuit",
+      "classification": "internal",
+      "rationale": "Manual WCS circuit reset is an internal guarded operations action and is not exposed through the business-console facade."
     }
   ]
 }
