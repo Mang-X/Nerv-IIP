@@ -25,21 +25,20 @@
 @source '../../../../../packages/ui/src';
 @source '../../../../../packages/ui-mobile/src';
 
-/* Reserve the scrollbar gutter permanently so opening any reka overlay (Select /
-   Dialog / Dropdown / Popover / Sheet) doesn't reflow the page. reka's scroll
-   lock sets `body { overflow: hidden }` to stop background scroll; without a
-   stable gutter that removes the scrollbar and the fixed nav bar + content jump
-   left. Paired with `<ConfigProvider :scroll-body="false">` (theme/Layout.vue) so
-   reka does NOT also add its own body padding-right — the stable gutter already
-   holds the width, and letting reka pad too would over-compensate the other way. */
-html {
-  /* `overflow-y: auto` is required for `scrollbar-gutter` to take effect on the
-     root — with the default `overflow: visible` the gutter is ignored and the
-     scrollbar's width is only reclaimed on lock, still shifting content 15px.
-     auto keeps the scrollbar hidden on short pages; stable reserves its gutter so
-     the width never changes when reka locks the body. (Verified: shift 0.) */
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+/* Modal-overlay scroll lock without layout shift.
+   True modals (Dialog / AlertDialog / Sheet) MUST lock background scroll. reka does
+   that with `body { overflow: hidden }`, which only actually stops the viewport when
+   the ROOT's overflow stays `visible` (the browser propagates body→viewport
+   overflow). So we must NOT set `overflow`/`scrollbar-gutter` on <html>: that makes
+   <html> the scroll container and the lock silently stops working (background
+   scrolls behind the modal).
+   To avoid the shift instead: reka's default `scrollBody` compensation already pads
+   the body so normal content doesn't move; the only thing body padding can't reach
+   is a `position: fixed` element — the nav bar — so compensate it with reka's
+   `--scrollbar-width` (set on <html> only while a lock is active, absent otherwise).
+   Popover overlays (dropdown/select/popover) are non-modal and never lock. */
+.VPNavBar {
+  padding-right: var(--scrollbar-width, 0px);
 }
 
 @import 'tw-animate-css';

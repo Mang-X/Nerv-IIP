@@ -196,12 +196,6 @@ export { Spinner } from './components/ui/spinner'
 export { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 export { Toaster } from './components/ui/sonner'
 export { toast } from 'vue-sonner'
-// reka's global config provider — re-exported through the stable boundary so apps
-// can set `<ConfigProvider :scroll-body="false">` at their root WITHOUT a direct
-// reka-ui import. Pairs with `html { scrollbar-gutter: stable }` to kill the
-// overlay-open layout shift (reka's default body padding-right double-compensates
-// once a gutter is reserved). See design-system docs style.css / Layout.vue.
-export { ConfigProvider } from 'reka-ui'
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
 export {
   Table,
