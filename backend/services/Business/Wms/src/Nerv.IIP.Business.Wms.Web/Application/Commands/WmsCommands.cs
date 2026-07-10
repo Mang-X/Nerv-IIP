@@ -821,6 +821,13 @@ public sealed class CompleteWcsTaskCommandHandler(
 
         var executedQuantity = ExtractExecutedQuantity(request.CompletionPayloadJson, out var diagnosticMessage);
         task.Complete(request.CompletionPayloadJson);
+        var circuit = await dbContext.WcsDispatchCircuits.SingleOrDefaultAsync(
+            x => x.OrganizationId == task.OrganizationId
+                && x.EnvironmentId == task.EnvironmentId
+                && x.AdapterType == task.AdapterType
+                && x.DeviceId == task.DeviceId,
+            cancellationToken);
+        circuit?.RecordSuccess();
         var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == task.WarehouseTaskId, cancellationToken)
             ?? throw new KnownException($"Warehouse task was not found: {task.WarehouseTaskId}");
         if (executedQuantity is null)

@@ -58,6 +58,30 @@ public sealed class WcsRetryCircuitCommandTests
         Assert.Contains("circuit is open", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task Completed_task_resets_the_closed_device_circuit_failure_counter()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = CreateWarehouseTask("WT-SUCCESS-001");
+        dbContext.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var wcsTask = WcsTask.Dispatch("org-001", "env-dev", warehouseTask.Id, "agv", "EXT-SUCCESS-001", "{}", "AGV-01");
+        var circuit = WcsDispatchCircuit.Create("org-001", "env-dev", "agv", "AGV-01");
+        circuit.RecordFailure(DateTime.UtcNow.AddMinutes(-2), 3);
+        circuit.RecordFailure(DateTime.UtcNow.AddMinutes(-1), 3);
+        dbContext.AddRange(wcsTask, circuit);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteWcsTaskCommandHandler(dbContext).Handle(
+            new CompleteWcsTaskCommand("org-001", "env-dev", "EXT-SUCCESS-001", "{\"actualQuantity\":3}"),
+            CancellationToken.None);
+
+        Assert.Equal(0, circuit.ConsecutiveFailureCount);
+        Assert.False(circuit.IsOpen);
+    }
+
     private static WarehouseTask CreateWarehouseTask(string taskNo) =>
         WarehouseTask.CreatePutaway("org-001", "env-dev", taskNo, "IN-001", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "STAGE-01", 3m);
 

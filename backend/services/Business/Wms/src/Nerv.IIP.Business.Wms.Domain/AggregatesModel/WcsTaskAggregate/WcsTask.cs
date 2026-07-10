@@ -91,6 +91,11 @@ public sealed class WcsTask : Entity<WcsTaskId>, IAggregateRoot
             throw new InvalidOperationException("Completed WCS tasks cannot later fail.");
         }
 
+        if (Status == WcsTaskStatus.Failed)
+        {
+            return;
+        }
+
         FailureCode = WmsText.Required(failureCode, nameof(failureCode));
         FailureMessage = WmsText.Required(failureMessage, nameof(failureMessage));
         Status = WcsTaskStatus.Failed;

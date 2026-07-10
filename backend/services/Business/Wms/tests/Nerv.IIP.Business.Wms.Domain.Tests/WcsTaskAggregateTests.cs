@@ -90,6 +90,19 @@ public sealed class WcsTaskAggregateTests
     }
 
     [Fact]
+    public void Repeated_failure_callback_does_not_increment_task_failure_state_or_raise_another_event()
+    {
+        var firstFailureAtUtc = new DateTime(2026, 7, 10, 0, 0, 0, DateTimeKind.Utc);
+        var task = WcsTask.Dispatch("org-001", "env-dev", new WarehouseTaskId(Guid.CreateVersion7()), "agv", "EXT-001", "{}");
+
+        task.Fail("E001", "blocked aisle", firstFailureAtUtc);
+        task.Fail("E001", "blocked aisle", firstFailureAtUtc.AddMinutes(1));
+
+        Assert.Equal(firstFailureAtUtc, task.FailedAtUtc);
+        Assert.Single(task.GetDomainEvents().OfType<WcsTaskFailedDomainEvent>());
+    }
+
+    [Fact]
     public void Cancelled_task_raises_domain_event_for_adapter_compensation()
     {
         var task = WcsTask.Dispatch("org-001", "env-dev", new WarehouseTaskId(Guid.CreateVersion7()), "agv", "EXT-001", "{}");
