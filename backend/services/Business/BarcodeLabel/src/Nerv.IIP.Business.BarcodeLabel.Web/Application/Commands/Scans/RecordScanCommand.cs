@@ -69,27 +69,36 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
 {
     public async Task<ScanRecordId> Handle(RecordScanCommand request, CancellationToken cancellationToken)
     {
+        var existing = await dbContext.ScanRecords.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.IdempotencyKey == request.IdempotencyKey,
+            cancellationToken);
+        if (existing is not null)
+        {
+            var idempotencyCandidate = CreateCandidate(request, request.Result, request.RejectionReason);
+            try
+            {
+                existing.EnsureSameIdempotencyPayload(idempotencyCandidate);
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw new KnownException(ex.Message, ex);
+            }
+
+            return existing.Id;
+        }
+
+        var isVoidedLabel = await dbContext.LabelPrintItems.AnyAsync(x =>
+            x.LabelValue == request.ScannedValue
+            && x.Status == "voided",
+            cancellationToken);
+        var result = isVoidedLabel ? "rejected" : request.Result;
+        var rejectionReason = isVoidedLabel ? "label-voided" : request.RejectionReason;
         ScanRecord candidate;
         try
         {
-            candidate = ScanRecord.Record(
-                request.OrganizationId,
-                request.EnvironmentId,
-                request.DeviceCode,
-                request.ScannedValue,
-                request.SourceWorkflow,
-                request.SourceDocumentId,
-                request.IdempotencyKey,
-                request.Result,
-                request.RejectionReason,
-                request.SkuCode,
-                request.UomCode,
-                request.SiteCode,
-                request.LocationCode,
-                request.QualityStatus,
-                request.OwnerType,
-                request.OwnerId,
-                request.Quantity);
+            candidate = CreateCandidate(request, result, rejectionReason);
         }
         catch (ArgumentOutOfRangeException ex)
         {
@@ -102,25 +111,6 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
         catch (InvalidOperationException ex)
         {
             throw new KnownException(ex.Message, ex);
-        }
-
-        var existing = await dbContext.ScanRecords.SingleOrDefaultAsync(x =>
-            x.OrganizationId == request.OrganizationId
-            && x.EnvironmentId == request.EnvironmentId
-            && x.IdempotencyKey == request.IdempotencyKey,
-            cancellationToken);
-        if (existing is not null)
-        {
-            try
-            {
-                existing.EnsureSameIdempotencyPayload(candidate);
-            }
-            catch (InvalidOperationException ex)
-            {
-                throw new KnownException(ex.Message, ex);
-            }
-
-            return existing.Id;
         }
 
         if (string.Equals(candidate.Result, "accepted", StringComparison.Ordinal))
@@ -168,7 +158,37 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
             }
         }
 
+        if (string.Equals(candidate.Result, "accepted", StringComparison.Ordinal))
+        {
+            var owningBatch = await dbContext.LabelPrintBatches
+                .Include(x => x.Items)
+                .SingleOrDefaultAsync(x => x.Items.Any(item => item.LabelValue == candidate.ScannedValue), cancellationToken);
+            owningBatch?.ConsumeItem(candidate.ScannedValue);
+        }
+
         dbContext.ScanRecords.Add(candidate);
         return candidate.Id;
+    }
+
+    private static ScanRecord CreateCandidate(RecordScanCommand request, string result, string? rejectionReason)
+    {
+        return ScanRecord.Record(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceCode,
+            request.ScannedValue,
+            request.SourceWorkflow,
+            request.SourceDocumentId,
+            request.IdempotencyKey,
+            result,
+            rejectionReason,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.LocationCode,
+            request.QualityStatus,
+            request.OwnerType,
+            request.OwnerId,
+            request.Quantity);
     }
 }
