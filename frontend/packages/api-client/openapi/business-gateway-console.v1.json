@@ -37816,7 +37816,8 @@
         "additionalProperties": false,
         "properties": {
           "movementId": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "varianceQuantity": {
             "type": "number",
@@ -37825,6 +37826,13 @@
           "onHandQuantity": {
             "type": "number",
             "format": "decimal"
+          },
+          "status": {
+            "type": "string"
+          },
+          "approvalChainId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

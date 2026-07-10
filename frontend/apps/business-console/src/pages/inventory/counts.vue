@@ -168,10 +168,13 @@ async function submitAdjustment() {
     idempotencyKey: adjustmentForm.idempotencyKey.trim(),
   }
   const response = await confirmAdjustment(adjustmentForm.countTaskId.trim(), body)
-  adjustmentSuccess.value = `库存调整 ${response?.data?.movementId ?? body.idempotencyKey} 已提交。`
+  const approvalPending = response?.data?.status === 'pending-approval'
+  adjustmentSuccess.value = approvalPending
+    ? `库存调整 ${response?.data?.approvalChainId ?? body.idempotencyKey} 已进入审批。`
+    : `库存调整 ${response?.data?.movementId ?? body.idempotencyKey} 已确认。`
   countTaskQueue.value = countTaskQueue.value.map((row) =>
     row.countTaskId === adjustmentForm.countTaskId
-      ? { ...row, countedQuantity: body.countedQuantity, status: '已确认' }
+      ? { ...row, countedQuantity: body.countedQuantity, status: approvalPending ? '待审批' : '已确认' }
       : row,
   )
 }

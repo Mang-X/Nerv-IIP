@@ -6226,7 +6226,7 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
         string countTaskId,
         BusinessConsoleConfirmStockCountAdjustmentRequest request,
         CancellationToken cancellationToken) =>
-        Task.FromResult(new BusinessConsoleConfirmStockCountAdjustmentResponse("move-001", 1, 11));
+        Task.FromResult(new BusinessConsoleConfirmStockCountAdjustmentResponse("move-001", 1, 11, "posted", null));
 }
 
 internal sealed class RecordingQualityClient : IBusinessQualityClient

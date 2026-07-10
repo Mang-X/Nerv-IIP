@@ -4316,9 +4316,11 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfirmStockCoun
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmStockCountAdjustmentResponse = {
-    movementId?: string;
+    movementId?: string | null;
     varianceQuantity?: number;
     onHandQuantity?: number;
+    status?: string;
+    approvalChainId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmStockCountAdjustmentRequest = {

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
+using Nerv.IIP.Business.Inventory.Web.Application.Approval;
 using Nerv.IIP.Business.Inventory.Web.Application.Expiry;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Inventory.Web.Application.MasterData;
@@ -58,9 +59,15 @@ try
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
     builder.Services.Configure<ExpiredStockBlockingOptions>(builder.Configuration.GetSection("Inventory:ExpiredStockBlocking"));
+    builder.Services.Configure<StockCountAdjustmentApprovalOptions>(builder.Configuration.GetSection(StockCountAdjustmentApprovalOptions.SectionName));
     builder.Services.Configure<InventoryForwardedPermissionOptions>(builder.Configuration.GetSection("Inventory:ForwardedPermissions"));
     builder.Services.AddScoped<ExpiredStockBlockingService>();
     builder.Services.AddHostedService<ExpiredStockBlockingHostedService>();
+    var approvalBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
+    builder.Services.AddHttpClient<IStockCountApprovalClient, HttpStockCountApprovalClient>(client =>
+    {
+        client.BaseAddress = approvalBaseAddress;
+    }).UseHttpClientMetrics();
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
     if (isTesting && string.IsNullOrWhiteSpace(connectionString))
