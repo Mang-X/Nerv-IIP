@@ -22,6 +22,7 @@ import { useRouter } from 'vue-router'
 import {
   useMesOperationTasks,
   useMesProductionReports,
+  useMesTelemetryProductionReportCandidates,
   useMesWorkOrders,
 } from '@/composables/useBusinessMes'
 import RetryableListError from '@/components/RetryableListError.vue'
@@ -58,6 +59,20 @@ const {
 } = useMesOperationTasks()
 
 const { recordReport } = useMesProductionReports()
+const telemetryQueue = useMesTelemetryProductionReportCandidates()
+const telemetryCandidateId = ref<string | null>(null)
+const telemetryWorkOrderId = ref('')
+const telemetryOperationTaskId = ref('')
+const telemetryDismissReason = ref('')
+
+async function promoteTelemetryCandidate(candidate: { candidateId?: string; workOrderId?: string | null; operationTaskId?: string | null }) {
+  if (!candidate.candidateId) return
+  const workOrderId = telemetryWorkOrderId.value.trim() || candidate.workOrderId?.trim()
+  const operationTaskId = telemetryOperationTaskId.value.trim() || candidate.operationTaskId?.trim()
+  if (!workOrderId || !operationTaskId) return
+  await telemetryQueue.promote(candidate.candidateId, workOrderId, operationTaskId)
+  telemetryCandidateId.value = null
+}
 
 // --- 流程上下文（productionReportFlow 驱动当前步/进度）---
 const ctx = reactive<ReportCtx>({
@@ -292,6 +307,20 @@ function onScanWorkOrder(value: string) {
     </NvMobileResult>
 
     <div v-else class="space-y-4 p-4">
+      <section v-if="telemetryQueue.candidates.value.length" class="space-y-3 rounded-lg border border-warning/40 bg-warning/5 p-3">
+        <div class="flex items-center justify-between"><h2 class="font-semibold">遥测待确认</h2><span class="text-xs text-muted-foreground">{{ telemetryQueue.total.value }} 条</span></div>
+        <div v-for="candidate in telemetryQueue.candidates.value" :key="candidate.candidateId" class="rounded-lg border border-border bg-card p-3">
+          <button type="button" class="w-full text-left" @click="telemetryCandidateId = telemetryCandidateId === candidate.candidateId ? null : (candidate.candidateId ?? null)">
+            <span class="block font-medium">{{ candidate.deviceAssetId }} · {{ candidate.goodQuantity }} 件</span><span class="block text-xs text-muted-foreground">{{ candidate.suspensionReason ?? candidate.status }}</span>
+          </button>
+          <div v-if="telemetryCandidateId === candidate.candidateId" class="mt-3 space-y-2">
+            <input v-model="telemetryWorkOrderId" :placeholder="candidate.workOrderId ?? '真实工单号'" class="min-h-touch w-full rounded-lg border border-border bg-background px-3" />
+            <input v-model="telemetryOperationTaskId" :placeholder="candidate.operationTaskId ?? '真实工序任务号'" class="min-h-touch w-full rounded-lg border border-border bg-background px-3" />
+            <input v-model="telemetryDismissReason" placeholder="忽略原因（忽略时必填）" class="min-h-touch w-full rounded-lg border border-border bg-background px-3" />
+            <div class="grid grid-cols-2 gap-2"><button type="button" class="min-h-touch rounded-lg bg-primary text-primary-foreground" @click="promoteTelemetryCandidate(candidate)">确认转正</button><button type="button" :disabled="!telemetryDismissReason.trim()" class="min-h-touch rounded-lg border border-border disabled:opacity-50" @click="telemetryQueue.dismiss(candidate.candidateId!, telemetryDismissReason.trim()).then(() => telemetryCandidateId = null)">忽略</button></div>
+          </div>
+        </div>
+      </section>
       <!-- 步骤 1：选工单 -->
       <template v-if="currentStep === 'selectWorkOrder'">
         <NvScanBar placeholder="扫描工单号" :active="scanActive" @scan="onScanWorkOrder" />

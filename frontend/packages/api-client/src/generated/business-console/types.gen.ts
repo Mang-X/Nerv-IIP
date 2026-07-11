@@ -3024,6 +3024,67 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     materialIssueRequestNo?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesTelemetryCandidateListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateRow>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateRow = {
+    candidateId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    status?: string;
+    reportingMode?: string;
+    deviceAssetId?: string;
+    tagKey?: string;
+    goodQuantity?: number;
+    bucketStartUtc?: string;
+    bucketEndUtc?: string;
+    workCenterId?: string | null;
+    workOrderId?: string | null;
+    operationTaskId?: string | null;
+    suspensionReason?: string | null;
+    sourceIdempotencyKey?: string;
+    resolutionReason?: string | null;
+    resolvedBy?: string | null;
+    resolvedAtUtc?: string | null;
+    productionReportId?: string | null;
+    transitions?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateTransition>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateTransition = {
+    fromStatus?: string;
+    toStatus?: string;
+    actor?: string;
+    reason?: string | null;
+    occurredAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesTelemetryCandidateRow = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateRow | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateDetailRequest = {
+    [key: string]: never;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidatePromoteRequest = {
+    workOrderId?: string;
+    operationTaskId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateDismissRequest = {
+    reason?: string;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectRequest = {
     organizationId?: string;
     environmentId?: string;
@@ -11003,6 +11064,139 @@ export type RecordBusinessConsoleMesProductionReportResponses = {
 };
 
 export type RecordBusinessConsoleMesProductionReportResponse = RecordBusinessConsoleMesProductionReportResponses[keyof RecordBusinessConsoleMesProductionReportResponses];
+
+export type ListBusinessConsoleMesTelemetryProductionReportCandidatesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        status?: string | null;
+        workCenterId?: string | null;
+        deviceAssetId?: string | null;
+        fromUtc?: string | null;
+        toUtc?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/mes/telemetry-production-report-candidates';
+};
+
+export type ListBusinessConsoleMesTelemetryProductionReportCandidatesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleMesTelemetryProductionReportCandidatesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesTelemetryCandidateListResponse;
+};
+
+export type ListBusinessConsoleMesTelemetryProductionReportCandidatesResponse = ListBusinessConsoleMesTelemetryProductionReportCandidatesResponses[keyof ListBusinessConsoleMesTelemetryProductionReportCandidatesResponses];
+
+export type GetBusinessConsoleMesTelemetryProductionReportCandidateData = {
+    body?: never;
+    path: {
+        candidateId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/telemetry-production-report-candidates/{candidateId}';
+};
+
+export type GetBusinessConsoleMesTelemetryProductionReportCandidateErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleMesTelemetryProductionReportCandidateResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesTelemetryCandidateRow;
+};
+
+export type GetBusinessConsoleMesTelemetryProductionReportCandidateResponse = GetBusinessConsoleMesTelemetryProductionReportCandidateResponses[keyof GetBusinessConsoleMesTelemetryProductionReportCandidateResponses];
+
+export type PromoteBusinessConsoleMesTelemetryProductionReportCandidateData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidatePromoteRequest;
+    path: {
+        candidateId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/telemetry-production-report-candidates/{candidateId}/promote';
+};
+
+export type PromoteBusinessConsoleMesTelemetryProductionReportCandidateErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PromoteBusinessConsoleMesTelemetryProductionReportCandidateResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordProductionReportResponse;
+};
+
+export type PromoteBusinessConsoleMesTelemetryProductionReportCandidateResponse = PromoteBusinessConsoleMesTelemetryProductionReportCandidateResponses[keyof PromoteBusinessConsoleMesTelemetryProductionReportCandidateResponses];
+
+export type DismissBusinessConsoleMesTelemetryProductionReportCandidateData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateDismissRequest;
+    path: {
+        candidateId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/telemetry-production-report-candidates/{candidateId}/dismiss';
+};
+
+export type DismissBusinessConsoleMesTelemetryProductionReportCandidateErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type DismissBusinessConsoleMesTelemetryProductionReportCandidateResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type DismissBusinessConsoleMesTelemetryProductionReportCandidateResponse = DismissBusinessConsoleMesTelemetryProductionReportCandidateResponses[keyof DismissBusinessConsoleMesTelemetryProductionReportCandidateResponses];
 
 export type RecordBusinessConsoleMesDefectData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectRequest;

@@ -30,6 +30,9 @@ import {
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
+  listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions,
+  promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
+  dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
@@ -65,6 +68,7 @@ import {
   type BusinessConsoleMesProductionPlanRow,
   type BusinessConsoleMesProductionReportListEnvelope,
   type BusinessConsoleMesProductionReportRow,
+  type BusinessConsoleMesTelemetryCandidateRow,
   type BusinessConsoleMesRecordDefectRequest,
   type BusinessConsoleMesRecordDowntimeEventRequest,
   type BusinessConsoleMesRelatedQualityItemListEnvelope,
@@ -1136,6 +1140,41 @@ export function useMesProductionReports() {
     productionReportsPending: reportsQuery.isLoading,
     productionReportsTotal: computed(() => envelopeTotal(reportsQuery.data.value)),
     refreshProductionReports: () => refetchWithBusinessContext(filters, reportsQuery),
+  }
+}
+
+export function useMesTelemetryProductionReportCandidates() {
+  const filters = Object.assign(defaultFilters(), { status: 'pending-confirmation', fromUtc: undefined as string | undefined, toUtc: undefined as string | undefined })
+  const queryCache = useQueryCache()
+  const candidatesQuery = useQuery(() => withBusinessContextEnabled(
+    listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions({ query: {
+      organizationId: filters.organizationId, environmentId: filters.environmentId, status: filters.status || undefined,
+      workCenterId: filters.workCenterId || undefined, deviceAssetId: filters.deviceAssetId || undefined,
+      fromUtc: filters.fromUtc, toUtc: filters.toUtc, skip: filters.skip, take: filters.take,
+    } }), filters))
+  const promoteMutation = useMutation({
+    ...promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions(),
+    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesTelemetryProductionReportCandidates', 'listBusinessConsoleMesProductionReports', 'listBusinessConsoleMesWorkOrders']).catch(ignoreBackgroundError),
+  })
+  const dismissMutation = useMutation({
+    ...dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions(),
+    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesTelemetryProductionReportCandidates']).catch(ignoreBackgroundError),
+  })
+  type CandidateEnvelope = { data?: { items?: BusinessConsoleMesTelemetryCandidateRow[]; total?: number } | null }
+  return {
+    filters,
+    candidates: computed(() => envelopeItems<BusinessConsoleMesTelemetryCandidateRow, CandidateEnvelope>(candidatesQuery.data.value as CandidateEnvelope | undefined)),
+    total: computed(() => envelopeTotal(candidatesQuery.data.value as CandidateEnvelope | undefined)),
+    pending: candidatesQuery.isLoading,
+    error: candidatesQuery.error,
+    refresh: () => refetchWithBusinessContext(filters, candidatesQuery),
+    promote: (candidateId: string, workOrderId: string, operationTaskId: string) => promoteMutation.mutateAsync({
+      path: { candidateId }, query: { organizationId: filters.organizationId, environmentId: filters.environmentId }, body: { workOrderId, operationTaskId },
+    }),
+    dismiss: (candidateId: string, reason: string) => dismissMutation.mutateAsync({
+      path: { candidateId }, query: { organizationId: filters.organizationId, environmentId: filters.environmentId }, body: { reason },
+    }),
+    actionPending: computed(() => promoteMutation.isLoading.value || dismissMutation.isLoading.value),
   }
 }
 
