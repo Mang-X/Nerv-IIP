@@ -60,6 +60,7 @@ const {
   detailPending,
   filters,
   finishedGoodsReceiptRequests,
+  materialIssueRequests,
   materialReadiness,
   materialReadinessError,
   materialReadinessPending,
@@ -167,12 +168,19 @@ const cancelDisabledReason = computed(() => {
   )
 })
 
-// 补偿预览（后端暂无取消预览端点，按关联单据前端汇总，PR 已注明降级实现）
-const reservationRows = computed(() =>
-  materialRows.value.filter((row) => (row.requestedQuantity ?? 0) > 0),
-)
+// 补偿预览（后端暂无取消预览端点，按关联单据前端汇总，PR 已注明降级实现）。
+// 权威来源是本工单的领料申请（取消 handler 遍历的对象）：已收料→退料指引，未收料且未终结→释放预留；
+// 齐套快照仅在有已发布 MBOM 时才有行，无法覆盖无 MBOM 直接领料的工单，故不用它做补偿汇总。
+const TERMINAL_ISSUE_STATUSES = new Set(['cancelled', 'closed', 'returned', 'completed'])
 const lineSideReturnRows = computed(() =>
-  materialRows.value.filter((row) => (row.receivedQuantity ?? 0) > 0),
+  materialIssueRequests.value.filter((row) => (row.receivedQuantity ?? 0) > 0),
+)
+const reservationRows = computed(() =>
+  materialIssueRequests.value.filter(
+    (row) =>
+      (row.receivedQuantity ?? 0) <= 0 &&
+      !TERMINAL_ISSUE_STATUSES.has((row.status ?? '').toLowerCase()),
+  ),
 )
 const cancellableReceiptCount = computed(
   () =>
@@ -473,11 +481,11 @@ function formatError(error: unknown) {
             <ul class="max-h-28 divide-y overflow-y-auto rounded-md border bg-background">
               <li
                 v-for="row in reservationRows"
-                :key="`res-${row.materialId}-${row.materialLotId}`"
+                :key="`res-${row.requestId}`"
                 class="flex items-center justify-between gap-2 px-2 py-1"
               >
                 <span class="truncate"
-                  >{{ row.materialId
+                  >{{ row.materialCode ?? row.materialId
                   }}<span v-if="row.materialLotId" class="text-muted-foreground">
                     · {{ row.materialLotId }}</span
                   ></span
@@ -494,11 +502,11 @@ function formatError(error: unknown) {
             <ul class="max-h-28 divide-y overflow-y-auto rounded-md border bg-background">
               <li
                 v-for="row in lineSideReturnRows"
-                :key="`ret-${row.materialId}-${row.materialLotId}`"
+                :key="`ret-${row.requestId}`"
                 class="flex items-center justify-between gap-2 px-2 py-1"
               >
                 <span class="truncate"
-                  >{{ row.materialId
+                  >{{ row.materialCode ?? row.materialId
                   }}<span v-if="row.materialLotId" class="text-muted-foreground">
                     · {{ row.materialLotId }}</span
                   ></span

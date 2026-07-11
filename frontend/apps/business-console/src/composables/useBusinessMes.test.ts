@@ -858,4 +858,38 @@ describe('business MES composables', () => {
       { receiptRequestId: 'fg-1', workOrderId: 'WO-CANCEL', receiptStatus: 'created' },
     ])
   })
+
+  it('scopes the cancel compensation material issue requests to the current work order', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
+      success: true,
+      data: {
+        total: 3,
+        items: [
+          {
+            requestId: 'MIR-1',
+            workOrderId: 'WO-CANCEL',
+            receivedQuantity: 30,
+            status: 'Received',
+          },
+          {
+            requestId: 'MIR-2',
+            workOrderId: 'WO-CANCEL',
+            receivedQuantity: 0,
+            status: 'Requested',
+          },
+          { requestId: 'MIR-9', workOrderId: 'WO-OTHER', receivedQuantity: 5, status: 'Received' },
+        ],
+      },
+    })
+
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-CANCEL'
+    detail.activateCancelPreview()
+
+    // 领料申请是补偿预览的权威来源，且必须按当前工单过滤（不掺入 WO-OTHER）
+    expect(detail.materialIssueRequests.value).toEqual([
+      { requestId: 'MIR-1', workOrderId: 'WO-CANCEL', receivedQuantity: 30, status: 'Received' },
+      { requestId: 'MIR-2', workOrderId: 'WO-CANCEL', receivedQuantity: 0, status: 'Requested' },
+    ])
+  })
 })

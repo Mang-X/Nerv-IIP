@@ -648,6 +648,20 @@ export function useMesWorkOrderDetail() {
     enabled: receiptPreviewEnabled.value,
   }))
 
+  // 领料申请是取消补偿的权威来源：取消 handler 遍历本工单的领料申请——已收料→退料指引，未收料→释放，
+  // 与齐套快照（material_requirements，仅在有已发布 MBOM 时才有）解耦，无 MBOM 的工单也能正确汇总。
+  const materialIssueQuery = useQuery(() => ({
+    ...listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        skip: 0,
+        take: DEFAULT_TAKE,
+      },
+    }),
+    enabled: receiptPreviewEnabled.value,
+  }))
+
   const cancelMutation = useMutation({
     ...cancelBusinessConsoleMesWorkOrderMutationOptions(),
     onSuccess() {
@@ -695,6 +709,13 @@ export function useMesWorkOrderDetail() {
         BusinessConsoleMesReceiptRequestRow,
         BusinessConsoleMesReceiptRequestListEnvelope
       >(receiptQuery.data.value).filter((row) => row.workOrderId === filters.workOrderId),
+    ),
+    // 本工单的领料申请（补偿预览的预留释放/退料指引权威来源，PR 已注明降级实现）
+    materialIssueRequests: computed<BusinessConsoleMesMaterialIssueRequestRow[]>(() =>
+      envelopeItems<
+        BusinessConsoleMesMaterialIssueRequestRow,
+        BusinessConsoleMesMaterialIssueRequestListEnvelope
+      >(materialIssueQuery.data.value).filter((row) => row.workOrderId === filters.workOrderId),
     ),
     materialReadiness: computed(() =>
       unwrapData<
