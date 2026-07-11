@@ -3962,6 +3962,14 @@
     {
       "service": "Wms",
       "method": "GET",
+      "route": "/api/business/v1/wms/replenishment-tasks",
+      "operationId": "listWmsReplenishmentTasks",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the remaining WMS deepening and Business Console operations tranche tracked by #707."
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
       "route": "/api/business/v1/wms/putaway-tasks",
       "operationId": "listWmsPutawayTasks",
       "classification": "exposed",

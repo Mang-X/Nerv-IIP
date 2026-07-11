@@ -378,6 +378,15 @@ public sealed record CompleteOutboundOrderCommand(OutboundOrderId OutboundOrderI
 
 public sealed record CloseBackorderOrderCommand(BackorderOrderId BackorderOrderId, string Reason) : ICommand;
 
+public sealed class CloseBackorderOrderCommandValidator : AbstractValidator<CloseBackorderOrderCommand>
+{
+    public CloseBackorderOrderCommandValidator()
+    {
+        RuleFor(x => x.BackorderOrderId).NotEmpty();
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(1000);
+    }
+}
+
 public sealed class CloseBackorderOrderCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<CloseBackorderOrderCommand>
 {
@@ -385,7 +394,14 @@ public sealed class CloseBackorderOrderCommandHandler(ApplicationDbContext dbCon
     {
         var backorder = await dbContext.BackorderOrders.SingleOrDefaultAsync(x => x.Id == request.BackorderOrderId, cancellationToken)
             ?? throw new KnownException($"Backorder order was not found: {request.BackorderOrderId}");
-        backorder.Close(request.Reason);
+        try
+        {
+            backorder.Close(request.Reason);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
     }
 }
 

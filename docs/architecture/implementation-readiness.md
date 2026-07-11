@@ -394,7 +394,7 @@ Ops 任务事实当前以 PostgreSQL `operation_tasks`、`operation_attempts`、
 
 ### 2026-07-11 WMS 短拣欠交与补货建议记录（MAN-391 / #707）
 
-WMS 出库复核现在按 WarehouseTask 实际执行量识别短拣，在释放剩余 Inventory reservation 的同时，以同一 WMS 事务创建耐久 `BackorderOrder` 和 `Replenishment` 类型的 WarehouseTask 建议。欠交单按组织、环境、原出库单行保持唯一，可通过内部服务 API 分页查询并带审计原因幂等关闭；完成命令按原幂等键重放不会重复创建欠交或补货建议。本 tranche 只记录目标拣货位与欠交数量，不选择或伪造补货来源库位；移库任务、库位容量/混放规则和波次拣货仍属于后续 #707 子项。
+WMS 出库复核现在按 WarehouseTask 实际执行量识别短拣，在释放剩余 Inventory reservation 的同时，以同一 WMS 事务创建耐久 `BackorderOrder` 和 `Replenishment` 类型的 WarehouseTask 建议。欠交单按组织、环境、原出库单行保持唯一，可通过内部服务 API 分页查询并带审计原因幂等关闭；补货建议也可通过独立的内部服务 API 按任务状态、库位与关键字分页查询。完成命令按原幂等键重放不会重复创建欠交或补货建议。本 tranche 只记录目标拣货位与欠交数量，不选择或伪造补货来源库位；移库任务、库位容量/混放规则和波次拣货仍属于后续 #707 子项。
 
 ### 可以并行但不阻塞开工的事项
 

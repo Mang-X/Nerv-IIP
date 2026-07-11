@@ -101,7 +101,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | ProductEngineering | 38 | 38 | 0 | 0 |
 | Quality | 31 | 16 | 15 | 0 |
 | Scheduling | 7 | 6 | 1 | 0 |
-| Wms | 29 | 19 | 5 | 5 |
+| Wms | 30 | 19 | 6 | 5 |
 | **Total** | **335** | **271** | **44** | **20** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
@@ -157,6 +157,7 @@ governance decisions, are listed in full below.
 | Scheduling | POST | `/api/business/v1/scheduling/problems/assemble` | BusinessGateway facade pending; APS problem-assemble follows the scheduling workbench menu phase (preview/create/gantt/release already exposed). |
 | Wms | POST | `/api/business/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry` | BusinessGateway facade pending; WMS inbound posting-retry follows the WMS operations menu phase (MES posting-retry already exposed via #833). |
 | Wms | GET | `/api/business/v1/wms/backorder-orders` | BusinessGateway facade pending; follows the remaining WMS deepening and Business Console operations tranche tracked by #707. |
+| Wms | GET | `/api/business/v1/wms/replenishment-tasks` | BusinessGateway facade pending; follows the remaining WMS deepening and Business Console operations tranche tracked by #707. |
 | Wms | POST | `/api/business/v1/wms/backorder-orders/{backorderOrderId}/close` | BusinessGateway facade pending; follows the remaining WMS deepening and Business Console operations tranche tracked by #707. |
 | Wms | POST | `/api/business/v1/wms/outbound-orders/{outboundOrderId}/cancel` | BusinessGateway facade pending; WMS outbound cancel follows the WMS operations menu phase. |
 | Wms | POST | `/api/business/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry` | BusinessGateway facade pending; WMS outbound posting-retry follows the WMS operations menu phase. |

@@ -210,6 +210,16 @@ public sealed class ListPickingTasksEndpoint(ISender sender) : WmsEndpoint<ListW
     }
 }
 
+public sealed class ListReplenishmentTasksEndpoint(ISender sender) : WmsEndpoint<ListWarehouseTasksRequest, ResponseData<ListWarehouseTasksResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListReplenishmentTasksEndpoint>());
+    public override async Task HandleAsync(ListWarehouseTasksRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListWarehouseTasksQuery(req.OrganizationId, req.EnvironmentId, WarehouseTaskType.Replenishment, req.Skip, req.Take, req.Status, req.LocationCode, req.OperatorUserId, req.Keyword), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class RecordWarehouseTaskProgressEndpoint(ISender sender) : WmsEndpoint<RecordWarehouseTaskProgressRequest, ResponseData<object>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<RecordWarehouseTaskProgressEndpoint>());
@@ -404,6 +414,7 @@ public static class WmsEndpointContracts
         new(typeof(ListOutboundOrdersEndpoint), "GET", "/api/business/v1/wms/outbound-orders", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "listWmsOutboundOrders"),
         new(typeof(CreatePickingTaskEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "createWmsPickingTask"),
         new(typeof(ListPickingTasksEndpoint), "GET", "/api/business/v1/wms/picking-tasks", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "listWmsPickingTasks"),
+        new(typeof(ListReplenishmentTasksEndpoint), "GET", "/api/business/v1/wms/replenishment-tasks", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "listWmsReplenishmentTasks"),
         new(typeof(RecordWarehouseTaskProgressEndpoint), "POST", "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/progress", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "recordWmsWarehouseTaskProgress"),
         new(typeof(CompleteWarehouseTaskEndpoint), "POST", "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsWarehouseTask"),
         new(typeof(CompleteOutboundOrderEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/complete", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsOutboundOrder"),
