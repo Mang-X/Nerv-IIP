@@ -17,7 +17,9 @@ import {
   listBusinessConsoleMesCapacityImpactsQueryOptions,
   listBusinessConsoleMesDispatchTasksQueryOptions,
   listBusinessConsoleMesDowntimeEventsQueryOptions,
+  listBusinessConsoleMesFinishedGoodsReceiptRequests,
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
+  listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesProductionPlansQueryOptions,
@@ -194,6 +196,13 @@ vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesMaterialIssueRequests' }],
     query: vi.fn(),
+  })),
+  // 原始 fetch fn（供完整分页），默认返回空页；分页测试用 mockImplementation 覆盖成多页。
+  listBusinessConsoleMesFinishedGoodsReceiptRequests: vi.fn(async () => ({
+    data: { success: true, data: { items: [], total: 0 } },
+  })),
+  listBusinessConsoleMesMaterialIssueRequests: vi.fn(async () => ({
+    data: { success: true, data: { items: [], total: 0 } },
   })),
   listBusinessConsoleMesOperationTasksQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesOperationTasks' }],
@@ -908,6 +917,40 @@ describe('business MES composables', () => {
     expect(listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions).toHaveBeenCalledWith(
       expect.objectContaining({ query: expect.objectContaining({ workOrderId: 'WO-CANCEL' }) }),
     )
+  })
+
+  it('paginates the compensation lists to fetch every related document, not just one page', async () => {
+    // 第一页满页（200）→ 继续；第二页不足一页（50）→ 结束。应累计取全 250 条，而非只取第一页。
+    const page1 = Array.from({ length: 200 }, (_, i) => ({
+      requestId: `MIR-${i}`,
+      workOrderId: 'WO-CANCEL',
+      receivedQuantity: 0,
+      status: 'Requested',
+    }))
+    const page2 = Array.from({ length: 50 }, (_, i) => ({
+      requestId: `MIR-${200 + i}`,
+      workOrderId: 'WO-CANCEL',
+      receivedQuantity: 0,
+      status: 'Requested',
+    }))
+    vi.mocked(listBusinessConsoleMesMaterialIssueRequests).mockImplementation(((options?: {
+      query?: { skip?: number }
+    }) => Promise.resolve({
+      data: {
+        success: true,
+        data: { items: (options?.query?.skip ?? 0) === 0 ? page1 : page2, total: 250 },
+      },
+    })) as unknown as typeof listBusinessConsoleMesMaterialIssueRequests)
+
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-CANCEL'
+    detail.activateCancelPreview()
+
+    // mock 的 useQuery 不会自动执行 query，直接跑分页 query fn 验证累计取全
+    const factory = coladaState.queryFactoriesById.get('listBusinessConsoleMesMaterialIssueRequests')
+    const options = factory?.() as { query: () => Promise<{ data?: { items?: unknown[] } }> }
+    const result = await options.query()
+    expect(result.data?.items).toHaveLength(250)
   })
 
   it('marks cancel preview ready only after both compensation lists return data', () => {

@@ -186,6 +186,13 @@ const lineSideReturnRows = computed(() =>
     (row) => (row.materialLotId ?? '').trim().length > 0 && returnableQuantityOf(row) > 0,
   ),
 )
+// 已收料且仍有可退量、却缺少物料批次的申请：后端退料要求批次（#557），取消整单会因此抛业务错误。
+// 不能只在预览里隐藏——必须前置阻断确认，并提示修复路径（补录批次或先消耗），否则用户确认后整单取消失败。
+const unreturnableNoLotRows = computed(() =>
+  materialIssueRequests.value.filter(
+    (row) => (row.materialLotId ?? '').trim().length === 0 && returnableQuantityOf(row) > 0,
+  ),
+)
 const reservationRows = computed(() =>
   materialIssueRequests.value.filter(
     (row) =>
@@ -232,6 +239,8 @@ const remarkMaxLength = computed(() =>
 const canSubmitCancel = computed(() => {
   // 破坏性动作：两项补偿预览成功拿到数据前禁用确认（慢网/失败时不允许在空数据上确认）。
   if (!cancelPreviewReady.value) return false
+  // 存在无批次却可退的已收料申请时，后端会拒绝整单取消——前置阻断，不允许确认。
+  if (unreturnableNoLotRows.value.length > 0) return false
   if (!cancelForm.reasonCode) return false
   if (requiresRemark.value && !cancelForm.remark.trim()) return false
   if (finalReasonLength.value > REASON_MAX_LENGTH) return false
@@ -523,6 +532,27 @@ function formatError(error: unknown) {
                 {{ cancellableTaskCount }}
               </p>
             </div>
+          </div>
+
+          <div
+            v-if="unreturnableNoLotRows.length"
+            class="grid gap-1 rounded-md border border-destructive/40 bg-destructive/5 p-2"
+          >
+            <p class="text-xs font-medium text-destructive">
+              以下已收料申请缺少物料批次，无法退料，直接取消整单会被后端拒绝。请先补录批次或消耗后再取消。
+            </p>
+            <ul class="max-h-24 divide-y overflow-y-auto rounded-md border bg-background">
+              <li
+                v-for="row in unreturnableNoLotRows"
+                :key="`nolot-${row.requestId}`"
+                class="flex items-center justify-between gap-2 px-2 py-1"
+              >
+                <span class="truncate">{{ row.materialCode ?? row.materialId }}</span>
+                <span class="shrink-0 tabular-nums">{{
+                  formatQuantity(returnableQuantityOf(row))
+                }}</span>
+              </li>
+            </ul>
           </div>
 
           <div v-if="reservationRows.length" class="grid gap-1">

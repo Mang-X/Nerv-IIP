@@ -20,6 +20,8 @@ import {
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
+  listBusinessConsoleMesFinishedGoodsReceiptRequests,
+  listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesDispatchTasksQueryOptions,
   listBusinessConsoleMesDowntimeEventsQueryOptions,
   listBusinessConsoleMesCapacityImpactsQueryOptions,
@@ -98,6 +100,26 @@ import {
 } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
+// 取消补偿预览按此页大小完整分页，直到取全该工单的全部关联单据（取消 handler 处理全部）。
+const CANCEL_PREVIEW_PAGE_SIZE = 200
+
+// 逐页拉取直到最后一页（返回不足一页即结束），累计全部行。任一页 fetch 失败（throwOnError:true）会向上抛，
+// 由 useQuery.error 捕获，从而让补偿预览走失败门禁（不允许在不完整数据上确认取消）。
+async function fetchAllCompensationItems<TRow>(
+  fetchPage: (skip: number, take: number) => Promise<TRow[]>,
+): Promise<TRow[]> {
+  const items: TRow[] = []
+  let skip = 0
+  for (;;) {
+    const page = await fetchPage(skip, CANCEL_PREVIEW_PAGE_SIZE)
+    items.push(...page)
+    if (page.length < CANCEL_PREVIEW_PAGE_SIZE) {
+      break
+    }
+    skip += page.length
+  }
+  return items
+}
 
 type MesListStatus = NonNullable<
   NonNullable<ListBusinessConsoleMesWorkOrdersData['query']>['status']
@@ -636,34 +658,67 @@ export function useMesWorkOrderDetail() {
     enabled: detailEnabled.value,
   }))
 
-  // 服务端按 workOrderId 过滤（facade/底层 MES 均支持），避免只取组织级前 100 条再客户端过滤导致的漏报。
-  const receiptQuery = useQuery(() => ({
-    ...listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        workOrderId: filters.workOrderId,
-        skip: 0,
-        take: DEFAULT_TAKE,
+  // 服务端按 workOrderId 过滤（facade/底层 MES 均支持）+ 完整分页取全。取消 handler 会处理该工单的全部
+  // 关联单据，预览与 toast 也必须取全，故不能固定 take/只取一页——否则单工单 >一页 时仍会少算。
+  const receiptQuery = useQuery(() => {
+    const scope = {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      workOrderId: filters.workOrderId,
+    }
+    return {
+      key: listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions({
+        query: { ...scope, skip: 0, take: CANCEL_PREVIEW_PAGE_SIZE },
+      }).key,
+      query: async () => {
+        const items = await fetchAllCompensationItems<BusinessConsoleMesReceiptRequestRow>(
+          async (skip, take) => {
+            const { data } = await listBusinessConsoleMesFinishedGoodsReceiptRequests({
+              query: { ...scope, skip, take },
+              throwOnError: true,
+            })
+            return data?.success ? (data.data?.items ?? []) : []
+          },
+        )
+        return {
+          success: true,
+          data: { items, total: items.length },
+        } as BusinessConsoleMesReceiptRequestListEnvelope
       },
-    }),
-    enabled: receiptPreviewEnabled.value,
-  }))
+      enabled: receiptPreviewEnabled.value,
+    }
+  })
 
   // 领料申请是取消补偿的权威来源：取消 handler 遍历本工单的领料申请——已收料→退料指引，未收料→释放，
   // 与齐套快照（material_requirements，仅在有已发布 MBOM 时才有）解耦，无 MBOM 的工单也能正确汇总。
-  const materialIssueQuery = useQuery(() => ({
-    ...listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        workOrderId: filters.workOrderId,
-        skip: 0,
-        take: DEFAULT_TAKE,
+  const materialIssueQuery = useQuery(() => {
+    const scope = {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      workOrderId: filters.workOrderId,
+    }
+    return {
+      key: listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
+        query: { ...scope, skip: 0, take: CANCEL_PREVIEW_PAGE_SIZE },
+      }).key,
+      query: async () => {
+        const items = await fetchAllCompensationItems<BusinessConsoleMesMaterialIssueRequestRow>(
+          async (skip, take) => {
+            const { data } = await listBusinessConsoleMesMaterialIssueRequests({
+              query: { ...scope, skip, take },
+              throwOnError: true,
+            })
+            return data?.success ? (data.data?.items ?? []) : []
+          },
+        )
+        return {
+          success: true,
+          data: { items, total: items.length },
+        } as BusinessConsoleMesMaterialIssueRequestListEnvelope
       },
-    }),
-    enabled: receiptPreviewEnabled.value,
-  }))
+      enabled: receiptPreviewEnabled.value,
+    }
+  })
 
   const cancelMutation = useMutation({
     ...cancelBusinessConsoleMesWorkOrderMutationOptions(),
