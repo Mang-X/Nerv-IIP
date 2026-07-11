@@ -2984,6 +2984,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     reportedAtUtc?: string;
     workOrderNo?: string | null;
     operationTaskNo?: string | null;
+    reversedReportNo?: string | null;
+    reversalReason?: string | null;
+    workOrderStatus?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListWithoutStatusRequest = {

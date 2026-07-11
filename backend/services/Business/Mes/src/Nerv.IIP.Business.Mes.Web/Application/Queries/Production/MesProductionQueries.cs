@@ -37,7 +37,9 @@ public sealed record ProductionReportFact(
     string? ReversalReason = null,
     string? InventoryPostingFailureCode = null,
     string? InventoryPostingFailureMessage = null,
-    DateTimeOffset? InventoryPostingFailedAtUtc = null);
+    DateTimeOffset? InventoryPostingFailedAtUtc = null,
+    // 报工所属工单当前状态,供 Console 报工冲销按钮按工单生命周期分级(已关闭工单禁用冲销,MAN-444/#798)。
+    string? WorkOrderStatus = null);
 
 public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListProductionReportsQuery, ListProductionReportsResponse>
@@ -125,6 +127,12 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
                         && consumption.InventoryPostingFailureCode != null)
                     .OrderByDescending(consumption => consumption.InventoryPostingFailedAtUtc)
                     .Select(consumption => consumption.InventoryPostingFailedAtUtc)
+                    .FirstOrDefault(),
+                dbContext.WorkOrders
+                    .Where(workOrder => workOrder.OrganizationId == x.OrganizationId
+                        && workOrder.EnvironmentId == x.EnvironmentId
+                        && workOrder.WorkOrderIdValue == x.WorkOrderId)
+                    .Select(workOrder => workOrder.Status)
                     .FirstOrDefault()))
             .ToArrayAsync(cancellationToken);
         return new ListProductionReportsResponse(items, total);

@@ -3505,7 +3505,13 @@ public sealed record BusinessConsoleMesProductionReportRow(
     decimal ReworkQuantity,
     DateTimeOffset ReportedAtUtc,
     string? WorkOrderNo = null,
-    string? OperationTaskNo = null);
+    string? OperationTaskNo = null,
+    // 冲销互链(MAN-444/#798):冲销行携带被冲销的原报工号与冲销原因,供 Console 展示负向记录标记
+    // 与「原单 ⇄ 冲销单」双向高亮。MES 事实层 ProductionReportFact 已有这两个字段,facade 直接透传。
+    string? ReversedReportNo = null,
+    string? ReversalReason = null,
+    // 报工所属工单状态,供 Console 冲销按钮分级(已关闭工单前端禁用,与后端拒绝构成双层拦截,MAN-444/#798)。
+    string? WorkOrderStatus = null);
 
 public sealed record BusinessConsoleMesRecordDefectRequest(
     string OrganizationId,

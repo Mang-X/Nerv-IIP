@@ -786,7 +786,11 @@ public sealed class BusinessGatewayOpenApiTests
             document,
             "BusinessConsoleMesProductionReportRow",
             "workOrderNo",
-            "operationTaskNo");
+            "operationTaskNo",
+            // MAN-444/#798: 冲销互链与工单状态字段,支撑 Console 负向记录标记、原单⇄冲销单双向高亮与冲销按钮分级。
+            "reversedReportNo",
+            "reversalReason",
+            "workOrderStatus");
 
         AssertMesDisplayProperties(
             document,
