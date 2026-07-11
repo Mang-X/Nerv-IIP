@@ -26,6 +26,9 @@ export type { ReceiptCtx, ReportCtx } from './sop/mesFlows'
 export { repairOrderFlow, inspectionFlow } from './sop/equipmentFlows'
 export type { RepairCtx, InspectCtx } from './sop/equipmentFlows'
 export {
+  alarmLifecycleSortWeight,
+  alarmLifecycleStatusLabel,
+  alarmLifecycleStatusLabels,
   alarmSeverityLabel,
   alarmSeverityLabels,
   equipmentStateLabel,

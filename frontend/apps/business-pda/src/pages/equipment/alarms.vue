@@ -1,9 +1,25 @@
 <script setup lang="ts">
+import type { BusinessConsoleTelemetryAlarmEventItem } from '@nerv-iip/api-client'
+import { alarmLifecycleStatusLabel, alarmSeverityLabel } from '@nerv-iip/business-core'
+import { describeRequestError } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
-import { useBusinessEquipmentAlarms } from '@/composables/useBusinessEquipmentAlarms'
-import { alarmSeverityLabel } from '@nerv-iip/business-core'
-import { NvAppShellMobile, NvListRow, NvScanBar } from '@nerv-iip/ui-mobile'
-import { computed } from 'vue'
+import {
+  ALARM_SHELVE_DURATIONS_MINUTES,
+  useBusinessEquipmentAlarms,
+} from '@/composables/useBusinessEquipmentAlarms'
+import {
+  NvActionSheet,
+  NvAppShellMobile,
+  NvBottomSheet,
+  NvListRow,
+  NvMobileButton,
+  NvMobileDialog,
+  NvMobileTag,
+  NvMobileToast,
+  NvScanBar,
+  type ActionItem,
+} from '@nerv-iip/ui-mobile'
+import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -13,9 +29,12 @@ definePage({
   },
 })
 
+type Alarm = BusinessConsoleTelemetryAlarmEventItem
+
 const router = useRouter()
 
-const { filters, alarms, pending, error, refresh } = useBusinessEquipmentAlarms()
+const { filters, alarms, pending, error, refresh, acknowledge, shelve, actionPending } =
+  useBusinessEquipmentAlarms()
 
 // 当前是否按设备过滤（用于展示/清除过滤）。
 const filteredDevice = computed(() => filters.deviceAssetId)
@@ -29,24 +48,120 @@ function clearFilter() {
   filters.deviceAssetId = undefined
 }
 
+function statusOf(item: Alarm) {
+  return (item.status ?? '').trim().toLowerCase()
+}
+
+// 未确认（raised）才提供行内 确认/搁置；已处理行灰显 + 状态标。
+function isRaised(item: Alarm) {
+  return statusOf(item) === 'raised'
+}
+
+function timeText(iso?: string | null) {
+  if (!iso) return ''
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
 // 行标题：设备 · 报警码（均为业务码，可显示）。
-function alarmTitle(item: { deviceAssetId?: string; alarmCode?: string }) {
+function alarmTitle(item: Alarm) {
   const device = item.deviceAssetId ?? '未知设备'
   const code = item.alarmCode ?? '—'
   return `${device} · 报警码 ${code}`
 }
 
 // 行副标题：级别中文 + 发生时间（alarmEventId/externalAlarmId 仅作 key / 透传，不外显）。
-function alarmSubtitle(item: { severity?: string; raisedAtUtc?: string }) {
+function alarmSubtitle(item: Alarm) {
   const parts = [alarmSeverityLabel(item.severity)]
-  if (item.raisedAtUtc) {
-    parts.push(new Date(item.raisedAtUtc).toLocaleString('zh-CN'))
-  }
+  const raised = timeText(item.raisedAtUtc)
+  if (raised) parts.push(raised)
   return parts.join(' · ')
 }
 
+// 已处理行的处理人 + 时刻元信息（“张三 · 14:32”）。搁置额外显示解除时刻。
+function processedMeta(item: Alarm) {
+  const status = statusOf(item)
+  if (status === 'acknowledged') {
+    return [item.acknowledgedBy, timeText(item.acknowledgedAtUtc)].filter(Boolean).join(' · ')
+  }
+  if (status === 'shelved') {
+    const until = timeText(item.shelvedUntilUtc)
+    return [item.shelvedBy, until ? `至 ${until}` : ''].filter(Boolean).join(' · ')
+  }
+  return ''
+}
+
+const TAG_VARIANTS: Record<string, 'success' | 'warning' | 'default'> = {
+  acknowledged: 'success',
+  shelved: 'warning',
+  cleared: 'default',
+}
+function tagVariant(item: Alarm) {
+  return TAG_VARIANTS[statusOf(item)] ?? 'default'
+}
+
+// --- 确认弹层 -----------------------------------------------------------------
+const pendingAck = ref<Alarm | null>(null)
+const ackOpen = computed({
+  get: () => pendingAck.value !== null,
+  set: (open) => {
+    if (!open) pendingAck.value = null
+  },
+})
+function askAcknowledge(item: Alarm) {
+  pendingAck.value = item
+}
+async function confirmAcknowledge() {
+  const item = pendingAck.value
+  pendingAck.value = null
+  if (!item?.alarmEventId) return
+  await runAction(() => acknowledge(item.alarmEventId!), '已确认报警')
+}
+
+// --- 搁置 ActionSheet（30m / 2h / 8h）-----------------------------------------
+const DURATION_LABELS: Record<number, string> = { 30: '30 分钟', 120: '2 小时', 480: '8 小时' }
+const shelveActions: ActionItem[] = ALARM_SHELVE_DURATIONS_MINUTES.map((minutes) => ({
+  label: `搁置 ${DURATION_LABELS[minutes] ?? `${minutes} 分钟`}`,
+  value: String(minutes),
+}))
+const pendingShelve = ref<Alarm | null>(null)
+const shelveOpen = computed({
+  get: () => pendingShelve.value !== null,
+  set: (open) => {
+    if (!open) pendingShelve.value = null
+  },
+})
+function askShelve(item: Alarm) {
+  pendingShelve.value = item
+}
+async function onShelveDuration(value: string) {
+  const item = pendingShelve.value
+  pendingShelve.value = null
+  const minutes = Number(value)
+  if (!item?.alarmEventId || !Number.isFinite(minutes)) return
+  await runAction(
+    () => shelve(item.alarmEventId!, minutes),
+    `已搁置 ${DURATION_LABELS[minutes] ?? ''}`.trim(),
+  )
+}
+
+// --- 行详情（去报修入口）------------------------------------------------------
+const detail = ref<Alarm | null>(null)
+const detailOpen = computed({
+  get: () => detail.value !== null,
+  set: (open) => {
+    if (!open) detail.value = null
+  },
+})
+function openDetail(item: Alarm) {
+  detail.value = item
+}
+
 // 去报修：把设备 + 来源报警事件 ID 作为上下文带入报修页（repair.vue 消费 query 预填）。
-function goRepair(item: { deviceAssetId?: string; alarmEventId?: string }) {
+function goRepair(item: Alarm) {
+  detail.value = null
   void router.push({
     path: '/equipment/repair',
     query: {
@@ -54,6 +169,27 @@ function goRepair(item: { deviceAssetId?: string; alarmEventId?: string }) {
       sourceAlarmId: item.alarmEventId,
     },
   })
+}
+
+// --- 结果反馈（轻操作用 toast；确认/搁置服务端幂等，失败可安全重试）-------------
+const toast = reactive<{ show: boolean; message: string; type: 'success' | 'error' }>({
+  show: false,
+  message: '',
+  type: 'success',
+})
+function showToast(message: string, type: 'success' | 'error') {
+  toast.message = message
+  toast.type = type
+  toast.show = true
+}
+
+async function runAction(action: () => Promise<unknown>, successMessage: string) {
+  try {
+    await action()
+    showToast(successMessage, 'success')
+  } catch (e) {
+    showToast(describeRequestError(e, '操作失败，请重试').message, 'error')
+  }
 }
 </script>
 
@@ -115,21 +251,112 @@ function goRepair(item: { deviceAssetId?: string; alarmEventId?: string }) {
             :key="item.alarmEventId"
             :title="alarmTitle(item)"
             :subtitle="alarmSubtitle(item)"
-            :interactive="false"
+            :class="isRaised(item) ? undefined : 'opacity-60'"
+            @select="openDetail(item)"
           >
+            <template v-if="processedMeta(item)" #meta>
+              <div class="truncate text-xs text-muted-foreground">{{ processedMeta(item) }}</div>
+            </template>
             <template #trailing>
-              <button
-                :data-testid="`repair-${item.alarmEventId}`"
-                type="button"
-                class="shrink-0 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
-                @click="goRepair(item)"
-              >
-                去报修
-              </button>
+              <div class="flex shrink-0 items-center gap-2" @click.stop>
+                <template v-if="isRaised(item)">
+                  <NvMobileButton
+                    :data-testid="`ack-${item.alarmEventId}`"
+                    variant="primary"
+                    size="sm"
+                    :disabled="actionPending"
+                    @click="askAcknowledge(item)"
+                  >
+                    确认
+                  </NvMobileButton>
+                  <NvMobileButton
+                    :data-testid="`shelve-${item.alarmEventId}`"
+                    variant="outline"
+                    size="sm"
+                    :disabled="actionPending"
+                    @click="askShelve(item)"
+                  >
+                    搁置
+                  </NvMobileButton>
+                </template>
+                <NvMobileTag
+                  v-else
+                  :data-testid="`status-${item.alarmEventId}`"
+                  :variant="tagVariant(item)"
+                >
+                  {{ alarmLifecycleStatusLabel(item.status) }}
+                </NvMobileTag>
+              </div>
             </template>
           </NvListRow>
         </div>
       </section>
     </div>
+
+    <!-- 确认弹层（轻量二次确认）-->
+    <NvMobileDialog
+      :open="ackOpen"
+      title="确认该报警？"
+      :description="pendingAck ? alarmTitle(pendingAck) : ''"
+      confirm-text="确认"
+      @update:open="ackOpen = $event"
+      @confirm="confirmAcknowledge"
+    />
+
+    <!-- 搁置时长选择 -->
+    <NvActionSheet
+      v-model:open="shelveOpen"
+      title="搁置多久？"
+      :description="pendingShelve ? alarmTitle(pendingShelve) : undefined"
+      :actions="shelveActions"
+      @select="onShelveDuration"
+    />
+
+    <!-- 行详情：保留去报修入口 -->
+    <NvBottomSheet
+      :open="detailOpen"
+      :title="detail ? alarmTitle(detail) : ''"
+      @update:open="detailOpen = $event"
+    >
+      <div v-if="detail" class="space-y-3 pb-2">
+        <dl class="space-y-2 text-sm">
+          <div class="flex justify-between gap-3">
+            <dt class="text-muted-foreground">级别</dt>
+            <dd class="text-foreground">{{ alarmSeverityLabel(detail.severity) }}</dd>
+          </div>
+          <div class="flex justify-between gap-3">
+            <dt class="text-muted-foreground">状态</dt>
+            <dd class="text-foreground">{{ alarmLifecycleStatusLabel(detail.status) }}</dd>
+          </div>
+          <div v-if="timeText(detail.raisedAtUtc)" class="flex justify-between gap-3">
+            <dt class="text-muted-foreground">发生时间</dt>
+            <dd class="text-foreground">
+              {{ new Date(detail.raisedAtUtc!).toLocaleString('zh-CN') }}
+            </dd>
+          </div>
+          <div v-if="processedMeta(detail)" class="flex justify-between gap-3">
+            <dt class="text-muted-foreground">处理</dt>
+            <dd class="text-foreground">{{ processedMeta(detail) }}</dd>
+          </div>
+        </dl>
+
+        <NvMobileButton
+          :data-testid="`repair-${detail.alarmEventId}`"
+          variant="primary"
+          size="lg"
+          block
+          @click="goRepair(detail)"
+        >
+          去报修
+        </NvMobileButton>
+      </div>
+    </NvBottomSheet>
+
+    <NvMobileToast
+      :show="toast.show"
+      :message="toast.message"
+      :type="toast.type"
+      @update:show="toast.show = $event"
+    />
   </NvAppShellMobile>
 </template>
