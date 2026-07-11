@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { Button, ThemePicker } from '@nerv-iip/ui'
+import { Button, NvThemePicker } from '@nerv-iip/ui'
 import { Moon, Search, Sun } from 'lucide-vue-next'
 import { useData } from 'vitepress'
 import DefaultTheme from 'vitepress/theme'
 import { onMounted, ref } from 'vue'
+import SceneBadge from './SceneBadge.vue'
 
 // Wrap the default layout and swap VitePress's built-in nav controls for our own
 // @nerv-iip/ui components, so the docs chrome matches the system it documents:
 //   • the search box  → our Button-styled trigger (opens VitePress's own local
 //     search modal via its Ctrl/⌘-K shortcut, so the index/modal still work);
 //   • the appearance switch → our Sun/Moon Button bound to `isDark`;
-//   • the accent picker (ThemePicker) was already here.
+//   • the accent picker (NvThemePicker) was already here.
 // The originals are hidden in style.css (the search container stays mounted so
 // its modal + key listeners keep working — only its button is hidden).
 const { Layout } = DefaultTheme
@@ -36,6 +37,13 @@ function toggleAppearance() {
 
 <template>
   <Layout>
+    <!-- Scene-availability badge above the article title for doc-layout surfaces
+         (desktop / touch / screen). PDA pages use `layout: page` + MobileDoc, which
+         injects its own <SceneBadge>. Renders nothing on non-component pages. -->
+    <template #doc-before>
+      <SceneBadge />
+    </template>
+
     <template #nav-bar-content-before>
       <ClientOnly>
         <div class="ds-doc-search-slot">
@@ -70,7 +78,7 @@ function toggleAppearance() {
             <Moon v-if="isDark" class="size-4" />
             <Sun v-else class="size-4" />
           </Button>
-          <ThemePicker class="ds-doc-accent" />
+          <NvThemePicker class="ds-doc-accent" />
         </div>
       </ClientOnly>
     </template>

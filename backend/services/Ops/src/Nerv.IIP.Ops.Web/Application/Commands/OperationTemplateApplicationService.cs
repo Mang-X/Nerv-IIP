@@ -46,7 +46,7 @@ public sealed class EfOperationTemplateApplicationService(
             request.DefaultLeaseDurationSeconds,
             request.RequiresApproval);
         var existing = await repository.GetByOperationCodeAsync(normalized.OperationCode, cancellationToken);
-        if (existing is not null)
+        if (existing is not null || BuiltInOperationTemplates.Find(normalized.OperationCode) is not null)
         {
             throw new InvalidOperationTaskRequestException($"Operation template already exists: {normalized.OperationCode}");
         }
@@ -67,17 +67,30 @@ public sealed class EfOperationTemplateApplicationService(
 
     public async Task<OperationTemplateListResponse> ListAsync(CancellationToken cancellationToken)
     {
-        var items = await context.OperationTemplates
+        var persisted = await context.OperationTemplates
             .AsNoTracking()
             .OrderBy(x => x.OperationCode)
             .Select(x => ToResponse(x))
             .ToListAsync(cancellationToken);
+        var persistedCodes = persisted.Select(x => x.OperationCode).ToHashSet(StringComparer.Ordinal);
+        var items = BuiltInOperationTemplates.Responses
+            .Where(x => !persistedCodes.Contains(x.OperationCode))
+            .Concat(persisted)
+            .OrderBy(x => x.OperationCode, StringComparer.Ordinal)
+            .ToList();
 
         return new OperationTemplateListResponse(items);
     }
 
     public async Task<OperationTemplateResponse> GetAsync(string operationCode, CancellationToken cancellationToken)
     {
+        var builtIn = BuiltInOperationTemplates.Responses
+            .SingleOrDefault(x => string.Equals(x.OperationCode, operationCode, StringComparison.Ordinal));
+        if (builtIn is not null)
+        {
+            return builtIn;
+        }
+
         var template = await repository.GetByOperationCodeAsync(operationCode, cancellationToken)
             ?? throw new OperationTemplateNotFoundException(operationCode);
         return ToResponse(template);

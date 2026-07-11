@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import RetryableListError from '@/components/RetryableListError.vue'
 import { useBusinessEquipmentAlarms } from '@/composables/useBusinessEquipmentAlarms'
 import { alarmSeverityLabel } from '@nerv-iip/business-core'
-import { AppShellMobile, ListRow, ScanBar } from '@nerv-iip/ui-mobile'
+import { NvAppShellMobile, NvListRow, NvScanBar } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -14,12 +15,7 @@ definePage({
 
 const router = useRouter()
 
-const {
-  filters,
-  alarms,
-  pending,
-  error,
-} = useBusinessEquipmentAlarms()
+const { filters, alarms, pending, error, refresh } = useBusinessEquipmentAlarms()
 
 // 当前是否按设备过滤（用于展示/清除过滤）。
 const filteredDevice = computed(() => filters.deviceAssetId)
@@ -34,14 +30,14 @@ function clearFilter() {
 }
 
 // 行标题：设备 · 报警码（均为业务码，可显示）。
-function alarmTitle(item: { deviceAssetId?: string, alarmCode?: string }) {
+function alarmTitle(item: { deviceAssetId?: string; alarmCode?: string }) {
   const device = item.deviceAssetId ?? '未知设备'
   const code = item.alarmCode ?? '—'
   return `${device} · 报警码 ${code}`
 }
 
 // 行副标题：级别中文 + 发生时间（alarmEventId/externalAlarmId 仅作 key / 透传，不外显）。
-function alarmSubtitle(item: { severity?: string, raisedAtUtc?: string }) {
+function alarmSubtitle(item: { severity?: string; raisedAtUtc?: string }) {
   const parts = [alarmSeverityLabel(item.severity)]
   if (item.raisedAtUtc) {
     parts.push(new Date(item.raisedAtUtc).toLocaleString('zh-CN'))
@@ -50,7 +46,7 @@ function alarmSubtitle(item: { severity?: string, raisedAtUtc?: string }) {
 }
 
 // 去报修：把设备 + 来源报警事件 ID 作为上下文带入报修页（repair.vue 消费 query 预填）。
-function goRepair(item: { deviceAssetId?: string, alarmEventId?: string }) {
+function goRepair(item: { deviceAssetId?: string; alarmEventId?: string }) {
   void router.push({
     path: '/equipment/repair',
     query: {
@@ -62,7 +58,7 @@ function goRepair(item: { deviceAssetId?: string, alarmEventId?: string }) {
 </script>
 
 <template>
-  <AppShellMobile>
+  <NvAppShellMobile>
     <template #header>
       <div class="px-4 py-3">
         <h1 class="text-lg font-semibold text-foreground">查看报警</h1>
@@ -72,7 +68,7 @@ function goRepair(item: { deviceAssetId?: string, alarmEventId?: string }) {
     <div class="space-y-4 p-4">
       <!-- 按设备过滤 -->
       <section class="space-y-2">
-        <ScanBar placeholder="扫描设备码筛选报警" @scan="onScan" />
+        <NvScanBar placeholder="扫描设备码筛选报警" @scan="onScan" />
         <div
           v-if="filteredDevice"
           class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2 text-sm"
@@ -93,13 +89,14 @@ function goRepair(item: { deviceAssetId?: string, alarmEventId?: string }) {
       <section class="space-y-2">
         <h2 class="text-sm font-medium text-muted-foreground">设备报警</h2>
 
-        <p
+        <RetryableListError
           v-if="error"
-          data-testid="alarms-error"
-          class="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-        >
-          报警加载失败，请稍后重试。
-        </p>
+          :error="error"
+          :pending="pending"
+          fallback="报警加载失败，请稍后重试。"
+          test-id="alarms-error"
+          @retry="() => refresh()"
+        />
 
         <div v-else-if="pending" class="px-4 py-6 text-center text-sm text-muted-foreground">
           加载中…
@@ -113,7 +110,7 @@ function goRepair(item: { deviceAssetId?: string, alarmEventId?: string }) {
         </div>
 
         <div v-else class="overflow-hidden rounded-lg border border-border">
-          <ListRow
+          <NvListRow
             v-for="item in alarms"
             :key="item.alarmEventId"
             :title="alarmTitle(item)"
@@ -130,9 +127,9 @@ function goRepair(item: { deviceAssetId?: string, alarmEventId?: string }) {
                 去报修
               </button>
             </template>
-          </ListRow>
+          </NvListRow>
         </div>
       </section>
     </div>
-  </AppShellMobile>
+  </NvAppShellMobile>
 </template>

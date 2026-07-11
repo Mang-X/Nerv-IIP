@@ -12,6 +12,10 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 public interface IEngineeringDocumentRepository : IRepository<EngineeringDocument, EngineeringDocumentId>
 {
     Task<bool> ExistsAsync(string organizationId, string environmentId, string documentNumber, string revision, CancellationToken cancellationToken = default);
+
+    Task<EngineeringDocument?> GetByBusinessKeyAsync(string organizationId, string environmentId, string documentNumber, string revision, CancellationToken cancellationToken = default);
+
+    Task<EngineeringDocument?> GetByVersionIdAsync(string organizationId, string environmentId, string versionId, CancellationToken cancellationToken = default);
 }
 
 public sealed class EngineeringDocumentRepository(ApplicationDbContext context)
@@ -25,6 +29,23 @@ public sealed class EngineeringDocumentRepository(ApplicationDbContext context)
             x.DocumentNumber == documentNumber &&
             x.Revision == revision,
             cancellationToken);
+    }
+
+    public async Task<EngineeringDocument?> GetByBusinessKeyAsync(string organizationId, string environmentId, string documentNumber, string revision, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.EngineeringDocuments.SingleOrDefaultAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.DocumentNumber == documentNumber &&
+            x.Revision == revision,
+            cancellationToken);
+    }
+
+    public async Task<EngineeringDocument?> GetByVersionIdAsync(string organizationId, string environmentId, string versionId, CancellationToken cancellationToken = default)
+    {
+        return ProductEngineeringVersionReference.TryParse(versionId, out var documentNumber, out var revision)
+            ? await GetByBusinessKeyAsync(organizationId, environmentId, documentNumber, revision, cancellationToken)
+            : null;
     }
 }
 

@@ -2,7 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
 import { cn } from '../../../lib/utils'
-import { TooltipPro, TooltipProContent, TooltipProProvider, TooltipProTrigger } from '../tooltip'
+import { NvTooltip, NvTooltipContent, NvTooltipProvider, NvTooltipTrigger } from '../tooltip'
 import type { DescriptionItem } from './types'
 
 /**
@@ -88,7 +88,7 @@ const labelStyle = computed(() => (props.labelWidth ? { width: props.labelWidth 
 </script>
 
 <template>
-  <TooltipProProvider :delay-duration="280">
+  <NvTooltipProvider :delay-duration="280">
     <div :class="cn('ds-desc', size === 'compact' && 'ds-desc-compact', props.class)">
       <div v-if="title || $slots.extra" class="ds-desc-header">
         <h3 v-if="title" class="text-sm font-semibold">{{ title }}</h3>
@@ -100,12 +100,12 @@ const labelStyle = computed(() => (props.labelWidth ? { width: props.labelWidth 
       <div v-if="bordered" class="ds-desc-bordered" :style="gridStyle">
         <template v-for="(row, ri) in rows" :key="ri">
           <template v-for="placed in row" :key="placed.item.key ?? placed.item.label">
-            <TooltipPro v-if="ellipsis">
-              <TooltipProTrigger as-child>
+            <NvTooltip v-if="ellipsis">
+              <NvTooltipTrigger as-child>
                 <div class="ds-desc-blabel ds-desc-clip">{{ placed.item.label }}</div>
-              </TooltipProTrigger>
-              <TooltipProContent>{{ placed.item.label }}</TooltipProContent>
-            </TooltipPro>
+              </NvTooltipTrigger>
+              <NvTooltipContent>{{ placed.item.label }}</NvTooltipContent>
+            </NvTooltip>
             <div v-else class="ds-desc-blabel">{{ placed.item.label }}</div>
             <div class="ds-desc-bvalue" :style="{ gridColumn: `span ${placed.span * 2 - 1}` }">
               <slot :name="placed.item.key ?? '__none__'" :item="placed.item">
@@ -127,16 +127,16 @@ const labelStyle = computed(() => (props.labelWidth ? { width: props.labelWidth 
           :class="layout === 'vertical' ? 'ds-desc-cell-v' : 'ds-desc-cell-h'"
           :style="{ gridColumn: `span ${spanOf(item)}` }"
         >
-          <TooltipPro v-if="ellipsis">
-            <TooltipProTrigger as-child>
+          <NvTooltip v-if="ellipsis">
+            <NvTooltipTrigger as-child>
               <span
                 class="ds-desc-label ds-desc-clip"
                 :style="layout === 'horizontal' ? labelStyle : undefined"
                 >{{ item.label }}</span
               >
-            </TooltipProTrigger>
-            <TooltipProContent>{{ item.label }}</TooltipProContent>
-          </TooltipPro>
+            </NvTooltipTrigger>
+            <NvTooltipContent>{{ item.label }}</NvTooltipContent>
+          </NvTooltip>
           <span
             v-else
             class="ds-desc-label"
@@ -153,121 +153,123 @@ const labelStyle = computed(() => (props.labelWidth ? { width: props.labelWidth 
         </div>
       </div>
     </div>
-  </TooltipProProvider>
+  </NvTooltipProvider>
 </template>
 
 <style scoped>
-.ds-desc-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.875rem;
-}
+@layer nv-components {
+  .ds-desc-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.875rem;
+  }
 
-/* ── Open grid ── */
-.ds-desc-grid {
-  display: grid;
-  grid-template-columns: repeat(var(--ds-desc-cols), minmax(0, 1fr));
-  column-gap: 2rem;
-  row-gap: 1rem;
-}
-.ds-desc-cell {
-  min-width: 0;
-}
-.ds-desc-cell-h {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-}
-.ds-desc-cell-v {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-.ds-desc-label {
-  flex-shrink: 0;
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
-  line-height: 1.5rem;
-}
-.ds-desc-cell-h .ds-desc-label {
-  min-width: 5rem;
-}
-.ds-desc-value {
-  min-width: 0;
-  flex: 1 1 auto;
-  color: var(--foreground);
-  font-size: 0.875rem;
-  line-height: 1.5rem;
-  word-break: break-word;
-}
-
-/* Single-line clamp + ellipsis for the label (opt-in via `ellipsis`). */
-.ds-desc-clip {
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: default;
-}
-
-/* ── Bordered ──
-   A single grid (shared column tracks → rows align). The 1px gap over a
-   border-coloured backplate paints every interior hairline; cells are opaque. */
-.ds-desc-bordered {
-  display: grid;
-  grid-template-columns: repeat(var(--ds-desc-cols), var(--ds-desc-label, auto) minmax(0, 1fr));
-  gap: 1px;
-  overflow: hidden;
-  background-color: var(--border);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-.ds-desc-blabel,
-.ds-desc-bvalue {
-  padding: 0.625rem 0.875rem;
-  font-size: 0.8125rem;
-  line-height: 1.375rem;
-  background-color: var(--card);
-}
-.ds-desc-blabel {
-  white-space: nowrap;
-  background-color: color-mix(in oklch, var(--muted) 45%, var(--card));
-  color: var(--muted-foreground);
-}
-.ds-desc-bvalue {
-  color: var(--foreground);
-  word-break: break-word;
-}
-
-/* ── Compact ── */
-.ds-desc-compact .ds-desc-grid {
-  row-gap: 0.625rem;
-}
-.ds-desc-compact .ds-desc-label,
-.ds-desc-compact .ds-desc-value {
-  font-size: 0.8125rem;
-  line-height: 1.375rem;
-}
-.ds-desc-compact .ds-desc-blabel,
-.ds-desc-compact .ds-desc-bvalue {
-  padding: 0.4375rem 0.75rem;
-  font-size: 0.78rem;
-}
-
-/* ── Responsive: single column ── */
-@media (max-width: 640px) {
+  /* ── Open grid ── */
   .ds-desc-grid {
-    grid-template-columns: 1fr;
+    display: grid;
+    grid-template-columns: repeat(var(--ds-desc-cols), minmax(0, 1fr));
+    column-gap: 2rem;
+    row-gap: 1rem;
   }
   .ds-desc-cell {
-    grid-column: span 1 !important;
+    min-width: 0;
   }
+  .ds-desc-cell-h {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+  }
+  .ds-desc-cell-v {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .ds-desc-label {
+    flex-shrink: 0;
+    color: var(--muted-foreground);
+    font-size: 0.8125rem;
+    line-height: 1.5rem;
+  }
+  .ds-desc-cell-h .ds-desc-label {
+    min-width: 5rem;
+  }
+  .ds-desc-value {
+    min-width: 0;
+    flex: 1 1 auto;
+    color: var(--foreground);
+    font-size: 0.875rem;
+    line-height: 1.5rem;
+    word-break: break-word;
+  }
+
+  /* Single-line clamp + ellipsis for the label (opt-in via `ellipsis`). */
+  .ds-desc-clip {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: default;
+  }
+
+  /* ── Bordered ──
+   A single grid (shared column tracks → rows align). The 1px gap over a
+   border-coloured backplate paints every interior hairline; cells are opaque. */
   .ds-desc-bordered {
-    grid-template-columns: var(--ds-desc-label, auto) minmax(0, 1fr);
+    display: grid;
+    grid-template-columns: repeat(var(--ds-desc-cols), var(--ds-desc-label, auto) minmax(0, 1fr));
+    gap: 1px;
+    overflow: hidden;
+    background-color: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .ds-desc-blabel,
+  .ds-desc-bvalue {
+    padding: 0.625rem 0.875rem;
+    font-size: 0.8125rem;
+    line-height: 1.375rem;
+    background-color: var(--card);
+  }
+  .ds-desc-blabel {
+    white-space: nowrap;
+    background-color: color-mix(in oklch, var(--muted) 45%, var(--card));
+    color: var(--muted-foreground);
   }
   .ds-desc-bvalue {
-    grid-column: span 1 !important;
+    color: var(--foreground);
+    word-break: break-word;
+  }
+
+  /* ── Compact ── */
+  .ds-desc-compact .ds-desc-grid {
+    row-gap: 0.625rem;
+  }
+  .ds-desc-compact .ds-desc-label,
+  .ds-desc-compact .ds-desc-value {
+    font-size: 0.8125rem;
+    line-height: 1.375rem;
+  }
+  .ds-desc-compact .ds-desc-blabel,
+  .ds-desc-compact .ds-desc-bvalue {
+    padding: 0.4375rem 0.75rem;
+    font-size: 0.78rem;
+  }
+
+  /* ── Responsive: single column ── */
+  @media (max-width: 640px) {
+    .ds-desc-grid {
+      grid-template-columns: 1fr;
+    }
+    .ds-desc-cell {
+      grid-column: span 1 !important;
+    }
+    .ds-desc-bordered {
+      grid-template-columns: var(--ds-desc-label, auto) minmax(0, 1fr);
+    }
+    .ds-desc-bvalue {
+      grid-column: span 1 !important;
+    }
   }
 }
 </style>

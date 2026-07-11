@@ -4,10 +4,12 @@ using NetCorePal.Extensions.DistributedTransactions;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.MeasuringDevices;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
 using Nerv.IIP.Contracts.Erp;
@@ -44,6 +46,23 @@ public sealed class QualityInspectionTaskWorkflowTests
     }
 
     [Fact]
+    public async Task Wms_inbound_completed_creates_task_for_unlisted_quality_status_that_wms_gates()
+    {
+        await using var dbContext = CreateDbContext(nameof(Wms_inbound_completed_creates_task_for_unlisted_quality_status_that_wms_gates));
+        dbContext.InspectionPlans.Add(ActivePlan("PLAN-RCV-IQC", "receiving", "SKU-RM-1000"));
+        await dbContext.SaveChangesAsync();
+        var handler = CreateWmsHandler(dbContext);
+
+        await handler.HandleAsync(WmsInboundCompleted("IN-IQC", "LINE-001", "SKU-RM-1000", "iqc"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var task = await dbContext.InspectionTasks.SingleAsync();
+        Assert.Equal("IN-IQC", task.SourceDocumentId);
+        Assert.Equal("LINE-001", task.SourceDocumentLineId);
+        Assert.Equal("SKU-RM-1000", task.SkuCode);
+    }
+
+    [Fact]
     public async Task Wms_inbound_completed_deduplicates_duplicate_lines_before_save()
     {
         await using var dbContext = CreateDbContext(nameof(Wms_inbound_completed_deduplicates_duplicate_lines_before_save));
@@ -68,6 +87,8 @@ public sealed class QualityInspectionTaskWorkflowTests
 
         await handler.HandleAsync(WmsInboundCompleted("IN-001", "LINE-001", "SKU-RM-1000", "inspection-exempt"), CancellationToken.None);
         await handler.HandleAsync(WmsInboundCompleted("IN-002", "LINE-001", "SKU-RM-1000", "sampling-skip"), CancellationToken.None);
+        await handler.HandleAsync(WmsInboundCompleted("IN-003", "LINE-001", "SKU-RM-1000", "unrestricted"), CancellationToken.None);
+        await handler.HandleAsync(WmsInboundCompleted("IN-004", "LINE-001", "SKU-RM-1000", "qualified"), CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         Assert.Empty(await dbContext.InspectionTasks.ToListAsync());
@@ -254,6 +275,41 @@ public sealed class QualityInspectionTaskWorkflowTests
         Assert.Equal("SKU-RM-1000", integrationEvent.Payload.SkuCode);
     }
 
+    [Fact]
+    public async Task Calibration_check_publishes_overdue_device_event_and_moves_device_to_calibration()
+    {
+        await using var dbContext = CreateDbContext(nameof(Calibration_check_publishes_overdue_device_event_and_moves_device_to_calibration));
+        dbContext.MeasuringDevices.Add(MeasuringDevice.Create("org-001", "env-dev", "MD-001", "Micrometer", "0.001mm", 30, DateTimeOffset.Parse("2026-01-01T00:00:00Z")));
+        await dbContext.SaveChangesAsync();
+        var publisher = new RecordingIntegrationEventPublisher();
+
+        await new PublishMeasuringDeviceCalibrationAlertsCommandHandler(dbContext, publisher).Handle(
+            new PublishMeasuringDeviceCalibrationAlertsCommand("org-001", "env-dev", DateTimeOffset.Parse("2026-02-01T00:00:00Z")),
+            CancellationToken.None);
+
+        var integrationEvent = Assert.IsType<MeasuringDeviceCalibrationDueIntegrationEvent>(Assert.Single(publisher.Published));
+        Assert.Equal("overdue", integrationEvent.Payload.CalibrationState);
+        Assert.Equal("calibration", Assert.Single(dbContext.MeasuringDevices).Status);
+    }
+
+    [Fact]
+    public async Task Calibration_check_does_not_republish_for_device_already_in_calibration()
+    {
+        await using var dbContext = CreateDbContext(nameof(Calibration_check_does_not_republish_for_device_already_in_calibration));
+        var device = MeasuringDevice.Create("org-001", "env-dev", "MD-002", "Micrometer", "0.001mm", 30, DateTimeOffset.Parse("2026-01-01T00:00:00Z"));
+        device.MoveToCalibrationIfOverdue(DateTimeOffset.Parse("2026-02-01T00:00:00Z"));
+        dbContext.MeasuringDevices.Add(device);
+        await dbContext.SaveChangesAsync();
+        var publisher = new RecordingIntegrationEventPublisher();
+
+        var published = await new PublishMeasuringDeviceCalibrationAlertsCommandHandler(dbContext, publisher).Handle(
+            new PublishMeasuringDeviceCalibrationAlertsCommand("org-001", "env-dev", DateTimeOffset.Parse("2026-02-02T00:00:00Z")),
+            CancellationToken.None);
+
+        Assert.Equal(0, published);
+        Assert.Empty(publisher.Published);
+    }
+
     private static WmsInboundOrderCompletedIntegrationEventHandlerForCreateInspectionTasks CreateWmsHandler(ApplicationDbContext dbContext)
     {
         return new WmsInboundOrderCompletedIntegrationEventHandlerForCreateInspectionTasks(
@@ -370,9 +426,9 @@ public sealed class QualityInspectionTaskWorkflowTests
                 ]));
     }
 
-    private static OperationTaskCompletedIntegrationEvent MesOperationCompleted(bool requiresQualityInspection)
+    private static MesOperationTaskCompletedIntegrationEvent MesOperationCompleted(bool requiresQualityInspection)
     {
-        return new OperationTaskCompletedIntegrationEvent(
+        return new MesOperationTaskCompletedIntegrationEvent(
             "evt-mes-op-001",
             MesIntegrationEventTypes.OperationTaskCompleted,
             MesIntegrationEventVersions.V1,

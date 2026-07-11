@@ -1,3 +1,8 @@
+/* Global cascade-layer order (ADR 0020 §4.1) — MUST be the first statement.
+   reset/theme < tokens < base < components < nv-components < utilities <
+   nv-overrides < app. */
+@layer theme, nv-tokens, base, components, nv-components, utilities, nv-overrides, app;
+
 @import 'tailwindcss';
 
 @source '../../../../packages/ui/src';
@@ -9,5 +14,7 @@
 
 /* Design System v2 tokens — single source of truth in @nerv-iip/ui */
 @import '../../../../packages/ui/src/styles/theme.css';
-/* 移动端安全区/触控基线 */
+/* 移动端安全区/触控基线（@nerv-iip/ui-mobile） */
 @import '../../../../packages/ui-mobile/src/styles/mobile.css';
+/* Host-override decorations (overlay glass, sidebar premium) → nv-overrides. */
+@import '../../../../packages/ui/src/styles/overrides.css' layer(nv-overrides);

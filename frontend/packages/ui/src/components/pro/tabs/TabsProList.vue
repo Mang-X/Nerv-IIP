@@ -24,26 +24,28 @@ const delegated = reactiveOmit(props, 'class')
 </template>
 
 <style scoped>
-.ds-stab-ind {
-  position: absolute;
-  top: 0.25rem;
-  bottom: 0.25rem;
-  left: 0;
-  z-index: 0;
-  width: var(--reka-tabs-indicator-size);
-  transform: translateX(var(--reka-tabs-indicator-position));
-  border-radius: 6px;
-  background: var(--card);
-  box-shadow:
-    inset 0 1px 0 0 color-mix(in oklch, white 6%, transparent),
-    var(--shadow-xs);
-  transition:
-    transform 0.25s var(--ease-out-quart, ease-out),
-    width 0.25s var(--ease-out-quart, ease-out);
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
   .ds-stab-ind {
-    transition: none;
+    position: absolute;
+    top: 0.25rem;
+    bottom: 0.25rem;
+    left: 0;
+    z-index: 0;
+    width: var(--reka-tabs-indicator-size);
+    transform: translateX(var(--reka-tabs-indicator-position));
+    border-radius: 6px;
+    background: var(--card);
+    box-shadow:
+      inset 0 1px 0 0 color-mix(in oklch, white 6%, transparent),
+      var(--nv-shadow-xs);
+    transition:
+      transform 0.25s var(--nv-ease-out-quart, ease-out),
+      width 0.25s var(--nv-ease-out-quart, ease-out);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-stab-ind {
+      transition: none;
+    }
   }
 }
 </style>

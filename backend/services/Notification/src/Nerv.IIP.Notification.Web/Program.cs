@@ -122,11 +122,17 @@ builder.Services.AddScoped<OperationApprovalRejectedIntegrationEventHandlerForNo
 builder.Services.AddScoped<ApprovalStepOverdueIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<ApprovalStepResolvedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<ApprovalActionRecordedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<ApprovalRejectedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<ScheduleConflictDetectedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<SchedulePlanInvalidatedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<WorkOrderEngineeringChangeImpactDetectedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<AlarmRaisedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<AlarmClearedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<AlarmEscalatedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<ConnectorHostUnreachableIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<ConnectorHostRestoredIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<InspectionTaskOverdueIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<SpcAlertRaisedIntegrationEventHandlerForNotification>();
 
 var app = builder.Build();
 if (usePostgreSql && autoMigrate)

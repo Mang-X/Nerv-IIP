@@ -60,24 +60,26 @@ const model = useVModel(props, 'modelValue', emits, {
 </template>
 
 <style scoped>
-.ds-input {
-  transition:
-    border-color 0.15s var(--ease-out-quart, ease-out),
-    box-shadow 0.15s var(--ease-out-quart, ease-out);
-}
-.ds-input:hover {
-  border-color: color-mix(in oklch, var(--foreground) 18%, transparent);
-}
-.ds-input:focus-within {
-  border-color: var(--brand);
-  box-shadow:
-    0 0 0 3px color-mix(in oklch, var(--brand) 22%, transparent),
-    0 1px 2px 0 color-mix(in oklch, black 6%, transparent);
-}
-.ds-input[data-invalid] {
-  border-color: var(--destructive);
-}
-.ds-input[data-invalid]:focus-within {
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--destructive) 22%, transparent);
+@layer nv-components {
+  .ds-input {
+    transition:
+      border-color 0.15s var(--nv-ease-out-quart, ease-out),
+      box-shadow 0.15s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-input:hover {
+    border-color: color-mix(in oklch, var(--foreground) 18%, transparent);
+  }
+  .ds-input:focus-within {
+    border-color: var(--nv-brand);
+    box-shadow:
+      0 0 0 3px color-mix(in oklch, var(--nv-brand) 22%, transparent),
+      0 1px 2px 0 color-mix(in oklch, black 6%, transparent);
+  }
+  .ds-input[data-invalid] {
+    border-color: var(--destructive);
+  }
+  .ds-input[data-invalid]:focus-within {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--destructive) 22%, transparent);
+  }
 }
 </style>

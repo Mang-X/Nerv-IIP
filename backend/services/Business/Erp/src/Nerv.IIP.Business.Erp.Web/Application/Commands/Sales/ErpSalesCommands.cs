@@ -3,9 +3,12 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.OpportunityAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.MasterData;
+using Nerv.IIP.Business.Erp.Web.Application.Wms;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
 
@@ -189,7 +192,11 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
     }
 }
 
-public sealed record ReleaseSalesOrderCreditHoldCommand(string OrganizationId, string EnvironmentId, string SalesOrderNo) : ICommand;
+public sealed record ReleaseSalesOrderCreditHoldCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string SalesOrderNo,
+    string StartedBy = "system:erp") : ICommand;
 
 public sealed class ReleaseSalesOrderCreditHoldCommandValidator : AbstractValidator<ReleaseSalesOrderCreditHoldCommand>
 {
@@ -198,10 +205,13 @@ public sealed class ReleaseSalesOrderCreditHoldCommandValidator : AbstractValida
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.SalesOrderNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.StartedBy).NotEmpty().MaximumLength(150);
     }
 }
 
-public sealed class ReleaseSalesOrderCreditHoldCommandHandler(ApplicationDbContext dbContext)
+public sealed class ReleaseSalesOrderCreditHoldCommandHandler(
+    ApplicationDbContext dbContext,
+    IPurchaseOrderApprovalClient approvalClient)
     : ICommandHandler<ReleaseSalesOrderCreditHoldCommand>
 {
     public async Task Handle(ReleaseSalesOrderCreditHoldCommand request, CancellationToken cancellationToken)
@@ -216,7 +226,23 @@ public sealed class ReleaseSalesOrderCreditHoldCommandHandler(ApplicationDbConte
 
         try
         {
-            order.ReleaseCreditHold();
+            if (!string.Equals(order.Status, "credit-held", StringComparison.Ordinal))
+            {
+                order.ReleaseCreditHold();
+                return;
+            }
+
+            await approvalClient.StartApprovalAsync(new PurchaseOrderApprovalRequest(
+                order.OrganizationId,
+                order.EnvironmentId,
+                "erp-sales-credit-release",
+                "business-erp",
+                "sales-order-credit-release",
+                order.SalesOrderNo,
+                null,
+                request.StartedBy,
+                $"sales-credit:{order.OrganizationId}:{order.EnvironmentId}:{order.SalesOrderNo}",
+                order.TotalAmount), cancellationToken);
         }
         catch (InvalidOperationException exception)
         {
@@ -287,5 +313,213 @@ public sealed class ReleaseDeliveryOrderCommandHandler(ApplicationDbContext dbCo
 
         dbContext.DeliveryOrders.Add(delivery);
         return delivery.Id;
+    }
+}
+
+public sealed record ChangeSalesOrderLineCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string SalesOrderNo,
+    string LineNo,
+    decimal OrderedQuantity,
+    decimal UnitPrice,
+    DateOnly RequiredDate,
+    string Reason) : ICommand;
+
+public sealed class ChangeSalesOrderLineCommandHandler(ApplicationDbContext dbContext) : ICommandHandler<ChangeSalesOrderLineCommand>
+{
+    public async Task Handle(ChangeSalesOrderLineCommand request, CancellationToken cancellationToken)
+    {
+        var order = await dbContext.SalesOrders.Include(x => x.Lines).Include(x => x.ChangeHistory).SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == request.SalesOrderNo,
+            cancellationToken) ?? throw new KnownException($"Sales order '{request.SalesOrderNo}' was not found.");
+        try { order.ChangeLine(request.LineNo, request.OrderedQuantity, request.UnitPrice, request.RequiredDate, request.Reason); }
+        catch (InvalidOperationException exception) { throw new KnownException(exception.Message, exception); }
+    }
+}
+
+public sealed record CancelSalesOrderCommand(string OrganizationId, string EnvironmentId, string SalesOrderNo, string Reason) : ICommand;
+
+public sealed class CancelSalesOrderCommandHandler(
+    ApplicationDbContext dbContext,
+    IWmsOutboundCancellationClient wmsOutboundCancellationClient) : ICommandHandler<CancelSalesOrderCommand>
+{
+    public async Task Handle(CancelSalesOrderCommand request, CancellationToken cancellationToken)
+    {
+        var order = await dbContext.SalesOrders.Include(x => x.Lines).Include(x => x.ChangeHistory).SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == request.SalesOrderNo,
+            cancellationToken) ?? throw new KnownException($"Sales order '{request.SalesOrderNo}' was not found.");
+        var deliveries = await dbContext.DeliveryOrders.Include(x => x.Lines).Where(x => x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == request.SalesOrderNo && x.Status == "released").ToArrayAsync(cancellationToken);
+        var cancellationResults = await wmsOutboundCancellationClient.CancelForDeliveryOrdersAsync(
+            request.OrganizationId, request.EnvironmentId, deliveries.Select(x => x.DeliveryOrderNo).ToArray(), request.Reason, cancellationToken);
+        var missingDeliveryOrderNos = cancellationResults
+            .Where(x => x.Status == WmsOutboundCancellationStatus.NotFound)
+            .Select(x => x.DeliveryOrderNo)
+            .ToArray();
+        if (missingDeliveryOrderNos.Length > 0)
+        {
+            throw new KnownException($"Sales order has WMS outbound orders that could not be found yet: {string.Join(", ", missingDeliveryOrderNos)}.");
+        }
+
+        var notCancellableDeliveryOrderNos = cancellationResults
+            .Where(x => x.Status == WmsOutboundCancellationStatus.NotCancellable)
+            .Select(x => x.DeliveryOrderNo)
+            .ToArray();
+        if (notCancellableDeliveryOrderNos.Length > 0)
+        {
+            throw new KnownException($"Sales order has WMS outbound orders that are already in a non-cancellable state: {string.Join(", ", notCancellableDeliveryOrderNos)}.");
+        }
+        try
+        {
+            foreach (var delivery in deliveries)
+            {
+                if (delivery.Cancel(request.Reason, DateTime.UtcNow))
+                {
+                    foreach (var line in delivery.Lines)
+                    {
+                        order.ReleaseDelivery(line.SalesOrderLineNo, line.Quantity);
+                    }
+                }
+            }
+
+            order.Cancel(request.Reason);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+    }
+}
+
+public sealed record SalesReturnAuthorizationCommandLine(
+    string SalesOrderLineNo,
+    decimal Quantity,
+    string LocationCode,
+    string? LotNo);
+
+public sealed record CreateSalesReturnAuthorizationCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string? RmaNo,
+    string SalesOrderNo,
+    string AccountReceivableNo,
+    string SiteCode,
+    IReadOnlyCollection<SalesReturnAuthorizationCommandLine> Lines,
+    string? IdempotencyKey = null) : ICommand<SalesReturnAuthorizationId>;
+
+public sealed class CreateSalesReturnAuthorizationCommandValidator : AbstractValidator<CreateSalesReturnAuthorizationCommand>
+{
+    public CreateSalesReturnAuthorizationCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.RmaNo).MaximumLength(100);
+        RuleFor(x => x.SalesOrderNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AccountReceivableNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Lines).NotEmpty();
+        RuleForEach(x => x.Lines).ChildRules(line =>
+        {
+            line.RuleFor(x => x.SalesOrderLineNo).NotEmpty().MaximumLength(100);
+            line.RuleFor(x => x.Quantity).GreaterThan(0);
+            line.RuleFor(x => x.LocationCode).NotEmpty().MaximumLength(100);
+            line.RuleFor(x => x.LotNo).MaximumLength(100);
+        });
+    }
+}
+
+public sealed class CreateSalesReturnAuthorizationCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
+    : ICommandHandler<CreateSalesReturnAuthorizationCommand, SalesReturnAuthorizationId>
+{
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
+
+    public async Task<SalesReturnAuthorizationId> Handle(CreateSalesReturnAuthorizationCommand request, CancellationToken cancellationToken)
+    {
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "sales-return-authorization",
+            request.RmaNo,
+            request.IdempotencyKey,
+            ErpCodingService.Fingerprint(request.SalesOrderNo, request.AccountReceivableNo, request.SiteCode, request.Lines),
+            cancellationToken);
+        var existing = await dbContext.SalesReturnAuthorizations.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.RmaNo == allocation.Code,
+            cancellationToken);
+        if (existing is not null)
+        {
+            return existing.Id;
+        }
+
+        var salesOrder = await dbContext.SalesOrders
+            .Include(x => x.Lines)
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.SalesOrderNo == request.SalesOrderNo,
+                cancellationToken)
+            ?? throw new KnownException($"Sales order '{request.SalesOrderNo}' was not found for RMA authorization.");
+        var receivable = await dbContext.AccountReceivables.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.ReceivableNo == request.AccountReceivableNo,
+            cancellationToken)
+            ?? throw new KnownException($"Account receivable '{request.AccountReceivableNo}' was not found for RMA authorization.");
+        if (!string.Equals(salesOrder.CustomerCode, receivable.CustomerCode, StringComparison.Ordinal))
+        {
+            throw new KnownException("RMA sales order customer must match the account receivable customer.");
+        }
+
+        var priorRmas = await dbContext.SalesReturnAuthorizations
+            .Include(x => x.Lines)
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.SalesOrderNo == salesOrder.SalesOrderNo)
+            .ToListAsync(cancellationToken);
+        var drafts = new List<SalesReturnAuthorizationLineDraft>();
+        foreach (var requestedLine in request.Lines)
+        {
+            var salesLine = salesOrder.Lines.SingleOrDefault(x => x.LineNo == requestedLine.SalesOrderLineNo)
+                ?? throw new KnownException($"Sales order line '{requestedLine.SalesOrderLineNo}' was not found for RMA authorization.");
+            var alreadyAuthorized = priorRmas.SelectMany(x => x.Lines)
+                .Where(x => x.SalesOrderLineNo == salesLine.LineNo)
+                .Sum(x => x.Quantity);
+            if (requestedLine.Quantity > salesLine.DeliveredQuantity - alreadyAuthorized)
+            {
+                throw new KnownException($"RMA quantity for sales order line '{salesLine.LineNo}' exceeds delivered quantity available for return.");
+            }
+
+            drafts.Add(new SalesReturnAuthorizationLineDraft(
+                salesLine.LineNo,
+                salesLine.SkuCode,
+                salesLine.UomCode,
+                requestedLine.Quantity,
+                salesLine.UnitPrice,
+                requestedLine.LocationCode,
+                requestedLine.LotNo));
+        }
+
+        var totalAmount = drafts.Sum(x => x.Quantity * x.UnitPrice);
+        if (totalAmount > receivable.OpenAmount)
+        {
+            throw new KnownException("RMA credit amount cannot exceed the account receivable open balance.");
+        }
+
+        var rma = SalesReturnAuthorization.Authorize(
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Code,
+            salesOrder.SalesOrderNo,
+            receivable.ReceivableNo,
+            salesOrder.CustomerCode,
+            request.SiteCode,
+            receivable.CurrencyCode,
+            receivable.ExchangeRate,
+            drafts);
+        dbContext.SalesReturnAuthorizations.Add(rma);
+        return rma.Id;
     }
 }

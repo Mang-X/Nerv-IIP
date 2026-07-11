@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
 
 namespace Nerv.IIP.Business.Mes.Domain.DomainEvents;
 
@@ -15,6 +16,8 @@ public sealed record WorkOrderCompletedDomainEvent(WorkOrder WorkOrder, DateTime
 
 public sealed record WorkOrderClosedDomainEvent(WorkOrder WorkOrder, DateTimeOffset ClosedAtUtc) : IDomainEvent;
 
+public sealed record MesEngineeringChangeWorkOrderImpactDetectedDomainEvent(MesEngineeringChangeWorkOrderImpact Impact) : IDomainEvent;
+
 public sealed record OperationTaskCompletedDomainEvent(OperationTask OperationTask) : IDomainEvent;
 
 public sealed record WorkOrderCancelledDomainEvent(
@@ -23,7 +26,15 @@ public sealed record WorkOrderCancelledDomainEvent(
     string Reason,
     IReadOnlyCollection<string> MaterialIssueRequestNos) : IDomainEvent;
 
-public sealed record ProductionReportRecordedDomainEvent(ProductionReport ProductionReport) : IDomainEvent;
+public sealed record ProductionReportOeeProjection(
+    string WorkCenterId,
+    string? DeviceAssetId,
+    string UomCode,
+    decimal? TheoreticalRatePerHour);
+
+public sealed record ProductionReportRecordedDomainEvent(
+    ProductionReport ProductionReport,
+    ProductionReportOeeProjection? OeeProjection = null) : IDomainEvent;
 
 public sealed record ProductionMaterialConsumedDomainEvent(ProductionReportMaterialConsumption MaterialConsumption) : IDomainEvent;
 

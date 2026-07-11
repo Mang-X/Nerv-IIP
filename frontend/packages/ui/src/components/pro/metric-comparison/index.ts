@@ -1,2 +1,1 @@
-export { default as MetricComparisonPro } from './MetricComparisonPro.vue'
-export type { MetricComparisonSide } from './MetricComparisonPro.vue'
+export { default as NvMetricComparison, type MetricComparisonSide } from './MetricComparisonPro.vue'

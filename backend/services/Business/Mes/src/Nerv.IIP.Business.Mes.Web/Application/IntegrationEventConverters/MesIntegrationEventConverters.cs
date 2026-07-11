@@ -11,6 +11,50 @@ using System.Globalization;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 
+public sealed class ProductionReportRecordedIntegrationEventConverter
+    : IIntegrationEventConverter<ProductionReportRecordedDomainEvent, ProductionReportRecordedIntegrationEvent>
+{
+    public ProductionReportRecordedIntegrationEvent Convert(ProductionReportRecordedDomainEvent domainEvent)
+    {
+        var report = domainEvent.ProductionReport;
+        var projection = domainEvent.OeeProjection;
+        var idempotencyKey = EventIds.Idempotency(
+            "production-report-recorded",
+            report.OrganizationId,
+            report.EnvironmentId,
+            report.ReportNo);
+        return new ProductionReportRecordedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1,
+            report.ReportedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            report.ReportNo,
+            report.ReportNo,
+            report.OrganizationId,
+            report.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new ProductionReportRecordedPayload(
+                report.ReportNo,
+                report.WorkOrderId,
+                report.OperationTaskId,
+                projection?.WorkCenterId ?? string.Empty,
+                projection?.DeviceAssetId,
+                report.GoodQuantity,
+                report.ScrapQuantity,
+                report.ReworkQuantity,
+                projection?.UomCode ?? "UNSPECIFIED",
+                projection?.TheoreticalRatePerHour,
+                report.ReportedAtUtc,
+                // OEE nets reversals through their negative quantities and distinct report number;
+                // retain correction lineage for audit and downstream projections that need it.
+                report.IsReversal,
+                report.ReversedReportNo,
+                report.MaterialMovementCount));
+    }
+}
+
 public sealed class ProductionMaterialConsumedIntegrationEventConverter
     : IIntegrationEventConverter<ProductionMaterialConsumedDomainEvent, InventoryMovementRequestedIntegrationEvent>
 {
@@ -157,9 +201,9 @@ public sealed class FinishedGoodsReceiptRequestedForQualityIntegrationEventConve
 }
 
 public sealed class OperationTaskCompletedIntegrationEventConverter
-    : IIntegrationEventConverter<OperationTaskCompletedDomainEvent, OperationTaskCompletedIntegrationEvent>
+    : IIntegrationEventConverter<OperationTaskCompletedDomainEvent, MesOperationTaskCompletedIntegrationEvent>
 {
-    public OperationTaskCompletedIntegrationEvent Convert(OperationTaskCompletedDomainEvent domainEvent)
+    public MesOperationTaskCompletedIntegrationEvent Convert(OperationTaskCompletedDomainEvent domainEvent)
     {
         var task = domainEvent.OperationTask;
         var completedAtUtc = task.ExistingEndUtc ?? DateTimeOffset.UtcNow;
@@ -168,8 +212,8 @@ public sealed class OperationTaskCompletedIntegrationEventConverter
             task.OrganizationId,
             task.EnvironmentId,
             task.OperationTaskId,
-            completedAtUtc.ToString("O", CultureInfo.InvariantCulture));
-        return new OperationTaskCompletedIntegrationEvent(
+            completedAtUtc.UtcTicks.ToString(CultureInfo.InvariantCulture));
+        return new MesOperationTaskCompletedIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}",
             MesIntegrationEventTypes.OperationTaskCompleted,
             MesIntegrationEventVersions.V1,
@@ -276,7 +320,7 @@ public sealed class MaterialLineSideReturnRequestedIntegrationEventConverter
             request.RequestNo,
             domainEvent.MaterialLotId,
             domainEvent.ReturnedQuantity.ToString("0.######", CultureInfo.InvariantCulture),
-            occurredAtUtc.ToString("O", CultureInfo.InvariantCulture));
+            occurredAtUtc.UtcTicks.ToString(CultureInfo.InvariantCulture));
         EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
@@ -309,7 +353,7 @@ public sealed class MaterialReturnedToWarehouseIntegrationEventConverter
             request.RequestNo,
             domainEvent.MaterialLotId,
             domainEvent.ReturnedQuantity.ToString("0.######", CultureInfo.InvariantCulture),
-            occurredAtUtc.ToString("O", CultureInfo.InvariantCulture));
+            occurredAtUtc.UtcTicks.ToString(CultureInfo.InvariantCulture));
         EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
@@ -426,7 +470,9 @@ public sealed class WorkOrderCompletedIntegrationEventConverter
                 workOrder.Quantity,
                 workOrder.CompletedQuantity,
                 workOrder.ScrapQuantity,
-                domainEvent.CompletedAtUtc));
+                domainEvent.CompletedAtUtc,
+                workOrder.CostReportCount,
+                workOrder.MaterialMovementCount));
     }
 }
 
@@ -460,6 +506,41 @@ public sealed class WorkOrderClosedIntegrationEventConverter
                 workOrder.CompletedQuantity,
                 workOrder.ScrapQuantity,
                 domainEvent.ClosedAtUtc));
+    }
+}
+
+public sealed class WorkOrderEngineeringChangeImpactDetectedIntegrationEventConverter
+    : IIntegrationEventConverter<MesEngineeringChangeWorkOrderImpactDetectedDomainEvent, WorkOrderEngineeringChangeImpactDetectedIntegrationEvent>
+{
+    public WorkOrderEngineeringChangeImpactDetectedIntegrationEvent Convert(MesEngineeringChangeWorkOrderImpactDetectedDomainEvent domainEvent)
+    {
+        var impact = domainEvent.Impact;
+        var idempotencyKey = EventIds.Idempotency(
+            "engineering-change-impact",
+            impact.OrganizationId,
+            impact.EnvironmentId,
+            impact.ChangeNumber,
+            impact.WorkOrderId);
+        return new WorkOrderEngineeringChangeImpactDetectedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.WorkOrderEngineeringChangeImpactDetected,
+            MesIntegrationEventVersions.V1,
+            impact.DetectedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            idempotencyKey,
+            impact.WorkOrderId,
+            impact.OrganizationId,
+            impact.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new WorkOrderEngineeringChangeImpactDetectedPayload(
+                impact.WorkOrderId,
+                impact.SkuId,
+                impact.ChangeNumber,
+                impact.ArchivedProductionVersionId,
+                impact.SupersededByProductionVersionId,
+                impact.Status,
+                impact.EffectiveDate));
     }
 }
 

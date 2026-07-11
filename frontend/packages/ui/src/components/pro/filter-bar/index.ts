@@ -1,2 +1,5 @@
-export { default as FilterBarPro } from './FilterBarPro.vue'
-export type { FilterField, FilterFieldOption } from './FilterBarPro.vue'
+export {
+  default as NvFilterBar,
+  type FilterField,
+  type FilterFieldOption,
+} from './FilterBarPro.vue'

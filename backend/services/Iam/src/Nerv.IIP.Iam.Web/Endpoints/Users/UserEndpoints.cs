@@ -2,8 +2,11 @@ using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Iam.Web.Application;
+using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.Commands.Users;
+using Nerv.IIP.Iam.Web.Application.DataScopes;
 using Nerv.IIP.Iam.Web.Application.Queries.Users;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 using Nerv.IIP.Iam.Web.Application.Users;
 using Nerv.IIP.Iam.Web.Endpoints;
 using Nerv.IIP.ServiceAuth;
@@ -182,5 +185,35 @@ public sealed class ResetUserPasswordEndpoint(IIamPermissionAuthorizer authorize
         var userId = Route<string>("userId") ?? string.Empty;
         await mediator.Send(new ResetUserPasswordCommand(userId, SensitivePassword.From(req.NewPassword)), ct);
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
+    }
+}
+
+[HttpPatch("/api/iam/v1/users/{userId}/membership-data-scopes")]
+[AllowAnonymous]
+public sealed class PatchUserMembershipDataScopesEndpoint(
+    IIamPermissionAuthorizer authorizer,
+    IIamAuthService auth,
+    IMediator mediator) : EndpointWithoutRequest<ResponseData<DataScopeListResponse>>
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.users.manage", ct))
+        {
+            return;
+        }
+
+        var req = await HttpContext.Request.ReadFromJsonAsync<PatchMembershipDataScopesRequest>(ct)
+            ?? throw new BadHttpRequestException("Request body is required.");
+        var principal = await auth.GetCurrentPrincipalAsync(HttpContext, ct);
+        var userId = Route<string>("userId") ?? string.Empty;
+        var response = await mediator.Send(
+            new PatchMembershipDataScopesCommand(
+                userId,
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.DataScopes,
+                IamSecurityAuditEndpointContext.Create(HttpContext, principal)),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
     }
 }

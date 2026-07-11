@@ -3,19 +3,24 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
+  convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions,
   listBusinessConsoleErpPurchaseOrdersQueryOptions,
   listBusinessConsoleErpPurchaseRequisitionsQueryOptions,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { useBusinessErp } from './useBusinessErp'
+import { useBusinessErp, useErpPurchaseRequisitions } from './useBusinessErp'
 
 const coladaState = vi.hoisted(() => ({
   queryFactoriesById: new Map<string, () => unknown>(),
   queryDataById: new Map<string, unknown>(),
   refetchById: new Map<string, ReturnType<typeof vi.fn>>(),
+  mutateAsync: vi.fn(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(),
+  })),
   listBusinessConsoleErpPurchaseOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleErpPurchaseOrders' }],
     query: vi.fn(),
@@ -43,6 +48,12 @@ vi.mock('@pinia/colada', () => ({
       refetch,
     }
   }),
+  useMutation: vi.fn((options) => ({
+    ...options,
+    mutateAsync: coladaState.mutateAsync,
+    error: shallowRef(),
+    isLoading: shallowRef(false),
+  })),
 }))
 
 describe('business ERP composable', () => {
@@ -52,6 +63,40 @@ describe('business ERP composable', () => {
     coladaState.queryFactoriesById.clear()
     coladaState.queryDataById.clear()
     coladaState.refetchById.clear()
+    coladaState.mutateAsync.mockReset()
+    coladaState.mutateAsync.mockResolvedValue({ success: true, data: { status: 'PurchaseOrderCreated', purchaseOrderNo: 'PO-001' } })
+  })
+
+  it('converts open purchase requisitions through the generated gateway mutation', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-002', environmentId: 'prod' })
+
+    const erp = useErpPurchaseRequisitions()
+    await erp.convertToPurchaseOrder(['PR-001', 'PR-002'])
+
+    expect(convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions).toHaveBeenCalled()
+    expect(coladaState.mutateAsync).toHaveBeenCalledWith({
+      body: expect.objectContaining({
+        organizationId: 'org-002',
+        environmentId: 'prod',
+        purchaseRequisitionNos: ['PR-001', 'PR-002'],
+      }),
+    })
+  })
+
+  it('passes RFQ supplier candidates when converting a purchase requisition without a price source', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-002', environmentId: 'prod' })
+
+    const erp = useErpPurchaseRequisitions()
+    await erp.convertToPurchaseOrder(['PR-001'], { rfqSupplierCodes: ['SUP-001', 'SUP-002'] })
+
+    expect(coladaState.mutateAsync).toHaveBeenCalledWith({
+      body: expect.objectContaining({
+        purchaseRequisitionNos: ['PR-001'],
+        rfqSupplierCodes: ['SUP-001', 'SUP-002'],
+      }),
+    })
   })
 
   it('loads procurement purchase orders through the generated gateway client', () => {

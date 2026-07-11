@@ -3,7 +3,7 @@ import InstanceDetailPanel from '@/components/console/InstanceDetailPanel.vue'
 import InstanceTable from '@/components/console/InstanceTable.vue'
 import { useConsoleInstances, useRestartOperation } from '@/composables/useConsoleOperations'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
-import { Alert, AlertDescription, AlertTitle, Button, PageHeader } from '@nerv-iip/ui'
+import { Alert, AlertDescription, AlertTitle, Button, NvPageHeader } from '@nerv-iip/ui'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -56,7 +56,7 @@ async function handleRefreshDetail() {
 <template>
   <DefaultLayout>
     <section class="grid gap-6">
-      <PageHeader
+      <NvPageHeader
         :title="t('nav.instances')"
         :breadcrumbs="[{ label: t('nav.platform') }]"
         :count="`${instances.length} 个实例`"

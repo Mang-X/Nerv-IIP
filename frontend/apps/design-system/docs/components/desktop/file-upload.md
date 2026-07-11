@@ -222,7 +222,7 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
     :create-upload-session="createUploadSession"
     :complete-upload-session="completeUploadSession"
     :transport="uploadWithNativeFileStorageTransport"
-    @completed="files => bindEvidence(files)"
+    @completed="(files) => bindEvidence(files)"
   />
 </template>
 ```
@@ -263,7 +263,12 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
 
 ```vue
 <script setup lang="ts">
-import { Button, FileUpload, uploadWithNativeFileStorageTransport, type FileUploadExpose } from '@nerv-iip/ui'
+import {
+  Button,
+  FileUpload,
+  uploadWithNativeFileStorageTransport,
+  type FileUploadExpose,
+} from '@nerv-iip/ui'
 import { ref } from 'vue'
 
 const upload = ref<FileUploadExpose | null>(null)
@@ -529,42 +534,42 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
 
 ## 接口边界
 
-| 属性 / 事件 | 说明 |
-| --- | --- |
-| `purpose` | FileStorage `filePurpose`，例如 `quality-evidence` |
-| `ownerService / ownerType / ownerId` | 业务归属，只作为上传会话请求载荷，不由组件解释业务语义 |
-| `organizationId / environmentId` | 租户和环境范围，会传入创建与完成上传会话请求 |
-| `acceptedContentTypes` | 前端选择和入队校验，组件会在上传入口显示推导后的可接受扩展名；传空数组表示不限制 |
-| `maxFileSizeBytes / maxFiles` | 单文件大小和当前队列槽位限制，会进入上传入口的限制摘要；有队列时组件会显示文件计数和总大小 |
-| `autoUpload` | 是否入队后自动创建会话并上传，默认 `true` |
-| `variant` | 展示变体：`default / queue / compact / avatar / gallery / table / image`；默认是基础按钮，`queue` 是拖拽队列上传 |
-| `virtualizeThreshold` | 超过该行数后启用虚拟列表，默认 `40` |
-| `virtualRowHeight / virtualListHeight` | 虚拟列表行高和最大滚动高度 |
-| `disabled` | 禁用文件选择；使用 dropzone 变体时同时禁用拖拽入队 |
-| `class` | 透传到根容器，供页面做宽度或栅格控制 |
-| `createUploadSession(request)` | 创建 FileStorage 上传会话 |
-| `completeUploadSession(uploadSessionId, request)` | 传输完成后提交完成请求 |
-| `transport(context)` | 真实传输实现，默认 `uploadWithNativeFileStorageTransport` |
-| `completed(files)` | 当前队列内已完成文件快照；单个文件完成或移除已完成行后都会重新发出 |
-| `rejected(files)` | 入队前被拒绝的文件与原因 |
-| `failed(row)` | 上传失败的行；`default / queue / compact / table` 行内提供重试，`avatar / gallery / image` 可移除后重新选择，父级也可调用 `retryFailed()` 统一重试 |
+| 属性 / 事件                                       | 说明                                                                                                                                               |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `purpose`                                         | FileStorage `filePurpose`，例如 `quality-evidence`                                                                                                 |
+| `ownerService / ownerType / ownerId`              | 业务归属，只作为上传会话请求载荷，不由组件解释业务语义                                                                                             |
+| `organizationId / environmentId`                  | 租户和环境范围，会传入创建与完成上传会话请求                                                                                                       |
+| `acceptedContentTypes`                            | 前端选择和入队校验，组件会在上传入口显示推导后的可接受扩展名；传空数组表示不限制                                                                   |
+| `maxFileSizeBytes / maxFiles`                     | 单文件大小和当前队列槽位限制，会进入上传入口的限制摘要；有队列时组件会显示文件计数和总大小                                                         |
+| `autoUpload`                                      | 是否入队后自动创建会话并上传，默认 `true`                                                                                                          |
+| `variant`                                         | 展示变体：`default / queue / compact / avatar / gallery / table / image`；默认是基础按钮，`queue` 是拖拽队列上传                                   |
+| `virtualizeThreshold`                             | 超过该行数后启用虚拟列表，默认 `40`                                                                                                                |
+| `virtualRowHeight / virtualListHeight`            | 虚拟列表行高和最大滚动高度                                                                                                                         |
+| `disabled`                                        | 禁用文件选择；使用 dropzone 变体时同时禁用拖拽入队                                                                                                 |
+| `class`                                           | 透传到根容器，供页面做宽度或栅格控制                                                                                                               |
+| `createUploadSession(request)`                    | 创建 FileStorage 上传会话                                                                                                                          |
+| `completeUploadSession(uploadSessionId, request)` | 传输完成后提交完成请求                                                                                                                             |
+| `transport(context)`                              | 真实传输实现，默认 `uploadWithNativeFileStorageTransport`                                                                                          |
+| `completed(files)`                                | 当前队列内已完成文件快照；单个文件完成或移除已完成行后都会重新发出                                                                                 |
+| `rejected(files)`                                 | 入队前被拒绝的文件与原因                                                                                                                           |
+| `failed(row)`                                     | 上传失败的行；`default / queue / compact / table` 行内提供重试，`avatar / gallery / image` 可移除后重新选择，父级也可调用 `retryFailed()` 统一重试 |
 
 ## 暴露方法
 
-| 方法 | 用途 |
-| --- | --- |
-| `addFiles(files)` | 从外部文件选择器、粘贴或业务模板加入队列 |
-| `uploadQueued()` | 上传所有 queued 行 |
-| `pauseAll() / resumeAll()` | 暂停或恢复上传中的行 |
-| `retryFailed()` | 重试失败行，过期会话会重新创建 |
-| `clear()` | 清空队列，不发出 synthetic completed 事件 |
-| `browse()` | 打开原生文件选择器 |
+| 方法                       | 用途                                      |
+| -------------------------- | ----------------------------------------- |
+| `addFiles(files)`          | 从外部文件选择器、粘贴或业务模板加入队列  |
+| `uploadQueued()`           | 上传所有 queued 行                        |
+| `pauseAll() / resumeAll()` | 暂停或恢复上传中的行                      |
+| `retryFailed()`            | 重试失败行，过期会话会重新创建            |
+| `clear()`                  | 清空队列，不发出 synthetic completed 事件 |
+| `browse()`                 | 打开原生文件选择器                        |
 
 ## 暴露状态
 
-| 状态 | 用途 |
-| --- | --- |
-| `hasRows` | 队列内是否存在任意文件行，可用于禁用清空按钮 |
+| 状态            | 用途                                             |
+| --------------- | ------------------------------------------------ |
+| `hasRows`       | 队列内是否存在任意文件行，可用于禁用清空按钮     |
 | `hasQueuedRows` | 队列内是否存在待上传文件，可用于禁用开始上传按钮 |
 
 ## 动效

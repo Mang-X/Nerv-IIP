@@ -38,6 +38,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("capa_code")
                         .HasComment("Human-readable CAPA code.");
 
+                    b.Property<string>("CloseApprovalChainId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("close_approval_chain_id")
+                        .HasComment("Optional BusinessApproval chain id that approved CAPA closure.");
+
                     b.Property<DateTimeOffset?>("ClosedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("closed_at_utc")
@@ -65,6 +71,11 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("due_at_utc")
                         .HasComment("UTC due time for CAPA completion.");
+
+                    b.Property<Guid?>("EffectivenessInspectionRecordId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("effectiveness_inspection_record_id")
+                        .HasComment("Passed Quality inspection record that verifies CAPA effectiveness.");
 
                     b.Property<string>("EffectivenessResult")
                         .HasMaxLength(1000)
@@ -133,6 +144,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "CapaCode")
                         .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "CloseApprovalChainId")
+                        .HasDatabaseName("ix_corrective_actions_close_approval_chain");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "EffectivenessInspectionRecordId")
+                        .HasDatabaseName("ix_corrective_actions_effectiveness_inspection");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceNcrId");
 
@@ -477,6 +494,28 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("location_code")
                         .HasComment("Optional stock release location code for Inventory quality-status transfer.");
 
+                    b.Property<DateTimeOffset?>("MeasuringDeviceCalibrationDueAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("measuring_device_calibration_due_at_utc")
+                        .HasComment("Snapshot of the device calibration due UTC time at inspection entry.");
+
+                    b.Property<string>("MeasuringDeviceCalibrationState")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("measuring_device_calibration_state")
+                        .HasComment("Snapshot of the device calibration state at inspection entry.");
+
+                    b.Property<string>("MeasuringDeviceCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("measuring_device_code")
+                        .HasComment("Snapshot of the measuring device business code used at inspection entry.");
+
+                    b.Property<Guid?>("MeasuringDeviceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("measuring_device_id")
+                        .HasComment("Optional measuring device used for this inspection.");
+
                     b.Property<string>("NonconformanceReportId")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
@@ -567,6 +606,8 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasComment("UTC time when the inspection record was last changed.");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "MeasuringDeviceId");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "Result");
 
@@ -813,6 +854,131 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.ToTable("inspection_tasks", "quality", t =>
                         {
                             t.HasComment("Quality pending inspection task facts generated from upstream receipt and production events.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate.CalibrationRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Calibration record id.");
+
+                    b.Property<DateTimeOffset>("CalibratedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("calibrated_at_utc")
+                        .HasComment("UTC time calibration was accepted.");
+
+                    b.Property<string>("CalibrationNo")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("calibration_no")
+                        .HasComment("Calibration record business code.");
+
+                    b.Property<string>("CalibrationProvider")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("calibration_provider")
+                        .HasComment("External calibration laboratory or service provider reference, not the application audit actor.");
+
+                    b.Property<string>("CertificateFileId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("certificate_file_id")
+                        .HasComment("Optional File Storage certificate reference.");
+
+                    b.Property<Guid>("MeasuringDeviceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("measuring_device_id")
+                        .HasComment("Owning measuring device id.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MeasuringDeviceId", "CalibrationNo")
+                        .IsUnique();
+
+                    b.ToTable("calibration_records", "quality", t =>
+                        {
+                            t.HasComment("Immutable accepted calibration records for Quality measuring devices.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate.MeasuringDevice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Measuring device aggregate id.");
+
+                    b.Property<string>("Accuracy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("accuracy")
+                        .HasComment("Declared measuring accuracy.");
+
+                    b.Property<DateTimeOffset>("CalibrationDueAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("calibration_due_at_utc")
+                        .HasComment("UTC time when calibration is due.");
+
+                    b.Property<int>("CalibrationIntervalDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("calibration_interval_days")
+                        .HasComment("Calibration cycle in days.");
+
+                    b.Property<string>("DeviceCode")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("device_code")
+                        .HasComment("Quality coding-engine allocated measuring device code.");
+
+                    b.Property<string>("DeviceType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("device_type")
+                        .HasComment("Measuring device type.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<DateTimeOffset?>("LastCalibratedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_calibrated_at_utc")
+                        .HasComment("UTC time of latest accepted calibration.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("Device lifecycle status: in-use, calibration, disabled or retired.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceCode")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "CalibrationDueAtUtc", "Status");
+
+                    b.ToTable("measuring_devices", "quality", t =>
+                        {
+                            t.HasComment("Quality measuring devices with calibration due-date lifecycle.");
                         });
                 });
 
@@ -1125,6 +1291,125 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.ToTable("quality_reasons", "quality", t =>
                         {
                             t.HasComment("Quality reason code catalog with grouping, severity and default disposition.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.SpcControlChartAggregate.SpcControlChart", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("SPC control chart aggregate id.");
+
+                    b.Property<decimal>("AverageRange")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("average_range")
+                        .HasComment("Locked average subgroup range.");
+
+                    b.Property<decimal>("CenterLine")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("center_line")
+                        .HasComment("Locked Xbar center line.");
+
+                    b.Property<string>("CharacteristicCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("characteristic_code")
+                        .HasComment("Variable inspection characteristic code used for SPC.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the SPC chart lock record was created.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the SPC chart applies.");
+
+                    b.Property<DateTime?>("LimitsCalculatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("limits_calculated_at_utc")
+                        .HasComment("UTC time when the locked control limits were calculated.");
+
+                    b.Property<bool>("Locked")
+                        .HasColumnType("boolean")
+                        .HasColumnName("locked")
+                        .HasComment("Whether the current control limits are locked for operational judgment.");
+
+                    b.Property<DateTime?>("LockedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("locked_at_utc")
+                        .HasComment("UTC time when the limits were locked.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the SPC chart.");
+
+                    b.Property<decimal>("RangeLowerControlLimit")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("range_lower_control_limit")
+                        .HasComment("Locked R chart lower control limit.");
+
+                    b.Property<decimal>("RangeUpperControlLimit")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("range_upper_control_limit")
+                        .HasComment("Locked R chart upper control limit.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
+                        .HasComment("SKU code for the measured SPC sequence.");
+
+                    b.Property<int>("SubgroupSize")
+                        .HasColumnType("integer")
+                        .HasColumnName("subgroup_size")
+                        .HasComment("Xbar-R subgroup size used to calculate locked limits.");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the SPC chart lock record was last changed.");
+
+                    b.Property<string>("WorkCenterId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("Work center scope for the SPC sequence.");
+
+                    b.Property<decimal>("XbarLowerControlLimit")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("xbar_lower_control_limit")
+                        .HasComment("Locked Xbar lower control limit.");
+
+                    b.Property<decimal>("XbarUpperControlLimit")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("xbar_upper_control_limit")
+                        .HasComment("Locked Xbar upper control limit.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SkuCode", "CharacteristicCode", "WorkCenterId", "SubgroupSize")
+                        .IsUnique();
+
+                    b.ToTable("spc_control_charts", "quality", t =>
+                        {
+                            t.HasComment("Quality SPC control chart limit locks by SKU, characteristic and work center.");
                         });
                 });
 
@@ -1544,6 +1829,15 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate.CalibrationRecord", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate.MeasuringDevice", null)
+                        .WithMany("CalibrationRecords")
+                        .HasForeignKey("MeasuringDeviceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate.MrbReview", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate.NonconformanceReport", null)
@@ -1566,6 +1860,11 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
             modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate.InspectionRecord", b =>
                 {
                     b.Navigation("ResultLines");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate.MeasuringDevice", b =>
+                {
+                    b.Navigation("CalibrationRecords");
                 });
 
             modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate.NonconformanceReport", b =>

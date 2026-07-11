@@ -883,3 +883,66 @@ function Invoke-WithScopedEnvironment {
         }
     }
 }
+
+function Assert-FacadeTypesGenExport {
+    <#
+    .SYNOPSIS
+        Facade-coverage (MAN-475 / #841) assertion for an `exposed` endpoint: the
+        generated request/response type is queryable in the api-client `types.gen.ts`
+        AND the operation is re-exported from the stable barrel. Use this in the
+        focused verify script of any issue that declares an endpoint `exposed`, so a
+        silently-dropped facade type or barrel export fails the focused gate — not
+        only the full contract test. See docs/architecture/facade-coverage-matrix.md.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $TypeName,
+
+        [Parameter(Mandatory)]
+        [string[]] $ExportName,
+
+        [ValidateSet('business-console', 'console')]
+        [string] $Surface = 'business-console',
+
+        [string] $RepoRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
+        $RepoRoot = Get-ScriptAutomationRepoRoot
+    }
+
+    $apiClientSrc = Join-Path $RepoRoot 'frontend/packages/api-client/src'
+    $typesPath = Join-Path $apiClientSrc "generated/$Surface/types.gen.ts"
+    $barrelPath = Join-Path $apiClientSrc "$Surface.ts"
+
+    foreach ($path in @($typesPath, $barrelPath)) {
+        if (-not (Test-Path -LiteralPath $path)) {
+            throw "Assert-FacadeTypesGenExport: expected api-client file not found: $path"
+        }
+    }
+
+    $typesContent = Get-Content -LiteralPath $typesPath -Raw
+    $barrelContent = Get-Content -LiteralPath $barrelPath -Raw
+
+    $missing = New-Object System.Collections.Generic.List[string]
+
+    foreach ($type in $TypeName) {
+        # Word-boundary match so a substring of a longer identifier does not pass.
+        if ($typesContent -notmatch "\b$([regex]::Escape($type))\b") {
+            $missing.Add("type '$type' not found in generated/$Surface/types.gen.ts")
+        }
+    }
+
+    foreach ($export in $ExportName) {
+        if ($barrelContent -notmatch "\b$([regex]::Escape($export))\b") {
+            $missing.Add("export '$export' not re-exported from stable barrel $Surface.ts")
+        }
+    }
+
+    if ($missing.Count -gt 0) {
+        throw ("Facade-coverage export assertion failed (docs/architecture/facade-coverage-matrix.md):`n  - " + ($missing -join "`n  - "))
+    }
+
+    Write-Diagnostic "Facade-coverage export assertion passed: $($TypeName.Count) type(s) in $Surface types.gen.ts, $($ExportName.Count) export(s) in $Surface.ts."
+}

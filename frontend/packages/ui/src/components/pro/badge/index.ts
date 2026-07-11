@@ -1,1 +1,1 @@
-export { default as BadgePro } from './BadgePro.vue'
+export { default as NvBadge } from './BadgePro.vue'

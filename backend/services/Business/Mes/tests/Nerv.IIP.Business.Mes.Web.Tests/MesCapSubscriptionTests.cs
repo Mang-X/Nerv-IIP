@@ -28,14 +28,14 @@ public sealed class MesCapSubscriptionCollection
 [Collection(MesCapSubscriptionCollection.Name)]
 public sealed class MesCapSubscriptionTests
 {
-    private const string AssetUnavailableTopic = "Nerv.IIP.Contracts.Maintenance.AssetUnavailableIntegrationEvent";
-    private const string AssetRestoredTopic = "Nerv.IIP.Contracts.Maintenance.AssetRestoredIntegrationEvent";
-    private const string SchedulePlanReleasedTopic = "Nerv.IIP.Contracts.Scheduling.SchedulePlanReleasedIntegrationEvent";
-    private const string SchedulePlanInvalidatedTopic = "Nerv.IIP.Contracts.Scheduling.SchedulePlanInvalidatedIntegrationEvent";
-    private const string NcrDispositionDecidedTopic = "Nerv.IIP.Contracts.Quality.NcrDispositionDecidedIntegrationEvent";
-    private const string InspectionResultTopic = "Nerv.IIP.Contracts.Quality.InspectionResultIntegrationEvent";
-    private const string StockMovementPostedTopic = "Nerv.IIP.Contracts.Inventory.StockMovementPostedIntegrationEvent";
-    private const string StockMovementPostingFailedTopic = "Nerv.IIP.Contracts.Inventory.StockMovementPostingFailedIntegrationEvent";
+    private const string AssetUnavailableTopic = "AssetUnavailableIntegrationEvent";
+    private const string AssetRestoredTopic = "AssetRestoredIntegrationEvent";
+    private const string SchedulePlanReleasedTopic = "SchedulePlanReleasedIntegrationEvent";
+    private const string SchedulePlanInvalidatedTopic = "SchedulePlanInvalidatedIntegrationEvent";
+    private const string NcrDispositionDecidedTopic = "NcrDispositionDecidedIntegrationEvent";
+    private const string InspectionResultTopic = "InspectionResultIntegrationEvent";
+    private const string StockMovementPostedTopic = "StockMovementPostedIntegrationEvent";
+    private const string StockMovementPostingFailedTopic = "StockMovementPostingFailedIntegrationEvent";
 
     [Fact]
     public void Mes_cap_registration_discovers_maintenance_asset_event_subscribers()

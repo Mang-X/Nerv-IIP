@@ -2,26 +2,26 @@
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import { useBusinessWorkers, useTeamMembers } from '@/composables/useBusinessMasterData'
 import {
-  AlertDialogPro,
-  AlertDialogProAction,
-  AlertDialogProCancel,
-  AlertDialogProContent,
-  AlertDialogProDescription,
-  AlertDialogProFooter,
-  AlertDialogProHeader,
-  AlertDialogProTitle,
-  ButtonPro,
-  CheckboxPro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  FieldPro,
-  FieldProLabel,
+  NvAlertDialog,
+  NvAlertDialogAction,
+  NvAlertDialogCancel,
+  NvAlertDialogContent,
+  NvAlertDialogDescription,
+  NvAlertDialogFooter,
+  NvAlertDialogHeader,
+  NvAlertDialogTitle,
+  NvButton,
+  NvCheckbox,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvField,
+  NvFieldLabel,
   Spinner,
-  StatusBadgePro,
+  NvStatusBadge,
   toast,
 } from '@nerv-iip/ui'
 import { Trash2Icon } from 'lucide-vue-next'
@@ -35,8 +35,16 @@ const props = defineProps<{
 const open = defineModel<boolean>('open', { default: false })
 
 const teamCodeRef = toRef(props, 'teamCode')
-const { members, membersPending, memberError, addMember, addPending, removeMember, removePending, refresh }
-  = useTeamMembers(teamCodeRef)
+const {
+  members,
+  membersPending,
+  memberError,
+  addMember,
+  addPending,
+  removeMember,
+  removePending,
+  refresh,
+} = useTeamMembers(teamCodeRef)
 
 // 成员列表只携带 userId；经工人目录解析成姓名（工号）展示，绝不向用户暴露 userId。
 const { workers } = useBusinessWorkers()
@@ -87,8 +95,7 @@ async function submitAdd() {
     selectedUserId.value = ''
     isLeader.value = false
     showErrors.value = false
-  }
-  catch (error) {
+  } catch (error) {
     toast.error(error instanceof Error ? error.message : '添加失败，请稍后重试。')
   }
 }
@@ -100,41 +107,49 @@ async function confirmRemove() {
     await removeMember(userId)
     toast.success('已移除成员。')
     removeTarget.value = null
-  }
-  catch (error) {
+  } catch (error) {
     toast.error(error instanceof Error ? error.message : '移除失败，请稍后重试。')
   }
 }
 </script>
 
 <template>
-  <DialogPro v-model:open="open">
-    <DialogProContent class="sm:max-w-2xl">
-      <DialogProHeader>
-        <DialogProTitle>{{ teamName }} · 成员维护</DialogProTitle>
-        <DialogProDescription>登记班组成员与组长，移除时仅解除归属、不影响人员档案。</DialogProDescription>
-      </DialogProHeader>
+  <NvDialog v-model:open="open">
+    <NvDialogContent class="sm:max-w-2xl">
+      <NvDialogHeader>
+        <NvDialogTitle>{{ teamName }} · 成员维护</NvDialogTitle>
+        <NvDialogDescription
+          >登记班组成员与组长，移除时仅解除归属、不影响人员档案。</NvDialogDescription
+        >
+      </NvDialogHeader>
 
       <p v-if="errorText" class="text-sm text-destructive" role="alert">{{ errorText }}</p>
 
-      <form class="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end" @submit.prevent="submitAdd">
-        <FieldPro :data-invalid="showErrors && !canAdd">
-          <FieldProLabel for="member-worker">工人 <span class="text-destructive">*</span></FieldProLabel>
+      <form
+        class="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end"
+        @submit.prevent="submitAdd"
+      >
+        <NvField :data-invalid="showErrors && !canAdd">
+          <NvFieldLabel for="member-worker"
+            >工人 <span class="text-destructive">*</span></NvFieldLabel
+          >
           <WorkerSelect id="member-worker" v-model="selectedUserId" placeholder="搜索并选择工人" />
-        </FieldPro>
-        <FieldPro class="flex flex-row items-center gap-2">
-          <CheckboxPro id="member-leader" v-model="isLeader" />
-          <FieldProLabel for="member-leader" class="mb-0">设为组长</FieldProLabel>
-        </FieldPro>
-        <ButtonPro type="submit" size="sm" :disabled="addPending">
+        </NvField>
+        <NvField class="flex flex-row items-center gap-2">
+          <NvCheckbox id="member-leader" v-model="isLeader" />
+          <NvFieldLabel for="member-leader" class="mb-0">设为组长</NvFieldLabel>
+        </NvField>
+        <NvButton type="submit" size="sm" :disabled="addPending">
           <Spinner v-if="addPending" aria-hidden="true" />添加成员
-        </ButtonPro>
+        </NvButton>
       </form>
 
       <div class="rounded-md border">
         <ul class="divide-y">
           <li v-if="membersPending" class="px-3 py-3 text-sm text-muted-foreground">加载成员中…</li>
-          <li v-else-if="members.length === 0" class="px-3 py-3 text-sm text-muted-foreground">暂无成员，使用上方表单添加。</li>
+          <li v-else-if="members.length === 0" class="px-3 py-3 text-sm text-muted-foreground">
+            暂无成员，使用上方表单添加。
+          </li>
           <li
             v-for="member in members"
             v-else
@@ -143,10 +158,10 @@ async function confirmRemove() {
           >
             <div class="flex items-center gap-2">
               <span class="text-sm">{{ memberLabel(member.userId) }}</span>
-              <StatusBadgePro v-if="member.isLeader" value="active" />
+              <NvStatusBadge v-if="member.isLeader" value="active" />
               <span v-if="member.isLeader" class="text-xs text-muted-foreground">组长</span>
             </div>
-            <ButtonPro
+            <NvButton
               type="button"
               variant="ghost"
               size="sm"
@@ -155,27 +170,38 @@ async function confirmRemove() {
               @click="removeTarget = member.userId ?? null"
             >
               <Trash2Icon aria-hidden="true" />移除
-            </ButtonPro>
+            </NvButton>
           </li>
         </ul>
       </div>
 
-      <DialogProFooter>
-        <ButtonPro type="button" variant="outline" @click="open = false">关闭</ButtonPro>
-      </DialogProFooter>
-    </DialogProContent>
-  </DialogPro>
+      <NvDialogFooter>
+        <NvButton type="button" variant="outline" @click="open = false">关闭</NvButton>
+      </NvDialogFooter>
+    </NvDialogContent>
+  </NvDialog>
 
-  <AlertDialogPro :open="removeTarget !== null" @update:open="(value) => { if (!value) removeTarget = null }">
-    <AlertDialogProContent>
-      <AlertDialogProHeader>
-        <AlertDialogProTitle>确认移除该成员？</AlertDialogProTitle>
-        <AlertDialogProDescription>移除后该工人将不再归属本班组，可随时重新添加。</AlertDialogProDescription>
-      </AlertDialogProHeader>
-      <AlertDialogProFooter>
-        <AlertDialogProCancel>取消</AlertDialogProCancel>
-        <AlertDialogProAction :disabled="removePending" @click="confirmRemove">确认移除</AlertDialogProAction>
-      </AlertDialogProFooter>
-    </AlertDialogProContent>
-  </AlertDialogPro>
+  <NvAlertDialog
+    :open="removeTarget !== null"
+    @update:open="
+      (value) => {
+        if (!value) removeTarget = null
+      }
+    "
+  >
+    <NvAlertDialogContent>
+      <NvAlertDialogHeader>
+        <NvAlertDialogTitle>确认移除该成员？</NvAlertDialogTitle>
+        <NvAlertDialogDescription
+          >移除后该工人将不再归属本班组，可随时重新添加。</NvAlertDialogDescription
+        >
+      </NvAlertDialogHeader>
+      <NvAlertDialogFooter>
+        <NvAlertDialogCancel>取消</NvAlertDialogCancel>
+        <NvAlertDialogAction :disabled="removePending" @click="confirmRemove"
+          >确认移除</NvAlertDialogAction
+        >
+      </NvAlertDialogFooter>
+    </NvAlertDialogContent>
+  </NvAlertDialog>
 </template>

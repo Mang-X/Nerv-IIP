@@ -7,8 +7,10 @@ public static class MesIntegrationEventTypes
     public const string WorkOrderReleased = "mes.WorkOrderReleased";
     public const string WorkOrderCompleted = "mes.WorkOrderCompleted";
     public const string WorkOrderClosed = "mes.WorkOrderClosed";
+    public const string WorkOrderEngineeringChangeImpactDetected = "mes.WorkOrderEngineeringChangeImpactDetected";
     public const string OperationTaskCompleted = "mes.OperationTaskCompleted";
     public const string FinishedGoodsReceiptRequested = "mes.FinishedGoodsReceiptRequested";
+    public const string ProductionReportRecorded = "mes.ProductionReportRecorded";
 }
 
 public static class MesIntegrationEventVersions
@@ -73,7 +75,9 @@ public sealed record WorkOrderCompletedPayload(
     decimal PlannedQuantity,
     decimal GoodQuantity,
     decimal ScrapQuantity,
-    DateTimeOffset CompletedAtUtc);
+    DateTimeOffset CompletedAtUtc,
+    int ExpectedCostReportCount = 0,
+    int ExpectedMaterialMovementCount = 0);
 
 public sealed record WorkOrderClosedIntegrationEvent(
     string EventId,
@@ -100,7 +104,41 @@ public sealed record WorkOrderClosedPayload(
     decimal ScrapQuantity,
     DateTimeOffset ClosedAtUtc);
 
-public sealed record OperationTaskCompletedIntegrationEvent(
+public static class MesEngineeringChangeImpactContractStatuses
+{
+    public const string PendingDecision = "pending-decision";
+    public const string AutoRebound = "auto-rebound";
+    public const string BlockedForManualConfirmation = "blocked-for-manual-confirmation";
+    public const string Decided = "decided";
+}
+
+public sealed record WorkOrderEngineeringChangeImpactDetectedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    WorkOrderEngineeringChangeImpactDetectedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record WorkOrderEngineeringChangeImpactDetectedPayload(
+    string WorkOrderId,
+    string SkuCode,
+    string ChangeNumber,
+    string ArchivedProductionVersionId,
+    string? SupersededByProductionVersionId,
+    string ImpactStatus,
+    DateOnly EffectiveDate);
+
+public sealed record MesOperationTaskCompletedIntegrationEvent(
     string EventId,
     string EventType,
     int EventVersion,
@@ -127,6 +165,39 @@ public sealed record OperationTaskCompletedPayload(
     string UomCode,
     bool RequiresQualityInspection,
     DateTimeOffset CompletedAtUtc);
+
+public sealed record ProductionReportRecordedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    ProductionReportRecordedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record ProductionReportRecordedPayload(
+    string ReportNo,
+    string WorkOrderId,
+    string OperationTaskId,
+    string WorkCenterId,
+    string? DeviceAssetId,
+    decimal GoodQuantity,
+    decimal ScrapQuantity,
+    decimal ReworkQuantity,
+    string UomCode,
+    decimal? TheoreticalRatePerHour,
+    DateTimeOffset ReportedAtUtc,
+    bool IsReversal,
+    string? ReversedReportNo = null,
+    int MaterialMovementCount = 0);
 
 public sealed record FinishedGoodsReceiptRequestedIntegrationEvent(
     string EventId,

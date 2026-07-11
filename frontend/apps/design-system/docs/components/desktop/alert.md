@@ -67,6 +67,6 @@ import { InfoIcon, TriangleAlertIcon } from 'lucide-vue-next'
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
+| 属性      | 说明     | 类型                     | 默认      |
+| --------- | -------- | ------------------------ | --------- |
 | `variant` | 视觉变体 | `default \| destructive` | `default` |

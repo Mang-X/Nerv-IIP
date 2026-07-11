@@ -1,2 +1,2 @@
-export { default as RadioGroupPro } from './RadioGroupPro.vue'
-export { default as RadioGroupProItem } from './RadioGroupProItem.vue'
+export { default as NvRadioGroup } from './RadioGroupPro.vue'
+export { default as NvRadioGroupItem } from './RadioGroupProItem.vue'

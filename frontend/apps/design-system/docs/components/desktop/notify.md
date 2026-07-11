@@ -3,7 +3,7 @@ title: Notify 消息提醒
 ---
 
 <script setup>
-import { messagePro, notificationPro, NotifierHost, ButtonPro } from '@nerv-iip/ui'
+import { messagePro, notificationPro, NvNotifierHost, NvButton } from '@nerv-iip/ui'
 
 function fireMessage(kind) {
   const map = {
@@ -32,22 +32,22 @@ function fireNotification(kind) {
 
 # Notify 消息提醒
 
-两类反馈通道：`messagePro` 顶部居中、单行、短暂自停；`notificationPro` 右上角卡片，带标题与描述。二者皆为命令式函数调用，需在应用根部挂载一次 `NotifierHost`。
+两类反馈通道：`messagePro` 顶部居中、单行、短暂自停；`notificationPro` 右上角卡片，带标题与描述。二者皆为命令式函数调用，需在应用根部挂载一次 `NvNotifierHost`。
 
-> 应用入口处放置 `<NotifierHost />`，本页 Demo 已内置。
+> 应用入口处放置 `<NvNotifierHost />`，本页 Demo 已内置。
 
 ## 轻提示 Message
 
 `messagePro.{info|success|warning|error}(标题)`，适合无需详述的即时结果。
 
 <Demo>
-  <NotifierHost />
+  <NvNotifierHost />
   <div class="flex flex-wrap gap-2">
-    <ButtonPro size="sm" variant="outline" @click="fireMessage('success')">成功</ButtonPro>
-    <ButtonPro size="sm" variant="outline" @click="fireMessage('info')">信息</ButtonPro>
-    <ButtonPro size="sm" variant="outline" @click="fireMessage('warning')">预警</ButtonPro>
-    <ButtonPro size="sm" variant="outline" @click="fireMessage('error')">错误</ButtonPro>
-    <ButtonPro size="sm" variant="brand" @click="fireBurst">连发 3 条</ButtonPro>
+    <NvButton size="sm" variant="outline" @click="fireMessage('success')">成功</NvButton>
+    <NvButton size="sm" variant="outline" @click="fireMessage('info')">信息</NvButton>
+    <NvButton size="sm" variant="outline" @click="fireMessage('warning')">预警</NvButton>
+    <NvButton size="sm" variant="outline" @click="fireMessage('error')">错误</NvButton>
+    <NvButton size="sm" variant="brand" @click="fireBurst">连发 3 条</NvButton>
   </div>
 </Demo>
 
@@ -57,8 +57,8 @@ import { messagePro } from '@nerv-iip/ui'
 </script>
 
 <template>
-  <ButtonPro @click="messagePro.success('保存成功')">成功</ButtonPro>
-  <ButtonPro @click="messagePro.error('网络连接中断')">错误</ButtonPro>
+  <NvButton @click="messagePro.success('保存成功')">成功</NvButton>
+  <NvButton @click="messagePro.error('网络连接中断')">错误</NvButton>
 </template>
 ```
 
@@ -67,12 +67,12 @@ import { messagePro } from '@nerv-iip/ui'
 `notificationPro.{info|success|warning|error}(标题, { description })`，右上角卡片，适合带上下文的异步结果。
 
 <Demo>
-  <NotifierHost />
+  <NvNotifierHost />
   <div class="flex flex-wrap gap-2">
-    <ButtonPro size="sm" variant="outline" @click="fireNotification('success')">成功</ButtonPro>
-    <ButtonPro size="sm" variant="outline" @click="fireNotification('info')">信息</ButtonPro>
-    <ButtonPro size="sm" variant="outline" @click="fireNotification('warning')">预警</ButtonPro>
-    <ButtonPro size="sm" variant="outline" @click="fireNotification('error')">错误</ButtonPro>
+    <NvButton size="sm" variant="outline" @click="fireNotification('success')">成功</NvButton>
+    <NvButton size="sm" variant="outline" @click="fireNotification('info')">信息</NvButton>
+    <NvButton size="sm" variant="outline" @click="fireNotification('warning')">预警</NvButton>
+    <NvButton size="sm" variant="outline" @click="fireNotification('error')">错误</NvButton>
   </div>
 </Demo>
 
@@ -82,23 +82,28 @@ import { notificationPro } from '@nerv-iip/ui'
 </script>
 
 <template>
-  <ButtonPro @click="notificationPro.warning('B 线物料不足', {
-    description: '液压阀体 V3 缺口 452 件，已转采购申请。',
-  })">预警</ButtonPro>
+  <NvButton
+    @click="
+      notificationPro.warning('B 线物料不足', {
+        description: '液压阀体 V3 缺口 452 件，已转采购申请。',
+      })
+    "
+    >预警</NvButton
+  >
 </template>
 ```
 
 ## API
 
-| 方法 | 说明 | 参数 |
-|---|---|---|
-| `messagePro.info / success / warning / error` | 顶部轻提示 | `(title: string, { duration }?)` |
+| 方法                                               | 说明           | 参数                                          |
+| -------------------------------------------------- | -------------- | --------------------------------------------- |
+| `messagePro.info / success / warning / error`      | 顶部轻提示     | `(title: string, { duration }?)`              |
 | `notificationPro.info / success / warning / error` | 右上角通知卡片 | `(title: string, { description, duration }?)` |
-| `dismissNotify` | 主动关闭指定项 | `(id: number)` |
+| `dismissNotify`                                    | 主动关闭指定项 | `(id: number)`                                |
 
 ## 选项
 
-| 选项 | 适用 | 说明 | 类型 | 默认 |
-|---|---|---|---|---|
-| `duration` | 两者 | 自动关闭时长（ms），`0` 不自动关闭 | `number` | message `2600` / notification `4500` |
-| `description` | notification | 卡片描述文本 | `string` | — |
+| 选项          | 适用         | 说明                               | 类型     | 默认                                 |
+| ------------- | ------------ | ---------------------------------- | -------- | ------------------------------------ |
+| `duration`    | 两者         | 自动关闭时长（ms），`0` 不自动关闭 | `number` | message `2600` / notification `4500` |
+| `description` | notification | 卡片描述文本                       | `string` | —                                    |

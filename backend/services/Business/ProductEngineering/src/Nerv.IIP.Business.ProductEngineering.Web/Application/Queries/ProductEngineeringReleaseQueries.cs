@@ -470,6 +470,12 @@ public sealed record EngineeringDocumentItem(
     string FileName,
     string ContentType,
     string DocumentType,
+    string Status,
+    string? OperationCode,
+    string? WorkCenterCode,
+    string? RoutingCode,
+    string? RoutingRevision,
+    DateOnly? EffectiveDate,
     DateTime RegisteredAtUtc);
 
 public sealed record ListEngineeringDocumentsResponse(IReadOnlyCollection<EngineeringDocumentItem> Items, int Total);
@@ -509,7 +515,21 @@ public sealed class ListEngineeringDocumentsQueryHandler(ApplicationDbContext db
             .ThenBy(x => x.Revision)
             .Skip(EngineeringQueryParameters.NormalizeSkip(request.Skip))
             .Take(EngineeringQueryParameters.NormalizeTake(request.Take))
-            .Select(x => new EngineeringDocumentItem(x.DocumentNumber, x.Revision, x.ItemCode, x.FileId, x.FileName, x.ContentType, x.DocumentType, x.RegisteredAtUtc))
+            .Select(x => new EngineeringDocumentItem(
+                x.DocumentNumber,
+                x.Revision,
+                x.ItemCode,
+                x.FileId,
+                x.FileName,
+                x.ContentType,
+                x.DocumentType,
+                x.Status.ToString(),
+                x.OperationCode,
+                x.WorkCenterCode,
+                x.RoutingCode,
+                x.RoutingRevision,
+                x.EffectiveDate,
+                x.RegisteredAtUtc))
             .ToArrayAsync(cancellationToken);
 
         return new ListEngineeringDocumentsResponse(items, total);
@@ -530,10 +550,159 @@ public sealed class GetEngineeringDocumentQueryHandler(ApplicationDbContext dbCo
                 && x.EnvironmentId == request.EnvironmentId
                 && x.DocumentNumber == request.DocumentNumber
                 && x.Revision == request.Revision)
-            .Select(x => new EngineeringDocumentItem(x.DocumentNumber, x.Revision, x.ItemCode, x.FileId, x.FileName, x.ContentType, x.DocumentType, x.RegisteredAtUtc))
+            .Select(x => new EngineeringDocumentItem(
+                x.DocumentNumber,
+                x.Revision,
+                x.ItemCode,
+                x.FileId,
+                x.FileName,
+                x.ContentType,
+                x.DocumentType,
+                x.Status.ToString(),
+                x.OperationCode,
+                x.WorkCenterCode,
+                x.RoutingCode,
+                x.RoutingRevision,
+                x.EffectiveDate,
+                x.RegisteredAtUtc))
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"Engineering document '{request.DocumentNumber}' revision '{request.Revision}' was not found.");
     }
+}
+
+public sealed record CurrentSopDocumentItem(
+    string DocumentNumber,
+    string Revision,
+    string OperationCode,
+    string? WorkCenterCode,
+    string? RoutingCode,
+    string? RoutingRevision,
+    DateOnly EffectiveDate,
+    string FileId,
+    string FileName,
+    string ContentType,
+    string Status);
+
+public sealed record CurrentSopDocumentsResponse(IReadOnlyCollection<CurrentSopDocumentItem> Items);
+
+public sealed record GetCurrentSopDocumentsQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string OperationCode,
+    string? WorkCenterCode,
+    string? RoutingCode,
+    string? RoutingRevision,
+    DateOnly? AsOfDate = null) : IQuery<CurrentSopDocumentsResponse>;
+
+public sealed class GetCurrentSopDocumentsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetCurrentSopDocumentsQuery, CurrentSopDocumentsResponse>
+{
+    public async Task<CurrentSopDocumentsResponse> Handle(GetCurrentSopDocumentsQuery request, CancellationToken cancellationToken)
+    {
+        var operationCode = EngineeringQueryParameters.NormalizeOptionalText(request.OperationCode)
+            ?? throw new KnownException("Operation code is required.");
+        var workCenterCode = EngineeringQueryParameters.NormalizeOptionalText(request.WorkCenterCode);
+        var routingCode = EngineeringQueryParameters.NormalizeOptionalText(request.RoutingCode);
+        var routingRevision = EngineeringQueryParameters.NormalizeOptionalText(request.RoutingRevision);
+        var asOfDate = request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var query = dbContext.EngineeringDocuments
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.DocumentType == "sop" &&
+                x.Status == EngineeringVersionStatus.Published &&
+                x.OperationCode == operationCode &&
+                x.EffectiveDate.HasValue &&
+                x.EffectiveDate.Value <= asOfDate);
+
+        if (workCenterCode is not null)
+        {
+            query = query.Where(x => x.WorkCenterCode == null || x.WorkCenterCode == workCenterCode);
+        }
+        else
+        {
+            query = query.Where(x => x.WorkCenterCode == null);
+        }
+
+        if (routingCode is not null)
+        {
+            query = query.Where(x => x.RoutingCode == null || x.RoutingCode == routingCode);
+        }
+        else
+        {
+            query = query.Where(x => x.RoutingCode == null);
+        }
+
+        if (routingRevision is not null)
+        {
+            query = query.Where(x => x.RoutingRevision == null || x.RoutingRevision == routingRevision);
+        }
+        else
+        {
+            query = query.Where(x => x.RoutingRevision == null);
+        }
+
+        var candidates = await query
+            .Select(x => new CurrentSopDocumentCandidate(
+                x.DocumentNumber,
+                x.Revision,
+                x.OperationCode!,
+                x.WorkCenterCode,
+                x.RoutingCode,
+                x.RoutingRevision,
+                x.EffectiveDate!.Value,
+                x.FileId,
+                x.FileName,
+                x.ContentType,
+                x.Status.ToString()))
+            .ToArrayAsync(cancellationToken);
+
+        var items = candidates
+            .GroupBy(x => new SopDispatchScope(x.OperationCode, x.RoutingCode, x.RoutingRevision))
+            .Select(group => group
+                .OrderByDescending(x => workCenterCode is not null && x.WorkCenterCode == workCenterCode ? 1 : 0)
+                .ThenByDescending(x => routingCode is not null && x.RoutingCode == routingCode ? 1 : 0)
+                .ThenByDescending(x => routingRevision is not null && x.RoutingRevision == routingRevision ? 1 : 0)
+                .ThenByDescending(x => x.EffectiveDate)
+                .ThenByDescending(x => x.Revision, StringComparer.Ordinal)
+                .First())
+            .OrderBy(x => x.DocumentNumber, StringComparer.Ordinal)
+            .Select(x => new CurrentSopDocumentItem(
+                x.DocumentNumber,
+                x.Revision,
+                x.OperationCode,
+                x.WorkCenterCode,
+                x.RoutingCode,
+                x.RoutingRevision,
+                x.EffectiveDate,
+                x.FileId,
+                x.FileName,
+                x.ContentType,
+                x.Status))
+            .ToArray();
+
+        return new CurrentSopDocumentsResponse(items);
+    }
+
+    private sealed record SopDispatchScope(
+        string OperationCode,
+        string? RoutingCode,
+        string? RoutingRevision);
+
+    private sealed record CurrentSopDocumentCandidate(
+        string DocumentNumber,
+        string Revision,
+        string OperationCode,
+        string? WorkCenterCode,
+        string? RoutingCode,
+        string? RoutingRevision,
+        DateOnly EffectiveDate,
+        string FileId,
+        string FileName,
+        string ContentType,
+        string Status);
 }
 
 public sealed record EngineeringItemRevisionItem(

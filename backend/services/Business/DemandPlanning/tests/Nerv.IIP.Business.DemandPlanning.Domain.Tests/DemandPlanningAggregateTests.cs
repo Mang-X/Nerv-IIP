@@ -127,6 +127,28 @@ public sealed class DemandPlanningAggregateTests
         Assert.Throws<InvalidOperationException>(() => rejected.Accept("erp", "purchase-request", "PR-003"));
     }
 
+    [Theory]
+    [InlineData("reschedule-in")]
+    [InlineData("reschedule-out")]
+    [InlineData("cancel")]
+    public void Planning_exception_suggestion_does_not_publish_downstream_creation_event(string suggestionType)
+    {
+        var suggestion = PlanningSuggestion.Create(
+            "org-001",
+            "env-dev",
+            new MrpRunId(Guid.CreateVersion7()),
+            suggestionType,
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            10m,
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 6, 5),
+            "scheduled-receipt-exception");
+
+        Assert.DoesNotContain(suggestion.GetDomainEvents(), x => x is PlannedPurchaseSuggestedDomainEvent or PlannedWorkOrderSuggestedDomainEvent);
+    }
+
     [Fact]
     public void Pegging_links_preserve_demand_source_and_version_references()
     {

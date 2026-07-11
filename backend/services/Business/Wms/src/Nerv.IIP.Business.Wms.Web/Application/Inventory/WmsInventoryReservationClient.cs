@@ -66,6 +66,10 @@ public sealed record WmsInventoryReservationReleaseRequest(string ReservationId,
 
 public sealed record WmsInventoryReservationReleaseResult(string ReservationId, decimal OpenQuantity, decimal AvailableQuantity);
 
+public sealed record WmsInventoryReservationRenewalRequest(string ReservationId);
+
+public sealed record WmsInventoryReservationRenewalResult(string ReservationId, DateTime ExpiresAtUtc);
+
 public sealed record WmsInventoryCountTaskRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -78,7 +82,8 @@ public sealed record WmsInventoryCountTaskRequest(
     string? SerialNo,
     string QualityStatus,
     string OwnerType,
-    string? OwnerId);
+    string? OwnerId,
+    string IdempotencyKey);
 
 public sealed record WmsInventoryCountTaskResult(string CountTaskId, long ExpectedLedgerVersion);
 
@@ -101,6 +106,10 @@ public interface IWmsInventoryReservationClient
 
     Task<WmsInventoryReservationReleaseResult> ReleaseAsync(
         WmsInventoryReservationReleaseRequest request,
+        CancellationToken cancellationToken);
+
+    Task<WmsInventoryReservationRenewalResult> RenewAsync(
+        WmsInventoryReservationRenewalRequest request,
         CancellationToken cancellationToken);
 
     Task<WmsInventoryCountTaskResult> CreateCountTaskAsync(
@@ -174,6 +183,27 @@ public sealed class HttpWmsInventoryReservationClient(
         if (envelope is null || !envelope.Success || envelope.Data is null)
         {
             throw new KnownException(envelope?.Message ?? "Inventory reservation release was rejected without a response payload.");
+        }
+
+        return envelope.Data;
+    }
+
+    public async Task<WmsInventoryReservationRenewalResult> RenewAsync(
+        WmsInventoryReservationRenewalRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/inventory/v1/reservations/{Uri.EscapeDataString(request.ReservationId)}/renew")
+        {
+            Content = JsonContent.Create(request),
+        };
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
+
+        using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<WmsInventoryReservationRenewalResult>>(cancellationToken);
+        if (envelope is null || !envelope.Success || envelope.Data is null)
+        {
+            throw new KnownException(envelope?.Message ?? "Inventory reservation renewal was rejected without a response payload.");
         }
 
         return envelope.Data;

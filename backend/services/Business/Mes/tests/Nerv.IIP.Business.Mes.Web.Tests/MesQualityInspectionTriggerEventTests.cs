@@ -41,7 +41,12 @@ public sealed class MesQualityInspectionTriggerEventTests
         Assert.Equal("SKU-FG-1000", integrationEvent.Payload.SkuCode);
         Assert.Equal(12.5m, integrationEvent.Payload.PlannedQuantity);
         Assert.Equal("kg", integrationEvent.Payload.UomCode);
-        Assert.Contains("2026-07-05T08:00:00.0000000", integrationEvent.IdempotencyKey);
+        // Idempotency key encodes the completion time as UtcTicks (digits only) — the '+' from an
+        // ISO "O" timestamp is rejected by Inventory's movement key validator.
+        Assert.Contains(
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z").UtcTicks.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            integrationEvent.IdempotencyKey);
+        Assert.DoesNotContain("+", integrationEvent.IdempotencyKey);
     }
 
     [Fact]

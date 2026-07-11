@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
@@ -36,7 +38,8 @@ public sealed record RecordProductionReportCommand(
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
-    string? SerialNo = null) : ICommand<ProductionReportCommandResult>;
+    string? SerialNo = null,
+    string Source = "manual") : ICommand<ProductionReportCommandResult>;
 
 public sealed class RecordProductionReportCommandValidator : AbstractValidator<RecordProductionReportCommand>
 {
@@ -51,6 +54,8 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
         RuleFor(x => x.ReworkQuantity).GreaterThanOrEqualTo(0);
         RuleFor(x => x).Must(x => x.GoodQuantity + x.ScrapQuantity + x.ReworkQuantity > 0)
             .WithMessage("At least one reported quantity must be positive.");
+        RuleFor(x => x.Source).NotEmpty().MaximumLength(50).Must(ProductionReport.IsSupportedSource)
+            .WithMessage("Production report source must be manual or telemetry.");
         RuleForEach(x => x.ConsumedMaterialLots).ChildRules(lot =>
         {
             lot.RuleFor(x => x.MaterialId).NotEmpty().MaximumLength(100);
@@ -85,6 +90,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 request.DefectRecordNo,
                 request.ProducedLotNo,
                 request.SerialNo,
+                request.Source,
                 ConsumedMaterialLotsFingerprint(request.ConsumedMaterialLots)),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
@@ -147,7 +153,10 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             request.ScrapReasonCode,
             request.DefectRecordNo,
             producedLotNo,
-            request.SerialNo);
+            request.SerialNo,
+            ProductionReportOeeProjectionFactory.Create(operationTask),
+            request.Source,
+            consumedMaterialLots.Count);
 
         var duplicateLot = consumedMaterialLots
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId.ToUpperInvariant()}", StringComparer.Ordinal)
@@ -226,16 +235,11 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 lot.MaterialIssueRequestNo));
         }
 
+        workOrder.RegisterCostReport(consumedMaterialLots.Count);
         if (isOutputOperation)
         {
-            try
-            {
-                workOrder.RecordProductionProgress(request.GoodQuantity, request.ScrapQuantity, request.ReportedAtUtc);
-            }
-            catch (InvalidOperationException exception)
-            {
-                throw new KnownException(exception.Message);
-            }
+            MesDomainRuleGuard.Enforce(() =>
+                workOrder.RecordProductionProgress(request.GoodQuantity, request.ScrapQuantity, request.ReportedAtUtc));
         }
 
         if (request.CompletesOperation)
@@ -244,14 +248,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 dbContext,
                 operationTask,
                 cancellationToken);
-            try
-            {
-                operationTask.Complete(request.ReportedAtUtc);
-            }
-            catch (InvalidOperationException exception)
-            {
-                throw new KnownException(exception.Message);
-            }
+            MesDomainRuleGuard.Enforce(() => operationTask.Complete(request.ReportedAtUtc));
         }
 
         dbContext.ProductionReports.Add(report);
@@ -398,17 +395,10 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
         var progressQuantity = Math.Abs(original.GoodQuantity) + Math.Abs(original.ScrapQuantity);
         if (isOutputOperation && progressQuantity > 0m)
         {
-            try
-            {
-                workOrder.ReverseProductionProgress(
-                    Math.Abs(original.GoodQuantity),
-                    Math.Abs(original.ScrapQuantity),
-                    request.ReversedAtUtc);
-            }
-            catch (InvalidOperationException exception)
-            {
-                throw new KnownException(exception.Message);
-            }
+            MesDomainRuleGuard.Enforce(() => workOrder.ReverseProductionProgress(
+                Math.Abs(original.GoodQuantity),
+                Math.Abs(original.ScrapQuantity),
+                request.ReversedAtUtc));
         }
 
         if (original.CompletesOperation)
@@ -416,7 +406,11 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
             operationTask.ReopenAfterReportReversal();
         }
 
-        var reversal = ProductionReport.Reverse(original, allocation.Code, request.ReversedAtUtc, request.Reason);
+        var reversal = ProductionReport.Reverse(
+            original,
+            allocation.Code,
+            request.ReversedAtUtc,
+            request.Reason);
         var originalConsumptions = await dbContext.ProductionReportMaterialConsumptions
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
@@ -438,6 +432,23 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
         dbContext.ProductionReportMaterialConsumptions.AddRange(reversalConsumptions);
         dbContext.OutputLotGenealogies.RemoveRange(originalOutputLots);
         return new ReverseProductionReportCommandResult(reversal.Id, reversal.ReportNo, original.ReportNo);
+    }
+}
+
+internal static class ProductionReportOeeProjectionFactory
+{
+    public static ProductionReportOeeProjection Create(OperationTask operationTask)
+    {
+        ArgumentNullException.ThrowIfNull(operationTask);
+        var durationHours = decimal.Divide(operationTask.DurationTicks, TimeSpan.TicksPerHour);
+        decimal? theoreticalRatePerHour = operationTask.PlannedQuantity > 0m && durationHours > 0m
+            ? decimal.Divide(operationTask.PlannedQuantity, durationHours)
+            : null;
+        return new ProductionReportOeeProjection(
+            operationTask.WorkCenterId,
+            operationTask.DeviceAssetId,
+            operationTask.UomCode,
+            theoreticalRatePerHour);
     }
 }
 
@@ -472,7 +483,10 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandValidator : Abstract
         RuleFor(x => x.SkuId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Quantity).GreaterThan(0);
         RuleFor(x => x.UomCode).NotEmpty().MaximumLength(30);
-        RuleFor(x => x.UnitCost).NotNull().GreaterThan(0);
+        // UnitCost is optional by design — FinishedGoodsReceiptRequest.Create stores null as-is and only guards
+        // positivity when a value is provided. Validate the same way (positive only when present) so the API
+        // does not reject a cost-less receipt the domain accepts.
+        RuleFor(x => x.UnitCost).GreaterThan(0).When(x => x.UnitCost.HasValue);
     }
 }
 

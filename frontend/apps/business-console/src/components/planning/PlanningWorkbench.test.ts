@@ -31,17 +31,19 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
       demands: shallowRef([]),
       demandsError: shallowRef(null),
       demandsPending: shallowRef(false),
-      mrpRuns: shallowRef([{
-        runId: 'run-001',
-        horizonStart: '2026-06-01',
-        horizonEnd: '2026-06-30',
-        status: 'Completed',
-        demandCount: 1,
-        availabilityCount: 1,
-        suggestionCount: 1,
-        hasInputDegradation: false,
-        inputDegradationSources: [],
-      }]),
+      mrpRuns: shallowRef([
+        {
+          runId: 'run-001',
+          horizonStart: '2026-06-01',
+          horizonEnd: '2026-06-30',
+          status: 'Completed',
+          demandCount: 1,
+          availabilityCount: 1,
+          suggestionCount: 1,
+          hasInputDegradation: false,
+          inputDegradationSources: [],
+        },
+      ]),
       mrpRunsError: shallowRef(null),
       mrpRunsPending: shallowRef(false),
       mpsBuckets: shallowRef([]),
@@ -62,27 +64,38 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
       reviewMpsBucket: vi.fn(),
       reviewMpsBucketError: shallowRef(null),
       reviewMpsBucketPending: shallowRef(false),
-      pegging: shallowRef([{
-        suggestionId: 'suggestion-001',
-        peggingType: 'demand',
-        demandSourceReference: 'SO-1001',
-        sourceType: 'sales',
-        parentSkuCode: 'FG-SHOCK',
-        componentSkuCode: null,
-        quantity: 10,
-        grossDemandQuantity: 10,
-        productionVersionReference: 'PV-FG',
-        manufacturingBomReference: 'MBOM-FG:001',
-        routingReference: 'ROUTING-FG',
-      }]),
+      pegging: shallowRef([
+        {
+          suggestionId: 'suggestion-001',
+          peggingType: 'demand',
+          demandSourceReference: 'SO-1001',
+          sourceType: 'sales',
+          parentSkuCode: 'FG-SHOCK',
+          componentSkuCode: null,
+          quantity: 10,
+          grossDemandQuantity: 10,
+          productionVersionReference: 'PV-FG',
+          manufacturingBomReference: 'MBOM-FG:001',
+          routingReference: 'ROUTING-FG',
+        },
+      ]),
       peggingPending: shallowRef(false),
       refreshPlanning: vi.fn(),
       runMrp: vi.fn(),
       runMrpError: shallowRef(null),
       runMrpPending: shallowRef(false),
-      runRequest: reactive({ organizationId: 'org-001', environmentId: 'env-dev', horizonStart: '2026-06-01', horizonEnd: '2026-06-30' }),
+      runRequest: reactive({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        horizonStart: '2026-06-01',
+        horizonEnd: '2026-06-30',
+      }),
       runSelection: reactive({ runId: 'run-001' }),
-      suggestionFilters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', status: 'open' }),
+      suggestionFilters: reactive({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        status: 'open',
+      }),
       suggestionTypeFilter: reactive({ type: 'all' }),
       suggestions: shallowRef([
         {
@@ -139,6 +152,19 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
             degradationSources: [],
           },
         },
+        {
+          suggestionId: 'suggestion-003',
+          runId: 'run-001',
+          suggestionType: 'reschedule-out',
+          skuCode: 'FG-SHOCK',
+          uomCode: 'pcs',
+          siteCode: 'SITE-01',
+          quantity: 8,
+          requiredDate: '2026-06-20',
+          status: 'Open',
+          reasonCode: 'scheduled-receipt-early',
+          netRequirementExplanation: null,
+        },
       ]),
       suggestionsError: shallowRef(null),
       suggestionsPending: shallowRef(false),
@@ -176,44 +202,52 @@ vi.mock('@nerv-iip/ui', async () => {
       rows: { type: Array, default: () => [] },
     },
     setup(props, { slots }) {
-      return () => h('div', props.rows.flatMap((row: any) =>
-        props.columns.map((column: any) => {
-          const slot = slots[`cell-${column.key}`]
-          return h('div', { class: `cell-${column.key}` }, slot ? slot({ row }) : String(row[column.key] ?? ''))
-        }),
-      ))
+      return () =>
+        h(
+          'div',
+          props.rows.flatMap((row: any) =>
+            props.columns.map((column: any) => {
+              const slot = slots[`cell-${column.key}`]
+              return h(
+                'div',
+                { class: `cell-${column.key}` },
+                slot ? slot({ row }) : String(row[column.key] ?? ''),
+              )
+            }),
+          ),
+        )
     },
   })
 
   return {
-    ButtonPro: Button,
-    DataTablePro: DataTable,
-    DatePickerPro: Shell,
-    DialogPro: Shell,
-    DialogProContent: Shell,
-    DialogProDescription: Shell,
-    DialogProFooter: Shell,
-    DialogProHeader: Shell,
-    DialogProTitle: Shell,
-    DialogProTrigger: Shell,
-    FieldPro: Shell,
-    FieldProGroup: Shell,
-    FieldProLabel: Shell,
-    InputPro: Shell,
-    PageHeader: Shell,
-    SectionCard: Shell,
-    SectionCards: Shell,
-    SelectPro: Shell,
-    SelectProContent: Shell,
-    SelectProItem: Shell,
-    SelectProTrigger: Shell,
-    SelectProValue: Shell,
+    NvButton: Button,
+    NvDataTable: DataTable,
+    NvDatePicker: Shell,
+    NvDialog: Shell,
+    NvDialogContent: Shell,
+    NvDialogDescription: Shell,
+    NvDialogFooter: Shell,
+    NvDialogHeader: Shell,
+    NvDialogTitle: Shell,
+    NvDialogTrigger: Shell,
+    NvField: Shell,
+    NvFieldGroup: Shell,
+    NvFieldLabel: Shell,
+    NvInput: Shell,
+    NvPageHeader: Shell,
+    NvSectionCard: Shell,
+    NvSectionCards: Shell,
+    NvSelect: Shell,
+    NvSelectContent: Shell,
+    NvSelectItem: Shell,
+    NvSelectTrigger: Shell,
+    NvSelectValue: Shell,
     Spinner: Shell,
-    StatusBadgePro: defineComponent({ props: ['label'], template: '<span>{{ label }}</span>' }),
-    TabsPro: Shell,
-    TabsProContent: Shell,
-    TabsProList: Shell,
-    TabsProTrigger: Shell,
+    NvStatusBadge: defineComponent({ props: ['label'], template: '<span>{{ label }}</span>' }),
+    NvTabs: Shell,
+    NvTabsContent: Shell,
+    NvTabsList: Shell,
+    NvTabsTrigger: Shell,
   }
 })
 
@@ -227,5 +261,13 @@ describe('PlanningWorkbench', () => {
     expect(wrapper.text()).toContain('组件毛需求')
     expect(wrapper.text()).toContain('scrap/yield 已计入组件毛需求')
     expect(wrapper.text()).toContain('SO-1001')
+  })
+
+  it('renders MRP exception suggestions as non-acceptance workbench rows', () => {
+    const wrapper = mount(PlanningWorkbench)
+
+    expect(wrapper.text()).toContain('延期调整')
+    expect(wrapper.text()).toContain('异常待处理')
+    expect(wrapper.findAll('button').filter((button) => button.text() === '接受')).toHaveLength(2)
   })
 })

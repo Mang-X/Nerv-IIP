@@ -1,11 +1,38 @@
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.BackorderOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 
 namespace Nerv.IIP.Business.Wms.Infrastructure.EntityConfigurations;
+
+public sealed class BackorderOrderEntityTypeConfiguration : IEntityTypeConfiguration<BackorderOrder>
+{
+    public void Configure(EntityTypeBuilder<BackorderOrder> builder)
+    {
+        builder.ToTable("backorder_orders", table => table.HasComment("Durable WMS short-pick backorder facts that drive replenishment recommendations."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Backorder order aggregate id.");
+        InboundOrderEntityTypeConfiguration.AddTenantColumns(builder);
+        builder.Property(x => x.BackorderOrderNo).HasColumnName("backorder_order_no").IsRequired().HasMaxLength(100).HasComment("Stable WMS backorder order number.");
+        builder.Property(x => x.OutboundOrderNo).HasColumnName("outbound_order_no").IsRequired().HasMaxLength(100).HasComment("Short-picked WMS outbound order number.");
+        builder.Property(x => x.OutboundOrderLineNo).HasColumnName("outbound_order_line_no").IsRequired().HasMaxLength(100).HasComment("Short-picked WMS outbound order line number.");
+        builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("Short-picked SKU code.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("Short-picked unit of measure.");
+        builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("Site where the short pick occurred.");
+        builder.Property(x => x.PickLocationCode).HasColumnName("pick_location_code").IsRequired().HasMaxLength(100).HasComment("Pick face targeted by the replenishment recommendation.");
+        builder.Property(x => x.BackorderQuantity).HasColumnName("backorder_quantity").IsRequired().HasPrecision(18, 6).HasComment("Unfulfilled quantity recorded by pack review.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Backorder lifecycle status.");
+        builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the short pick created the backorder.");
+        builder.Property(x => x.ClosedAtUtc).HasColumnName("closed_at_utc").HasComment("UTC time when the backorder was closed.");
+        builder.Property(x => x.ClosureReason).HasColumnName("closure_reason").HasMaxLength(1000).HasComment("Audited reason for closing the backorder.");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.BackorderOrderNo }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OutboundOrderNo, x.OutboundOrderLineNo }).IsUnique();
+    }
+}
 
 public sealed class InboundOrderEntityTypeConfiguration : IEntityTypeConfiguration<InboundOrder>
 {
@@ -22,9 +49,13 @@ public sealed class InboundOrderEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Inbound execution status.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
+        builder.Property(x => x.CancelledAtUtc).HasColumnName("cancelled_at_utc").HasComment("UTC time when the open inbound expectation was cancelled.");
+        builder.Property(x => x.CancellationReason).HasColumnName("cancellation_reason").HasMaxLength(1000).HasComment("Auditable reason supplied when the inbound expectation was cancelled.");
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("InboundOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.InboundOrderNo }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceDocumentType, x.SourceDocumentId, x.Status })
+            .HasDatabaseName("ix_inbound_orders_source_status");
     }
 
     internal static void AddTenantColumns<T>(EntityTypeBuilder<T> builder)
@@ -47,6 +78,9 @@ public sealed class InboundOrderLineEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.StagingLocationCode).HasColumnName("staging_location_code").IsRequired().HasMaxLength(100).HasComment("Staging location for received stock.");
         builder.Property(x => x.ProductionDate).HasColumnName("production_date").HasComment("Optional received batch production date captured by WMS.");
         builder.Property(x => x.ExpiryDate).HasColumnName("expiry_date").HasComment("Optional received batch expiry date captured by WMS.");
+        builder.Property(x => x.QualityGateStatus).HasColumnName("quality_gate_status").IsRequired().HasMaxLength(50).HasDefaultValue(InboundQualityGateStatuses.NotRequired).HasComment("WMS inbound quality gate state: pending, passed, conditional-release, rejected or not-required.");
+        builder.Property(x => x.InspectionRecordId).HasColumnName("inspection_record_id").HasMaxLength(150).HasComment("Quality inspection record id that released or rejected this inbound line.");
+        builder.Property(x => x.QualityDispositionReason).HasColumnName("quality_disposition_reason").HasMaxLength(1000).HasComment("Optional Quality disposition reason copied from the inspection result.");
     }
 
     internal static void AddLineColumns<T>(EntityTypeBuilder<T> builder, string quantityColumn, string quantityComment)
@@ -61,6 +95,36 @@ public sealed class InboundOrderLineEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property<string>("QualityStatus").HasColumnName("quality_status").IsRequired().HasMaxLength(50).HasComment("Quality status dimension.");
         builder.Property<string>("OwnerType").HasColumnName("owner_type").IsRequired().HasMaxLength(50).HasComment("Owner type dimension.");
         builder.Property<string?>("OwnerId").HasColumnName("owner_id").HasMaxLength(100).HasComment("Optional owner id.");
+    }
+}
+
+public sealed class SupplierReturnRequestEntityTypeConfiguration : IEntityTypeConfiguration<SupplierReturnRequest>
+{
+    public void Configure(EntityTypeBuilder<SupplierReturnRequest> builder)
+    {
+        builder.ToTable("supplier_return_requests", table => table.HasComment("WMS supplier return request facts generated from rejected receiving inspections."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Supplier return request id.");
+        InboundOrderEntityTypeConfiguration.AddTenantColumns(builder);
+        builder.Property(x => x.SupplierReturnNo).HasColumnName("supplier_return_no").IsRequired().HasMaxLength(300).HasComment("WMS supplier return request number.");
+        builder.Property(x => x.InboundOrderNo).HasColumnName("inbound_order_no").IsRequired().HasMaxLength(100).HasComment("Source WMS inbound order number.");
+        builder.Property(x => x.InboundOrderLineNo).HasColumnName("inbound_order_line_no").IsRequired().HasMaxLength(100).HasComment("Source WMS inbound order line number.");
+        builder.Property(x => x.InspectionRecordId).HasColumnName("inspection_record_id").IsRequired().HasMaxLength(150).HasComment("Quality inspection record that rejected the received stock.");
+        builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("Rejected SKU code.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("Rejected stock unit of measure.");
+        builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("Site code where rejected stock was received.");
+        builder.Property(x => x.LocationCode).HasColumnName("location_code").IsRequired().HasMaxLength(100).HasComment("Rejected stock quarantine or staging location.");
+        builder.Property(x => x.LotNo).HasColumnName("lot_no").HasMaxLength(100).HasComment("Optional rejected lot number.");
+        builder.Property(x => x.SerialNo).HasColumnName("serial_no").HasMaxLength(100).HasComment("Optional rejected serial number.");
+        builder.Property(x => x.OwnerType).HasColumnName("owner_type").IsRequired().HasMaxLength(50).HasComment("Rejected stock owner type.");
+        builder.Property(x => x.OwnerId).HasColumnName("owner_id").HasMaxLength(100).HasComment("Optional rejected stock owner id.");
+        builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Rejected quantity to return to supplier.");
+        builder.Property(x => x.DispositionType).HasColumnName("disposition_type").IsRequired().HasMaxLength(50).HasComment("Quality disposition type, currently return-to-supplier.");
+        builder.Property(x => x.DispositionReason).HasColumnName("disposition_reason").HasMaxLength(1000).HasComment("Quality rejection or disposition reason.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Supplier return request status.");
+        builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when WMS created the supplier return request.");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SupplierReturnNo }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.InboundOrderNo, x.InboundOrderLineNo, x.InspectionRecordId }).IsUnique();
     }
 }
 
@@ -110,11 +174,11 @@ public sealed class WarehouseTaskEntityTypeConfiguration : IEntityTypeConfigurat
 {
     public void Configure(EntityTypeBuilder<WarehouseTask> builder)
     {
-        builder.ToTable("warehouse_tasks", table => table.HasComment("WMS putaway and picking warehouse tasks."));
+        builder.ToTable("warehouse_tasks", table => table.HasComment("WMS putaway, picking and replenishment recommendation tasks."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Warehouse task id.");
         InboundOrderEntityTypeConfiguration.AddTenantColumns(builder);
-        builder.Property(x => x.TaskType).HasColumnName("task_type").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Task type: putaway or picking.");
+        builder.Property(x => x.TaskType).HasColumnName("task_type").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Task type: putaway, picking or replenishment.");
         builder.Property(x => x.TaskNo).HasColumnName("task_no").IsRequired().HasMaxLength(100).HasComment("Warehouse task number.");
         builder.Property(x => x.SourceOrderNo).HasColumnName("source_order_no").IsRequired().HasMaxLength(100).HasComment("WMS source order number.");
         builder.Property(x => x.SourceOrderLineNo).HasColumnName("source_order_line_no").IsRequired().HasMaxLength(100).HasComment("WMS source order line number.");
@@ -165,6 +229,7 @@ public sealed class WcsTaskEntityTypeConfiguration : IEntityTypeConfiguration<Wc
         InboundOrderEntityTypeConfiguration.AddTenantColumns(builder);
         builder.Property(x => x.WarehouseTaskId).HasColumnName("warehouse_task_id").IsRequired().HasComment("WMS warehouse task id.");
         builder.Property(x => x.AdapterType).HasColumnName("adapter_type").IsRequired().HasMaxLength(100).HasComment("WCS adapter type.");
+        builder.Property(x => x.DeviceId).HasColumnName("device_id").IsRequired().HasMaxLength(150).HasComment("WCS adapter-scoped device identifier used by retry and circuit controls.");
         builder.Property(x => x.ExternalTaskId).HasColumnName("external_task_id").IsRequired().HasMaxLength(150).HasComment("External WCS task id.");
         builder.Property(x => x.PayloadJson).HasColumnName("payload_json").IsRequired().HasComment("Outbound adapter payload JSON.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("WCS task status.");
@@ -175,8 +240,28 @@ public sealed class WcsTaskEntityTypeConfiguration : IEntityTypeConfiguration<Wc
         builder.Property(x => x.DispatchedAtUtc).HasColumnName("dispatched_at_utc").IsRequired().HasComment("UTC dispatch time.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
         builder.Property(x => x.FailedAtUtc).HasColumnName("failed_at_utc").HasComment("UTC failure time.");
+        builder.Property(x => x.NextRetryAtUtc).HasColumnName("next_retry_at_utc").HasComment("Earliest UTC time at which a failed WCS task may be dispatched again.");
+        builder.Property(x => x.IsTerminalFailure).HasColumnName("is_terminal_failure").IsRequired().HasDefaultValue(false).HasComment("Whether bounded WCS retry attempts have been exhausted.");
         builder.HasIndex(x => new { x.WarehouseTaskId, x.AdapterType }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ExternalTaskId }).IsUnique();
+    }
+}
+
+public sealed class WcsDispatchCircuitEntityTypeConfiguration : IEntityTypeConfiguration<WcsDispatchCircuit>
+{
+    public void Configure(EntityTypeBuilder<WcsDispatchCircuit> builder)
+    {
+        builder.ToTable("wcs_dispatch_circuits", table => table.HasComment("Per adapter and device WCS dispatch circuit state."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("WCS dispatch circuit id.");
+        InboundOrderEntityTypeConfiguration.AddTenantColumns(builder);
+        builder.Property(x => x.AdapterType).HasColumnName("adapter_type").IsRequired().HasMaxLength(100).HasComment("WCS adapter type.");
+        builder.Property(x => x.DeviceId).HasColumnName("device_id").IsRequired().HasMaxLength(150).HasComment("WCS device identifier.");
+        builder.Property(x => x.ConsecutiveFailureCount).HasColumnName("consecutive_failure_count").IsRequired().HasComment("Consecutive failed dispatch count.");
+        builder.Property(x => x.OpenedAtUtc).HasColumnName("opened_at_utc").HasComment("UTC time the circuit opened.");
+        builder.Property(x => x.LastFailureAtUtc).HasColumnName("last_failure_at_utc").HasComment("UTC time of the most recent failure.");
+        builder.Property(x => x.ResetAtUtc).HasColumnName("reset_at_utc").HasComment("UTC time of the latest manual reset.");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.AdapterType, x.DeviceId }).IsUnique();
     }
 }
 

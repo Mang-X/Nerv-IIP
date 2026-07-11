@@ -38,7 +38,7 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
         return consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Erp.PurchaseReceiptRecordedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(PurchaseReceiptRecordedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(
         PurchaseReceiptRecordedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
@@ -101,6 +101,26 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
                 integrationEvent,
                 failureCode,
                 failureMessage,
+                cancellationToken);
+            return;
+        }
+
+        try
+        {
+            await AccountingPeriodPostingGuard.EnsureOpenAsync(
+                dbContext,
+                receipt.OrganizationId,
+                receipt.EnvironmentId,
+                DateOnly.FromDateTime(receipt.RecordedAtUtc),
+                "late purchase receipt GR/IR accrual voucher",
+                cancellationToken);
+        }
+        catch (KnownException ex)
+        {
+            await DeadLetterAsync(
+                integrationEvent,
+                "closed-accounting-period",
+                ex.Message,
                 cancellationToken);
             return;
         }

@@ -67,6 +67,7 @@ public static class GatewayPermissions
     public const string NotificationMessagesMarkRead = "notifications.messages.mark-read";
     public const string NotificationMessagesRead = "notifications.messages.read";
     public const string NotificationTasksRead = "notifications.tasks.read";
+    public const string NotificationDeliveryManage = "notifications.delivery.manage";
 }
 
 public static class GatewayAuthorization

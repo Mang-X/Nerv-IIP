@@ -37,7 +37,7 @@ public sealed class ApprovalStepOverdueIntegrationEventHandlerForNotification(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Approval.ApprovalStepOverdueIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(ApprovalStepOverdueIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(ApprovalStepOverdueIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -109,7 +109,7 @@ public sealed class ApprovalStepResolvedIntegrationEventHandlerForNotification(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Approval.ApprovalStepResolvedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(ApprovalStepResolvedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(ApprovalStepResolvedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -177,7 +177,7 @@ public sealed class ApprovalActionRecordedIntegrationEventHandlerForNotification
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Approval.ApprovalActionRecordedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(ApprovalActionRecordedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(ApprovalActionRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -228,6 +228,63 @@ public sealed class ApprovalActionRecordedIntegrationEventHandlerForNotification
             SuggestedRecipientRefs: recipientRefs);
 
         await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+    }
+}
+
+[IntegrationEventConsumer("Nerv.IIP.Contracts.Approval.ApprovalCompletedIntegrationEvent", ConsumerName)]
+public sealed class ApprovalRejectedIntegrationEventHandlerForNotification(
+    ISender sender,
+    ApplicationDbContext dbContext,
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    TimeProvider timeProvider)
+    : IIntegrationEventHandler<ApprovalCompletedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "notification.approval-rejected-initiator";
+
+    private readonly IntegrationEventConsumerGuard<ApprovalCompletedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            ApprovalIntegrationEventTypes.ApprovalRejected,
+            ApprovalIntegrationEventVersions.V1)
+        {
+            IgnoreUnsupportedEventTypes = true,
+        });
+
+    public Task HandleAsync(ApprovalCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        => consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+
+    [CapSubscribe(nameof(ApprovalCompletedIntegrationEvent), Group = ConsumerName)]
+    public Task HandleCapAsync(ApprovalCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        => HandleAsync(integrationEvent, cancellationToken);
+
+    private async Task HandleValidEventAsync(ApprovalCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload ?? throw new KnownException("Approval rejected payload is required.");
+        if (string.IsNullOrWhiteSpace(payload.InitiatorRef))
+        {
+            return;
+        }
+
+        var initiatorRef = payload.InitiatorRef;
+        if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, timeProvider.GetUtcNow(), cancellationToken))
+        {
+            return;
+        }
+
+        var request = new SubmitNotificationIntentRequest(
+            integrationEvent.SourceService,
+            integrationEvent.EventType,
+            integrationEvent.EventId,
+            NotificationContractConstants.IntentTypeMessage,
+            NotificationContractConstants.SeverityWarning,
+            integrationEvent.IdempotencyKey,
+            new NotificationResourceRef("approval-chain", payload.ChainId, null),
+            "Approval rejected",
+            $"Approval was rejected for {payload.DocumentReference.DocumentType} {payload.DocumentReference.DocumentId}; the source document is editable again.",
+            [initiatorRef]);
+        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, timeProvider.GetUtcNow()), cancellationToken);
     }
 }
 

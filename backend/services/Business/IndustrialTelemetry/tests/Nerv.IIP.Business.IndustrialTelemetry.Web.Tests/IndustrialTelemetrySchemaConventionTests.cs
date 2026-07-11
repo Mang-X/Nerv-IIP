@@ -6,7 +6,11 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlChannelBindingAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlCommandAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
@@ -24,8 +28,12 @@ public sealed class IndustrialTelemetrySchemaConventionTests
         {
             typeof(TelemetryTag),
             typeof(AlarmRule),
+            typeof(DeviceControlChannelBinding),
+            typeof(DeviceControlCommand),
             typeof(DeviceStateSnapshot),
             typeof(AlarmEvent),
+            typeof(TelemetryRawSample),
+            typeof(TelemetryRollup),
             typeof(TelemetrySummary),
         };
         var failures = new List<string>();
@@ -47,6 +55,8 @@ public sealed class IndustrialTelemetrySchemaConventionTests
         AssertOptionalStringColumn<DeviceStateSnapshot>(fixture, nameof(DeviceStateSnapshot.SourceConnector), "source_connector", 150);
         AssertOptionalStringColumn<TelemetrySummary>(fixture, nameof(TelemetrySummary.SourceSystem), "source_system", 100);
         AssertOptionalStringColumn<TelemetrySummary>(fixture, nameof(TelemetrySummary.SourceConnector), "source_connector", 150);
+        AssertOptionalStringColumn<TelemetryRawSample>(fixture, nameof(TelemetryRawSample.SourceSystem), "source_system", 100);
+        AssertOptionalStringColumn<TelemetryRawSample>(fixture, nameof(TelemetryRawSample.SourceConnector), "source_connector", 150);
     }
 
     [Fact]
@@ -63,7 +73,7 @@ public sealed class IndustrialTelemetrySchemaConventionTests
                 nameof(AlarmEvent.AlarmCode),
                 nameof(AlarmEvent.ExternalAlarmId),
             ],
-            "status = 'raised'");
+            "status <> 'cleared'");
         AssertUniqueIndex<AlarmEvent>(
             fixture,
             [
@@ -73,7 +83,7 @@ public sealed class IndustrialTelemetrySchemaConventionTests
                 nameof(AlarmEvent.TagKey),
                 nameof(AlarmEvent.ExternalAlarmId),
             ],
-            "status = 'raised' AND tag_key IS NOT NULL");
+            "status <> 'cleared' AND tag_key IS NOT NULL");
         AssertUniqueIndex<DeviceStateSnapshot>(
             fixture,
             [
@@ -94,6 +104,27 @@ public sealed class IndustrialTelemetrySchemaConventionTests
                 nameof(TelemetrySummary.DeviceAssetId),
                 nameof(TelemetrySummary.TagKey),
                 nameof(TelemetrySummary.SourceSequence),
+            ]);
+        AssertUniqueIndex<TelemetryRawSample>(
+            fixture,
+            [
+                nameof(TelemetryRawSample.OrganizationId),
+                nameof(TelemetryRawSample.EnvironmentId),
+                nameof(TelemetryRawSample.SourceSystem),
+                nameof(TelemetryRawSample.SourceConnector),
+                nameof(TelemetryRawSample.DeviceAssetId),
+                nameof(TelemetryRawSample.TagKey),
+                nameof(TelemetryRawSample.SourceSequence),
+            ]);
+        AssertUniqueIndex<TelemetryRollup>(
+            fixture,
+            [
+                nameof(TelemetryRollup.OrganizationId),
+                nameof(TelemetryRollup.EnvironmentId),
+                nameof(TelemetryRollup.DeviceAssetId),
+                nameof(TelemetryRollup.TagKey),
+                nameof(TelemetryRollup.Grain),
+                nameof(TelemetryRollup.WindowStartUtc),
             ]);
     }
 

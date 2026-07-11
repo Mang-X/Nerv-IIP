@@ -11,6 +11,19 @@ public sealed record BusinessConsoleTelemetryTagListResponse(
     IReadOnlyCollection<BusinessConsoleTelemetryTagItem> Items,
     int Total = 0);
 
+public sealed record BusinessConsoleTelemetryTagCurrentValueRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string TagKey);
+
+public sealed record BusinessConsoleTelemetryTagCurrentValueResponse(
+    string DeviceAssetId,
+    string TagKey,
+    bool HasSample,
+    decimal? Value,
+    DateTimeOffset? OccurredAtUtc);
+
 public sealed record BusinessConsoleTelemetryTagItem(
     string TelemetryTagId,
     string OrganizationId,
@@ -19,7 +32,11 @@ public sealed record BusinessConsoleTelemetryTagItem(
     string TagKey,
     string ValueType,
     string UnitCode,
-    string SamplingPolicy);
+    string SamplingPolicy,
+    bool IsWritable = false,
+    decimal? ControlMinValue = null,
+    decimal? ControlMaxValue = null,
+    IReadOnlyCollection<string>? ControlAllowedValues = null);
 
 public sealed record BusinessConsoleTelemetryAlarmRuleListRequest(
     string OrganizationId,
@@ -64,13 +81,159 @@ public sealed record BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest(
 public sealed record BusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse(
     string AlarmRuleId);
 
+// RequestedBy is intentionally omitted: the gateway injects the authenticated principal
+// as the command requester so callers cannot forge the device-control audit actor.
+// ConnectorHostId/InstanceKey are intentionally omitted: the downstream service resolves the control
+// channel from the device's DeviceControlChannelBinding so operators never supply routing identifiers.
+public sealed record BusinessConsoleTelemetryDeviceControlCommandRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string CommandType,
+    string? TagKey,
+    string? Value,
+    IReadOnlyDictionary<string, string>? Parameters,
+    string Reason,
+    string IdempotencyKey,
+    string CorrelationId);
+
+public sealed record BusinessConsoleTelemetryDeviceControlCommandResponse(
+    string OperationTaskId,
+    string Status,
+    BusinessConsoleTelemetryOperationApprovalSummary? Approval);
+
+// Mirrors Nerv.IIP.Contracts.Ops.OperationApprovalSummary; the gateway does not
+// reference Contracts.Ops, so the shape is duplicated here as a passthrough DTO.
+public sealed record BusinessConsoleTelemetryOperationApprovalSummary(
+    string Status,
+    string RequestedBy,
+    DateTimeOffset RequestedAtUtc,
+    string? DecidedBy,
+    DateTimeOffset? DecidedAtUtc,
+    string? DecisionReason);
+
+// DeviceAssetId scopes the single-command read to a device resource: device control audit is a
+// device-resource surface, so the gateway authorizes on device-asset and the service verifies the
+// command belongs to that device rather than letting any org/env reader resolve it by command id.
+public sealed record BusinessConsoleTelemetryDeviceControlCommandContextRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId);
+
+public sealed record BusinessConsoleTelemetryDeviceControlCommandListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DeviceAssetId,
+    string? Status,
+    DateTimeOffset? FromUtc,
+    DateTimeOffset? ToUtc,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleTelemetryDeviceControlCommandListResponse(
+    IReadOnlyCollection<BusinessConsoleTelemetryDeviceControlCommandListItem> Items,
+    int Total = 0);
+
+public sealed record BusinessConsoleTelemetryDeviceControlCommandListItem(
+    string CommandId,
+    string OperationTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ConnectorHostId,
+    string DeviceAssetId,
+    string CommandType,
+    string? TagKey,
+    string? Value,
+    string RequestedBy,
+    string Reason,
+    string Status,
+    string? ApprovalStatus,
+    string? FailureCode,
+    string? DeviceReceiptCode,
+    string? DeviceReceiptMessage,
+    string CorrelationId,
+    DateTimeOffset RequestedAtUtc);
+
+public sealed record BusinessConsoleTelemetryDeviceControlCommandDetail(
+    string CommandId,
+    string OperationTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ConnectorHostId,
+    string InstanceKey,
+    string DeviceAssetId,
+    string CommandType,
+    string? TagKey,
+    string? Value,
+    IReadOnlyDictionary<string, string>? Parameters,
+    string RequestedBy,
+    string Reason,
+    string CorrelationId,
+    string IdempotencyKey,
+    DateTimeOffset RequestedAtUtc,
+    string Status,
+    bool StatusFromLiveOps,
+    BusinessConsoleTelemetryOperationApprovalSummary? Approval,
+    string? CurrentAttemptId,
+    IReadOnlyList<BusinessConsoleTelemetryDeviceControlCommandAttempt> Attempts);
+
+public sealed record BusinessConsoleTelemetryDeviceControlCommandAttempt(
+    string AttemptId,
+    string Status,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset? FinishedAtUtc,
+    string? FailureCode,
+    IReadOnlyDictionary<string, string>? Output);
+
+public sealed record BusinessConsoleTelemetryDeviceControlBindingListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DeviceAssetId,
+    bool? IsActive,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleTelemetryDeviceControlBindingListResponse(
+    IReadOnlyCollection<BusinessConsoleTelemetryDeviceControlBindingItem> Items,
+    int Total = 0);
+
+public sealed record BusinessConsoleTelemetryDeviceControlBindingItem(
+    string DeviceControlChannelBindingId,
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string ConnectorHostId,
+    string InstanceKey,
+    bool IsActive,
+    string? DisabledReason,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string ConnectorHostId,
+    string InstanceKey);
+
+public sealed record BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse(
+    string DeviceControlChannelBindingId);
+
+public sealed record BusinessConsoleDisableTelemetryDeviceControlBindingRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Reason);
+
+public sealed record BusinessConsoleDisableTelemetryDeviceControlBindingResponse(
+    string DeviceControlChannelBindingId);
+
 public sealed record BusinessConsoleTelemetryAlarmListRequest(
     string OrganizationId,
     string EnvironmentId,
     string? DeviceAssetId,
     string? Status,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? DeviceAssetIds = null);
 
 public sealed record BusinessConsoleTelemetryAlarmEventListResponse(
     IReadOnlyCollection<BusinessConsoleTelemetryAlarmEventItem> Items,
@@ -86,7 +249,16 @@ public sealed record BusinessConsoleTelemetryAlarmEventItem(
     string Status,
     DateTimeOffset RaisedAtUtc,
     DateTimeOffset? ClearedAtUtc,
-    string ExternalAlarmId);
+    string ExternalAlarmId,
+    DateTimeOffset? AcknowledgedAtUtc = null,
+    string? AcknowledgedBy = null,
+    DateTimeOffset? ShelvedAtUtc = null,
+    DateTimeOffset? ShelvedUntilUtc = null,
+    string? ShelvedBy = null,
+    string? ShelveReason = null,
+    DateTimeOffset? EscalatedAtUtc = null,
+    string? EscalationReason = null,
+    IReadOnlyCollection<string>? EscalationRecipientRefs = null);
 
 public sealed record BusinessConsoleEquipmentAlarmListRequest(
     string OrganizationId,
@@ -94,11 +266,33 @@ public sealed record BusinessConsoleEquipmentAlarmListRequest(
     string? DeviceAssetId,
     string? Status,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? DeviceAssetIds = null);
 
 public sealed record BusinessConsoleEquipmentAlarmListPageResponse(
-    IReadOnlyCollection<Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeAlarmSummary> Items,
+    IReadOnlyCollection<BusinessConsoleTelemetryAlarmEventItem> Items,
     int Total = 0);
+
+public sealed record BusinessConsoleAcknowledgeAlarmRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset AcknowledgedAtUtc,
+    string AcknowledgedBy);
+
+public sealed record BusinessConsoleShelveAlarmRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset ShelvedAtUtc,
+    int DurationMinutes,
+    string ShelvedBy,
+    string? Reason);
+
+public sealed record BusinessConsoleUnshelveAlarmRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset? UnshelvedAtUtc);
+
+public sealed record BusinessConsoleAlarmLifecycleResponse(string AlarmEventId);
 
 public sealed record BusinessConsoleTelemetryHistoryRequest(
     string OrganizationId,
@@ -130,10 +324,17 @@ public sealed record BusinessConsoleTelemetryOeeResponse(
     DateTimeOffset WindowStartUtc,
     DateTimeOffset WindowEndUtc,
     int StateSampleCount,
-    decimal AvailabilityRate,
+    decimal? AvailabilityRate,
     decimal LoadingRate,
-    decimal PerformanceRate,
-    decimal QualityRate,
-    decimal OeeRate,
-    bool PerformanceRateEstimated,
-    bool QualityRateEstimated);
+    int ProductionFactCount,
+    decimal? GoodQuantity,
+    decimal? ScrapQuantity,
+    decimal? ReworkQuantity,
+    string? OutputUomCode,
+    decimal? TheoreticalRatePerHour,
+    decimal? ExpectedOutputQuantity,
+    decimal? PerformanceRate,
+    decimal? QualityRate,
+    decimal? OeeRate,
+    bool IsDegraded,
+    IReadOnlyCollection<string> DegradedReasons);

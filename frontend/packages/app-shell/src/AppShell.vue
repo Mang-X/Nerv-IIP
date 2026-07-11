@@ -9,7 +9,7 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarInset,
-  SidebarProBrand,
+  NvSidebarBrand,
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
@@ -50,7 +50,13 @@ defineEmits<{
   <SidebarProvider>
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <SidebarProBrand :as="RouterLink" :to="{ path: '/' }" :name="title" logo="N" :caret="false" />
+        <NvSidebarBrand
+          :as="RouterLink"
+          :to="{ path: '/' }"
+          :name="title"
+          logo="N"
+          :caret="false"
+        />
       </SidebarHeader>
       <SidebarContent>
         <NavMain :items="navItems" :label="navLabel" />
@@ -62,7 +68,9 @@ defineEmits<{
     </Sidebar>
 
     <SidebarInset>
-      <header class="flex h-16 shrink-0 items-center gap-2 border-b px-4 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+      <header
+        class="flex h-16 shrink-0 items-center gap-2 border-b px-4 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12"
+      >
         <SidebarTrigger class="-ml-1" />
         <Separator
           orientation="vertical"

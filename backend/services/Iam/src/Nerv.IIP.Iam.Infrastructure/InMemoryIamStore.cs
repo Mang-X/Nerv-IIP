@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Nerv.IIP.Iam.Domain;
+using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 
 namespace Nerv.IIP.Iam.Infrastructure;
 
@@ -15,6 +16,8 @@ public sealed class InMemoryIamStore
     private readonly List<UserFact> _users = [];
     private readonly List<RoleFact> _roles = [];
     private readonly List<MembershipFact> _memberships = [];
+    private readonly Dictionary<string, IReadOnlySet<DataScopeBinding>> _roleDataScopes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlySet<DataScopeBinding>> _membershipDataScopes = new(StringComparer.Ordinal);
     private readonly List<UserSessionFact> _sessions = [];
     private readonly List<ConnectorHostCredentialFact> _connectorHostCredentials = [];
     private readonly List<ExternalClientFact> _externalClients = [];
@@ -372,6 +375,41 @@ public sealed class InMemoryIamStore
         }
     }
 
+    public IReadOnlyList<DataScopeBinding> ReplaceRoleDataScopes(string roleId, IEnumerable<DataScopeBinding> scopes)
+    {
+        lock (_gate)
+        {
+            if (_roles.All(x => x.RoleId != roleId))
+            {
+                throw new InvalidOperationException($"Role '{roleId}' was not found.");
+            }
+
+            var normalized = NormalizeDataScopes(scopes);
+            _roleDataScopes[roleId] = normalized.ToHashSet();
+            return normalized;
+        }
+    }
+
+    public IReadOnlyList<DataScopeBinding> ReplaceMembershipDataScopes(
+        string userId,
+        string organizationId,
+        string environmentId,
+        IEnumerable<DataScopeBinding> scopes)
+    {
+        lock (_gate)
+        {
+            var key = MembershipDataScopeKey(userId, organizationId, environmentId);
+            if (_memberships.All(x => MembershipDataScopeKey(x.UserId, x.OrganizationId, x.EnvironmentId) != key))
+            {
+                throw new InvalidOperationException($"Membership for user '{userId}' in '{organizationId}/{environmentId}' was not found.");
+            }
+
+            var normalized = NormalizeDataScopes(scopes);
+            _membershipDataScopes[key] = normalized.ToHashSet();
+            return normalized;
+        }
+    }
+
     public UserFact UpdateUser(string userId, string loginName, string email, bool enabled, DateTimeOffset? accountExpiresAtUtc)
     {
         lock (_gate)
@@ -667,6 +705,17 @@ public sealed class InMemoryIamStore
         _externalClients.Add(new ExternalClientFact("external-client-resource-demo", "Resource Scoped External Client", "org-001", "env-dev", Hash("external-client-resource-secret"), true, 1, DateTimeOffset.UtcNow.AddDays(-1), null));
         _authorizationGrants.Add(new AuthorizationGrantFact("external-client", "external-client-resource-demo", "org-001", "env-dev", "ops.tasks.create", "operation-template", "restart-critical", DateTimeOffset.UtcNow.AddDays(-1), null, null));
     }
+
+    private static IReadOnlyList<DataScopeBinding> NormalizeDataScopes(IEnumerable<DataScopeBinding> scopes) =>
+        scopes
+            .Select(DataScopeBinding.Normalize)
+            .Distinct()
+            .OrderBy(x => x.ScopeType, StringComparer.Ordinal)
+            .ThenBy(x => x.ScopeCode, StringComparer.Ordinal)
+            .ToArray();
+
+    private static string MembershipDataScopeKey(string userId, string organizationId, string environmentId) =>
+        $"{userId}:{organizationId}:{environmentId}";
 
     private void EnsureUserIsUnique(string? currentUserId, string loginName, string email)
     {

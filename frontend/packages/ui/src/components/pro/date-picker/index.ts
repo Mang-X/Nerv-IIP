@@ -1,2 +1,2 @@
-export { default as DatePickerPro } from './DatePickerPro.vue'
-export { default as DateRangePickerPro, type DateRange } from './DateRangePickerPro.vue'
+export { default as NvDatePicker } from './DatePickerPro.vue'
+export { default as NvDateRangePicker, type DateRange } from './DateRangePickerPro.vue'

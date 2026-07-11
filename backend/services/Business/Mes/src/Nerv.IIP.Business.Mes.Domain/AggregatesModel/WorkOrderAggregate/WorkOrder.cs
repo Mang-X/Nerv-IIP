@@ -11,7 +11,8 @@ public sealed record RoutingStepSnapshot(
     string WorkCenterId,
     IReadOnlyCollection<string> AlternativeWorkCenterIds,
     TimeSpan Duration,
-    bool RequiresQualityInspection = false);
+    bool RequiresQualityInspection = false,
+    string? OperationCode = null);
 
 public sealed class SourcePlanReference
 {
@@ -94,6 +95,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public decimal CompletedQuantity { get; private set; }
     public decimal ScrapQuantity { get; private set; }
+    public int CostReportCount { get; private set; }
+    public int MaterialMovementCount { get; private set; }
     public decimal OverReceiptTolerancePercent { get; private set; }
     public DateTimeOffset? ClosedAtUtc { get; private set; }
     public string? HoldReason { get; private set; }
@@ -157,7 +160,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
                 SkuId,
                 UomCode,
                 Quantity,
-                step.RequiresQualityInspection))
+                step.RequiresQualityInspection,
+                step.OperationCode))
             .ToList();
         Status = ReleasedStatus;
         AddDomainEvent(new WorkOrderReleasedDomainEvent(this, tasks));
@@ -184,6 +188,17 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             !string.Equals(ProductionVersionId, normalizedProductionVersionId, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Work order is already bound to a different production version.");
+        }
+
+        ProductionVersionId = normalizedProductionVersionId;
+    }
+
+    public void RebindProductionVersionForEngineeringChange(string productionVersionId)
+    {
+        var normalizedProductionVersionId = DomainGuard.Required(productionVersionId, nameof(productionVersionId));
+        if (Status is not CreatedStatus and not ReleasedStatus)
+        {
+            throw new InvalidOperationException("Only not-started work orders can be rebound after an engineering change.");
         }
 
         ProductionVersionId = normalizedProductionVersionId;
@@ -223,6 +238,23 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         HoldReason = DomainGuard.Required(reason, nameof(reason));
         Status = HoldStatus;
+    }
+
+    public void ResolveEngineeringChangeHold(string statusBeforeHold)
+    {
+        var normalizedStatus = DomainGuard.Required(statusBeforeHold, nameof(statusBeforeHold));
+        if (Status != HoldStatus)
+        {
+            return;
+        }
+
+        if (normalizedStatus is not CreatedStatus and not ReleasedStatus and not StartedStatus)
+        {
+            throw new InvalidOperationException($"Cannot restore work order from engineering change hold to status '{normalizedStatus}'.");
+        }
+
+        Status = normalizedStatus;
+        HoldReason = null;
     }
 
     public bool Cancel(string reason, DateTimeOffset cancelledAtUtc, IReadOnlyCollection<string>? materialIssueRequestNos = null)
@@ -281,6 +313,13 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         {
             AddDomainEvent(new WorkOrderCompletedDomainEvent(this, reportedAtUtc));
         }
+    }
+
+    public void RegisterCostReport(int materialMovementCount)
+    {
+        if (materialMovementCount < 0) throw new ArgumentOutOfRangeException(nameof(materialMovementCount));
+        CostReportCount++;
+        MaterialMovementCount += materialMovementCount;
     }
 
     public void ReverseProductionProgress(decimal goodQuantity, decimal scrapQuantity, DateTimeOffset reversedAtUtc)

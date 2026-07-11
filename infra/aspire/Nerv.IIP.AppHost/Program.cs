@@ -95,6 +95,8 @@ var apphub = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddPro
     .WithEnvironment("ConnectorHostCredential__EnvironmentId", connectorHostEnvironmentId)
     .WithEnvironment("ConnectorHostCredential__Secret", iamSeedConnectorHostSecret)
     .WithEnvironment("ConnectorIngestionToken__SigningKey", connectorIngestionTokenSigningKey)
+    .WithEnvironment("AppHub__HeartbeatTimeoutScan__Enabled", "true")
+    .WithEnvironment("AppHub__HeartbeatTimeoutScan__HeartbeatTimeout", "00:05:00")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(appHubDatabase, "AppHubDb")
     .WithReference(redis)
@@ -383,9 +385,12 @@ var businessIndustrialTelemetry = WithNervIipTelemetry(WithLocalDevelopmentEnvir
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessIndustrialTelemetryDatabase, "PostgreSQL")
-    .WaitFor(businessIndustrialTelemetryDatabase);
+    .WithReference(ops)
+    .WaitFor(businessIndustrialTelemetryDatabase)
+    .WaitFor(ops);
 businessIndustrialTelemetry = WithRedisMessagingTransport(businessIndustrialTelemetry);
 if (rabbitmq is not null)
 {

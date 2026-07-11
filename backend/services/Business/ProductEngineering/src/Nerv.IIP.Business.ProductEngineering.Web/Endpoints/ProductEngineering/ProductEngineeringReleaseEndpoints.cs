@@ -58,6 +58,49 @@ public sealed class RegisterEngineeringDocumentEndpoint(ISender sender)
     }
 }
 
+public sealed record PublishSopDocumentRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DocumentNumber,
+    string Revision,
+    string OperationCode,
+    string? WorkCenterCode,
+    string? RoutingCode,
+    string? RoutingRevision,
+    DateOnly EffectiveDate,
+    string FileId,
+    string FileName,
+    string ContentType,
+    string? IdempotencyKey = null);
+
+public sealed class PublishSopDocumentEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<PublishSopDocumentRequest, ResponseData<EntityResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<PublishSopDocumentEndpoint>());
+    }
+
+    public override async Task HandleAsync(PublishSopDocumentRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new PublishSopDocumentCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.DocumentNumber,
+            req.Revision,
+            req.OperationCode,
+            req.WorkCenterCode,
+            req.RoutingCode,
+            req.RoutingRevision,
+            req.EffectiveDate,
+            req.FileId,
+            req.FileName,
+            req.ContentType,
+            req.IdempotencyKey), ct);
+        await Send.OkAsync(new EntityResponse(result.Id).AsResponseData(), ct);
+    }
+}
+
 public sealed record CreateEngineeringItemRevisionRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -334,6 +377,37 @@ public sealed class ListEngineeringDocumentsEndpoint(ISender sender)
     public override async Task HandleAsync(ListEngineeringDocumentsRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new ListEngineeringDocumentsQuery(req.OrganizationId, req.EnvironmentId, req.ItemCode, req.DocumentType, req.Skip, req.Take), ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
+public sealed record GetCurrentSopDocumentsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string OperationCode,
+    string? WorkCenterCode,
+    string? RoutingCode,
+    string? RoutingRevision,
+    DateOnly? AsOfDate);
+
+public sealed class GetCurrentSopDocumentsEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<GetCurrentSopDocumentsRequest, ResponseData<CurrentSopDocumentsResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<GetCurrentSopDocumentsEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetCurrentSopDocumentsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetCurrentSopDocumentsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.OperationCode,
+            req.WorkCenterCode,
+            req.RoutingCode,
+            req.RoutingRevision,
+            req.AsOfDate), ct);
         await Send.OkAsync(response.AsResponseData(), ct);
     }
 }
@@ -621,6 +695,8 @@ public static class ProductEngineeringEndpointContracts
     public static readonly IReadOnlyCollection<ProductEngineeringEndpointContract> All =
     [
         new(typeof(RegisterEngineeringDocumentEndpoint), "POST", "/api/business/v1/engineering/documents", EngineeringPermissionCodes.DocumentsManage, "registerBusinessEngineeringDocument"),
+        new(typeof(PublishSopDocumentEndpoint), "POST", "/api/business/v1/engineering/sops/publish", EngineeringPermissionCodes.DocumentsManage, "publishBusinessEngineeringSopDocument"),
+        new(typeof(GetCurrentSopDocumentsEndpoint), "GET", "/api/business/v1/engineering/sops/current", EngineeringPermissionCodes.DocumentsRead, "getBusinessCurrentEngineeringSopDocuments"),
         new(typeof(ListEngineeringDocumentsEndpoint), "GET", "/api/business/v1/engineering/documents", EngineeringPermissionCodes.DocumentsRead, "listBusinessEngineeringDocuments"),
         new(typeof(GetEngineeringDocumentEndpoint), "GET", "/api/business/v1/engineering/documents/{documentNumber}/{revision}", EngineeringPermissionCodes.DocumentsRead, "getBusinessEngineeringDocument"),
         new(typeof(CreateEngineeringItemRevisionEndpoint), "POST", "/api/business/v1/engineering/items", EngineeringPermissionCodes.ItemsManage, "createBusinessEngineeringItemRevision"),

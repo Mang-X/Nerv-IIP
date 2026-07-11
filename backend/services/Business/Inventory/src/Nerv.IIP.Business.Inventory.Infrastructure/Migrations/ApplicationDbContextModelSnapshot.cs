@@ -30,10 +30,16 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Stock count adjustment aggregate id.");
 
-                    b.Property<DateTime>("ConfirmedAtUtc")
+                    b.Property<string>("ApprovalChainId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("approval_chain_id")
+                        .HasComment("BusinessApproval chain id when the variance exceeds an approval threshold.");
+
+                    b.Property<DateTime?>("ConfirmedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("confirmed_at_utc")
-                        .HasComment("UTC time when the count adjustment was confirmed.");
+                        .HasComment("UTC time when the count adjustment was posted after approval or auto-routing.");
 
                     b.Property<string>("CountTaskCode")
                         .IsRequired()
@@ -76,11 +82,10 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasComment("Optional lot or batch number dimension.");
 
                     b.Property<string>("MovementId")
-                        .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
                         .HasColumnName("movement_id")
-                        .HasComment("Stock movement id generated for the count variance.");
+                        .HasComment("Stock movement id generated only after the count variance is posted.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
@@ -129,12 +134,25 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasColumnName("sku_code")
                         .HasComment("MasterData SKU code.");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("status")
+                        .HasComment("Count adjustment lifecycle status: pending-approval, posted or voided.");
+
                     b.Property<string>("UomCode")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("uom_code")
                         .HasComment("MasterData unit of measure code for counted quantity.");
+
+                    b.Property<decimal>("VarianceAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("variance_amount")
+                        .HasComment("Absolute variance value at the ledger moving-average unit cost used for approval routing.");
 
                     b.Property<decimal>("VarianceQuantity")
                         .HasPrecision(18, 6)
@@ -144,6 +162,11 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ApprovalChainId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_stock_count_adjustments_approval_chain")
+                        .HasFilter("approval_chain_id is not null");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "CountTaskCode", "IdempotencyKey")
                         .IsUnique();
 
@@ -151,7 +174,7 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
 
                     b.ToTable("stock_count_adjustments", "inventory", t =>
                         {
-                            t.HasComment("Inventory stock count adjustment facts generated from confirmed count variances.");
+                            t.HasComment("Inventory stock count adjustment facts, including pending approval, posted and voided variances.");
 
                             t.HasCheckConstraint("ck_stock_count_adjustments_location_code_format", "location_code ~ '^[A-Za-z0-9_.:-]+$'");
 
@@ -160,6 +183,8 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_stock_count_adjustments_site_code_format", "site_code ~ '^[A-Za-z0-9_.:-]+$'");
 
                             t.HasCheckConstraint("ck_stock_count_adjustments_sku_code_format", "sku_code ~ '^[A-Za-z0-9_.:-]+$'");
+
+                            t.HasCheckConstraint("ck_stock_count_adjustments_status", "status in ('pending-approval','posted','voided')");
                         });
                 });
 
@@ -199,6 +224,13 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("expected_ledger_version")
                         .HasComment("Ledger version captured when the count task was created.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Caller-provided stable idempotency key used to recover Inventory count freezes after RPC timeout.");
 
                     b.Property<string>("LedgerEnvironmentId")
                         .IsRequired()
@@ -304,11 +336,15 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "CountTaskCode")
                         .IsUnique();
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_stock_count_tasks_idempotency_key");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "Status", "SiteCode", "LocationCode");
 
                     b.ToTable("stock_count_tasks", "inventory", t =>
                         {
-                            t.HasComment("Inventory stock count tasks, expected ledger version snapshots and confirmed variances.");
+                            t.HasComment("Inventory stock count tasks, expected ledger version snapshots, approval state and confirmed variances.");
 
                             t.HasCheckConstraint("ck_stock_count_tasks_location_code_format", "location_code ~ '^[A-Za-z0-9_.:-]+$'");
 
@@ -761,6 +797,11 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id where the reservation is valid.");
 
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at_utc")
+                        .HasComment("UTC deadline after which an open reservation is automatically released.");
+
                     b.Property<DateOnly?>("ExpiryDate")
                         .HasColumnType("date")
                         .HasColumnName("expiry_date")
@@ -836,6 +877,12 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasColumnName("reserved_quantity")
                         .HasComment("Original reserved quantity.");
 
+                    b.Property<int>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("row_version")
+                        .HasComment("Optimistic row version for concurrent reservation renewal and expiration.");
+
                     b.Property<string>("SerialNo")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -896,6 +943,9 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasComment("UTC time when the reservation was last changed.");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ExpiresAtUtc", "Status")
+                        .HasDatabaseName("ix_stock_reservations_expiration_scan");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceService", "SourceDocumentId", "IdempotencyKey")
                         .IsUnique();

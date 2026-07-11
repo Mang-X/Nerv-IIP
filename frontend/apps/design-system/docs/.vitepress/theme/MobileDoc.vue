@@ -8,9 +8,10 @@
 //   </MobileDoc>
 import { provide } from 'vue'
 import { MOBILE_OVERLAY_TARGET } from '@nerv-iip/ui-mobile'
+import SceneBadge from './SceneBadge.vue'
 
-// Keep mobile overlays (BottomSheet, Picker, DatePicker, ActionSheet, Dialog,
-// NumberKeyboard, Toast) inside the phone frame instead of covering the page.
+// Keep mobile overlays (NvBottomSheet, NvPicker, DatePicker, NvActionSheet, Dialog,
+// NvNumberKeyboard, Toast) inside the phone frame instead of covering the page.
 // `.ds-mdoc-screen` is given a containing block (transform) below so their
 // `position: fixed` anchors to the phone, not the viewport.
 provide(MOBILE_OVERLAY_TARGET, '.ds-mdoc-screen')
@@ -19,12 +20,18 @@ provide(MOBILE_OVERLAY_TARGET, '.ds-mdoc-screen')
 <template>
   <div class="ds-mdoc">
     <div class="ds-mdoc-main vp-doc">
+      <!-- PDA pages are `layout: page`, so the Layout `#doc-before` badge doesn't
+           fire here — render the scene-availability badge at the top of the prose
+           column instead. Auto-detects the mobile family from the route. -->
+      <SceneBadge />
       <slot />
     </div>
     <aside class="ds-mdoc-aside">
       <div class="ds-mdoc-sticky">
         <ClientOnly>
-          <div class="ds-mdoc-phone">
+          <!-- `vp-raw` isolates the phone preview from VitePress base/vp-doc
+               resets (ADR 0020 §4.2); the prose column keeps its `vp-doc`. -->
+          <div class="ds-mdoc-phone vp-raw">
             <div class="ds-mdoc-statusbar">
               <span class="font-semibold tabular-nums">9:41</span>
               <span class="ds-mdoc-notch" aria-hidden="true" />
@@ -118,6 +125,12 @@ provide(MOBILE_OVERLAY_TARGET, '.ds-mdoc-screen')
   overflow-y: auto;
   background: var(--background);
   scrollbar-width: thin;
+  /* Reserve the scrollbar gutter permanently. Bottom overlays (NvBottomSheet,
+     NvActionSheet, NvPicker, Dialog, Toast) teleport here and animate up from
+     translateY(100%); mid-animation they briefly extend past the bottom, which
+     would pop a scrollbar and squeeze the content width, then release it. A
+     stable gutter keeps the width fixed so there's no reflow flash. */
+  scrollbar-gutter: stable;
   /* containing block for overlays teleported here (MOBILE_OVERLAY_TARGET): a
      transform makes this element the containing block for `position: fixed`
      descendants, so sheets/dialogs/keypads/toasts anchor to the phone screen

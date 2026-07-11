@@ -1,7 +1,33 @@
 import { fileURLToPath, URL } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
-import { defineConfig } from 'vitepress'
+import { defineConfig, postcssIsolateStyles } from 'vitepress'
 import wasm from 'vite-plugin-wasm'
+
+// 一体机 / 工位触控侧栏 —— 复用给 /components/touch 与 /components/board（工位看板完整示例）。
+const touchSidebar = [
+  {
+    text: '一体机 / 工位',
+    items: [
+      { text: '概览', link: '/components/touch/' },
+      { text: '工位看板完整示例', link: '/components/board' },
+    ],
+  },
+  {
+    text: '操作',
+    items: [
+      { text: 'TouchButton 触控按钮', link: '/components/touch/touch-button' },
+      { text: 'TouchSegmented 分段切换', link: '/components/touch/touch-segmented' },
+      { text: 'QtyStepper 数量步进', link: '/components/touch/qty-stepper' },
+    ],
+  },
+  {
+    text: '信息',
+    items: [
+      { text: 'StatTile 指标块', link: '/components/touch/stat-tile' },
+      { text: 'StationBar 工位栏', link: '/components/touch/station-bar' },
+    ],
+  },
+]
 
 // Nerv-IIP 设计系统文档 (VitePress).
 // Runs under the workspace's `vite → @voidzero-dev/vite-plus-core` override; the
@@ -30,9 +56,10 @@ export default defineConfig({
           { text: '动效', link: '/foundations/motion' },
         ],
       },
+      { text: '模式', link: '/patterns/interaction-patterns', activeMatch: '/patterns/' },
       { text: '桌面 PC', link: '/components/desktop/', activeMatch: '/components/desktop' },
       { text: 'PDA 移动', link: '/components/mobile/', activeMatch: '/components/mobile' },
-      { text: '一体机看板', link: '/components/board', activeMatch: '/components/board' },
+      { text: '一体机', link: '/components/touch/', activeMatch: '/components/(touch|board)' },
       { text: '大屏', link: '/components/screen/', activeMatch: '/components/screen' },
     ],
     sidebar: {
@@ -41,7 +68,7 @@ export default defineConfig({
           text: '开始',
           items: [
             { text: '介绍', link: '/guide/introduction' },
-            { text: '三个表面', link: '/guide/surfaces' },
+            { text: '四个表面', link: '/guide/surfaces' },
             { text: '组件概览', link: '/components/overview' },
           ],
         },
@@ -55,6 +82,13 @@ export default defineConfig({
             { text: '色彩与动态色', link: '/foundations/color' },
             { text: '动效', link: '/foundations/motion' },
           ],
+        },
+      ],
+      // 交互模式 —— 业务前端横切交互规范（正文源自 frontend/DESIGN/patterns/，经 @include 嵌入）
+      '/patterns/': [
+        {
+          text: '交互模式',
+          items: [{ text: '交互模式规范 v1', link: '/patterns/interaction-patterns' }],
         },
       ],
       // 桌面 PC —— 组件库式：每个组件一页，按分类分组
@@ -239,22 +273,28 @@ export default defineConfig({
           ],
         },
       ],
-      '/components/board': [
-        {
-          text: '一体机看板',
-          items: [{ text: '工位看板', link: '/components/board' }],
-        },
-      ],
-      // 大屏 / 控制室 —— 独立 --sb-* 工业蓝令牌层，每组件一页，按分类分组
+      // 一体机 / 工位触控 —— 大触控 touch 层，每组件一页 + 工位看板完整示例
+      '/components/touch': touchSidebar,
+      '/components/board': touchSidebar,
+      // 大屏 / 控制室 —— 独立 --nv-scr-* 工业蓝令牌层，每组件一页，按分类分组
       '/components/screen': [
         {
           text: '大屏 / 控制室',
           items: [{ text: '概览', link: '/components/screen/' }],
         },
         {
+          text: '基础设施',
+          items: [
+            { text: 'ScreenScaler 舞台缩放', link: '/components/screen/screen-scaler' },
+            { text: 'ScrollBoard 无缝滚动板', link: '/components/screen/scroll-board' },
+            { text: 'useScreenData 大屏取数', link: '/components/screen/use-screen-data' },
+          ],
+        },
+        {
           text: '容器 / 外壳',
           items: [
             { text: 'ScreenPanel 面板', link: '/components/screen/screen-panel' },
+            { text: 'ScreenScrollArea 滚动区', link: '/components/screen/screen-scroll-area' },
             { text: 'BorderPanel 描边面板', link: '/components/screen/border-panel' },
             { text: 'TechFrame 科技边框', link: '/components/screen/tech-frame' },
             { text: 'TitleBar 标题栏', link: '/components/screen/title-bar' },
@@ -271,6 +311,9 @@ export default defineConfig({
             { text: 'DigitalFlop 数字翻牌', link: '/components/screen/digital-flop' },
             { text: 'Sparkline 迷你趋势', link: '/components/screen/sparkline' },
             { text: 'TrendChart 趋势图', link: '/components/screen/trend-chart' },
+            { text: 'ScreenBarChart 柱状图', link: '/components/screen/screen-bar-chart' },
+            { text: 'ScreenDonut 环形占比', link: '/components/screen/screen-donut' },
+            { text: 'ScreenPareto 帕累托', link: '/components/screen/screen-pareto' },
             { text: 'TaktGantt 节拍甘特', link: '/components/screen/takt-gantt' },
           ],
         },
@@ -312,10 +355,26 @@ export default defineConfig({
 
   vite: {
     plugins: [wasm(), tailwindcss()],
+    css: {
+      // ADR 0020 §4.2 — official style isolation. `postcssIsolateStyles` appends
+      // `:not(:where(.vp-raw, .vp-raw *))` to VitePress's own reset selectors so
+      // they stop leaking into component demos. The default only isolates
+      // `base.css` (global `h1..h6`/`button` resets); we ADD `vp-doc.css` so the
+      // prose typography (`.vp-doc table` borders/zebra, heading margins, link
+      // colour) also stops bleeding onto demos wrapped in `.vp-raw`
+      // (`<Demo>`/`<ScreenDemo>`/`<MobileDoc>` roots). Replaces the old per-case
+      // `.vp-doc` counter-rules; the removed `revert-layer` hack stays removed.
+      postcss: {
+        plugins: [postcssIsolateStyles({ includeFiles: [/base\.css/, /vp-doc\.css/] })],
+      },
+    },
     resolve: {
       alias: {
         '@nerv-iip/ui/file-preview': fileURLToPath(
-          new URL('../../../../packages/ui/src/components/ui/file-preview/index.ts', import.meta.url),
+          new URL(
+            '../../../../packages/ui/src/components/ui/file-preview/index.ts',
+            import.meta.url,
+          ),
         ),
         '@nerv-iip/ui': fileURLToPath(
           new URL('../../../../packages/ui/src/index.ts', import.meta.url),

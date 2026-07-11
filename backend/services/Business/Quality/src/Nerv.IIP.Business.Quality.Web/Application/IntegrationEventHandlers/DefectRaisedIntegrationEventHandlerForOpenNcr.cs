@@ -34,7 +34,7 @@ public sealed class DefectRaisedIntegrationEventHandlerForOpenNcr(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Quality.DefectRaisedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(DefectRaisedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(DefectRaisedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

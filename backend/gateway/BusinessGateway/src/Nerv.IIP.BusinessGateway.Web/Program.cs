@@ -50,6 +50,7 @@ builder.Services.AddSingleton<BusinessGatewayDownstreamHealthState>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<AcceptLanguageForwardingHandler>();
 builder.Services.AddScoped<BusinessConsoleSearchService>();
+builder.Services.AddScoped<BusinessGatewayDataScopeFilter>();
 var iamBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
 var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
 var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
@@ -61,6 +62,7 @@ var wmsBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.En
 var approvalBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
 var barcodeLabelBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "BarcodeLabel:BaseUrl", "http://localhost:5113");
 var notificationBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Notification:BaseUrl", "http://localhost:5106");
+var fileStorageBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "FileStorage:BaseUrl", "http://localhost:5104");
 var mesBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
 var schedulingBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Scheduling:BaseUrl", "http://localhost:5120");
 var industrialTelemetryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
@@ -112,6 +114,10 @@ builder.Services.AddHttpClient<IBusinessBarcodeLabelClient, HttpBusinessBarcodeL
 builder.Services.AddHttpClient<IBusinessNotificationClient, HttpBusinessNotificationClient>(client =>
 {
     client.BaseAddress = notificationBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessFileStorageClient, HttpBusinessFileStorageClient>(client =>
+{
+    client.BaseAddress = fileStorageBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IBusinessMesClient, HttpBusinessMesClient>(client =>
 {

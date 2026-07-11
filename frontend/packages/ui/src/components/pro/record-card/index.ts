@@ -1,2 +1,5 @@
-export { default as RecordCardPro } from './RecordCardPro.vue'
-export type { RecordCardMeta, RecordCardStatus } from './RecordCardPro.vue'
+export {
+  default as NvRecordCard,
+  type RecordCardMeta,
+  type RecordCardStatus,
+} from './RecordCardPro.vue'

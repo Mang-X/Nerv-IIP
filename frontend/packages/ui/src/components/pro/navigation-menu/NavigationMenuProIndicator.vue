@@ -32,28 +32,30 @@ const forwarded = useForwardProps(reactiveOmit(props, 'class'))
 <!-- NOT scoped: reka teleports the indicator out of this component, so Vue's
      scoped data-v attribute never reaches it and scoped rules wouldn't apply. -->
 <style>
-.ds-nav-indicator {
-  width: var(--reka-navigation-menu-indicator-size);
-  transform: translateX(var(--reka-navigation-menu-indicator-position));
-  transition:
-    transform 0.25s var(--ease-out-quart, ease-out),
-    width 0.25s var(--ease-out-quart, ease-out);
-}
-.ds-nav-indicator-diamond {
-  position: relative;
-  top: 70%;
-  height: 0.5rem;
-  width: 0.5rem;
-  rotate: 45deg;
-  border-radius: 2px;
-  background: var(--popover);
-  box-shadow:
-    -1px -1px 0 0 color-mix(in oklch, var(--border) 80%, transparent),
-    inset 0 0 0 1px color-mix(in oklch, var(--primary) 30%, transparent);
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
   .ds-nav-indicator {
-    transition: none;
+    width: var(--reka-navigation-menu-indicator-size);
+    transform: translateX(var(--reka-navigation-menu-indicator-position));
+    transition:
+      transform 0.25s var(--nv-ease-out-quart, ease-out),
+      width 0.25s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-nav-indicator-diamond {
+    position: relative;
+    top: 70%;
+    height: 0.5rem;
+    width: 0.5rem;
+    rotate: 45deg;
+    border-radius: 2px;
+    background: var(--popover);
+    box-shadow:
+      -1px -1px 0 0 color-mix(in oklch, var(--border) 80%, transparent),
+      inset 0 0 0 1px color-mix(in oklch, var(--primary) 30%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-nav-indicator {
+      transition: none;
+    }
   }
 }
 </style>

@@ -10,6 +10,13 @@ public sealed record BusinessConsoleMaintenanceListRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record BusinessConsoleMaintenanceWorkOrderListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? DeviceAssetIds = null);
+
 public sealed record BusinessConsoleMaintenanceSparePartInput(
     string SkuCode,
     decimal Quantity,

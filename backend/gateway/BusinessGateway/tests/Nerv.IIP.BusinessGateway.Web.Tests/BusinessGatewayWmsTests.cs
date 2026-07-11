@@ -91,6 +91,8 @@ public sealed class BusinessGatewayWmsTests
                     "/api/business/v1/wms/picking-tasks" => new { items = Array.Empty<object>(), total = 13 },
                     "/api/business/v1/wms/count-executions" => new { items = Array.Empty<object>(), total = 11 },
                     "/api/business/v1/wms/wcs-tasks" => new { items = Array.Empty<object>(), total = 9 },
+                    "/api/business/v1/wms/receiving-quality-gates" => new { items = Array.Empty<object>(), total = 7 },
+                    "/api/business/v1/wms/supplier-return-requests" => new { items = Array.Empty<object>(), total = 5 },
                     _ => throw new InvalidOperationException($"Unexpected path {request.RequestUri!.AbsolutePath}"),
                 },
                 success = true,
@@ -106,6 +108,8 @@ public sealed class BusinessGatewayWmsTests
         var picking = await client.ListPickingTasksAsync("internal-token-001", new BusinessConsoleWmsWarehouseTaskListRequest("org-001", "env-dev", "BIN-01", "user-002", 25, 35, "Open", "PICK-001"), CancellationToken.None);
         var count = await client.ListCountExecutionsAsync("internal-token-001", new BusinessConsoleWmsCountExecutionListRequest("org-001", "env-dev", "BIN-02", 5, 15, "Open", "COUNT-001"), CancellationToken.None);
         var wcs = await client.ListWcsTasksAsync("internal-token-001", new BusinessConsoleWmsWcsTaskListRequest("org-001", "env-dev", "EXT-001", "warehouse-task-001", 30, 15, "Failed", true, "EXT"), CancellationToken.None);
+        var gates = await client.ListReceivingQualityGatesAsync("internal-token-001", new BusinessConsoleWmsReceivingQualityGateListRequest("org-001", "env-dev", 5, 15, "rejected", "IN-GATE"), CancellationToken.None);
+        var returns = await client.ListSupplierReturnRequestsAsync("internal-token-001", new BusinessConsoleWmsListRequest("org-001", "env-dev", 10, 20, "Open", "RTS"), CancellationToken.None);
 
         Assert.Equal(23, inbound.Total);
         Assert.Equal(19, putaway.Total);
@@ -113,6 +117,8 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(13, picking.Total);
         Assert.Equal(11, count.Total);
         Assert.Equal(9, wcs.Total);
+        Assert.Equal(7, gates.Total);
+        Assert.Equal(5, returns.Total);
         Assert.Equal(
         [
             "GET /api/business/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skip=10&take=20&status=Open&keyword=IN-001",
@@ -121,6 +127,8 @@ public sealed class BusinessGatewayWmsTests
             "GET /api/business/v1/wms/picking-tasks?organizationId=org-001&environmentId=env-dev&locationCode=BIN-01&operatorUserId=user-002&skip=25&take=35&status=Open&keyword=PICK-001",
             "GET /api/business/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev&locationCode=BIN-02&skip=5&take=15&status=Open&keyword=COUNT-001",
             "GET /api/business/v1/wms/wcs-tasks?organizationId=org-001&environmentId=env-dev&externalTaskId=EXT-001&warehouseTaskId=warehouse-task-001&skip=30&take=15&status=Failed&failed=true&keyword=EXT",
+            "GET /api/business/v1/wms/receiving-quality-gates?organizationId=org-001&environmentId=env-dev&skip=5&take=15&gateStatus=rejected&keyword=IN-GATE",
+            "GET /api/business/v1/wms/supplier-return-requests?organizationId=org-001&environmentId=env-dev&skip=10&take=20&status=Open&keyword=RTS",
         ],
         handler.Requests.Select(request => $"{request.Method} {request.RequestUri!.PathAndQuery}").ToArray());
     }
@@ -535,6 +543,54 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("EXT-001", data.GetProperty("items")[0].GetProperty("externalTaskId").GetString());
     }
 
+    [Fact]
+    public async Task Receiving_quality_gate_and_supplier_return_lists_use_receipts_read_permission_internal_token_and_filters()
+    {
+        var wms = new RecordingWmsClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var gates = await client.GetAsync("/api/business-console/v1/wms/receiving-quality-gates?organizationId=org-001&environmentId=env-dev&skip=5&take=15&gateStatus=rejected&keyword=IN-GATE");
+        var returns = await client.GetAsync("/api/business-console/v1/wms/supplier-return-requests?organizationId=org-001&environmentId=env-dev&skip=10&take=20&status=Open&keyword=RTS");
+
+        Assert.Equal(HttpStatusCode.OK, gates.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, returns.StatusCode);
+        Assert.Equal(
+        [
+            BusinessGatewayPermissions.WmsReceiptsRead,
+            BusinessGatewayPermissions.WmsReceiptsRead,
+        ],
+        auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
+        Assert.Equal("internal-test-token", wms.LastInternalToken);
+        Assert.Equal(new BusinessConsoleWmsReceivingQualityGateListRequest("org-001", "env-dev", 5, 15, "rejected", "IN-GATE"), wms.LastReceivingQualityGateRequest);
+        Assert.Equal(new BusinessConsoleWmsListRequest("org-001", "env-dev", 10, 20, "Open", "RTS"), wms.LastSupplierReturnRequest);
+
+        using var gatesDocument = JsonDocument.Parse(await gates.Content.ReadAsStringAsync());
+        var gatesData = gatesDocument.RootElement.GetProperty("data");
+        Assert.Equal(41, gatesData.GetProperty("total").GetInt32());
+        var gateItem = gatesData.GetProperty("items")[0];
+        Assert.Equal("IN-GATE-001", gateItem.GetProperty("inboundOrderNo").GetString());
+        Assert.Equal("rejected", gateItem.GetProperty("qualityGateStatus").GetString());
+        Assert.Equal("QI-REJ-001", gateItem.GetProperty("inspectionRecordId").GetString());
+        Assert.Equal("critical-defect", gateItem.GetProperty("qualityDispositionReason").GetString());
+
+        using var returnsDocument = JsonDocument.Parse(await returns.Content.ReadAsStringAsync());
+        var returnsData = returnsDocument.RootElement.GetProperty("data");
+        Assert.Equal(37, returnsData.GetProperty("total").GetInt32());
+        var returnItem = returnsData.GetProperty("items")[0];
+        Assert.Equal("RTS-IN-GATE-001-10-QI-REJ-001", returnItem.GetProperty("supplierReturnNo").GetString());
+        Assert.Equal("return-to-supplier", returnItem.GetProperty("dispositionType").GetString());
+        Assert.Equal("Open", returnItem.GetProperty("status").GetString());
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         FakeBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null) =>
@@ -636,6 +692,10 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
     public BusinessConsoleWmsCountExecutionListRequest? LastCountExecutionListRequest { get; private set; }
 
     public BusinessConsoleWmsWcsTaskListRequest? LastWcsTaskRequest { get; private set; }
+
+    public BusinessConsoleWmsReceivingQualityGateListRequest? LastReceivingQualityGateRequest { get; private set; }
+
+    public BusinessConsoleWmsListRequest? LastSupplierReturnRequest { get; private set; }
 
     public BusinessConsoleCreateWmsInboundOrderRequest? LastCreateInboundRequest { get; private set; }
 
@@ -941,5 +1001,74 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
                 null),
         ],
         14));
+    }
+
+    public Task<BusinessConsoleWmsReceivingQualityGateListResponse> ListReceivingQualityGatesAsync(
+        string internalBearerToken,
+        BusinessConsoleWmsReceivingQualityGateListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastReceivingQualityGateRequest = request;
+        return Task.FromResult(new BusinessConsoleWmsReceivingQualityGateListResponse(
+        [
+            new BusinessConsoleWmsReceivingQualityGateItem(
+                "inbound-order-001",
+                "inbound-order-line-001",
+                "org-001",
+                "env-dev",
+                "IN-GATE-001",
+                "Completed",
+                "S1",
+                "10",
+                "SKU-FG-1000",
+                "kg",
+                5,
+                "STAGE-01",
+                "LOT-001",
+                null,
+                "quality",
+                "rejected",
+                "QI-REJ-001",
+                "critical-defect",
+                "company",
+                null,
+                DateTime.Parse("2026-06-01T10:10:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal)),
+        ],
+        41));
+    }
+
+    public Task<BusinessConsoleWmsSupplierReturnListResponse> ListSupplierReturnRequestsAsync(
+        string internalBearerToken,
+        BusinessConsoleWmsListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastSupplierReturnRequest = request;
+        return Task.FromResult(new BusinessConsoleWmsSupplierReturnListResponse(
+        [
+            new BusinessConsoleWmsSupplierReturnItem(
+                "supplier-return-001",
+                "org-001",
+                "env-dev",
+                "RTS-IN-GATE-001-10-QI-REJ-001",
+                "IN-GATE-001",
+                "10",
+                "QI-REJ-001",
+                "SKU-FG-1000",
+                "kg",
+                "S1",
+                "STAGE-01",
+                "LOT-001",
+                null,
+                "company",
+                null,
+                5,
+                "return-to-supplier",
+                "critical-defect",
+                "Open",
+                DateTime.Parse("2026-06-01T10:20:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal)),
+        ],
+        37));
     }
 }

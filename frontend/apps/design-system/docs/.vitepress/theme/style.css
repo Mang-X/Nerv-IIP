@@ -3,14 +3,43 @@
  * and unlayered CSS beats Tailwind's normally-layered `@layer utilities` — which
  * shrinks our headings and strips component backgrounds inside the docs. Importing
  * utilities without a layer lets them win by specificity (.text-xl 0,1,0 > h2 0,0,1),
- * so embedded design-system components render exactly as in the apps. */
-@layer theme, base, components;
+ * so embedded design-system components render exactly as in the apps.
+ *
+ * The layered order below MUST include `nv-components` (and `nv-tokens`), and this
+ * statement MUST be the first thing in the theme's CSS so it fixes the layer order
+ * before any component `<style scoped> @layer nv-components {…}` tag is injected.
+ * Otherwise `nv-components` first appears in an injected SFC sheet and gets ordered
+ * BEFORE `base`, so Tailwind Preflight's `*{ padding: 0 }` (layer base) beats every
+ * component that styles itself via scoped CSS — collapsing NvMobileGrid / NvFab /
+ * bordered NvDescriptions / pagination / dialog padding to zero in the docs only
+ * (product apps declare the full order in their own main.css, so they're fine).
+ * Utilities + overrides stay UNLAYERED so they still win over VitePress's own
+ * unlayered resets; nv-components sits above base/components so scoped rules beat
+ * Preflight, exactly as in the apps' `theme, nv-tokens, base, components,
+ * nv-components, utilities, nv-overrides, app` order. */
+@layer theme, nv-tokens, base, components, nv-components;
 @import 'tailwindcss/theme.css' layer(theme);
 @import 'tailwindcss/preflight.css' layer(base);
 @import 'tailwindcss/utilities.css';
 
 @source '../../../../../packages/ui/src';
 @source '../../../../../packages/ui-mobile/src';
+
+/* Modal-overlay scroll lock without layout shift.
+   True modals (Dialog / AlertDialog / Sheet) MUST lock background scroll. reka does
+   that with `body { overflow: hidden }`, which only actually stops the viewport when
+   the ROOT's overflow stays `visible` (the browser propagates body→viewport
+   overflow). So we must NOT set `overflow`/`scrollbar-gutter` on <html>: that makes
+   <html> the scroll container and the lock silently stops working (background
+   scrolls behind the modal).
+   To avoid the shift instead: reka's default `scrollBody` compensation already pads
+   the body so normal content doesn't move; the only thing body padding can't reach
+   is a `position: fixed` element — the nav bar — so compensate it with reka's
+   `--scrollbar-width` (set on <html> only while a lock is active, absent otherwise).
+   Popover overlays (dropdown/select/popover) are non-modal and never lock. */
+.VPNavBar {
+  padding-right: var(--scrollbar-width, 0px);
+}
 
 @import 'tw-animate-css';
 
@@ -20,6 +49,11 @@
 @import '../../../../../packages/ui/src/styles/theme.css';
 /* 移动端安全区/触控基线（@nerv-iip/ui-mobile） */
 @import '../../../../../packages/ui-mobile/src/styles/mobile.css';
+/* Host-override decorations (overlay glass, sidebar premium). Imported UNLAYERED
+   in the docs (ADR 0020 §4.2.1) — same rationale as the unlayered utilities
+   above: they must win by specificity over VitePress's own unlayered resets.
+   (In product apps this same file is imported `layer(nv-overrides)`.) */
+@import '../../../../../packages/ui/src/styles/overrides.css';
 
 /* ----------------------------------------------------------------------------
  * Chrome re-theme — map VitePress's `--vp-*` design variables onto OUR tokens so
@@ -30,10 +64,10 @@
 :root,
 .dark {
   /* brand / accent — follows the runtime dynamic accent (`--brand`) */
-  --vp-c-brand-1: var(--brand-strong);
-  --vp-c-brand-2: var(--brand);
-  --vp-c-brand-3: var(--brand);
-  --vp-c-brand-soft: color-mix(in oklch, var(--brand) 14%, transparent);
+  --vp-c-brand-1: var(--nv-brand-strong);
+  --vp-c-brand-2: var(--nv-brand);
+  --vp-c-brand-3: var(--nv-brand);
+  --vp-c-brand-soft: color-mix(in oklch, var(--nv-brand) 14%, transparent);
 
   /* surfaces */
   --vp-c-bg: var(--background);
@@ -58,23 +92,23 @@
   --vp-c-default-soft: var(--muted);
 
   /* brand buttons */
-  --vp-button-brand-bg: var(--brand);
-  --vp-button-brand-text: var(--brand-foreground);
+  --vp-button-brand-bg: var(--nv-brand);
+  --vp-button-brand-text: var(--nv-brand-foreground);
   --vp-button-brand-border: transparent;
-  --vp-button-brand-hover-bg: var(--brand-strong);
-  --vp-button-brand-hover-text: var(--brand-foreground);
-  --vp-button-brand-active-bg: var(--brand-strong);
+  --vp-button-brand-hover-bg: var(--nv-brand-strong);
+  --vp-button-brand-hover-text: var(--nv-brand-foreground);
+  --vp-button-brand-active-bg: var(--nv-brand-strong);
 
   /* code */
   --vp-code-block-bg: var(--card);
   --vp-code-bg: color-mix(in oklch, var(--muted) 70%, transparent);
 
   /* home hero — brand-tinted name + soft glow */
-  --vp-home-hero-name-color: var(--brand-strong);
+  --vp-home-hero-name-color: var(--nv-brand-strong);
   --vp-home-hero-image-background-image: linear-gradient(
     -45deg,
-    color-mix(in oklch, var(--brand) 50%, transparent),
-    color-mix(in oklch, var(--brand) 12%, transparent)
+    color-mix(in oklch, var(--nv-brand) 50%, transparent),
+    color-mix(in oklch, var(--nv-brand) 12%, transparent)
   );
   --vp-home-hero-image-filter: blur(48px);
 
@@ -84,7 +118,7 @@
 
 /* tighten the brand focus ring + nav active to our accent */
 :root {
-  --vp-c-brand-1: var(--brand-strong);
+  --vp-c-brand-1: var(--nv-brand-strong);
 }
 
 /* (The earlier `[data-slot] { background-color: revert-layer }` hack is gone:
@@ -196,7 +230,7 @@
   margin-inline: -8px;
   padding-inline: 8px;
   border-radius: 8px;
-  transition: background-color 0.15s var(--ease-out-quart, ease-out);
+  transition: background-color 0.15s var(--nv-ease-out-quart, ease-out);
 }
 .VPSidebar .VPSidebarItem.is-link > .item:hover {
   background-color: color-mix(in oklch, var(--foreground) 6%, transparent);
@@ -225,22 +259,9 @@
   max-width: 1080px !important;
 }
 
-/* ----------------------------------------------------------------------------
- * Screen-layer tables. VitePress styles every `.vp-doc table` (full cell
- * borders, grey zebra, display:block, margins). On screen-component doc pages
- * that bleeds onto ScreenTable / AlarmTable and fights their scoped design.
- * Strip it so their own styles (hairline rows, cyan hover, rounded frame) win.
- * gallery (layout:false) has no .vp-doc, so it was unaffected all along.
- * ------------------------------------------------------------------------- */
-.vp-doc :is(.sb-tbl, .sb-at-tbl) {
-  display: table;
-  margin: 0;
-  overflow: visible;
-}
-.vp-doc :is(.sb-tbl, .sb-at-tbl) tr {
-  background: transparent !important;
-  border: 0;
-}
-.vp-doc :is(.sb-tbl, .sb-at-tbl) :is(th, td) {
-  border: 0;
-}
+/* NOTE (ADR 0020 §4.2): the former `.vp-doc :is(.sb-tbl, .sb-at-tbl)` table
+   counter-rules — which stripped VitePress's `.vp-doc table` borders/zebra off
+   NvScreenTable / NvAlarmTable — are REMOVED. Screen demos now render inside the
+   `vp-raw` root of `<ScreenDemo>`, and `postcssIsolateStyles` (config.mts) keeps
+   `vp-doc.css`'s table styling out of that isolated subtree, so their own scoped
+   design (hairline rows, cyan hover, rounded frame) wins without a counter-rule. */

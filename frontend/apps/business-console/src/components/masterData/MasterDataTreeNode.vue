@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
-import { ButtonPro, StatusBadgePro } from '@nerv-iip/ui'
+import { NvButton, NvStatusBadge } from '@nerv-iip/ui'
 import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 
@@ -42,7 +42,11 @@ const childLabel = computed(() => props.childLabelOf(props.node.type))
 </script>
 
 <template>
-  <li role="treeitem" :aria-expanded="hasChildren ? isExpanded : undefined" :aria-selected="isSelected">
+  <li
+    role="treeitem"
+    :aria-expanded="hasChildren ? isExpanded : undefined"
+    :aria-selected="isSelected"
+  >
     <div
       class="group flex items-center gap-1 rounded-md pr-1 text-sm"
       :class="isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'"
@@ -63,11 +67,13 @@ const childLabel = computed(() => props.childLabelOf(props.node.type))
         class="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left"
         @click="emit('select', node)"
       >
-        <span class="truncate" :class="node.active ? '' : 'text-muted-foreground line-through'">{{ node.displayName }}</span>
+        <span class="truncate" :class="node.active ? '' : 'text-muted-foreground line-through'">{{
+          node.displayName
+        }}</span>
         <span class="shrink-0 text-xs text-muted-foreground">{{ node.code }}</span>
-        <StatusBadgePro v-if="!node.active" value="disabled" />
+        <NvStatusBadge v-if="!node.active" value="disabled" />
       </button>
-      <ButtonPro
+      <NvButton
         v-if="childLabel"
         size="icon"
         variant="ghost"
@@ -77,7 +83,7 @@ const childLabel = computed(() => props.childLabelOf(props.node.type))
         @click="emit('createChild', node)"
       >
         <PlusIcon class="size-3.5" aria-hidden="true" />
-      </ButtonPro>
+      </NvButton>
     </div>
     <ul v-if="hasChildren && isExpanded" class="grid gap-0.5" role="group">
       <MasterDataTreeNode

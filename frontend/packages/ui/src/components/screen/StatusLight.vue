@@ -21,7 +21,7 @@ const props = withDefaults(
 const color = computed(
   () =>
     (
-      {
+      ({
         run: 'green',
         idle: 'amber',
         alarm: 'red',
@@ -29,64 +29,66 @@ const color = computed(
         green: 'green',
         amber: 'amber',
         red: 'red',
-      } as const
+      }) as const
     )[props.tone],
 )
 </script>
 
 <template>
-  <span class="sb-sl" :class="color">
-    <span class="sb-sl-dot" />
-    <span v-if="label" class="sb-sl-label">{{ label }}</span>
+  <span class="nv-scr-sl" :class="color">
+    <span class="nv-scr-sl-dot" />
+    <span v-if="label" class="nv-scr-sl-label">{{ label }}</span>
   </span>
 </template>
 
 <style scoped>
-.sb-sl {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--sb-text-2);
-}
-.sb-sl-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex: none;
-  animation: sb-sl-breathe 2s ease-in-out infinite;
-}
-.sb-sl.cyan .sb-sl-dot {
-  background: var(--sb-cyan);
-  box-shadow: 0 0 9px var(--sb-cyan);
-}
-.sb-sl.green .sb-sl-dot {
-  background: var(--sb-green);
-  box-shadow: 0 0 9px var(--sb-green);
-}
-.sb-sl.amber .sb-sl-dot {
-  background: var(--sb-amber);
-  box-shadow: 0 0 9px var(--sb-amber);
-}
-.sb-sl.red .sb-sl-dot {
-  background: var(--sb-red);
-  box-shadow: 0 0 9px var(--sb-red);
-}
-.sb-sl-label {
-  line-height: 1;
-}
-@media (prefers-reduced-motion: reduce) {
-  .sb-sl-dot {
-    animation: none;
+@layer nv-components {
+  .nv-scr-sl {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--nv-scr-text-2);
   }
-}
-@keyframes sb-sl-breathe {
-  0%,
-  100% {
-    opacity: 0.55;
+  .nv-scr-sl-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex: none;
+    animation: nv-scr-sl-breathe 2s ease-in-out infinite;
   }
-  50% {
-    opacity: 1;
+  .nv-scr-sl.cyan .nv-scr-sl-dot {
+    background: var(--nv-scr-cyan);
+    box-shadow: 0 0 9px var(--nv-scr-cyan);
+  }
+  .nv-scr-sl.green .nv-scr-sl-dot {
+    background: var(--nv-scr-green);
+    box-shadow: 0 0 9px var(--nv-scr-green);
+  }
+  .nv-scr-sl.amber .nv-scr-sl-dot {
+    background: var(--nv-scr-amber);
+    box-shadow: 0 0 9px var(--nv-scr-amber);
+  }
+  .nv-scr-sl.red .nv-scr-sl-dot {
+    background: var(--nv-scr-red);
+    box-shadow: 0 0 9px var(--nv-scr-red);
+  }
+  .nv-scr-sl-label {
+    line-height: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .nv-scr-sl-dot {
+      animation: none;
+    }
+  }
+  @keyframes nv-scr-sl-breathe {
+    0%,
+    100% {
+      opacity: 0.55;
+    }
+    50% {
+      opacity: 1;
+    }
   }
 }
 </style>

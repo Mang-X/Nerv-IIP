@@ -24,13 +24,18 @@ public sealed record BusinessGatewayAuthorizationResult(
     string? PrincipalId,
     string? PrincipalType,
     string? LoginName,
-    string? DenialReason)
+    string? DenialReason,
+    AuthorizationDataScope? DataScope = null)
 {
-    public static BusinessGatewayAuthorizationResult Allowed(string principalId, string principalType, string loginName) =>
-        new(true, principalId, principalType, loginName, null);
+    public static BusinessGatewayAuthorizationResult Allowed(
+        string principalId,
+        string principalType,
+        string loginName,
+        AuthorizationDataScope? dataScope = null) =>
+        new(true, principalId, principalType, loginName, null, dataScope);
 
     public static BusinessGatewayAuthorizationResult Forbidden(string reason) =>
-        new(false, null, null, null, reason);
+        new(false, null, null, null, reason, null);
 }
 
 public interface IBusinessGatewayAuthorizationClient
@@ -99,6 +104,9 @@ public static class BusinessGatewayPermissions
     public const string IiotAlarmsRead = "business.iiot.alarms.read";
     public const string IiotAlarmsWrite = "business.iiot.alarms.write";
     public const string IiotAlarmRulesManage = "business.iiot.alarm-rules.manage";
+    public const string IiotDeviceControlWrite = "business.iiot.device-control.write";
+    public const string IiotDeviceControlManage = "business.iiot.device-control.manage";
+    public const string IiotDeviceControlRead = "business.iiot.device-control.read";
     public const string MaintenanceWorkOrdersRead = "business.maintenance.work-orders.read";
     public const string MaintenanceWorkOrdersManage = "business.maintenance.work-orders.manage";
     public const string MaintenancePlansRead = "business.maintenance.plans.read";
@@ -228,7 +236,7 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
             var body = envelope?.Data;
             healthState.RecordSuccess("IAM");
             return body is not null && body.Allowed
-                ? BusinessGatewayAuthorizationResult.Allowed(body.PrincipalId!, body.PrincipalType!, body.LoginName!)
+                ? BusinessGatewayAuthorizationResult.Allowed(body.PrincipalId!, body.PrincipalType!, body.LoginName!, body.DataScope)
                 : BusinessGatewayAuthorizationResult.Forbidden(body?.DenialReason ?? "forbidden");
         }
         catch (Exception ex) when (IsDownstreamFailure(ex, cancellationToken))
@@ -253,7 +261,7 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
             requirement.EnvironmentId,
             resourceType,
             resourceId,
-            "v1");
+            "v2");
     }
 
     private string AuthorizationCheckPath()

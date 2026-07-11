@@ -1,10 +1,10 @@
 ---
 layout: page
-title: Fab 悬浮按钮
+title: NvFab 悬浮按钮
 ---
 
 <script setup>
-import { Fab } from '@nerv-iip/ui-mobile'
+import { NvFab } from '@nerv-iip/ui-mobile'
 import { ClipboardListIcon, ScanLineIcon, WrenchIcon } from 'lucide-vue-next'
 import { ref } from 'vue'
 
@@ -22,18 +22,19 @@ function onFabSelect(action) {
 <MobileDoc>
 
 <template #phone>
+
   <section>
     <p class="ds-mdoc-label">速拨菜单</p>
     <div class="relative h-64 w-full overflow-hidden rounded-xl border border-border bg-background">
       <div class="space-y-2 p-3">
         <div v-for="n in 4" :key="n" class="h-12 rounded-lg bg-card" />
       </div>
-      <Fab :actions="fabActions" @select="onFabSelect" />
+      <NvFab :actions="fabActions" @select="onFabSelect" />
     </div>
   </section>
 </template>
 
-# Fab 悬浮按钮
+# NvFab 悬浮按钮
 
 锚定容器角落的悬浮操作按钮。提供 `actions` 时变为速拨菜单：主按钮旋转展开、出现遮罩、带标签的子动作依次升起。需放入相对定位（relative）容器。
 
@@ -43,7 +44,7 @@ function onFabSelect(action) {
 
 ```vue
 <script setup>
-import { Fab } from '@nerv-iip/ui-mobile'
+import { NvFab } from '@nerv-iip/ui-mobile'
 import { ClipboardListIcon, ScanLineIcon, WrenchIcon } from 'lucide-vue-next'
 
 const fabActions = [
@@ -57,30 +58,30 @@ function onFabSelect(action) {
 </script>
 
 <template>
-  <!-- 放入相对定位容器，例如 AppShellMobile -->
+  <!-- 放入相对定位容器，例如 NvAppShellMobile -->
   <div class="relative h-64 overflow-hidden">
-    <Fab :actions="fabActions" @select="onFabSelect" />
+    <NvFab :actions="fabActions" @select="onFabSelect" />
   </div>
 </template>
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `icon` | 主按钮图标（单动作模式） | `Component` | `PlusIcon` |
-| `text` | 扩展态药丸文案（单动作模式） | `string` | — |
-| `actions` | 速拨子动作；提供时点击展开 | `FabAction[]` | — |
-| `position` | 锚定位置 | `bottom-right \| bottom-left \| bottom-center` | `bottom-right` |
-| `tone` | 主按钮色调 | `brand \| default` | `brand` |
+| 属性       | 说明                         | 类型                                           | 默认           |
+| ---------- | ---------------------------- | ---------------------------------------------- | -------------- |
+| `icon`     | 主按钮图标（单动作模式）     | `Component`                                    | `PlusIcon`     |
+| `text`     | 扩展态药丸文案（单动作模式） | `string`                                       | —              |
+| `actions`  | 速拨子动作；提供时点击展开   | `FabAction[]`                                  | —              |
+| `position` | 锚定位置                     | `bottom-right \| bottom-left \| bottom-center` | `bottom-right` |
+| `tone`     | 主按钮色调                   | `brand \| default`                             | `brand`        |
 
 `FabAction`：`{ key?: string; icon?: Component; text?: string }`
 
 ## 事件
 
-| 事件 | 说明 | 回调参数 |
-|---|---|---|
-| `click` | 单动作模式点击主按钮 | — |
-| `select` | 选择速拨子动作 | `(action: FabAction, index: number)` |
+| 事件     | 说明                 | 回调参数                             |
+| -------- | -------------------- | ------------------------------------ |
+| `click`  | 单动作模式点击主按钮 | —                                    |
+| `select` | 选择速拨子动作       | `(action: FabAction, index: number)` |
 
 </MobileDoc>

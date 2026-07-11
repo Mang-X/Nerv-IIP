@@ -8,4 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Contracts\Nerv.IIP.Contracts.IntegrationEvents\Nerv.IIP.Contracts.IntegrationEvents.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nerv.IIP.Messaging.CAP.Tests" />
+  </ItemGroup>
 </Project>

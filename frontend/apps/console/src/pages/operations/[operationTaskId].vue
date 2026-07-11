@@ -2,7 +2,7 @@
 import OperationTimeline from '@/components/console/OperationTimeline.vue'
 import { useOperationTask } from '@/composables/useConsoleOperations'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
-import { Button, PageHeader } from '@nerv-iip/ui'
+import { Button, NvPageHeader } from '@nerv-iip/ui'
 import { ArrowLeftIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
@@ -25,7 +25,7 @@ const errorMessage = computed(() => (operationError.value ? operationError.value
 <template>
   <DefaultLayout>
     <section class="grid gap-6">
-      <PageHeader
+      <NvPageHeader
         title="运维任务"
         :breadcrumbs="[{ label: '平台' }, { label: '实例' }]"
         :count="operationTaskId"
@@ -38,7 +38,7 @@ const errorMessage = computed(() => (operationError.value ? operationError.value
             </RouterLink>
           </Button>
         </template>
-      </PageHeader>
+      </NvPageHeader>
 
       <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 

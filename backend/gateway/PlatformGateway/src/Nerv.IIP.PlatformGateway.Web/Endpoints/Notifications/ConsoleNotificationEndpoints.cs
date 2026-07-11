@@ -451,6 +451,123 @@ public sealed class MarkConsoleNotificationMessagesReadEndpoint(
     }
 }
 
+[HttpPost("/api/console/v1/notifications/delivery/preferences")]
+[GatewayOperationId("upsertConsoleNotificationPreference")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class UpsertConsoleNotificationPreferenceEndpoint(
+    IGatewayNotificationClient notificationClient,
+    IGatewayAuthorizationClient auth)
+    : Endpoint<UpsertNotificationPreferenceRequest, ResponseData<NotificationPreferenceResponse>>
+{
+    public override async Task HandleAsync(UpsertNotificationPreferenceRequest req, CancellationToken ct)
+    {
+        var context = await GatewayNotificationEndpointContext.AuthorizeAsync(
+            HttpContext,
+            auth,
+            GatewayPermissions.NotificationDeliveryManage,
+            "/api/notifications/v1/delivery/preferences",
+            "notification-preference",
+            req.RecipientRef,
+            ct);
+        if (context is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await notificationClient.UpsertPreferenceAsync(context, req, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
+        }
+        catch (GatewayNotificationException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteDownstreamErrorAsync(HttpContext, ex, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteBadGatewayAsync(HttpContext, ex, ct);
+        }
+    }
+}
+
+[HttpPost("/api/console/v1/notifications/delivery/subscriptions")]
+[GatewayOperationId("upsertConsoleNotificationSubscription")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class UpsertConsoleNotificationSubscriptionEndpoint(
+    IGatewayNotificationClient notificationClient,
+    IGatewayAuthorizationClient auth)
+    : Endpoint<UpsertNotificationSubscriptionRequest, ResponseData<NotificationSubscriptionResponse>>
+{
+    public override async Task HandleAsync(UpsertNotificationSubscriptionRequest req, CancellationToken ct)
+    {
+        var context = await GatewayNotificationEndpointContext.AuthorizeAsync(
+            HttpContext,
+            auth,
+            GatewayPermissions.NotificationDeliveryManage,
+            "/api/notifications/v1/delivery/subscriptions",
+            "notification-subscription",
+            req.RecipientRef,
+            ct);
+        if (context is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await notificationClient.UpsertSubscriptionAsync(context, req, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
+        }
+        catch (GatewayNotificationException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteDownstreamErrorAsync(HttpContext, ex, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteBadGatewayAsync(HttpContext, ex, ct);
+        }
+    }
+}
+
+[HttpPost("/api/console/v1/notifications/delivery/recipient-channel-bindings")]
+[GatewayOperationId("upsertConsoleNotificationRecipientChannelBinding")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class UpsertConsoleNotificationRecipientChannelBindingEndpoint(
+    IGatewayNotificationClient notificationClient,
+    IGatewayAuthorizationClient auth)
+    : Endpoint<UpsertNotificationRecipientChannelBindingRequest, ResponseData<NotificationRecipientChannelBindingResponse>>
+{
+    public override async Task HandleAsync(UpsertNotificationRecipientChannelBindingRequest req, CancellationToken ct)
+    {
+        var context = await GatewayNotificationEndpointContext.AuthorizeAsync(
+            HttpContext,
+            auth,
+            GatewayPermissions.NotificationDeliveryManage,
+            "/api/notifications/v1/delivery/recipient-channel-bindings",
+            "notification-recipient-channel-binding",
+            req.RecipientRef,
+            ct);
+        if (context is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await notificationClient.UpsertRecipientChannelBindingAsync(context, req, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
+        }
+        catch (GatewayNotificationException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteDownstreamErrorAsync(HttpContext, ex, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteBadGatewayAsync(HttpContext, ex, ct);
+        }
+    }
+}
+
 internal static class GatewayNotificationEndpointContext
 {
     public static string WithQueryString(HttpContext context, string path) =>

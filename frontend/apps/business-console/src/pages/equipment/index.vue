@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import {
   describeEquipmentReason,
   equipmentStatusTone,
@@ -8,34 +8,59 @@ import {
 } from '@/composables/useBusinessEquipment'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  BadgePro,
-  ButtonPro,
-  DataTablePro,
-  DropdownMenuProItem,
-  InputPro,
-  PageHeader,
-  RowActions,
-  SectionCard,
-  SectionCards,
-  Toolbar,
+  NvBadge,
+  NvButton,
+  NvDataTable,
+  NvDropdownMenuItem,
+  NvInput,
+  NvPageHeader,
+  NvRowActions,
+  NvSectionCard,
+  NvSectionCards,
+  NvToolbar,
 } from '@nerv-iip/ui'
-import { ActivityIcon, BellRingIcon, EyeIcon, GaugeIcon, RefreshCwIcon, WrenchIcon } from 'lucide-vue-next'
+import {
+  ActivityIcon,
+  BellRingIcon,
+  EyeIcon,
+  GaugeIcon,
+  RefreshCwIcon,
+  WrenchIcon,
+} from 'lucide-vue-next'
 import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '设备运行看板', requiredPermissions: ['business.iiot.telemetry.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '设备运行看板',
+    requiredPermissions: ['business.iiot.telemetry.read'],
+  },
+})
 
 const router = useRouter()
-const { activeBlocks, devices, filters, overviewError, overviewPending, refreshOverview } = useBusinessEquipmentOverview()
+const { activeBlocks, devices, filters, overviewError, overviewPending, refreshOverview } =
+  useBusinessEquipmentOverview()
 
 const errorMessage = computed(() => formatError(overviewError.value))
-const runningCount = computed(() => devices.value.filter((d) => equipmentStatusTone(d.currentState) === 'success').length)
-const faultCount = computed(() => devices.value.filter((d) => equipmentStatusTone(d.currentState) === 'danger').length)
-const alarmCount = computed(() => devices.value.reduce((total, d) => total + (d.activeAlarmCount ?? 0), 0))
+const runningCount = computed(
+  () => devices.value.filter((d) => equipmentStatusTone(d.currentState) === 'success').length,
+)
+const faultCount = computed(
+  () => devices.value.filter((d) => equipmentStatusTone(d.currentState) === 'danger').length,
+)
+const alarmCount = computed(() =>
+  devices.value.reduce((total, d) => total + (d.activeAlarmCount ?? 0), 0),
+)
 
 type Device = (typeof devices)['value'][number]
-const columns: DataTableProColumn<Device>[] = [
-  { key: 'deviceAssetId', header: '设备', cellClass: 'font-medium', accessor: (r) => r.deviceAssetId ?? '无编号' },
+const columns: NvDataTableColumn<Device>[] = [
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    cellClass: 'font-medium',
+    accessor: (r) => r.deviceAssetId ?? '无编号',
+  },
   { key: 'currentState', header: '状态', width: 'w-24' },
   { key: 'isSourceFresh', header: '数据新鲜', width: 'w-24' },
   { key: 'activeAlarmCount', header: '报警', align: 'end', width: 'w-20' },
@@ -49,7 +74,15 @@ function badgeVariant(tone: EquipmentTone) {
   return 'neutral'
 }
 function statusLabel(status?: string | null) {
-  const labels: Record<string, string> = { down: '停机', faulted: '故障', idle: '空闲', offline: '离线', ready: '就绪', running: '运行中', stopped: '停止' }
+  const labels: Record<string, string> = {
+    down: '停机',
+    faulted: '故障',
+    idle: '空闲',
+    offline: '离线',
+    ready: '就绪',
+    running: '运行中',
+    stopped: '停止',
+  }
   return status ? (labels[status.toLowerCase()] ?? status) : '未知'
 }
 function recordDowntime(deviceAssetId?: string | null) {
@@ -67,38 +100,57 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="设备运行看板" :breadcrumbs="[{ label: '设备监控（IoT）' }]" :count="`${devices.length} 台设备`">
+    <NvPageHeader
+      title="设备运行看板"
+      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
+      :count="`${devices.length} 台设备`"
+    >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" as-child>
-          <RouterLink to="/equipment/alarms"><BellRingIcon aria-hidden="true" />查看报警</RouterLink>
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" variant="outline" as-child>
-          <RouterLink to="/equipment/telemetry/oee"><GaugeIcon aria-hidden="true" />OEE 与可用性</RouterLink>
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="overviewPending" @click="refreshOverview">
+        <NvButton size="sm" type="button" variant="outline" as-child>
+          <RouterLink to="/equipment/alarms"
+            ><BellRingIcon aria-hidden="true" />查看报警</RouterLink
+          >
+        </NvButton>
+        <NvButton size="sm" type="button" variant="outline" as-child>
+          <RouterLink to="/equipment/telemetry/oee"
+            ><GaugeIcon aria-hidden="true" />OEE 与可用性</RouterLink
+          >
+        </NvButton>
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="overviewPending"
+          @click="refreshOverview"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <SectionCards :columns="4">
-      <SectionCard description="运行就绪" :value="runningCount" hint="运行 / 就绪 / 空闲" />
-      <SectionCard description="异常停机" :value="faultCount" hint="故障 / 停止 / 离线 / 停机" />
-      <SectionCard description="未解除报警" :value="alarmCount" hint="设备当前报警" />
-      <SectionCard description="阻塞中" :value="activeBlocks.length" hint="影响排程或执行" />
-    </SectionCards>
+    <NvSectionCards :columns="4">
+      <NvSectionCard description="运行就绪" :value="runningCount" hint="运行 / 就绪 / 空闲" />
+      <NvSectionCard description="异常停机" :value="faultCount" hint="故障 / 停止 / 离线 / 停机" />
+      <NvSectionCard description="未解除报警" :value="alarmCount" hint="设备当前报警" />
+      <NvSectionCard description="阻塞中" :value="activeBlocks.length" hint="影响排程或执行" />
+    </NvSectionCards>
 
-    <Toolbar :show-search="false">
+    <NvToolbar :show-search="false">
       <template #filters>
-        <InputPro v-model="filters.deviceAssetIds" class="h-9 w-72" placeholder="默认全部设备；逗号分隔设备号可缩小范围" aria-label="设备范围（留空显示全部）" />
+        <NvInput
+          v-model="filters.deviceAssetIds"
+          class="h-9 w-72"
+          placeholder="默认全部设备；逗号分隔设备号可缩小范围"
+          aria-label="设备范围（留空显示全部）"
+        />
       </template>
-    </Toolbar>
+    </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.75fr)]">
-      <DataTablePro
+      <NvDataTable
         :columns="columns"
         :rows="devices"
         :row-key="(r) => r.deviceAssetId ?? '无'"
@@ -108,76 +160,131 @@ function formatError(error: unknown) {
         empty-message="暂无设备运行事实。请先在基础数据登记设备资产，或调整上方设备范围后再试。"
       >
         <template #cell-deviceAssetId="{ row }">
-          <RouterLink :to="`/equipment/${row.deviceAssetId}`" class="font-medium text-brand underline-offset-4 hover:underline">
+          <RouterLink
+            :to="`/equipment/${row.deviceAssetId}`"
+            class="font-medium text-brand underline-offset-4 hover:underline"
+          >
             {{ row.deviceAssetId ?? '无编号' }}
           </RouterLink>
         </template>
         <template #cell-currentState="{ row }">
-          <BadgePro class="rounded-sm" :variant="badgeVariant(equipmentStatusTone(row.currentState))">{{ statusLabel(row.currentState) }}</BadgePro>
+          <NvBadge
+            class="rounded-sm"
+            :variant="badgeVariant(equipmentStatusTone(row.currentState))"
+            >{{ statusLabel(row.currentState) }}</NvBadge
+          >
         </template>
         <template #cell-isSourceFresh="{ row }">
-          <BadgePro class="rounded-sm" :variant="row.isSourceFresh ? 'success' : 'warning'">{{ row.isSourceFresh ? '正常' : '过期' }}</BadgePro>
+          <NvBadge class="rounded-sm" :variant="row.isSourceFresh ? 'success' : 'warning'">{{
+            row.isSourceFresh ? '正常' : '过期'
+          }}</NvBadge>
         </template>
-        <template #cell-activeAlarmCount="{ row }"><span class="tabular-nums">{{ row.activeAlarmCount ?? 0 }}</span></template>
-        <template #cell-activeBlockCount="{ row }"><span class="tabular-nums">{{ row.activeBlockCount ?? 0 }}</span></template>
+        <template #cell-activeAlarmCount="{ row }"
+          ><span class="tabular-nums">{{ row.activeAlarmCount ?? 0 }}</span></template
+        >
+        <template #cell-activeBlockCount="{ row }"
+          ><span class="tabular-nums">{{ row.activeBlockCount ?? 0 }}</span></template
+        >
         <template #cell-actions="{ row }">
-          <RowActions :label="`设备操作 ${row.deviceAssetId ?? ''}`">
-            <DropdownMenuProItem as-child>
-              <RouterLink :to="`/equipment/${row.deviceAssetId}`"><EyeIcon aria-hidden="true" />查看详情</RouterLink>
-            </DropdownMenuProItem>
-            <DropdownMenuProItem as-child>
-              <RouterLink :to="{ path: '/equipment/telemetry/oee', query: { deviceAssetId: row.deviceAssetId } }">
+          <NvRowActions :label="`设备操作 ${row.deviceAssetId ?? ''}`">
+            <NvDropdownMenuItem as-child>
+              <RouterLink :to="`/equipment/${row.deviceAssetId}`"
+                ><EyeIcon aria-hidden="true" />查看详情</RouterLink
+              >
+            </NvDropdownMenuItem>
+            <NvDropdownMenuItem as-child>
+              <RouterLink
+                :to="{
+                  path: '/equipment/telemetry/oee',
+                  query: { deviceAssetId: row.deviceAssetId },
+                }"
+              >
                 <GaugeIcon aria-hidden="true" />
                 OEE 与可用性
               </RouterLink>
-            </DropdownMenuProItem>
-            <DropdownMenuProItem @click="recordDowntime(row.deviceAssetId)">
+            </NvDropdownMenuItem>
+            <NvDropdownMenuItem @click="recordDowntime(row.deviceAssetId)">
               <WrenchIcon aria-hidden="true" />
               记录停机
-            </DropdownMenuProItem>
-            <DropdownMenuProItem as-child>
-              <RouterLink :to="{ path: '/maintenance/work-orders', query: { deviceAssetId: row.deviceAssetId } }">
+            </NvDropdownMenuItem>
+            <NvDropdownMenuItem as-child>
+              <RouterLink
+                :to="{
+                  path: '/maintenance/work-orders',
+                  query: { deviceAssetId: row.deviceAssetId },
+                }"
+              >
                 <WrenchIcon aria-hidden="true" />
                 创建维修工单
               </RouterLink>
-            </DropdownMenuProItem>
-          </RowActions>
+            </NvDropdownMenuItem>
+          </NvRowActions>
         </template>
-      </DataTablePro>
+      </NvDataTable>
 
       <div class="rounded-lg border bg-card">
         <div class="flex items-center justify-between border-b px-4 py-3">
           <h2 class="text-sm font-semibold text-foreground">当前阻塞</h2>
-          <BadgePro class="rounded-sm" variant="neutral">{{ activeBlocks.length }}</BadgePro>
+          <NvBadge class="rounded-sm" variant="neutral">{{ activeBlocks.length }}</NvBadge>
         </div>
         <div class="grid gap-3 p-4">
-          <div v-for="block in activeBlocks" :key="`${block.deviceAssetId}-${block.reasonCode}-${block.startUtc}`" class="grid gap-2 rounded-lg border p-3">
+          <div
+            v-for="block in activeBlocks"
+            :key="`${block.deviceAssetId}-${block.reasonCode}-${block.startUtc}`"
+            class="grid gap-2 rounded-lg border p-3"
+          >
             <div class="flex min-w-0 items-center justify-between gap-2">
               <div class="min-w-0">
-                <p class="truncate text-sm font-semibold text-foreground">{{ block.deviceAssetId ?? '无设备' }}</p>
-                <p class="truncate text-xs text-muted-foreground">{{ block.workCenterId ?? '未绑定工作中心' }}</p>
+                <p class="truncate text-sm font-semibold text-foreground">
+                  {{ block.deviceAssetId ?? '无设备' }}
+                </p>
+                <p class="truncate text-xs text-muted-foreground">
+                  {{ block.workCenterId ?? '未绑定工作中心' }}
+                </p>
               </div>
-              <BadgePro class="rounded-sm" variant="danger">{{ describeEquipmentReason(block.reasonCode ?? '').label }}</BadgePro>
+              <NvBadge class="rounded-sm" variant="danger">{{
+                describeEquipmentReason(block.reasonCode ?? '').label
+              }}</NvBadge>
             </div>
-            <p class="text-sm leading-6 text-muted-foreground">{{ describeEquipmentReason(block.reasonCode ?? '').nextStep }}</p>
+            <p class="text-sm leading-6 text-muted-foreground">
+              {{ describeEquipmentReason(block.reasonCode ?? '').nextStep }}
+            </p>
             <div class="flex flex-wrap gap-2 text-xs text-muted-foreground">
-              <span><ActivityIcon class="inline size-3" /> {{ formatDateTime(block.startUtc) }}</span>
+              <span
+                ><ActivityIcon class="inline size-3" /> {{ formatDateTime(block.startUtc) }}</span
+              >
               <span>{{ formatDateTime(block.endUtc) }}</span>
               <span v-if="block.sourceReferenceId">关联单据 {{ block.sourceReferenceId }}</span>
-              <span v-if="block.substituteDeviceAssetIds?.length">替代设备 {{ block.substituteDeviceAssetIds.join(', ') }}</span>
+              <span v-if="block.substituteDeviceAssetIds?.length"
+                >替代设备 {{ block.substituteDeviceAssetIds.join(', ') }}</span
+              >
             </div>
-            <ButtonPro size="sm" type="button" variant="outline" class="justify-self-start" @click="recordDowntime(block.deviceAssetId)">
+            <NvButton
+              size="sm"
+              type="button"
+              variant="outline"
+              class="justify-self-start"
+              @click="recordDowntime(block.deviceAssetId)"
+            >
               <WrenchIcon aria-hidden="true" />
               记录停机
-            </ButtonPro>
-            <ButtonPro size="sm" type="button" variant="outline" class="justify-self-start" as-child>
-              <RouterLink :to="{ path: '/maintenance/work-orders', query: { deviceAssetId: block.deviceAssetId } }">
+            </NvButton>
+            <NvButton size="sm" type="button" variant="outline" class="justify-self-start" as-child>
+              <RouterLink
+                :to="{
+                  path: '/maintenance/work-orders',
+                  query: { deviceAssetId: block.deviceAssetId },
+                }"
+              >
                 <WrenchIcon aria-hidden="true" />
                 创建维修工单
               </RouterLink>
-            </ButtonPro>
+            </NvButton>
           </div>
-          <div v-if="!activeBlocks.length" class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+          <div
+            v-if="!activeBlocks.length"
+            class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
+          >
             当前没有设备阻塞窗口。
           </div>
         </div>

@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import type { NotificationTaskResponse } from '@nerv-iip/api-client'
-import { Skeleton, StatusBadge } from '@nerv-iip/ui'
-import { formatNotificationDate, notificationStatusLabel, notificationTone } from './notificationFormatters'
+import { Skeleton, NvStatusBadge } from '@nerv-iip/ui'
+import {
+  formatNotificationDate,
+  notificationStatusLabel,
+  notificationTone,
+} from './notificationFormatters'
 
 const props = defineProps<{
   pending?: boolean
@@ -14,7 +18,10 @@ function rowKey(task: NotificationTaskResponse, index: number) {
 </script>
 
 <template>
-  <section class="overflow-hidden rounded-lg border bg-card" aria-labelledby="notification-tasks-title">
+  <section
+    class="overflow-hidden rounded-lg border bg-card"
+    aria-labelledby="notification-tasks-title"
+  >
     <div class="flex items-center justify-between border-b px-4 py-3">
       <h2 id="notification-tasks-title" class="text-sm font-semibold">待办任务</h2>
       <span class="text-xs font-semibold text-muted-foreground">{{ props.tasks.length }}</span>
@@ -25,7 +32,11 @@ function rowKey(task: NotificationTaskResponse, index: number) {
     </div>
 
     <ul v-else-if="props.tasks.length" class="m-0 list-none divide-y p-0">
-      <li v-for="(task, index) in props.tasks" :key="rowKey(task, index)" class="grid gap-2 px-4 py-3">
+      <li
+        v-for="(task, index) in props.tasks"
+        :key="rowKey(task, index)"
+        class="grid gap-2 px-4 py-3"
+      >
         <div class="flex min-w-0 items-start justify-between gap-3">
           <div class="min-w-0">
             <p class="break-anywhere text-sm font-semibold">
@@ -35,14 +46,15 @@ function rowKey(task: NotificationTaskResponse, index: number) {
               {{ task.actionRef ?? task.messageId ?? task.taskId ?? '无动作引用' }}
             </p>
           </div>
-          <StatusBadge :label="notificationStatusLabel(task.status)" :tone="notificationTone(task.status)" />
+          <NvStatusBadge
+            :label="notificationStatusLabel(task.status)"
+            :tone="notificationTone(task.status)"
+          />
         </div>
         <p class="text-xs text-muted-foreground">{{ formatNotificationDate(task.createdAtUtc) }}</p>
       </li>
     </ul>
 
-    <p v-else class="px-4 py-8 text-center text-sm text-muted-foreground">
-      暂无待办通知任务。
-    </p>
+    <p v-else class="px-4 py-8 text-center text-sm text-muted-foreground">暂无待办通知任务。</p>
   </section>
 </template>

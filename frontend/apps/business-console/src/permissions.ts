@@ -48,6 +48,10 @@ export const BUSINESS_PERMISSION_CODES = {
   iiotTelemetryRead: 'business.iiot.telemetry.read',
   iiotAlarmRulesManage: 'business.iiot.alarm-rules.manage',
   iiotAlarmsRead: 'business.iiot.alarms.read',
+  iiotAlarmsWrite: 'business.iiot.alarms.write',
+  iiotDeviceControlRead: 'business.iiot.device-control.read',
+  iiotDeviceControlWrite: 'business.iiot.device-control.write',
+  iiotDeviceControlManage: 'business.iiot.device-control.manage',
   maintenanceWorkOrdersRead: 'business.maintenance.work-orders.read',
   maintenanceWorkOrdersManage: 'business.maintenance.work-orders.manage',
   maintenancePlansRead: 'business.maintenance.plans.read',
@@ -66,10 +70,7 @@ const P = BUSINESS_PERMISSION_CODES
 
 export const BUSINESS_DOMAIN_PERMISSIONS = {
   workbench: Object.values(P),
-  masterData: [
-    P.masterDataProductsRead,
-    P.masterDataResourcesRead,
-  ],
+  masterData: [P.masterDataProductsRead, P.masterDataResourcesRead],
   engineering: [
     P.engineeringDocumentsRead,
     P.engineeringItemsRead,
@@ -108,40 +109,23 @@ export const BUSINESS_DOMAIN_PERMISSIONS = {
     P.mesSchedulesManage,
     P.mesCapacityRead,
   ],
-  quality: [
-    P.qualityInspectionRecordsRead,
-    P.qualityNcrRead,
-    P.qualityNcrManage,
-  ],
-  inventory: [
-    P.inventoryLedgerRead,
-    P.inventoryMovementsCreate,
-    P.inventoryCountsManage,
-  ],
-  wms: [
-    P.wmsReceiptsRead,
-    P.wmsShipmentsRead,
-    P.wmsAutomationManage,
-  ],
-  erp: [
-    P.erpProcurementRead,
-    P.erpSalesRead,
-    P.erpFinanceRead,
-  ],
+  quality: [P.qualityInspectionRecordsRead, P.qualityNcrRead, P.qualityNcrManage],
+  inventory: [P.inventoryLedgerRead, P.inventoryMovementsCreate, P.inventoryCountsManage],
+  wms: [P.wmsReceiptsRead, P.wmsShipmentsRead, P.wmsAutomationManage],
+  erp: [P.erpProcurementRead, P.erpSalesRead, P.erpFinanceRead],
   equipment: [
     P.iiotTelemetryRead,
     P.iiotAlarmRulesManage,
     P.iiotAlarmsRead,
+    P.iiotAlarmsWrite,
+    P.iiotDeviceControlRead,
+    P.iiotDeviceControlWrite,
+    P.iiotDeviceControlManage,
     P.maintenanceWorkOrdersRead,
     P.maintenanceWorkOrdersManage,
     P.maintenancePlansRead,
     P.maintenancePlansManage,
   ],
-  barcode: [
-    P.barcodeTemplatesManage,
-  ],
-  approval: [
-    P.approvalsRead,
-    P.approvalsManage,
-  ],
+  barcode: [P.barcodeTemplatesManage],
+  approval: [P.approvalsRead, P.approvalsManage],
 } as const satisfies Record<string, readonly BusinessPermissionCode[]>

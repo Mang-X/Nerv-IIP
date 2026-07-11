@@ -33,72 +33,77 @@ If data is demo-only or incomplete, keep that fact in developer docs, PR notes o
 
 ## Component Quick Reference
 
-| Component | Export | Use when | Do NOT use when |
-|---|---|---|---|
-| `Button` | `@nerv-iip/ui` | Any clickable action | Navigating to another route (use `RouterLink`) |
-| `Badge` | `@nerv-iip/ui` | Status labels, category chips | Long text > 3 words |
-| `Card` + parts | `@nerv-iip/ui` | Grouped content sections, form cards | Wrapping a data table |
-| `Table` + parts | `@nerv-iip/ui` | Tabular entity lists | Single-item detail views |
-| `TableEmpty` | `@nerv-iip/ui` | Zero-results state inside Table | Standalone empty states |
-| `Empty` + parts | `@nerv-iip/ui` | Full-section empty state with illustration | Inside a data table |
-| `Alert` + parts | `@nerv-iip/ui` | Inline persistent errors/notices | Transient feedback (use toast) |
-| `Dialog` + parts | `@nerv-iip/ui` | Create/Edit entity forms | Destructive confirmations (use AlertDialog) |
-| `AlertDialog` + parts | `@nerv-iip/ui` | Confirm irreversible actions (delete, disable) | Informational prompts |
-| `Field` + parts | `@nerv-iip/ui` | Form fields with label + validation | Simple inline inputs without labels |
-| `Input` | `@nerv-iip/ui` | Text entry | Selecting from a fixed list (use Select) |
-| `Select` + parts | `@nerv-iip/ui` | Fixed-option selection | Searching through large option sets (use Combobox) |
-| `Checkbox` | `@nerv-iip/ui` | Multi-select, permission toggles | Exclusive single-choice (use Select) |
-| `Tabs` + parts | `@nerv-iip/ui` | Peer sections inside a detail object | Primary app navigation |
-| `Sheet` + parts | `@nerv-iip/ui` | Slide-in detail/edit panels that preserve list context | Full-page workflows |
-| `DatePicker` / `DateRangePicker` | `@nerv-iip/ui` | DateOnly form fields and business date range filters | Date-time selection or timezone-specific timestamps |
-| `Chart` parts | `@nerv-iip/ui` | Business dashboards with semantic chart tokens | Decorative one-off visualizations |
-| `FileUpload` | `@nerv-iip/ui` | FileStorage-backed attachments and evidence uploads | Direct object-storage uploads |
-| `Avatar` + parts | `@nerv-iip/ui` | User identity display | Generic icons |
-| `DropdownMenu` + parts | `@nerv-iip/ui` | Contextual row actions, topbar user menu | Primary navigation |
-| `Pagination` + parts | `@nerv-iip/ui` | Server-side paginated lists (via IamPagination wrapper) | Client-side filtered lists |
-| `Skeleton` | `@nerv-iip/ui` | Initial data load placeholder | Refresh over existing data (use Spinner) |
-| `Spinner` | `@nerv-iip/ui` | Button/inline loading indicator | Full-section initial load (use Skeleton) |
-| `Progress` | `@nerv-iip/ui` | Upload, batch, or operation progress | Binary status labels |
-| `ScrollArea` + `ScrollBar` | `@nerv-iip/ui` | Constrained task/detail lists | Whole-page scrolling |
-| `Separator` | `@nerv-iip/ui` | Visual section dividers | Layout spacing (use `gap-*`) |
-| `Toaster` / `toast` | `@nerv-iip/ui` | Transient success/error feedback | Persistent errors (use Alert) |
-| `Breadcrumb` + parts | `@nerv-iip/ui` | Deep hierarchy navigation (plant → line → device) | Flat single-level pages |
-| `Tooltip` + parts | `@nerv-iip/ui` | Icon-only button labels, status descriptions | Long-form help text (use Popover) |
-| `Popover` + parts | `@nerv-iip/ui` | Date pickers and compact advanced filter panels | Modal workflows (use Dialog/Sheet) |
-| `Sidebar` + parts | `@nerv-iip/ui` | App shell collapsible sidebar layout | — (only used by `AppShell`) |
+| Component                        | Export         | Use when                                                | Do NOT use when                                     |
+| -------------------------------- | -------------- | ------------------------------------------------------- | --------------------------------------------------- |
+| `Button`                         | `@nerv-iip/ui` | Any clickable action                                    | Navigating to another route (use `RouterLink`)      |
+| `Badge`                          | `@nerv-iip/ui` | Status labels, category chips                           | Long text > 3 words                                 |
+| `Card` + parts                   | `@nerv-iip/ui` | Grouped content sections, form cards                    | Wrapping a data table                               |
+| `Table` + parts                  | `@nerv-iip/ui` | Tabular entity lists                                    | Single-item detail views                            |
+| `TableEmpty`                     | `@nerv-iip/ui` | Zero-results state inside Table                         | Standalone empty states                             |
+| `Empty` + parts                  | `@nerv-iip/ui` | Full-section empty state with illustration              | Inside a data table                                 |
+| `Alert` + parts                  | `@nerv-iip/ui` | Inline persistent errors/notices                        | Transient feedback (use toast)                      |
+| `Dialog` + parts                 | `@nerv-iip/ui` | Create/Edit entity forms                                | Destructive confirmations (use AlertDialog)         |
+| `AlertDialog` + parts            | `@nerv-iip/ui` | Confirm irreversible actions (delete, disable)          | Informational prompts                               |
+| `Field` + parts                  | `@nerv-iip/ui` | Form fields with label + validation                     | Simple inline inputs without labels                 |
+| `Input`                          | `@nerv-iip/ui` | Text entry                                              | Selecting from a fixed list (use Select)            |
+| `Select` + parts                 | `@nerv-iip/ui` | Fixed-option selection                                  | Searching through large option sets (use Combobox)  |
+| `Checkbox`                       | `@nerv-iip/ui` | Multi-select, permission toggles                        | Exclusive single-choice (use Select)                |
+| `Tabs` + parts                   | `@nerv-iip/ui` | Peer sections inside a detail object                    | Primary app navigation                              |
+| `Sheet` + parts                  | `@nerv-iip/ui` | Slide-in detail/edit panels that preserve list context  | Full-page workflows                                 |
+| `DatePicker` / `DateRangePicker` | `@nerv-iip/ui` | DateOnly form fields and business date range filters    | Date-time selection or timezone-specific timestamps |
+| `Chart` parts                    | `@nerv-iip/ui` | Business dashboards with semantic chart tokens          | Decorative one-off visualizations                   |
+| `FileUpload`                     | `@nerv-iip/ui` | FileStorage-backed attachments and evidence uploads     | Direct object-storage uploads                       |
+| `Avatar` + parts                 | `@nerv-iip/ui` | User identity display                                   | Generic icons                                       |
+| `DropdownMenu` + parts           | `@nerv-iip/ui` | Contextual row actions, topbar user menu                | Primary navigation                                  |
+| `Pagination` + parts             | `@nerv-iip/ui` | Server-side paginated lists (via IamPagination wrapper) | Client-side filtered lists                          |
+| `Skeleton`                       | `@nerv-iip/ui` | Initial data load placeholder                           | Refresh over existing data (use Spinner)            |
+| `Spinner`                        | `@nerv-iip/ui` | Button/inline loading indicator                         | Full-section initial load (use Skeleton)            |
+| `Progress`                       | `@nerv-iip/ui` | Upload, batch, or operation progress                    | Binary status labels                                |
+| `ScrollArea` + `ScrollBar`       | `@nerv-iip/ui` | Constrained task/detail lists                           | Whole-page scrolling                                |
+| `Separator`                      | `@nerv-iip/ui` | Visual section dividers                                 | Layout spacing (use `gap-*`)                        |
+| `Toaster` / `toast`              | `@nerv-iip/ui` | Transient success/error feedback                        | Persistent errors (use Alert)                       |
+| `Breadcrumb` + parts             | `@nerv-iip/ui` | Deep hierarchy navigation (plant → line → device)       | Flat single-level pages                             |
+| `Tooltip` + parts                | `@nerv-iip/ui` | Icon-only button labels, status descriptions            | Long-form help text (use Popover)                   |
+| `Popover` + parts                | `@nerv-iip/ui` | Date pickers and compact advanced filter panels         | Modal workflows (use Dialog/Sheet)                  |
+| `Sidebar` + parts                | `@nerv-iip/ui` | App shell collapsible sidebar layout                    | — (only used by `AppShell`)                         |
 
 ### Not yet installed — install as needed
 
 See `components/install-backlog.md` for full list and install commands.
 
-| Component | When you need it |
-|---|---|
-| `Collapsible` | Timeline entries, config section groups (available via `reka-ui` directly) |
-| `Command` | Combobox / searchable Select for large datasets |
-| `Toggle` / `ToggleGroup` | View mode switches, filter pill groups |
+| Component                | When you need it                                                           |
+| ------------------------ | -------------------------------------------------------------------------- |
+| `Collapsible`            | Timeline entries, config section groups (available via `reka-ui` directly) |
+| `Command`                | Combobox / searchable Select for large datasets                            |
+| `Toggle` / `ToggleGroup` | View mode switches, filter pill groups                                     |
 
 ---
 
 ## Pattern Quick Reference
 
-| Scenario | Pattern | File |
-|---|---|---|
-| Authentication / sign in | Login Page | `patterns/pages/login-page.md` |
-| CRUD list page with search/filter | List Page | `patterns/pages/list-page.md` |
-| Inline entity creation | Create Dialog | `patterns/flows/create-dialog.md` |
-| Confirm destructive action | Confirm Destroy | `patterns/flows/confirm-destroy.md` |
-| App chrome (sidebar + topbar) | App Shell | `patterns/blocks/app-shell.md` |
-| Page heading with title + description | Page Header | `patterns/blocks/page-header.md` |
-| Search + filter + primary action bar | Toolbar | `patterns/blocks/toolbar.md` |
-| Data table with loading/empty states | Data Table | `patterns/blocks/data-table.md` |
-| Paginated table footer | Pagination Bar | `patterns/blocks/pagination-bar.md` |
+| Scenario                                                                        | Pattern                  | File                                      |
+| ------------------------------------------------------------------------------- | ------------------------ | ----------------------------------------- |
+| 表单承载/行操作/列表-详情/操作后引导/空态·批量·筛选 + PDA（W2/W3 交互验收依据） | Interaction Patterns v1  | `patterns/interaction-patterns.md`        |
+| 操作反馈：toast vs 内联校验                                                     | Feedback & Notifications | `patterns/feedback-and-notifications.md`  |
+| Business Console 列表工作台基线                                                 | List Workbench           | `patterns/pages/list-workbench.md`        |
+| 主数据六类页型模板                                                              | Master Data Templates    | `patterns/pages/master-data-templates.md` |
+| Authentication / sign in                                                        | Login Page               | `patterns/pages/login-page.md`            |
+| CRUD list page with search/filter                                               | List Page                | `patterns/pages/list-page.md`             |
+| Inline entity creation                                                          | Create Dialog            | `patterns/flows/create-dialog.md`         |
+| Confirm destructive action                                                      | Confirm Destroy          | `patterns/flows/confirm-destroy.md`       |
+| App chrome (sidebar + topbar)                                                   | App Shell                | `patterns/blocks/app-shell.md`            |
+| Page heading with title + description                                           | Page Header              | `patterns/blocks/page-header.md`          |
+| Search + filter + primary action bar                                            | Toolbar                  | `patterns/blocks/toolbar.md`              |
+| Data table with loading/empty states                                            | Data Table               | `patterns/blocks/data-table.md`           |
+| Paginated table footer                                                          | Pagination Bar           | `patterns/blocks/pagination-bar.md`       |
 
 ## Roadmaps
 
-| Scenario | File |
-|---|---|
-| Business console component readiness (#143) | `roadmaps/business-console-readiness.md` |
-| Business Console MES PC workbench | `roadmaps/business-console-mes-pc-workbench.md` |
+| Scenario                                            | File                                             |
+| --------------------------------------------------- | ------------------------------------------------ |
+| Business console component readiness (#143)         | `roadmaps/business-console-readiness.md`         |
+| Business Console MES PC workbench                   | `roadmaps/business-console-mes-pc-workbench.md`  |
+| UX 走查发现 console + PDA（#815 / A1 验收事实来源） | `roadmaps/2026-07-11-ux-walkthrough-findings.md` |
 
 ---
 

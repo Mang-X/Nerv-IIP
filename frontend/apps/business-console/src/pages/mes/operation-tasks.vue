@@ -1,36 +1,58 @@
 <script setup lang="ts">
-import type { BusinessConsoleMesOperationTaskRow, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
-import type { DataTableProColumn, DataTableSort } from '@nerv-iip/ui'
+import type {
+  BusinessConsoleMesOperationTaskRow,
+  BusinessConsoleResourceItem,
+} from '@nerv-iip/api-client'
+import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
+import { openDownloadGrantBlob } from '@nerv-iip/business-core'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
-import { describeMesReadinessReason, useMesOperationTasks } from '@/composables/useBusinessMes'
+import {
+  describeMesReadinessReason,
+  useMesCurrentOperationSops,
+  useMesOperationTasks,
+} from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  DropdownMenuProItem,
-  DropdownMenuProSeparator,
-  PageHeader,
-  RowActions,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
-  StatusBadgePro,
-  Toolbar,
+  NvButton,
+  NvDataTable,
+  NvDropdownMenuItem,
+  NvDropdownMenuSeparator,
+  NvPageHeader,
+  NvRowActions,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { watchDebounced } from '@vueuse/core'
-import { ClipboardCheckIcon, EyeIcon, RefreshCwIcon, ShieldCheckIcon, WrenchIcon } from 'lucide-vue-next'
+import {
+  ClipboardCheckIcon,
+  EyeIcon,
+  FileTextIcon,
+  RefreshCwIcon,
+  ShieldCheckIcon,
+  WrenchIcon,
+} from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '工序执行', requiredPermissions: ['business.mes.operations.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '工序执行',
+    requiredPermissions: ['business.mes.operations.read'],
+  },
+})
 
 type Row = BusinessConsoleMesOperationTaskRow
+type CurrentSop = { fileId?: string | null; fileName?: string | null }
 
 const {
   filters,
@@ -47,6 +69,17 @@ const { resources: workCenterResources } = useBusinessMasterDataResources('work-
 const { resources: shiftResources } = useBusinessMasterDataResources('shift')
 
 const quickViewWorkOrderId = ref<string | null>(null)
+const selectedSopTask = ref<Row | null>(null)
+const openingSopFileId = ref<string | null>(null)
+const sopFileError = ref('')
+const {
+  filters: sopFilters,
+  currentSops,
+  currentSopsError,
+  currentSopsPending,
+  refreshCurrentSops,
+  createSopFileDownloadGrant,
+} = useMesCurrentOperationSops()
 
 // --- Filters (live) ---
 const keyword = ref('')
@@ -57,9 +90,13 @@ const shiftFilter = ref('all')
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
-watchDebounced(keyword, (value) => {
-  filters.keyword = value.trim() || undefined
-}, { debounce: 300, maxWait: 1000 })
+watchDebounced(
+  keyword,
+  (value) => {
+    filters.keyword = value.trim() || undefined
+  },
+  { debounce: 300, maxWait: 1000 },
+)
 watch(workCenterFilter, (value) => {
   filters.workCenterId = value === 'all' ? undefined : value
 })
@@ -74,10 +111,11 @@ const shiftOptions = computed(() => toResourceOptions(shiftResources.value))
 const visibleTasks = computed(() => operationTasks.value)
 
 // --- Sort (page-owned, before pagination) ---
-const sort = ref<DataTableSort | null>(null)
+const sort = ref<NvDataTableSort | null>(null)
 function sortValue(task: Row, key: string): string | number {
   if (key === 'operationSequence') return task.operationSequence ?? 0
-  if (key === 'plannedStartUtc') return task.plannedStartUtc ? new Date(task.plannedStartUtc).getTime() : 0
+  if (key === 'plannedStartUtc')
+    return task.plannedStartUtc ? new Date(task.plannedStartUtc).getTime() : 0
   return (task[key as keyof Row] as string | null) ?? ''
 }
 const sortedTasks = computed(() => {
@@ -93,21 +131,48 @@ const sortedTasks = computed(() => {
 })
 
 // --- Pagination ---
-const { page, pageSize } = usePagedList(filters, { resetOn: [keyword, statusFilter, workCenterFilter, shiftFilter] })
+const { page, pageSize } = usePagedList(filters, {
+  resetOn: [keyword, statusFilter, workCenterFilter, shiftFilter],
+})
 const pagedTasks = computed(() => sortedTasks.value)
 
 // facade 返回人读编码（workOrderId=WO-…、workCenterId=WC-…、operationTaskId=WO-…-OP-序号）：
 // 工序序号(operationSequence)作主锚点，工单/工作中心直接展示编码即可分辨。
-const columns: DataTableProColumn<Row>[] = [
-  { key: 'operationTaskId', header: '工序任务', cellClass: 'font-medium', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无编号' },
+const columns: NvDataTableColumn<Row>[] = [
+  {
+    key: 'operationTaskId',
+    header: '工序任务',
+    cellClass: 'font-medium',
+    accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无编号',
+  },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'operationSequence', header: '序号', align: 'end', width: 'w-16', accessor: (r) => r.operationSequence ?? 0 },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? resolveWorkCenter(r.workCenterCode ?? r.workCenterId) ?? '无' },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定' },
+  {
+    key: 'operationSequence',
+    header: '序号',
+    align: 'end',
+    width: 'w-16',
+    accessor: (r) => r.operationSequence ?? 0,
+  },
+  {
+    key: 'workCenterId',
+    header: '工作中心',
+    accessor: (r) =>
+      r.workCenterName ?? resolveWorkCenter(r.workCenterCode ?? r.workCenterId) ?? '无',
+  },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定',
+  },
   { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
-  { key: 'plannedStartUtc', header: '计划开始', accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0) },
+  {
+    key: 'plannedStartUtc',
+    header: '计划开始',
+    accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0),
+  },
   { key: 'qualityStatus', header: '质量状态' },
+  { key: 'sop', header: 'SOP', align: 'end', width: 'w-20' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
 ]
 
@@ -126,6 +191,33 @@ function resetFilters() {
 
 function openWorkOrder(workOrderId?: string | null) {
   if (workOrderId) quickViewWorkOrderId.value = workOrderId
+}
+function openSops(task: Row) {
+  selectedSopTask.value = task
+  sopFileError.value = ''
+  sopFilters.operationCode = task.operationCode?.trim() ?? ''
+  sopFilters.workCenterCode = (task.workCenterCode ?? task.workCenterId)?.trim() ?? ''
+  sopFilters.routingCode = ''
+  sopFilters.routingRevision = ''
+  sopFilters.asOfDate = ''
+}
+async function openSopFile(sop: CurrentSop) {
+  const fileId = sop.fileId?.trim()
+  if (!fileId) {
+    sopFileError.value = '当前SOP未绑定可查看的文件。'
+    return
+  }
+  sopFileError.value = ''
+  openingSopFileId.value = fileId
+  try {
+    const grant = await createSopFileDownloadGrant(fileId)
+    if (!grant) throw new Error('无法获取SOP查看授权。')
+    await openDownloadGrantBlob(grant)
+  } catch (error) {
+    sopFileError.value = error instanceof Error ? error.message : '无法打开SOP。'
+  } finally {
+    openingSopFileId.value = null
+  }
 }
 function openRoute(path: string, task: Row) {
   void router.push({
@@ -153,17 +245,38 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
+function formatDate(value?: string | null) {
+  if (!value) return '无'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
+}
+function canOpenSops(task: Row) {
+  return Boolean(task.operationCode?.trim())
+}
+const selectedSopErrorMessage = computed(() => formatError(currentSopsError.value))
+const selectedSopTitle = computed(() => {
+  const task = selectedSopTask.value
+  if (!task) return ''
+  return `${task.operationTaskNo ?? task.operationTaskId ?? '工序任务'} · ${task.operationCode ?? '未绑定工序'}`
+})
 function readiness(value?: string | null) {
   return describeMesReadinessReason(value ?? '未检')
 }
 function readinessNeedsAction(value?: string | null) {
-  return ['QUALITY_PLAN_MISSING', 'QUALITY_HOLD_ACTIVE', 'EQUIPMENT_UNAVAILABLE', 'EQUIPMENT_MAINTENANCE_CONFLICT']
-    .includes(describeMesReadinessReason(value ?? '').code)
+  return [
+    'QUALITY_PLAN_MISSING',
+    'QUALITY_HOLD_ACTIVE',
+    'EQUIPMENT_UNAVAILABLE',
+    'EQUIPMENT_MAINTENANCE_CONFLICT',
+  ].includes(describeMesReadinessReason(value ?? '').code)
 }
 function toResourceOptions(items: BusinessConsoleResourceItem[]) {
   return items
     .filter((item) => item.active !== false && item.code)
-    .map((item) => ({ label: item.displayName ? `${item.displayName} (${item.code})` : item.code!, value: item.code! }))
+    .map((item) => ({
+      label: item.displayName ? `${item.displayName} (${item.code})` : item.code!,
+      value: item.code!,
+    }))
 }
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
@@ -172,50 +285,77 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader
+    <NvPageHeader
       title="工序执行"
       :breadcrumbs="[{ label: '制造执行' }]"
       :count="`${operationTasksTotal} 个工序任务`"
     >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="operationTasksPending" @click="refreshOperationTasks">
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="operationTasksPending"
+          @click="refreshOperationTasks"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <Toolbar v-model:search="keyword" search-placeholder="搜索任务、工单、设备">
+    <NvToolbar v-model:search="keyword" search-placeholder="搜索任务、工单、设备">
       <template #filters>
-        <SelectPro v-model="statusFilter">
-          <SelectProTrigger class="h-9 w-32" aria-label="工序状态"><SelectProValue /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
-        <SelectPro v-model="workCenterFilter">
-          <SelectProTrigger class="h-9 w-40" aria-label="工作中心"><SelectProValue placeholder="全部工作中心" /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem value="all">全部工作中心</SelectProItem>
-            <SelectProItem v-for="option in workCenterOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
-        <SelectPro v-model="shiftFilter">
-          <SelectProTrigger class="h-9 w-32" aria-label="班次"><SelectProValue placeholder="全部班次" /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem value="all">全部班次</SelectProItem>
-            <SelectProItem v-for="option in shiftOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+        <NvSelect v-model="statusFilter">
+          <NvSelectTrigger class="h-9 w-32" aria-label="工序状态"
+            ><NvSelectValue
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem
+              v-for="option in statusOptions"
+              :key="option.value"
+              :value="option.value"
+              >{{ option.label }}</NvSelectItem
+            >
+          </NvSelectContent>
+        </NvSelect>
+        <NvSelect v-model="workCenterFilter">
+          <NvSelectTrigger class="h-9 w-40" aria-label="工作中心"
+            ><NvSelectValue placeholder="全部工作中心"
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem value="all">全部工作中心</NvSelectItem>
+            <NvSelectItem
+              v-for="option in workCenterOptions"
+              :key="option.value"
+              :value="option.value"
+              >{{ option.label }}</NvSelectItem
+            >
+          </NvSelectContent>
+        </NvSelect>
+        <NvSelect v-model="shiftFilter">
+          <NvSelectTrigger class="h-9 w-32" aria-label="班次"
+            ><NvSelectValue placeholder="全部班次"
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem value="all">全部班次</NvSelectItem>
+            <NvSelectItem
+              v-for="option in shiftOptions"
+              :key="option.value"
+              :value="option.value"
+              >{{ option.label }}</NvSelectItem
+            >
+          </NvSelectContent>
+        </NvSelect>
       </template>
       <template #actions>
-        <ButtonPro type="button" variant="ghost" size="sm" @click="resetFilters">重置</ButtonPro>
+        <NvButton type="button" variant="ghost" size="sm" @click="resetFilters">重置</NvButton>
       </template>
-    </Toolbar>
+    </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -247,7 +387,7 @@ function formatError(error: unknown) {
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadgePro :value="row.status" />
+        <NvStatusBadge :value="row.status" />
       </template>
       <template #cell-plannedStartUtc="{ row }">
         {{ formatDateTime(row.plannedStartUtc) }}
@@ -255,14 +395,30 @@ function formatError(error: unknown) {
       <template #cell-qualityStatus="{ row }">
         <div class="grid gap-0.5">
           <span>{{ readiness(row.qualityStatus).label }}</span>
-          <span v-if="readinessNeedsAction(row.qualityStatus)" class="text-xs text-muted-foreground">
+          <span
+            v-if="readinessNeedsAction(row.qualityStatus)"
+            class="text-xs text-muted-foreground"
+          >
             {{ readiness(row.qualityStatus).nextStep }}
           </span>
         </div>
       </template>
+      <template #cell-sop="{ row }">
+        <NvButton
+          size="icon"
+          type="button"
+          variant="ghost"
+          :disabled="!canOpenSops(row)"
+          :title="canOpenSops(row) ? '查看当前SOP' : '当前任务未绑定标准工序'"
+          @click="openSops(row)"
+        >
+          <FileTextIcon aria-hidden="true" />
+          <span class="sr-only">查看当前SOP</span>
+        </NvButton>
+      </template>
       <template #cell-actions="{ row }">
         <div class="flex items-center justify-end gap-1">
-          <ButtonPro
+          <NvButton
             v-if="showReportButton(row)"
             size="sm"
             type="button"
@@ -270,34 +426,105 @@ function formatError(error: unknown) {
           >
             <ClipboardCheckIcon aria-hidden="true" />
             报工
-          </ButtonPro>
-          <RowActions :label="`工序任务操作 工序 ${row.operationSequence ?? ''}`">
-            <DropdownMenuProItem
+          </NvButton>
+          <NvRowActions :label="`工序任务操作 工序 ${row.operationSequence ?? ''}`">
+            <NvDropdownMenuItem :disabled="!canOpenSops(row)" @click="openSops(row)">
+              <FileTextIcon aria-hidden="true" />
+              {{ canOpenSops(row) ? '查看当前SOP' : '未绑定标准工序' }}
+            </NvDropdownMenuItem>
+            <NvDropdownMenuSeparator />
+            <NvDropdownMenuItem
               v-if="!showReportButton(row)"
               :disabled="!canOpenReport(row)"
               @click="openRoute('/mes/work-orders', row)"
             >
               <ClipboardCheckIcon aria-hidden="true" />
               {{ canOpenReport(row) ? '报工' : '暂不可报工（缺工单）' }}
-            </DropdownMenuProItem>
-            <DropdownMenuProItem :disabled="!row.workOrderId" @click="openWorkOrder(row.workOrderId)">
+            </NvDropdownMenuItem>
+            <NvDropdownMenuItem
+              :disabled="!row.workOrderId"
+              @click="openWorkOrder(row.workOrderId)"
+            >
               <EyeIcon aria-hidden="true" />
               查看工单
-            </DropdownMenuProItem>
-            <DropdownMenuProSeparator />
-            <DropdownMenuProItem @click="openRoute('/quality/inspections', row)">
+            </NvDropdownMenuItem>
+            <NvDropdownMenuSeparator />
+            <NvDropdownMenuItem @click="openRoute('/quality/inspections', row)">
               <ShieldCheckIcon aria-hidden="true" />
               呼叫质检
-            </DropdownMenuProItem>
-            <DropdownMenuProItem @click="openRoute('/mes/downtime', row)">
+            </NvDropdownMenuItem>
+            <NvDropdownMenuItem @click="openRoute('/mes/downtime', row)">
               <WrenchIcon aria-hidden="true" />
               记录异常
-            </DropdownMenuProItem>
-          </RowActions>
+            </NvDropdownMenuItem>
+          </NvRowActions>
         </div>
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
+    <section
+      v-if="selectedSopTask"
+      class="grid gap-3 border-t border-border pt-4"
+      aria-live="polite"
+    >
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="min-w-0">
+          <h2 class="text-sm font-semibold text-foreground">{{ selectedSopTitle }}</h2>
+          <p class="text-xs text-muted-foreground">
+            当前生效 SOP ·
+            {{
+              selectedSopTask.workCenterName ??
+              resolveWorkCenter(selectedSopTask.workCenterCode ?? selectedSopTask.workCenterId) ??
+              selectedSopTask.workCenterId ??
+              '无工作中心'
+            }}
+          </p>
+        </div>
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="currentSopsPending"
+          @click="refreshCurrentSops"
+        >
+          <RefreshCwIcon aria-hidden="true" />
+          刷新SOP
+        </NvButton>
+      </div>
+      <p
+        v-if="selectedSopErrorMessage || sopFileError"
+        class="text-sm text-destructive"
+        role="alert"
+      >
+        {{ selectedSopErrorMessage || sopFileError }}
+      </p>
+      <p v-else-if="currentSopsPending" class="text-sm text-muted-foreground">正在加载当前SOP...</p>
+      <ul v-else-if="currentSops.length" class="grid gap-2 md:grid-cols-2">
+        <li
+          v-for="sop in currentSops"
+          :key="`${sop.documentNumber}-${sop.revision}-${sop.fileId}`"
+          class="grid gap-1 rounded-md border border-border px-3 py-2 text-sm"
+        >
+          <span class="font-medium text-foreground">{{ sop.fileName || sop.documentNumber }}</span>
+          <span class="text-xs text-muted-foreground">
+            {{ sop.documentNumber }} · rev {{ sop.revision }} · 生效
+            {{ formatDate(sop.effectiveDate) }}
+          </span>
+          <NvButton
+            size="sm"
+            type="button"
+            variant="outline"
+            class="w-fit"
+            :disabled="openingSopFileId === sop.fileId"
+            @click="openSopFile(sop)"
+          >
+            <EyeIcon aria-hidden="true" />
+            查看SOP
+          </NvButton>
+        </li>
+      </ul>
+      <p v-else class="text-sm text-muted-foreground">当前工序没有已发布且已生效的SOP。</p>
+    </section>
 
     <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>

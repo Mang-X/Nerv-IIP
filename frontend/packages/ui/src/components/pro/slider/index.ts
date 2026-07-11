@@ -1,1 +1,1 @@
-export { default as SliderPro } from './SliderPro.vue'
+export { default as NvSlider } from './SliderPro.vue'

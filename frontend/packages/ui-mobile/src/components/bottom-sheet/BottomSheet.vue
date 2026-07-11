@@ -133,7 +133,7 @@ watch(
         :style="sheetStyle"
         :class="
           cn(
-            'data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom data-[state=open]:[animation-timing-function:var(--ease-out-expo)] fixed inset-x-0 bottom-0 z-50 flex max-h-[85dvh] flex-col rounded-t-3xl border-t border-border bg-card pb-safe shadow-[0_-8px_40px_-12px_rgb(0_0_0/0.45)] duration-300 outline-none',
+            'data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom data-[state=open]:[animation-timing-function:var(--nv-ease-out-expo)] fixed inset-x-0 bottom-0 z-50 flex max-h-[85dvh] flex-col rounded-t-3xl border-t border-border bg-card pb-safe shadow-[0_-8px_40px_-12px_rgb(0_0_0/0.45)] duration-300 outline-none',
             // reka exit slide for normal closes only; drag-dismiss slides manually
             !dismissing &&
               'data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom',
@@ -172,16 +172,18 @@ watch(
 </template>
 
 <style scoped>
-.ds-sheet-grab {
-  /* claim vertical gestures for the drag instead of letting them scroll the page */
-  touch-action: none;
-}
-.ds-sheet-snap {
-  transition: transform 0.32s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
+  .ds-sheet-grab {
+    /* claim vertical gestures for the drag instead of letting them scroll the page */
+    touch-action: none;
+  }
   .ds-sheet-snap {
-    transition: none;
+    transition: transform 0.32s var(--nv-ease-out-expo);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-sheet-snap {
+      transition: none;
+    }
   }
 }
 </style>

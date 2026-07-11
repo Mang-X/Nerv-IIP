@@ -28,9 +28,9 @@ describe('ERP business flow route split', () => {
 
       const source = readFileSync(path, 'utf8')
       expect(source).toContain('definePage')
-      expect(source).toContain('DataTablePro')
-      expect(source).not.toContain('TabsPro')
-      expect(source).not.toContain('TabsProTrigger')
+      expect(source).toContain('NvDataTable')
+      expect(source).not.toContain('NvTabs')
+      expect(source).not.toContain('NvTabsTrigger')
     })
   }
 })

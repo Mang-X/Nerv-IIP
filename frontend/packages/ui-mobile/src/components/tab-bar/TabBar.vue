@@ -40,28 +40,30 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 </template>
 
 <style scoped>
-.ds-tabbar-btn {
-  position: relative;
-  outline: none;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-  transition: color 0.15s var(--ease-out-quart, ease-out);
-}
-.ds-tabbar-hit {
-  position: absolute;
-  inset: 0.25rem 0.5rem;
-  border-radius: 10px;
-  background-color: var(--muted);
-  opacity: 0;
-  transition: opacity 0.2s var(--ease-out-quart, ease-out);
-}
-.ds-tabbar-btn:active .ds-tabbar-hit {
-  opacity: 1;
-  transition-duration: 0s;
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
+  .ds-tabbar-btn {
+    position: relative;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: color 0.15s var(--nv-ease-out-quart, ease-out);
+  }
   .ds-tabbar-hit {
-    transition: none;
+    position: absolute;
+    inset: 0.25rem 0.5rem;
+    border-radius: 10px;
+    background-color: var(--muted);
+    opacity: 0;
+    transition: opacity 0.2s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-tabbar-btn:active .ds-tabbar-hit {
+    opacity: 1;
+    transition-duration: 0s;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-tabbar-hit {
+      transition: none;
+    }
   }
 }
 </style>

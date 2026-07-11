@@ -33,7 +33,7 @@ public sealed class SchedulingIntegrationEventTests
         Assert.Equal("aps-lite-v1", integrationEvent.Payload.AlgorithmVersion);
         Assert.Equal("fingerprint-001", integrationEvent.Payload.ProblemFingerprint);
         Assert.Equal("generated", integrationEvent.Payload.PlanStatus);
-        Assert.Contains(integrationEvent.Payload.AffectedOperations, x => x.WorkOrderId == "wo-001" && x.OperationId == "op-001");
+        Assert.Contains(integrationEvent.Payload.AffectedOperations, x => x.WorkOrderId == "wo-001" && x.OperationId == "op-001" && x.StandardOperationCode == "STD-ASSY");
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class SchedulingIntegrationEventTests
         Assert.Equal("plan-001", integrationEvent.Payload.PlanId);
         Assert.Equal("problem-001", integrationEvent.Payload.ProblemId);
         Assert.Equal("released", integrationEvent.Payload.PlanStatus);
-        Assert.Contains(integrationEvent.Payload.AffectedOperations, x => x.WorkOrderId == "wo-001" && x.OperationId == "op-001");
+        Assert.Contains(integrationEvent.Payload.AffectedOperations, x => x.WorkOrderId == "wo-001" && x.OperationId == "op-001" && x.StandardOperationCode == "STD-ASSY");
     }
 
     [Fact]
@@ -236,7 +236,8 @@ public sealed class SchedulingIntegrationEventTests
                         StartUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
                         EndUtc: new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
                         IsLocked: false,
-                        ExplanationCode: "scheduled")
+                        ExplanationCode: "scheduled",
+                        StandardOperationCode: "STD-ASSY")
                 ],
                 ResourceLoads: [],
                 Conflicts:

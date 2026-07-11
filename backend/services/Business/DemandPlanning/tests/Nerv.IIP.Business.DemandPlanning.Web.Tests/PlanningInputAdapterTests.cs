@@ -4,9 +4,11 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.ForecastInputAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
+using Nerv.IIP.Business.DemandPlanning.Web.Application.Queries;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
@@ -164,6 +166,191 @@ public sealed class PlanningInputAdapterTests
         Assert.DoesNotContain(snapshot.Demands, x => x.SkuCode == "SKU-FG-2000");
         Assert.Contains("SKU-FG-1000", engineering.RequestedParentSkuCodes);
         Assert.Contains("SKU-FG-1000", inventory.RequestedSkuCodes);
+    }
+
+    [Fact]
+    public async Task Forecast_input_command_creates_and_lists_forecast_periods()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateOrUpdateForecastInputCommandHandler(dbContext);
+
+        var id = await handler.Handle(NewForecastCommand(), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var forecasts = await new ListForecastInputsQueryHandler(dbContext)
+            .Handle(new ListForecastInputsQuery("org-001", "env-dev", "SKU-FG-1000", "SITE-01", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)), CancellationToken.None);
+
+        Assert.NotEqual(default, id);
+        var forecast = Assert.Single(forecasts);
+        Assert.Equal("FC-2026-06-SKU-FG-1000", forecast.ForecastReference);
+        Assert.Equal(new DateOnly(2026, 6, 1), forecast.PeriodStartDate);
+        Assert.Equal(new DateOnly(2026, 6, 30), forecast.PeriodEndDate);
+        Assert.Equal(10m, forecast.Quantity);
+        Assert.Equal(7, forecast.BackwardConsumptionDays);
+        Assert.Equal(3, forecast.ForwardConsumptionDays);
+    }
+
+    [Fact]
+    public async Task Upstream_adapter_consumes_forecast_with_overlapping_sales_orders()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateForecastInputCommandHandler(dbContext).Handle(NewForecastCommand(), CancellationToken.None);
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 4m, new DateOnly(2026, 6, 15)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient());
+
+        var snapshot = await providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 6, 30),
+            CancellationToken.None);
+
+        Assert.Contains(snapshot.Demands, x => x.SourceType == "sales-order" && x.DemandSourceReference == "SO-1000" && x.Quantity == 4m);
+        var forecast = Assert.Single(snapshot.Demands, x => x.SourceType == "forecast");
+        Assert.Equal("FC-2026-06-SKU-FG-1000", forecast.DemandSourceReference);
+        Assert.Equal(6m, forecast.Quantity);
+        Assert.Equal(new DateOnly(2026, 6, 30), forecast.DueDate);
+    }
+
+    [Fact]
+    public async Task Upstream_adapter_consumes_forecast_after_normalizing_sales_order_uom()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateForecastInputCommandHandler(dbContext).Handle(NewForecastCommand(), CancellationToken.None);
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-BOX", "SKU-FG-1000", "box", "SITE-01", 1m, new DateOnly(2026, 6, 15)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient(),
+            null,
+            new BoxPlanningParameterClient());
+
+        var snapshot = await providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 6, 30),
+            CancellationToken.None);
+
+        Assert.Contains(snapshot.Demands, x => x.SourceType == "sales-order" && x.DemandSourceReference == "SO-BOX" && x.UomCode == "box" && x.Quantity == 1m);
+        Assert.DoesNotContain(snapshot.Demands, x => x.SourceType == "forecast");
+    }
+
+    [Fact]
+    public async Task Upstream_adapter_consumes_forecast_with_released_mps_buckets()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateForecastInputCommandHandler(dbContext).Handle(NewForecastCommand(), CancellationToken.None);
+        var mps = MasterProductionSchedule.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            new DateOnly(2026, 6, 20),
+            4m);
+        mps.MarkReviewed("planner.li");
+        mps.Release("planning.manager");
+        dbContext.MasterProductionSchedules.Add(mps);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient());
+
+        var snapshot = await providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 6, 30),
+            CancellationToken.None);
+
+        Assert.Contains(snapshot.Demands, x => x.SourceType == "mps" && x.Quantity == 4m);
+        var forecast = Assert.Single(snapshot.Demands, x => x.SourceType == "forecast");
+        Assert.Equal(6m, forecast.Quantity);
+    }
+
+    [Fact]
+    public async Task Upstream_adapter_clamps_cross_horizon_forecast_due_date_to_horizon_end()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateForecastInputCommandHandler(dbContext).Handle(
+            new CreateOrUpdateForecastInputCommand(
+                "org-001",
+                "env-dev",
+                "FC-2026-Q3-SKU-FG-1000",
+                "SKU-FG-1000",
+                "pcs",
+                "SITE-01",
+                new DateOnly(2026, 7, 1),
+                new DateOnly(2026, 9, 30),
+                90m,
+                7,
+                7),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient());
+
+        var snapshot = await providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 31),
+            CancellationToken.None);
+
+        var forecast = Assert.Single(snapshot.Demands, x => x.SourceType == "forecast");
+        Assert.Equal("FC-2026-Q3-SKU-FG-1000", forecast.DemandSourceReference);
+        Assert.Equal(90m, forecast.Quantity);
+        Assert.Equal(new DateOnly(2026, 7, 31), forecast.DueDate);
+    }
+
+    [Fact]
+    public async Task Upstream_adapter_omits_fully_consumed_forecast()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateForecastInputCommandHandler(dbContext).Handle(NewForecastCommand(), CancellationToken.None);
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 12m, new DateOnly(2026, 6, 15)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient());
+
+        var snapshot = await providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 6, 30),
+            CancellationToken.None);
+
+        Assert.DoesNotContain(snapshot.Demands, x => x.SourceType == "forecast");
+        Assert.Contains(snapshot.Demands, x => x.SourceType == "sales-order" && x.Quantity == 12m);
     }
 
     [Fact]
@@ -1124,6 +1311,22 @@ public sealed class PlanningInputAdapterTests
         return services.BuildServiceProvider();
     }
 
+    private static CreateOrUpdateForecastInputCommand NewForecastCommand()
+    {
+        return new CreateOrUpdateForecastInputCommand(
+            "org-001",
+            "env-dev",
+            "FC-2026-06-SKU-FG-1000",
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 6, 30),
+            10m,
+            7,
+            3);
+    }
+
     private sealed class FakePlanningProductEngineeringClient : IPlanningProductEngineeringSnapshotClient
     {
         private readonly List<string> requestedParentSkuCodes = [];
@@ -1201,6 +1404,24 @@ public sealed class PlanningInputAdapterTests
                     new PlanningParameterSnapshot("SKU-RM-1000", "pcs", "SITE-01", 3, 2m, null, null, 10m),
                 ],
                 []));
+        }
+    }
+
+    private sealed class BoxPlanningParameterClient : IPlanningParameterSnapshotClient
+    {
+        public Task<PlanningParameterSnapshotResult> GetPlanningParametersAsync(
+            string internalBearerToken,
+            PlanningParameterSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new PlanningParameterSnapshotResult(
+                "master-data-planning-parameters:1;master-data-uom-conversions:1",
+                [
+                    new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 0m, null, null, null),
+                ],
+                [
+                    new UomConversionSnapshot("box", "pcs", 10m, 0m, 0, "half-up"),
+                ]));
         }
     }
 

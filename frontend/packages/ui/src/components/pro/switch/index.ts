@@ -1,1 +1,1 @@
-export { default as SwitchPro } from './SwitchPro.vue'
+export { default as NvSwitch } from './SwitchPro.vue'

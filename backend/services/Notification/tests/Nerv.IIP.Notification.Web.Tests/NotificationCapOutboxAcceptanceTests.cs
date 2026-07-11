@@ -27,7 +27,7 @@ public sealed class NotificationCapOutboxAcceptanceCollection
 [Collection(NotificationCapOutboxAcceptanceCollection.Name)]
 public sealed class NotificationCapOutboxAcceptanceTests
 {
-    private const string TopicName = "Nerv.IIP.Contracts.Ops.OperationTaskFailedIntegrationEvent";
+    private const string TopicName = "OperationTaskFailedIntegrationEvent";
 
     [Fact]
     [Trait("Category", "cap-inmemory")]

@@ -1,1 +1,1 @@
-export { default as InputPro } from './InputPro.vue'
+export { default as NvInput } from './InputPro.vue'

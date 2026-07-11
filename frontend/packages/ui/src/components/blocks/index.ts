@@ -1,6 +1,5 @@
 // FE-2 custom block component library — copy-rebuilt, reusable, never edits原版.
 export * from './app-shell-inset'
-export * from './data-table'
 export * from './page-header'
 export * from './row-actions'
 export * from './section-card'

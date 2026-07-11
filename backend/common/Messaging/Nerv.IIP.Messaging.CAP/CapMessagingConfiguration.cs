@@ -19,6 +19,8 @@ public static class CapMessagingConfiguration
     public const string RedisConnectionStringConfigurationKey = "Messaging:Redis:ConnectionString";
     public const string RedisConnectionStringFallbackKey = "ConnectionStrings:Redis";
     public const string RedisCachingFallbackKey = "Caching:Redis";
+    public const string RabbitMqConnectionStringConfigurationKey = "Messaging:RabbitMQ:ConnectionString";
+    public const string RabbitMqConnectionStringFallbackKey = "ConnectionStrings:rabbitmq";
     private const string DevelopmentEnvironmentName = "Development";
 
     public static CapOptions UseConfiguredTransport(
@@ -44,13 +46,7 @@ public static class CapMessagingConfiguration
 
         if (string.Equals(provider, RabbitMqProvider, StringComparison.OrdinalIgnoreCase))
         {
-            options.UseRabbitMQ(rabbitMqOptions =>
-            {
-                rabbitMqOptions.HostName = configuration["RabbitMQ:HostName"] ?? "localhost";
-                rabbitMqOptions.Port = ReadRabbitMqPort(configuration);
-                rabbitMqOptions.UserName = configuration["RabbitMQ:UserName"] ?? "guest";
-                rabbitMqOptions.Password = configuration["RabbitMQ:Password"] ?? "guest";
-            });
+            options.UseRabbitMQ(rabbitMqOptions => ApplyRabbitMqConnection(rabbitMqOptions, configuration));
             return options;
         }
 
@@ -67,9 +63,71 @@ public static class CapMessagingConfiguration
             $"Unsupported {ProviderConfigurationKey} '{provider}'. Supported values are '{InMemoryProvider}', '{RabbitMqProvider}' and '{RedisProvider}'.");
     }
 
-    private static int ReadRabbitMqPort(IConfiguration configuration)
+    /// <summary>
+    /// Configures RabbitMQ host/port/credentials. The orchestrator (Aspire) injects the broker
+    /// endpoint as an AMQP connection string (<see cref="RabbitMqConnectionStringFallbackKey"/>),
+    /// so that is parsed first; explicit <c>RabbitMQ:*</c> keys override individual fields, and
+    /// localhost/guest defaults apply only when nothing else is provided. Without this the broker
+    /// endpoint is unknown and CAP falls back to localhost:5672, which is unreachable for
+    /// container-hosted brokers and silently breaks all cross-service consumption.
+    /// </summary>
+    internal static void ApplyRabbitMqConnection(RabbitMQOptions rabbitMqOptions, IConfiguration configuration)
     {
-        return int.TryParse(configuration["RabbitMQ:Port"], out var port) && port > 0 ? port : 5672;
+        var connectionString = configuration[RabbitMqConnectionStringConfigurationKey];
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            connectionString = configuration[RabbitMqConnectionStringFallbackKey];
+        }
+
+        string? hostFromConnection = null;
+        int? portFromConnection = null;
+        string? userFromConnection = null;
+        string? passwordFromConnection = null;
+        string? virtualHostFromConnection = null;
+
+        if (!string.IsNullOrWhiteSpace(connectionString)
+            && Uri.TryCreate(connectionString, UriKind.Absolute, out var amqpUri))
+        {
+            hostFromConnection = amqpUri.Host;
+            if (amqpUri.Port > 0)
+            {
+                portFromConnection = amqpUri.Port;
+            }
+
+            var userInfoParts = amqpUri.UserInfo.Split(':', 2);
+            if (userInfoParts.Length > 0 && !string.IsNullOrEmpty(userInfoParts[0]))
+            {
+                userFromConnection = Uri.UnescapeDataString(userInfoParts[0]);
+            }
+
+            if (userInfoParts.Length > 1)
+            {
+                passwordFromConnection = Uri.UnescapeDataString(userInfoParts[1]);
+            }
+
+            var path = amqpUri.AbsolutePath.TrimStart('/');
+            if (!string.IsNullOrEmpty(path))
+            {
+                virtualHostFromConnection = Uri.UnescapeDataString(path);
+            }
+        }
+
+        rabbitMqOptions.HostName = configuration["RabbitMQ:HostName"] ?? hostFromConnection ?? "localhost";
+        rabbitMqOptions.Port = int.TryParse(configuration["RabbitMQ:Port"], out var explicitPort) && explicitPort > 0
+            ? explicitPort
+            : portFromConnection ?? 5672;
+        rabbitMqOptions.UserName = configuration["RabbitMQ:UserName"] ?? userFromConnection ?? "guest";
+        rabbitMqOptions.Password = configuration["RabbitMQ:Password"] ?? passwordFromConnection ?? "guest";
+
+        var explicitVirtualHost = configuration["RabbitMQ:VirtualHost"];
+        if (!string.IsNullOrWhiteSpace(explicitVirtualHost))
+        {
+            rabbitMqOptions.VirtualHost = explicitVirtualHost;
+        }
+        else if (!string.IsNullOrEmpty(virtualHostFromConnection))
+        {
+            rabbitMqOptions.VirtualHost = virtualHostFromConnection;
+        }
     }
 
     private static string ReadRedisConnectionString(IConfiguration configuration)

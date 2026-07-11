@@ -111,6 +111,104 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.ForecastInputAggregate.ForecastInput", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Forecast input aggregate id.");
+
+                    b.Property<int>("BackwardConsumptionDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("backward_consumption_days")
+                        .HasComment("Days before the forecast period that sales orders may consume this forecast.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC timestamp when the forecast input was created.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Planning environment id.");
+
+                    b.Property<string>("ForecastReference")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("forecast_reference")
+                        .HasComment("Business forecast reference unique in the planning scope.");
+
+                    b.Property<int>("ForwardConsumptionDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("forward_consumption_days")
+                        .HasComment("Days after the forecast period that sales orders may consume this forecast.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Tenant organization id that owns the forecast.");
+
+                    b.Property<DateOnly>("PeriodEndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("period_end_date")
+                        .HasComment("Forecast period end date and default MRP requirement date for remaining forecast.");
+
+                    b.Property<DateOnly>("PeriodStartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("period_start_date")
+                        .HasComment("Forecast period start date.");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("quantity")
+                        .HasComment("Forecast quantity before order consumption.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("site_code")
+                        .HasComment("Forecast site code snapshot.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("sku_code")
+                        .HasComment("Forecast SKU code snapshot.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("uom_code")
+                        .HasComment("Forecast quantity unit of measure snapshot.");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC timestamp when the forecast input was last updated.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ForecastReference")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SkuCode", "SiteCode", "PeriodEndDate");
+
+                    b.ToTable("forecast_inputs", "demand_planning", t =>
+                        {
+                            t.HasComment("DemandPlanning owned forecast input facts consumed by MRP.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate.MasterProductionSchedule", b =>
                 {
                     b.Property<Guid>("Id")

@@ -1,42 +1,51 @@
 <script setup lang="ts">
 import type { BusinessConsoleTelemetryAlarmRuleItem } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
-import { useBusinessTelemetryAlarmRules, type SaveTelemetryAlarmRuleInput } from '@/composables/useBusinessTelemetry'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
+import {
+  useBusinessTelemetryAlarmRules,
+  type SaveTelemetryAlarmRuleInput,
+} from '@/composables/useBusinessTelemetry'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  BadgePro,
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProClose,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DropdownMenuProItem,
-  FieldPro,
-  FieldProError,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  RowActions,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvBadge,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogClose,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDropdownMenuItem,
+  NvField,
+  NvFieldError,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvRowActions,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  Toolbar,
+  NvToolbar,
   toast,
 } from '@nerv-iip/ui'
 import { EditIcon, LineChartIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 import { RouterLink } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '报警规则', requiredPermissions: ['business.iiot.alarms.read', 'business.iiot.alarm-rules.manage'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '报警规则',
+    requiredPermissions: ['business.iiot.alarms.read', 'business.iiot.alarm-rules.manage'],
+  },
+})
 
 const {
   alarmRules,
@@ -68,14 +77,19 @@ const form = reactive<SaveTelemetryAlarmRuleInput>({
 const errorMessage = computed(() => formatError(alarmRulesError.value))
 const formErrorMessage = computed(() => formError.value || formatError(saveAlarmRuleError.value))
 const formEnabledValue = computed({
-  get: () => form.isEnabled ? 'enabled' : 'disabled',
+  get: () => (form.isEnabled ? 'enabled' : 'disabled'),
   set: (value: string) => {
     form.isEnabled = value === 'enabled'
   },
 })
 
-const columns: DataTableProColumn<BusinessConsoleTelemetryAlarmRuleItem>[] = [
-  { key: 'ruleCode', header: '规则', cellClass: 'font-medium', accessor: (r) => r.ruleCode ?? '无规则' },
+const columns: NvDataTableColumn<BusinessConsoleTelemetryAlarmRuleItem>[] = [
+  {
+    key: 'ruleCode',
+    header: '规则',
+    cellClass: 'font-medium',
+    accessor: (r) => r.ruleCode ?? '无规则',
+  },
   { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '无设备' },
   { key: 'tagKey', header: '采集标签', accessor: (r) => r.tagKey ?? '无标签' },
   { key: 'condition', header: '触发条件', accessor: (r) => conditionLabel(r) },
@@ -133,12 +147,12 @@ function openEdit(row: BusinessConsoleTelemetryAlarmRuleItem) {
 async function submitRule() {
   const thresholdValue = parseThresholdValue(form.thresholdValue)
   if (
-    !form.deviceAssetId.trim()
-    || !form.ruleCode.trim()
-    || !form.alarmCode.trim()
-    || !form.tagKey.trim()
-    || thresholdValue === undefined
-    || !form.unitCode.trim()
+    !form.deviceAssetId.trim() ||
+    !form.ruleCode.trim() ||
+    !form.alarmCode.trim() ||
+    !form.tagKey.trim() ||
+    thresholdValue === undefined ||
+    !form.unitCode.trim()
   ) {
     formError.value = '请填写设备、规则、报警、采集标签、阈值和单位。'
     return
@@ -194,36 +208,53 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="报警规则" :breadcrumbs="[{ label: '设备监控（IoT）' }]" :count="`${alarmRulesTotal} 条规则`">
+    <NvPageHeader
+      title="报警规则"
+      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
+      :count="`${alarmRulesTotal} 条规则`"
+    >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="alarmRulesPending" @click="refreshAlarmRules">
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="alarmRulesPending"
+          @click="refreshAlarmRules"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" @click="openCreate">
+        </NvButton>
+        <NvButton size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建报警规则
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <Toolbar :show-search="false">
+    <NvToolbar :show-search="false">
       <template #filters>
-        <InputPro v-model="filters.deviceAssetId" class="h-9 w-64" placeholder="按设备编号筛选" aria-label="设备编号" />
-        <SelectPro v-model="filters.isEnabled">
-          <SelectProTrigger class="h-9 w-36" aria-label="规则状态"><SelectProValue /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem value="all">全部状态</SelectProItem>
-            <SelectProItem value="enabled">启用</SelectProItem>
-            <SelectProItem value="disabled">停用</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+        <NvInput
+          v-model="filters.deviceAssetId"
+          class="h-9 w-64"
+          placeholder="按设备编号筛选"
+          aria-label="设备编号"
+        />
+        <NvSelect v-model="filters.isEnabled">
+          <NvSelectTrigger class="h-9 w-36" aria-label="规则状态"
+            ><NvSelectValue
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem value="all">全部状态</NvSelectItem>
+            <NvSelectItem value="enabled">启用</NvSelectItem>
+            <NvSelectItem value="disabled">停用</NvSelectItem>
+          </NvSelectContent>
+        </NvSelect>
       </template>
-    </Toolbar>
+    </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -239,108 +270,169 @@ function formatError(error: unknown) {
       empty-message="暂无报警规则。为关键设备的采集标签配置阈值后，系统会按真实采样事实触发报警。"
     >
       <template #cell-deviceAssetId="{ row }">
-        <RouterLink :to="`/equipment/${row.deviceAssetId}`" class="text-brand underline-offset-4 hover:underline">
+        <RouterLink
+          :to="`/equipment/${row.deviceAssetId}`"
+          class="text-brand underline-offset-4 hover:underline"
+        >
           {{ row.deviceAssetId ?? '无设备' }}
         </RouterLink>
       </template>
       <template #cell-severity="{ row }">
-        <BadgePro class="rounded-sm" :variant="severityVariant(row.severity)">{{ severityLabel(row.severity) }}</BadgePro>
+        <NvBadge class="rounded-sm" :variant="severityVariant(row.severity)">{{
+          severityLabel(row.severity)
+        }}</NvBadge>
       </template>
       <template #cell-isEnabled="{ row }">
-        <BadgePro class="rounded-sm" :variant="row.isEnabled ? 'success' : 'neutral'">{{ row.isEnabled ? '启用' : '停用' }}</BadgePro>
+        <NvBadge class="rounded-sm" :variant="row.isEnabled ? 'success' : 'neutral'">{{
+          row.isEnabled ? '启用' : '停用'
+        }}</NvBadge>
       </template>
       <template #cell-updatedAtUtc="{ row }">{{ formatDateTime(row.updatedAtUtc) }}</template>
       <template #cell-actions="{ row }">
-        <RowActions :label="`报警规则操作 ${row.ruleCode ?? ''}`">
-          <DropdownMenuProItem @click="openEdit(row)">
+        <NvRowActions :label="`报警规则操作 ${row.ruleCode ?? ''}`">
+          <NvDropdownMenuItem @click="openEdit(row)">
             <EditIcon aria-hidden="true" />
             维护规则
-          </DropdownMenuProItem>
-          <DropdownMenuProItem as-child>
-            <RouterLink :to="{ path: '/equipment/telemetry/history', query: { deviceAssetId: row.deviceAssetId, tagKey: row.tagKey } }">
+          </NvDropdownMenuItem>
+          <NvDropdownMenuItem as-child>
+            <RouterLink
+              :to="{
+                path: '/equipment/telemetry/history',
+                query: { deviceAssetId: row.deviceAssetId, tagKey: row.tagKey },
+              }"
+            >
               <LineChartIcon aria-hidden="true" />
               查看趋势
             </RouterLink>
-          </DropdownMenuProItem>
-        </RowActions>
+          </NvDropdownMenuItem>
+        </NvRowActions>
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
-    <DialogPro v-model:open="formOpen">
-      <DialogProContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogProHeader>
-          <DialogProTitle>维护报警规则</DialogProTitle>
-          <DialogProDescription>规则保存后由 IndustrialTelemetry 按真实采样事实评估，不在前端模拟报警。</DialogProDescription>
-        </DialogProHeader>
+    <NvDialog v-model:open="formOpen">
+      <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <NvDialogHeader>
+          <NvDialogTitle>维护报警规则</NvDialogTitle>
+          <NvDialogDescription
+            >规则保存后由 IndustrialTelemetry
+            按真实采样事实评估，不在前端模拟报警。</NvDialogDescription
+          >
+        </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitRule">
-          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-            <FieldPro>
-              <FieldProLabel for="rule-device">设备</FieldProLabel>
-              <InputPro id="rule-device" v-model="form.deviceAssetId" autocomplete="off" placeholder="如 DEV-CNC-01" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="rule-tag">采集标签</FieldProLabel>
-              <InputPro id="rule-tag" v-model="form.tagKey" autocomplete="off" placeholder="如 temperature" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="rule-code">规则编号</FieldProLabel>
-              <InputPro id="rule-code" v-model="form.ruleCode" autocomplete="off" placeholder="如 TEMP_HIGH" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="rule-alarm">报警编号</FieldProLabel>
-              <InputPro id="rule-alarm" v-model="form.alarmCode" autocomplete="off" placeholder="如 ALM-TEMP-HIGH" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="rule-severity">级别</FieldProLabel>
-              <SelectPro v-model="form.severity">
-                <SelectProTrigger id="rule-severity" aria-label="报警级别"><SelectProValue /></SelectProTrigger>
-                <SelectProContent>
-                  <SelectProItem v-for="option in severityOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-                </SelectProContent>
-              </SelectPro>
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="rule-operator">比较方式</FieldProLabel>
-              <SelectPro v-model="form.comparisonOperator">
-                <SelectProTrigger id="rule-operator" aria-label="比较方式"><SelectProValue /></SelectProTrigger>
-                <SelectProContent>
-                  <SelectProItem v-for="option in operatorOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-                </SelectProContent>
-              </SelectPro>
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="rule-threshold">阈值</FieldProLabel>
-              <InputPro id="rule-threshold" v-model="form.thresholdValue" type="number" step="0.001" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="rule-unit">单位</FieldProLabel>
-              <InputPro id="rule-unit" v-model="form.unitCode" autocomplete="off" placeholder="如 CEL" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="rule-enabled">规则状态</FieldProLabel>
-              <SelectPro v-model="formEnabledValue">
-                <SelectProTrigger id="rule-enabled" aria-label="规则状态"><SelectProValue /></SelectProTrigger>
-                <SelectProContent>
-                  <SelectProItem value="enabled">启用</SelectProItem>
-                  <SelectProItem value="disabled">停用</SelectProItem>
-                </SelectProContent>
-              </SelectPro>
-            </FieldPro>
-          </FieldProGroup>
+          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+            <NvField>
+              <NvFieldLabel for="rule-device">设备</NvFieldLabel>
+              <NvInput
+                id="rule-device"
+                v-model="form.deviceAssetId"
+                autocomplete="off"
+                placeholder="如 DEV-CNC-01"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="rule-tag">采集标签</NvFieldLabel>
+              <NvInput
+                id="rule-tag"
+                v-model="form.tagKey"
+                autocomplete="off"
+                placeholder="如 temperature"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="rule-code">规则编号</NvFieldLabel>
+              <NvInput
+                id="rule-code"
+                v-model="form.ruleCode"
+                autocomplete="off"
+                placeholder="如 TEMP_HIGH"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="rule-alarm">报警编号</NvFieldLabel>
+              <NvInput
+                id="rule-alarm"
+                v-model="form.alarmCode"
+                autocomplete="off"
+                placeholder="如 ALM-TEMP-HIGH"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="rule-severity">级别</NvFieldLabel>
+              <NvSelect v-model="form.severity">
+                <NvSelectTrigger id="rule-severity" aria-label="报警级别"
+                  ><NvSelectValue
+                /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem
+                    v-for="option in severityOptions"
+                    :key="option.value"
+                    :value="option.value"
+                    >{{ option.label }}</NvSelectItem
+                  >
+                </NvSelectContent>
+              </NvSelect>
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="rule-operator">比较方式</NvFieldLabel>
+              <NvSelect v-model="form.comparisonOperator">
+                <NvSelectTrigger id="rule-operator" aria-label="比较方式"
+                  ><NvSelectValue
+                /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem
+                    v-for="option in operatorOptions"
+                    :key="option.value"
+                    :value="option.value"
+                    >{{ option.label }}</NvSelectItem
+                  >
+                </NvSelectContent>
+              </NvSelect>
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="rule-threshold">阈值</NvFieldLabel>
+              <NvInput
+                id="rule-threshold"
+                v-model="form.thresholdValue"
+                type="number"
+                step="0.001"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="rule-unit">单位</NvFieldLabel>
+              <NvInput
+                id="rule-unit"
+                v-model="form.unitCode"
+                autocomplete="off"
+                placeholder="如 CEL"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="rule-enabled">规则状态</NvFieldLabel>
+              <NvSelect v-model="formEnabledValue">
+                <NvSelectTrigger id="rule-enabled" aria-label="规则状态"
+                  ><NvSelectValue
+                /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem value="enabled">启用</NvSelectItem>
+                  <NvSelectItem value="disabled">停用</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+            </NvField>
+          </NvFieldGroup>
 
-          <FieldProError v-if="formErrorMessage" :errors="[formErrorMessage]" />
+          <NvFieldError v-if="formErrorMessage" :errors="[formErrorMessage]" />
 
-          <DialogProFooter>
-            <DialogProClose as-child>
-              <ButtonPro type="button" variant="outline">取消</ButtonPro>
-            </DialogProClose>
-            <ButtonPro type="submit" :disabled="saveAlarmRulePending">
+          <NvDialogFooter>
+            <NvDialogClose as-child>
+              <NvButton type="button" variant="outline">取消</NvButton>
+            </NvDialogClose>
+            <NvButton type="submit" :disabled="saveAlarmRulePending">
               <Spinner v-if="saveAlarmRulePending" aria-hidden="true" />
               保存规则
-            </ButtonPro>
-          </DialogProFooter>
+            </NvButton>
+          </NvDialogFooter>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>

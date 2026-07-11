@@ -1,7 +1,7 @@
-export { default as TooltipProContent } from './TooltipProContent.vue'
-// Provider / root / trigger carry no styling — re-export reka under Pro names.
+export { default as NvTooltipContent } from './TooltipProContent.vue'
+// Provider / root / trigger carry no styling — re-export reka under Nv names.
 export {
-  TooltipProvider as TooltipProProvider,
-  TooltipRoot as TooltipPro,
-  TooltipTrigger as TooltipProTrigger,
+  TooltipProvider as NvTooltipProvider,
+  TooltipRoot as NvTooltip,
+  TooltipTrigger as NvTooltipTrigger,
 } from 'reka-ui'

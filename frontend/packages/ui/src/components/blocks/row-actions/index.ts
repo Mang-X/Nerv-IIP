@@ -1,1 +1,1 @@
-export { default as RowActions } from './RowActions.vue'
+export { default as NvRowActions } from './RowActions.vue'

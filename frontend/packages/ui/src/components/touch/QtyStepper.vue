@@ -71,8 +71,10 @@ function inc() {
 </template>
 
 <style scoped>
-.ds-step {
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
+@layer nv-components {
+  .ds-step {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
 }
 </style>

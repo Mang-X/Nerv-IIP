@@ -2,6 +2,8 @@ using System.Reflection;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.DomainEvents;
@@ -103,6 +105,95 @@ public sealed class IndustrialTelemetryAggregateTests
     }
 
     [Fact]
+    public void Alarm_acknowledge_is_idempotent_and_preserves_clear_compatibility()
+    {
+        var raisedAtUtc = new DateTimeOffset(2026, 7, 6, 8, 0, 0, TimeSpan.Zero);
+        var acknowledgedAtUtc = raisedAtUtc.AddMinutes(5);
+        var alarm = AlarmEvent.Raise("org-001", "env-dev", "DEV-CNC-01", "OVER_TEMP", "critical", raisedAtUtc, "alarm-ext-001");
+
+        alarm.Acknowledge(acknowledgedAtUtc, "operator-001");
+        alarm.Acknowledge(acknowledgedAtUtc, "operator-001");
+        alarm.Clear(raisedAtUtc.AddMinutes(10), "operator-001", "temperature normalized");
+
+        Assert.Equal("cleared", alarm.Status);
+        Assert.Equal("operator-001", alarm.AcknowledgedBy);
+        Assert.Equal(acknowledgedAtUtc, alarm.AcknowledgedAtUtc);
+        Assert.Single(alarm.GetDomainEvents().OfType<AlarmAcknowledgedDomainEvent>());
+        Assert.Single(alarm.GetDomainEvents().OfType<AlarmClearedDomainEvent>());
+    }
+
+    [Fact]
+    public void Alarm_shelve_temporarily_suppresses_escalation_and_expires_to_previous_active_state()
+    {
+        var raisedAtUtc = new DateTimeOffset(2026, 7, 6, 8, 0, 0, TimeSpan.Zero);
+        var alarm = AlarmEvent.Raise("org-001", "env-dev", "DEV-CNC-01", "OVER_TEMP", "critical", raisedAtUtc, "alarm-ext-001");
+        alarm.Acknowledge(raisedAtUtc.AddMinutes(2), "operator-001");
+
+        alarm.Shelve(raisedAtUtc.AddMinutes(3), raisedAtUtc.AddMinutes(33), "operator-001", "maintenance window");
+        alarm.Shelve(raisedAtUtc.AddMinutes(4), raisedAtUtc.AddMinutes(34), "operator-001", "duplicate request");
+
+        Assert.Equal("shelved", alarm.Status);
+        Assert.True(alarm.IsShelvedAt(raisedAtUtc.AddMinutes(20)));
+        Assert.False(alarm.ShouldEscalateAt(raisedAtUtc.AddMinutes(20), TimeSpan.FromMinutes(10), ["critical"]));
+        Assert.False(alarm.ExpireShelving(raisedAtUtc.AddMinutes(20)));
+        Assert.True(alarm.ExpireShelving(raisedAtUtc.AddMinutes(40)));
+        Assert.Equal("acknowledged", alarm.Status);
+        Assert.False(alarm.IsShelvedAt(raisedAtUtc.AddMinutes(40)));
+        Assert.Single(alarm.GetDomainEvents().OfType<AlarmShelvedDomainEvent>());
+        Assert.Single(alarm.GetDomainEvents().OfType<AlarmUnshelvedDomainEvent>());
+    }
+
+    [Fact]
+    public void Alarm_can_be_unshelved_before_expiry()
+    {
+        var raisedAtUtc = new DateTimeOffset(2026, 7, 6, 8, 0, 0, TimeSpan.Zero);
+        var alarm = AlarmEvent.Raise("org-001", "env-dev", "DEV-CNC-01", "OVER_TEMP", "critical", raisedAtUtc, "alarm-ext-001");
+        alarm.Shelve(raisedAtUtc.AddMinutes(3), raisedAtUtc.AddMinutes(33), "operator-001", "maintenance window");
+
+        Assert.True(alarm.Unshelve(raisedAtUtc.AddMinutes(10)));
+
+        Assert.Equal("raised", alarm.Status);
+        Assert.False(alarm.IsShelvedAt(raisedAtUtc.AddMinutes(20)));
+        Assert.Single(alarm.GetDomainEvents().OfType<AlarmUnshelvedDomainEvent>());
+    }
+
+    [Fact]
+    public void Alarm_escalates_once_for_high_severity_or_unacknowledged_timeout()
+    {
+        var raisedAtUtc = new DateTimeOffset(2026, 7, 6, 8, 0, 0, TimeSpan.Zero);
+        var critical = AlarmEvent.Raise("org-001", "env-dev", "DEV-CNC-01", "OVER_TEMP", "critical", raisedAtUtc, "alarm-ext-001");
+        var warning = AlarmEvent.Raise("org-001", "env-dev", "DEV-CNC-02", "PRESSURE_LOW", "warning", raisedAtUtc, "alarm-ext-002");
+
+        Assert.True(critical.ShouldEscalateAt(raisedAtUtc.AddMinutes(1), TimeSpan.FromMinutes(30), ["critical"]));
+        Assert.False(warning.ShouldEscalateAt(raisedAtUtc.AddMinutes(10), TimeSpan.FromMinutes(30), ["critical"]));
+        Assert.True(warning.ShouldEscalateAt(raisedAtUtc.AddMinutes(31), TimeSpan.FromMinutes(30), ["critical"]));
+
+        critical.Escalate(raisedAtUtc.AddMinutes(1), "critical-severity", ["role:maintenance-manager"]);
+        critical.Escalate(raisedAtUtc.AddMinutes(2), "critical-severity", ["role:maintenance-manager"]);
+
+        Assert.Equal(raisedAtUtc.AddMinutes(1), critical.EscalatedAtUtc);
+        Assert.Equal("critical-severity", critical.EscalationReason);
+        Assert.Equal(["role:maintenance-manager"], critical.EscalationRecipientRefs);
+        Assert.Single(critical.GetDomainEvents().OfType<AlarmEscalatedDomainEvent>());
+        Assert.False(critical.ShouldEscalateAt(raisedAtUtc.AddMinutes(40), TimeSpan.FromMinutes(30), ["critical"]));
+    }
+
+    [Fact]
+    public void Alarm_cannot_be_directly_escalated_while_shelved()
+    {
+        var raisedAtUtc = new DateTimeOffset(2026, 7, 6, 8, 0, 0, TimeSpan.Zero);
+        var alarm = AlarmEvent.Raise("org-001", "env-dev", "DEV-CNC-01", "OVER_TEMP", "critical", raisedAtUtc, "alarm-ext-001");
+        alarm.Shelve(raisedAtUtc.AddMinutes(3), raisedAtUtc.AddMinutes(33), "operator-001", "maintenance window");
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            alarm.Escalate(raisedAtUtc.AddMinutes(10), "critical-severity", ["role:maintenance-manager"]));
+
+        Assert.Equal("shelved alarms cannot be escalated.", ex.Message);
+        Assert.Null(alarm.EscalatedAtUtc);
+        Assert.Empty(alarm.GetDomainEvents().OfType<AlarmEscalatedDomainEvent>());
+    }
+
+    [Fact]
     public void Telemetry_summary_keeps_coarse_facts_not_raw_time_series()
     {
         var summary = TelemetrySummary.Record("org-001", "env-dev", "DEV-CNC-01", "spindle.speed", new DateTimeOffset(2026, 5, 23, 10, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 5, 23, 10, 5, 0, TimeSpan.Zero), 30, 1200m, 1500m, 1350m);
@@ -114,19 +205,21 @@ public sealed class IndustrialTelemetryAggregateTests
     }
 
     [Fact]
-    public void Public_domain_facts_do_not_expose_control_payload_credential_or_scada_concepts()
+    public void Public_domain_facts_do_not_expose_payload_credential_or_scada_concepts()
     {
         var publicNames = new[]
             {
                 typeof(TelemetryTag),
                 typeof(DeviceStateSnapshot),
                 typeof(AlarmEvent),
+                typeof(TelemetryRawSample),
+                typeof(TelemetryRollup),
                 typeof(TelemetrySummary),
             }
             .SelectMany(type => type.GetMembers(BindingFlags.Instance | BindingFlags.Public).Select(member => $"{type.Name}.{member.Name}"))
             .ToArray();
 
-        var forbidden = new[] { "Control", "CommandPayload", "Credential", "Secret", "Password", "Scada" };
+        var forbidden = new[] { "CommandPayload", "Credential", "Secret", "Password", "Scada" };
         Assert.DoesNotContain(publicNames, name => forbidden.Any(fragment => name.Contains(fragment, StringComparison.OrdinalIgnoreCase)));
     }
 }

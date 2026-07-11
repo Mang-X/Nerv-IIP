@@ -10,10 +10,17 @@ import {
   workOrderSubtitle,
   workOrderTitle,
 } from '@nerv-iip/business-core'
-import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
+import {
+  NvAppShellMobile,
+  NvBottomSheet,
+  NvListRow,
+  NvMobileResult,
+  NvScanBar,
+} from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMesReceipts, useMesWorkOrders } from '@/composables/useBusinessMes'
+import RetryableListError from '@/components/RetryableListError.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 
 definePage({
@@ -28,19 +35,15 @@ type WorkOrder = BusinessConsoleMesWorkOrderItem
 
 const router = useRouter()
 
-const {
-  filters,
-  receipts,
-  total,
-  pending,
-  error,
-  createReceipt,
-} = useMesReceipts()
+const { filters, receipts, total, pending, error, refresh, createReceipt } = useMesReceipts()
 
 const {
   filters: workOrderFilters,
   workOrders,
   total: workOrderTotal,
+  pending: workOrdersPending,
+  error: workOrdersError,
+  refresh: refreshWorkOrders,
 } = useMesWorkOrders()
 
 // 可读中文状态标签 + 工单标题/副标题来自 @nerv-iip/business-core（不外显原始状态码 / GUID）。
@@ -53,7 +56,8 @@ function receiptTitle(req: Receipt) {
 function receiptSubtitle(req: Receipt) {
   const parts = [receiptStatusLabel(req.receiptStatus)]
   if (req.quantity !== undefined) parts.push(`数量 ${req.quantity}`)
-  if (req.unitCost !== undefined && req.unitCost !== null) parts.push(`成本 ${formatReceiptNumber(req.unitCost)}`)
+  if (req.unitCost !== undefined && req.unitCost !== null)
+    parts.push(`成本 ${formatReceiptNumber(req.unitCost)}`)
   if (req.requestNo) parts.push(`单号 ${req.requestNo}`)
   return parts.join(' · ')
 }
@@ -61,13 +65,6 @@ function receiptSubtitle(req: Receipt) {
 function formatReceiptNumber(value: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 6 }).format(value)
 }
-
-// --- 列表加载错误 ---
-const errorMessage = computed(() => {
-  const e = error.value
-  if (!e) return ''
-  return e instanceof Error ? e.message : '加载完工入库申请失败，请下拉刷新或重试。'
-})
 
 // --- 流程上下文（finishedGoodsReceiptFlow 驱动当前步/进度）---
 const ctx = reactive<ReceiptCtx>({
@@ -166,7 +163,16 @@ async function submitCreate() {
   const uom = uomCode.value.trim()
   const qty = quantity.value
   const cost = unitCost.value
-  if (!workOrderId || sku === '' || uom === '' || qty === null || !(qty > 0) || cost === null || !(cost > 0)) return
+  if (
+    !workOrderId ||
+    sku === '' ||
+    uom === '' ||
+    qty === null ||
+    !(qty > 0) ||
+    cost === null ||
+    !(cost > 0)
+  )
+    return
   syncEnterStep()
   // 首次提交铸造稳定幂等键，重试复用同键。
   if (operationKey.value === '') {
@@ -216,9 +222,7 @@ function goBack() {
 }
 
 // ScanBar 仅在列表态活跃；新建/结果展开时不抢焦点
-const scanActive = computed(() =>
-  result.value === null && !creating.value,
-)
+const scanActive = computed(() => result.value === null && !creating.value)
 
 function onScan(value: string) {
   filters.keyword = value
@@ -229,7 +233,7 @@ function onScanWorkOrder(value: string) {
 </script>
 
 <template>
-  <AppShellMobile>
+  <NvAppShellMobile>
     <template #header>
       <div class="flex items-center gap-3 px-4 py-3">
         <button
@@ -253,7 +257,7 @@ function onScanWorkOrder(value: string) {
     </template>
 
     <!-- 写操作结果反馈 -->
-    <Result
+    <NvMobileResult
       v-if="result"
       :status="result.status"
       :title="result.title"
@@ -286,14 +290,21 @@ function onScanWorkOrder(value: string) {
           返回
         </button>
       </template>
-    </Result>
+    </NvMobileResult>
 
     <div v-else class="space-y-4 p-4">
-      <ScanBar placeholder="扫描工单号 / 入库单" :active="scanActive" @scan="onScan" />
+      <NvScanBar placeholder="扫描工单号 / 入库单" :active="scanActive" @scan="onScan" />
 
       <p class="text-sm text-muted-foreground">共 {{ total }} 条完工入库申请</p>
 
-      <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+      <RetryableListError
+        v-if="error"
+        :error="error"
+        :pending="pending"
+        fallback="加载完工入库申请失败，请下拉刷新或重试。"
+        test-id="receipt-error"
+        @retry="() => refresh()"
+      />
 
       <div
         v-if="!pending && !error && receipts.length === 0"
@@ -303,7 +314,7 @@ function onScanWorkOrder(value: string) {
       </div>
 
       <div v-else class="overflow-hidden rounded-lg border border-border">
-        <ListRow
+        <NvListRow
           v-for="req in receipts"
           :key="req.receiptRequestId ?? `${req.workOrderId}-${req.skuId}`"
           :title="receiptTitle(req)"
@@ -314,28 +325,45 @@ function onScanWorkOrder(value: string) {
     </div>
 
     <!-- 新建完工入库（finishedGoodsReceiptFlow：选工单 → 录 SKU/数量/单位成本/单位 → 创建）-->
-    <BottomSheet
+    <NvBottomSheet
       :open="createSheetOpen"
       title="新建完工入库"
       @update:open="createSheetOpen = $event"
     >
       <div class="space-y-4 pb-2">
         <p class="text-xs text-muted-foreground">
-          第 {{ progress.completed + 1 > progress.total ? progress.total : progress.completed + 1 }}/{{ progress.total }} 步
+          第
+          {{ progress.completed + 1 > progress.total ? progress.total : progress.completed + 1 }}/{{
+            progress.total
+          }}
+          步
         </p>
 
         <!-- 步骤 1：选工单 -->
         <div v-if="currentStep === 'selectWorkOrder' || !selectedWorkOrder" class="space-y-2">
-          <ScanBar placeholder="扫描工单号" :active="false" @scan="onScanWorkOrder" />
-          <p class="text-sm text-muted-foreground">选择完工入库的工单（共 {{ workOrderTotal }} 张）</p>
+          <NvScanBar placeholder="扫描工单号" :active="false" @scan="onScanWorkOrder" />
+          <p class="text-sm text-muted-foreground">
+            选择完工入库的工单（共 {{ workOrderTotal }} 张）
+          </p>
+          <RetryableListError
+            v-if="workOrdersError"
+            :error="workOrdersError"
+            :pending="workOrdersPending"
+            fallback="加载工单失败，请稍后重试。"
+            test-id="receipt-work-orders-error"
+            @retry="() => refreshWorkOrders()"
+          />
           <div
-            v-if="workOrders.length === 0"
+            v-else-if="workOrders.length === 0"
             class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
           >
             暂无可完工入库的工单
           </div>
-          <div v-else class="max-h-64 overflow-y-auto overflow-x-hidden rounded-lg border border-border">
-            <ListRow
+          <div
+            v-else
+            class="max-h-64 overflow-y-auto overflow-x-hidden rounded-lg border border-border"
+          >
+            <NvListRow
               v-for="wo in workOrders"
               :key="wo.workOrderId"
               data-testid="receipt-work-order"
@@ -348,10 +376,14 @@ function onScanWorkOrder(value: string) {
 
         <!-- 步骤 2：录 SKU / 数量 / 单位成本 / 单位 -->
         <div v-else class="space-y-4">
-          <div class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
+          <div
+            class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
+          >
             <div class="min-w-0">
               <p class="text-sm text-muted-foreground">当前工单</p>
-              <p class="truncate text-base font-medium text-foreground">{{ workOrderTitle(selectedWorkOrder) }}</p>
+              <p class="truncate text-base font-medium text-foreground">
+                {{ workOrderTitle(selectedWorkOrder) }}
+              </p>
             </div>
             <button
               type="button"
@@ -434,6 +466,6 @@ function onScanWorkOrder(value: string) {
           </button>
         </div>
       </div>
-    </BottomSheet>
-  </AppShellMobile>
+    </NvBottomSheet>
+  </NvAppShellMobile>
 </template>

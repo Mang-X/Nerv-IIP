@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
+using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
@@ -44,7 +45,9 @@ public sealed record ListMesWorkOrdersRequest(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? WorkCenterIds = null,
+    string? DeviceAssetIds = null);
 
 public sealed record ListProductionPlansRequest(
     string OrganizationId,
@@ -243,6 +246,15 @@ public sealed record WorkOrderReasonRequest(
     [property: RouteParam] string WorkOrderId,
     string Reason,
     DateTimeOffset? ChangedAtUtc);
+
+public sealed record RecordEngineeringChangeDecisionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string WorkOrderId,
+    string ChangeNumber,
+    string Decision,
+    string DecidedBy,
+    string Reason);
 
 public sealed record CreateMaterialIssueRequestRequest(
     string OrganizationId,
@@ -577,7 +589,9 @@ public sealed class ListMesWorkOrdersEndpoint(ISender sender)
                 req.Keyword,
                 req.WorkCenterId,
                 req.ShiftId,
-                req.DeviceAssetId),
+                req.DeviceAssetId,
+                req.WorkCenterIds,
+                req.DeviceAssetIds),
             ct);
         await Send.OkAsync(response, ct);
     }
@@ -677,6 +691,25 @@ public sealed class CancelWorkOrderEndpoint(ISender sender, TimeProvider timePro
             req.Reason,
             req.ChangedAtUtc ?? timeProvider.GetUtcNow()), ct);
         await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class RecordEngineeringChangeDecisionEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<RecordEngineeringChangeDecisionRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<RecordEngineeringChangeDecisionEndpoint>());
+
+    public override async Task HandleAsync(RecordEngineeringChangeDecisionRequest req, CancellationToken ct)
+    {
+        await sender.Send(new RecordEngineeringChangeDecisionCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.ChangeNumber,
+            req.Decision,
+            req.DecidedBy,
+            req.Reason), ct);
+        await Send.OkAsync(new MesAcceptedResponse("Accepted", req.WorkOrderId, timeProvider.GetUtcNow()), ct);
     }
 }
 
@@ -1256,6 +1289,7 @@ public static class MesEndpointContracts
         new(typeof(CloseWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/close", MesPermissionCodes.WorkOrdersManage, "closeBusinessMesWorkOrder"),
         new(typeof(HoldWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/hold", MesPermissionCodes.WorkOrdersManage, "holdBusinessMesWorkOrder"),
         new(typeof(CancelWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/cancel", MesPermissionCodes.WorkOrdersManage, "cancelBusinessMesWorkOrder"),
+        new(typeof(RecordEngineeringChangeDecisionEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions", MesPermissionCodes.WorkOrdersManage, "recordBusinessMesEngineeringChangeDecision"),
         new(typeof(ForceReleaseQualityHoldEndpoint), "POST", "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release", MesPermissionCodes.QualityWrite, "forceReleaseBusinessMesQualityHold"),
         new(typeof(GetMaterialReadinessEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialReadiness"),
         new(typeof(CreateMaterialIssueRequestEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/material-issue-requests", MesPermissionCodes.MaterialsManage, "createBusinessMesMaterialIssueRequest"),

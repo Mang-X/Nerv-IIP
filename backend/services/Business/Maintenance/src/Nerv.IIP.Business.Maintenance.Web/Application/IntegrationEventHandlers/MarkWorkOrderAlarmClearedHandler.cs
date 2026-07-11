@@ -29,7 +29,7 @@ public sealed class MarkWorkOrderAlarmClearedHandler(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.IndustrialTelemetry.AlarmClearedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(AlarmClearedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(AlarmClearedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

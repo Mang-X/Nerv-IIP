@@ -7,6 +7,8 @@ public static class IndustrialTelemetryIntegrationEventTypes
     public const string DeviceStateChanged = "industrialTelemetry.DeviceStateChanged";
     public const string AlarmRaised = "industrialTelemetry.AlarmRaised";
     public const string AlarmCleared = "industrialTelemetry.AlarmCleared";
+    public const string AlarmEscalated = "industrialTelemetry.AlarmEscalated";
+    public const string ProductionCountDeltaRecorded = "industrialTelemetry.ProductionCountDeltaRecorded";
     public const string TelemetryTagCreated = "industrialTelemetry.TelemetryTagCreated";
     public const string TelemetrySampleRecorded = "industrialTelemetry.TelemetrySampleRecorded";
 }
@@ -99,3 +101,59 @@ public sealed record AlarmClearedPayload(
     DateTimeOffset RaisedAtUtc,
     DateTimeOffset ClearedAtUtc,
     string ExternalAlarmId);
+
+public sealed record AlarmEscalatedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    AlarmEscalatedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record AlarmEscalatedPayload(
+    string AlarmEventId,
+    string DeviceAssetId,
+    string AlarmCode,
+    string Severity,
+    DateTimeOffset RaisedAtUtc,
+    DateTimeOffset EscalatedAtUtc,
+    string ExternalAlarmId,
+    string EscalationReason,
+    IReadOnlyCollection<string> RecipientRefs,
+    string? Priority = null);
+
+public sealed record TelemetryProductionCountDeltaIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    TelemetryProductionCountDeltaPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record TelemetryProductionCountDeltaPayload(
+    string DeviceAssetId,
+    string TagKey,
+    string ReportingMode,
+    decimal DeltaQuantity,
+    DateTimeOffset BucketStartUtc,
+    DateTimeOffset BucketEndUtc,
+    string SourceSequence,
+    bool HasActiveAlarm);

@@ -6,7 +6,7 @@ import { cva } from 'class-variance-authority'
  * These are layout/semantic components: structurally equivalent to the base
  * `ui/field` set but namespaced under the Pro layer (data-slot `field-pro*`).
  */
-export const fieldProVariants = cva(
+export const nvFieldVariants = cva(
   'data-[invalid=true]:text-destructive gap-2 group/field flex w-full',
   {
     variants: {
@@ -24,15 +24,15 @@ export const fieldProVariants = cva(
   },
 )
 
-export type FieldProVariants = VariantProps<typeof fieldProVariants>
+export type NvFieldVariants = VariantProps<typeof nvFieldVariants>
 
-export { default as FieldPro } from './FieldPro.vue'
-export { default as FieldProContent } from './FieldProContent.vue'
-export { default as FieldProDescription } from './FieldProDescription.vue'
-export { default as FieldProError } from './FieldProError.vue'
-export { default as FieldProGroup } from './FieldProGroup.vue'
-export { default as FieldProLabel } from './FieldProLabel.vue'
-export { default as FieldProLegend } from './FieldProLegend.vue'
-export { default as FieldProSeparator } from './FieldProSeparator.vue'
-export { default as FieldProSet } from './FieldProSet.vue'
-export { default as FieldProTitle } from './FieldProTitle.vue'
+export { default as NvField } from './FieldPro.vue'
+export { default as NvFieldContent } from './FieldProContent.vue'
+export { default as NvFieldDescription } from './FieldProDescription.vue'
+export { default as NvFieldError } from './FieldProError.vue'
+export { default as NvFieldGroup } from './FieldProGroup.vue'
+export { default as NvFieldLabel } from './FieldProLabel.vue'
+export { default as NvFieldLegend } from './FieldProLegend.vue'
+export { default as NvFieldSeparator } from './FieldProSeparator.vue'
+export { default as NvFieldSet } from './FieldProSet.vue'
+export { default as NvFieldTitle } from './FieldProTitle.vue'

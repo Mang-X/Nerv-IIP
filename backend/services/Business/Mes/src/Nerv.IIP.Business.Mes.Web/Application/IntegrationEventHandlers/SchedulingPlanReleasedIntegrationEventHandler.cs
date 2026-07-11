@@ -115,7 +115,8 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
                 operation.WorkCenterId,
                 [],
                 operation.StartUtc,
-                operation.EndUtc - operation.StartUtc);
+                operation.EndUtc - operation.StartUtc,
+                operationCode: operation.StandardOperationCode);
             dbContext.OperationTasks.Add(task);
         }
 
@@ -134,14 +135,15 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
             operation.ResourceId,
             operation.StartUtc,
             operation.EndUtc,
-            integrationEvent.OccurredAtUtc);
+            integrationEvent.OccurredAtUtc,
+            operation.StandardOperationCode);
         return null;
     }
 }
 
 public static class SchedulePlanReleasedIntegrationEventTopic
 {
-    public const string TopicName = "Nerv.IIP.Contracts.Scheduling.SchedulePlanReleasedIntegrationEvent";
+    public const string TopicName = "SchedulePlanReleasedIntegrationEvent";
 }
 
 [IntegrationEventConsumer(SchedulePlanInvalidatedIntegrationEventTopic.TopicName, ConsumerName)]
@@ -215,5 +217,5 @@ public sealed class SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalid
 
 public static class SchedulePlanInvalidatedIntegrationEventTopic
 {
-    public const string TopicName = "Nerv.IIP.Contracts.Scheduling.SchedulePlanInvalidatedIntegrationEvent";
+    public const string TopicName = "SchedulePlanInvalidatedIntegrationEvent";
 }

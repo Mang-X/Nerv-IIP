@@ -35,7 +35,8 @@ public sealed record OpcUaTagSubscription(
     string TagKey,
     string NodeId,
     int SamplingIntervalMilliseconds,
-    int BucketSeconds);
+    int BucketSeconds,
+    string? SamplingPolicy = null);
 
 public sealed record OpcUaNode(string NodeId, string DisplayName, bool IsVariable);
 
@@ -44,6 +45,10 @@ public sealed record OpcUaDataChange(
     object? Value,
     DateTimeOffset SourceTimestampUtc,
     string Status);
+
+public sealed record OpcUaWriteRequest(string NodeId, string Value);
+
+public sealed record OpcUaWriteReceipt(string Status, string ReceiptCode, string Message);
 
 public sealed record RecordIndustrialTelemetrySampleRequest(
     string OrganizationId,
@@ -60,7 +65,9 @@ public sealed record RecordIndustrialTelemetrySampleRequest(
     string? SourceSystem,
     string? SourceConnector,
     string? DeviceState = null,
-    DateTimeOffset? StateOccurredAtUtc = null);
+    DateTimeOffset? StateOccurredAtUtc = null,
+    decimal? FirstValue = null,
+    decimal? LastValue = null);
 
 public sealed record OpcUaConnectorState(
     string ReportedStatus,
@@ -95,6 +102,13 @@ public interface IOpcUaClient
         Func<OpcUaDataChange, CancellationToken, Task> onDataChange,
         CancellationToken cancellationToken);
 
+    Task<OpcUaWriteReceipt> WriteAsync(OpcUaWriteRequest request, CancellationToken cancellationToken)
+    {
+        _ = request;
+        _ = cancellationToken;
+        throw new NotSupportedException("This OPC UA client does not support writes.");
+    }
+
     Task DisconnectAsync(CancellationToken cancellationToken);
 }
 
@@ -121,6 +135,8 @@ internal sealed class TelemetryBucket(OpcUaTagSubscription tag, DateTimeOffset b
     public int SampleCount { get; private set; }
     public decimal MinValue { get; private set; }
     public decimal MaxValue { get; private set; }
+    public decimal FirstValue { get; private set; }
+    public decimal LastValue { get; private set; }
     public decimal AverageValue => SampleCount == 0 ? 0 : _sum / SampleCount;
 
     public void Add(decimal value)
@@ -129,6 +145,7 @@ internal sealed class TelemetryBucket(OpcUaTagSubscription tag, DateTimeOffset b
         {
             MinValue = value;
             MaxValue = value;
+            FirstValue = value;
         }
         else
         {
@@ -136,6 +153,7 @@ internal sealed class TelemetryBucket(OpcUaTagSubscription tag, DateTimeOffset b
             MaxValue = Math.Max(MaxValue, value);
         }
 
+        LastValue = value;
         _sum += value;
         SampleCount++;
     }

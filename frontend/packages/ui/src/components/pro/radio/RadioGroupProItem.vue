@@ -24,7 +24,7 @@ const id = props.id ?? generatedId
       v-bind="forwarded"
       :class="
         cn(
-          'ds-radio flex size-[18px] shrink-0 items-center justify-center rounded-full border border-input bg-card outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-brand/30 focus-visible:border-brand data-[state=checked]:border-brand disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30',
+          'ds-radio flex size-[18px] shrink-0 items-center justify-center rounded-full border border-input bg-card outline-none focus-visible:ring-[3px] focus-visible:ring-brand/30 focus-visible:border-brand data-[state=checked]:border-brand disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30',
           props.class,
         )
       "
@@ -38,31 +38,37 @@ const id = props.id ?? generatedId
 </template>
 
 <style scoped>
-.ds-radio {
-  transition:
-    border-color 0.15s var(--ease-out-quart, ease-out),
-    box-shadow 0.15s var(--ease-out-quart, ease-out),
-    transform 0.18s var(--ease-out-quart, ease-out);
-}
-/* Press: the control depresses while held, then decelerates back — unified with
+@layer nv-components {
+  /* This transition covers border/ring/press-scale — do NOT add the Tailwind
+     `transition-colors` utility to the root: as a utility it outranks this layered
+     rule and resets `transition-property` to colors only, dropping `transform` so
+     the press-scale below fires with no easing (instant, feels like no motion). */
+  .ds-radio {
+    transition:
+      border-color 0.15s var(--nv-ease-out-quart, ease-out),
+      box-shadow 0.15s var(--nv-ease-out-quart, ease-out),
+      transform 0.18s var(--nv-ease-out-quart, ease-out);
+  }
+  /* Press: the control depresses while held, then decelerates back — unified with
    Switch/Checkbox. No bounce (per our motion philosophy). */
-.ds-radio:active:not([data-disabled]) {
-  transform: scale(0.9);
-}
-.ds-radio-ind {
-  animation: ds-radio-in 0.16s var(--ease-out-quart, ease-out);
-}
-@keyframes ds-radio-in {
-  from {
-    transform: scale(0);
+  .ds-radio:active:not([data-disabled]) {
+    transform: scale(0.9);
   }
-  to {
-    transform: scale(1);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
   .ds-radio-ind {
-    animation: none;
+    animation: ds-radio-in 0.16s var(--nv-ease-out-quart, ease-out);
+  }
+  @keyframes ds-radio-in {
+    from {
+      transform: scale(0);
+    }
+    to {
+      transform: scale(1);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-radio-ind {
+      animation: none;
+    }
   }
 }
 </style>

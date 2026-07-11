@@ -151,7 +151,9 @@ function pickToday() {
 </template>
 
 <style scoped>
-.ds-dp-cell {
-  -webkit-tap-highlight-color: transparent;
+@layer nv-components {
+  .ds-dp-cell {
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 </style>

@@ -23,6 +23,119 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Nerv.IIP.Business.Wms.Domain.AggregatesModel.BackorderOrderAggregate.BackorderOrder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Backorder order aggregate id.");
+
+                    b.Property<string>("BackorderOrderNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("backorder_order_no")
+                        .HasComment("Stable WMS backorder order number.");
+
+                    b.Property<decimal>("BackorderQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("backorder_quantity")
+                        .HasComment("Unfulfilled quantity recorded by pack review.");
+
+                    b.Property<DateTime?>("ClosedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at_utc")
+                        .HasComment("UTC time when the backorder was closed.");
+
+                    b.Property<string>("ClosureReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("closure_reason")
+                        .HasComment("Audited reason for closing the backorder.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the short pick created the backorder.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("OutboundOrderLineNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("outbound_order_line_no")
+                        .HasComment("Short-picked WMS outbound order line number.");
+
+                    b.Property<string>("OutboundOrderNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("outbound_order_no")
+                        .HasComment("Short-picked WMS outbound order number.");
+
+                    b.Property<string>("PickLocationCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("pick_location_code")
+                        .HasComment("Pick face targeted by the replenishment recommendation.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Site where the short pick occurred.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
+                        .HasComment("Short-picked SKU code.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("Backorder lifecycle status.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("uom_code")
+                        .HasComment("Short-picked unit of measure.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "BackorderOrderNo")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "OutboundOrderNo", "OutboundOrderLineNo")
+                        .IsUnique();
+
+                    b.ToTable("backorder_orders", "wms", t =>
+                        {
+                            t.HasComment("Durable WMS short-pick backorder facts that drive replenishment recommendations.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate.CountExecution", b =>
                 {
                     b.Property<Guid>("Id")
@@ -135,6 +248,17 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Inbound order aggregate id.");
 
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("cancellation_reason")
+                        .HasComment("Auditable reason supplied when the inbound expectation was cancelled.");
+
+                    b.Property<DateTime?>("CancelledAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at_utc")
+                        .HasComment("UTC time when the open inbound expectation was cancelled.");
+
                     b.Property<DateTime?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at_utc")
@@ -199,6 +323,9 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "InboundOrderNo")
                         .IsUnique();
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceDocumentType", "SourceDocumentId", "Status")
+                        .HasDatabaseName("ix_inbound_orders_source_status");
+
                     b.ToTable("inbound_orders", "wms", t =>
                         {
                             t.HasComment("WMS inbound execution order header and source document reference.");
@@ -221,6 +348,12 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("inbound_order_id")
                         .HasComment("Owning inbound order id.");
+
+                    b.Property<string>("InspectionRecordId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("inspection_record_id")
+                        .HasComment("Quality inspection record id that released or rejected this inbound line.");
 
                     b.Property<string>("LineNo")
                         .IsRequired()
@@ -252,6 +385,21 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("date")
                         .HasColumnName("production_date")
                         .HasComment("Optional received batch production date captured by WMS.");
+
+                    b.Property<string>("QualityDispositionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("quality_disposition_reason")
+                        .HasComment("Optional Quality disposition reason copied from the inspection result.");
+
+                    b.Property<string>("QualityGateStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasDefaultValue("not-required")
+                        .HasColumnName("quality_gate_status")
+                        .HasComment("WMS inbound quality gate state: pending, passed, conditional-release, rejected or not-required.");
 
                     b.Property<string>("QualityStatus")
                         .IsRequired()
@@ -689,6 +837,153 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate.SupplierReturnRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Supplier return request id.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when WMS created the supplier return request.");
+
+                    b.Property<string>("DispositionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("disposition_reason")
+                        .HasComment("Quality rejection or disposition reason.");
+
+                    b.Property<string>("DispositionType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("disposition_type")
+                        .HasComment("Quality disposition type, currently return-to-supplier.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<string>("InboundOrderLineNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("inbound_order_line_no")
+                        .HasComment("Source WMS inbound order line number.");
+
+                    b.Property<string>("InboundOrderNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("inbound_order_no")
+                        .HasComment("Source WMS inbound order number.");
+
+                    b.Property<string>("InspectionRecordId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("inspection_record_id")
+                        .HasComment("Quality inspection record that rejected the received stock.");
+
+                    b.Property<string>("LocationCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("location_code")
+                        .HasComment("Rejected stock quarantine or staging location.");
+
+                    b.Property<string>("LotNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("lot_no")
+                        .HasComment("Optional rejected lot number.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("OwnerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_id")
+                        .HasComment("Optional rejected stock owner id.");
+
+                    b.Property<string>("OwnerType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("owner_type")
+                        .HasComment("Rejected stock owner type.");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("quantity")
+                        .HasComment("Rejected quantity to return to supplier.");
+
+                    b.Property<string>("SerialNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("serial_no")
+                        .HasComment("Optional rejected serial number.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Site code where rejected stock was received.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
+                        .HasComment("Rejected SKU code.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("Supplier return request status.");
+
+                    b.Property<string>("SupplierReturnNo")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("supplier_return_no")
+                        .HasComment("WMS supplier return request number.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("uom_code")
+                        .HasComment("Rejected stock unit of measure.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SupplierReturnNo")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "InboundOrderNo", "InboundOrderLineNo", "InspectionRecordId")
+                        .IsUnique();
+
+                    b.ToTable("supplier_return_requests", "wms", t =>
+                        {
+                            t.HasComment("WMS supplier return request facts generated from rejected receiving inspections.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTask", b =>
                 {
                     b.Property<Guid>("Id")
@@ -786,7 +1081,7 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("task_type")
-                        .HasComment("Task type: putaway or picking.");
+                        .HasComment("Task type: putaway, picking or replenishment.");
 
                     b.Property<string>("ToLocationCode")
                         .IsRequired()
@@ -809,7 +1104,73 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 
                     b.ToTable("warehouse_tasks", "wms", t =>
                         {
-                            t.HasComment("WMS putaway and picking warehouse tasks.");
+                            t.HasComment("WMS putaway, picking and replenishment recommendation tasks.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate.WcsDispatchCircuit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("WCS dispatch circuit id.");
+
+                    b.Property<string>("AdapterType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("adapter_type")
+                        .HasComment("WCS adapter type.");
+
+                    b.Property<int>("ConsecutiveFailureCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("consecutive_failure_count")
+                        .HasComment("Consecutive failed dispatch count.");
+
+                    b.Property<string>("DeviceId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("device_id")
+                        .HasComment("WCS device identifier.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<DateTime?>("LastFailureAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_failure_at_utc")
+                        .HasComment("UTC time of the most recent failure.");
+
+                    b.Property<DateTime?>("OpenedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("opened_at_utc")
+                        .HasComment("UTC time the circuit opened.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<DateTime?>("ResetAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reset_at_utc")
+                        .HasComment("UTC time of the latest manual reset.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "AdapterType", "DeviceId")
+                        .IsUnique();
+
+                    b.ToTable("wcs_dispatch_circuits", "wms", t =>
+                        {
+                            t.HasComment("Per adapter and device WCS dispatch circuit state.");
                         });
                 });
 
@@ -841,6 +1202,13 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("completion_payload_json")
                         .HasComment("Completion callback payload JSON.");
+
+                    b.Property<string>("DeviceId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("device_id")
+                        .HasComment("WCS adapter-scoped device identifier used by retry and circuit controls.");
 
                     b.Property<DateTime>("DispatchedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -877,6 +1245,18 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("failure_message")
                         .HasComment("WCS failure diagnostic message.");
+
+                    b.Property<bool>("IsTerminalFailure")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_terminal_failure")
+                        .HasComment("Whether bounded WCS retry attempts have been exhausted.");
+
+                    b.Property<DateTime?>("NextRetryAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_retry_at_utc")
+                        .HasComment("Earliest UTC time at which a failed WCS task may be dispatched again.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()

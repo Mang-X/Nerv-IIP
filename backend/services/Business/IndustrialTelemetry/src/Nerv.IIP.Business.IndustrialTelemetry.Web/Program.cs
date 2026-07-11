@@ -7,13 +7,16 @@ using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Historian;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Sdk.Ops;
 using NetCorePal.Context.CAP;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
@@ -52,6 +55,18 @@ try
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
+    builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddScoped<TelemetryHistorianService>();
+    builder.Services.AddHostedService<AlarmEscalationScheduler>();
+    builder.Services.AddHostedService<TelemetryHistorianScheduler>();
+    builder.Services.AddScoped<IDeviceControlOpsClient, DeviceControlOpsClient>();
+    var opsBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Ops:BaseUrl", "http://localhost:5103");
+    builder.Services.AddHttpClient<IOpsClient, HttpOpsClient>((services, client) =>
+    {
+        client.BaseAddress = opsBaseAddress;
+        var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+    });
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
     if (isTesting && string.IsNullOrWhiteSpace(connectionString))
@@ -66,10 +81,12 @@ try
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)
     {
+        builder.Services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
         builder.Services.AddIntegrationEvents(typeof(Program));
     }
     else
     {
+        builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
         builder.Services.AddIntegrationEvents(typeof(Program))
             .UseCap<ApplicationDbContext>(b =>
             {
@@ -114,7 +131,7 @@ try
     }
 
     app.UseNervIipRequestLocalization();
-    app.UseKnownExceptionHandler();
+    app.UseKnownExceptionHandler(_ => new() { KnownExceptionStatusCode = System.Net.HttpStatusCode.BadRequest });
     app.UseStaticFiles();
     app.UseRouting();
     app.UseAuthentication();
@@ -151,6 +168,26 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
+}
+
+static Uri ResolveServiceBaseAddress(
+    IConfiguration configuration,
+    IWebHostEnvironment environment,
+    string configurationKey,
+    string developmentFallback)
+{
+    var configuredBaseUrl = configuration[configurationKey];
+    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
+    {
+        return new Uri(configuredBaseUrl, UriKind.Absolute);
+    }
+
+    if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
+    {
+        return new Uri(developmentFallback, UriKind.Absolute);
+    }
+
+    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 #pragma warning disable S1118

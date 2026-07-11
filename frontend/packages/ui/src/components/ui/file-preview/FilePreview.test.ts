@@ -5,7 +5,7 @@ import { computed, defineComponent, h, shallowRef } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { FilePreview, getFilePreviewKindMeta } from '.'
-import { SelectPro } from '../../pro/select'
+import { NvSelect } from '../../pro/select'
 import OfficePreview from './OfficePreview.vue'
 import PdfPreview from './PdfPreview.vue'
 
@@ -32,7 +32,10 @@ const pdfScrollMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@embedpdf/core', () => ({
-  createPluginRegistration: (pluginPackage: unknown, config?: unknown) => ({ pluginPackage, config }),
+  createPluginRegistration: (pluginPackage: unknown, config?: unknown) => ({
+    pluginPackage,
+    config,
+  }),
 }))
 
 vi.mock('@embedpdf/engines/vue', () => ({
@@ -49,7 +52,11 @@ vi.mock('@embedpdf/core/vue', () => ({
     props: ['engine', 'plugins'],
     setup(_props, { slots }) {
       return () =>
-        h('div', { 'data-testid': 'embedpdf-provider' }, slots.default?.({ activeDocumentId: 'test-document' }))
+        h(
+          'div',
+          { 'data-testid': 'embedpdf-provider' },
+          slots.default?.({ activeDocumentId: 'test-document' }),
+        )
     },
   }),
   useDocumentState: () =>
@@ -156,11 +163,11 @@ vi.mock('@embedpdf/plugin-zoom/vue', () => ({
 vi.mock('@silurus/ooxml/docx', () => ({
   DocxViewer: class {
     pageCount = 2
-    _opts: { width?: number, onPageChange?: (index: number, count: number) => void }
+    _opts: { width?: number; onPageChange?: (index: number, count: number) => void }
 
     constructor(
       public canvas: HTMLCanvasElement,
-      private options: { width?: number, onPageChange?: (index: number, count: number) => void },
+      private options: { width?: number; onPageChange?: (index: number, count: number) => void },
     ) {
       this._opts = options
       officeViewerMocks.docxOptions.push(options)
@@ -189,11 +196,11 @@ vi.mock('@silurus/ooxml/docx', () => ({
 vi.mock('@silurus/ooxml/pptx', () => ({
   PptxViewer: class {
     slideCount = 3
-    opts: { width?: number, onSlideChange?: (index: number, count: number) => void }
+    opts: { width?: number; onSlideChange?: (index: number, count: number) => void }
 
     constructor(
       public canvas: HTMLCanvasElement,
-      private options: { width?: number, onSlideChange?: (index: number, count: number) => void },
+      private options: { width?: number; onSlideChange?: (index: number, count: number) => void },
     ) {
       this.opts = options
       officeViewerMocks.pptxOptions.push(options)
@@ -267,12 +274,13 @@ vi.mock('motion-v', () => {
         name: 'motion-img',
         props: ['src', 'alt', 'initial', 'animate', 'transition', 'style'],
         setup(props, { attrs }) {
-          return () => h('img', {
-            ...attrs,
-            alt: props.alt,
-            src: props.src,
-            style: props.style,
-          })
+          return () =>
+            h('img', {
+              ...attrs,
+              alt: props.alt,
+              src: props.src,
+              style: props.style,
+            })
         },
       }),
     },
@@ -346,7 +354,7 @@ describe('FilePreview', () => {
       },
     })
 
-    const pageSelect = wrapper.getComponent(SelectPro)
+    const pageSelect = wrapper.getComponent(NvSelect)
     pageSelect.vm.$emit('update:modelValue', '3')
     await flushPromises()
 
@@ -381,7 +389,9 @@ describe('FilePreview', () => {
       },
     })
 
-    expect(wrapper.get('[data-testid="file-preview-image"]').attributes('src')).toBe('/files/evidence.png')
+    expect(wrapper.get('[data-testid="file-preview-image"]').attributes('src')).toBe(
+      '/files/evidence.png',
+    )
     expect(wrapper.get('button[aria-label="Zoom in evidence.png"]')).toBeTruthy()
 
     await wrapper.get('button[aria-label="Zoom in evidence.png"]').trigger('click')
@@ -528,15 +538,18 @@ describe('FilePreview', () => {
     vi.useFakeTimers()
 
     let resizeCallback: ResizeObserverCallback | undefined
-    vi.stubGlobal('ResizeObserver', class {
-      constructor(callback: ResizeObserverCallback) {
-        resizeCallback = callback
-      }
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          resizeCallback = callback
+        }
 
-      observe() {}
+        observe() {}
 
-      disconnect() {}
-    })
+        disconnect() {}
+      },
+    )
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0)
       return 1
@@ -602,14 +615,24 @@ describe('FilePreview', () => {
       'utf8',
     )
 
-    for (const title of ['图片预览', 'PDF 预览', 'Word / DOCX 预览', 'Excel / XLSX 预览', 'PowerPoint / PPTX 预览', '状态示例']) {
+    for (const title of [
+      '图片预览',
+      'PDF 预览',
+      'Word / DOCX 预览',
+      'Excel / XLSX 预览',
+      'PowerPoint / PPTX 预览',
+      '状态示例',
+    ]) {
       expect(docs, `${title} needs a VitePress outline heading`).toContain(`### ${title}`)
 
       const sectionStart = docs.indexOf(`<Demo title="${title}"`)
       expect(sectionStart, `${title} demo is missing`).toBeGreaterThanOrEqual(0)
 
       const nextSectionStart = docs.indexOf('<Demo title=', sectionStart + 1)
-      const section = docs.slice(sectionStart, nextSectionStart === -1 ? undefined : nextSectionStart)
+      const section = docs.slice(
+        sectionStart,
+        nextSectionStart === -1 ? undefined : nextSectionStart,
+      )
       expect(section, `${title} demo needs a Vue code example`).toContain('```vue')
     }
 
@@ -653,7 +676,7 @@ describe('FilePreview', () => {
 
     await flushPromises()
 
-    const pageSelect = wrapper.getComponent(SelectPro)
+    const pageSelect = wrapper.getComponent(NvSelect)
     pageSelect.vm.$emit('update:modelValue', '1')
     await flushPromises()
 
@@ -670,7 +693,7 @@ describe('FilePreview', () => {
 
     await flushPromises()
 
-    const slideSelect = wrapper.getComponent(SelectPro)
+    const slideSelect = wrapper.getComponent(NvSelect)
     slideSelect.vm.$emit('update:modelValue', '2')
     await flushPromises()
 
@@ -689,7 +712,7 @@ describe('FilePreview', () => {
 
     expect(wrapper.text()).toContain('Summary · 1/2')
 
-    const sheetSelect = wrapper.getComponent(SelectPro)
+    const sheetSelect = wrapper.getComponent(NvSelect)
     sheetSelect.vm.$emit('update:modelValue', '1')
     await flushPromises()
 
@@ -707,6 +730,8 @@ describe('FilePreview', () => {
     await flushPromises()
 
     expect(officeViewerMocks.xlsxOptions.at(-1)?.showZoomSlider).toBe(false)
-    expect(wrapper.get('[data-slot="file-preview-spreadsheet-host"]').classes()).toContain('file-preview-spreadsheet-host')
+    expect(wrapper.get('[data-slot="file-preview-spreadsheet-host"]').classes()).toContain(
+      'file-preview-spreadsheet-host',
+    )
   })
 })

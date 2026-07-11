@@ -1,1 +1,1 @@
-export { default as CarouselPro } from './CarouselPro.vue'
+export { default as NvCarousel } from './CarouselPro.vue'

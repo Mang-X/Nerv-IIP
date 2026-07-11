@@ -13,6 +13,8 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   describeTelemetryOeeLimitations,
+  describeTelemetryOeeDegradation,
+  formatOeeQuantity,
   formatOeeRate,
   useBusinessTelemetryAlarmRules,
   useBusinessTelemetryHistory,
@@ -231,8 +233,9 @@ describe('business telemetry composables', () => {
         deviceAssetId: 'DEV-PACK-01',
         stateSampleCount: 10,
         availabilityRate: 0.82,
-        performanceRateEstimated: true,
-        qualityRateEstimated: true,
+        performanceRate: 0.8,
+        qualityRate: 0.9,
+        isDegraded: false,
       },
     })
     coladaState.queryDataById.set('queryBusinessConsoleTelemetryRuntimeAvailability', {
@@ -262,10 +265,11 @@ describe('business telemetry composables', () => {
     expect(oee.availabilityWindows.value).toHaveLength(1)
   })
 
-  it('formats OEE rates and states the P0 limitation in business language', () => {
+  it('formats OEE measures and explains degraded inputs in business language', () => {
     expect(formatOeeRate(0.876)).toBe('87.6%')
     expect(formatOeeRate(undefined)).toBe('无数据')
-    expect(describeTelemetryOeeLimitations()).toContain('当前 OEE 只按设备运行状态计算可用率')
-    expect(describeTelemetryOeeLimitations()).toContain('性能与质量不作为真实测量值')
+    expect(formatOeeQuantity(12.5, 'PCS')).toBe('12.5 PCS')
+    expect(describeTelemetryOeeLimitations()).toContain('OEE = 可用率 × 性能率 × 质量率')
+    expect(describeTelemetryOeeDegradation('production-facts-missing')).toBe('缺少 MES 报工事实')
   })
 })

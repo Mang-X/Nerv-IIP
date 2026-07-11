@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.DomainEvents;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
@@ -9,6 +10,34 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
 public sealed class IndustrialTelemetryIntegrationEventTests
 {
+    [Fact]
+    public void Production_count_delta_event_keeps_source_sequence_and_reporting_mode_in_stable_envelope()
+    {
+        var summary = TelemetrySummary.Record(
+            "org-001",
+            "env-dev",
+            "DEV-PACK-01",
+            "parts_count",
+            DateTimeOffset.Parse("2026-07-11T08:00:00Z"),
+            DateTimeOffset.Parse("2026-07-11T08:01:00Z"),
+            1,
+            103m,
+            103m,
+            103m,
+            "seq-002",
+            "opcua",
+            "opcua-cell-01");
+
+        var integrationEvent = new TelemetryProductionCountDeltaIntegrationEventConverter().Convert(
+            new TelemetryProductionCountDeltaDomainEvent(summary, 3m, "posted", HasActiveAlarm: false));
+
+        Assert.Equal(IndustrialTelemetryIntegrationEventTypes.ProductionCountDeltaRecorded, integrationEvent.EventType);
+        Assert.Equal("posted", integrationEvent.Payload.ReportingMode);
+        Assert.Equal("seq-002", integrationEvent.Payload.SourceSequence);
+        Assert.Equal(3m, integrationEvent.Payload.DeltaQuantity);
+        Assert.Equal("industrialTelemetry:production-count:org-001:env-dev:DEV-PACK-01:parts_count:opcua:opcua-cell-01:seq-002", integrationEvent.IdempotencyKey);
+    }
+
     [Fact]
     public void Device_state_changed_event_serializes_required_event_type()
     {
@@ -84,6 +113,34 @@ public sealed class IndustrialTelemetryIntegrationEventTests
         Assert.Equal($"industrialTelemetry:alarm-cleared:org-001:env-dev:DEV-CNC-01:OVER_TEMP:alarm-ext-001:{alarm.Id.Id:D}", cleared.IdempotencyKey);
         Assert.Contains("\"eventType\":\"industrialTelemetry.AlarmRaised\"", JsonSerializer.Serialize(raised, new JsonSerializerOptions(JsonSerializerDefaults.Web)), StringComparison.Ordinal);
         Assert.Contains("\"eventType\":\"industrialTelemetry.AlarmCleared\"", JsonSerializer.Serialize(cleared, new JsonSerializerOptions(JsonSerializerDefaults.Web)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Alarm_escalated_event_serializes_required_event_type_and_recipients()
+    {
+        var alarm = AlarmEvent.Raise(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "OVER_TEMP",
+            "critical",
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+            "alarm-ext-001",
+            priority: "p1");
+        alarm.Escalate(
+            DateTimeOffset.Parse("2026-07-06T08:05:00Z"),
+            "critical-severity",
+            ["role:maintenance-manager", "user:lead-001"]);
+
+        var escalated = new AlarmEscalatedIntegrationEventConverter().Convert(new AlarmEscalatedDomainEvent(alarm));
+        var json = JsonSerializer.Serialize(escalated, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Equal(IndustrialTelemetryIntegrationEventTypes.AlarmEscalated, escalated.EventType);
+        Assert.Equal(alarm.Id.Id.ToString("D"), escalated.Payload.AlarmEventId);
+        Assert.Equal("critical-severity", escalated.Payload.EscalationReason);
+        Assert.Equal(["role:maintenance-manager", "user:lead-001"], escalated.Payload.RecipientRefs);
+        Assert.Equal($"industrialTelemetry:alarm-escalated:org-001:env-dev:DEV-CNC-01:OVER_TEMP:alarm-ext-001:{alarm.Id.Id:D}", escalated.IdempotencyKey);
+        Assert.Contains("\"eventType\":\"industrialTelemetry.AlarmEscalated\"", json, StringComparison.Ordinal);
     }
 
     [Fact]

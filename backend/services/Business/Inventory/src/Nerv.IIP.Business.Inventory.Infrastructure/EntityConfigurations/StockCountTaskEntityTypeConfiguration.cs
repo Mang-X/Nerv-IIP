@@ -8,7 +8,7 @@ public sealed class StockCountTaskEntityTypeConfiguration : IEntityTypeConfigura
     {
         builder.ToTable("stock_count_tasks", tableBuilder =>
         {
-            tableBuilder.HasComment("Inventory stock count tasks, expected ledger version snapshots and confirmed variances.");
+            tableBuilder.HasComment("Inventory stock count tasks, expected ledger version snapshots, approval state and confirmed variances.");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_count_tasks_location_code_format", "location_code");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_count_tasks_sku_code_format", "sku_code");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_count_tasks_site_code_format", "site_code");
@@ -19,6 +19,7 @@ public sealed class StockCountTaskEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id that owns the count task.");
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id where the count task was created.");
         builder.Property(x => x.CountTaskCode).HasColumnName("count_task_code").IsRequired().HasMaxLength(100).HasComment("Business count task code.");
+        builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").IsRequired().HasMaxLength(128).HasComment("Caller-provided stable idempotency key used to recover Inventory count freezes after RPC timeout.");
         builder.Property(x => x.LedgerOrganizationId).HasColumnName("ledger_organization_id").IsRequired().HasMaxLength(100).HasComment("Organization id of the ledger snapshot.");
         builder.Property(x => x.LedgerEnvironmentId).HasColumnName("ledger_environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id of the ledger snapshot.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("MasterData SKU code.");
@@ -37,6 +38,9 @@ public sealed class StockCountTaskEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the count task was created.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the count task was last changed.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.CountTaskCode }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.IdempotencyKey })
+            .IsUnique()
+            .HasDatabaseName("ux_stock_count_tasks_idempotency_key");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status, x.SiteCode, x.LocationCode });
     }
 }

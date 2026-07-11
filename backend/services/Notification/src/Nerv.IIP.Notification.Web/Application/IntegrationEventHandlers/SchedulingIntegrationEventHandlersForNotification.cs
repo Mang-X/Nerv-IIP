@@ -38,7 +38,7 @@ public sealed class ScheduleConflictDetectedIntegrationEventHandlerForNotificati
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Scheduling.ScheduleConflictDetectedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(ScheduleConflictDetectedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(
         ScheduleConflictDetectedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
@@ -150,7 +150,7 @@ public sealed class SchedulePlanInvalidatedIntegrationEventHandlerForNotificatio
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Scheduling.SchedulePlanInvalidatedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(SchedulePlanInvalidatedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(
         SchedulePlanInvalidatedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)

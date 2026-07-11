@@ -57,11 +57,11 @@ import {
 
 ## 组成
 
-| 部件 | 说明 |
-|---|---|
-| `Breadcrumb` / `BreadcrumbList` | 根 + 列表（`<nav>` / `<ol>`，含 aria）|
-| `BreadcrumbItem` | 单项容器 |
-| `BreadcrumbLink` | 可点击层级（支持 `as-child` 接 router-link）|
-| `BreadcrumbPage` | 当前页，不可点、`aria-current="page"` |
-| `BreadcrumbSeparator` | 分隔符（默认 `/`，可自定义插槽）|
-| `BreadcrumbEllipsis` | 折叠中间层级的省略号 |
+| 部件                            | 说明                                         |
+| ------------------------------- | -------------------------------------------- |
+| `Breadcrumb` / `BreadcrumbList` | 根 + 列表（`<nav>` / `<ol>`，含 aria）       |
+| `BreadcrumbItem`                | 单项容器                                     |
+| `BreadcrumbLink`                | 可点击层级（支持 `as-child` 接 router-link） |
+| `BreadcrumbPage`                | 当前页，不可点、`aria-current="page"`        |
+| `BreadcrumbSeparator`           | 分隔符（默认 `/`，可自定义插槽）             |
+| `BreadcrumbEllipsis`            | 折叠中间层级的省略号                         |

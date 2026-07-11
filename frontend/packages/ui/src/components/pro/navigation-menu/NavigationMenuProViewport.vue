@@ -18,7 +18,9 @@ const forwarded = useForwardProps(reactiveOmit(props, 'class'))
 </script>
 
 <template>
-  <div class="ds-nav-viewport-wrap absolute top-full left-0 isolate z-50 flex w-full justify-center">
+  <div
+    class="ds-nav-viewport-wrap absolute top-full left-0 isolate z-50 flex w-full justify-center"
+  >
     <NavigationMenuViewport
       data-slot="navigation-menu-pro-viewport"
       v-bind="forwarded"
@@ -33,24 +35,26 @@ const forwarded = useForwardProps(reactiveOmit(props, 'class'))
 </template>
 
 <style scoped>
-/* Size to reka's measured content box (falls back to the content's natural width
+@layer nv-components {
+  /* Size to reka's measured content box (falls back to the content's natural width
    if the var isn't set yet). `shrink-0` keeps the flex-centre wrapper from
    squashing a panel wider than the bar. Only width/height transition — position
    is the centred flex slot, so there is no horizontal slide. */
-.ds-nav-viewport {
-  width: var(--reka-navigation-menu-viewport-width);
-  height: var(--reka-navigation-menu-viewport-height);
-  transition:
-    width 0.3s var(--ease-out-expo, ease-out),
-    height 0.3s var(--ease-out-expo, ease-out);
-  /* Glass: faint top highlight over the translucent popover fill. */
-  box-shadow:
-    0 18px 48px -16px color-mix(in oklch, black 50%, transparent),
-    inset 0 1px 0 0 color-mix(in oklch, white 8%, transparent);
-}
-@media (prefers-reduced-motion: reduce) {
   .ds-nav-viewport {
-    transition: none;
+    width: var(--reka-navigation-menu-viewport-width);
+    height: var(--reka-navigation-menu-viewport-height);
+    transition:
+      width 0.3s var(--nv-ease-out-expo, ease-out),
+      height 0.3s var(--nv-ease-out-expo, ease-out);
+    /* Glass: faint top highlight over the translucent popover fill. */
+    box-shadow:
+      0 18px 48px -16px color-mix(in oklch, black 50%, transparent),
+      inset 0 1px 0 0 color-mix(in oklch, white 8%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-nav-viewport {
+      transition: none;
+    }
   }
 }
 </style>

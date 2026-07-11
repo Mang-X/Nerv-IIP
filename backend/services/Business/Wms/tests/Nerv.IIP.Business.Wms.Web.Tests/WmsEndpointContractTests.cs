@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
+using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.Messaging.CAP;
@@ -26,6 +27,7 @@ using WarehouseTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTask
 using WarehouseTaskId = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskId;
 using WarehouseTaskType = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskType;
 using WcsTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate.WcsTask;
+using SupplierReturnRequest = Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate.SupplierReturnRequest;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -36,30 +38,63 @@ public sealed class WmsEndpointContractTests
     {
         var contracts = WmsEndpointContracts.All.ToArray();
 
-        Assert.Equal(22, contracts.Length);
+        Assert.Equal(30, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsInboundOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsPutawayTask");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/putaway-tasks" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsPutawayTasks");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "completeWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "retryWmsInboundInventoryPosting");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/cancel-by-source" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "cancelWmsInboundOrdersForSource");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "createWmsOutboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/outbound-orders" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "listWmsOutboundOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "createWmsPickingTask");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/picking-tasks" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "listWmsPickingTasks");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/replenishment-tasks" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "listWmsReplenishmentTasks");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/progress" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "recordWmsWarehouseTaskProgress");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "completeWmsWarehouseTask");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders/{outboundOrderId}/complete" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "completeWmsOutboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders/{outboundOrderId}/cancel" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "cancelWmsOutboundOrder");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/backorder-orders" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "listWmsBackorderOrders");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/backorder-orders/{backorderOrderId}/close" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "closeWmsBackorderOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "retryWmsOutboundInventoryPosting");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/count-executions" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsCountExecution");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/count-executions" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsCountExecutions");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/count-executions/{countExecutionId}/complete" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "completeWmsCountExecution");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "dispatchWmsWcsTask");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/wcs-dispatch-circuits" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "listWmsWcsDispatchCircuits");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-dispatch-circuits/reset" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "resetWmsWcsDispatchCircuit");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-tasks/{externalTaskId}/complete" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "completeWmsWcsTask");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-tasks/{externalTaskId}/fail" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "failWmsWcsTask");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/wcs-tasks" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "listWmsWcsTasks");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/receiving-quality-gates" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsReceivingQualityGates");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/supplier-return-requests" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsSupplierReturnRequests");
         Assert.All(contracts, x => Assert.Equal(InternalServiceAuthorizationPolicy.Name, x.AuthorizationPolicy));
+    }
+
+    [Fact]
+    public async Task Cancelling_inbound_expectations_by_source_only_closes_matching_open_orders()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var matching = InboundOrder.Create(
+            "org-001", "env-dev", "IN-PO-001", "purchase-order", "PO-001", "SITE-01",
+            [new InboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "STAGE-01", null, null, "qualified", "company", null)]);
+        var unrelated = InboundOrder.Create(
+            "org-001", "env-dev", "IN-PO-002", "purchase-order", "PO-002", "SITE-01",
+            [new InboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "STAGE-01", null, null, "qualified", "company", null)]);
+        dbContext.InboundOrders.AddRange(matching, unrelated);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var cancelled = await new CancelInboundOrdersForSourceCommandHandler(dbContext).Handle(
+            new CancelInboundOrdersForSourceCommand("org-001", "env-dev", "purchase-order", "PO-001", "purchase-order-cancelled"),
+            CancellationToken.None);
+
+        Assert.Equal(1, cancelled);
+        Assert.Equal("Cancelled", matching.Status.ToString());
+        Assert.Equal("purchase-order-cancelled", matching.CancellationReason);
+        Assert.Equal("Open", unrelated.Status.ToString());
     }
 
     [Theory]
@@ -183,7 +218,7 @@ public sealed class WmsEndpointContractTests
         dbContext.WarehouseTasks.AddRange(warehouseTask, otherTenantTask);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var commandHandler = new Application.Commands.DispatchWcsTaskCommandHandler(dbContext);
+        var commandHandler = new Application.Commands.DispatchWcsTaskCommandHandler(dbContext, new WcsTestTimeProvider(DateTimeOffset.UtcNow.AddMinutes(2)));
         await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(warehouseTask.Id, "agv", "EXT-001", """{"step":1}"""), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new Application.Commands.FailWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.FailWcsTaskCommand("org-001", "env-dev", "EXT-001", "PLC_TIMEOUT", "PLC timeout"), CancellationToken.None);
@@ -282,6 +317,87 @@ public sealed class WmsEndpointContractTests
         var item = Assert.Single(result.Items);
         Assert.Equal("IN-PAGE-001", item.InboundOrderNo);
         Assert.Equal("Open", item.Status);
+    }
+
+    [Fact]
+    public async Task Receiving_quality_gate_query_projects_line_flow_and_filters_by_gate_status_and_tenant()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var passed = CreateQualityGateInboundOrder("IN-GATE-PASS-001");
+        passed.Complete("idem-gate-pass-001");
+        passed.ApplyInspectionResult("quality.InspectionPassed", "QI-PASS-001", "SKU-FG-1000", "LOT-001", null, 5m, null);
+        var rejected = CreateQualityGateInboundOrder("IN-GATE-REJ-001");
+        rejected.Complete("idem-gate-rej-001");
+        rejected.ApplyInspectionResult("quality.InspectionRejected", "QI-REJ-001", "SKU-FG-1000", "LOT-001", null, 5m, "critical-defect");
+        var pending = CreateQualityGateInboundOrder("IN-GATE-PEND-001");
+        pending.Complete("idem-gate-pend-001");
+        var notRequired = CreateInboundOrder("IN-GATE-NOGATE-001");
+        var otherTenant = CreateQualityGateInboundOrder("IN-GATE-PASS-001", "org-002");
+        otherTenant.Complete("idem-gate-other-001");
+        dbContext.InboundOrders.AddRange(passed, rejected, pending, notRequired, otherTenant);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ListReceivingQualityGatesQueryHandler(dbContext);
+        var all = await handler.Handle(
+            new ListReceivingQualityGatesQuery("org-001", "env-dev", 0, 100),
+            CancellationToken.None);
+
+        Assert.Equal(3, all.Total);
+        Assert.All(all.Items, x => Assert.NotEqual("not-required", x.QualityGateStatus));
+        Assert.DoesNotContain(all.Items, x => x.InboundOrderNo == "IN-GATE-NOGATE-001");
+
+        var rejectedOnly = await handler.Handle(
+            new ListReceivingQualityGatesQuery("org-001", "env-dev", 0, 100, "rejected"),
+            CancellationToken.None);
+
+        var fact = Assert.Single(rejectedOnly.Items);
+        Assert.Equal("IN-GATE-REJ-001", fact.InboundOrderNo);
+        Assert.Equal("rejected", fact.QualityGateStatus);
+        Assert.Equal("QI-REJ-001", fact.InspectionRecordId);
+        Assert.Equal("critical-defect", fact.QualityDispositionReason);
+        Assert.Equal("SKU-FG-1000", fact.SkuCode);
+        Assert.Equal("quality", fact.QualityStatus);
+        Assert.Equal(5m, fact.ReceivedQuantity);
+        Assert.Equal("LOT-001", fact.LotNo);
+        Assert.Equal("10", fact.LineNo);
+    }
+
+    [Fact]
+    public async Task Supplier_return_query_filters_status_keyword_before_offset_page_and_total_count()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.SupplierReturnRequests.AddRange(
+            CreateSupplierReturnRequest("IN-PAGE-001", "QI-1"),
+            CreateSupplierReturnRequest("IN-PAGE-002", "QI-2"),
+            CreateSupplierReturnRequest("IN-OTHER-001", "QI-3"),
+            CreateSupplierReturnRequest("IN-PAGE-003", "QI-4", "org-002"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ListSupplierReturnRequestsQueryHandler(dbContext);
+        var result = await handler.Handle(
+            new ListSupplierReturnRequestsQuery("org-001", "env-dev", 1, 1, "Open", "page"),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.Total);
+        var item = Assert.Single(result.Items);
+        Assert.Equal("IN-PAGE-001", item.InboundOrderNo);
+        Assert.Equal("RTS-IN-PAGE-001-10-QI-1", item.SupplierReturnNo);
+        Assert.Equal("Open", item.Status);
+        Assert.Equal("return-to-supplier", item.DispositionType);
+        Assert.Equal("critical-defect", item.DispositionReason);
+        Assert.Equal(3m, item.Quantity);
+
+        var numeric = await handler.Handle(
+            new ListSupplierReturnRequestsQuery("org-001", "env-dev", 0, 100, "0", null),
+            CancellationToken.None);
+
+        Assert.Equal(0, numeric.Total);
+        Assert.Empty(numeric.Items);
     }
 
     [Fact]
@@ -485,6 +601,7 @@ public sealed class WmsEndpointContractTests
             builder.UseSetting("environment", "Testing");
             builder.UseSetting("InternalService:BearerToken", "test-internal-token");
             builder.UseSetting("Inventory:BaseUrl", "http://inventory.local");
+            builder.UseSetting("Wcs:Retry:InitialRetryBackoff", "00:00:00");
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<ApplicationDbContext>();
@@ -536,6 +653,38 @@ public sealed class WmsEndpointContractTests
         }
 
         return order;
+    }
+
+    private static InboundOrder CreateQualityGateInboundOrder(string orderNo, string organizationId = "org-001")
+    {
+        return InboundOrder.Create(
+            organizationId,
+            "env-dev",
+            orderNo,
+            "purchase-receipt",
+            $"PO-{orderNo}",
+            "SITE-01",
+            [new InboundOrderLineDraft("10", "SKU-FG-1000", "kg", 5m, "STAGE-01", "LOT-001", null, "quality", "company", null)]);
+    }
+
+    private static SupplierReturnRequest CreateSupplierReturnRequest(string inboundOrderNo, string inspectionRecordId, string organizationId = "org-001")
+    {
+        return SupplierReturnRequest.Create(
+            organizationId,
+            "env-dev",
+            inboundOrderNo,
+            "10",
+            inspectionRecordId,
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "STAGE-01",
+            null,
+            null,
+            "company",
+            null,
+            3m,
+            "critical-defect");
     }
 
     private static OutboundOrder CreateOutboundOrder(string orderNo)

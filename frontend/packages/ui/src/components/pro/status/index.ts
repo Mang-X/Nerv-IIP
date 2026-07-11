@@ -1,2 +1,2 @@
-export { default as StatusDot } from './StatusDot.vue'
-export { default as StatusBadgePro } from './StatusBadgePro.vue'
+export { default as NvStatusDot } from './StatusDot.vue'
+export { default as NvStatusBadge } from './StatusBadgePro.vue'

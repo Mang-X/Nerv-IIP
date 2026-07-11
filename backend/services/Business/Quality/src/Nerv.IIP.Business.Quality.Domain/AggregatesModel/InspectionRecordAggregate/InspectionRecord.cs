@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate;
 using Nerv.IIP.Business.Quality.Domain.DomainEvents;
 
 namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
@@ -6,6 +7,23 @@ namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggre
 public partial record InspectionRecordId : IGuidStronglyTypedId;
 
 public partial record InspectionResultLineId : IGuidStronglyTypedId;
+
+public sealed record InspectionMeasuringDeviceUsage(
+    MeasuringDeviceId MeasuringDeviceId,
+    string MeasuringDeviceCode,
+    string CalibrationState,
+    DateTimeOffset CalibrationDueAtUtc)
+{
+    public static InspectionMeasuringDeviceUsage Create(MeasuringDevice device, DateTimeOffset usedAtUtc)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        return new InspectionMeasuringDeviceUsage(
+            device.Id,
+            device.DeviceCode,
+            device.ComputeCalibrationState(usedAtUtc),
+            device.CalibrationDueAtUtc);
+    }
+}
 
 public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoot
 {
@@ -49,7 +67,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         IReadOnlyCollection<InspectionResultLineInput> resultLines,
         string? dispositionReason,
         IReadOnlyCollection<string> dispositionAttachmentFileIds,
-        IReadOnlyCollection<InspectionUomConversion>? uomConversions = null)
+        IReadOnlyCollection<InspectionUomConversion>? uomConversions = null,
+        InspectionMeasuringDeviceUsage? measuringDeviceUsage = null)
     {
         Id = new InspectionRecordId(Guid.CreateVersion7());
         OrganizationId = Required(organizationId);
@@ -62,6 +81,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         InspectedQuantity = Positive(inspectedQuantity, nameof(inspectedQuantity));
         BatchNo = Optional(batchNo);
         SerialNo = Optional(serialNo);
+        ApplyMeasuringDeviceUsage(measuringDeviceUsage);
         ApplyStockRelease(stockRelease);
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
@@ -101,6 +121,10 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
     public decimal InspectedQuantity { get; private set; }
     public string? BatchNo { get; private set; }
     public string? SerialNo { get; private set; }
+    public MeasuringDeviceId? MeasuringDeviceId { get; private set; }
+    public string? MeasuringDeviceCode { get; private set; }
+    public string? MeasuringDeviceCalibrationState { get; private set; }
+    public DateTimeOffset? MeasuringDeviceCalibrationDueAtUtc { get; private set; }
     public string? UomCode { get; private set; }
     public string? SiteCode { get; private set; }
     public string? LocationCode { get; private set; }
@@ -129,7 +153,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         IReadOnlyCollection<InspectionResultLineInput> resultLines,
         string? dispositionReason,
         IReadOnlyCollection<string> dispositionAttachmentFileIds,
-        StockReleaseDimension? stockRelease = null)
+        StockReleaseDimension? stockRelease = null,
+        InspectionMeasuringDeviceUsage? measuringDeviceUsage = null)
     {
         return new InspectionRecord(
             organizationId,
@@ -145,7 +170,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             stockRelease,
             resultLines,
             dispositionReason,
-            dispositionAttachmentFileIds);
+            dispositionAttachmentFileIds,
+            measuringDeviceUsage: measuringDeviceUsage);
     }
 
     public static InspectionRecord CreateFromPlan(
@@ -161,7 +187,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         IReadOnlyCollection<InspectionResultLineInput> resultLines,
         string? dispositionReason,
         IReadOnlyCollection<string> dispositionAttachmentFileIds,
-        IReadOnlyCollection<InspectionUomConversion>? uomConversions = null)
+        IReadOnlyCollection<InspectionUomConversion>? uomConversions = null,
+        InspectionMeasuringDeviceUsage? measuringDeviceUsage = null)
     {
         ArgumentNullException.ThrowIfNull(inspectionPlan);
         if (inspectionPlan.Status != "active")
@@ -196,7 +223,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             stockRelease,
             plannedLines,
             dispositionReason,
-            dispositionAttachmentFileIds);
+            dispositionAttachmentFileIds,
+            measuringDeviceUsage: measuringDeviceUsage);
     }
 
     public void LinkNonconformanceReport(string ncrId)
@@ -252,6 +280,15 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         SourceQualityStatus = stockRelease.SourceQualityStatus;
         OwnerType = stockRelease.OwnerType;
         OwnerId = stockRelease.OwnerId;
+    }
+
+    private void ApplyMeasuringDeviceUsage(InspectionMeasuringDeviceUsage? usage)
+    {
+        if (usage is null) return;
+        MeasuringDeviceId = usage.MeasuringDeviceId;
+        MeasuringDeviceCode = Required(usage.MeasuringDeviceCode);
+        MeasuringDeviceCalibrationState = Required(usage.CalibrationState);
+        MeasuringDeviceCalibrationDueAtUtc = usage.CalibrationDueAtUtc;
     }
 
     private static IReadOnlyCollection<InspectionResultLineInput> CalculatePlannedLines(

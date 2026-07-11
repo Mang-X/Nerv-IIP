@@ -300,6 +300,59 @@ public sealed class GatewayConsoleNotificationTests
         Assert.Equal("message ids are required", exception.Message);
     }
 
+    [Fact]
+    public async Task Upsert_delivery_preferences_subscriptions_and_bindings_use_delivery_manage_permission_and_forward_payloads()
+    {
+        var notification = new FakeGatewayNotificationClient();
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(notification, auth);
+
+        using var preferenceRequest = AuthorizedRequest(HttpMethod.Post, "/api/console/v1/notifications/delivery/preferences");
+        preferenceRequest.Content = JsonContent.Create(new UpsertNotificationPreferenceRequest("user:admin", "ops.OperationTaskFailed", "email", true));
+
+        var preferenceResponse = await factory.CreateClient().SendAsync(preferenceRequest);
+
+        preferenceResponse.EnsureSuccessStatusCode();
+        var preference = await ReadResponseDataAsync<NotificationPreferenceResponse>(preferenceResponse);
+        Assert.Equal("user:admin", preference.RecipientRef);
+        Assert.Equal("ops.OperationTaskFailed", preference.NotificationType);
+        Assert.Equal("email", preference.Channel);
+        Assert.True(preference.Enabled);
+        Assert.Equal("/api/notifications/v1/delivery/preferences", notification.LastRequest!.RequestUri);
+        Assert.Equal("user:admin", notification.LastPreferenceRequest!.RecipientRef);
+        Assert.Equal(GatewayPermissions.NotificationDeliveryManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("notification-preference", auth.LastRequirement.ResourceType);
+        Assert.Equal("user:admin", auth.LastRequirement.ResourceId);
+
+        using var subscriptionRequest = AuthorizedRequest(HttpMethod.Post, "/api/console/v1/notifications/delivery/subscriptions");
+        subscriptionRequest.Content = JsonContent.Create(new UpsertNotificationSubscriptionRequest("user:admin", "ops.OperationTaskFailed", "wecom", false));
+
+        var subscriptionResponse = await factory.CreateClient().SendAsync(subscriptionRequest);
+
+        subscriptionResponse.EnsureSuccessStatusCode();
+        var subscription = await ReadResponseDataAsync<NotificationSubscriptionResponse>(subscriptionResponse);
+        Assert.Equal("wecom", subscription.Channel);
+        Assert.False(subscription.Enabled);
+        Assert.Equal("/api/notifications/v1/delivery/subscriptions", notification.LastRequest!.RequestUri);
+        Assert.Equal("ops.OperationTaskFailed", notification.LastSubscriptionRequest!.NotificationType);
+        Assert.Equal(GatewayPermissions.NotificationDeliveryManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("notification-subscription", auth.LastRequirement.ResourceType);
+
+        using var bindingRequest = AuthorizedRequest(HttpMethod.Post, "/api/console/v1/notifications/delivery/recipient-channel-bindings");
+        bindingRequest.Content = JsonContent.Create(new UpsertNotificationRecipientChannelBindingRequest("user:admin", "email", "admin@example.test", true));
+
+        var bindingResponse = await factory.CreateClient().SendAsync(bindingRequest);
+
+        bindingResponse.EnsureSuccessStatusCode();
+        var binding = await ReadResponseDataAsync<NotificationRecipientChannelBindingResponse>(bindingResponse);
+        Assert.Equal("admin@example.test", binding.RecipientAddress);
+        Assert.True(binding.Enabled);
+        Assert.Equal("/api/notifications/v1/delivery/recipient-channel-bindings", notification.LastRequest!.RequestUri);
+        Assert.Equal("admin@example.test", notification.LastRecipientChannelBindingRequest!.RecipientAddress);
+        Assert.Equal(GatewayPermissions.NotificationDeliveryManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("notification-recipient-channel-binding", auth.LastRequirement.ResourceType);
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         FakeGatewayNotificationClient notification,
         FakeGatewayAuthorizationClient? auth = null)
@@ -359,6 +412,9 @@ public sealed class GatewayConsoleNotificationTests
         public MarkNotificationMessagesReadRequest? LastBatchReadRequest { get; private set; }
         public ReplayNotificationDeadLetterBatchRequest? LastReplayBatchRequest { get; private set; }
         public IgnoreNotificationDeadLetterRequest? LastIgnoreRequest { get; private set; }
+        public UpsertNotificationPreferenceRequest? LastPreferenceRequest { get; private set; }
+        public UpsertNotificationSubscriptionRequest? LastSubscriptionRequest { get; private set; }
+        public UpsertNotificationRecipientChannelBindingRequest? LastRecipientChannelBindingRequest { get; private set; }
         public Exception? ExceptionToThrow { get; init; }
 
         public Task<NotificationMessageListResponse> ListMessagesAsync(
@@ -502,6 +558,57 @@ public sealed class GatewayConsoleNotificationTests
                 request.MessageIds.Select(messageId => new MarkNotificationMessageReadResponse(messageId, "read", DateTimeOffset.UtcNow)).ToArray());
         }
 
+        public Task<NotificationPreferenceResponse> UpsertPreferenceAsync(
+            GatewayNotificationRequestContext context,
+            UpsertNotificationPreferenceRequest request,
+            CancellationToken cancellationToken)
+        {
+            ThrowIfConfigured();
+            LastRequest = context;
+            LastRequirement = context.PermissionRequirement;
+            LastPreferenceRequest = request;
+            return Task.FromResult(new NotificationPreferenceResponse(
+                request.RecipientRef,
+                request.NotificationType,
+                request.Channel,
+                request.Enabled,
+                DateTimeOffset.UtcNow));
+        }
+
+        public Task<NotificationSubscriptionResponse> UpsertSubscriptionAsync(
+            GatewayNotificationRequestContext context,
+            UpsertNotificationSubscriptionRequest request,
+            CancellationToken cancellationToken)
+        {
+            ThrowIfConfigured();
+            LastRequest = context;
+            LastRequirement = context.PermissionRequirement;
+            LastSubscriptionRequest = request;
+            return Task.FromResult(new NotificationSubscriptionResponse(
+                request.RecipientRef,
+                request.NotificationType,
+                request.Channel,
+                request.Enabled,
+                DateTimeOffset.UtcNow));
+        }
+
+        public Task<NotificationRecipientChannelBindingResponse> UpsertRecipientChannelBindingAsync(
+            GatewayNotificationRequestContext context,
+            UpsertNotificationRecipientChannelBindingRequest request,
+            CancellationToken cancellationToken)
+        {
+            ThrowIfConfigured();
+            LastRequest = context;
+            LastRequirement = context.PermissionRequirement;
+            LastRecipientChannelBindingRequest = request;
+            return Task.FromResult(new NotificationRecipientChannelBindingResponse(
+                request.RecipientRef,
+                request.Channel,
+                request.RecipientAddress,
+                request.Enabled,
+                DateTimeOffset.UtcNow));
+        }
+
         private void ThrowIfConfigured()
         {
             if (ExceptionToThrow is not null)
@@ -536,7 +643,7 @@ public sealed class GatewayConsoleNotificationTests
                 1,
                 "ops",
                 "operation-task-failed:task-001",
-                "Nerv.IIP.Contracts.Ops.OperationTaskFailedIntegrationEvent",
+                "OperationTaskFailedIntegrationEvent",
                 "{\"eventId\":\"event-001\"}",
                 status == "Ignored" ? "ignored" : "handler-retry-exhausted",
                 status == "Ignored" ? "known replacement processed" : "Handler failed.",

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import {
-  SheetPro,
-  SheetProContent,
-  SheetProDescription,
-  SheetProHeader,
-  SheetProTitle,
+  NvSheet,
+  NvSheetContent,
+  NvSheetDescription,
+  NvSheetHeader,
+  NvSheetTitle,
 } from '@nerv-iip/ui'
 
 defineProps<{
@@ -16,15 +16,15 @@ const open = defineModel<boolean>('open', { required: true })
 </script>
 
 <template>
-  <SheetPro v-model:open="open">
-    <SheetProContent class="w-full overflow-y-auto sm:max-w-2xl">
-      <SheetProHeader class="border-b">
-        <SheetProTitle>{{ title }}</SheetProTitle>
-        <SheetProDescription v-if="description">{{ description }}</SheetProDescription>
-      </SheetProHeader>
+  <NvSheet v-model:open="open">
+    <NvSheetContent class="w-full overflow-y-auto sm:max-w-2xl">
+      <NvSheetHeader class="border-b">
+        <NvSheetTitle>{{ title }}</NvSheetTitle>
+        <NvSheetDescription v-if="description">{{ description }}</NvSheetDescription>
+      </NvSheetHeader>
       <div class="grid gap-4 px-4 pb-4">
         <slot />
       </div>
-    </SheetProContent>
-  </SheetPro>
+    </NvSheetContent>
+  </NvSheet>
 </template>

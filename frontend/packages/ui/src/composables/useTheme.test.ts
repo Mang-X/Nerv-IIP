@@ -68,7 +68,7 @@ describe('useTheme — runtime primary theming', () => {
     expect(htmlStyle().getPropertyValue('--primary')).toBe('')
   })
 
-  it('inlines primary / foreground / ring / sidebar-primary / brand for a colour preset', async () => {
+  it('inlines primary / foreground / ring / sidebar-primary / nv-brand for a colour preset', async () => {
     const { setTheme } = useTheme()
     setTheme('blue')
     await nextTick()
@@ -78,7 +78,9 @@ describe('useTheme — runtime primary theming', () => {
     expect(htmlStyle().getPropertyValue('--primary-foreground')).toBe(blue.foreground)
     expect(htmlStyle().getPropertyValue('--ring')).toBe(blue.primary)
     expect(htmlStyle().getPropertyValue('--sidebar-primary')).toBe(blue.primary)
-    expect(htmlStyle().getPropertyValue('--brand')).toBe(blue.primary)
+    // ADR 0020 §3: the emphasis accent is namespaced `--nv-brand`; the theme.css
+    // alias `--brand: var(--nv-brand)` keeps legacy `var(--brand)` refs tracking.
+    expect(htmlStyle().getPropertyValue('--nv-brand')).toBe(blue.primary)
   })
 
   it('clears the inline overrides when switching back to neutral', async () => {

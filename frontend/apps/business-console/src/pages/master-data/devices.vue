@@ -3,35 +3,35 @@ import type {
   BusinessConsoleRegisterDeviceAssetRequest,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import { useBusinessWorkshops, useMasterDataResource, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  CheckboxPro,
-  DataTablePro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DialogProTrigger,
-  FieldPro,
-  FieldProDescription,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvCheckbox,
+  NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDialogTrigger,
+  NvField,
+  NvFieldDescription,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
@@ -107,7 +107,7 @@ const createForm = reactive({
   components: [] as DeviceComponentForm[],
 })
 
-const columns: DataTableProColumn<BusinessConsoleResourceItem>[] = [
+const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '设备编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '设备名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'siteCode', header: '工厂', width: 'w-28', accessor: (r) => siteName(r.siteCode) },
@@ -378,189 +378,189 @@ async function submitDevice() {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="设备台账" :breadcrumbs="[{ label: '基础数据' }]" :count="`${devices.total.value} 台设备`">
+    <NvPageHeader title="设备台账" :breadcrumbs="[{ label: '基础数据' }]" :count="`${devices.total.value} 台设备`">
       <template #actions>
-        <ButtonPro size="sm" variant="outline" type="button" :disabled="devices.pending.value" @click="refreshAll">
+        <NvButton size="sm" variant="outline" type="button" :disabled="devices.pending.value" @click="refreshAll">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <DialogPro v-model:open="createOpen">
-          <DialogProTrigger as-child>
-            <ButtonPro size="sm" type="button" @click="openCreate">
+        </NvButton>
+        <NvDialog v-model:open="createOpen">
+          <NvDialogTrigger as-child>
+            <NvButton size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建设备
-            </ButtonPro>
-          </DialogProTrigger>
-          <DialogProContent class="sm:max-w-2xl">
-            <DialogProHeader>
-              <DialogProTitle>{{ editingCode ? `编辑设备 · ${editingCode}` : '新建设备' }}</DialogProTitle>
-              <DialogProDescription>{{ editingCode ? '修改设备档案（编码不可修改）。带 * 为必填项。' : '为产线与工作中心登记一台设备资产。带 * 为必填项。' }}</DialogProDescription>
-            </DialogProHeader>
+            </NvButton>
+          </NvDialogTrigger>
+          <NvDialogContent class="sm:max-w-2xl">
+            <NvDialogHeader>
+              <NvDialogTitle>{{ editingCode ? `编辑设备 · ${editingCode}` : '新建设备' }}</NvDialogTitle>
+              <NvDialogDescription>{{ editingCode ? '修改设备档案（编码不可修改）。带 * 为必填项。' : '为产线与工作中心登记一台设备资产。带 * 为必填项。' }}</NvDialogDescription>
+            </NvDialogHeader>
             <form class="grid gap-4" @submit.prevent="submitDevice">
               <p v-if="createShowErrors && !canCreateDevice" class="text-sm text-destructive" role="alert">请检查标红字段后再提交。</p>
-              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-                <FieldPro v-if="editingCode">
-                  <FieldProLabel for="dev-code">设备编码</FieldProLabel>
-                  <InputPro id="dev-code" :model-value="createForm.code" disabled />
-                </FieldPro>
-                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.model)">
-                  <FieldProLabel for="dev-model">设备型号 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="dev-model" v-model="createForm.model" autocomplete="off" required />
-                  <FieldProDescription v-if="!editingCode">编码由系统自动生成。</FieldProDescription>
-                </FieldPro>
-                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.manufacturer)">
-                  <FieldProLabel for="dev-maker">制造商 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="dev-maker" v-model="createForm.manufacturer" autocomplete="off" required />
-                </FieldPro>
-                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.serialNo)">
-                  <FieldProLabel for="dev-serial">出厂序列号 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="dev-serial" v-model="createForm.serialNo" autocomplete="off" required />
-                </FieldPro>
-                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.assetClassCode)">
-                  <FieldProLabel for="dev-class">设备类别 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="dev-class" v-model="createForm.assetClassCode" autocomplete="off" required />
-                  <FieldProDescription>填写「数据字典」中维护的设备类别编码。</FieldProDescription>
-                </FieldPro>
-                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.criticality)">
-                  <FieldProLabel for="dev-criticality">关键度 <span class="text-destructive">*</span></FieldProLabel>
-                  <SelectPro v-model="createForm.criticality">
-                    <SelectProTrigger id="dev-criticality"><SelectProValue /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="o in CRITICALITY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                </FieldPro>
-                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.siteCode)">
-                  <FieldProLabel for="dev-site">所属工厂 <span class="text-destructive">*</span></FieldProLabel>
-                  <SelectPro v-model="createForm.siteCode">
-                    <SelectProTrigger id="dev-site"><SelectProValue placeholder="请选择工厂" /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="s in sites.items.value" :key="s.code" :value="s.code ?? '__none__'">
+              <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+                <NvField v-if="editingCode">
+                  <NvFieldLabel for="dev-code">设备编码</NvFieldLabel>
+                  <NvInput id="dev-code" :model-value="createForm.code" disabled />
+                </NvField>
+                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.model)">
+                  <NvFieldLabel for="dev-model">设备型号 <span class="text-destructive">*</span></NvFieldLabel>
+                  <NvInput id="dev-model" v-model="createForm.model" autocomplete="off" required />
+                  <NvFieldDescription v-if="!editingCode">编码由系统自动生成。</NvFieldDescription>
+                </NvField>
+                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.manufacturer)">
+                  <NvFieldLabel for="dev-maker">制造商 <span class="text-destructive">*</span></NvFieldLabel>
+                  <NvInput id="dev-maker" v-model="createForm.manufacturer" autocomplete="off" required />
+                </NvField>
+                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.serialNo)">
+                  <NvFieldLabel for="dev-serial">出厂序列号 <span class="text-destructive">*</span></NvFieldLabel>
+                  <NvInput id="dev-serial" v-model="createForm.serialNo" autocomplete="off" required />
+                </NvField>
+                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.assetClassCode)">
+                  <NvFieldLabel for="dev-class">设备类别 <span class="text-destructive">*</span></NvFieldLabel>
+                  <NvInput id="dev-class" v-model="createForm.assetClassCode" autocomplete="off" required />
+                  <NvFieldDescription>填写「数据字典」中维护的设备类别编码。</NvFieldDescription>
+                </NvField>
+                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.criticality)">
+                  <NvFieldLabel for="dev-criticality">关键度 <span class="text-destructive">*</span></NvFieldLabel>
+                  <NvSelect v-model="createForm.criticality">
+                    <NvSelectTrigger id="dev-criticality"><NvSelectValue /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem v-for="o in CRITICALITY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.siteCode)">
+                  <NvFieldLabel for="dev-site">所属工厂 <span class="text-destructive">*</span></NvFieldLabel>
+                  <NvSelect v-model="createForm.siteCode">
+                    <NvSelectTrigger id="dev-site"><NvSelectValue placeholder="请选择工厂" /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem v-for="s in sites.items.value" :key="s.code" :value="s.code ?? '__none__'">
                         {{ s.displayName ?? s.code }}
-                      </SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                </FieldPro>
-                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.workshopCode)">
-                  <FieldProLabel for="dev-workshop">所属车间 <span class="text-destructive">*</span></FieldProLabel>
-                  <SelectPro v-model="createForm.workshopCode">
-                    <SelectProTrigger id="dev-workshop"><SelectProValue placeholder="请选择车间" /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="w in workshopOptions" :key="w.code" :value="w.code ?? '__none__'">
+                      </NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.workshopCode)">
+                  <NvFieldLabel for="dev-workshop">所属车间 <span class="text-destructive">*</span></NvFieldLabel>
+                  <NvSelect v-model="createForm.workshopCode">
+                    <NvSelectTrigger id="dev-workshop"><NvSelectValue placeholder="请选择车间" /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem v-for="w in workshopOptions" :key="w.code" :value="w.code ?? '__none__'">
                         {{ w.displayName ?? w.code }}
-                      </SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                </FieldPro>
-                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.lineCode)">
-                  <FieldProLabel for="dev-line">所属产线 <span class="text-destructive">*</span></FieldProLabel>
-                  <SelectPro v-model="createForm.lineCode">
-                    <SelectProTrigger id="dev-line"><SelectProValue placeholder="请选择产线" /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="l in lineOptions" :key="l.code" :value="l.code ?? '__none__'">
+                      </NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.lineCode)">
+                  <NvFieldLabel for="dev-line">所属产线 <span class="text-destructive">*</span></NvFieldLabel>
+                  <NvSelect v-model="createForm.lineCode">
+                    <NvSelectTrigger id="dev-line"><NvSelectValue placeholder="请选择产线" /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem v-for="l in lineOptions" :key="l.code" :value="l.code ?? '__none__'">
                         {{ l.displayName ?? l.code }}
-                      </SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                </FieldPro>
-                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.workCenterCode)">
-                  <FieldProLabel for="dev-wc">所属工作中心 <span class="text-destructive">*</span></FieldProLabel>
-                  <SelectPro v-model="createForm.workCenterCode">
-                    <SelectProTrigger id="dev-wc"><SelectProValue placeholder="请选择工作中心" /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem v-for="w in workCenterOptions" :key="w.code" :value="w.code ?? '__none__'">
+                      </NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.workCenterCode)">
+                  <NvFieldLabel for="dev-wc">所属工作中心 <span class="text-destructive">*</span></NvFieldLabel>
+                  <NvSelect v-model="createForm.workCenterCode">
+                    <NvSelectTrigger id="dev-wc"><NvSelectValue placeholder="请选择工作中心" /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem v-for="w in workCenterOptions" :key="w.code" :value="w.code ?? '__none__'">
                         {{ w.displayName ?? w.code }}
-                      </SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                </FieldPro>
-                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.stationCode)">
-                  <FieldProLabel for="dev-station">所属工位 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="dev-station" v-model="createForm.stationCode" autocomplete="off" required />
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel for="dev-purchase-date">购置日期</FieldProLabel>
-                  <InputPro id="dev-purchase-date" v-model="createForm.purchaseDate" type="date" />
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel for="dev-purchase-cost">购置成本</FieldProLabel>
-                  <InputPro id="dev-purchase-cost" v-model="createForm.purchaseCost" type="number" min="0" step="0.01" />
-                </FieldPro>
-                <FieldPro :data-invalid="createShowErrors && Boolean(currencyValidationMessage)">
-                  <FieldProLabel for="dev-currency">币种</FieldProLabel>
-                  <InputPro id="dev-currency" v-model="createForm.purchaseCurrencyCode" autocomplete="off" maxlength="3" />
-                  <FieldProDescription v-if="createShowErrors && currencyValidationMessage">{{ currencyValidationMessage }}</FieldProDescription>
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel for="dev-warranty">保修到期</FieldProLabel>
-                  <InputPro id="dev-warranty" v-model="createForm.warrantyExpiresOn" type="date" />
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel for="dev-supplier">供应商编码</FieldProLabel>
-                  <InputPro id="dev-supplier" v-model="createForm.supplierPartnerCode" autocomplete="off" />
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel for="dev-parent">父设备编码</FieldProLabel>
-                  <InputPro id="dev-parent" v-model="createForm.parentDeviceId" autocomplete="off" />
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel for="dev-retired">退役日期</FieldProLabel>
-                  <InputPro id="dev-retired" v-model="createForm.retiredOn" type="date" />
-                </FieldPro>
-                <FieldPro orientation="horizontal" class="h-fit items-center justify-between gap-3 self-start rounded-lg border px-3 py-2 sm:col-span-2">
-                  <FieldProLabel for="dev-maintainable" class="mb-0">纳入维护计划</FieldProLabel>
-                  <CheckboxPro id="dev-maintainable" v-model:checked="createForm.maintainable" />
-                </FieldPro>
-              </FieldProGroup>
+                      </NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.stationCode)">
+                  <NvFieldLabel for="dev-station">所属工位 <span class="text-destructive">*</span></NvFieldLabel>
+                  <NvInput id="dev-station" v-model="createForm.stationCode" autocomplete="off" required />
+                </NvField>
+                <NvField>
+                  <NvFieldLabel for="dev-purchase-date">购置日期</NvFieldLabel>
+                  <NvInput id="dev-purchase-date" v-model="createForm.purchaseDate" type="date" />
+                </NvField>
+                <NvField>
+                  <NvFieldLabel for="dev-purchase-cost">购置成本</NvFieldLabel>
+                  <NvInput id="dev-purchase-cost" v-model="createForm.purchaseCost" type="number" min="0" step="0.01" />
+                </NvField>
+                <NvField :data-invalid="createShowErrors && Boolean(currencyValidationMessage)">
+                  <NvFieldLabel for="dev-currency">币种</NvFieldLabel>
+                  <NvInput id="dev-currency" v-model="createForm.purchaseCurrencyCode" autocomplete="off" maxlength="3" />
+                  <NvFieldDescription v-if="createShowErrors && currencyValidationMessage">{{ currencyValidationMessage }}</NvFieldDescription>
+                </NvField>
+                <NvField>
+                  <NvFieldLabel for="dev-warranty">保修到期</NvFieldLabel>
+                  <NvInput id="dev-warranty" v-model="createForm.warrantyExpiresOn" type="date" />
+                </NvField>
+                <NvField>
+                  <NvFieldLabel for="dev-supplier">供应商编码</NvFieldLabel>
+                  <NvInput id="dev-supplier" v-model="createForm.supplierPartnerCode" autocomplete="off" />
+                </NvField>
+                <NvField>
+                  <NvFieldLabel for="dev-parent">父设备编码</NvFieldLabel>
+                  <NvInput id="dev-parent" v-model="createForm.parentDeviceId" autocomplete="off" />
+                </NvField>
+                <NvField>
+                  <NvFieldLabel for="dev-retired">退役日期</NvFieldLabel>
+                  <NvInput id="dev-retired" v-model="createForm.retiredOn" type="date" />
+                </NvField>
+                <NvField orientation="horizontal" class="h-fit items-center justify-between gap-3 self-start rounded-lg border px-3 py-2 sm:col-span-2">
+                  <NvFieldLabel for="dev-maintainable" class="mb-0">纳入维护计划</NvFieldLabel>
+                  <NvCheckbox id="dev-maintainable" v-model:checked="createForm.maintainable" />
+                </NvField>
+              </NvFieldGroup>
               <div class="grid gap-3">
                 <div class="flex items-center justify-between gap-3">
-                  <FieldProLabel>部件结构</FieldProLabel>
-                  <ButtonPro size="sm" variant="outline" type="button" @click="addComponent">
+                  <NvFieldLabel>部件结构</NvFieldLabel>
+                  <NvButton size="sm" variant="outline" type="button" @click="addComponent">
                     <PlusIcon aria-hidden="true" />
                     添加部件
-                  </ButtonPro>
+                  </NvButton>
                 </div>
                 <div v-for="(component, index) in createForm.components" :key="index" class="grid gap-3 rounded-md border px-3 py-3 sm:grid-cols-[1fr_1fr_6rem_auto_auto]">
-                  <FieldPro>
-                    <FieldProLabel :for="`dev-component-code-${index}`">部件编码</FieldProLabel>
-                    <InputPro :id="`dev-component-code-${index}`" v-model="component.componentCode" autocomplete="off" />
-                  </FieldPro>
-                  <FieldPro>
-                    <FieldProLabel :for="`dev-component-name-${index}`">部件名称</FieldProLabel>
-                    <InputPro :id="`dev-component-name-${index}`" v-model="component.componentName" autocomplete="off" />
-                  </FieldPro>
-                  <FieldPro :data-invalid="createShowErrors && isComponentReady(component) && componentQuantity(component) <= 0">
-                    <FieldProLabel :for="`dev-component-qty-${index}`">数量</FieldProLabel>
-                    <InputPro :id="`dev-component-qty-${index}`" v-model="component.quantity" type="number" min="0.001" step="0.001" />
-                    <FieldProDescription v-if="createShowErrors && isComponentReady(component) && componentQuantity(component) <= 0">必须大于 0。</FieldProDescription>
-                  </FieldPro>
-                  <FieldPro orientation="horizontal" class="items-center gap-2 self-end pb-2">
-                    <CheckboxPro :id="`dev-component-critical-${index}`" v-model:checked="component.critical" />
-                    <FieldProLabel :for="`dev-component-critical-${index}`" class="mb-0">关键</FieldProLabel>
-                  </FieldPro>
-                  <ButtonPro class="self-end" size="icon" variant="ghost" type="button" :aria-label="`删除部件 ${index + 1}`" @click="removeComponent(index)">
+                  <NvField>
+                    <NvFieldLabel :for="`dev-component-code-${index}`">部件编码</NvFieldLabel>
+                    <NvInput :id="`dev-component-code-${index}`" v-model="component.componentCode" autocomplete="off" />
+                  </NvField>
+                  <NvField>
+                    <NvFieldLabel :for="`dev-component-name-${index}`">部件名称</NvFieldLabel>
+                    <NvInput :id="`dev-component-name-${index}`" v-model="component.componentName" autocomplete="off" />
+                  </NvField>
+                  <NvField :data-invalid="createShowErrors && isComponentReady(component) && componentQuantity(component) <= 0">
+                    <NvFieldLabel :for="`dev-component-qty-${index}`">数量</NvFieldLabel>
+                    <NvInput :id="`dev-component-qty-${index}`" v-model="component.quantity" type="number" min="0.001" step="0.001" />
+                    <NvFieldDescription v-if="createShowErrors && isComponentReady(component) && componentQuantity(component) <= 0">必须大于 0。</NvFieldDescription>
+                  </NvField>
+                  <NvField orientation="horizontal" class="items-center gap-2 self-end pb-2">
+                    <NvCheckbox :id="`dev-component-critical-${index}`" v-model:checked="component.critical" />
+                    <NvFieldLabel :for="`dev-component-critical-${index}`" class="mb-0">关键</NvFieldLabel>
+                  </NvField>
+                  <NvButton class="self-end" size="icon" variant="ghost" type="button" :aria-label="`删除部件 ${index + 1}`" @click="removeComponent(index)">
                     <Trash2Icon aria-hidden="true" />
-                  </ButtonPro>
+                  </NvButton>
                 </div>
               </div>
-              <DialogProFooter>
-                <ButtonPro type="button" variant="outline" @click="createOpen = false">取消</ButtonPro>
-                <ButtonPro type="submit" :disabled="devices.createPending.value || deviceActions.updatePending.value || editLoading">
+              <NvDialogFooter>
+                <NvButton type="button" variant="outline" @click="createOpen = false">取消</NvButton>
+                <NvButton type="submit" :disabled="devices.createPending.value || deviceActions.updatePending.value || editLoading">
                   <Spinner v-if="devices.createPending.value || deviceActions.updatePending.value" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '保存设备' }}
-                </ButtonPro>
-              </DialogProFooter>
+                </NvButton>
+              </NvDialogFooter>
             </form>
-          </DialogProContent>
-        </DialogPro>
+          </NvDialogContent>
+        </NvDialog>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <Toolbar v-model:search="keyword" search-placeholder="在当前页内筛选设备编码、名称" />
+    <NvToolbar v-model:search="keyword" search-placeholder="在当前页内筛选设备编码、名称" />
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -580,12 +580,12 @@ async function submitDevice() {
       <template #cell-stationCode="{ row }">{{ row.stationCode ?? '无' }}</template>
       <template #cell-warrantyExpiresOn="{ row }">{{ formatDate(row.warrantyExpiresOn) }}</template>
       <template #cell-active="{ row }">
-        <StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" />
+        <NvStatusBadge :value="row.active === false ? 'disabled' : 'active'" />
       </template>
       <template #cell-actions="{ row }">
         <MasterDataRowActions :row="row" entity-label="设备" :detail-fields="deviceDetailFields(row)" :actions="deviceActions" @edit="openEdit" />
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
   </BusinessLayout>
 </template>

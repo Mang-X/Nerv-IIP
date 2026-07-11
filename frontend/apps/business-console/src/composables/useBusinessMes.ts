@@ -1,6 +1,7 @@
 import {
   acceptBusinessConsoleMesShiftHandoverMutationOptions,
   assignBusinessConsoleMesDispatchTaskMutationOptions,
+  cancelBusinessConsoleMesWorkOrderMutationOptions,
   completeBusinessConsoleMesOperationTaskMutationOptions,
   confirmBusinessConsoleMesDowntimeRecoveryMutationOptions,
   convertBusinessConsoleMesPlanToWorkOrderMutationOptions,
@@ -8,8 +9,10 @@ import {
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
   createBusinessConsoleMesShiftHandoverMutationOptions,
+  createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsoleMesBatchTraceabilityQueryOptions,
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
+  getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   getBusinessConsoleMesFoundationReadinessQueryOptions,
   getBusinessConsoleMesMaterialReadinessQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
@@ -17,6 +20,8 @@ import {
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
+  listBusinessConsoleMesFinishedGoodsReceiptRequests,
+  listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesDispatchTasksQueryOptions,
   listBusinessConsoleMesDowntimeEventsQueryOptions,
   listBusinessConsoleMesCapacityImpactsQueryOptions,
@@ -48,6 +53,10 @@ import {
   type BusinessConsoleMesMaterialIssueRequestListEnvelope,
   type BusinessConsoleMesMaterialIssueRequestRow,
   type BusinessConsoleMesMaterialReadinessEnvelope,
+  type BusinessConsoleCurrentSopDocumentItem,
+  type BusinessConsoleCurrentSopDocumentsEnvelope,
+  type BusinessConsoleSopFileDownloadGrantEnvelope,
+  type BusinessConsoleSopFileDownloadGrantResponse,
   type BusinessConsoleMesOperationTaskActionRequest,
   type BusinessConsoleMesOperationTaskListEnvelope,
   type BusinessConsoleMesOperationTaskRow,
@@ -91,8 +100,30 @@ import {
 } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
+// 取消补偿预览按此页大小完整分页，直到取全该工单的全部关联单据（取消 handler 处理全部）。
+const CANCEL_PREVIEW_PAGE_SIZE = 200
 
-type MesListStatus = NonNullable<NonNullable<ListBusinessConsoleMesWorkOrdersData['query']>['status']>
+// 逐页拉取直到最后一页（返回不足一页即结束），累计全部行。任一页 fetch 失败（throwOnError:true）会向上抛，
+// 由 useQuery.error 捕获，从而让补偿预览走失败门禁（不允许在不完整数据上确认取消）。
+async function fetchAllCompensationItems<TRow>(
+  fetchPage: (skip: number, take: number) => Promise<TRow[]>,
+): Promise<TRow[]> {
+  const items: TRow[] = []
+  let skip = 0
+  for (;;) {
+    const page = await fetchPage(skip, CANCEL_PREVIEW_PAGE_SIZE)
+    items.push(...page)
+    if (page.length < CANCEL_PREVIEW_PAGE_SIZE) {
+      break
+    }
+    skip += page.length
+  }
+  return items
+}
+
+type MesListStatus = NonNullable<
+  NonNullable<ListBusinessConsoleMesWorkOrdersData['query']>['status']
+>
 
 export interface MesReadinessReasonDisplay {
   code: string
@@ -131,11 +162,13 @@ const mesReadinessReasonDisplays: Record<string, MesReadinessReasonDisplay> = {
 export function describeMesReadinessReason(reason: string): MesReadinessReasonDisplay {
   const trimmedReason = reason.trim()
   const code = trimmedReason.split(':', 1)[0]?.trim() || trimmedReason
-  return mesReadinessReasonDisplays[code] ?? {
-    code,
-    label: trimmedReason,
-    nextStep: '查看阻塞详情并按来源业务页面处理',
-  }
+  return (
+    mesReadinessReasonDisplays[code] ?? {
+      code,
+      label: trimmedReason,
+      nextStep: '查看阻塞详情并按来源业务页面处理',
+    }
+  )
 }
 
 export interface MesListFilters {
@@ -180,45 +213,55 @@ export interface MesTraceabilityFilters extends MesContextFilters {
 }
 
 function defaultFilters(): MesListFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    skip: 0,
-    take: DEFAULT_TAKE,
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      skip: 0,
+      take: DEFAULT_TAKE,
+    }),
+  )
 }
 
 function defaultContext(): MesContextFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+    }),
+  )
 }
 
 function defaultFoundationFilters(): MesFoundationReadinessFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+    }),
+  )
 }
 
 function defaultWorkOrderContext(): MesWorkOrderContext {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    workOrderId: '',
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      workOrderId: '',
+    }),
+  )
 }
 
 function defaultTraceabilityFilters(): MesTraceabilityFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    workOrderId: '',
-    batchOrSerial: '',
-    materialLotId: '',
-    mode: 'work-order',
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      workOrderId: '',
+      batchOrSerial: '',
+      materialLotId: '',
+      mode: 'work-order',
+    }),
+  )
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -289,9 +332,10 @@ function unwrapData<TData, TEnvelope extends { success?: boolean; data?: TData |
   return envelope.data ?? undefined
 }
 
-function envelopeItems<TItem, TEnvelope extends { success?: boolean; data?: { items?: TItem[] } | null }>(
-  envelope: TEnvelope | undefined,
-) {
+function envelopeItems<
+  TItem,
+  TEnvelope extends { success?: boolean; data?: { items?: TItem[] } | null },
+>(envelope: TEnvelope | undefined) {
   if (!envelope?.success) {
     return []
   }
@@ -358,9 +402,12 @@ export function useMesWorkOrders() {
   const queryCache = useQueryCache()
 
   const workOrdersQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMesWorkOrdersQueryOptions({
-      query: toListQuery(filters),
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMesWorkOrdersQueryOptions({
+        query: toListQuery(filters),
+      }),
+      filters,
+    ),
   )
 
   const createRushMutation = useMutation({
@@ -410,8 +457,20 @@ export function useMesWorkOrders() {
     recordProductionReportError: reportMutation.error,
     recordProductionReportPending: reportMutation.isLoading,
     refreshWorkOrders: () => refetchWithBusinessContext(filters, workOrdersQuery),
-    releaseWorkOrder: (workOrderId: string, body: { organizationId: string; environmentId: string; confirmWarnings: boolean; idempotencyKey: string }) =>
-      releaseMutation.mutateAsync({ path: { workOrderId }, query: { organizationId: body.organizationId, environmentId: body.environmentId }, body }),
+    releaseWorkOrder: (
+      workOrderId: string,
+      body: {
+        organizationId: string
+        environmentId: string
+        confirmWarnings: boolean
+        idempotencyKey: string
+      },
+    ) =>
+      releaseMutation.mutateAsync({
+        path: { workOrderId },
+        query: { organizationId: body.organizationId, environmentId: body.environmentId },
+        body,
+      }),
     releaseWorkOrderError: releaseMutation.error,
     releaseWorkOrderPending: releaseMutation.isLoading,
     workOrders: computed<BusinessConsoleMesWorkOrderItem[]>(() =>
@@ -428,9 +487,12 @@ export function useMesProductionPlans() {
   const queryCache = useQueryCache()
 
   const plansQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMesProductionPlansQueryOptions({
-      query: toListQuery(filters),
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMesProductionPlansQueryOptions({
+        query: toListQuery(filters),
+      }),
+      filters,
+    ),
   )
 
   const convertMutation = useMutation({
@@ -447,7 +509,14 @@ export function useMesProductionPlans() {
   return {
     convertPlanToWorkOrder: (
       productionPlanId: string,
-      body: { organizationId: string; environmentId: string; workOrderId?: string; workCenterId?: string; dueUtc?: string; idempotencyKey: string },
+      body: {
+        organizationId: string
+        environmentId: string
+        workOrderId?: string
+        workCenterId?: string
+        dueUtc?: string
+        idempotencyKey: string
+      },
     ) =>
       convertMutation.mutateAsync({
         path: { productionPlanId },
@@ -458,9 +527,10 @@ export function useMesProductionPlans() {
     convertPlanToWorkOrderPending: convertMutation.isLoading,
     filters,
     productionPlans: computed<BusinessConsoleMesProductionPlanRow[]>(() =>
-      envelopeItems<BusinessConsoleMesProductionPlanRow, BusinessConsoleMesProductionPlanListEnvelope>(
-        plansQuery.data.value,
-      ),
+      envelopeItems<
+        BusinessConsoleMesProductionPlanRow,
+        BusinessConsoleMesProductionPlanListEnvelope
+      >(plansQuery.data.value),
     ),
     productionPlansError: plansQuery.error,
     productionPlansPending: plansQuery.isLoading,
@@ -470,13 +540,15 @@ export function useMesProductionPlans() {
 }
 
 export function useMesProductionPlanReadiness(productionPlanId = '') {
-  const filters = bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    productionPlanId,
-  }))
-  const readinessEnabled = computed(() =>
-    hasBusinessContext(filters) && isNonEmpty(filters.productionPlanId),
+  const filters = bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      productionPlanId,
+    }),
+  )
+  const readinessEnabled = computed(
+    () => hasBusinessContext(filters) && isNonEmpty(filters.productionPlanId),
   )
 
   const readinessQuery = useQuery(() => ({
@@ -497,7 +569,8 @@ export function useMesProductionPlanReadiness(productionPlanId = '') {
     ),
     planReadinessError: readinessQuery.error,
     planReadinessPending: readinessQuery.isLoading,
-    refreshPlanReadiness: () => readinessEnabled.value ? readinessQuery.refetch() : Promise.resolve(),
+    refreshPlanReadiness: () =>
+      readinessEnabled.value ? readinessQuery.refetch() : Promise.resolve(),
   }
 }
 
@@ -505,9 +578,12 @@ export function useMesFoundationReadiness() {
   const filters = defaultFoundationFilters()
 
   const readinessQuery = useQuery(() =>
-    withBusinessContextEnabled(getBusinessConsoleMesFoundationReadinessQueryOptions({
-      query: toFoundationQuery(filters),
-    }), filters),
+    withBusinessContextEnabled(
+      getBusinessConsoleMesFoundationReadinessQueryOptions({
+        query: toFoundationQuery(filters),
+      }),
+      filters,
+    ),
   )
 
   return {
@@ -528,9 +604,12 @@ export function useMesOverview() {
   const filters = defaultContext()
 
   const overviewQuery = useQuery(() =>
-    withBusinessContextEnabled(getBusinessConsoleMesOverviewQueryOptions({
-      query: toContextQuery(filters),
-    }), filters),
+    withBusinessContextEnabled(
+      getBusinessConsoleMesOverviewQueryOptions({
+        query: toContextQuery(filters),
+      }),
+      filters,
+    ),
   )
 
   const overview = computed(() =>
@@ -554,7 +633,14 @@ export function useMesOverview() {
 
 export function useMesWorkOrderDetail() {
   const filters = defaultWorkOrderContext()
-  const detailEnabled = computed(() => hasBusinessContext(filters) && isNonEmpty(filters.workOrderId))
+  const queryCache = useQueryCache()
+  const detailEnabled = computed(
+    () => hasBusinessContext(filters) && isNonEmpty(filters.workOrderId),
+  )
+
+  // 完工入库请求预览只在打开「取消工单」补偿预览时才拉取，避免每次进详情页多打一次列表请求。
+  const cancelPreviewRequested = shallowRef(false)
+  const receiptPreviewEnabled = computed(() => detailEnabled.value && cancelPreviewRequested.value)
 
   const detailQuery = useQuery(() => ({
     ...getBusinessConsoleMesWorkOrderDetailQueryOptions({
@@ -572,15 +658,153 @@ export function useMesWorkOrderDetail() {
     enabled: detailEnabled.value,
   }))
 
+  // 服务端按 workOrderId 过滤（facade/底层 MES 均支持）+ 完整分页取全。取消 handler 会处理该工单的全部
+  // 关联单据，预览与 toast 也必须取全，故不能固定 take/只取一页——否则单工单 >一页 时仍会少算。
+  const receiptQuery = useQuery(() => {
+    const scope = {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      workOrderId: filters.workOrderId,
+    }
+    return {
+      key: listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions({
+        query: { ...scope, skip: 0, take: CANCEL_PREVIEW_PAGE_SIZE },
+      }).key,
+      query: async () => {
+        const items = await fetchAllCompensationItems<BusinessConsoleMesReceiptRequestRow>(
+          async (skip, take) => {
+            const { data } = await listBusinessConsoleMesFinishedGoodsReceiptRequests({
+              query: { ...scope, skip, take },
+              throwOnError: true,
+            })
+            // throwOnError 只处理非 2xx；服务可能以 HTTP 200 返回 success:false 信封。此时必须抛错，
+            // 让 useQuery.error → cancelPreviewError 生效并禁用确认，而非合成空页 + success:true 放行破坏性取消。
+            if (data?.success !== true || !data.data) {
+              throw new Error(data?.message ?? '完工入库补偿预览请求失败')
+            }
+            return data.data.items ?? []
+          },
+        )
+        return {
+          success: true,
+          data: { items, total: items.length },
+        } as BusinessConsoleMesReceiptRequestListEnvelope
+      },
+      enabled: receiptPreviewEnabled.value,
+    }
+  })
+
+  // 领料申请是取消补偿的权威来源：取消 handler 遍历本工单的领料申请——已收料→退料指引，未收料→释放，
+  // 与齐套快照（material_requirements，仅在有已发布 MBOM 时才有）解耦，无 MBOM 的工单也能正确汇总。
+  const materialIssueQuery = useQuery(() => {
+    const scope = {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      workOrderId: filters.workOrderId,
+    }
+    return {
+      key: listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
+        query: { ...scope, skip: 0, take: CANCEL_PREVIEW_PAGE_SIZE },
+      }).key,
+      query: async () => {
+        const items = await fetchAllCompensationItems<BusinessConsoleMesMaterialIssueRequestRow>(
+          async (skip, take) => {
+            const { data } = await listBusinessConsoleMesMaterialIssueRequests({
+              query: { ...scope, skip, take },
+              throwOnError: true,
+            })
+            // 同上：HTTP 200 + success:false 也必须抛错，避免在失败/空预览上放行破坏性取消。
+            if (data?.success !== true || !data.data) {
+              throw new Error(data?.message ?? '领料补偿预览请求失败')
+            }
+            return data.data.items ?? []
+          },
+        )
+        return {
+          success: true,
+          data: { items, total: items.length },
+        } as BusinessConsoleMesMaterialIssueRequestListEnvelope
+      },
+      enabled: receiptPreviewEnabled.value,
+    }
+  })
+
+  const cancelMutation = useMutation({
+    ...cancelBusinessConsoleMesWorkOrderMutationOptions(),
+    onSuccess() {
+      void invalidateMesQueries(queryCache, [
+        // 本域：取消改动工单及其派生读模型（详情/列表/概览/在制/工序/派工/齐套/领料/完工入库）
+        'getBusinessConsoleMesWorkOrderDetail',
+        'listBusinessConsoleMesWorkOrders',
+        'getBusinessConsoleMesOverview',
+        'getBusinessConsoleMesWipSummary',
+        'listBusinessConsoleMesOperationTasks',
+        'listBusinessConsoleMesDispatchTasks',
+        'getBusinessConsoleMesMaterialReadiness',
+        'listBusinessConsoleMesMaterialIssueRequests',
+        'listBusinessConsoleMesFinishedGoodsReceiptRequests',
+        // 跨域（A1 §4.2 跨域刷新首个落地）：预留释放后库存可用量恢复，库存可用量读面必须失效
+        'getBusinessConsoleInventoryAvailability',
+      ]).catch(ignoreBackgroundError)
+    },
+  })
+
   return {
+    activateCancelPreview: () => {
+      cancelPreviewRequested.value = true
+    },
+    cancelWorkOrder: (reason: string) =>
+      cancelMutation.mutateAsync({
+        path: { workOrderId: filters.workOrderId },
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        body: { reason },
+      }),
+    cancelWorkOrderError: cancelMutation.error,
+    cancelWorkOrderPending: cancelMutation.isLoading,
+    // 补偿预览两项查询的加载/失败/就绪态，供破坏性确认按钮门禁：两项都成功拿到数据前禁用确认，失败可重试。
+    cancelPreviewPending: computed(
+      () =>
+        receiptPreviewEnabled.value &&
+        (receiptQuery.isLoading.value || materialIssueQuery.isLoading.value),
+    ),
+    cancelPreviewError: computed(() => receiptQuery.error.value ?? materialIssueQuery.error.value),
+    cancelPreviewReady: computed(
+      () =>
+        receiptPreviewEnabled.value &&
+        !receiptQuery.isLoading.value &&
+        !materialIssueQuery.isLoading.value &&
+        receiptQuery.error.value == null &&
+        materialIssueQuery.error.value == null &&
+        receiptQuery.data.value !== undefined &&
+        materialIssueQuery.data.value !== undefined,
+    ),
+    retryCancelPreview: () => {
+      void receiptQuery.refetch()
+      void materialIssueQuery.refetch()
+    },
     detail: computed<BusinessConsoleMesWorkOrderDetailResponse | undefined>(() =>
-      unwrapData<BusinessConsoleMesWorkOrderDetailResponse, BusinessConsoleMesWorkOrderDetailEnvelope>(
-        detailQuery.data.value,
-      ),
+      unwrapData<
+        BusinessConsoleMesWorkOrderDetailResponse,
+        BusinessConsoleMesWorkOrderDetailEnvelope
+      >(detailQuery.data.value),
     ),
     detailError: detailQuery.error,
     detailPending: detailQuery.isLoading,
     filters,
+    // 按关联单据前端汇总：该工单下未终结的完工入库请求（后端暂无取消预览端点，PR 已注明降级实现）
+    finishedGoodsReceiptRequests: computed<BusinessConsoleMesReceiptRequestRow[]>(() =>
+      envelopeItems<
+        BusinessConsoleMesReceiptRequestRow,
+        BusinessConsoleMesReceiptRequestListEnvelope
+      >(receiptQuery.data.value).filter((row) => row.workOrderId === filters.workOrderId),
+    ),
+    // 本工单的领料申请（补偿预览的预留释放/退料指引权威来源，PR 已注明降级实现）
+    materialIssueRequests: computed<BusinessConsoleMesMaterialIssueRequestRow[]>(() =>
+      envelopeItems<
+        BusinessConsoleMesMaterialIssueRequestRow,
+        BusinessConsoleMesMaterialIssueRequestListEnvelope
+      >(materialIssueQuery.data.value).filter((row) => row.workOrderId === filters.workOrderId),
+    ),
     materialReadiness: computed(() =>
       unwrapData<
         NonNullable<BusinessConsoleMesMaterialReadinessEnvelope['data']>,
@@ -589,8 +813,9 @@ export function useMesWorkOrderDetail() {
     ),
     materialReadinessError: materialQuery.error,
     materialReadinessPending: materialQuery.isLoading,
-    refreshDetail: () => detailEnabled.value ? detailQuery.refetch() : Promise.resolve(),
-    refreshMaterialReadiness: () => detailEnabled.value ? materialQuery.refetch() : Promise.resolve(),
+    refreshDetail: () => (detailEnabled.value ? detailQuery.refetch() : Promise.resolve()),
+    refreshMaterialReadiness: () =>
+      detailEnabled.value ? materialQuery.refetch() : Promise.resolve(),
   }
 }
 
@@ -599,25 +824,44 @@ export function useMesOperationTasks() {
   const queryCache = useQueryCache()
 
   const operationTasksQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMesOperationTasksQueryOptions({
-      query: toListQuery(filters),
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMesOperationTasksQueryOptions({
+        query: toListQuery(filters),
+      }),
+      filters,
+    ),
   )
   const startMutation = useMutation({
     ...startBusinessConsoleMesOperationTaskMutationOptions(),
-    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesOperationTasks', 'getBusinessConsoleMesWipSummary']).catch(ignoreBackgroundError),
+    onSuccess: () =>
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesOperationTasks',
+        'getBusinessConsoleMesWipSummary',
+      ]).catch(ignoreBackgroundError),
   })
   const pauseMutation = useMutation({
     ...pauseBusinessConsoleMesOperationTaskMutationOptions(),
-    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesOperationTasks', 'getBusinessConsoleMesWipSummary']).catch(ignoreBackgroundError),
+    onSuccess: () =>
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesOperationTasks',
+        'getBusinessConsoleMesWipSummary',
+      ]).catch(ignoreBackgroundError),
   })
   const resumeMutation = useMutation({
     ...resumeBusinessConsoleMesOperationTaskMutationOptions(),
-    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesOperationTasks', 'getBusinessConsoleMesWipSummary']).catch(ignoreBackgroundError),
+    onSuccess: () =>
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesOperationTasks',
+        'getBusinessConsoleMesWipSummary',
+      ]).catch(ignoreBackgroundError),
   })
   const completeMutation = useMutation({
     ...completeBusinessConsoleMesOperationTaskMutationOptions(),
-    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesOperationTasks', 'getBusinessConsoleMesWipSummary']).catch(ignoreBackgroundError),
+    onSuccess: () =>
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesOperationTasks',
+        'getBusinessConsoleMesWipSummary',
+      ]).catch(ignoreBackgroundError),
   })
 
   function operationActionBody(
@@ -634,23 +878,111 @@ export function useMesOperationTasks() {
 
   return {
     filters,
-    completeOperationTask: (operationTaskId: string, context: MesContextFilters, body: BusinessConsoleMesOperationTaskActionRequest) =>
-      completeMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
+    completeOperationTask: (
+      operationTaskId: string,
+      context: MesContextFilters,
+      body: BusinessConsoleMesOperationTaskActionRequest,
+    ) => completeMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
     operationTasks: computed<BusinessConsoleMesOperationTaskRow[]>(() =>
-      envelopeItems<BusinessConsoleMesOperationTaskRow, BusinessConsoleMesOperationTaskListEnvelope>(
-        operationTasksQuery.data.value,
-      ),
+      envelopeItems<
+        BusinessConsoleMesOperationTaskRow,
+        BusinessConsoleMesOperationTaskListEnvelope
+      >(operationTasksQuery.data.value),
     ),
     operationTasksError: operationTasksQuery.error,
     operationTasksPending: operationTasksQuery.isLoading,
     operationTasksTotal: computed(() => envelopeTotal(operationTasksQuery.data.value)),
-    pauseOperationTask: (operationTaskId: string, context: MesContextFilters, body: BusinessConsoleMesOperationTaskActionRequest) =>
-      pauseMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
+    pauseOperationTask: (
+      operationTaskId: string,
+      context: MesContextFilters,
+      body: BusinessConsoleMesOperationTaskActionRequest,
+    ) => pauseMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
     refreshOperationTasks: () => refetchWithBusinessContext(filters, operationTasksQuery),
-    resumeOperationTask: (operationTaskId: string, context: MesContextFilters, body: BusinessConsoleMesOperationTaskActionRequest) =>
-      resumeMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
-    startOperationTask: (operationTaskId: string, context: MesContextFilters, body: BusinessConsoleMesOperationTaskActionRequest) =>
-      startMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
+    resumeOperationTask: (
+      operationTaskId: string,
+      context: MesContextFilters,
+      body: BusinessConsoleMesOperationTaskActionRequest,
+    ) => resumeMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
+    startOperationTask: (
+      operationTaskId: string,
+      context: MesContextFilters,
+      body: BusinessConsoleMesOperationTaskActionRequest,
+    ) => startMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
+  }
+}
+
+export interface MesCurrentOperationSopFilters extends BusinessContextFields {
+  operationCode?: string
+  workCenterCode?: string | null
+  routingCode?: string | null
+  routingRevision?: string | null
+  asOfDate?: string | null
+}
+
+export function useMesCurrentOperationSops() {
+  const filters = bindBusinessContext(
+    reactive<MesCurrentOperationSopFilters>({
+      organizationId: '',
+      environmentId: '',
+      operationCode: '',
+      workCenterCode: '',
+      routingCode: '',
+      routingRevision: '',
+      asOfDate: '',
+    }),
+  )
+
+  const enabled = computed(
+    () => hasBusinessContext(filters) && Boolean(filters.operationCode?.trim()),
+  )
+  const sopsQuery = useQuery(() => ({
+    ...getBusinessConsoleMesCurrentOperationSopsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        operationCode: filters.operationCode?.trim() ?? '',
+        ...optionalQuery('workCenterCode', filters.workCenterCode?.trim()),
+        ...optionalQuery('routingCode', filters.routingCode?.trim()),
+        ...optionalQuery('routingRevision', filters.routingRevision?.trim()),
+        ...optionalQuery('asOfDate', filters.asOfDate?.trim()),
+      },
+    }),
+    enabled: enabled.value,
+  }))
+  const downloadGrantMutation = useMutation(
+    createBusinessConsoleSopFileDownloadGrantMutationOptions(),
+  )
+
+  async function createSopFileDownloadGrant(
+    fileId: string,
+  ): Promise<BusinessConsoleSopFileDownloadGrantResponse | null> {
+    const envelope = await downloadGrantMutation.mutateAsync({
+      path: { fileId },
+      body: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+      },
+    })
+    return (
+      unwrapData<
+        BusinessConsoleSopFileDownloadGrantResponse,
+        BusinessConsoleSopFileDownloadGrantEnvelope
+      >(envelope as BusinessConsoleSopFileDownloadGrantEnvelope) ?? null
+    )
+  }
+
+  return {
+    filters,
+    currentSops: computed<BusinessConsoleCurrentSopDocumentItem[]>(() =>
+      envelopeItems<
+        BusinessConsoleCurrentSopDocumentItem,
+        BusinessConsoleCurrentSopDocumentsEnvelope
+      >(sopsQuery.data.value as BusinessConsoleCurrentSopDocumentsEnvelope | undefined),
+    ),
+    currentSopsError: sopsQuery.error,
+    currentSopsPending: sopsQuery.isLoading,
+    refreshCurrentSops: () => (enabled.value ? sopsQuery.refetch() : Promise.resolve()),
+    createSopFileDownloadGrant,
   }
 }
 
@@ -659,20 +991,30 @@ export function useMesMaterialIssueRequests() {
   const queryCache = useQueryCache()
 
   const requestsQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
-      query: toListQuery(filters),
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
+        query: toListQuery(filters),
+      }),
+      filters,
+    ),
   )
 
   const createRequestMutation = useMutation({
     ...createBusinessConsoleMesMaterialIssueRequestMutationOptions(),
     onSuccess() {
-      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests', 'getBusinessConsoleMesMaterialReadiness']).catch(ignoreBackgroundError)
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesMaterialIssueRequests',
+        'getBusinessConsoleMesMaterialReadiness',
+      ]).catch(ignoreBackgroundError)
     },
   })
 
   return {
-    createMaterialIssueRequest: (workOrderId: string, context: MesContextFilters, body: BusinessConsoleMesCreateMaterialIssueRequest) =>
+    createMaterialIssueRequest: (
+      workOrderId: string,
+      context: MesContextFilters,
+      body: BusinessConsoleMesCreateMaterialIssueRequest,
+    ) =>
       createRequestMutation.mutateAsync({
         path: { workOrderId },
         query: { organizationId: context.organizationId, environmentId: context.environmentId },
@@ -681,9 +1023,10 @@ export function useMesMaterialIssueRequests() {
     createMaterialIssueRequestPending: createRequestMutation.isLoading,
     filters,
     materialIssueRequests: computed<BusinessConsoleMesMaterialIssueRequestRow[]>(() =>
-      envelopeItems<BusinessConsoleMesMaterialIssueRequestRow, BusinessConsoleMesMaterialIssueRequestListEnvelope>(
-        requestsQuery.data.value,
-      ),
+      envelopeItems<
+        BusinessConsoleMesMaterialIssueRequestRow,
+        BusinessConsoleMesMaterialIssueRequestListEnvelope
+      >(requestsQuery.data.value),
     ),
     materialIssueRequestsError: requestsQuery.error,
     materialIssueRequestsPending: requestsQuery.isLoading,
@@ -696,17 +1039,34 @@ export function useMesDispatchTasks() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
   const dispatchQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMesDispatchTasksQueryOptions({
-      query: toListQuery(filters),
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMesDispatchTasksQueryOptions({
+        query: toListQuery(filters),
+      }),
+      filters,
+    ),
   )
   const assignMutation = useMutation({
     ...assignBusinessConsoleMesDispatchTaskMutationOptions(),
-    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesDispatchTasks', 'listBusinessConsoleMesOperationTasks']).catch(ignoreBackgroundError),
+    onSuccess: () =>
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesDispatchTasks',
+        'listBusinessConsoleMesOperationTasks',
+      ]).catch(ignoreBackgroundError),
   })
 
   return {
-    assignDispatchTask: (operationTaskId: string, body: { organizationId: string; environmentId: string; assignedUserId?: string; deviceAssetId?: string; shiftId?: string; idempotencyKey: string }) =>
+    assignDispatchTask: (
+      operationTaskId: string,
+      body: {
+        organizationId: string
+        environmentId: string
+        assignedUserId?: string
+        deviceAssetId?: string
+        shiftId?: string
+        idempotencyKey: string
+      },
+    ) =>
       assignMutation.mutateAsync({
         path: { operationTaskId },
         query: { organizationId: body.organizationId, environmentId: body.environmentId },
@@ -730,9 +1090,12 @@ export function useMesWipSummary() {
   const filters = defaultFilters()
 
   const wipQuery = useQuery(() =>
-    withBusinessContextEnabled(getBusinessConsoleMesWipSummaryQueryOptions({
-      query: toListQuery(filters),
-    }), filters),
+    withBusinessContextEnabled(
+      getBusinessConsoleMesWipSummaryQueryOptions({
+        query: toListQuery(filters),
+      }),
+      filters,
+    ),
   )
 
   return {
@@ -753,9 +1116,12 @@ export function useMesProductionReports() {
   const filters = defaultFilters()
 
   const reportsQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMesProductionReportsQueryOptions({
-      query: toListQueryWithoutStatus(filters),
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMesProductionReportsQueryOptions({
+        query: toListQueryWithoutStatus(filters),
+      }),
+      filters,
+    ),
   )
 
   return {
@@ -778,9 +1144,12 @@ export function useMesFinishedGoodsReceipts() {
   const queryCache = useQueryCache()
 
   const receiptsQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions({
-      query: toListQuery(filters),
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions({
+        query: toListQuery(filters),
+      }),
+      filters,
+    ),
   )
 
   const createReceiptMutation = useMutation({
@@ -800,9 +1169,10 @@ export function useMesFinishedGoodsReceipts() {
     createReceiptRequestPending: createReceiptMutation.isLoading,
     filters,
     receiptRequests: computed<BusinessConsoleMesReceiptRequestRow[]>(() =>
-      envelopeItems<BusinessConsoleMesReceiptRequestRow, BusinessConsoleMesReceiptRequestListEnvelope>(
-        receiptsQuery.data.value,
-      ),
+      envelopeItems<
+        BusinessConsoleMesReceiptRequestRow,
+        BusinessConsoleMesReceiptRequestListEnvelope
+      >(receiptsQuery.data.value),
     ),
     receiptRequestsError: receiptsQuery.error,
     receiptRequestsPending: receiptsQuery.isLoading,
@@ -815,26 +1185,34 @@ export function useMesQualityContext() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
   const qualityQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMesRelatedQualityItemsQueryOptions({
-      query: toListQuery(filters),
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMesRelatedQualityItemsQueryOptions({
+        query: toListQuery(filters),
+      }),
+      filters,
+    ),
   )
   const defectMutation = useMutation({
     ...recordBusinessConsoleMesDefectMutationOptions(),
-    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesRelatedQualityItems']).catch(ignoreBackgroundError),
+    onSuccess: () =>
+      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesRelatedQualityItems']).catch(
+        ignoreBackgroundError,
+      ),
   })
 
   return {
     filters,
     qualityItems: computed<BusinessConsoleMesRelatedQualityItemRow[]>(() =>
-      envelopeItems<BusinessConsoleMesRelatedQualityItemRow, BusinessConsoleMesRelatedQualityItemListEnvelope>(
-        qualityQuery.data.value,
-      ),
+      envelopeItems<
+        BusinessConsoleMesRelatedQualityItemRow,
+        BusinessConsoleMesRelatedQualityItemListEnvelope
+      >(qualityQuery.data.value),
     ),
     qualityItemsError: qualityQuery.error,
     qualityItemsPending: qualityQuery.isLoading,
     qualityItemsTotal: computed(() => envelopeTotal(qualityQuery.data.value)),
-    recordDefect: (body: BusinessConsoleMesRecordDefectRequest) => defectMutation.mutateAsync({ body }),
+    recordDefect: (body: BusinessConsoleMesRecordDefectRequest) =>
+      defectMutation.mutateAsync({ body }),
     recordDefectPending: defectMutation.isLoading,
     refreshQualityItems: () => refetchWithBusinessContext(filters, qualityQuery),
   }
@@ -846,32 +1224,53 @@ export function useMesDowntimeEvents() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
   const downtimeQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMesDowntimeEventsQueryOptions({
-      query: toListQuery(filters),
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMesDowntimeEventsQueryOptions({
+        query: toListQuery(filters),
+      }),
+      filters,
+    ),
   )
   const recordMutation = useMutation({
     ...recordBusinessConsoleMesDowntimeEventMutationOptions(),
-    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesDowntimeEvents', 'listBusinessConsoleMesCapacityImpacts']).catch(ignoreBackgroundError),
+    onSuccess: () =>
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesDowntimeEvents',
+        'listBusinessConsoleMesCapacityImpacts',
+      ]).catch(ignoreBackgroundError),
   })
   const recoverMutation = useMutation({
     ...confirmBusinessConsoleMesDowntimeRecoveryMutationOptions(),
-    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesDowntimeEvents', 'listBusinessConsoleMesCapacityImpacts']).catch(ignoreBackgroundError),
+    onSuccess: () =>
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesDowntimeEvents',
+        'listBusinessConsoleMesCapacityImpacts',
+      ]).catch(ignoreBackgroundError),
   })
 
   return {
     downtimeEvents: computed<BusinessConsoleMesDowntimeEventRow[]>(() =>
-      envelopeItems<BusinessConsoleMesDowntimeEventRow, BusinessConsoleMesDowntimeEventListEnvelope>(
-        downtimeQuery.data.value,
-      ),
+      envelopeItems<
+        BusinessConsoleMesDowntimeEventRow,
+        BusinessConsoleMesDowntimeEventListEnvelope
+      >(downtimeQuery.data.value),
     ),
     downtimeEventsError: downtimeQuery.error,
     downtimeEventsPending: downtimeQuery.isLoading,
     downtimeEventsTotal: computed(() => envelopeTotal(downtimeQuery.data.value)),
     filters,
-    recordDowntimeEvent: (body: BusinessConsoleMesRecordDowntimeEventRequest) => recordMutation.mutateAsync({ body }),
+    recordDowntimeEvent: (body: BusinessConsoleMesRecordDowntimeEventRequest) =>
+      recordMutation.mutateAsync({ body }),
     recordDowntimeEventPending: recordMutation.isLoading,
-    recoverDowntimeEvent: (downtimeEventId: string, body: { organizationId: string; environmentId: string; recoveredAtUtc: string; idempotencyKey: string }) =>
+    recoverDowntimeEvent: (
+      downtimeEventId: string,
+      body: {
+        organizationId: string
+        environmentId: string
+        recoveredAtUtc: string
+        idempotencyKey: string
+      },
+    ) =>
       recoverMutation.mutateAsync({
         path: { downtimeEventId },
         query: { organizationId: body.organizationId, environmentId: body.environmentId },
@@ -886,32 +1285,46 @@ export function useMesShiftHandovers() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
   const handoversQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMesShiftHandoversQueryOptions({
-      query: toListQuery(filters),
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMesShiftHandoversQueryOptions({
+        query: toListQuery(filters),
+      }),
+      filters,
+    ),
   )
   const createMutation = useMutation({
     ...createBusinessConsoleMesShiftHandoverMutationOptions(),
-    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesShiftHandovers']).catch(ignoreBackgroundError),
+    onSuccess: () =>
+      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesShiftHandovers']).catch(
+        ignoreBackgroundError,
+      ),
   })
   const acceptMutation = useMutation({
     ...acceptBusinessConsoleMesShiftHandoverMutationOptions(),
-    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesShiftHandovers']).catch(ignoreBackgroundError),
+    onSuccess: () =>
+      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesShiftHandovers']).catch(
+        ignoreBackgroundError,
+      ),
   })
 
   return {
-    acceptShiftHandover: (handoverId: string, body: { organizationId: string; environmentId: string; idempotencyKey: string }) =>
+    acceptShiftHandover: (
+      handoverId: string,
+      body: { organizationId: string; environmentId: string; idempotencyKey: string },
+    ) =>
       acceptMutation.mutateAsync({
         path: { handoverId },
         query: { organizationId: body.organizationId, environmentId: body.environmentId },
         body,
       }),
-    createShiftHandover: (body: BusinessConsoleMesCreateShiftHandoverRequest) => createMutation.mutateAsync({ body }),
+    createShiftHandover: (body: BusinessConsoleMesCreateShiftHandoverRequest) =>
+      createMutation.mutateAsync({ body }),
     filters,
     handovers: computed<BusinessConsoleMesShiftHandoverRow[]>(() =>
-      envelopeItems<BusinessConsoleMesShiftHandoverRow, BusinessConsoleMesShiftHandoverListEnvelope>(
-        handoversQuery.data.value,
-      ),
+      envelopeItems<
+        BusinessConsoleMesShiftHandoverRow,
+        BusinessConsoleMesShiftHandoverListEnvelope
+      >(handoversQuery.data.value),
     ),
     handoversError: handoversQuery.error,
     handoversPending: handoversQuery.isLoading,
@@ -922,14 +1335,21 @@ export function useMesShiftHandovers() {
 
 export function useMesTraceability() {
   const filters = defaultTraceabilityFilters()
-  const workOrderEnabled = computed(() =>
-    hasBusinessContext(filters) && filters.mode === 'work-order' && isNonEmpty(filters.workOrderId),
+  const workOrderEnabled = computed(
+    () =>
+      hasBusinessContext(filters) &&
+      filters.mode === 'work-order' &&
+      isNonEmpty(filters.workOrderId),
   )
-  const batchEnabled = computed(() =>
-    hasBusinessContext(filters) && filters.mode === 'batch' && isNonEmpty(filters.batchOrSerial),
+  const batchEnabled = computed(
+    () =>
+      hasBusinessContext(filters) && filters.mode === 'batch' && isNonEmpty(filters.batchOrSerial),
   )
-  const materialLotEnabled = computed(() =>
-    hasBusinessContext(filters) && filters.mode === 'material-lot' && isNonEmpty(filters.materialLotId),
+  const materialLotEnabled = computed(
+    () =>
+      hasBusinessContext(filters) &&
+      filters.mode === 'material-lot' &&
+      isNonEmpty(filters.materialLotId),
   )
   const workOrderQuery = useQuery(() => ({
     ...getBusinessConsoleMesWorkOrderTraceabilityQueryOptions({
@@ -992,16 +1412,20 @@ export function useMesCapacityImpacts() {
   const filters = defaultFilters()
 
   const capacityQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMesCapacityImpactsQueryOptions({
-      query: toListQuery(filters),
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMesCapacityImpactsQueryOptions({
+        query: toListQuery(filters),
+      }),
+      filters,
+    ),
   )
 
   return {
     capacityImpacts: computed<BusinessConsoleMesCapacityImpactRow[]>(() =>
-      envelopeItems<BusinessConsoleMesCapacityImpactRow, BusinessConsoleMesCapacityImpactListEnvelope>(
-        capacityQuery.data.value,
-      ),
+      envelopeItems<
+        BusinessConsoleMesCapacityImpactRow,
+        BusinessConsoleMesCapacityImpactListEnvelope
+      >(capacityQuery.data.value),
     ),
     capacityImpactsError: capacityQuery.error,
     capacityImpactsPending: capacityQuery.isLoading,

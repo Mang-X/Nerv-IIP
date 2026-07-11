@@ -3,9 +3,12 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
+  cancelBusinessConsoleMesWorkOrderMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
+  createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsoleMesBatchTraceabilityQueryOptions,
+  getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   getBusinessConsoleMesFoundationReadinessQueryOptions,
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
@@ -14,7 +17,9 @@ import {
   listBusinessConsoleMesCapacityImpactsQueryOptions,
   listBusinessConsoleMesDispatchTasksQueryOptions,
   listBusinessConsoleMesDowntimeEventsQueryOptions,
+  listBusinessConsoleMesFinishedGoodsReceiptRequests,
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
+  listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesProductionPlansQueryOptions,
@@ -31,6 +36,7 @@ import {
   useMesDowntimeEvents,
   useMesFoundationReadiness,
   useMesFinishedGoodsReceipts,
+  useMesCurrentOperationSops,
   useMesMaterialIssueRequests,
   useMesOperationTasks,
   useMesOverview,
@@ -41,6 +47,7 @@ import {
   useMesShiftHandovers,
   useMesTraceability,
   useMesWipSummary,
+  useMesWorkOrderDetail,
   useMesWorkOrders,
 } from './useBusinessMes'
 import { useBusinessContextStore } from '@/stores/businessContext'
@@ -60,6 +67,12 @@ vi.mock('@nerv-iip/api-client', () => ({
     })),
   })),
   assignBusinessConsoleMesDispatchTaskMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  cancelBusinessConsoleMesWorkOrderMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
@@ -107,8 +120,25 @@ vi.mock('@nerv-iip/api-client', () => ({
       data: vars.body,
     })),
   })),
+  createBusinessConsoleSopFileDownloadGrantMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: {
+        fileId: vars.path.fileId,
+        downloadUrl: '/api/business-console/v1/files/download-grants/grant-sop/content',
+        downloadHeaders: {
+          'X-Organization-Id': vars.body.organizationId,
+          'X-Environment-Id': vars.body.environmentId,
+        },
+      },
+    })),
+  })),
   getBusinessConsoleMesBatchTraceabilityQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesBatchTraceability' }],
+    query: vi.fn(),
+  })),
+  getBusinessConsoleMesCurrentOperationSopsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesCurrentOperationSops' }],
     query: vi.fn(),
   })),
   getBusinessConsoleMesCapacityImpactsQueryOptions: vi.fn(() => ({
@@ -166,6 +196,13 @@ vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesMaterialIssueRequests' }],
     query: vi.fn(),
+  })),
+  // 原始 fetch fn（供完整分页），默认返回空页；分页测试用 mockImplementation 覆盖成多页。
+  listBusinessConsoleMesFinishedGoodsReceiptRequests: vi.fn(async () => ({
+    data: { success: true, data: { items: [], total: 0 } },
+  })),
+  listBusinessConsoleMesMaterialIssueRequests: vi.fn(async () => ({
+    data: { success: true, data: { items: [], total: 0 } },
   })),
   listBusinessConsoleMesOperationTasksQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesOperationTasks' }],
@@ -378,12 +415,29 @@ describe('business MES composables', () => {
     useMesWipSummary()
     useMesCapacityImpacts()
 
-    expect(coladaState.queryFactoriesById.get('listBusinessConsoleMesWorkOrders')?.()).toMatchObject({ enabled: false })
-    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesOverview')?.()).toMatchObject({ enabled: false })
-    expect(coladaState.queryFactoriesById.get('listBusinessConsoleMesProductionPlans')?.()).toMatchObject({ enabled: false })
-    expect(coladaState.queryFactoriesById.get('listBusinessConsoleMesOperationTasks')?.()).toMatchObject({ enabled: false })
-    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesWipSummary')?.()).toMatchObject({ enabled: false })
-    expect(coladaState.queryFactoriesById.get('listBusinessConsoleMesCapacityImpacts')?.()).toMatchObject({ enabled: false })
+    expect(
+      coladaState.queryFactoriesById.get('listBusinessConsoleMesWorkOrders')?.(),
+    ).toMatchObject({ enabled: false })
+    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesOverview')?.()).toMatchObject({
+      enabled: false,
+    })
+    expect(
+      coladaState.queryFactoriesById.get('listBusinessConsoleMesProductionPlans')?.(),
+    ).toMatchObject({ enabled: false })
+    expect(
+      coladaState.queryFactoriesById.get('listBusinessConsoleMesOperationTasks')?.(),
+    ).toMatchObject({ enabled: false })
+    const sops = useMesCurrentOperationSops()
+    expect(
+      coladaState.queryFactoriesById.get('getBusinessConsoleMesCurrentOperationSops')?.(),
+    ).toMatchObject({ enabled: false })
+    expect(sops.currentSops.value).toEqual([])
+    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesWipSummary')?.()).toMatchObject(
+      { enabled: false },
+    )
+    expect(
+      coladaState.queryFactoriesById.get('listBusinessConsoleMesCapacityImpacts')?.(),
+    ).toMatchObject({ enabled: false })
   })
 
   it('does not refetch MES lists when business context is empty', async () => {
@@ -503,6 +557,56 @@ describe('business MES composables', () => {
     expect(tasks.operationTasksTotal.value).toBe(77)
     expect(wip.wipRows.value).toHaveLength(1)
     expect(wip.wipTotal.value).toBe(23)
+  })
+
+  it('queries current SOP documents by operation and work center context', () => {
+    coladaState.queryDataById.set('getBusinessConsoleMesCurrentOperationSops', {
+      success: true,
+      data: {
+        items: [
+          {
+            documentNumber: 'SOP-ASSY',
+            revision: 'B',
+            operationCode: 'OP-ASSY',
+            fileId: 'file-sop-b',
+          },
+        ],
+      },
+    })
+    const sops = useMesCurrentOperationSops()
+    sops.filters.operationCode = ' OP-ASSY '
+    sops.filters.workCenterCode = ' WC-A '
+
+    coladaState.queryFactoriesById.get('getBusinessConsoleMesCurrentOperationSops')?.()
+
+    expect(getBusinessConsoleMesCurrentOperationSopsQueryOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        operationCode: 'OP-ASSY',
+        workCenterCode: 'WC-A',
+      },
+    })
+    expect(
+      coladaState.queryFactoriesById.get('getBusinessConsoleMesCurrentOperationSops')?.(),
+    ).toMatchObject({ enabled: true })
+    expect(sops.currentSops.value[0]).toMatchObject({ revision: 'B', fileId: 'file-sop-b' })
+  })
+
+  it('creates SOP file download grants through the generated mutation options', async () => {
+    const sops = useMesCurrentOperationSops()
+
+    const grant = await sops.createSopFileDownloadGrant('file-sop-b')
+
+    expect(createBusinessConsoleSopFileDownloadGrantMutationOptions).toHaveBeenCalled()
+    expect(grant).toMatchObject({
+      fileId: 'file-sop-b',
+      downloadUrl: '/api/business-console/v1/files/download-grants/grant-sop/content',
+      downloadHeaders: {
+        'X-Organization-Id': 'org-001',
+        'X-Environment-Id': 'env-dev',
+      },
+    })
   })
 
   it('exposes secondary MES list totals from response envelopes', () => {
@@ -699,14 +803,17 @@ describe('business MES composables', () => {
   it('suppresses traceability queries when their required scope is empty', () => {
     const traceability = useMesTraceability()
 
-    const workOrderOptions = coladaState.queryFactoriesById
-      .get('getBusinessConsoleMesWorkOrderTraceability')?.()
+    const workOrderOptions = coladaState.queryFactoriesById.get(
+      'getBusinessConsoleMesWorkOrderTraceability',
+    )?.()
     traceability.filters.mode = 'batch'
-    const batchOptions = coladaState.queryFactoriesById
-      .get('getBusinessConsoleMesBatchTraceability')?.()
+    const batchOptions = coladaState.queryFactoriesById.get(
+      'getBusinessConsoleMesBatchTraceability',
+    )?.()
     traceability.filters.mode = 'material-lot'
-    const materialLotOptions = coladaState.queryFactoriesById
-      .get('getBusinessConsoleMesMaterialLotTraceability')?.()
+    const materialLotOptions = coladaState.queryFactoriesById.get(
+      'getBusinessConsoleMesMaterialLotTraceability',
+    )?.()
 
     expect(workOrderOptions).toMatchObject({ enabled: false })
     expect(batchOptions).toMatchObject({ enabled: false })
@@ -720,5 +827,168 @@ describe('business MES composables', () => {
     expect(getBusinessConsoleMesMaterialLotTraceabilityQueryOptions).not.toHaveBeenCalledWith(
       expect.objectContaining({ path: { materialLotId: 'LOT-001' } }),
     )
+  })
+
+  it('cancels a work order with the reason payload and invalidates MES + inventory queries', async () => {
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-CANCEL'
+
+    await detail.cancelWorkOrder('计划取消：产线调整')
+
+    expect(cancelBusinessConsoleMesWorkOrderMutationOptions).toHaveBeenCalled()
+    expect(
+      vi.mocked(cancelBusinessConsoleMesWorkOrderMutationOptions).mock.results[0]?.value.mutation,
+    ).toHaveBeenCalledWith({
+      path: { workOrderId: 'WO-CANCEL' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: { reason: '计划取消：产线调整' },
+    })
+    // 本域 9 键 + 跨域库存可用量 1 键（A1 §4.2 跨域刷新首个落地）
+    expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(10)
+  })
+
+  it('scopes the cancel compensation preview receipts to the current work order', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesFinishedGoodsReceiptRequests', {
+      success: true,
+      data: {
+        total: 2,
+        items: [
+          { receiptRequestId: 'fg-1', workOrderId: 'WO-CANCEL', receiptStatus: 'created' },
+          { receiptRequestId: 'fg-2', workOrderId: 'WO-OTHER', receiptStatus: 'created' },
+        ],
+      },
+    })
+
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-CANCEL'
+    detail.activateCancelPreview()
+
+    expect(detail.finishedGoodsReceiptRequests.value).toEqual([
+      { receiptRequestId: 'fg-1', workOrderId: 'WO-CANCEL', receiptStatus: 'created' },
+    ])
+  })
+
+  it('scopes the cancel compensation material issue requests to the current work order', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
+      success: true,
+      data: {
+        total: 3,
+        items: [
+          {
+            requestId: 'MIR-1',
+            workOrderId: 'WO-CANCEL',
+            receivedQuantity: 30,
+            status: 'Received',
+          },
+          {
+            requestId: 'MIR-2',
+            workOrderId: 'WO-CANCEL',
+            receivedQuantity: 0,
+            status: 'Requested',
+          },
+          { requestId: 'MIR-9', workOrderId: 'WO-OTHER', receivedQuantity: 5, status: 'Received' },
+        ],
+      },
+    })
+
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-CANCEL'
+    detail.activateCancelPreview()
+
+    // 领料申请是补偿预览的权威来源，且必须按当前工单过滤（不掺入 WO-OTHER）
+    expect(detail.materialIssueRequests.value).toEqual([
+      { requestId: 'MIR-1', workOrderId: 'WO-CANCEL', receivedQuantity: 30, status: 'Received' },
+      { requestId: 'MIR-2', workOrderId: 'WO-CANCEL', receivedQuantity: 0, status: 'Requested' },
+    ])
+  })
+
+  it('filters both cancel compensation lists server-side by the current work order', () => {
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-CANCEL'
+    detail.activateCancelPreview()
+
+    // 重新求值 query 工厂，拿到当前 workOrderId 下发送给 facade 的查询参数（服务端过滤，避免组织级前 100 条截断漏报）
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesMaterialIssueRequests')?.()
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesFinishedGoodsReceiptRequests')?.()
+
+    expect(listBusinessConsoleMesMaterialIssueRequestsQueryOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ query: expect.objectContaining({ workOrderId: 'WO-CANCEL' }) }),
+    )
+    expect(listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ query: expect.objectContaining({ workOrderId: 'WO-CANCEL' }) }),
+    )
+  })
+
+  it('paginates the compensation lists to fetch every related document, not just one page', async () => {
+    // 第一页满页（200）→ 继续；第二页不足一页（50）→ 结束。应累计取全 250 条，而非只取第一页。
+    const page1 = Array.from({ length: 200 }, (_, i) => ({
+      requestId: `MIR-${i}`,
+      workOrderId: 'WO-CANCEL',
+      receivedQuantity: 0,
+      status: 'Requested',
+    }))
+    const page2 = Array.from({ length: 50 }, (_, i) => ({
+      requestId: `MIR-${200 + i}`,
+      workOrderId: 'WO-CANCEL',
+      receivedQuantity: 0,
+      status: 'Requested',
+    }))
+    vi.mocked(listBusinessConsoleMesMaterialIssueRequests).mockImplementation(((options?: {
+      query?: { skip?: number }
+    }) => Promise.resolve({
+      data: {
+        success: true,
+        data: { items: (options?.query?.skip ?? 0) === 0 ? page1 : page2, total: 250 },
+      },
+    })) as unknown as typeof listBusinessConsoleMesMaterialIssueRequests)
+
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-CANCEL'
+    detail.activateCancelPreview()
+
+    // mock 的 useQuery 不会自动执行 query，直接跑分页 query fn 验证累计取全
+    const factory = coladaState.queryFactoriesById.get('listBusinessConsoleMesMaterialIssueRequests')
+    const options = factory?.() as { query: () => Promise<{ data?: { items?: unknown[] } }> }
+    const result = await options.query()
+    expect(result.data?.items).toHaveLength(250)
+  })
+
+  it('rejects the compensation pagination on a success:false envelope so confirm stays gated', async () => {
+    // 服务以 HTTP 200 返回 success:false 时，分页回调必须抛错（而非合成空 success:true），
+    // 让 useQuery.error → cancelPreviewError 生效、cancelPreviewReady 保持 false、禁用破坏性确认。
+    vi.mocked(listBusinessConsoleMesMaterialIssueRequests).mockImplementation((() =>
+      Promise.resolve({
+        data: { success: false, message: '业务失败', data: null },
+      })) as unknown as typeof listBusinessConsoleMesMaterialIssueRequests)
+
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-CANCEL'
+    detail.activateCancelPreview()
+
+    const factory = coladaState.queryFactoriesById.get('listBusinessConsoleMesMaterialIssueRequests')
+    const options = factory?.() as { query: () => Promise<unknown> }
+    await expect(options.query()).rejects.toThrow()
+  })
+
+  it('marks cancel preview ready only after both compensation lists return data', () => {
+    const pending = useMesWorkOrderDetail()
+    pending.filters.workOrderId = 'WO-CANCEL'
+    pending.activateCancelPreview()
+    // 两项列表都未返回数据 → 未就绪，破坏性确认按钮应被禁用（慢网/失败不允许在空数据上确认）
+    expect(pending.cancelPreviewReady.value).toBe(false)
+
+    coladaState.queryDataById.set('listBusinessConsoleMesFinishedGoodsReceiptRequests', {
+      success: true,
+      data: { total: 0, items: [] },
+    })
+    coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
+      success: true,
+      data: { total: 0, items: [] },
+    })
+
+    const ready = useMesWorkOrderDetail()
+    ready.filters.workOrderId = 'WO-CANCEL'
+    ready.activateCancelPreview()
+    expect(ready.cancelPreviewReady.value).toBe(true)
   })
 })

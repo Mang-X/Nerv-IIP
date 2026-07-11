@@ -2,15 +2,19 @@
 import { useNow } from '@vueuse/core'
 import { Lock, User } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import heroUrl from '@/assets/login-hero.webp'
+import { IS_REAL_DATA } from '@/data/config'
 import { useAuthStore } from '@/stores/auth'
+import { useRealAuthStore } from '@/stores/realAuth'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const account = ref('')
 const password = ref('')
 const loading = ref(false)
+const errorMsg = ref('')
 
 // 秒级展示：固定 1s 间隔，避免默认 rAF 每帧触发重算
 const now = useNow({ interval: 1000 })
@@ -51,14 +55,33 @@ const particles = [
   { x: 74, y: 8, s: 5, tone: 'amber', dur: 14, d: 7.2, dy: -12 },
 ]
 
+function redirectTarget(): string {
+  const redirect = route.query.redirect
+  return typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
+    ? redirect
+    : '/'
+}
+
 async function onSubmit() {
   if (loading.value) return
   loading.value = true
-  // mock：本地登录后进入大屏（后端就绪后改为 @nerv-iip/auth 真实登录）
-  await new Promise((resolve) => setTimeout(resolve, 480))
-  auth.login(account.value)
-  loading.value = false
-  router.push('/')
+  errorMsg.value = ''
+  try {
+    if (IS_REAL_DATA) {
+      // 真实登录：@nerv-iip/auth 会话，token 由 api-client 拦截器自动注入。
+      await useRealAuthStore().login(account.value, password.value)
+      await router.push(redirectTarget())
+    } else {
+      // mock：本地登录后进入大屏（演示模式，任意账号密码）。
+      await new Promise((resolve) => setTimeout(resolve, 480))
+      auth.login(account.value)
+      await router.push('/')
+    }
+  } catch (error) {
+    errorMsg.value = error instanceof Error ? error.message : '登录失败，请重试'
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -134,363 +157,472 @@ async function onSubmit() {
         <span class="lbl">密码</span>
         <span class="inp">
           <Lock class="ic" :size="18" aria-hidden="true" />
-          <input v-model="password" type="password" placeholder="登录密码" autocomplete="current-password" />
+          <input
+            v-model="password"
+            type="password"
+            placeholder="登录密码"
+            autocomplete="current-password"
+          />
         </span>
       </label>
 
       <button class="submit reveal" style="--d: 0.42s" type="submit" :disabled="loading">
         <span>{{ loading ? '登录中' : '进入大屏' }}</span>
         <svg v-if="!loading" class="arrow" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          <path
+            d="M3 8h10M9 4l4 4-4 4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
         </svg>
         <span v-else class="spinner" aria-hidden="true" />
       </button>
 
-      <p class="hint reveal" style="--d: 0.5s">演示模式 · 任意账号密码即可进入（数据为 mock）</p>
+      <p v-if="errorMsg" class="err reveal" role="alert">{{ errorMsg }}</p>
+      <p class="hint reveal" style="--d: 0.5s">
+        {{
+          IS_REAL_DATA
+            ? '请使用工厂账号登录（连接真实数据）'
+            : '演示模式 · 任意账号密码即可进入（数据为 mock）'
+        }}
+      </p>
     </form>
   </div>
 </template>
 
 <style scoped>
-.login {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  /* 与插画底色一致，插画右缘渐隐后无缝延展 */
-  background: #050a15;
-  color: var(--sb-text);
-  overflow: hidden;
-  font-variant-numeric: tabular-nums;
-}
+@layer app {
+  .login {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    /* 与插画底色一致，插画右缘渐隐后无缝延展 */
+    background: #050a15;
+    color: var(--nv-scr-text);
+    overflow: hidden;
+    font-variant-numeric: tabular-nums;
+  }
 
-/* ── 左：插画列（占满剩余宽度，插画内容区始终居中、随列宽自适应缩放） ── */
-.art-col {
-  position: relative;
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 100%;
-  container-type: size;
-  pointer-events: none;
-}
-.art {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  aspect-ratio: 1672 / 941;
-  /* 全高铺满（上下无缝出血）。水平：列够宽时贴左缘；列变窄时向左平移，
+  /* ── 左：插画列（占满剩余宽度，插画内容区始终居中、随列宽自适应缩放） ── */
+  .art-col {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    container-type: size;
+    pointer-events: none;
+  }
+  .art {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    aspect-ratio: 1672 / 941;
+    /* 全高铺满（上下无缝出血）。水平：列够宽时贴左缘；列变窄时向左平移，
      让插画内容中心（约整图宽 30.5% 处 = 54.2cqh）对准列中心；
      min() 钳制保证图左缘永不进入可视区露出底色 */
-  left: min(0px, calc(50cqw - 54.2cqh));
-}
-.art-img {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-/* 右缘渐入底色（替代 mask，合成更轻） */
-.art::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent 70%, #050a15 99%);
-}
-/* 模块呼吸微光（叠在插画各模块上，克制） */
-.glow {
-  position: absolute;
-  translate: -50% -50%;
-  border-radius: 50%;
-  opacity: 0;
-  animation: glow-breathe 5.6s ease-in-out infinite;
-}
-.glow.cyan {
-  background: radial-gradient(circle, rgba(74, 166, 238, 0.2), transparent 68%);
-}
-.glow.amber {
-  background: radial-gradient(circle, rgba(242, 193, 78, 0.16), transparent 68%);
-}
-
-/* ── 全屏氛围层：漂浮粒子 + 极淡流光 ── */
-.fx {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  z-index: 1;
-}
-.p {
-  position: absolute;
-  translate: -50% -50%;
-  border-radius: 50%;
-  opacity: 0;
-  animation-name: p-float;
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-  animation-direction: alternate;
-}
-.p.cyan {
-  background: radial-gradient(circle, rgba(120, 190, 245, 0.55), transparent 70%);
-}
-.p.indigo {
-  background: radial-gradient(circle, rgba(139, 155, 230, 0.5), transparent 70%);
-}
-.p.amber {
-  background: radial-gradient(circle, rgba(242, 193, 78, 0.4), transparent 70%);
-}
-@keyframes p-float {
-  from {
-    transform: translateY(6px);
-    opacity: 0.08;
+    left: min(0px, calc(50cqw - 54.2cqh));
   }
-  to {
-    transform: translateY(var(--dy, -16px));
-    opacity: 0.5;
+  .art-img {
+    width: 100%;
+    height: 100%;
+    display: block;
   }
-}
-.streak {
-  position: absolute;
-  width: 150px;
-  height: 1px;
-  left: -160px;
-  background: linear-gradient(90deg, transparent, rgba(74, 166, 238, 0.38), transparent);
-  opacity: 0;
-  animation: streak-move linear infinite;
-}
-.s1 {
-  top: 20%;
-  animation-duration: 26s;
-  animation-delay: 4s;
-}
-.s2 {
-  top: 68%;
-  animation-duration: 34s;
-  animation-delay: 16s;
-}
-@keyframes streak-move {
-  0% {
-    transform: translateX(0) rotate(-12deg);
-    opacity: 0;
-  }
-  6% {
-    opacity: 0.45;
-  }
-  46% {
-    opacity: 0.3;
-  }
-  60% {
-    transform: translateX(115vw) rotate(-12deg);
-    opacity: 0;
-  }
-  100% {
-    transform: translateX(115vw) rotate(-12deg);
-    opacity: 0;
-  }
-}
-
-/* ── 四角 HUD ── */
-.hud {
-  position: absolute;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  color: var(--sb-faint);
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  z-index: 2;
-}
-.hud.mono { letter-spacing: 0.04em; }
-.hud.tl { top: 32px; left: 34px; }
-.hud.tr { top: 32px; right: 34px; }
-.hud.bl { bottom: 32px; left: 34px; }
-.hud.br { bottom: 32px; right: 34px; }
-.live {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--sb-green);
-  box-shadow: 0 0 8px var(--sb-green);
-  animation: breathe 4.5s ease-in-out infinite;
-}
-
-/* ── 右：登录面板（置于插画留白区） ── */
-.panel {
-  position: relative;
-  z-index: 2;
-  width: min(452px, calc(100vw - 44px));
-  margin-left: auto;
-  margin-right: clamp(28px, 9vw, 170px);
-  padding: 52px 56px 40px;
-  border-radius: 16px;
-  border: 1px solid var(--sb-line-2);
-  background: linear-gradient(180deg, rgba(17, 26, 45, 0.82), rgba(9, 14, 26, 0.78));
-  box-shadow:
-    inset 0 1px 0 var(--sb-highlight),
-    0 40px 100px -50px rgba(0, 0, 0, 0.92);
-}
-
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 11px;
-  margin-bottom: 30px;
-}
-.logo-mark {
-  width: 19px;
-  height: 19px;
-  border-radius: 5px;
-  background: var(--sb-accent-fill);
-  box-shadow: var(--sb-glow);
-  animation: breathe 4s ease-in-out infinite;
-}
-.logo-word {
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: 0.17em;
-  color: #fff;
-}
-.sep { color: var(--sb-cyan); margin: 0 1px; }
-
-.head { margin-bottom: 40px; }
-.head h1 {
-  margin: 0;
-  font-size: 29px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: #fff;
-  text-wrap: balance;
-}
-.head p {
-  margin: 12px 0 0;
-  font-size: 14px;
-  color: var(--sb-muted);
-}
-
-.field-row { display: block; margin-bottom: 22px; }
-.lbl {
-  display: block;
-  font-size: 12.5px;
-  letter-spacing: 0.06em;
-  color: var(--sb-muted);
-  margin-bottom: 10px;
-}
-.inp { position: relative; display: flex; align-items: center; }
-.ic {
-  position: absolute;
-  left: 15px;
-  color: var(--sb-faint);
-  transition: color 0.25s var(--sb-ease);
-}
-.inp input {
-  width: 100%;
-  box-sizing: border-box;
-  height: 50px;
-  padding: 0 16px 0 44px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--sb-line-2);
-  color: var(--sb-text);
-  font-size: 15px;
-  outline: none;
-  transition:
-    border-color 0.25s var(--sb-ease),
-    background-color 0.25s var(--sb-ease),
-    box-shadow 0.25s var(--sb-ease);
-}
-.inp input::placeholder { color: var(--sb-faint); }
-.inp:focus-within .ic { color: var(--sb-cyan); }
-.inp input:focus {
-  border-color: var(--sb-accent-edge);
-  background: rgba(74, 166, 238, 0.06);
-  box-shadow: 0 0 0 3px rgba(74, 166, 238, 0.12);
-}
-
-.submit {
-  width: 100%;
-  height: 52px;
-  margin-top: 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  border: 0;
-  border-radius: 10px;
-  cursor: pointer;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  color: #04101f;
-  background: var(--sb-accent-fill);
-  box-shadow: inset 0 1px 0 var(--sb-highlight);
-  transition:
-    filter 0.25s var(--sb-ease),
-    transform 0.12s var(--sb-ease);
-}
-.submit:hover { filter: brightness(1.07); }
-.submit:active { transform: scale(0.985); }
-.submit:disabled { cursor: default; filter: saturate(0.7) brightness(0.92); }
-.arrow {
-  width: 16px;
-  height: 16px;
-  transition: transform 0.25s var(--sb-ease);
-}
-.submit:hover .arrow { transform: translateX(3px); }
-.spinner {
-  width: 15px;
-  height: 15px;
-  border: 2px solid rgba(4, 16, 31, 0.35);
-  border-top-color: #04101f;
-  border-radius: 50%;
-  animation: spin-fast 0.7s linear infinite;
-}
-.hint {
-  margin: 24px 0 0;
-  text-align: center;
-  font-size: 12px;
-  color: var(--sb-faint);
-}
-
-/* ── 动效：克制、慢 ── */
-.reveal {
-  animation: reveal 0.7s var(--sb-ease-emphasized) both;
-  animation-delay: var(--d, 0s);
-}
-@keyframes reveal {
-  from { opacity: 0; transform: translateY(14px); }
-  to { opacity: 1; transform: none; }
-}
-@keyframes breathe {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
-}
-@keyframes glow-breathe {
-  0%, 100% { opacity: 0.1; }
-  50% { opacity: 0.85; }
-}
-@keyframes spin-fast {
-  to { transform: rotate(360deg); }
-}
-
-/* 窄屏：插画压暗作底（脱离布局流、全屏居中），面板居中 */
-@media (max-width: 960px) {
-  .panel {
-    margin-right: auto;
-  }
-  .art-col {
+  /* 右缘渐入底色（替代 mask，合成更轻） */
+  .art::after {
+    content: '';
     position: absolute;
     inset: 0;
-    opacity: 0.4;
+    background: linear-gradient(90deg, transparent 70%, #050a15 99%);
   }
-  .hud.tr, .hud.br { display: none; }
-}
-@media (max-width: 560px) {
-  .panel { padding: 44px 32px 34px; }
-}
+  /* 模块呼吸微光（叠在插画各模块上，克制） */
+  .glow {
+    position: absolute;
+    translate: -50% -50%;
+    border-radius: 50%;
+    opacity: 0;
+    animation: glow-breathe 5.6s ease-in-out infinite;
+  }
+  .glow.cyan {
+    background: radial-gradient(circle, rgba(74, 166, 238, 0.2), transparent 68%);
+  }
+  .glow.amber {
+    background: radial-gradient(circle, rgba(242, 193, 78, 0.16), transparent 68%);
+  }
 
-@media (prefers-reduced-motion: reduce) {
-  .reveal, .logo-mark, .live, .glow, .spinner, .p { animation: none; }
-  .reveal { opacity: 1; transform: none; }
-  .glow { opacity: 0.3; }
-  .p { opacity: 0.15; }
-  .streak { display: none; }
+  /* ── 全屏氛围层：漂浮粒子 + 极淡流光 ── */
+  .fx {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .p {
+    position: absolute;
+    translate: -50% -50%;
+    border-radius: 50%;
+    opacity: 0;
+    animation-name: p-float;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+  }
+  .p.cyan {
+    background: radial-gradient(circle, rgba(120, 190, 245, 0.55), transparent 70%);
+  }
+  .p.indigo {
+    background: radial-gradient(circle, rgba(139, 155, 230, 0.5), transparent 70%);
+  }
+  .p.amber {
+    background: radial-gradient(circle, rgba(242, 193, 78, 0.4), transparent 70%);
+  }
+  @keyframes p-float {
+    from {
+      transform: translateY(6px);
+      opacity: 0.08;
+    }
+    to {
+      transform: translateY(var(--dy, -16px));
+      opacity: 0.5;
+    }
+  }
+  .streak {
+    position: absolute;
+    width: 150px;
+    height: 1px;
+    left: -160px;
+    background: linear-gradient(90deg, transparent, rgba(74, 166, 238, 0.38), transparent);
+    opacity: 0;
+    animation: streak-move linear infinite;
+  }
+  .s1 {
+    top: 20%;
+    animation-duration: 26s;
+    animation-delay: 4s;
+  }
+  .s2 {
+    top: 68%;
+    animation-duration: 34s;
+    animation-delay: 16s;
+  }
+  @keyframes streak-move {
+    0% {
+      transform: translateX(0) rotate(-12deg);
+      opacity: 0;
+    }
+    6% {
+      opacity: 0.45;
+    }
+    46% {
+      opacity: 0.3;
+    }
+    60% {
+      transform: translateX(115vw) rotate(-12deg);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(115vw) rotate(-12deg);
+      opacity: 0;
+    }
+  }
+
+  /* ── 四角 HUD ── */
+  .hud {
+    position: absolute;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--nv-scr-faint);
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    z-index: 2;
+  }
+  .hud.mono {
+    letter-spacing: 0.04em;
+  }
+  .hud.tl {
+    top: 32px;
+    left: 34px;
+  }
+  .hud.tr {
+    top: 32px;
+    right: 34px;
+  }
+  .hud.bl {
+    bottom: 32px;
+    left: 34px;
+  }
+  .hud.br {
+    bottom: 32px;
+    right: 34px;
+  }
+  .live {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--nv-scr-green);
+    box-shadow: 0 0 8px var(--nv-scr-green);
+    animation: breathe 4.5s ease-in-out infinite;
+  }
+
+  /* ── 右：登录面板（置于插画留白区） ── */
+  .panel {
+    position: relative;
+    z-index: 2;
+    width: min(452px, calc(100vw - 44px));
+    margin-left: auto;
+    margin-right: clamp(28px, 9vw, 170px);
+    padding: 52px 56px 40px;
+    border-radius: 16px;
+    border: 1px solid var(--nv-scr-line-2);
+    background: linear-gradient(180deg, rgba(17, 26, 45, 0.82), rgba(9, 14, 26, 0.78));
+    box-shadow:
+      inset 0 1px 0 var(--nv-scr-highlight),
+      0 40px 100px -50px rgba(0, 0, 0, 0.92);
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 11px;
+    margin-bottom: 30px;
+  }
+  .logo-mark {
+    width: 19px;
+    height: 19px;
+    border-radius: 5px;
+    background: var(--nv-scr-accent-fill);
+    box-shadow: var(--nv-scr-glow);
+    animation: breathe 4s ease-in-out infinite;
+  }
+  .logo-word {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.17em;
+    color: #fff;
+  }
+  .sep {
+    color: var(--nv-scr-cyan);
+    margin: 0 1px;
+  }
+
+  .head {
+    margin-bottom: 40px;
+  }
+  .head h1 {
+    margin: 0;
+    font-size: 29px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: #fff;
+    text-wrap: balance;
+  }
+  .head p {
+    margin: 12px 0 0;
+    font-size: 14px;
+    color: var(--nv-scr-muted);
+  }
+
+  .field-row {
+    display: block;
+    margin-bottom: 22px;
+  }
+  .lbl {
+    display: block;
+    font-size: 12.5px;
+    letter-spacing: 0.06em;
+    color: var(--nv-scr-muted);
+    margin-bottom: 10px;
+  }
+  .inp {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .ic {
+    position: absolute;
+    left: 15px;
+    color: var(--nv-scr-faint);
+    transition: color 0.25s var(--nv-scr-ease);
+  }
+  .inp input {
+    width: 100%;
+    box-sizing: border-box;
+    height: 50px;
+    padding: 0 16px 0 44px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--nv-scr-line-2);
+    color: var(--nv-scr-text);
+    font-size: 15px;
+    outline: none;
+    transition:
+      border-color 0.25s var(--nv-scr-ease),
+      background-color 0.25s var(--nv-scr-ease),
+      box-shadow 0.25s var(--nv-scr-ease);
+  }
+  .inp input::placeholder {
+    color: var(--nv-scr-faint);
+  }
+  .inp:focus-within .ic {
+    color: var(--nv-scr-cyan);
+  }
+  .inp input:focus {
+    border-color: var(--nv-scr-accent-edge);
+    background: rgba(74, 166, 238, 0.06);
+    box-shadow: 0 0 0 3px rgba(74, 166, 238, 0.12);
+  }
+
+  .submit {
+    width: 100%;
+    height: 52px;
+    margin-top: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    border: 0;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: #04101f;
+    background: var(--nv-scr-accent-fill);
+    box-shadow: inset 0 1px 0 var(--nv-scr-highlight);
+    transition:
+      filter 0.25s var(--nv-scr-ease),
+      transform 0.12s var(--nv-scr-ease);
+  }
+  .submit:hover {
+    filter: brightness(1.07);
+  }
+  .submit:active {
+    transform: scale(0.985);
+  }
+  .submit:disabled {
+    cursor: default;
+    filter: saturate(0.7) brightness(0.92);
+  }
+  .arrow {
+    width: 16px;
+    height: 16px;
+    transition: transform 0.25s var(--nv-scr-ease);
+  }
+  .submit:hover .arrow {
+    transform: translateX(3px);
+  }
+  .spinner {
+    width: 15px;
+    height: 15px;
+    border: 2px solid rgba(4, 16, 31, 0.35);
+    border-top-color: #04101f;
+    border-radius: 50%;
+    animation: spin-fast 0.7s linear infinite;
+  }
+  .err {
+    margin: 18px 0 0;
+    padding: 9px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(239, 90, 99, 0.4);
+    background: rgba(239, 90, 99, 0.1);
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--nv-scr-red);
+  }
+  .hint {
+    margin: 24px 0 0;
+    text-align: center;
+    font-size: 12px;
+    color: var(--nv-scr-faint);
+  }
+
+  /* ── 动效：克制、慢 ── */
+  .reveal {
+    animation: reveal 0.7s var(--nv-scr-ease-emphasized) both;
+    animation-delay: var(--d, 0s);
+  }
+  @keyframes reveal {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes breathe {
+    0%,
+    100% {
+      opacity: 0.55;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @keyframes glow-breathe {
+    0%,
+    100% {
+      opacity: 0.1;
+    }
+    50% {
+      opacity: 0.85;
+    }
+  }
+  @keyframes spin-fast {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* 窄屏：插画压暗作底（脱离布局流、全屏居中），面板居中 */
+  @media (max-width: 960px) {
+    .panel {
+      margin-right: auto;
+    }
+    .art-col {
+      position: absolute;
+      inset: 0;
+      opacity: 0.4;
+    }
+    .hud.tr,
+    .hud.br {
+      display: none;
+    }
+  }
+  @media (max-width: 560px) {
+    .panel {
+      padding: 44px 32px 34px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal,
+    .logo-mark,
+    .live,
+    .glow,
+    .spinner,
+    .p {
+      animation: none;
+    }
+    .reveal {
+      opacity: 1;
+      transform: none;
+    }
+    .glow {
+      opacity: 0.3;
+    }
+    .p {
+      opacity: 0.15;
+    }
+    .streak {
+      display: none;
+    }
+  }
 }
 </style>

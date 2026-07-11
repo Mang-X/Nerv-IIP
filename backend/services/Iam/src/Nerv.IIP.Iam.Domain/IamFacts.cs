@@ -143,6 +143,9 @@ public static class NervIipSeedPermissions
         "business.iiot.alarm-rules.manage",
         "business.iiot.telemetry.read",
         "business.iiot.telemetry.write",
+        "business.iiot.device-control.write",
+        "business.iiot.device-control.manage",
+        "business.iiot.device-control.read",
         "business.iiot.alarms.read",
         "business.iiot.alarms.write",
         "business.maintenance.work-orders.read",
@@ -154,6 +157,7 @@ public static class NervIipSeedPermissions
         "notifications.dlq.manage",
         "notifications.messages.read",
         "notifications.messages.mark-read",
-        "notifications.tasks.read"
+        "notifications.tasks.read",
+        "notifications.delivery.manage"
     ];
 }

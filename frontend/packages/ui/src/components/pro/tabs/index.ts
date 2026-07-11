@@ -1,4 +1,4 @@
-export { default as TabsPro } from './TabsPro.vue'
-export { default as TabsProContent } from './TabsProContent.vue'
-export { default as TabsProList } from './TabsProList.vue'
-export { default as TabsProTrigger } from './TabsProTrigger.vue'
+export { default as NvTabs } from './TabsPro.vue'
+export { default as NvTabsContent } from './TabsProContent.vue'
+export { default as NvTabsList } from './TabsProList.vue'
+export { default as NvTabsTrigger } from './TabsProTrigger.vue'

@@ -10,7 +10,13 @@ import {
 } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, shallowRef } from 'vue'
 
-import { SelectPro, SelectProContent, SelectProItem, SelectProTrigger, SelectProValue } from '../../pro/select'
+import {
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
+} from '../../pro/select'
 import { Button } from '../button'
 
 const props = defineProps<{
@@ -25,7 +31,9 @@ const totalPages = computed(() => scrollState.value.totalPages || 0)
 const zoomLabel = computed(() => `${Math.round(zoomState.value.currentZoomLevel * 100)}%`)
 const jumping = shallowRef(false)
 const canGoPrevious = computed(() => currentPage.value > 1 && !jumping.value)
-const canGoNext = computed(() => totalPages.value > 0 && currentPage.value < totalPages.value && !jumping.value)
+const canGoNext = computed(
+  () => totalPages.value > 0 && currentPage.value < totalPages.value && !jumping.value,
+)
 const pageOptions = computed(() =>
   Array.from({ length: totalPages.value }, (_, index) => {
     const page = index + 1
@@ -86,21 +94,25 @@ onBeforeUnmount(() => {
       >
         <ChevronLeftIcon aria-hidden="true" />
       </Button>
-      <SelectPro
+      <NvSelect
         v-if="pageOptions.length > 0"
         data-slot="file-preview-pdf-page-select"
         :model-value="String(currentPage)"
         @update:model-value="jumpToPage"
       >
-        <SelectProTrigger class="h-7 w-24 font-mono text-xs" aria-label="选择 PDF 页码" :disabled="jumping">
-          <SelectProValue />
-        </SelectProTrigger>
-        <SelectProContent class="max-h-64 min-w-24">
-          <SelectProItem v-for="option in pageOptions" :key="option.value" :value="option.value">
+        <NvSelectTrigger
+          class="h-7 w-24 font-mono text-xs"
+          aria-label="选择 PDF 页码"
+          :disabled="jumping"
+        >
+          <NvSelectValue />
+        </NvSelectTrigger>
+        <NvSelectContent class="max-h-64 min-w-24">
+          <NvSelectItem v-for="option in pageOptions" :key="option.value" :value="option.value">
             {{ option.label }}
-          </SelectProItem>
-        </SelectProContent>
-      </SelectPro>
+          </NvSelectItem>
+        </NvSelectContent>
+      </NvSelect>
       <div v-else class="min-w-16 text-center font-mono text-xs text-muted-foreground">
         {{ currentPage }}/{{ totalPages || '-' }}
       </div>
@@ -119,14 +131,22 @@ onBeforeUnmount(() => {
       <Button variant="ghost" size="icon-sm" aria-label="Zoom out PDF" @click="zoom?.zoomOut()">
         <ZoomOutIcon aria-hidden="true" />
       </Button>
-      <div data-slot="file-preview-pdf-zoom" class="min-w-12 text-center font-mono text-xs text-muted-foreground">
+      <div
+        data-slot="file-preview-pdf-zoom"
+        class="min-w-12 text-center font-mono text-xs text-muted-foreground"
+      >
         {{ zoomLabel }}
       </div>
       <Button variant="ghost" size="icon-sm" aria-label="Zoom in PDF" @click="zoom?.zoomIn()">
         <ZoomInIcon aria-hidden="true" />
       </Button>
       <div class="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-      <Button variant="ghost" size="icon-sm" aria-label="Fit PDF width" @click="zoom?.requestZoom(ZoomMode.FitWidth)">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Fit PDF width"
+        @click="zoom?.requestZoom(ZoomMode.FitWidth)"
+      >
         <Maximize2Icon aria-hidden="true" />
       </Button>
     </div>

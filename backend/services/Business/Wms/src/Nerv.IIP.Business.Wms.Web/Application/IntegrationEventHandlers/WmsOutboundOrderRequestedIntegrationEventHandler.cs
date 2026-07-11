@@ -27,7 +27,7 @@ public sealed class WmsOutboundOrderRequestedIntegrationEventHandler(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Wms.WmsOutboundOrderRequestedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(WmsOutboundOrderRequestedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(WmsOutboundOrderRequestedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

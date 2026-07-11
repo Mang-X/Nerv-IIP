@@ -45,6 +45,32 @@ public sealed class ListBusinessConsoleTelemetryTagsEndpoint(
 }
 
 [Tags("Business Console Telemetry")]
+[HttpGet("/api/business-console/v1/telemetry/tags/current-value")]
+[BusinessGatewayOperationId("getBusinessConsoleTelemetryTagCurrentValue")]
+public sealed class GetBusinessConsoleTelemetryTagCurrentValueEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient telemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleTelemetryTagCurrentValueRequest, BusinessConsoleTelemetryTagCurrentValueResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotTelemetryRead)
+{
+    protected override string OrganizationId(BusinessConsoleTelemetryTagCurrentValueRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleTelemetryTagCurrentValueRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleTelemetryTagCurrentValueRequest request) => "device-asset";
+
+    protected override string ResourceId(BusinessConsoleTelemetryTagCurrentValueRequest request) => request.DeviceAssetId;
+
+    protected override Task<BusinessConsoleTelemetryTagCurrentValueResponse> ForwardAsync(
+        BusinessConsoleTelemetryTagCurrentValueRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        telemetry.GetTagCurrentValueAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Telemetry")]
 [HttpGet("/api/business-console/v1/telemetry/alarm-rules")]
 [BusinessGatewayOperationId("listBusinessConsoleTelemetryAlarmRules")]
 public sealed class ListBusinessConsoleTelemetryAlarmRulesEndpoint(
@@ -94,6 +120,167 @@ public sealed class CreateOrUpdateBusinessConsoleTelemetryAlarmRuleEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         telemetry.CreateOrUpdateAlarmRuleAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Telemetry")]
+[HttpPost("/api/business-console/v1/telemetry/device-control-commands")]
+[BusinessGatewayOperationId("createBusinessConsoleTelemetryDeviceControlCommand")]
+public sealed class CreateBusinessConsoleTelemetryDeviceControlCommandEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient telemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleTelemetryDeviceControlCommandRequest, BusinessConsoleTelemetryDeviceControlCommandResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotDeviceControlWrite)
+{
+    protected override string OrganizationId(BusinessConsoleTelemetryDeviceControlCommandRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleTelemetryDeviceControlCommandRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleTelemetryDeviceControlCommandRequest request) => "device-asset";
+
+    protected override string ResourceId(BusinessConsoleTelemetryDeviceControlCommandRequest request) => request.DeviceAssetId;
+
+    protected override Task<BusinessConsoleTelemetryDeviceControlCommandResponse> ForwardAsync(
+        BusinessConsoleTelemetryDeviceControlCommandRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        // Inject the authenticated principal as the command requester so the audit actor
+        // is bound to the caller identity rather than an attacker-supplied field.
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
+        return telemetry.CreateDeviceControlCommandAsync(tokenProvider.BearerToken, request, actorRef, cancellationToken);
+    }
+}
+
+[Tags("Business Console Telemetry")]
+[HttpGet("/api/business-console/v1/telemetry/device-control-commands/{commandId}")]
+[BusinessGatewayOperationId("getBusinessConsoleTelemetryDeviceControlCommand")]
+public sealed class GetBusinessConsoleTelemetryDeviceControlCommandEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient telemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleTelemetryDeviceControlCommandContextRequest, BusinessConsoleTelemetryDeviceControlCommandDetail>(
+        auth,
+        BusinessGatewayPermissions.IiotDeviceControlRead)
+{
+    protected override string OrganizationId(BusinessConsoleTelemetryDeviceControlCommandContextRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleTelemetryDeviceControlCommandContextRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleTelemetryDeviceControlCommandContextRequest request) => "device-asset";
+
+    protected override string ResourceId(BusinessConsoleTelemetryDeviceControlCommandContextRequest request) => request.DeviceAssetId;
+
+    protected override Task<BusinessConsoleTelemetryDeviceControlCommandDetail> ForwardAsync(
+        BusinessConsoleTelemetryDeviceControlCommandContextRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        telemetry.GetDeviceControlCommandAsync(tokenProvider.BearerToken, Route<string>("commandId")!, request, cancellationToken);
+}
+
+[Tags("Business Console Telemetry")]
+[HttpGet("/api/business-console/v1/telemetry/device-control-commands")]
+[BusinessGatewayOperationId("listBusinessConsoleTelemetryDeviceControlCommands")]
+public sealed class ListBusinessConsoleTelemetryDeviceControlCommandsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient telemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleTelemetryDeviceControlCommandListRequest, BusinessConsoleTelemetryDeviceControlCommandListResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotDeviceControlRead)
+{
+    protected override string OrganizationId(BusinessConsoleTelemetryDeviceControlCommandListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleTelemetryDeviceControlCommandListRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleTelemetryDeviceControlCommandListRequest request) => request.DeviceAssetId is null ? null : "device-asset";
+
+    protected override string? ResourceId(BusinessConsoleTelemetryDeviceControlCommandListRequest request) => request.DeviceAssetId;
+
+    protected override Task<BusinessConsoleTelemetryDeviceControlCommandListResponse> ForwardAsync(
+        BusinessConsoleTelemetryDeviceControlCommandListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        telemetry.ListDeviceControlCommandsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Telemetry")]
+[HttpGet("/api/business-console/v1/telemetry/device-control-bindings")]
+[BusinessGatewayOperationId("listBusinessConsoleTelemetryDeviceControlBindings")]
+public sealed class ListBusinessConsoleTelemetryDeviceControlBindingsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient telemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleTelemetryDeviceControlBindingListRequest, BusinessConsoleTelemetryDeviceControlBindingListResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotDeviceControlRead)
+{
+    protected override string OrganizationId(BusinessConsoleTelemetryDeviceControlBindingListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleTelemetryDeviceControlBindingListRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleTelemetryDeviceControlBindingListRequest request) => request.DeviceAssetId is null ? null : "device-asset";
+
+    protected override string? ResourceId(BusinessConsoleTelemetryDeviceControlBindingListRequest request) => request.DeviceAssetId;
+
+    protected override Task<BusinessConsoleTelemetryDeviceControlBindingListResponse> ForwardAsync(
+        BusinessConsoleTelemetryDeviceControlBindingListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        telemetry.ListDeviceControlBindingsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Telemetry")]
+[HttpPost("/api/business-console/v1/telemetry/device-control-bindings")]
+[BusinessGatewayOperationId("createOrUpdateBusinessConsoleTelemetryDeviceControlBinding")]
+public sealed class CreateOrUpdateBusinessConsoleTelemetryDeviceControlBindingEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient telemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest, BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotDeviceControlManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest request) => "device-asset";
+
+    protected override string ResourceId(BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest request) => request.DeviceAssetId;
+
+    protected override Task<BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse> ForwardAsync(
+        BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        telemetry.CreateOrUpdateDeviceControlBindingAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Telemetry")]
+[HttpPost("/api/business-console/v1/telemetry/device-control-bindings/{deviceAssetId}/disable")]
+[BusinessGatewayOperationId("disableBusinessConsoleTelemetryDeviceControlBinding")]
+public sealed class DisableBusinessConsoleTelemetryDeviceControlBindingEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient telemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleDisableTelemetryDeviceControlBindingRequest, BusinessConsoleDisableTelemetryDeviceControlBindingResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotDeviceControlManage)
+{
+    protected override string OrganizationId(BusinessConsoleDisableTelemetryDeviceControlBindingRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleDisableTelemetryDeviceControlBindingRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleDisableTelemetryDeviceControlBindingRequest request) => "device-asset";
+
+    protected override string? ResourceId(BusinessConsoleDisableTelemetryDeviceControlBindingRequest request) => Route<string>("deviceAssetId");
+
+    protected override Task<BusinessConsoleDisableTelemetryDeviceControlBindingResponse> ForwardAsync(
+        BusinessConsoleDisableTelemetryDeviceControlBindingRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        telemetry.DisableDeviceControlBindingAsync(tokenProvider.BearerToken, Route<string>("deviceAssetId")!, request, cancellationToken);
 }
 
 [Tags("Business Console Telemetry")]
@@ -154,6 +341,7 @@ public sealed class PostBusinessConsoleTelemetryAlarmEndpoint(
 public sealed class ListBusinessConsoleTelemetryAlarmsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessIndustrialTelemetryClient telemetry,
+    BusinessGatewayDataScopeFilter dataScopeFilter,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleTelemetryAlarmListRequest, BusinessConsoleTelemetryAlarmEventListResponse>(
         auth,
@@ -167,11 +355,17 @@ public sealed class ListBusinessConsoleTelemetryAlarmsEndpoint(
 
     protected override string? ResourceId(BusinessConsoleTelemetryAlarmListRequest request) => request.DeviceAssetId;
 
-    protected override Task<BusinessConsoleTelemetryAlarmEventListResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleTelemetryAlarmEventListResponse> ForwardAsync(
         BusinessConsoleTelemetryAlarmListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        telemetry.ListAlarmsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var scopedRequest = await dataScopeFilter.ApplyToTelemetryAlarmsAsync(
+            request,
+            AuthorizationResult?.DataScope,
+            cancellationToken);
+        return await telemetry.ListAlarmsAsync(tokenProvider.BearerToken, scopedRequest, cancellationToken);
+    }
 }
 
 [Tags("Business Console Telemetry")]
@@ -318,6 +512,132 @@ public sealed class BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequestValida
     private static bool IsSupportedOperator(string comparisonOperator)
     {
         return SupportedOperators.Contains(comparisonOperator);
+    }
+}
+
+public sealed class BusinessConsoleTelemetryDeviceControlCommandRequestValidator
+    : Validator<BusinessConsoleTelemetryDeviceControlCommandRequest>
+{
+    // Gateway mirrors the IndustrialTelemetry device-control command-type contract without
+    // referencing service internals. RequestedBy is not validated here: the gateway injects
+    // the authenticated principal as the requester before forwarding downstream.
+    public BusinessConsoleTelemetryDeviceControlCommandRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.CommandType)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(IsSupportedCommandType)
+            .WithMessage("Device control command type must be write-tag, start-stop or parameter-set.");
+        When(x => IsSingleTagCommand(x.CommandType), () =>
+        {
+            RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
+            RuleFor(x => x.Value).NotEmpty().MaximumLength(256);
+        });
+        When(x => IsParameterSetCommand(x.CommandType), () =>
+        {
+            RuleFor(x => x.Parameters).NotEmpty();
+            RuleForEach(x => x.Parameters!.Keys).NotEmpty().MaximumLength(150);
+            RuleForEach(x => x.Parameters!.Values).NotEmpty().MaximumLength(256);
+        });
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.CorrelationId).NotEmpty().MaximumLength(150);
+    }
+
+    private static bool IsSingleTagCommand(string commandType)
+    {
+        if (string.IsNullOrWhiteSpace(commandType))
+        {
+            return false;
+        }
+
+        var normalized = commandType.Trim().ToLowerInvariant();
+        return normalized is "write-tag" or "start-stop";
+    }
+
+    private static bool IsParameterSetCommand(string commandType) =>
+        !string.IsNullOrWhiteSpace(commandType) &&
+        string.Equals(commandType.Trim(), "parameter-set", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSupportedCommandType(string commandType) =>
+        IsSingleTagCommand(commandType) || IsParameterSetCommand(commandType);
+}
+
+public sealed class BusinessConsoleTelemetryDeviceControlCommandContextRequestValidator
+    : Validator<BusinessConsoleTelemetryDeviceControlCommandContextRequest>
+{
+    public BusinessConsoleTelemetryDeviceControlCommandContextRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsoleTelemetryDeviceControlCommandListRequestValidator
+    : Validator<BusinessConsoleTelemetryDeviceControlCommandListRequest>
+{
+    public BusinessConsoleTelemetryDeviceControlCommandListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).MaximumLength(150);
+        RuleFor(x => x.Status).MaximumLength(50);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        RuleFor(x => x.ToUtc).GreaterThan(x => x.FromUtc).When(x => x.FromUtc is not null && x.ToUtc is not null);
+    }
+}
+
+public sealed class BusinessConsoleTelemetryTagCurrentValueRequestValidator
+    : Validator<BusinessConsoleTelemetryTagCurrentValueRequest>
+{
+    public BusinessConsoleTelemetryTagCurrentValueRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsoleTelemetryDeviceControlBindingListRequestValidator
+    : Validator<BusinessConsoleTelemetryDeviceControlBindingListRequest>
+{
+    public BusinessConsoleTelemetryDeviceControlBindingListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).MaximumLength(150);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
+public sealed class BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequestValidator
+    : Validator<BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest>
+{
+    public BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ConnectorHostId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.InstanceKey).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsoleDisableTelemetryDeviceControlBindingRequestValidator
+    : Validator<BusinessConsoleDisableTelemetryDeviceControlBindingRequest>
+{
+    public BusinessConsoleDisableTelemetryDeviceControlBindingRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).MaximumLength(300);
     }
 }
 

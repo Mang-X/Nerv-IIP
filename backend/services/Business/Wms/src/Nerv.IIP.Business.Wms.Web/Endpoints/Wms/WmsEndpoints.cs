@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using FastEndpoints;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.BackorderOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
@@ -54,9 +55,13 @@ public sealed record CompleteWarehouseTaskRequest(WarehouseTaskId WarehouseTaskI
 public sealed record CompleteInboundOrderRequest(InboundOrderId InboundOrderId, string IdempotencyKey);
 public sealed record CompleteMovementResponse(InventoryMovementRequestId? RequestId, string? InventoryMovementId);
 public sealed record RetryInboundInventoryPostingRequest(InboundOrderId InboundOrderId, string IdempotencyKey);
+public sealed record CancelInboundOrdersForSourceRequest(string OrganizationId, string EnvironmentId, string SourceDocumentType, string SourceDocumentId, string Reason);
+public sealed record CancelInboundOrdersForSourceResponse(int CancelledCount);
 public sealed record CreateOutboundOrderRequest(string OrganizationId, string EnvironmentId, string OutboundOrderNo, string SourceDocumentType, string SourceDocumentId, string SiteCode, IReadOnlyCollection<WmsOutboundLineInput> Lines);
 public sealed record CreateOutboundOrderResponse(OutboundOrderId OutboundOrderId);
 public sealed record ListOutboundOrdersRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
+public sealed record ListBackorderOrdersRequest(string OrganizationId, string EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
+public sealed record CloseBackorderOrderRequest(BackorderOrderId BackorderOrderId, string Reason);
 public sealed record CreatePickingTaskRequest(OutboundOrderId OutboundOrderId, string TaskNo, string LineNo, string FromLocationCode, string ToLocationCode, decimal Quantity);
 public sealed record CompleteOutboundOrderRequest(OutboundOrderId OutboundOrderId, string PackReviewNo, bool Passed, string IdempotencyKey);
 public sealed record CancelOutboundOrderRequest(OutboundOrderId OutboundOrderId, string Reason);
@@ -87,6 +92,10 @@ public sealed record ListWcsTasksRequest(
     string? Status = null,
     bool? Failed = null,
     string? Keyword = null);
+public sealed record ListWcsDispatchCircuitsRequest(string OrganizationId, string EnvironmentId);
+public sealed record ResetWcsDispatchCircuitRequest(string OrganizationId, string EnvironmentId, string AdapterType, string DeviceId);
+public sealed record ListReceivingQualityGatesRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? GateStatus = null, string? Keyword = null);
+public sealed record ListSupplierReturnRequestsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
 
 public sealed class CreateInboundOrderEndpoint(ISender sender) : WmsEndpoint<CreateInboundOrderRequest, ResponseData<CreateInboundOrderResponse>>
 {
@@ -148,6 +157,19 @@ public sealed class RetryInboundInventoryPostingEndpoint(ISender sender) : WmsEn
     }
 }
 
+public sealed class CancelInboundOrdersForSourceEndpoint(ISender sender) : WmsEndpoint<CancelInboundOrdersForSourceRequest, ResponseData<CancelInboundOrdersForSourceResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CancelInboundOrdersForSourceEndpoint>());
+
+    public override async Task HandleAsync(CancelInboundOrdersForSourceRequest req, CancellationToken ct)
+    {
+        var cancelledCount = await sender.Send(
+            new CancelInboundOrdersForSourceCommand(req.OrganizationId, req.EnvironmentId, req.SourceDocumentType, req.SourceDocumentId, req.Reason),
+            ct);
+        await Send.OkAsync(new CancelInboundOrdersForSourceResponse(cancelledCount).AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class CreateOutboundOrderEndpoint(ISender sender) : WmsEndpoint<CreateOutboundOrderRequest, ResponseData<CreateOutboundOrderResponse>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CreateOutboundOrderEndpoint>());
@@ -184,6 +206,16 @@ public sealed class ListPickingTasksEndpoint(ISender sender) : WmsEndpoint<ListW
     public override async Task HandleAsync(ListWarehouseTasksRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new ListWarehouseTasksQuery(req.OrganizationId, req.EnvironmentId, WarehouseTaskType.Picking, req.Skip, req.Take, req.Status, req.LocationCode, req.OperatorUserId, req.Keyword), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListReplenishmentTasksEndpoint(ISender sender) : WmsEndpoint<ListWarehouseTasksRequest, ResponseData<ListWarehouseTasksResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListReplenishmentTasksEndpoint>());
+    public override async Task HandleAsync(ListWarehouseTasksRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListWarehouseTasksQuery(req.OrganizationId, req.EnvironmentId, WarehouseTaskType.Replenishment, req.Skip, req.Take, req.Status, req.LocationCode, req.OperatorUserId, req.Keyword), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -225,6 +257,26 @@ public sealed class CancelOutboundOrderEndpoint(ISender sender) : WmsEndpoint<Ca
     {
         await sender.Send(new CancelOutboundOrderCommand(req.OutboundOrderId, req.Reason), ct);
         await Send.OkAsync(new CancelOutboundOrderResponse(req.OutboundOrderId, "Cancelled").AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListBackorderOrdersEndpoint(ISender sender) : WmsEndpoint<ListBackorderOrdersRequest, ResponseData<ListBackorderOrdersResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListBackorderOrdersEndpoint>());
+    public override async Task HandleAsync(ListBackorderOrdersRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListBackorderOrdersQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take, req.Status, req.Keyword), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CloseBackorderOrderEndpoint(ISender sender) : WmsEndpoint<CloseBackorderOrderRequest, ResponseData<object>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CloseBackorderOrderEndpoint>());
+    public override async Task HandleAsync(CloseBackorderOrderRequest req, CancellationToken ct)
+    {
+        await sender.Send(new CloseBackorderOrderCommand(req.BackorderOrderId, req.Reason), ct);
+        await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -308,6 +360,43 @@ public sealed class ListWcsTasksEndpoint(ISender sender) : WmsEndpoint<ListWcsTa
     }
 }
 
+public sealed class ListWcsDispatchCircuitsEndpoint(ISender sender) : WmsEndpoint<ListWcsDispatchCircuitsRequest, ResponseData<IReadOnlyCollection<WcsDispatchCircuitFact>>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListWcsDispatchCircuitsEndpoint>());
+    public override async Task HandleAsync(ListWcsDispatchCircuitsRequest req, CancellationToken ct) =>
+        await Send.OkAsync((await sender.Send(new ListWcsDispatchCircuitsQuery(req.OrganizationId, req.EnvironmentId), ct)).AsResponseData(), cancellation: ct);
+}
+
+public sealed class ResetWcsDispatchCircuitEndpoint(ISender sender) : WmsEndpoint<ResetWcsDispatchCircuitRequest, ResponseData<object>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ResetWcsDispatchCircuitEndpoint>());
+    public override async Task HandleAsync(ResetWcsDispatchCircuitRequest req, CancellationToken ct)
+    {
+        await sender.Send(new ResetWcsDispatchCircuitCommand(req.OrganizationId, req.EnvironmentId, req.AdapterType, req.DeviceId), ct);
+        await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListReceivingQualityGatesEndpoint(ISender sender) : WmsEndpoint<ListReceivingQualityGatesRequest, ResponseData<ListReceivingQualityGatesResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListReceivingQualityGatesEndpoint>());
+    public override async Task HandleAsync(ListReceivingQualityGatesRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListReceivingQualityGatesQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take, req.GateStatus, req.Keyword), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListSupplierReturnRequestsEndpoint(ISender sender) : WmsEndpoint<ListSupplierReturnRequestsRequest, ResponseData<ListSupplierReturnRequestsResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<ListSupplierReturnRequestsEndpoint>());
+    public override async Task HandleAsync(ListSupplierReturnRequestsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListSupplierReturnRequestsQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take, req.Status, req.Keyword), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed record WmsEndpointContract(Type EndpointType, string HttpMethod, string Route, string PermissionCode, string AuthorizationPolicy, string OperationId);
 
 public static class WmsEndpointContracts
@@ -320,14 +409,18 @@ public static class WmsEndpointContracts
         new(typeof(ListPutawayTasksEndpoint), "GET", "/api/business/v1/wms/putaway-tasks", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsPutawayTasks"),
         new(typeof(CompleteInboundOrderEndpoint), "POST", "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsInboundOrder"),
         new(typeof(RetryInboundInventoryPostingEndpoint), "POST", "/api/business/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "retryWmsInboundInventoryPosting"),
+        new(typeof(CancelInboundOrdersForSourceEndpoint), "POST", "/api/business/v1/wms/inbound-orders/cancel-by-source", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "cancelWmsInboundOrdersForSource"),
         new(typeof(CreateOutboundOrderEndpoint), "POST", "/api/business/v1/wms/outbound-orders", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "createWmsOutboundOrder"),
         new(typeof(ListOutboundOrdersEndpoint), "GET", "/api/business/v1/wms/outbound-orders", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "listWmsOutboundOrders"),
         new(typeof(CreatePickingTaskEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "createWmsPickingTask"),
         new(typeof(ListPickingTasksEndpoint), "GET", "/api/business/v1/wms/picking-tasks", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "listWmsPickingTasks"),
+        new(typeof(ListReplenishmentTasksEndpoint), "GET", "/api/business/v1/wms/replenishment-tasks", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "listWmsReplenishmentTasks"),
         new(typeof(RecordWarehouseTaskProgressEndpoint), "POST", "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/progress", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "recordWmsWarehouseTaskProgress"),
         new(typeof(CompleteWarehouseTaskEndpoint), "POST", "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsWarehouseTask"),
         new(typeof(CompleteOutboundOrderEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/complete", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsOutboundOrder"),
         new(typeof(CancelOutboundOrderEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/cancel", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "cancelWmsOutboundOrder"),
+        new(typeof(ListBackorderOrdersEndpoint), "GET", "/api/business/v1/wms/backorder-orders", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "listWmsBackorderOrders"),
+        new(typeof(CloseBackorderOrderEndpoint), "POST", "/api/business/v1/wms/backorder-orders/{backorderOrderId}/close", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "closeWmsBackorderOrder"),
         new(typeof(RetryOutboundInventoryPostingEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "retryWmsOutboundInventoryPosting"),
         new(typeof(CreateCountExecutionEndpoint), "POST", "/api/business/v1/wms/count-executions", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "createWmsCountExecution"),
         new(typeof(ListCountExecutionsEndpoint), "GET", "/api/business/v1/wms/count-executions", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsCountExecutions"),
@@ -336,6 +429,10 @@ public static class WmsEndpointContracts
         new(typeof(CompleteWcsTaskEndpoint), "POST", "/api/business/v1/wms/wcs-tasks/{externalTaskId}/complete", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "completeWmsWcsTask"),
         new(typeof(FailWcsTaskEndpoint), "POST", "/api/business/v1/wms/wcs-tasks/{externalTaskId}/fail", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "failWmsWcsTask"),
         new(typeof(ListWcsTasksEndpoint), "GET", "/api/business/v1/wms/wcs-tasks", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "listWmsWcsTasks"),
+        new(typeof(ListWcsDispatchCircuitsEndpoint), "GET", "/api/business/v1/wms/wcs-dispatch-circuits", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "listWmsWcsDispatchCircuits"),
+        new(typeof(ResetWcsDispatchCircuitEndpoint), "POST", "/api/business/v1/wms/wcs-dispatch-circuits/reset", WmsPermissionCodes.AutomationManage, InternalServiceAuthorizationPolicy.Name, "resetWmsWcsDispatchCircuit"),
+        new(typeof(ListReceivingQualityGatesEndpoint), "GET", "/api/business/v1/wms/receiving-quality-gates", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsReceivingQualityGates"),
+        new(typeof(ListSupplierReturnRequestsEndpoint), "GET", "/api/business/v1/wms/supplier-return-requests", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsSupplierReturnRequests"),
     ];
 
     public static WmsEndpointContract Get<TEndpoint>() => All.Single(x => x.EndpointType == typeof(TEndpoint));

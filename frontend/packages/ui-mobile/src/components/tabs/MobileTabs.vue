@@ -73,23 +73,25 @@ onMounted(() => nextTick(measure))
 </template>
 
 <style scoped>
-.ds-mtab {
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-.ds-mtab-bar {
-  position: absolute;
-  bottom: 0;
-  height: 2px;
-  border-radius: 9999px;
-  background: var(--brand);
-  transition:
-    left 0.28s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
-    width 0.28s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
+  .ds-mtab {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
   .ds-mtab-bar {
-    transition: none;
+    position: absolute;
+    bottom: 0;
+    height: 2px;
+    border-radius: 9999px;
+    background: var(--nv-brand);
+    transition:
+      left 0.28s var(--nv-ease-out-expo),
+      width 0.28s var(--nv-ease-out-expo);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-mtab-bar {
+      transition: none;
+    }
   }
 }
 </style>

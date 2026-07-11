@@ -61,18 +61,20 @@ const sizeClass: Record<Size, string> = {
 </template>
 
 <style scoped>
-.ds-tag-close {
-  -webkit-tap-highlight-color: transparent;
-  opacity: 0.7;
-  transition: opacity 0.15s var(--ease-out-quart, ease-out);
-}
-.ds-tag-close:hover,
-.ds-tag-close:active {
-  opacity: 1;
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
   .ds-tag-close {
-    transition: none;
+    -webkit-tap-highlight-color: transparent;
+    opacity: 0.7;
+    transition: opacity 0.15s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-tag-close:hover,
+  .ds-tag-close:active {
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-tag-close {
+      transition: none;
+    }
   }
 }
 </style>

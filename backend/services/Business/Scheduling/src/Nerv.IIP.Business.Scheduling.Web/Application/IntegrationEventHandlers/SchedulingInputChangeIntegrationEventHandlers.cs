@@ -37,7 +37,7 @@ public sealed class AssetUnavailableIntegrationEventHandlerForInvalidateSchedule
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Maintenance.AssetUnavailableIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(AssetUnavailableIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(AssetUnavailableIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -83,7 +83,7 @@ public sealed class AssetRestoredIntegrationEventHandlerForInvalidateSchedulePla
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Maintenance.AssetRestoredIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(AssetRestoredIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(AssetRestoredIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -129,7 +129,7 @@ public sealed class DeviceStateChangedIntegrationEventHandlerForInvalidateSchedu
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.IndustrialTelemetry.DeviceStateChangedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(DeviceStateChangedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(DeviceStateChangedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -174,7 +174,7 @@ public sealed class StockAvailabilityChangedIntegrationEventHandlerForInvalidate
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Inventory.StockAvailabilityChangedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(StockAvailabilityChangedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(StockAvailabilityChangedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -225,7 +225,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForInvalidateS
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Quality.InspectionResultIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(InspectionResultIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -279,7 +279,7 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedul
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Mes.WorkOrderReleasedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(WorkOrderReleasedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(WorkOrderReleasedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

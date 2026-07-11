@@ -1,1 +1,1 @@
-export { default as ThemePicker } from './ThemePicker.vue'
+export { default as NvThemePicker } from './ThemePicker.vue'

@@ -2,11 +2,11 @@
 import type { NavDomain } from './types'
 import { ChevronDownIcon } from 'lucide-vue-next'
 import {
-  ButtonPro,
-  DropdownMenuPro,
-  DropdownMenuProContent,
-  DropdownMenuProItem,
-  DropdownMenuProTrigger,
+  NvButton,
+  NvDropdownMenu,
+  NvDropdownMenuContent,
+  NvDropdownMenuItem,
+  NvDropdownMenuTrigger,
   cn,
 } from '@nerv-iip/ui'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -62,8 +62,7 @@ function recompute() {
     if (used + w + GAP + moreWidth <= available) {
       used += w
       count++
-    }
-    else {
+    } else {
       break
     }
   }
@@ -83,7 +82,14 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => observer?.disconnect())
-watch(() => props.domains, () => { fitCount.value = props.domains.length; recompute() }, { flush: 'post' })
+watch(
+  () => props.domains,
+  () => {
+    fitCount.value = props.domains.length
+    recompute()
+  },
+  { flush: 'post' },
+)
 
 const tabClass = (active: boolean) =>
   cn(
@@ -101,7 +107,14 @@ const tabClass = (active: boolean) =>
     <div
       ref="measureRef"
       class="flex items-center gap-1"
-      :style="{ position: 'absolute', top: '0', left: '0', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'nowrap' }"
+      :style="{
+        position: 'absolute',
+        top: '0',
+        left: '0',
+        visibility: 'hidden',
+        pointerEvents: 'none',
+        whiteSpace: 'nowrap',
+      }"
       aria-hidden="true"
     >
       <span v-for="domain in domains" :key="domain.id" :class="tabClass(false)">
@@ -125,20 +138,22 @@ const tabClass = (active: boolean) =>
         <span>{{ domain.title }}</span>
       </RouterLink>
 
-      <DropdownMenuPro v-if="overflow.length">
-        <DropdownMenuProTrigger as-child>
-          <ButtonPro
+      <NvDropdownMenu v-if="overflow.length">
+        <NvDropdownMenuTrigger as-child>
+          <NvButton
             type="button"
             variant="ghost"
             size="sm"
-            :class="cn('h-8 shrink-0 gap-1', overflowActive ? 'text-foreground' : 'text-muted-foreground')"
+            :class="
+              cn('h-8 shrink-0 gap-1', overflowActive ? 'text-foreground' : 'text-muted-foreground')
+            "
           >
             更多
             <ChevronDownIcon class="size-4" aria-hidden="true" />
-          </ButtonPro>
-        </DropdownMenuProTrigger>
-        <DropdownMenuProContent align="start" class="w-52">
-          <DropdownMenuProItem
+          </NvButton>
+        </NvDropdownMenuTrigger>
+        <NvDropdownMenuContent align="start" class="w-52">
+          <NvDropdownMenuItem
             v-for="domain in overflow"
             :key="domain.id"
             as-child
@@ -148,9 +163,9 @@ const tabClass = (active: boolean) =>
               <component :is="domain.icon" v-if="domain.icon" class="size-4" aria-hidden="true" />
               {{ domain.title }}
             </RouterLink>
-          </DropdownMenuProItem>
-        </DropdownMenuProContent>
-      </DropdownMenuPro>
+          </NvDropdownMenuItem>
+        </NvDropdownMenuContent>
+      </NvDropdownMenu>
     </nav>
   </div>
 </template>

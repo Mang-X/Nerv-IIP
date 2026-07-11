@@ -1,3 +1,4 @@
+import { OfflineError, RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed } from 'vue'
@@ -10,15 +11,31 @@ vi.mock('vue-router', () => ({
 
 // 真实组合式用真实的 ref/computed，贴合运行时解包行为。
 const wmsState = vi.hoisted(() => ({
-  filters: { skip: 0, take: 100, status: undefined as string | undefined, keyword: undefined as string | undefined },
+  filters: {
+    skip: 0,
+    take: 100,
+    status: undefined as string | undefined,
+    keyword: undefined as string | undefined,
+  },
   orders: [
-    { inboundOrderId: '11111111-1111-1111-1111-111111111111', inboundOrderNo: 'IB-2026-0001', status: 'open', createdAtUtc: '2026-06-11T08:00:00Z' },
-    { inboundOrderId: '22222222-2222-2222-2222-222222222222', inboundOrderNo: 'IB-2026-0002', status: 'inProgress', createdAtUtc: '2026-06-11T09:00:00Z' },
+    {
+      inboundOrderId: '11111111-1111-1111-1111-111111111111',
+      inboundOrderNo: 'IB-2026-0001',
+      status: 'open',
+      createdAtUtc: '2026-06-11T08:00:00Z',
+    },
+    {
+      inboundOrderId: '22222222-2222-2222-2222-222222222222',
+      inboundOrderNo: 'IB-2026-0002',
+      status: 'inProgress',
+      createdAtUtc: '2026-06-11T09:00:00Z',
+    },
   ],
   completeInbound: vi.fn((_inboundOrderId: string, _idempotencyKey: string) => Promise.resolve()),
   completePending: false,
   error: null as unknown,
   pending: false,
+  refresh: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('@/composables/useBusinessWms', () => ({
@@ -28,7 +45,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
     total: computed(() => wmsState.orders.length),
     pending: computed(() => wmsState.pending),
     error: computed(() => wmsState.error),
-    refresh: vi.fn(),
+    refresh: wmsState.refresh,
     completeInbound: wmsState.completeInbound,
     completePending: computed(() => wmsState.completePending),
   }),
@@ -40,13 +57,24 @@ function resetState() {
   wmsState.filters.keyword = undefined
   wmsState.filters.status = undefined
   wmsState.orders = [
-    { inboundOrderId: '11111111-1111-1111-1111-111111111111', inboundOrderNo: 'IB-2026-0001', status: 'open', createdAtUtc: '2026-06-11T08:00:00Z' },
-    { inboundOrderId: '22222222-2222-2222-2222-222222222222', inboundOrderNo: 'IB-2026-0002', status: 'inProgress', createdAtUtc: '2026-06-11T09:00:00Z' },
+    {
+      inboundOrderId: '11111111-1111-1111-1111-111111111111',
+      inboundOrderNo: 'IB-2026-0001',
+      status: 'open',
+      createdAtUtc: '2026-06-11T08:00:00Z',
+    },
+    {
+      inboundOrderId: '22222222-2222-2222-2222-222222222222',
+      inboundOrderNo: 'IB-2026-0002',
+      status: 'inProgress',
+      createdAtUtc: '2026-06-11T09:00:00Z',
+    },
   ]
   wmsState.completePending = false
   wmsState.error = null
   wmsState.pending = false
   wmsState.completeInbound.mockClear()
+  wmsState.refresh.mockClear()
   push.mockClear()
 }
 
@@ -108,7 +136,7 @@ describe('WMS 收货入库', () => {
     expect(retryKey).toBe(firstKey)
 
     // 重试成功 → 进入成功态；点「继续」回列表清空选择与 operationKey。
-    const continueBtn = wrapper.findAll('button').find(b => b.text() === '继续')!
+    const continueBtn = wrapper.findAll('button').find((b) => b.text() === '继续')!
     expect(continueBtn).toBeTruthy()
     await continueBtn.trigger('click')
 
@@ -147,6 +175,24 @@ describe('WMS 收货入库', () => {
     wmsState.error = new Error('boom')
     const wrapper = mount(InboundPage)
     expect(wrapper.find('[data-testid="error-banner"]').exists()).toBe(true)
+  })
+
+  it('列表超时：显示"网络超时"文案且可点重试刷新（GET 重试安全）', async () => {
+    wmsState.error = new RequestTimeoutError()
+    const wrapper = mount(InboundPage)
+    expect(wrapper.get('[data-testid="error-banner"]').text()).toContain(
+      '网络超时，请检查连接后重试',
+    )
+    await wrapper.get('[data-testid="retry-list"]').trigger('click')
+    expect(wmsState.refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('列表离线：显示"当前离线"文案（区分于业务错误）', () => {
+    wmsState.error = new OfflineError()
+    const wrapper = mount(InboundPage)
+    expect(wrapper.get('[data-testid="error-banner"]').text()).toContain(
+      '当前离线，请检查网络连接后重试',
+    )
   })
 
   it('无单据且无错误时显示空态', () => {

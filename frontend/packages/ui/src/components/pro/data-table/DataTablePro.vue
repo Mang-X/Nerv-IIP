@@ -338,8 +338,12 @@ const innerPage = ref(1)
 const innerPageSize = ref(Number(props.pageSize) || 10)
 // Manual (server-driven) mode: parent owns page / size / total. Otherwise paginate client-side.
 const currentPage = computed(() => (props.manual ? (props.page ?? 1) : innerPage.value))
-const currentPageSize = computed(() => (props.manual ? (Number(props.pageSize) || 10) : innerPageSize.value))
-const resolvedTotal = computed(() => (props.manual ? (props.totalItems ?? processed.value.length) : processed.value.length))
+const currentPageSize = computed(() =>
+  props.manual ? Number(props.pageSize) || 10 : innerPageSize.value,
+)
+const resolvedTotal = computed(() =>
+  props.manual ? (props.totalItems ?? processed.value.length) : processed.value.length,
+)
 const pagedRows = computed(() => {
   // Manual mode (parent already paged) or pagination off → render the given rows verbatim.
   if (props.manual || !props.pagination) return processed.value
@@ -351,7 +355,10 @@ function setPage(p: number) {
   else innerPage.value = p
 }
 function setPageSize(s: number) {
-  if (props.manual) { emit('update:pageSize', s); return }
+  if (props.manual) {
+    emit('update:pageSize', s)
+    return
+  }
   innerPageSize.value = s
   innerPage.value = 1
 }
@@ -745,157 +752,159 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
 </template>
 
 <style scoped>
-.ds-dt-table {
-  border-collapse: separate;
-  border-spacing: 0;
-}
+@layer nv-components {
+  .ds-dt-table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
 
-/* Columns without an explicit `width` share the leftover space so the table
+  /* Columns without an explicit `width` share the leftover space so the table
    fills its container instead of leaving dead space on the right (product-first
    default — shadcn's nowrap cells otherwise lock every column to content width).
    `nowrap` keeps each at least content-wide; equal `width:100%` distributes the
    rest evenly. Give a column an explicit `width` to opt it out (e.g. number /
    status columns that should stay compact). */
-.ds-dt-fill {
-  width: 100%;
-}
+  .ds-dt-fill {
+    width: 100%;
+  }
 
-/* Header: a slightly recessed second surface, sticky when asked. */
-.ds-dt-headrow {
-  background-color: color-mix(in oklch, var(--muted) 55%, var(--card));
-}
-.ds-dt-headrow[data-sticky] :deep(th) {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background-color: color-mix(in oklch, var(--muted) 55%, var(--card));
-}
-.ds-dt-th :deep(*) {
-  vertical-align: middle;
-}
+  /* Header: a slightly recessed second surface, sticky when asked. */
+  .ds-dt-headrow {
+    background-color: color-mix(in oklch, var(--muted) 55%, var(--card));
+  }
+  .ds-dt-headrow[data-sticky] :deep(th) {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background-color: color-mix(in oklch, var(--muted) 55%, var(--card));
+  }
+  .ds-dt-th :deep(*) {
+    vertical-align: middle;
+  }
 
-.ds-dt-sort {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  border-radius: 5px;
-  padding: 0.125rem 0.25rem;
-  margin-inline-start: -0.25rem;
-  color: var(--muted-foreground);
-  outline: none;
-  transition: color 0.15s var(--ease-out-quart, ease-out);
-}
-.ds-dt-sort:hover,
-.ds-dt-sort[data-active] {
-  color: var(--foreground);
-}
-.ds-dt-sort:focus-visible {
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 45%, transparent);
-}
+  .ds-dt-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 5px;
+    padding: 0.125rem 0.25rem;
+    margin-inline-start: -0.25rem;
+    color: var(--muted-foreground);
+    outline: none;
+    transition: color 0.15s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-dt-sort:hover,
+  .ds-dt-sort[data-active] {
+    color: var(--foreground);
+  }
+  .ds-dt-sort:focus-visible {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 45%, transparent);
+  }
 
-/* Rows: hairline divider + calm hover; selection tinted with the brand. */
-.ds-dt-row {
-  transition: background-color 0.15s var(--ease-out-quart, ease-out);
-}
-.ds-dt-row:hover {
-  background-color: color-mix(in oklch, var(--muted) 45%, transparent);
-}
-.ds-dt-row[data-state='selected'] {
-  background-color: color-mix(in oklch, var(--brand) 8%, transparent);
-}
-.ds-dt-row[data-state='selected']:hover {
-  background-color: color-mix(in oklch, var(--brand) 12%, transparent);
-}
+  /* Rows: hairline divider + calm hover; selection tinted with the brand. */
+  .ds-dt-row {
+    transition: background-color 0.15s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-dt-row:hover {
+    background-color: color-mix(in oklch, var(--muted) 45%, transparent);
+  }
+  .ds-dt-row[data-state='selected'] {
+    background-color: color-mix(in oklch, var(--nv-brand) 8%, transparent);
+  }
+  .ds-dt-row[data-state='selected']:hover {
+    background-color: color-mix(in oklch, var(--nv-brand) 12%, transparent);
+  }
 
-/* Contextual selection strip — a brand-tinted band signalling bulk mode. */
-.ds-dt-bulk {
-  background-color: color-mix(in oklch, var(--brand) 7%, var(--card));
-}
-.ds-dt-bulk-wrap {
-  display: grid;
-  grid-template-rows: 1fr;
-}
-.ds-dt-bulk-inner {
-  overflow: hidden;
-  min-height: 0;
-}
-.ds-dt-bulk-enter-active,
-.ds-dt-bulk-leave-active {
-  transition:
-    opacity 0.2s var(--ease-out-quart, ease-out),
-    grid-template-rows 0.2s var(--ease-out-quart, ease-out);
-}
-.ds-dt-bulk-enter-from,
-.ds-dt-bulk-leave-to {
-  opacity: 0;
-  grid-template-rows: 0fr;
-}
-
-.ds-dt-clear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  color: var(--muted-foreground);
-  transition:
-    color 0.15s ease,
-    background-color 0.15s ease;
-}
-.ds-dt-clear:hover {
-  color: var(--foreground);
-  background-color: var(--muted);
-}
-
-/* Count pip on the filter button. */
-.ds-dt-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.125rem;
-  height: 1.125rem;
-  padding-inline: 0.25rem;
-  border-radius: 9999px;
-  background-color: var(--brand);
-  color: var(--brand-foreground);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.ds-dt-opt {
-  transition: background-color 0.12s ease;
-}
-.ds-dt-opt:hover {
-  background-color: var(--muted);
-}
-
-/* Active-filter chips. */
-.ds-dt-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  height: 1.625rem;
-  padding-inline: 0.5rem;
-  border-radius: 7px;
-  border: 1px solid var(--border);
-  background-color: color-mix(in oklch, var(--muted) 50%, var(--card));
-  font-size: 0.75rem;
-  color: var(--foreground);
-  transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease;
-}
-.ds-dt-chip:hover {
-  border-color: color-mix(in oklch, var(--foreground) 20%, transparent);
-  background-color: var(--muted);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ds-dt-row,
-  .ds-dt-sort,
+  /* Contextual selection strip — a brand-tinted band signalling bulk mode. */
+  .ds-dt-bulk {
+    background-color: color-mix(in oklch, var(--nv-brand) 7%, var(--card));
+  }
+  .ds-dt-bulk-wrap {
+    display: grid;
+    grid-template-rows: 1fr;
+  }
+  .ds-dt-bulk-inner {
+    overflow: hidden;
+    min-height: 0;
+  }
   .ds-dt-bulk-enter-active,
   .ds-dt-bulk-leave-active {
-    transition: none;
+    transition:
+      opacity 0.2s var(--nv-ease-out-quart, ease-out),
+      grid-template-rows 0.2s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-dt-bulk-enter-from,
+  .ds-dt-bulk-leave-to {
+    opacity: 0;
+    grid-template-rows: 0fr;
+  }
+
+  .ds-dt-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    color: var(--muted-foreground);
+    transition:
+      color 0.15s ease,
+      background-color 0.15s ease;
+  }
+  .ds-dt-clear:hover {
+    color: var(--foreground);
+    background-color: var(--muted);
+  }
+
+  /* Count pip on the filter button. */
+  .ds-dt-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.125rem;
+    height: 1.125rem;
+    padding-inline: 0.25rem;
+    border-radius: 9999px;
+    background-color: var(--nv-brand);
+    color: var(--nv-brand-foreground);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ds-dt-opt {
+    transition: background-color 0.12s ease;
+  }
+  .ds-dt-opt:hover {
+    background-color: var(--muted);
+  }
+
+  /* Active-filter chips. */
+  .ds-dt-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 1.625rem;
+    padding-inline: 0.5rem;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background-color: color-mix(in oklch, var(--muted) 50%, var(--card));
+    font-size: 0.75rem;
+    color: var(--foreground);
+    transition:
+      border-color 0.15s ease,
+      background-color 0.15s ease;
+  }
+  .ds-dt-chip:hover {
+    border-color: color-mix(in oklch, var(--foreground) 20%, transparent);
+    background-color: var(--muted);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ds-dt-row,
+    .ds-dt-sort,
+    .ds-dt-bulk-enter-active,
+    .ds-dt-bulk-leave-active {
+      transition: none;
+    }
   }
 }
 </style>

@@ -31,6 +31,30 @@ public sealed class ErpProcurementAggregateTests
     }
 
     [Fact]
+    public void Purchase_requisition_conversion_records_purchase_order_once()
+    {
+        var requisition = PurchaseRequisition.CreateFromSuggestion(
+            "org-001",
+            "env-dev",
+            "REQ-001",
+            "MPS-SUG-001",
+            "SKU-RM-1000",
+            "kg",
+            "SITE-01",
+            120m,
+            new DateOnly(2026, 6, 1));
+
+        requisition.MarkConverted("PO-001");
+        requisition.MarkConverted("PO-001");
+
+        Assert.Equal(PurchaseRequisitionStatus.Converted, requisition.Status);
+        Assert.Equal("PO-001", requisition.ConvertedPurchaseOrderNo);
+        Assert.NotNull(requisition.ConvertedAtUtc);
+        Assert.Single(requisition.GetDomainEvents().OfType<PurchaseRequisitionConvertedDomainEvent>());
+        Assert.Throws<InvalidOperationException>(() => requisition.MarkConverted("PO-002"));
+    }
+
+    [Fact]
     public void Request_for_quotation_requires_supplier_and_item()
     {
         Assert.Throws<ArgumentException>(() => RequestForQuotation.Create(
@@ -72,6 +96,137 @@ public sealed class ErpProcurementAggregateTests
             "SUP-001",
             "SITE-01",
             []));
+    }
+
+    [Fact]
+    public void Purchase_order_change_waits_for_approval_then_updates_open_supply_and_keeps_an_audit_version()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-CHANGE-001",
+            "SUP-001",
+            "SITE-01",
+            [NewPurchaseOrderLine(quantity: 10m)]);
+        order.MarkApprovalRequested("approval-create");
+        order.ReleaseAfterApproval("approval-create");
+        order.RegisterReceipt("LINE-001", 4m);
+
+        var change = order.RequestChange(
+            [new PurchaseOrderLineChangeDraft("LINE-001", 8m, 15m, new DateOnly(2026, 6, 10))]);
+        change.AssignApprovalChain("approval-change");
+
+        Assert.Equal(10m, order.Lines.Single().OrderedQuantity);
+        Assert.Equal(6m, order.Lines.Single().OpenQuantity);
+        Assert.Equal(PurchaseOrderChangeStatus.PendingApproval, change.Status);
+
+        order.ApplyApprovedChange("approval-change");
+
+        var line = order.Lines.Single();
+        Assert.Equal(8m, line.OrderedQuantity);
+        Assert.Equal(4m, line.OpenQuantity);
+        Assert.Equal(15m, line.UnitPrice);
+        Assert.Equal(new DateOnly(2026, 6, 10), line.PromisedDate);
+        Assert.Equal(PurchaseOrderChangeStatus.Approved, change.Status);
+        Assert.Equal(2, order.Version);
+        Assert.Single(order.ChangeHistory);
+    }
+
+    [Fact]
+    public void Purchase_order_change_rejects_duplicate_line_numbers_with_domain_error()
+    {
+        var order = PurchaseOrder.Create("org-001", "env-dev", "PO-DUP-001", "SUP-001", "SITE-01", [NewPurchaseOrderLine(quantity: 10m)]);
+        order.MarkApprovalRequested("approval-dup");
+        order.ReleaseAfterApproval("approval-dup");
+
+        var exception = Assert.Throws<InvalidOperationException>(() => order.RequestChange(
+            [
+                new PurchaseOrderLineChangeDraft("LINE-001", 9m, 12.5m, new DateOnly(2026, 6, 4)),
+                new PurchaseOrderLineChangeDraft("LINE-001", 8m, 12.5m, new DateOnly(2026, 6, 5)),
+            ]));
+
+        Assert.Equal("Purchase order change cannot contain duplicate lines.", exception.Message);
+    }
+
+    [Fact]
+    public void Approval_rejection_returns_purchase_order_to_editable_pending_state()
+    {
+        var order = PurchaseOrder.Create("org-001", "env-dev", "PO-REJECT-001", "SUP-001", "SITE-01", [NewPurchaseOrderLine(quantity: 10m)]);
+        order.MarkApprovalRequested("approval-reject-001");
+
+        order.ReturnToEditableAfterApprovalRejected("approval-reject-001");
+        order.ReturnToEditableAfterApprovalRejected("approval-reject-001");
+
+        Assert.Equal(PurchaseOrderStatus.PendingApproval, order.Status);
+        Assert.Null(order.ApprovalChainId);
+    }
+
+    [Fact]
+    public void Rejected_purchase_order_can_revise_lines_before_resubmission()
+    {
+        var order = PurchaseOrder.Create("org-001", "env-dev", "PO-REVISE-001", "SUP-001", "SITE-01", [NewPurchaseOrderLine(quantity: 10m)]);
+        order.MarkApprovalRequested("approval-reject-001");
+        order.ReturnToEditableAfterApprovalRejected("approval-reject-001");
+
+        order.ReviseBeforeApproval([new PurchaseOrderLineChangeDraft("LINE-001", 12m, 15m, new DateOnly(2026, 7, 20))]);
+
+        var line = Assert.Single(order.Lines);
+        Assert.Equal(12m, line.OrderedQuantity);
+        Assert.Equal(15m, line.UnitPrice);
+        Assert.Equal(new DateOnly(2026, 7, 20), line.PromisedDate);
+        Assert.Equal(180m, order.TotalAmount);
+    }
+
+    [Fact]
+    public void Purchase_order_final_delivery_closes_remaining_quantity_and_cancellation_rejects_received_orders()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-FINAL-001",
+            "SUP-001",
+            "SITE-01",
+            [NewPurchaseOrderLine(quantity: 10m, underReceiptTolerancePercent: 20m)]);
+        order.MarkApprovalRequested("approval-final");
+        order.ReleaseAfterApproval("approval-final");
+        order.RegisterReceipt("LINE-001", 8m);
+
+        order.CloseRemainingLine("LINE-001", "supplier final delivery");
+
+        Assert.True(order.Lines.Single().FinalDelivery);
+        Assert.Equal(0m, order.Lines.Single().OpenQuantity);
+        Assert.Equal(PurchaseOrderStatus.Closed, order.Status);
+        Assert.Throws<InvalidOperationException>(() => order.Cancel("no longer needed"));
+    }
+
+    [Fact]
+    public void Purchase_order_line_keeps_source_requisition_pegging()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-001",
+            "SUP-001",
+            "SITE-01",
+            [
+                new PurchaseOrderLineDraft(
+                    "LINE-001",
+                    "SKU-RM-1000",
+                    "kg",
+                    10m,
+                    12.5m,
+                    new DateOnly(2026, 6, 3),
+                    Sources:
+                    [
+                        new PurchaseOrderLineSourceDraft("PR-001", "10", 4m),
+                        new PurchaseOrderLineSourceDraft("PR-002", "10", 6m),
+                    ]),
+            ]);
+
+        var line = Assert.Single(order.Lines);
+        Assert.Equal(10m, line.SourceLinks.Sum(x => x.Quantity));
+        Assert.Contains(line.SourceLinks, x => x.PurchaseRequisitionNo == "PR-001" && x.PurchaseRequisitionLineNo == "10" && x.Quantity == 4m);
+        Assert.Contains(line.SourceLinks, x => x.PurchaseRequisitionNo == "PR-002" && x.PurchaseRequisitionLineNo == "10" && x.Quantity == 6m);
     }
 
     [Fact]

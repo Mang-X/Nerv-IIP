@@ -40,8 +40,12 @@ public sealed class StockReservationEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("Reservation lifecycle status.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the reservation was created.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the reservation was last changed.");
+        builder.Property(x => x.ExpiresAtUtc).HasColumnName("expires_at_utc").IsRequired().HasComment("UTC deadline after which an open reservation is automatically released.");
+        builder.Property(x => x.RowVersion).HasColumnName("row_version").HasConversion(x => x.VersionNumber, x => new RowVersion(x)).IsConcurrencyToken().HasComment("Optimistic row version for concurrent reservation renewal and expiration.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceService, x.SourceDocumentId, x.IdempotencyKey }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SkuCode, x.SiteCode, x.LocationCode, x.Status });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SiteCode, x.SkuCode, x.ExpiryDate, x.Status });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ExpiresAtUtc, x.Status })
+            .HasDatabaseName("ix_stock_reservations_expiration_scan");
     }
 }

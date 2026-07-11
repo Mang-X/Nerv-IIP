@@ -68,5 +68,5 @@ public sealed class ProductionVersionCreatedIntegrationEventHandlerForBindMesWor
 
 public static class ProductionVersionCreatedIntegrationEventTopic
 {
-    public const string TopicName = "Nerv.IIP.Contracts.ProductEngineering.ProductionVersionCreatedIntegrationEvent";
+    public const string TopicName = "ProductionVersionCreatedIntegrationEvent";
 }

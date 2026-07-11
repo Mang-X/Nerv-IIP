@@ -1,4 +1,4 @@
-export { default as NotifierHost } from './NotifierHost.vue'
+export { default as NvNotifierHost } from './NotifierHost.vue'
 export {
   dismissNotify,
   messagePro,

@@ -1,2 +1,2 @@
-export { default as TimelinePro } from './TimelinePro.vue'
+export { default as NvTimeline } from './TimelinePro.vue'
 export type { TimelineItem, TimelineTone } from './types'

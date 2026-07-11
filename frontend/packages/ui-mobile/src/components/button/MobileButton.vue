@@ -55,11 +55,13 @@ const classes = computed(() =>
 </template>
 
 <style scoped>
-.ds-mbtn {
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-.ds-mbtn:active:not(:disabled) {
-  opacity: 0.6;
+@layer nv-components {
+  .ds-mbtn {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .ds-mbtn:active:not(:disabled) {
+    opacity: 0.6;
+  }
 }
 </style>
