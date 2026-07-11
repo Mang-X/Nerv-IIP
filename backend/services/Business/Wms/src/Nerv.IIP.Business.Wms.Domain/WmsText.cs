@@ -38,4 +38,18 @@ public static class WmsText
         var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(candidate))).ToLowerInvariant();
         return $"wms-line:{hash}";
     }
+
+    public static string StableOperationalCode(string prefix, params string[] parts)
+    {
+        var normalizedPrefix = Required(prefix, nameof(prefix)).ToUpperInvariant();
+        var normalizedParts = parts.Select((part, index) => Required(part, $"parts[{index}]")).ToArray();
+        var candidate = $"{normalizedPrefix}-{string.Join('-', normalizedParts)}";
+        if (candidate.Length <= 100)
+        {
+            return candidate;
+        }
+
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(candidate))).ToLowerInvariant();
+        return $"{normalizedPrefix}-{hash}";
+    }
 }

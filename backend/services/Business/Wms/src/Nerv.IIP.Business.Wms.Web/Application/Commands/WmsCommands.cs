@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.BackorderOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
@@ -375,6 +376,19 @@ public sealed class CompleteWarehouseTaskCommandHandler(ApplicationDbContext dbC
 
 public sealed record CompleteOutboundOrderCommand(OutboundOrderId OutboundOrderId, string PackReviewNo, bool Passed, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
 
+public sealed record CloseBackorderOrderCommand(BackorderOrderId BackorderOrderId, string Reason) : ICommand;
+
+public sealed class CloseBackorderOrderCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CloseBackorderOrderCommand>
+{
+    public async Task Handle(CloseBackorderOrderCommand request, CancellationToken cancellationToken)
+    {
+        var backorder = await dbContext.BackorderOrders.SingleOrDefaultAsync(x => x.Id == request.BackorderOrderId, cancellationToken)
+            ?? throw new KnownException($"Backorder order was not found: {request.BackorderOrderId}");
+        backorder.Close(request.Reason);
+    }
+}
+
 public sealed class CompleteOutboundOrderCommandHandler(
     ApplicationDbContext dbContext,
     IWmsInventoryReservationClient? inventoryReservationClient = null)
@@ -384,11 +398,42 @@ public sealed class CompleteOutboundOrderCommandHandler(
     {
         var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.OutboundOrderId, cancellationToken)
             ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
+        if (outbound.Status == OutboundOrderStatus.Completed)
+        {
+            var existingRequest = await dbContext.InventoryMovementRequests
+                .Where(x => x.OrganizationId == outbound.OrganizationId
+                    && x.EnvironmentId == outbound.EnvironmentId
+                    && x.SourceDocumentId == outbound.OutboundOrderNo
+                    && (x.IdempotencyKey == request.IdempotencyKey || x.IdempotencyKey.StartsWith(request.IdempotencyKey + ":")))
+                .OrderBy(x => x.SourceDocumentLineId)
+                .FirstOrDefaultAsync(cancellationToken)
+                ?? throw new KnownException("Completed outbound order does not match the supplied idempotency key.");
+            return new CompleteWmsMovementResult(existingRequest.Id, null);
+        }
+
         var executedQuantitiesByLine = await GetExecutedPickingQuantitiesAsync(outbound, cancellationToken);
         EnsureInventoryClientAvailableForShortPickRelease(outbound, executedQuantitiesByLine);
         var movementRequests = outbound.CompletePackReview(request.PackReviewNo, request.Passed, request.IdempotencyKey, executedQuantitiesByLine);
         await ReleaseShortPickedReservationBalancesAsync(outbound, cancellationToken);
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
+        foreach (var line in outbound.Lines.Where(x => x.BackorderQuantity > 0))
+        {
+            var backorderNo = WmsText.StableOperationalCode("BO", outbound.OutboundOrderNo, line.LineNo);
+            var backorder = BackorderOrder.Create(
+                outbound.OrganizationId,
+                outbound.EnvironmentId,
+                backorderNo,
+                outbound.OutboundOrderNo,
+                line.LineNo,
+                line.SkuCode,
+                line.UomCode,
+                outbound.SiteCode,
+                line.PickLocationCode,
+                line.BackorderQuantity);
+            dbContext.BackorderOrders.Add(backorder);
+            dbContext.WarehouseTasks.Add(backorder.CreateReplenishmentRecommendation(WmsText.StableOperationalCode("RPL", outbound.OutboundOrderNo, line.LineNo)));
+        }
+
         return new CompleteWmsMovementResult(movementRequests.First().Id, null);
     }
 

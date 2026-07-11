@@ -6,6 +6,7 @@ public enum WarehouseTaskType
 {
     Putaway = 0,
     Picking = 1,
+    Replenishment = 2,
 }
 
 public enum WarehouseTaskStatus
@@ -98,6 +99,21 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
         decimal plannedQuantity)
     {
         return new WarehouseTask(WarehouseTaskType.Picking, organizationId, environmentId, taskNo, sourceOrderNo, sourceOrderLineNo, skuCode, uomCode, siteCode, fromLocationCode, toLocationCode, plannedQuantity);
+    }
+
+    public static WarehouseTask CreateReplenishment(
+        string organizationId,
+        string environmentId,
+        string taskNo,
+        string sourceOrderNo,
+        string sourceOrderLineNo,
+        string skuCode,
+        string uomCode,
+        string siteCode,
+        string toLocationCode,
+        decimal plannedQuantity)
+    {
+        return new WarehouseTask(WarehouseTaskType.Replenishment, organizationId, environmentId, taskNo, sourceOrderNo, sourceOrderLineNo, skuCode, uomCode, siteCode, "REPLENISHMENT-SOURCE-PENDING", toLocationCode, plannedQuantity);
     }
 
     public void RecordProgress(decimal executedQuantity)
