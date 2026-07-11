@@ -385,8 +385,10 @@ var businessIndustrialTelemetry = WithNervIipTelemetry(WithLocalDevelopmentEnvir
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessIndustrialTelemetryDatabase, "PostgreSQL")
+    .WithReference(ops)
     .WaitFor(businessIndustrialTelemetryDatabase);
 businessIndustrialTelemetry = WithRedisMessagingTransport(businessIndustrialTelemetry);
 if (rabbitmq is not null)
