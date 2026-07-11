@@ -6,12 +6,14 @@ import {
   createBusinessConsoleSkuMutationOptions,
   listBusinessConsoleMasterDataResourcesQueryOptions,
   listBusinessConsoleSkusQueryOptions,
+  listBusinessConsoleWorkersQueryOptions,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   useBusinessMasterDataGroups,
   useBusinessMasterDataResources,
   useBusinessSkus,
+  useBusinessWorkers,
 } from './useBusinessMasterData'
 
 const coladaState = vi.hoisted(() => ({
@@ -47,6 +49,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   listBusinessConsoleSkusQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleSkus' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleWorkersQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleWorkers' }],
     query: vi.fn(),
   })),
 }))
@@ -256,5 +262,21 @@ describe('business master data composables', () => {
       { key: 'production-line', title: '产线', rows: [] },
       { key: 'work-center', title: '工作中心', rows: [] },
     ])
+  })
+
+  // 回归：网关 BusinessConsoleWorkerDirectoryRequestValidator 要求 PageIndex > 0（1-based）。
+  // 曾发 pageIndex:0 → 后端 400，组织/技能/派工三处人员选择器静默空（MAN-461 实机走查发现）。
+  it('lists workers with a 1-based pageIndex to satisfy the gateway validator', () => {
+    const { workers } = useBusinessWorkers()
+
+    expect(listBusinessConsoleWorkersQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        pageIndex: 1,
+        pageSize: 100,
+      },
+    })
+    expect(workers.value).toEqual([])
   })
 })
