@@ -92,7 +92,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Approval | 16 | 11 | 4 | 1 |
 | BarcodeLabel | 12 | 9 | 0 | 3 |
 | DemandPlanning | 15 | 15 | 0 | 0 |
-| Erp | 50 | 39 | 10 | 1 |
+| Erp | 51 | 39 | 11 | 1 |
 | IndustrialTelemetry | 20 | 17 | 1 | 2 |
 | Inventory | 12 | 5 | 2 | 5 |
 | Maintenance | 20 | 15 | 5 | 0 |
@@ -127,6 +127,7 @@ governance decisions, are listed in full below.
 | Erp | POST | `/api/business/v1/erp/supplier-invoices` | BusinessGateway facade pending; supplier-invoice UI is a known ERP frontend gap (readiness). |
 | Erp | POST | `/api/business/v1/erp/supplier-invoices/{invoiceNo}/release-payment-hold` | BusinessGateway facade pending; supplier-invoice payment-hold UI is a known ERP frontend gap. |
 | Erp | POST | `/api/business/v1/erp/supplier-invoices/{invoiceNo}/void-payment-hold` | BusinessGateway facade pending; supplier-invoice payment-hold UI is a known ERP frontend gap. |
+| Erp | POST | `/api/business/v1/erp/sales-return-authorizations` | BusinessGateway facade pending; customer return authorization follows the ERP returns Business Console menu phase. |
 | IndustrialTelemetry | POST | `/api/business/v1/iiot/tags` | BusinessGateway facade pending; telemetry tag create follows the equipment/telemetry config menu phase (only tag list GET is exposed today). |
 | Inventory | POST | `/api/inventory/v1/count-tasks/{countTaskId}/cancel` | BusinessGateway facade pending; count-task create/adjust are exposed, cancel follows the inventory count Business Console menu phase. |
 | Inventory | POST | `/api/inventory/v1/locations` | BusinessGateway facade pending; inventory location master-setup UI is a later menu phase. |
