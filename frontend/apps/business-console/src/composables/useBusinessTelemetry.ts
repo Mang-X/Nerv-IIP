@@ -246,7 +246,9 @@ export function useBusinessTelemetryTagCurrentValue(
 
   return {
     currentValue,
+    currentValueError: currentValueQuery.error,
     currentValuePending: currentValueQuery.isLoading,
+    refreshCurrentValue: () => (enabled.value ? currentValueQuery.refetch() : Promise.resolve()),
   }
 }
 

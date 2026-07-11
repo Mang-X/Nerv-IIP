@@ -90,10 +90,12 @@ const showErrors = ref(false)
 
 // 写值单 tag 的真实当前值（最新原始采样 LastValue，来自专门 current-value 读面），区别于历史合并读面的 bucket 均值。
 const singleTagKey = computed(() => singleForm.tagKey)
-const { currentValue: singleCurrentValue } = useBusinessTelemetryTagCurrentValue(
-  deviceAssetId,
-  singleTagKey,
-)
+const {
+  currentValue: singleCurrentValue,
+  currentValueError: singleCurrentValueError,
+  currentValuePending: singleCurrentValuePending,
+  refreshCurrentValue: refreshSingleCurrentValue,
+} = useBusinessTelemetryTagCurrentValue(deviceAssetId, singleTagKey)
 
 function resetForm() {
   phase.value = 'form'
@@ -309,9 +311,19 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
               </div>
               <div>
                 <p class="text-muted-foreground">当前值</p>
-                <p class="font-medium text-foreground">
-                  {{ singleCurrentValue?.hasSample ? singleCurrentValue.value : '无采样' }}
+                <p v-if="singleCurrentValuePending" class="text-muted-foreground">读取中…</p>
+                <button
+                  v-else-if="singleCurrentValueError"
+                  type="button"
+                  class="text-left text-destructive underline-offset-2 hover:underline"
+                  @click="refreshSingleCurrentValue"
+                >
+                  读取失败，点击重试
+                </button>
+                <p v-else-if="singleCurrentValue?.hasSample" class="font-medium text-foreground">
+                  {{ singleCurrentValue.value }}
                 </p>
+                <p v-else class="text-muted-foreground">无采样</p>
               </div>
             </div>
 

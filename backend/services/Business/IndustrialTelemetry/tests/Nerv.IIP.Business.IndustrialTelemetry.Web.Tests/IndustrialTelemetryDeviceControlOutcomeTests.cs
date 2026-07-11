@@ -1,3 +1,4 @@
+using System.Net.Http;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlCommandAggregate;
@@ -303,6 +304,42 @@ public sealed class IndustrialTelemetryDeviceControlOutcomeTests
                 []);
             return Task.FromResult(response);
         }
+    }
+
+    [Fact]
+    public async Task Completed_handler_propagates_ops_failure_without_advancing_so_cap_can_retry()
+    {
+        var sender = new CapturingSender();
+        var handler = new DeviceControlCommandCompletedHandler(sender, new ThrowingDeviceControlOpsClient(), new InMemoryIntegrationEventDeadLetterStore());
+
+        // A transient Ops failure must surface (for CAP retry/DLQ), and the ledger must NOT be advanced —
+        // otherwise first-terminal-wins would permanently lose the device receipt on a message that was acked.
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => handler.HandleAsync(CompletedEvent("op-transient", "device.control.command"), CancellationToken.None));
+        Assert.Empty(sender.Sent);
+    }
+
+    [Fact]
+    public async Task Failed_handler_only_trusts_the_exact_event_attempt_for_the_receipt()
+    {
+        var sender = new CapturingSender();
+        // The task only contains a different attempt than the one the event names; the resolver must not
+        // fall back to it (mislabeling the receipt) — it retries until the exact attempt is present.
+        var opsClient = new StubDeviceControlOpsClient("attempt-999", "Good", "other attempt");
+        var handler = new DeviceControlCommandFailedHandler(sender, opsClient, new InMemoryIntegrationEventDeadLetterStore());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => handler.HandleAsync(FailedEvent("op-mismatch", "device.control.command", "opcua.write.rejected"), CancellationToken.None));
+        Assert.Empty(sender.Sent);
+    }
+
+    private sealed class ThrowingDeviceControlOpsClient : IDeviceControlOpsClient
+    {
+        public Task<OperationTaskResponse> CreateDeviceControlTaskAsync(CreateOperationTaskRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<OperationTaskResponse> GetDeviceControlTaskAsync(string operationTaskId, CancellationToken cancellationToken) =>
+            throw new HttpRequestException("Ops temporarily unavailable.");
     }
 
     private static ApplicationDbContext CreateDbContext(string databaseName)

@@ -234,6 +234,24 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
+    public async Task Tag_current_value_facade_returns_forbidden_scoped_to_the_device_when_iam_denies()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/telemetry/tags/current-value?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01&tagKey=spindle.speed");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Equal(BusinessGatewayPermissions.IiotTelemetryRead, auth.LastRequirement!.PermissionCode);
+        // The current-value read is a device-scoped surface: it authorizes on the device asset, not just org/env.
+        Assert.Equal("device-asset", auth.LastRequirement.ResourceType);
+        Assert.Equal("DEV-CNC-01", auth.LastRequirement.ResourceId);
+    }
+
+    [Fact]
     public async Task Business_console_endpoint_rejects_context_mismatch_before_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -997,6 +1015,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/equipment/alarms/alarm-001/shelve", BusinessGatewayPermissions.IiotAlarmsWrite);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/equipment/alarms/alarm-001/unshelve", BusinessGatewayPermissions.IiotAlarmsWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/tags?deviceAssetId=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/tags/current-value?deviceAssetId=DEV-OIL-01&tagKey=temperature", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/alarm-rules?deviceAssetId=DEV-OIL-01", BusinessGatewayPermissions.IiotAlarmsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/samples", BusinessGatewayPermissions.IiotTelemetryWrite);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/alarms", BusinessGatewayPermissions.IiotAlarmsWrite);

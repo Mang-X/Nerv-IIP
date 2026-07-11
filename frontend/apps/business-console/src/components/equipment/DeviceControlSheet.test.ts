@@ -11,6 +11,15 @@ const state = vi.hoisted(() => ({
   tracked: undefined as unknown,
 }))
 
+const cvState = vi.hoisted(() => ({
+  current: { hasSample: true, value: 55 } as
+    | { hasSample: boolean; value: number | null }
+    | undefined,
+  pending: false,
+  error: undefined as unknown,
+  refresh: vi.fn(),
+}))
+
 const TERMINAL = new Set(['completed', 'failed', 'rejected', 'abandoned'])
 
 vi.mock('@/composables/useBusinessDeviceControl', () => ({
@@ -58,14 +67,10 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
     ]),
   }),
   useBusinessTelemetryTagCurrentValue: () => ({
-    currentValue: computed(() => ({
-      deviceAssetId: 'DEV-CNC-01',
-      tagKey: 'spindle.speed',
-      hasSample: true,
-      value: 55,
-      occurredAtUtc: '2026-07-01T07:00:00Z',
-    })),
-    currentValuePending: shallowRef(false),
+    currentValue: computed(() => cvState.current),
+    currentValueError: computed(() => cvState.error),
+    currentValuePending: computed(() => cvState.pending),
+    refreshCurrentValue: cvState.refresh,
   }),
 }))
 
@@ -110,6 +115,10 @@ beforeEach(() => {
   state.dispatch.mockClear()
   state.startTracking.mockClear()
   state.tracked = undefined
+  cvState.current = { hasSample: true, value: 55 }
+  cvState.pending = false
+  cvState.error = undefined
+  cvState.refresh.mockClear()
 })
 
 describe('DeviceControlSheet', () => {
@@ -120,6 +129,33 @@ describe('DeviceControlSheet', () => {
     expect(wrapper.text()).toContain('值域：0 ~ 100 rpm')
     expect(wrapper.text()).toContain('当前值')
     expect(wrapper.text()).toContain('55')
+    expect(wrapper.text()).not.toContain('无采样')
+  })
+
+  it('distinguishes current-value loading, read failure and no-sample states', async () => {
+    cvState.pending = true
+    let wrapper = mountSheet()
+    await selectTag(wrapper)
+    expect(wrapper.text()).toContain('读取中')
+
+    cvState.pending = false
+    cvState.error = new Error('boom')
+    wrapper = mountSheet()
+    await selectTag(wrapper)
+    // A read failure must not be reported as a business "no sample"; it offers a retry.
+    expect(wrapper.text()).toContain('读取失败，点击重试')
+    expect(wrapper.text()).not.toContain('无采样')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('读取失败'))!
+      .trigger('click')
+    expect(cvState.refresh).toHaveBeenCalled()
+
+    cvState.error = undefined
+    cvState.current = { hasSample: false, value: null }
+    wrapper = mountSheet()
+    await selectTag(wrapper)
+    expect(wrapper.text()).toContain('无采样')
   })
 
   it('blocks submit and shows an error for an out-of-range value', async () => {

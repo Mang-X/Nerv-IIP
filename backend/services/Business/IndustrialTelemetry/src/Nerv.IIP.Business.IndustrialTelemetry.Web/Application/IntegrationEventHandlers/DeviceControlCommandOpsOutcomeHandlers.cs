@@ -17,34 +17,33 @@ internal static class DeviceControlOutcomeConsumer
 
     // The Ops completed/failed events carry only the generic FailureCode; the device-reported receipt
     // (e.g. Good/BadOutOfRange) lives on the connector attempt output. Fetch the Ops task and read the
-    // attempt output so the ledger persists the real device receipt. Degrades to (null,null) if Ops is
-    // unavailable or the output is absent — the generic FailureCode still lands via the event.
+    // output of the EXACT attempt the event names, then advance status + receipt together.
+    //
+    // Reliability: exceptions are NOT swallowed. Because the resolver runs before the ledger is advanced,
+    // a transient Ops fetch failure/timeout/cancellation (or an event whose attempt is not yet present in
+    // the task snapshot) propagates and lets CAP retry the whole handler; the ledger stays non-terminal so
+    // the receipt is never permanently lost to first-terminal-wins. Only the exact attempt is trusted, so
+    // a retry chain cannot mislabel this outcome with another attempt's receipt. An attempt that genuinely
+    // carries no device receipt (connector emits none) resolves to (null,null) so status still advances.
     public static async Task<(string? DeviceReceiptCode, string? DeviceReceiptMessage)> ResolveDeviceReceiptAsync(
         IDeviceControlOpsClient opsClient,
         string operationTaskId,
-        string? attemptId,
+        string attemptId,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var task = await opsClient.GetDeviceControlTaskAsync(operationTaskId, cancellationToken);
-            var attempt = task.Attempts.FirstOrDefault(x => string.Equals(x.AttemptId, attemptId, StringComparison.Ordinal))
-                ?? task.Attempts.FirstOrDefault(x => string.Equals(x.AttemptId, task.CurrentAttemptId, StringComparison.Ordinal))
-                ?? task.Attempts.LastOrDefault();
-            var output = attempt?.Output;
-            if (output is null)
-            {
-                return (null, null);
-            }
-
-            output.TryGetValue("deviceReceiptCode", out var code);
-            output.TryGetValue("deviceReceiptMessage", out var message);
-            return (code, message);
-        }
-        catch (Exception)
+        var task = await opsClient.GetDeviceControlTaskAsync(operationTaskId, cancellationToken);
+        var attempt = task.Attempts.FirstOrDefault(x => string.Equals(x.AttemptId, attemptId, StringComparison.Ordinal))
+            ?? throw new InvalidOperationException(
+                $"Ops task '{operationTaskId}' does not yet contain attempt '{attemptId}' for device receipt resolution; retrying.");
+        var output = attempt.Output;
+        if (output is null)
         {
             return (null, null);
         }
+
+        output.TryGetValue("deviceReceiptCode", out var code);
+        output.TryGetValue("deviceReceiptMessage", out var message);
+        return (code, message);
     }
 }
 
