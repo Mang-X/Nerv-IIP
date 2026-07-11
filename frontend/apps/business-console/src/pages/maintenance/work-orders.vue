@@ -1,22 +1,17 @@
 <script setup lang="ts">
 import type {
   BusinessConsoleCreateMaintenanceWorkOrderRequest,
+  BusinessConsoleMaintenanceSparePartInput,
   BusinessConsoleMaintenanceWorkOrderItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenanceWorkOrders } from '@/composables/useBusinessMaintenance'
+import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
   NvDataTable,
-  NvDialog,
-  NvDialogClose,
-  NvDialogContent,
-  NvDialogDescription,
-  NvDialogFooter,
-  NvDialogHeader,
-  NvDialogTitle,
   NvDropdownMenuItem,
   NvField,
   NvFieldError,
@@ -32,11 +27,17 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
+  NvSheet,
+  NvSheetContent,
+  NvSheetDescription,
+  NvSheetFooter,
+  NvSheetHeader,
+  NvSheetTitle,
   Spinner,
   NvStatusBadge,
   toast,
 } from '@nerv-iip/ui'
-import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { CheckCircle2Icon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -65,6 +66,9 @@ const {
 const { page, pageSize } = usePagedList(filters)
 const route = useRoute()
 
+// 技师目录（人员选择器数据源，读自 /master-data/workers）。
+const { workers, workersPending } = useBusinessWorkers()
+
 const priorityOptions = [
   { label: '高', value: 'high' },
   { label: '中', value: 'medium' },
@@ -80,6 +84,7 @@ const reasonOptions = [
   { label: '部件磨损', value: 'worn-part' },
   { label: '突发故障', value: 'breakdown' },
 ]
+const UNASSIGNED = '__unassigned__'
 
 // 待执行 / 已完成基于本页可见行的语义统计（可行动数，非机械总数）。
 const OPEN_STATUSES = new Set(['open', 'opened', 'scheduled', 'inprogress', 'in-progress'])
@@ -101,8 +106,22 @@ const createForm = reactive({
   priority: 'medium',
   openedBy: '',
   sourceAlarmId: '',
+  assignedTechnicianUserId: UNASSIGNED,
+  estimatedLaborMinutes: '',
 })
 const createError = shallowRef('')
+
+interface SparePartRow {
+  id: number
+  skuCode: string
+  quantity: string
+  uomCode: string
+  unitCost: string
+}
+let nextSpareRowId = 1
+function createSpareRow(): SparePartRow {
+  return { id: nextSpareRowId++, skuCode: '', quantity: '1', uomCode: 'EA', unitCost: '' }
+}
 
 const completeOpen = shallowRef(false)
 const completeTarget = shallowRef<BusinessConsoleMaintenanceWorkOrderItem>()
@@ -110,10 +129,43 @@ const completeForm = reactive({
   result: 'repaired',
   downtimeReasonCode: 'preventive',
   downtimeMinutes: '30',
-  sparePartSku: '',
-  sparePartQuantity: '1',
+  actualLaborMinutes: '',
+  externalServiceCostAmount: '',
+  costCurrencyCode: 'CNY',
 })
+const spareRows = reactive<SparePartRow[]>([createSpareRow()])
+// 备件成本覆盖：空串 = 未覆盖（用自动合计）；非空 = 人工改写值。
+const sparePartCostOverride = shallowRef('')
 const completeError = shallowRef('')
+
+// 自动合计：Σ(数量 × 单价)，仅计入数值有效的行。
+const autoSparePartCost = computed(() =>
+  spareRows.reduce((sum, row) => {
+    const qty = Number(row.quantity)
+    const unit = Number(row.unitCost)
+    if (!Number.isFinite(qty) || !Number.isFinite(unit) || !row.unitCost.trim()) return sum
+    return sum + qty * unit
+  }, 0),
+)
+// 展示/编辑用：未覆盖时回显自动合计，人工输入即视为覆盖。
+const sparePartCostDisplay = computed({
+  get: () =>
+    sparePartCostOverride.value !== ''
+      ? sparePartCostOverride.value
+      : autoSparePartCost.value > 0
+        ? String(round2(autoSparePartCost.value))
+        : '',
+  set: (value: string) => {
+    sparePartCostOverride.value = value
+  },
+})
+const effectiveSparePartCost = computed<number | undefined>(() => {
+  if (sparePartCostOverride.value !== '') {
+    const n = Number(sparePartCostOverride.value)
+    return Number.isFinite(n) ? n : undefined
+  }
+  return autoSparePartCost.value > 0 ? round2(autoSparePartCost.value) : undefined
+})
 
 const listErrorMessage = computed(() => formatError(workOrdersError.value))
 const createErrorMessage = computed(
@@ -135,6 +187,7 @@ const columns: NvDataTableColumn<WorkOrderRow>[] = [
   { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '—' },
   { key: 'priority', header: '优先级', width: 'w-20' },
   { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'assignedTechnicianUserId', header: '技师', accessor: (r) => technicianLabel(r.assignedTechnicianUserId) },
   { key: 'openedAtUtc', header: '开单时间', accessor: (r) => formatDateTime(r.openedAtUtc) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
@@ -147,8 +200,16 @@ function workOrderNo(row: WorkOrderRow) {
 function priorityLabel(value?: string | null) {
   return priorityOptions.find((o) => o.value === (value ?? '').toLowerCase())?.label ?? value ?? '—'
 }
+function technicianLabel(userId?: string | null) {
+  if (!userId) return '未指派'
+  const worker = workers.value.find((w) => w.userId === userId)
+  return worker?.displayName ?? userId
+}
 function rowKey(row: WorkOrderRow) {
   return row.workOrderId ?? '维护工单'
+}
+function round2(value: number) {
+  return Math.round(value * 100) / 100
 }
 
 function openCreate(prefill: Partial<typeof createForm> = {}) {
@@ -156,12 +217,19 @@ function openCreate(prefill: Partial<typeof createForm> = {}) {
   createForm.priority = 'medium'
   createForm.openedBy = prefill.openedBy ?? ''
   createForm.sourceAlarmId = prefill.sourceAlarmId ?? ''
+  createForm.assignedTechnicianUserId = UNASSIGNED
+  createForm.estimatedLaborMinutes = ''
   createError.value = ''
   createOpen.value = true
 }
 async function submitCreate() {
   if (!createForm.deviceAssetId.trim() || !createForm.openedBy.trim()) {
     createError.value = '请填写设备与开单人。'
+    return
+  }
+  const estimatedLaborMinutes = optionalNonNegativeInt(createForm.estimatedLaborMinutes)
+  if (estimatedLaborMinutes === false) {
+    createError.value = '预估工时需为非负整数。'
     return
   }
   const body: BusinessConsoleCreateMaintenanceWorkOrderRequest = {
@@ -171,13 +239,18 @@ async function submitCreate() {
     priority: createForm.priority,
     openedBy: createForm.openedBy.trim(),
     sourceAlarmId: createForm.sourceAlarmId.trim() || undefined,
+    assignedTechnicianUserId:
+      createForm.assignedTechnicianUserId === UNASSIGNED
+        ? undefined
+        : createForm.assignedTechnicianUserId,
+    ...(estimatedLaborMinutes !== undefined ? { estimatedLaborMinutes } : {}),
   }
   try {
     await createWorkOrder(body)
     createOpen.value = false
     toast.success('维护工单已创建')
   } catch {
-    // 失败信息由对话框错误区呈现。
+    // 失败信息由抽屉错误区呈现。
   }
 }
 
@@ -186,11 +259,29 @@ function openComplete(row: WorkOrderRow) {
   completeForm.result = 'repaired'
   completeForm.downtimeReasonCode = 'preventive'
   completeForm.downtimeMinutes = '30'
-  completeForm.sparePartSku = ''
-  completeForm.sparePartQuantity = '1'
+  completeForm.actualLaborMinutes = ''
+  completeForm.externalServiceCostAmount = ''
+  completeForm.costCurrencyCode = 'CNY'
+  spareRows.splice(0, spareRows.length, createSpareRow())
+  sparePartCostOverride.value = ''
   completeError.value = ''
   completeOpen.value = true
 }
+function addSpareRow() {
+  spareRows.push(createSpareRow())
+}
+function removeSpareRow(rowId: number) {
+  if (spareRows.length === 1) {
+    Object.assign(spareRows[0], createSpareRow())
+    return
+  }
+  const index = spareRows.findIndex((row) => row.id === rowId)
+  if (index >= 0) spareRows.splice(index, 1)
+}
+function spareOutOfBounds(row: SparePartRow) {
+  return Boolean(row.skuCode.trim()) && !(Number(row.quantity) > 0)
+}
+
 async function submitComplete() {
   const target = completeTarget.value
   if (!target?.workOrderId) return
@@ -199,16 +290,31 @@ async function submitComplete() {
     completeError.value = '停机时长需为非负数。'
     return
   }
-  // 完成需登记至少一条更换备件（领料扣减）；后端以此核销维护成本。
-  if (!completeForm.sparePartSku.trim()) {
-    completeError.value = '请登记一条更换备件（物料 + 数量）。'
+  const actualLaborMinutes = optionalNonNegativeInt(completeForm.actualLaborMinutes)
+  if (actualLaborMinutes === false) {
+    completeError.value = '实际工时需为非负整数。'
     return
   }
-  const quantity = Number(completeForm.sparePartQuantity)
-  if (!(quantity > 0)) {
+  const externalServiceCostAmount = optionalNonNegativeNumber(completeForm.externalServiceCostAmount)
+  if (externalServiceCostAmount === false) {
+    completeError.value = '外委费用需为非负数。'
+    return
+  }
+  // 完成需登记至少一条更换备件（领料扣减）；后端以此核销维护成本。
+  const filledSpares = spareRows.filter((row) => row.skuCode.trim())
+  if (filledSpares.length === 0) {
+    completeError.value = '请登记至少一条更换备件（物料 + 数量）。'
+    return
+  }
+  if (filledSpares.some(spareOutOfBounds)) {
     completeError.value = '备件数量需为正数。'
     return
   }
+  const spareParts: BusinessConsoleMaintenanceSparePartInput[] = filledSpares.map((row) => ({
+    skuCode: row.skuCode.trim(),
+    quantity: Number(row.quantity),
+    uomCode: row.uomCode.trim() || 'EA',
+  }))
   try {
     await completeWorkOrder(target.workOrderId, {
       organizationId: filters.organizationId,
@@ -216,13 +322,33 @@ async function submitComplete() {
       result: completeForm.result,
       downtimeReasonCode: completeForm.downtimeReasonCode,
       downtimeMinutes: minutes,
-      spareParts: [{ skuCode: completeForm.sparePartSku.trim(), quantity, uomCode: 'EA' }],
+      spareParts,
+      ...(actualLaborMinutes !== undefined ? { actualLaborMinutes } : {}),
+      ...(effectiveSparePartCost.value !== undefined
+        ? { sparePartCostAmount: effectiveSparePartCost.value }
+        : {}),
+      ...(externalServiceCostAmount !== undefined ? { externalServiceCostAmount } : {}),
+      costCurrencyCode: completeForm.costCurrencyCode.trim() || undefined,
     })
     completeOpen.value = false
     toast.success(`维护工单 ${workOrderNo(target)} 已完成`)
   } catch {
-    // 失败信息由对话框错误区呈现。
+    // 失败信息由抽屉错误区呈现。
   }
+}
+
+// 非负整数：空 → undefined（不带该字段）；非法 → false；合法 → number。
+function optionalNonNegativeInt(value: string): number | undefined | false {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  const n = Number(trimmed)
+  return Number.isInteger(n) && n >= 0 ? n : false
+}
+function optionalNonNegativeNumber(value: string): number | undefined | false {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  const n = Number(trimmed)
+  return Number.isFinite(n) && n >= 0 ? round2(n) : false
 }
 
 function formatDateTime(value?: string | null) {
@@ -315,13 +441,16 @@ watch(
       </template>
     </NvDataTable>
 
-    <NvDialog v-model:open="createOpen">
-      <NvDialogContent>
-        <NvDialogHeader>
-          <NvDialogTitle>新建维护工单</NvDialogTitle>
-          <NvDialogDescription>对设备开具维护工单，可关联触发的设备报警。</NvDialogDescription>
-        </NvDialogHeader>
-        <form class="grid gap-4" @submit.prevent="submitCreate">
+    <!-- 新建维护工单：设备/优先级/开单人/报警/技师/预估工时（6 字段）→ 侧滑 Sheet（A1 §1）。 -->
+    <NvSheet v-model:open="createOpen">
+      <NvSheetContent class="flex w-full flex-col overflow-y-auto sm:max-w-xl">
+        <NvSheetHeader>
+          <NvSheetTitle>新建维护工单</NvSheetTitle>
+          <NvSheetDescription
+            >对设备开具维护工单，可关联触发的设备报警，并指派技师与预估工时。</NvSheetDescription
+          >
+        </NvSheetHeader>
+        <form class="grid gap-4 py-2" @submit.prevent="submitCreate">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="mwo-device">设备</NvFieldLabel>
@@ -363,36 +492,60 @@ watch(
                 placeholder="可选"
               />
             </NvField>
+            <NvField>
+              <NvFieldLabel for="mwo-technician">指派技师</NvFieldLabel>
+              <NvSelect v-model="createForm.assignedTechnicianUserId">
+                <NvSelectTrigger id="mwo-technician" aria-label="指派技师"
+                  ><NvSelectValue :placeholder="workersPending ? '加载中…' : '未指派'"
+                /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem :value="UNASSIGNED">未指派</NvSelectItem>
+                  <NvSelectItem v-for="w in workers" :key="w.userId" :value="w.userId ?? ''">
+                    {{ w.displayName ?? w.userId }}{{ w.employeeNo ? ` · ${w.employeeNo}` : '' }}
+                  </NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="mwo-est-labor">预估工时（分钟）</NvFieldLabel>
+              <NvInput
+                id="mwo-est-labor"
+                v-model="createForm.estimatedLaborMinutes"
+                type="number"
+                min="0"
+                step="1"
+                placeholder="可选"
+              />
+            </NvField>
           </NvFieldGroup>
 
           <NvFieldError v-if="createErrorMessage" :errors="[createErrorMessage]" />
 
-          <NvDialogFooter>
-            <NvDialogClose as-child>
-              <NvButton type="button" variant="outline">取消</NvButton>
-            </NvDialogClose>
+          <NvSheetFooter>
+            <NvButton type="button" variant="outline" @click="createOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="createWorkOrderPending">
               <Spinner v-if="createWorkOrderPending" aria-hidden="true" />
               创建维护工单
             </NvButton>
-          </NvDialogFooter>
+          </NvSheetFooter>
         </form>
-      </NvDialogContent>
-    </NvDialog>
+      </NvSheetContent>
+    </NvSheet>
 
-    <NvDialog v-model:open="completeOpen">
-      <NvDialogContent>
-        <NvDialogHeader>
-          <NvDialogTitle>完成维护工单</NvDialogTitle>
-          <NvDialogDescription>
+    <!-- 完成维护工单：结果/停机/工时 + 备件动态行 + 成本汇总 → 侧滑 Sheet（A1 §1）。 -->
+    <NvSheet v-model:open="completeOpen">
+      <NvSheetContent class="flex w-full flex-col overflow-y-auto sm:max-w-xl">
+        <NvSheetHeader>
+          <NvSheetTitle>完成维护工单</NvSheetTitle>
+          <NvSheetDescription>
             {{
               completeTarget
                 ? `${workOrderNo(completeTarget)} · ${completeTarget.deviceAssetId ?? ''}`
-                : '登记维护结果与停机时长。'
+                : '登记维护结果、工时与成本。'
             }}
-          </NvDialogDescription>
-        </NvDialogHeader>
-        <form class="grid gap-4" @submit.prevent="submitComplete">
+          </NvSheetDescription>
+        </NvSheetHeader>
+        <form class="grid gap-4 py-2" @submit.prevent="submitComplete">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="mwo-result">维护结果</NvFieldLabel>
@@ -431,40 +584,117 @@ watch(
               />
             </NvField>
             <NvField>
-              <NvFieldLabel for="mwo-spare-sku">更换备件物料</NvFieldLabel>
+              <NvFieldLabel for="mwo-actual-labor">实际工时（分钟）</NvFieldLabel>
               <NvInput
-                id="mwo-spare-sku"
-                v-model="completeForm.sparePartSku"
-                autocomplete="off"
-                placeholder="如 主控芯片MCU"
+                id="mwo-actual-labor"
+                v-model="completeForm.actualLaborMinutes"
+                type="number"
+                min="0"
+                step="1"
+                placeholder="可选"
+              />
+            </NvField>
+          </NvFieldGroup>
+
+          <div class="grid gap-2">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium">更换备件</span>
+              <NvButton type="button" variant="outline" size="sm" @click="addSpareRow">
+                <PlusIcon aria-hidden="true" />
+                添加一行
+              </NvButton>
+            </div>
+            <div
+              v-for="row in spareRows"
+              :key="row.id"
+              :data-testid="`spare-row-${row.id}`"
+              class="grid items-end gap-2 rounded-md border p-3 sm:grid-cols-[1fr_5rem_4rem_6rem_auto]"
+            >
+              <NvField>
+                <NvFieldLabel :for="`spare-sku-${row.id}`">物料</NvFieldLabel>
+                <NvInput
+                  :id="`spare-sku-${row.id}`"
+                  v-model="row.skuCode"
+                  autocomplete="off"
+                  placeholder="如 主控芯片MCU"
+                />
+              </NvField>
+              <NvField>
+                <NvFieldLabel :for="`spare-qty-${row.id}`">数量</NvFieldLabel>
+                <NvInput :id="`spare-qty-${row.id}`" v-model="row.quantity" type="number" min="1" step="1" />
+              </NvField>
+              <NvField>
+                <NvFieldLabel :for="`spare-uom-${row.id}`">单位</NvFieldLabel>
+                <NvInput :id="`spare-uom-${row.id}`" v-model="row.uomCode" autocomplete="off" />
+              </NvField>
+              <NvField>
+                <NvFieldLabel :for="`spare-cost-${row.id}`">单价</NvFieldLabel>
+                <NvInput
+                  :id="`spare-cost-${row.id}`"
+                  v-model="row.unitCost"
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="可选"
+                />
+              </NvField>
+              <NvButton
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="移除该备件"
+                @click="removeSpareRow(row.id)"
+              >
+                <Trash2Icon aria-hidden="true" />
+              </NvButton>
+            </div>
+          </div>
+
+          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+            <NvField>
+              <NvFieldLabel for="mwo-spare-cost">备件成本汇总</NvFieldLabel>
+              <NvInput
+                id="mwo-spare-cost"
+                v-model="sparePartCostDisplay"
+                type="number"
+                min="0"
+                step="any"
+                :placeholder="`自动合计 ${round2(autoSparePartCost)}`"
+              />
+              <p class="text-xs text-muted-foreground">
+                自动从备件行（数量 × 单价）合计
+                <span class="tabular-nums">{{ round2(autoSparePartCost) }}</span>，可直接改写。
+              </p>
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="mwo-external-cost">外委费用</NvFieldLabel>
+              <NvInput
+                id="mwo-external-cost"
+                v-model="completeForm.externalServiceCostAmount"
+                type="number"
+                min="0"
+                step="any"
+                placeholder="可选"
               />
             </NvField>
             <NvField>
-              <NvFieldLabel for="mwo-spare-qty">备件数量</NvFieldLabel>
-              <NvInput
-                id="mwo-spare-qty"
-                v-model="completeForm.sparePartQuantity"
-                type="number"
-                min="1"
-                step="1"
-              />
+              <NvFieldLabel for="mwo-currency">币种</NvFieldLabel>
+              <NvInput id="mwo-currency" v-model="completeForm.costCurrencyCode" autocomplete="off" />
             </NvField>
           </NvFieldGroup>
 
           <NvFieldError v-if="completeErrorMessage" :errors="[completeErrorMessage]" />
 
-          <NvDialogFooter>
-            <NvDialogClose as-child>
-              <NvButton type="button" variant="outline">取消</NvButton>
-            </NvDialogClose>
+          <NvSheetFooter>
+            <NvButton type="button" variant="outline" @click="completeOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="completeWorkOrderPending">
               <Spinner v-if="completeWorkOrderPending" aria-hidden="true" />
               <CheckCircle2Icon v-else aria-hidden="true" />
               完成工单
             </NvButton>
-          </NvDialogFooter>
+          </NvSheetFooter>
         </form>
-      </NvDialogContent>
-    </NvDialog>
+      </NvSheetContent>
+    </NvSheet>
   </BusinessLayout>
 </template>

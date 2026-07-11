@@ -3,10 +3,14 @@ import RetryableListError from '@/components/RetryableListError.vue'
 import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
 import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
 import {
+  createMeasurementDraft,
   inspectionFlow,
   inspectionResultLabel,
   inspectionResultLabels,
+  measurementRowsValid,
+  toMeasurementPayload,
   type InspectCtx,
+  type MeasurementDraftRow,
 } from '@nerv-iip/business-core'
 import { NvAppShellMobile, NvListRow, NvMobileResult, NvScanBar } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref } from 'vue'
@@ -40,13 +44,8 @@ interface InspectionMeasurementRow {
   isWithinSpec?: boolean
 }
 
-interface MeasurementFormRow {
+interface MeasurementFormRow extends MeasurementDraftRow {
   id: number
-  characteristicCode: string
-  measuredValue: string | number
-  uomCode: string
-  lowerSpecLimit: string | number
-  upperSpecLimit: string | number
 }
 
 definePage({
@@ -107,34 +106,9 @@ const measurementRows = reactive<MeasurementFormRow[]>([createMeasurementRow()])
 // 结果选项（中文经 inspectionResultLabel）。
 const resultOptions = Object.keys(inspectionResultLabels)
 
-const measurementsValid = computed(() =>
-  measurementRows.every((row) => {
-    if (!hasMeasurementInput(row)) return true
-    const measuredValue = requiredNumber(row.measuredValue)
-    const lowerSpecLimit = optionalNumber(row.lowerSpecLimit)
-    const upperSpecLimit = optionalNumber(row.upperSpecLimit)
-    return (
-      Boolean(row.characteristicCode.trim()) &&
-      measuredValue.valid &&
-      Boolean(row.uomCode.trim()) &&
-      lowerSpecLimit.valid &&
-      upperSpecLimit.valid &&
-      (lowerSpecLimit.value === null ||
-        upperSpecLimit.value === null ||
-        lowerSpecLimit.value <= upperSpecLimit.value)
-    )
-  }),
-)
+const measurementsValid = computed(() => measurementRowsValid(measurementRows))
 
-const measurementPayload = computed(() =>
-  measurementRows.filter(hasMeasurementInput).map((row) => ({
-    characteristicCode: row.characteristicCode.trim(),
-    measuredValue: requiredNumber(row.measuredValue).value!,
-    uomCode: row.uomCode.trim(),
-    lowerSpecLimit: optionalNumber(row.lowerSpecLimit).value,
-    upperSpecLimit: optionalNumber(row.upperSpecLimit).value,
-  })),
-)
+const measurementPayload = computed(() => toMeasurementPayload(measurementRows))
 
 // 流程驱动校验：planId + result 必填，测量值行可选但一旦填写必须完整有效。
 const valid = computed(
@@ -173,44 +147,7 @@ function chooseResult(value: string) {
 }
 
 function createMeasurementRow(): MeasurementFormRow {
-  return {
-    id: nextMeasurementRowId++,
-    characteristicCode: '',
-    measuredValue: '',
-    uomCode: '',
-    lowerSpecLimit: '',
-    upperSpecLimit: '',
-  }
-}
-
-function hasMeasurementInput(row: MeasurementFormRow) {
-  return Boolean(
-    String(row.characteristicCode ?? '').trim() ||
-    String(row.measuredValue ?? '').trim() ||
-    String(row.uomCode ?? '').trim() ||
-    String(row.lowerSpecLimit ?? '').trim() ||
-    String(row.upperSpecLimit ?? '').trim(),
-  )
-}
-
-function optionalNumber(value: string | number | null | undefined): {
-  valid: boolean
-  value: number | null
-} {
-  const trimmed = String(value ?? '').trim()
-  if (!trimmed) return { valid: true, value: null }
-  const numeric = Number(trimmed)
-  return { valid: Number.isFinite(numeric), value: Number.isFinite(numeric) ? numeric : null }
-}
-
-function requiredNumber(value: string | number | null | undefined): {
-  valid: boolean
-  value: number | null
-} {
-  const trimmed = String(value ?? '').trim()
-  if (!trimmed) return { valid: false, value: null }
-  const numeric = Number(trimmed)
-  return { valid: Number.isFinite(numeric), value: Number.isFinite(numeric) ? numeric : null }
+  return { id: nextMeasurementRowId++, ...createMeasurementDraft() }
 }
 
 function addMeasurementRow() {
