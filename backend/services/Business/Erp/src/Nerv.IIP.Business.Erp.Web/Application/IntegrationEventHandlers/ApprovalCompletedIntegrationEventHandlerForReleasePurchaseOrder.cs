@@ -56,6 +56,27 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
             return;
         }
 
+        if (string.Equals(integrationEvent.Payload.DocumentReference.SourceService, "business-erp", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(integrationEvent.Payload.DocumentReference.DocumentType, "sales-order-credit-release", StringComparison.OrdinalIgnoreCase))
+        {
+            var salesOrder = await dbContext.SalesOrders.SingleOrDefaultAsync(x =>
+                x.OrganizationId == integrationEvent.OrganizationId
+                && x.EnvironmentId == integrationEvent.EnvironmentId
+                && x.SalesOrderNo == integrationEvent.Payload.DocumentReference.DocumentId,
+                cancellationToken);
+            if (salesOrder is null || !await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+            {
+                return;
+            }
+
+            if (string.Equals(integrationEvent.Payload.Result, ApprovalResults.Approved, StringComparison.OrdinalIgnoreCase))
+            {
+                salesOrder.ReleaseCreditHold();
+            }
+
+            return;
+        }
+
         if (!string.Equals(integrationEvent.Payload.DocumentReference.SourceService, "business-erp", StringComparison.OrdinalIgnoreCase)
             || !string.Equals(integrationEvent.Payload.DocumentReference.DocumentType, "purchase-order", StringComparison.OrdinalIgnoreCase))
         {
@@ -98,7 +119,7 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
             {
                 if (order.Status == Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderStatus.PendingApproval)
                 {
-                    order.CancelAfterApprovalRejected(integrationEvent.Payload.ChainId);
+                    order.ReturnToEditableAfterApprovalRejected(integrationEvent.Payload.ChainId);
                 }
                 else
                 {

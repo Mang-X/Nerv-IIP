@@ -113,7 +113,8 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(
                     "inventory",
                     "inventory-count-variance",
                     task.CountTaskCode,
-                    "system:inventory"),
+                    "system:inventory",
+                    varianceAmount),
                 cancellationToken);
             var pendingAdjustment = StockCountAdjustment.RecordPendingApproval(task, request.IdempotencyKey, approval.ChainId, varianceAmount);
             dbContext.StockCountAdjustments.Add(pendingAdjustment);

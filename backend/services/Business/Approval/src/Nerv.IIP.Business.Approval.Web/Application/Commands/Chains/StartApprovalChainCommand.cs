@@ -13,7 +13,10 @@ public sealed record StartApprovalChainCommand(
     string DocumentType,
     string DocumentId,
     string? DocumentLineId,
-    string StartedBy) : ICommand<ApprovalChainId>;
+    string StartedBy,
+    decimal? Amount = null,
+    string? RoutingOrganizationId = null,
+    string? DepartmentId = null) : ICommand<ApprovalChainId>;
 
 public sealed class StartApprovalChainCommandValidator : AbstractValidator<StartApprovalChainCommand>
 {
@@ -27,6 +30,9 @@ public sealed class StartApprovalChainCommandValidator : AbstractValidator<Start
         RuleFor(x => x.DocumentId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.DocumentLineId).MaximumLength(150);
         RuleFor(x => x.StartedBy).RequiredApprovalCode(150);
+        RuleFor(x => x.Amount).GreaterThanOrEqualTo(0).When(x => x.Amount.HasValue);
+        RuleFor(x => x.RoutingOrganizationId).OptionalApprovalCode(100);
+        RuleFor(x => x.DepartmentId).OptionalApprovalCode(100);
     }
 }
 
@@ -35,6 +41,22 @@ public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbCont
 {
     public async Task<ApprovalChainId> Handle(StartApprovalChainCommand request, CancellationToken cancellationToken)
     {
+        var existingChainId = await dbContext.ApprovalChains
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.TemplateCode == request.TemplateCode
+                && x.Status == ApprovalChainStatuses.Pending
+                && x.DocumentReference.SourceService == request.SourceService.ToLower()
+                && x.DocumentReference.DocumentType == request.DocumentType
+                && x.DocumentReference.DocumentId == request.DocumentId
+                && x.DocumentReference.DocumentLineId == request.DocumentLineId)
+            .Select(x => x.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (existingChainId is not null)
+        {
+            return existingChainId;
+        }
+
         var template = await dbContext.ApprovalTemplates
             .Include(x => x.Steps)
             .SingleOrDefaultAsync(x =>
@@ -53,7 +75,10 @@ public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbCont
                     request.SourceService,
                     request.DocumentType,
                     request.DocumentId,
-                    request.DocumentLineId),
+                    request.DocumentLineId,
+                    request.Amount,
+                    request.RoutingOrganizationId ?? request.OrganizationId,
+                    request.DepartmentId),
                 request.StartedBy);
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)

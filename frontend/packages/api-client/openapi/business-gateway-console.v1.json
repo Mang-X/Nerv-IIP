@@ -41609,6 +41609,59 @@
             "type": "integer",
             "format": "int32",
             "nullable": true
+          },
+          "completionPolicy": {
+            "type": "string",
+            "nullable": true
+          },
+          "conditionExpression": {
+            "type": "string",
+            "nullable": true
+          },
+          "condition": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApprovalRoutingCondition"
+              }
+            ]
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApprovalRoutingCondition": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "minimumAmount": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "maximumAmount": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "documentTypes": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "organizationIds": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "departmentIds": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -41826,6 +41879,19 @@
           },
           "startedBy": {
             "type": "string"
+          },
+          "amount": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "routingOrganizationId": {
+            "type": "string",
+            "nullable": true
+          },
+          "departmentId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

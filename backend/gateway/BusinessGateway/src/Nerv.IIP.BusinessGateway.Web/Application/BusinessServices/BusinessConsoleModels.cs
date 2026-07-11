@@ -2680,7 +2680,17 @@ public sealed record BusinessConsoleApprovalTemplateStepItem(
     string? ParallelGroupKey,
     string ApproverType,
     string ApproverRef,
-    int? DueInHours);
+    int? DueInHours,
+    string? CompletionPolicy = null,
+    string? ConditionExpression = null,
+    BusinessConsoleApprovalRoutingCondition? Condition = null);
+
+public sealed record BusinessConsoleApprovalRoutingCondition(
+    decimal? MinimumAmount = null,
+    decimal? MaximumAmount = null,
+    IReadOnlyCollection<string>? DocumentTypes = null,
+    IReadOnlyCollection<string>? OrganizationIds = null,
+    IReadOnlyCollection<string>? DepartmentIds = null);
 
 public sealed record BusinessConsoleCreateOrUpdateApprovalTemplateRequest(
     string OrganizationId,
@@ -2701,7 +2711,10 @@ public sealed record BusinessConsoleStartApprovalChainRequest(
     string DocumentType,
     string DocumentId,
     string? DocumentLineId,
-    string StartedBy);
+    string StartedBy,
+    decimal? Amount = null,
+    string? RoutingOrganizationId = null,
+    string? DepartmentId = null);
 
 public sealed record BusinessConsoleStartApprovalChainResponse(string ChainId);
 

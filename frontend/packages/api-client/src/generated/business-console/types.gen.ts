@@ -5441,6 +5441,17 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     approverType?: string;
     approverRef?: string;
     dueInHours?: number | null;
+    completionPolicy?: string | null;
+    conditionExpression?: string | null;
+    condition?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApprovalRoutingCondition | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApprovalRoutingCondition = {
+    minimumAmount?: number | null;
+    maximumAmount?: number | null;
+    documentTypes?: Array<string> | null;
+    organizationIds?: Array<string> | null;
+    departmentIds?: Array<string> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApprovalTemplateListRequest = {
@@ -5511,6 +5522,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     documentId?: string;
     documentLineId?: string | null;
     startedBy?: string;
+    amount?: number | null;
+    routingOrganizationId?: string | null;
+    departmentId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleApprovalChainResponse = NetCorePalExtensionsDtoResponseData & {

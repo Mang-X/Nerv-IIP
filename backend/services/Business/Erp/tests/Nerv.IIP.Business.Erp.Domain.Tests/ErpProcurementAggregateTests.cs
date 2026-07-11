@@ -149,6 +149,19 @@ public sealed class ErpProcurementAggregateTests
     }
 
     [Fact]
+    public void Approval_rejection_returns_purchase_order_to_editable_pending_state()
+    {
+        var order = PurchaseOrder.Create("org-001", "env-dev", "PO-REJECT-001", "SUP-001", "SITE-01", [NewPurchaseOrderLine(quantity: 10m)]);
+        order.MarkApprovalRequested("approval-reject-001");
+
+        order.ReturnToEditableAfterApprovalRejected("approval-reject-001");
+        order.ReturnToEditableAfterApprovalRejected("approval-reject-001");
+
+        Assert.Equal(PurchaseOrderStatus.PendingApproval, order.Status);
+        Assert.Null(order.ApprovalChainId);
+    }
+
+    [Fact]
     public void Purchase_order_final_delivery_closes_remaining_quantity_and_cancellation_rejects_received_orders()
     {
         var order = PurchaseOrder.Create(

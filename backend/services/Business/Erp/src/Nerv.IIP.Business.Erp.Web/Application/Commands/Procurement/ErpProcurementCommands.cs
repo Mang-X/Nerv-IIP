@@ -293,7 +293,8 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
                 allocation.Code,
                 null,
                 "system:erp",
-                GeneratedPurchaseOrderApprovalClient.BuildChainId(request.OrganizationId, request.EnvironmentId, allocation.Code)),
+                GeneratedPurchaseOrderApprovalClient.BuildChainId(request.OrganizationId, request.EnvironmentId, allocation.Code),
+                lineDrafts.Sum(x => x.Quantity * x.UnitPrice)),
             cancellationToken);
         order.MarkApprovalRequested(approvalResult.ChainId);
         foreach (var requisition in requisitions)
@@ -701,7 +702,8 @@ public sealed class CreatePurchaseOrderCommandHandler(
                 allocation.Code,
                 null,
                 "system:erp",
-                GeneratedPurchaseOrderApprovalClient.BuildChainId(request.OrganizationId, request.EnvironmentId, allocation.Code)),
+                GeneratedPurchaseOrderApprovalClient.BuildChainId(request.OrganizationId, request.EnvironmentId, allocation.Code),
+                request.Lines.Sum(x => x.Quantity * x.UnitPrice)),
             cancellationToken);
         order.MarkApprovalRequested(approvalResult.ChainId);
         dbContext.PurchaseOrders.Add(order);

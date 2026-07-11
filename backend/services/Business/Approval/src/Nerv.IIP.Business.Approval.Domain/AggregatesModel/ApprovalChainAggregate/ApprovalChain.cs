@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 using Nerv.IIP.Business.Approval.Domain.DomainEvents;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 
@@ -687,18 +688,31 @@ public sealed class ApprovalDocumentReference
     {
     }
 
-    public ApprovalDocumentReference(string sourceService, string documentType, string documentId, string? documentLineId)
+    public ApprovalDocumentReference(
+        string sourceService,
+        string documentType,
+        string documentId,
+        string? documentLineId,
+        decimal? amount = null,
+        string? organizationId = null,
+        string? departmentId = null)
     {
         SourceService = ApprovalText.RequiredLower(sourceService);
         DocumentType = ApprovalText.Required(documentType);
         DocumentId = ApprovalText.Required(documentId);
         DocumentLineId = ApprovalText.Optional(documentLineId);
+        Amount = amount;
+        OrganizationId = ApprovalText.Optional(organizationId);
+        DepartmentId = ApprovalText.Optional(departmentId);
     }
 
     public string SourceService { get; private set; } = string.Empty;
     public string DocumentType { get; private set; } = string.Empty;
     public string DocumentId { get; private set; } = string.Empty;
     public string? DocumentLineId { get; private set; }
+    [NotMapped] public decimal? Amount { get; private set; }
+    [NotMapped] public string? OrganizationId { get; private set; }
+    [NotMapped] public string? DepartmentId { get; private set; }
 }
 
 public static class ApprovalChainStatuses
@@ -740,7 +754,7 @@ public static class ApprovalConditionMatcher
             _ = Parse(conditionExpression);
             return true;
         }
-        catch (InvalidOperationException)
+        catch (Exception exception) when (exception is InvalidOperationException or System.Text.Json.JsonException)
         {
             return false;
         }
@@ -748,6 +762,11 @@ public static class ApprovalConditionMatcher
 
     public static bool Matches(string? conditionExpression, ApprovalDocumentReference documentReference)
     {
+        if (conditionExpression?.TrimStart().StartsWith('{') is true)
+        {
+            return Matches(ApprovalRoutingCondition.Deserialize(conditionExpression), documentReference);
+        }
+
         var parsedCondition = Parse(conditionExpression);
         if (parsedCondition is null)
         {
@@ -763,11 +782,33 @@ public static class ApprovalConditionMatcher
         };
     }
 
+    public static bool Matches(ApprovalRoutingCondition condition, ApprovalDocumentReference documentReference)
+    {
+        condition.Validate();
+        return (!condition.MinimumAmount.HasValue || documentReference.Amount >= condition.MinimumAmount)
+            && (!condition.MaximumAmount.HasValue || documentReference.Amount <= condition.MaximumAmount)
+            && MatchesDimension(condition.DocumentTypes, documentReference.DocumentType)
+            && MatchesDimension(condition.OrganizationIds, documentReference.OrganizationId)
+            && MatchesDimension(condition.DepartmentIds, documentReference.DepartmentId);
+    }
+
+    private static bool MatchesDimension(IReadOnlyCollection<string>? accepted, string? actual)
+    {
+        return accepted is null || accepted.Count == 0
+            || (!string.IsNullOrWhiteSpace(actual) && accepted.Contains(actual, StringComparer.OrdinalIgnoreCase));
+    }
+
     private static (string Key, string Value)? Parse(string? conditionExpression)
     {
         if (string.IsNullOrWhiteSpace(conditionExpression))
         {
             return null;
+        }
+
+        if (conditionExpression.TrimStart().StartsWith('{'))
+        {
+            _ = ApprovalRoutingCondition.Deserialize(conditionExpression);
+            return ("structured", conditionExpression);
         }
 
         var parts = conditionExpression.Split('=', 2, StringSplitOptions.TrimEntries);

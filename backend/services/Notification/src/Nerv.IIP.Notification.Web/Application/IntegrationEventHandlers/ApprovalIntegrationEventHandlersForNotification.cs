@@ -231,6 +231,55 @@ public sealed class ApprovalActionRecordedIntegrationEventHandlerForNotification
     }
 }
 
+[IntegrationEventConsumer("Nerv.IIP.Contracts.Approval.ApprovalCompletedIntegrationEvent", ConsumerName)]
+public sealed class ApprovalRejectedIntegrationEventHandlerForNotification(
+    ISender sender,
+    ApplicationDbContext dbContext,
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    TimeProvider timeProvider)
+    : IIntegrationEventHandler<ApprovalCompletedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "notification.approval-rejected-initiator";
+
+    private readonly IntegrationEventConsumerGuard<ApprovalCompletedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            ApprovalIntegrationEventTypes.ApprovalRejected,
+            ApprovalIntegrationEventVersions.V1));
+
+    public Task HandleAsync(ApprovalCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        => consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+
+    [CapSubscribe("Nerv.IIP.Contracts.Approval.ApprovalCompletedIntegrationEvent", Group = ConsumerName)]
+    public Task HandleCapAsync(ApprovalCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        => HandleAsync(integrationEvent, cancellationToken);
+
+    private async Task HandleValidEventAsync(ApprovalCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload ?? throw new KnownException("Approval rejected payload is required.");
+        var initiatorRef = NotificationIntegrationEventRequired.Value(payload.InitiatorRef, "Approval initiator is required for rejection notification.");
+        if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, timeProvider.GetUtcNow(), cancellationToken))
+        {
+            return;
+        }
+
+        var request = new SubmitNotificationIntentRequest(
+            integrationEvent.SourceService,
+            integrationEvent.EventType,
+            integrationEvent.EventId,
+            NotificationContractConstants.IntentTypeMessage,
+            NotificationContractConstants.SeverityWarning,
+            integrationEvent.IdempotencyKey,
+            new NotificationResourceRef("approval-chain", payload.ChainId, null),
+            "Approval rejected",
+            $"Approval was rejected for {payload.DocumentReference.DocumentType} {payload.DocumentReference.DocumentId}; the source document is editable again.",
+            [initiatorRef]);
+        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+    }
+}
+
 file static class NotificationIntegrationEventRequired
 {
     public static string Value(string? value, string message)

@@ -396,6 +396,10 @@ Ops 任务事实当前以 PostgreSQL `operation_tasks`、`operation_attempts`、
 
 WMS 出库复核现在按 WarehouseTask 实际执行量识别短拣，在释放剩余 Inventory reservation 的同时，以同一 WMS 事务创建耐久 `BackorderOrder` 和 `Replenishment` 类型的 WarehouseTask 建议。欠交单按组织、环境、原出库单行保持唯一，可通过内部服务 API 分页查询并带审计原因幂等关闭；补货建议也可通过独立的内部服务 API 按任务状态、库位与关键字分页查询。完成命令按原幂等键重放不会重复创建欠交或补货建议。本 tranche 只记录目标拣货位与欠交数量，不选择或伪造补货来源库位；移库任务、库位容量/混放规则和波次拣货仍属于后续 #707 子项。
 
+### 2026-07-11 BusinessApproval 结构化路由与拒绝回滚记录（MAN-410 / #727）
+
+BusinessApproval 模板步骤现在可通过结构化条件配置金额上下限、单据类型、组织和部门维度；BusinessGateway 已暴露相同模型，采购订单和盘点差异启动审批链时显式传入真实金额和组织上下文，不从 metadata 或伪造的下游标识推断。旧 `documentType=...` / `sourceService=...` 条件继续兼容。`ApprovalCompletedPayload` 携带原始发起人引用，Notification 对拒绝事件以 inbox + 事件幂等键生成发起人消息。ERP 采购订单拒绝或退回后清除旧审批链并保持 `PendingApproval` 可编辑态；销售信用超限释放改为发起 `sales-order-credit-release` 审批，只有批准事件才解除 `credit-held`，拒绝继续保持可编辑的信用冻结态；Inventory 盘点调整继续使用 #704 已交付的真实批准/拒绝消费者。ECO、CAPA 关闭和 MRB 当前在进入终态前同步验证已批准 BusinessApproval 链，拒绝不会先行改变源聚合，因此保持草稿/开放可编辑态而无需伪造补偿事件。
+
 ### 可以并行但不阻塞开工的事项
 
 1. Ops 持久化 outbox、复杂失败重试、审批 Console 管理入口和生产级调度策略。

@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.MasterData;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
@@ -191,7 +192,11 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
     }
 }
 
-public sealed record ReleaseSalesOrderCreditHoldCommand(string OrganizationId, string EnvironmentId, string SalesOrderNo) : ICommand;
+public sealed record ReleaseSalesOrderCreditHoldCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string SalesOrderNo,
+    string StartedBy = "system:erp") : ICommand;
 
 public sealed class ReleaseSalesOrderCreditHoldCommandValidator : AbstractValidator<ReleaseSalesOrderCreditHoldCommand>
 {
@@ -200,10 +205,13 @@ public sealed class ReleaseSalesOrderCreditHoldCommandValidator : AbstractValida
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.SalesOrderNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.StartedBy).NotEmpty().MaximumLength(150);
     }
 }
 
-public sealed class ReleaseSalesOrderCreditHoldCommandHandler(ApplicationDbContext dbContext)
+public sealed class ReleaseSalesOrderCreditHoldCommandHandler(
+    ApplicationDbContext dbContext,
+    IPurchaseOrderApprovalClient approvalClient)
     : ICommandHandler<ReleaseSalesOrderCreditHoldCommand>
 {
     public async Task Handle(ReleaseSalesOrderCreditHoldCommand request, CancellationToken cancellationToken)
@@ -218,7 +226,23 @@ public sealed class ReleaseSalesOrderCreditHoldCommandHandler(ApplicationDbConte
 
         try
         {
-            order.ReleaseCreditHold();
+            if (!string.Equals(order.Status, "credit-held", StringComparison.Ordinal))
+            {
+                order.ReleaseCreditHold();
+                return;
+            }
+
+            await approvalClient.StartApprovalAsync(new PurchaseOrderApprovalRequest(
+                order.OrganizationId,
+                order.EnvironmentId,
+                "erp-sales-credit-release",
+                "business-erp",
+                "sales-order-credit-release",
+                order.SalesOrderNo,
+                null,
+                request.StartedBy,
+                $"sales-credit:{order.OrganizationId}:{order.EnvironmentId}:{order.SalesOrderNo}",
+                order.TotalAmount), cancellationToken);
         }
         catch (InvalidOperationException exception)
         {
