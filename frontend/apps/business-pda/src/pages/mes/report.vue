@@ -24,6 +24,7 @@ import {
   useMesProductionReports,
   useMesWorkOrders,
 } from '@/composables/useBusinessMes'
+import RetryableListError from '@/components/RetryableListError.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 
 definePage({
@@ -44,6 +45,7 @@ const {
   total: workOrderTotal,
   pending: workOrdersPending,
   error: workOrdersError,
+  refresh: refreshWorkOrders,
 } = useMesWorkOrders()
 
 const {
@@ -52,6 +54,7 @@ const {
   total: taskTotal,
   pending: tasksPending,
   error: tasksError,
+  refresh: refreshTasks,
 } = useMesOperationTasks()
 
 const { recordReport } = useMesProductionReports()
@@ -127,17 +130,6 @@ function taskSubtitle(task: Task) {
   if (task.workCenterId) parts.push(`工作中心 ${task.workCenterId}`)
   return parts.join(' · ')
 }
-
-const workOrdersErrorMessage = computed(() => {
-  const e = workOrdersError.value
-  if (!e) return ''
-  return e instanceof Error ? e.message : '加载工单失败，请下拉刷新或重试。'
-})
-const tasksErrorMessage = computed(() => {
-  const e = tasksError.value
-  if (!e) return ''
-  return e instanceof Error ? e.message : '加载工序失败，请下拉刷新或重试。'
-})
 
 // --- 步骤操作 ---
 function chooseWorkOrder(wo: WorkOrder) {
@@ -304,9 +296,14 @@ function onScanWorkOrder(value: string) {
       <template v-if="currentStep === 'selectWorkOrder'">
         <NvScanBar placeholder="扫描工单号" :active="scanActive" @scan="onScanWorkOrder" />
         <p class="text-sm text-muted-foreground">选择报工的工单（共 {{ workOrderTotal }} 张）</p>
-        <p v-if="workOrdersErrorMessage" class="text-sm text-destructive" role="alert">
-          {{ workOrdersErrorMessage }}
-        </p>
+        <RetryableListError
+          v-if="workOrdersError"
+          :error="workOrdersError"
+          :pending="workOrdersPending"
+          fallback="加载工单失败，请下拉刷新或重试。"
+          test-id="work-orders-error"
+          @retry="() => refreshWorkOrders()"
+        />
         <div
           v-if="!workOrdersPending && workOrders.length === 0"
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
@@ -346,9 +343,14 @@ function onScanWorkOrder(value: string) {
         </div>
 
         <p class="text-sm text-muted-foreground">选择要报工的工序（共 {{ taskTotal }} 道）</p>
-        <p v-if="tasksErrorMessage" class="text-sm text-destructive" role="alert">
-          {{ tasksErrorMessage }}
-        </p>
+        <RetryableListError
+          v-if="tasksError"
+          :error="tasksError"
+          :pending="tasksPending"
+          fallback="加载工序失败，请下拉刷新或重试。"
+          test-id="tasks-error"
+          @retry="() => refreshTasks()"
+        />
         <div
           v-if="!tasksPending && operationTasks.length === 0"
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"

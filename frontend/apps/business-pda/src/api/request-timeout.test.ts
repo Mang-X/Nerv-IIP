@@ -114,12 +114,7 @@ describe('typed request errors', () => {
 })
 
 describe('describeRequestError', () => {
-  it('classifies offline/timeout/network as INDETERMINATE (result unknown, non-idempotent retry unsafe)', () => {
-    expect(describeRequestError(new OfflineError())).toMatchObject({
-      kind: 'offline',
-      indeterminate: true,
-      message: '当前离线，请检查网络连接后重试',
-    })
+  it('classifies a DISPATCHED timeout / network drop as INDETERMINATE (result unknown, non-idempotent retry unsafe)', () => {
     expect(describeRequestError(new RequestTimeoutError())).toMatchObject({
       kind: 'timeout',
       indeterminate: true,
@@ -129,6 +124,14 @@ describe('describeRequestError', () => {
       kind: 'network',
       indeterminate: true,
       message: '网络连接失败，请检查网络后重试',
+    })
+  })
+
+  it('classifies an OFFLINE pre-check as safe to retry (request never left the device)', () => {
+    expect(describeRequestError(new OfflineError())).toMatchObject({
+      kind: 'offline',
+      indeterminate: false,
+      message: '当前离线，请检查网络连接后重试',
     })
   })
 
@@ -156,9 +159,11 @@ describe('describeRequestError', () => {
     })
   })
 
-  it('isIndeterminateError is true only for transport failures, not business ones', () => {
+  it('isIndeterminateError is true only for a dispatched-but-unanswered request', () => {
+    // Dispatched, outcome unknown → unsafe to blindly retry a non-idempotent write.
     expect(isIndeterminateError(new RequestTimeoutError())).toBe(true)
-    expect(isIndeterminateError(new OfflineError())).toBe(true)
+    // Offline pre-check (never dispatched) + business errors (server responded) → safe.
+    expect(isIndeterminateError(new OfflineError())).toBe(false)
     expect(isIndeterminateError({ message: '业务失败' })).toBe(false)
   })
 })

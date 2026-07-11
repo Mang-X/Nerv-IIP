@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
 import { openDownloadGrantBlob, operationTaskStatusLabel } from '@nerv-iip/business-core'
+import RetryableListError from '@/components/RetryableListError.vue'
 import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import {
@@ -34,6 +35,7 @@ const {
   resumeTask,
   completeTask,
   actionPending,
+  refresh,
 } = useMesOperationTasks()
 const {
   filters: sopFilters,
@@ -131,12 +133,6 @@ function rowSubtitle(task: Task) {
   if (task.operationCode) parts.push(`工序 ${task.operationCode}`)
   return parts.join(' · ')
 }
-
-const errorMessage = computed(() => {
-  const e = error.value
-  if (!e) return ''
-  return e instanceof Error ? e.message : '加载工序任务失败，请下拉刷新或重试。'
-})
 
 function openSheet(task: Task) {
   result.value = null
@@ -307,7 +303,14 @@ function formatDate(value?: string | null) {
 
       <p class="text-sm text-muted-foreground">共 {{ total }} 个工序任务</p>
 
-      <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+      <RetryableListError
+        v-if="error"
+        :error="error"
+        :pending="pending"
+        fallback="加载工序任务失败，请下拉刷新或重试。"
+        test-id="operation-tasks-error"
+        @retry="() => refresh()"
+      />
 
       <div
         v-if="!pending && operationTasks.length === 0"

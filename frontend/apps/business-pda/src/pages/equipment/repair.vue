@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { describeRequestError } from '@/api/request-timeout'
+import RetryableListError from '@/components/RetryableListError.vue'
 import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
+import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
 import {
   maintenancePriorityLabel,
   maintenancePriorityLabels,
@@ -9,7 +10,7 @@ import {
   type RepairCtx,
 } from '@nerv-iip/business-core'
 import { NvAppShellMobile, NvListRow, NvMobileResult, NvScanBar } from '@nerv-iip/ui-mobile'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 definePage({
@@ -30,6 +31,18 @@ const {
   createWorkOrder,
   createPending,
 } = useBusinessMaintenance()
+
+// 报修端点无服务端幂等键 → 写结果状态机由共享 composable 统一：结果不确定（超时/网络中断）
+// 不给盲目重试、引导核实；离线（未发出）与确定业务失败可安全重试。
+const { phase, errorTitle, errorDescription, canRetry, run, retry, verify, reset } =
+  useNonIdempotentWriteResult({
+    failureTitle: '报修提交失败',
+    verifyListLabel: '近期维修工单',
+    verifyVerb: '创建',
+    onVerify: () => {
+      void refreshWorkOrders()
+    },
+  })
 
 // ---- 设备上下文来源优先级：route query 预填 > 扫码 > 手输 -------------------------
 const queryDeviceAssetId = computed(() => {
@@ -54,21 +67,6 @@ const priorityOptions = Object.keys(maintenancePriorityLabels)
 // 流程驱动的校验：deviceAssetId + priority 必填（故障描述建议但非必填）。
 const valid = computed(() => repairOrderFlow.progress(form).completed >= 2)
 
-type Phase = 'form' | 'success' | 'error'
-const phase = ref<Phase>('form')
-// 保留原始错误对象，分类为"结果不确定（超时/离线/网络）"或"确定失败（服务端已响应）"。
-const lastError = ref<unknown>(null)
-const errorInfo = computed(() => describeRequestError(lastError.value, '报修提交失败'))
-// 报修端点无服务端幂等键：结果不确定时重试会重复创建工单 → 不给重试，改引导去列表核实。
-const errorDescription = computed(() =>
-  errorInfo.value.indeterminate
-    ? `${errorInfo.value.message}。请勿重复提交，返回后在"近期维修工单"中核实是否已创建。`
-    : errorInfo.value.message,
-)
-const workOrdersErrorMessage = computed(
-  () => describeRequestError(workOrdersError.value, '维修工单加载失败，请稍后重试。').message,
-)
-
 // ScanBar 在浮层（成功/失败 Result）展示时停止抢焦。
 const scanActive = computed(() => phase.value === 'form')
 
@@ -78,19 +76,14 @@ function onScan(value: string) {
 
 async function submit() {
   if (!valid.value || createPending.value) return
-  lastError.value = null
-  try {
-    await createWorkOrder({
+  await run(() =>
+    createWorkOrder({
       deviceAssetId: form.deviceAssetId as string,
       priority: form.priority as string,
       assetUnavailableReason: form.assetUnavailableReason,
       ...(sourceAlarmId.value ? { sourceAlarmId: sourceAlarmId.value } : {}),
-    })
-    phase.value = 'success'
-  } catch (e) {
-    lastError.value = e
-    phase.value = 'error'
-  }
+    }),
+  )
 }
 
 function resetForm() {
@@ -98,25 +91,11 @@ function resetForm() {
   form.deviceAssetId = queryDeviceAssetId.value
   form.priority = ''
   form.assetUnavailableReason = ''
-  lastError.value = null
-  phase.value = 'form'
+  reset()
 }
 
 function goBack() {
   router.push('/').catch(() => {})
-}
-
-// 确定失败（服务端已响应错误、无副作用）：可安全回表单重试。
-function retry() {
-  lastError.value = null
-  phase.value = 'form'
-}
-
-// 结果不确定（超时/离线/网络中断，工单可能已创建）：刷新列表回表单让用户核实，绝不自动重提。
-function verifyList() {
-  void refreshWorkOrders()
-  lastError.value = null
-  phase.value = 'form'
 }
 
 function workOrderSubtitle(item: { priority?: string; status?: string; openedAtUtc?: string }) {
@@ -167,13 +146,13 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
     <NvMobileResult
       v-else-if="phase === 'error'"
       status="error"
-      :title="errorInfo.indeterminate ? '提交结果未知' : '报修提交失败'"
+      :title="errorTitle"
       :description="errorDescription"
     >
       <template #actions>
-        <!-- 确定失败（服务端已响应、无副作用）→ 安全重试；结果不确定 → 只给核实入口，不重试。 -->
+        <!-- 可安全重试（离线未发出 / 服务端已响应）→ 重试；结果不确定 → 只给核实入口。 -->
         <button
-          v-if="!errorInfo.indeterminate"
+          v-if="canRetry"
           type="button"
           data-testid="retry"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
@@ -186,7 +165,7 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
           type="button"
           data-testid="verify-list"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
-          @click="verifyList"
+          @click="verify"
         >
           查看维修工单
         </button>
@@ -259,22 +238,14 @@ function workOrderSubtitle(item: { priority?: string; status?: string; openedAtU
       <section class="space-y-2">
         <h2 class="text-sm font-medium text-muted-foreground">近期维修工单</h2>
 
-        <div
+        <RetryableListError
           v-if="workOrdersError"
-          data-testid="work-orders-error"
-          class="space-y-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
-        >
-          <p class="text-destructive">{{ workOrdersErrorMessage }}</p>
-          <button
-            type="button"
-            data-testid="work-orders-retry"
-            :disabled="workOrdersPending"
-            class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground disabled:opacity-60"
-            @click="refreshWorkOrders"
-          >
-            重试
-          </button>
-        </div>
+          :error="workOrdersError"
+          :pending="workOrdersPending"
+          fallback="维修工单加载失败，请稍后重试。"
+          test-id="work-orders-error"
+          @retry="() => refreshWorkOrders()"
+        />
 
         <div
           v-else-if="workOrdersPending"

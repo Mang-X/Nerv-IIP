@@ -1,3 +1,4 @@
+import { RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
@@ -11,6 +12,7 @@ vi.mock('vue-router', () => ({
 const recordReport = vi.fn(async (_input: Record<string, unknown>) => {})
 const refreshWorkOrders = vi.fn(async () => {})
 const refreshTasks = vi.fn(async () => {})
+const workOrdersErrorRef = ref<unknown>(null)
 
 const workOrderFilters = reactive({
   keyword: undefined as string | undefined,
@@ -27,8 +29,20 @@ const workOrders = [
 ]
 
 const operationTasks = [
-  { operationTaskId: 'OP-1', workOrderId: 'WO-2026-0001', status: 'Running', operationSequence: 10, workCenterId: 'WC-A' },
-  { operationTaskId: 'OP-2', workOrderId: 'WO-2026-0001', status: 'Ready', operationSequence: 20, workCenterId: 'WC-B' },
+  {
+    operationTaskId: 'OP-1',
+    workOrderId: 'WO-2026-0001',
+    status: 'Running',
+    operationSequence: 10,
+    workCenterId: 'WC-A',
+  },
+  {
+    operationTaskId: 'OP-2',
+    workOrderId: 'WO-2026-0001',
+    status: 'Ready',
+    operationSequence: 20,
+    workCenterId: 'WC-B',
+  },
 ]
 
 vi.mock('@/composables/useBusinessMes', () => ({
@@ -37,7 +51,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     workOrders: computed(() => workOrders),
     total: computed(() => workOrders.length),
     pending: ref(false),
-    error: ref(null),
+    error: workOrdersErrorRef,
     refresh: refreshWorkOrders,
   }),
   useMesOperationTasks: () => ({
@@ -77,6 +91,8 @@ describe('PDA MES production reporting page', () => {
     recordReport.mockClear()
     recordReport.mockResolvedValue(undefined)
     push.mockClear()
+    refreshWorkOrders.mockClear()
+    workOrdersErrorRef.value = null
     workOrderFilters.keyword = undefined
     taskFilters.workOrderId = undefined
   })
@@ -119,7 +135,9 @@ describe('PDA MES production reporting page', () => {
     await flushPromises()
 
     // 录入良品数（量录入区 teleport 到 body）
-    const goodInput = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    const goodInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="good-quantity"]',
+    )!
     goodInput.value = '8'
     goodInput.dispatchEvent(new Event('input'))
     await flushPromises()
@@ -155,7 +173,9 @@ describe('PDA MES production reporting page', () => {
     await taskRows[0].trigger('click')
     await flushPromises()
 
-    const goodInput = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    const goodInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="good-quantity"]',
+    )!
     goodInput.value = '8'
     goodInput.dispatchEvent(new Event('input'))
     await flushPromises()
@@ -204,10 +224,21 @@ describe('PDA MES production reporting page', () => {
     await taskRows[0].trigger('click')
     await flushPromises()
 
-    const submitBtn = document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!
+    const submitBtn = document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="submit-report"]',
+    )!
     submitBtn.click()
     await flushPromises()
     expect(recordReport).not.toHaveBeenCalled()
     wrapper.unmount()
+  })
+
+  it('工单列表超时：显示可操作错误文案 + 重试调 refresh（GET 安全）', async () => {
+    workOrdersErrorRef.value = new RequestTimeoutError()
+    const wrapper = mount(ReportPage)
+    const banner = wrapper.get('[data-testid="work-orders-error"]')
+    expect(banner.text()).toContain('网络超时，请检查连接后重试')
+    await wrapper.get('[data-testid="retry-list"]').trigger('click')
+    expect(refreshWorkOrders).toHaveBeenCalledTimes(1)
   })
 })

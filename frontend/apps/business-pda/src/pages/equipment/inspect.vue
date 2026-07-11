@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { describeRequestError } from '@/api/request-timeout'
+import RetryableListError from '@/components/RetryableListError.vue'
 import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
+import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
 import {
   inspectionFlow,
   inspectionResultLabel,
@@ -140,23 +141,17 @@ const valid = computed(
   () => inspectionFlow.progress(form).completed >= 2 && measurementsValid.value,
 )
 
-type Phase = 'form' | 'success' | 'error'
-const phase = ref<Phase>('form')
-// 保留原始错误对象，分类为"结果不确定（超时/离线/网络）"或"确定失败（服务端已响应）"。
-const lastError = ref<unknown>(null)
-const errorInfo = computed(() => describeRequestError(lastError.value, '点检记录失败'))
-// 点检端点无服务端幂等键：结果不确定时重试会重复记录点检 → 不给重试，改引导去列表核实。
-const errorDescription = computed(() =>
-  errorInfo.value.indeterminate
-    ? `${errorInfo.value.message}。请勿重复提交，返回后在"近期点检记录"中核实是否已记录。`
-    : errorInfo.value.message,
-)
-const plansErrorMessage = computed(
-  () => describeRequestError(plansError.value, '保养计划加载失败，请稍后重试。').message,
-)
-const inspectionsErrorMessage = computed(
-  () => describeRequestError(inspectionsError.value, '点检记录加载失败，请稍后重试。').message,
-)
+// 点检端点无服务端幂等键 → 写结果状态机由共享 composable 统一：结果不确定（超时/网络中断）
+// 不给盲目重试、引导核实；离线（未发出）与确定业务失败可安全重试。
+const { phase, errorTitle, errorDescription, canRetry, run, retry, verify, reset } =
+  useNonIdempotentWriteResult({
+    failureTitle: '点检记录失败',
+    verifyListLabel: '近期点检记录',
+    verifyVerb: '记录',
+    onVerify: () => {
+      void refreshInspections()
+    },
+  })
 
 // ScanBar 在浮层（成功/失败 Result）展示时停止抢焦。
 const scanActive = computed(() => phase.value === 'form')
@@ -235,18 +230,13 @@ function removeMeasurementRow(rowId: number) {
 
 async function submit() {
   if (!valid.value || recordPending.value) return
-  lastError.value = null
-  try {
-    await recordInspection({
+  await run(() =>
+    recordInspection({
       planId: form.planId as string,
       result: form.result as string,
       ...(measurementPayload.value.length > 0 ? { measurements: measurementPayload.value } : {}),
-    })
-    phase.value = 'success'
-  } catch (e) {
-    lastError.value = e
-    phase.value = 'error'
-  }
+    }),
+  )
 }
 
 function resetForm() {
@@ -254,25 +244,11 @@ function resetForm() {
   form.planId = ''
   form.result = ''
   measurementRows.splice(0, measurementRows.length, createMeasurementRow())
-  lastError.value = null
-  phase.value = 'form'
+  reset()
 }
 
 function goBack() {
   router.push('/').catch(() => {})
-}
-
-// 确定失败（服务端已响应错误、无副作用）：可安全回表单重试。
-function retry() {
-  lastError.value = null
-  phase.value = 'form'
-}
-
-// 结果不确定（超时/离线/网络中断，点检可能已记录）：刷新列表回表单让用户核实，绝不自动重提。
-function verifyList() {
-  void refreshInspections()
-  lastError.value = null
-  phase.value = 'form'
 }
 
 function planSubtitle(item: { deviceAssetId?: string; interval?: string }) {
@@ -344,13 +320,13 @@ function inspectionSubtitle(item: {
     <NvMobileResult
       v-else-if="phase === 'error'"
       status="error"
-      :title="errorInfo.indeterminate ? '提交结果未知' : '点检记录失败'"
+      :title="errorTitle"
       :description="errorDescription"
     >
       <template #actions>
-        <!-- 确定失败（服务端已响应、无副作用）→ 安全重试；结果不确定 → 只给核实入口，不重试。 -->
+        <!-- 可安全重试（离线未发出 / 服务端已响应）→ 重试；结果不确定 → 只给核实入口。 -->
         <button
-          v-if="!errorInfo.indeterminate"
+          v-if="canRetry"
           type="button"
           data-testid="retry"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
@@ -363,7 +339,7 @@ function inspectionSubtitle(item: {
           type="button"
           data-testid="verify-list"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
-          @click="verifyList"
+          @click="verify"
         >
           查看点检记录
         </button>
@@ -388,22 +364,14 @@ function inspectionSubtitle(item: {
         <div class="space-y-2">
           <p class="text-sm text-foreground">选择保养计划</p>
 
-          <div
+          <RetryableListError
             v-if="plansError"
-            data-testid="plans-error"
-            class="space-y-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
-          >
-            <p class="text-destructive">{{ plansErrorMessage }}</p>
-            <button
-              type="button"
-              data-testid="plans-retry"
-              :disabled="plansPending"
-              class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground disabled:opacity-60"
-              @click="refreshPlans"
-            >
-              重试
-            </button>
-          </div>
+            :error="plansError"
+            :pending="plansPending"
+            fallback="保养计划加载失败，请稍后重试。"
+            test-id="plans-error"
+            @retry="() => refreshPlans()"
+          />
 
           <div v-else-if="plansPending" class="px-4 py-6 text-center text-sm text-muted-foreground">
             加载中…
@@ -582,22 +550,14 @@ function inspectionSubtitle(item: {
       <section class="space-y-2">
         <h2 class="text-sm font-medium text-muted-foreground">近期点检记录</h2>
 
-        <div
+        <RetryableListError
           v-if="inspectionsError"
-          data-testid="inspections-error"
-          class="space-y-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
-        >
-          <p class="text-destructive">{{ inspectionsErrorMessage }}</p>
-          <button
-            type="button"
-            data-testid="inspections-retry"
-            :disabled="inspectionsPending"
-            class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground disabled:opacity-60"
-            @click="refreshInspections"
-          >
-            重试
-          </button>
-        </div>
+          :error="inspectionsError"
+          :pending="inspectionsPending"
+          fallback="点检记录加载失败，请稍后重试。"
+          test-id="inspections-error"
+          @retry="() => refreshInspections()"
+        />
 
         <div
           v-else-if="inspectionsPending"

@@ -16,9 +16,11 @@
  *  - write pages with a stable per-action idempotency key (MES/WMS) keep their retry —
  *    a lost response never double-applies;
  *  - write pages WITHOUT server-side idempotency (Maintenance report/inspect) must NOT
- *    offer a blind retry on an `indeterminate` failure (timeout/offline/network), since
- *    the write may already have taken effect server-side; they steer the user to the
- *    list to verify instead.
+ *    offer a blind retry on an `indeterminate` failure (a dispatched-but-unanswered
+ *    timeout / network drop), since the write may already have taken effect
+ *    server-side; they steer the user to the list to verify instead. An OFFLINE
+ *    pre-check is NOT indeterminate — the request never left the device, so those
+ *    pages keep a safe retry (the #814 offline actionable-error requirement).
  *
  * Business errors thrown by the gateway are plain objects/strings (not `Error`) → a
  * determinate failure the server actually responded to, so retrying them is safe.
@@ -138,10 +140,11 @@ export interface DescribedRequestError {
   /** User-facing copy — the typed-error message for transport failures, else the server message. */
   message: string
   /**
-   * The request may have taken effect server-side even though the client saw a failure
-   * (offline pre-check, 30s timeout, or a mid-flight network drop). A blind retry of a
-   * NON-idempotent write can therefore duplicate the business fact. `false` means the
-   * server actually responded with an error, so no side effect happened — a retry is safe.
+   * `true` when the request was DISPATCHED but its server-side outcome is unknown — a
+   * 30s timeout or a mid-flight network drop. A blind retry of a NON-idempotent write
+   * could then duplicate the business fact. `false` when a retry is safe: either the
+   * server responded with a definite error (no side effect), OR the request never left
+   * the device (offline pre-check), so nothing could have happened server-side.
    */
   indeterminate: boolean
 }
@@ -176,7 +179,9 @@ export function describeRequestError(
   fallback = '操作失败，请重试',
 ): DescribedRequestError {
   if (error instanceof OfflineError) {
-    return { kind: 'offline', message: error.message, indeterminate: true }
+    // The offline pre-check throws BEFORE baseFetch — the request never left the device,
+    // so there is no server-side effect and a retry is safe once back online.
+    return { kind: 'offline', message: error.message, indeterminate: false }
   }
   if (error instanceof RequestTimeoutError) {
     return { kind: 'timeout', message: error.message, indeterminate: true }

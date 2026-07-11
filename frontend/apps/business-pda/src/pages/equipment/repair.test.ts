@@ -1,4 +1,4 @@
-import { RequestTimeoutError } from '@/api/request-timeout'
+import { OfflineError, RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
@@ -190,6 +190,21 @@ describe('PDA equipment repair page', () => {
     // 服务端已明确失败、无副作用 → 给"重试"，不给"核实"入口。
     expect(wrapper.find('[data-testid="verify-list"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="retry"]').exists()).toBe(true)
+  })
+
+  // 离线预检在请求发出前抛出 → 服务端从未收到 → 安全重试（不逼用户绕路核实，#814 离线可操作）。
+  it('离线（请求未发出）时给安全重试而非核实', async () => {
+    createWorkOrder.mockRejectedValueOnce(new OfflineError())
+    const wrapper = mount(RepairPage)
+    await wrapper.get('[data-testid="device-input"]').setValue('DEV-9')
+    await wrapper.get('[data-testid="priority-select"]').setValue('high')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('当前离线，请检查网络连接后重试')
+    expect(wrapper.find('[data-testid="retry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="verify-list"]').exists()).toBe(false)
   })
 
   it('prefills deviceAssetId + sourceAlarmId from the route query (from alarms page)', async () => {
