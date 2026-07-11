@@ -1245,6 +1245,38 @@ public sealed class MesEndpointContractTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Cancel_work_order_endpoint_executes_command_validator_and_rejects_empty_reason()
+    {
+        // Regression guard for the MES command-validation wiring (AddValidatorsFromAssembly +
+        // AddKnownExceptionValidationBehavior in Program.cs). Reason is validated only by
+        // CancelWorkOrderCommandValidator — WorkOrderReasonRequest has no FastEndpoints Validator<> — so a clean
+        // 400 here proves the MediatR validation pipeline runs. Without the wiring the command validators are dead
+        // and the request would fall through to the handler instead. Validation short-circuits before any database
+        // access, so this needs no Postgres.
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token"));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/work-orders/WO-VALIDATION/cancel",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                reason = string.Empty,
+            });
+
+        var body = await response.Content.ReadAsStringAsync();
+        // MES uses the plain UseKnownExceptionHandler(), so a KnownException is returned at the service level as a
+        // success=false envelope (the gateway maps that to HTTP 400 downstream). The command validator is what
+        // rejects the empty reason, so the envelope must carry the "Reason" validation message.
+        Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Reason", body, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [MemberData(nameof(EndpointTypes))]
     public void Mes_endpoints_route_through_mediator(Type endpointType)
