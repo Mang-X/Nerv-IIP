@@ -32,16 +32,6 @@ public sealed class CapSubscribeTopicConventionTests
         "Nerv.IIP.AppHub.Web",
     ];
 
-    // Known short-name COLLISION: OperationTaskCompletedIntegrationEvent exists in both
-    // Nerv.IIP.Contracts.Mes and Nerv.IIP.Contracts.Ops. Both publish the same short CAP topic, so
-    // short-name subscription would cross-wire the two events. Its handlers deliberately keep the
-    // fully-qualified topic and are exempt here until the collision is resolved by renaming one
-    // event type (tracked follow-up). They do not function cross-service until then.
-    private static readonly HashSet<string> CollisionExemptEventShortNames =
-    [
-        "OperationTaskCompletedIntegrationEvent",
-    ];
-
     [Fact]
     public void CapSubscribe_topics_match_the_event_short_name()
     {
@@ -73,11 +63,6 @@ public sealed class CapSubscribeTopicConventionTests
                     }
 
                     var eventShortName = parameters[0].ParameterType.Name;
-                    if (CollisionExemptEventShortNames.Contains(eventShortName))
-                    {
-                        continue;
-                    }
-
                     checkedCount++;
                     if (!string.Equals(topic, eventShortName, StringComparison.Ordinal))
                     {

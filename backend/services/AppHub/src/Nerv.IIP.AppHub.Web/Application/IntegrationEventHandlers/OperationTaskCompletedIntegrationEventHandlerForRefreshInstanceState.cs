@@ -35,7 +35,7 @@ public sealed class OperationTaskCompletedIntegrationEventHandlerForRefreshInsta
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Ops.OperationTaskCompletedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(OperationTaskCompletedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(OperationTaskCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

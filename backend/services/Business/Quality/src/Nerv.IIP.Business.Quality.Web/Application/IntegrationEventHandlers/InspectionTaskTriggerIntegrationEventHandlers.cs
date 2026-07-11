@@ -133,29 +133,29 @@ public sealed class ErpPurchaseReceiptRecordedIntegrationEventHandlerForCreateIn
     }
 }
 
-[IntegrationEventConsumer("Nerv.IIP.Contracts.Mes.OperationTaskCompletedIntegrationEvent", ConsumerName)]
+[IntegrationEventConsumer(nameof(MesOperationTaskCompletedIntegrationEvent), ConsumerName)]
 public sealed class MesOperationCompletedIntegrationEventHandlerForCreateInspectionTasks(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore)
-    : IIntegrationEventHandler<OperationTaskCompletedIntegrationEvent>, ICapSubscribe
+    : IIntegrationEventHandler<MesOperationTaskCompletedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-quality.mes-operation-completed-inspection-tasks";
 
-    private readonly IntegrationEventConsumerGuard<OperationTaskCompletedIntegrationEvent> consumerGuard = new(
+    private readonly IntegrationEventConsumerGuard<MesOperationTaskCompletedIntegrationEvent> consumerGuard = new(
         new IntegrationEventEnvelopeValidator(),
         deadLetterStore,
         new IntegrationEventConsumerOptions(ConsumerName, MesIntegrationEventTypes.OperationTaskCompleted, MesIntegrationEventVersions.V1));
 
-    public async Task HandleAsync(OperationTaskCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    public async Task HandleAsync(MesOperationTaskCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Mes.OperationTaskCompletedIntegrationEvent", Group = ConsumerName)]
-    public Task HandleCapAsync(OperationTaskCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
+    [CapSubscribe(nameof(MesOperationTaskCompletedIntegrationEvent), Group = ConsumerName)]
+    public Task HandleCapAsync(MesOperationTaskCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
         HandleAsync(integrationEvent, cancellationToken);
 
-    private async Task HandleValidEventAsync(OperationTaskCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    private async Task HandleValidEventAsync(MesOperationTaskCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
         if (!payload.RequiresQualityInspection)

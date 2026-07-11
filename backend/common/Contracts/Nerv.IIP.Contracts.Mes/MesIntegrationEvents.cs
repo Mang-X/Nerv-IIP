@@ -136,7 +136,7 @@ public sealed record WorkOrderEngineeringChangeImpactDetectedPayload(
     string ImpactStatus,
     DateOnly EffectiveDate);
 
-public sealed record OperationTaskCompletedIntegrationEvent(
+public sealed record MesOperationTaskCompletedIntegrationEvent(
     string EventId,
     string EventType,
     int EventVersion,

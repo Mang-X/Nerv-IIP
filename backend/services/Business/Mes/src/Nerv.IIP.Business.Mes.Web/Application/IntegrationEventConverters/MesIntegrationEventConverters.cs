@@ -200,9 +200,9 @@ public sealed class FinishedGoodsReceiptRequestedForQualityIntegrationEventConve
 }
 
 public sealed class OperationTaskCompletedIntegrationEventConverter
-    : IIntegrationEventConverter<OperationTaskCompletedDomainEvent, OperationTaskCompletedIntegrationEvent>
+    : IIntegrationEventConverter<OperationTaskCompletedDomainEvent, MesOperationTaskCompletedIntegrationEvent>
 {
-    public OperationTaskCompletedIntegrationEvent Convert(OperationTaskCompletedDomainEvent domainEvent)
+    public MesOperationTaskCompletedIntegrationEvent Convert(OperationTaskCompletedDomainEvent domainEvent)
     {
         var task = domainEvent.OperationTask;
         var completedAtUtc = task.ExistingEndUtc ?? DateTimeOffset.UtcNow;
@@ -212,7 +212,7 @@ public sealed class OperationTaskCompletedIntegrationEventConverter
             task.EnvironmentId,
             task.OperationTaskId,
             completedAtUtc.UtcTicks.ToString(CultureInfo.InvariantCulture));
-        return new OperationTaskCompletedIntegrationEvent(
+        return new MesOperationTaskCompletedIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}",
             MesIntegrationEventTypes.OperationTaskCompleted,
             MesIntegrationEventVersions.V1,
