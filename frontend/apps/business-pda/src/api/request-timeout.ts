@@ -89,6 +89,9 @@ export interface TimeoutFetchConfig {
  * firing is translated into a `RequestTimeoutError`, so navigation-cancellations never
  * masquerade as timeouts.
  */
+/** Response body-consuming methods the generated client uses (`response.text()` etc). */
+const BODY_READERS = new Set(['arrayBuffer', 'blob', 'formData', 'json', 'text'])
+
 export function createTimeoutFetch(config: TimeoutFetchConfig = {}): typeof fetch {
   const timeoutMs = config.timeoutMs ?? REQUEST_TIMEOUT_MS
   const baseFetch = config.baseFetch ?? globalThis.fetch
@@ -113,30 +116,89 @@ export function createTimeoutFetch(config: TimeoutFetchConfig = {}): typeof fetc
     callerSignal?.addEventListener('abort', onCallerAbort, { once: true })
 
     let timedOut = false
+    let settled = false
+    // Deterministic, response-lifecycle cleanup: called when the request completes —
+    // either the (bodyless) response is returned, the base fetch rejects, OR the body
+    // finishes/aborts. This detaches the caller listener promptly instead of leaving it
+    // attached on a signal the caller might reuse/long-hold (no listener accumulation).
+    const settle = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      callerSignal?.removeEventListener('abort', onCallerAbort)
+    }
     const timer = setTimeout(() => {
       timedOut = true
       controller.abort()
+      callerSignal?.removeEventListener('abort', onCallerAbort)
     }, timeoutMs)
 
+    let response: Response
     try {
-      return await baseFetch(input, { ...init, signal: controller.signal })
+      response = await baseFetch(input, { ...init, signal: controller.signal })
     } catch (error) {
+      settle()
       // Our timer fired (not a caller cancellation) and the base fetch aborted → timeout.
-      if (timedOut && !callerSignal?.aborted && isAbortError(error)) {
+      if (timedOut && !(callerSignal?.aborted ?? false) && isAbortError(error)) {
         throw new RequestTimeoutError()
       }
       throw error
-    } finally {
-      clearTimeout(timer)
-      // NOTE: intentionally do NOT detach onCallerAbort here. fetch() resolves at HEADERS,
-      // but the caller may still read a large body afterwards (e.g. a SOP blob download),
-      // and that body stream is tied to `controller.signal`. Keeping the caller→controller
-      // link alive lets the caller's own abort/timeout still cancel a stalled body read —
-      // otherwise the link would be severed at headers and the body could hang unbounded.
-      // The `{ once: true }` listener self-removes when it fires; otherwise it is GC'd with
-      // the (short-lived, per-request) caller signal.
     }
+
+    // fetch() resolves at HEADERS, but the 30s must cover the WHOLE facade call: the
+    // generated client (and the SOP blob download) read the body AFTER this. If there is
+    // no body to read, the ceiling is already satisfied.
+    const hasNoBody =
+      response.body === null ||
+      response.status === 204 ||
+      response.status === 205 ||
+      response.headers.get('Content-Length') === '0'
+    if (hasNoBody) {
+      settle()
+      return response
+    }
+
+    // Keep the timer armed through body consumption: a body that stalls after headers
+    // still aborts within the ceiling, and the abort is surfaced as a RequestTimeoutError.
+    return wrapResponseBodyWithTimeout(response, {
+      settle,
+      isTimeout: () => timedOut && !(callerSignal?.aborted ?? false),
+    })
   }
+}
+
+/**
+ * Wrap a Response so its body-reading methods keep the timeout armed until the body
+ * settles: on success clear the ceiling, on a stalled-body abort surface the timeout
+ * copy. Non-body access (`status`/`headers`/`ok`/`clone`/…) passes straight through.
+ */
+function wrapResponseBodyWithTimeout(
+  response: Response,
+  hooks: { settle: () => void; isTimeout: () => boolean },
+): Response {
+  return new Proxy(response, {
+    get(target, prop) {
+      if (typeof prop === 'string' && BODY_READERS.has(prop)) {
+        return async () => {
+          try {
+            const result = await (target as unknown as Record<string, () => Promise<unknown>>)[
+              prop
+            ]()
+            hooks.settle()
+            return result
+          } catch (error) {
+            hooks.settle()
+            if (hooks.isTimeout() && isAbortError(error)) {
+              throw new RequestTimeoutError()
+            }
+            throw error
+          }
+        }
+      }
+      const value = Reflect.get(target, prop, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
 }
 
 export type RequestErrorKind = 'timeout' | 'offline' | 'network' | 'business' | 'unknown'

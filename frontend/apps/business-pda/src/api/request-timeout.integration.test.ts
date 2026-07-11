@@ -2,7 +2,7 @@ import {
   configureApiClient,
   recordBusinessConsoleMesProductionReportMutationOptions,
 } from '@nerv-iip/api-client'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTimeoutFetch, RequestTimeoutError } from './request-timeout'
 
 /**
@@ -23,9 +23,27 @@ function hangUntilAborted(): typeof fetch {
     })) as typeof fetch
 }
 
+/** Headers resolve immediately, but the response BODY read (`text()`) stalls until abort. */
+function headersOkBodyStalls(): typeof fetch {
+  return ((_input: RequestInfo | URL, init?: RequestInit) =>
+    Promise.resolve({
+      ok: true,
+      status: 200,
+      body: {},
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+      text: () =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('The operation was aborted.', 'AbortError')),
+          )
+        }),
+    })) as unknown as typeof fetch
+}
+
 afterEach(() => {
   // Reset the shared client singletons back to their default fetch/baseUrl.
   configureApiClient()
+  vi.useRealTimers()
 })
 
 describe('PDA api-client global timeout wiring', () => {
@@ -58,5 +76,38 @@ describe('PDA api-client global timeout wiring', () => {
     )
 
     await expect(pending).rejects.toBeInstanceOf(RequestTimeoutError)
+  })
+
+  it('surfaces a RequestTimeoutError when a real facade RESPONSE BODY stalls after headers', async () => {
+    vi.useFakeTimers()
+    configureApiClient({
+      baseUrl: 'http://gateway.test',
+      fetch: createTimeoutFetch({
+        baseFetch: headersOkBodyStalls(),
+        isOffline: () => false,
+        timeoutMs: 1_000,
+      }),
+    })
+
+    const options = recordBusinessConsoleMesProductionReportMutationOptions()
+    const pending = options.mutation!(
+      {
+        body: {
+          organizationId: 'org-1',
+          environmentId: 'env-1',
+          workOrderId: 'WO-1',
+          operationTaskId: 'OP-1',
+          goodQuantity: 1,
+          scrapQuantity: 0,
+          reportedAtUtc: '2026-07-10T00:00:00.000Z',
+          idempotencyKey: 'idem-fixed-key',
+        },
+      } as Parameters<NonNullable<typeof options.mutation>>[0],
+      {} as never,
+    )
+
+    const assertion = expect(pending).rejects.toBeInstanceOf(RequestTimeoutError)
+    await vi.advanceTimersByTimeAsync(1_000)
+    await assertion
   })
 })

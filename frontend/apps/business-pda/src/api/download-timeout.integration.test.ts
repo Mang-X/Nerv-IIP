@@ -24,6 +24,9 @@ describe('SOP download composed with the real PDA timeout fetch', () => {
     const baseFetch = ((_input: RequestInfo | URL, init?: RequestInit) =>
       Promise.resolve({
         ok: true,
+        status: 200,
+        body: {},
+        headers: new Headers(),
         blob: () =>
           new Promise((_resolve, reject) => {
             init?.signal?.addEventListener('abort', () =>

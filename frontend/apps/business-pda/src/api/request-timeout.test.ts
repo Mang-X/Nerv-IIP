@@ -35,13 +35,39 @@ describe('createTimeoutFetch', () => {
     expect(baseFetch).not.toHaveBeenCalled()
   })
 
-  it('passes a successful response straight through', async () => {
+  it('passes a successful response through (status + body readable)', async () => {
     const response = new Response('ok', { status: 200 })
     const baseFetch = vi.fn<typeof fetch>().mockResolvedValue(response)
     const timeoutFetch = createTimeoutFetch({ baseFetch, isOffline: () => false })
 
-    await expect(timeoutFetch('/api/business-console/v1/ping')).resolves.toBe(response)
+    const result = await timeoutFetch('/api/business-console/v1/ping')
+    expect(result.status).toBe(200)
+    expect(await result.text()).toBe('ok')
     expect(baseFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('bounds a body that stalls AFTER headers (30s covers the whole facade, not just headers)', async () => {
+    vi.useFakeTimers()
+    // Headers resolve immediately; the body read only settles when the signal aborts.
+    const baseFetch = ((_input: RequestInfo | URL, init?: RequestInit) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        body: {},
+        headers: new Headers(),
+        text: () =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(new DOMException('The operation was aborted.', 'AbortError')),
+            )
+          }),
+      })) as unknown as typeof fetch
+    const timeoutFetch = createTimeoutFetch({ baseFetch, isOffline: () => false, timeoutMs: 1_000 })
+
+    const response = await timeoutFetch('/api/business-console/v1/slow-body')
+    const assertion = expect(response.text()).rejects.toBeInstanceOf(RequestTimeoutError)
+    await vi.advanceTimersByTimeAsync(1_000)
+    await assertion
   })
 
   it('translates its own timeout abort into a RequestTimeoutError', async () => {
