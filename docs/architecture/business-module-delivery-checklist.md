@@ -79,7 +79,7 @@
 ### Inventory
 
 - [x] 服务存在：`backend/services/Business/Inventory`
-- [x] 覆盖 stock location、stock availability、stock movement、reservation/release、status transfer、stock count create/confirm/cancel。
+- [x] 覆盖 stock location、stock availability、stock movement、reservation/release/renew/timeout auto-release、status transfer、stock count create/confirm/cancel。
 - [x] 覆盖 Quality inspection result 到库存状态、WMS/MES movement request、posting failed/posted 反馈闭环。
 - [x] BusinessGateway 暴露 availability、movements、counts facade。
 - [ ] MAN-351 已补 availability facade 支撑的批次与预留 PC 视图；还缺独立批次/序列号履历、库存冻结原因分析、预留分配分析、成本分析和移动端独立库存应用。
