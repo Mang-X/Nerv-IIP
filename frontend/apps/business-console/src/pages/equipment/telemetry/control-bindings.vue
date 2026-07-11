@@ -47,7 +47,7 @@ definePage({
 
 const auth = useAuthStore()
 const canManage = computed(() =>
-  (auth.principal?.permissionCodes ?? []).includes(P.iiotDeviceControlWrite),
+  (auth.principal?.permissionCodes ?? []).includes(P.iiotDeviceControlManage),
 )
 
 const {

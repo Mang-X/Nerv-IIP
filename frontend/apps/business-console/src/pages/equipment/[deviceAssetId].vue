@@ -1042,9 +1042,16 @@ function formatError(error: unknown) {
             }}</NvBadge>
           </template>
           <template #cell-status="{ row }">
-            <NvBadge class="rounded-sm" :variant="deviceControlStatusTone(row.status)">{{
-              deviceControlStatusLabel(row.status)
-            }}</NvBadge>
+            <div class="grid gap-0.5">
+              <NvBadge
+                class="rounded-sm justify-self-start"
+                :variant="deviceControlStatusTone(row.status)"
+                >{{ deviceControlStatusLabel(row.status) }}</NvBadge
+              >
+              <span v-if="row.failureCode" class="font-mono text-xs text-destructive">{{
+                row.failureCode
+              }}</span>
+            </div>
           </template>
         </NvDataTable>
       </section>

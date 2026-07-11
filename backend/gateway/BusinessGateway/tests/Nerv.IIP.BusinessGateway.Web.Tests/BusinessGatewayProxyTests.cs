@@ -8482,6 +8482,7 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
                     "speed adjustment",
                     "approval-pending",
                     "pending",
+                    null,
                     "corr-device-control-001",
                     DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture)),
             ],

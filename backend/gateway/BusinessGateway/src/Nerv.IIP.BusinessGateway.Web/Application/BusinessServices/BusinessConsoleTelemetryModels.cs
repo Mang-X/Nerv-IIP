@@ -135,6 +135,7 @@ public sealed record BusinessConsoleTelemetryDeviceControlCommandListItem(
     string Reason,
     string Status,
     string? ApprovalStatus,
+    string? FailureCode,
     string CorrelationId,
     DateTimeOffset RequestedAtUtc);
 

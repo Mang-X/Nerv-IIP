@@ -214,7 +214,7 @@ public sealed class CreateOrUpdateBusinessConsoleTelemetryDeviceControlBindingEn
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest, BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse>(
         auth,
-        BusinessGatewayPermissions.IiotDeviceControlWrite)
+        BusinessGatewayPermissions.IiotDeviceControlManage)
 {
     protected override string OrganizationId(BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest request) => request.OrganizationId;
 
@@ -240,7 +240,7 @@ public sealed class DisableBusinessConsoleTelemetryDeviceControlBindingEndpoint(
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleDisableTelemetryDeviceControlBindingRequest, BusinessConsoleDisableTelemetryDeviceControlBindingResponse>(
         auth,
-        BusinessGatewayPermissions.IiotDeviceControlWrite)
+        BusinessGatewayPermissions.IiotDeviceControlManage)
 {
     protected override string OrganizationId(BusinessConsoleDisableTelemetryDeviceControlBindingRequest request) => request.OrganizationId;
 

@@ -676,6 +676,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     reason?: string;
     status?: string;
     approvalStatus?: string | null;
+    failureCode?: string | null;
     correlationId?: string;
     requestedAtUtc?: string;
 };

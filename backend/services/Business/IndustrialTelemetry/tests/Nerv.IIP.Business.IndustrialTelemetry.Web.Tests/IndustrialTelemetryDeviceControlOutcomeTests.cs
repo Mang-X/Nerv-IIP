@@ -117,6 +117,49 @@ public sealed class IndustrialTelemetryDeviceControlOutcomeTests
         Assert.Equal(0, stillPending.Total);
     }
 
+    [Fact]
+    public async Task Advance_status_command_projects_approval_terminal_on_completion()
+    {
+        await using var dbContext = CreateDbContext(nameof(Advance_status_command_projects_approval_terminal_on_completion));
+        await SeedAsync(dbContext, "op-ap1", "DEV-A", "approval-pending");
+
+        await new AdvanceDeviceControlCommandStatusCommandHandler(dbContext).Handle(
+            new AdvanceDeviceControlCommandStatusCommand("op-ap1", "completed", BaseTime.AddMinutes(5), null),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var row = await dbContext.DeviceControlCommands.SingleAsync();
+        Assert.Equal("completed", row.Status);
+        // A still-pending approval snapshot that reaches a terminal execution outcome must read as approved.
+        Assert.Equal("approved", row.ApprovalStatus);
+    }
+
+    [Fact]
+    public async Task Rejected_handler_projects_rejected_status_and_approval()
+    {
+        var sender = new CapturingSender();
+        var handler = new DeviceControlCommandRejectedHandler(sender, new InMemoryIntegrationEventDeadLetterStore());
+        await handler.HandleAsync(RejectedEvent("op-r1", "device.control.command"), CancellationToken.None);
+
+        var otherSender = new CapturingSender();
+        var otherHandler = new DeviceControlCommandRejectedHandler(otherSender, new InMemoryIntegrationEventDeadLetterStore());
+        await otherHandler.HandleAsync(RejectedEvent("op-restart", "instance.restart"), CancellationToken.None);
+
+        var command = Assert.IsType<AdvanceDeviceControlCommandStatusCommand>(Assert.Single(sender.Sent));
+        Assert.Equal("op-r1", command.OperationTaskId);
+        Assert.Equal("rejected", command.TerminalStatus);
+        Assert.Empty(otherSender.Sent);
+
+        await using var dbContext = CreateDbContext(nameof(Rejected_handler_projects_rejected_status_and_approval));
+        await SeedAsync(dbContext, "op-r1", "DEV-A", "approval-pending");
+        await new AdvanceDeviceControlCommandStatusCommandHandler(dbContext).Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var row = await dbContext.DeviceControlCommands.SingleAsync();
+        Assert.Equal("rejected", row.Status);
+        Assert.Equal("rejected", row.ApprovalStatus);
+    }
+
     private static async Task SeedAsync(ApplicationDbContext dbContext, string operationTaskId, string deviceAssetId, string status)
     {
         dbContext.DeviceControlCommands.Add(DeviceControlCommand.Record(
@@ -155,6 +198,23 @@ public sealed class IndustrialTelemetryDeviceControlOutcomeTests
             "connector-host-001",
             $"ops:operation-task-completed:{operationTaskId}",
             new OperationTaskCompletedPayload(operationTaskId, "attempt-001", "opcua-cell-01", operationCode, BaseTime.AddMinutes(5)));
+    }
+
+    private static OperationApprovalRejectedIntegrationEvent RejectedEvent(string operationTaskId, string operationCode)
+    {
+        return new OperationApprovalRejectedIntegrationEvent(
+            $"evt-{operationTaskId}",
+            "ops.OperationApprovalRejected",
+            1,
+            BaseTime.AddMinutes(3),
+            "ops",
+            $"corr-{operationTaskId}",
+            $"cause-{operationTaskId}",
+            "org-001",
+            "env-dev",
+            "user:supervisor-001",
+            $"ops:operation-approval-rejected:{operationTaskId}",
+            new OperationApprovalDecidedPayload(operationTaskId, "opcua-cell-01", operationCode, "user:supervisor-001", "not safe to write", BaseTime.AddMinutes(3)));
     }
 
     private static ApplicationDbContext CreateDbContext(string databaseName)

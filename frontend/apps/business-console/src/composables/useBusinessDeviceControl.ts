@@ -9,7 +9,7 @@ import {
   type BusinessConsoleTelemetryDeviceControlCommandListItem,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
-import { computed, onScopeDispose, reactive, ref, watch, type Ref } from 'vue'
+import { computed, reactive, ref, watch, type Ref } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { hasBusinessContext } from './businessContextBinding'
 
@@ -183,6 +183,8 @@ export function useBusinessDeviceControlCommands(deviceAssetId: Ref<string>) {
   }
 
   // --- 命令结果轮询（提交后跟踪单命令状态直至终态） ---
+  // 用官方 @pinia/colada-plugin-auto-refetch 表达轮询：非终态每 POLL_INTERVAL_MS 自动重取，命中终态返回
+  // false 停止。缓存、取消、错误状态与其余读面统一，不在组件里手写 setInterval（见 api-contract-and-codegen.md）。
   const trackedCommandId = ref<string | null>(null)
   const resultQuery = useQuery(() => ({
     ...getBusinessConsoleTelemetryDeviceControlCommandQueryOptions({
@@ -193,6 +195,13 @@ export function useBusinessDeviceControlCommands(deviceAssetId: Ref<string>) {
       },
     }),
     enabled: Boolean(trackedCommandId.value) && hasBusinessContext(businessContext),
+    autoRefetch: (state: { data?: BusinessConsoleTelemetryDeviceControlCommandDetailEnvelope }) => {
+      const status = unwrapData<
+        BusinessConsoleTelemetryDeviceControlCommandDetail,
+        BusinessConsoleTelemetryDeviceControlCommandDetailEnvelope
+      >(state.data)?.status
+      return isTerminalDeviceControlStatus(status) ? false : POLL_INTERVAL_MS
+    },
   }))
   const trackedResult = computed<BusinessConsoleTelemetryDeviceControlCommandDetail | undefined>(
     () =>
@@ -206,36 +215,12 @@ export function useBusinessDeviceControlCommands(deviceAssetId: Ref<string>) {
       ),
   )
 
-  let pollTimer: ReturnType<typeof setInterval> | null = null
-  function stopPolling() {
-    if (pollTimer) {
-      clearInterval(pollTimer)
-      pollTimer = null
-    }
-  }
   function startTracking(commandId: string) {
     trackedCommandId.value = commandId
-    stopPolling()
-    pollTimer = setInterval(() => {
-      if (!trackedCommandId.value) {
-        stopPolling()
-        return
-      }
-      void resultQuery.refetch()
-    }, POLL_INTERVAL_MS)
   }
   function resetTracking() {
-    stopPolling()
     trackedCommandId.value = null
   }
-  // 命中终态即停止轮询，避免无谓刷新。
-  watch(
-    () => trackedResult.value?.status,
-    (status) => {
-      if (isTerminalDeviceControlStatus(status)) stopPolling()
-    },
-  )
-  onScopeDispose(stopPolling)
 
   return {
     // history
@@ -255,6 +240,7 @@ export function useBusinessDeviceControlCommands(deviceAssetId: Ref<string>) {
     trackedCommandId,
     trackedResult,
     trackedPending: resultQuery.isLoading,
+    trackedError: resultQuery.error,
     startTracking,
     resetTracking,
   }

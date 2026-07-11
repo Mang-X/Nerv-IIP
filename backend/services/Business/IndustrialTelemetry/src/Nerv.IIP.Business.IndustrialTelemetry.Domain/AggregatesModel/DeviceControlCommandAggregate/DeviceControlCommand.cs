@@ -117,6 +117,24 @@ public sealed class DeviceControlCommand : Entity<DeviceControlCommandId>, IAggr
         Status = normalized;
         FinishedAtUtc = finishedAtUtc;
         FailureCode = IndustrialTelemetryText.Optional(failureCode);
+        ApprovalStatus = ResolveApprovalStatus(normalized, ApprovalStatus);
+    }
+
+    // Reflect the approval outcome on the ledger so the history read-face shows the real approval terminal
+    // instead of the dispatch-time snapshot: a rejected task is approval-rejected; a task that reached
+    // completed/failed must have cleared approval, so a still-pending snapshot becomes approved. An
+    // auto-approved (not-required) or already-decided snapshot is left untouched.
+    private static string? ResolveApprovalStatus(string terminalStatus, string? currentApprovalStatus)
+    {
+        if (terminalStatus == "rejected")
+        {
+            return "rejected";
+        }
+
+        return string.IsNullOrWhiteSpace(currentApprovalStatus)
+            || string.Equals(currentApprovalStatus, "pending", StringComparison.OrdinalIgnoreCase)
+            ? "approved"
+            : currentApprovalStatus;
     }
 
     public static DeviceControlCommand Record(

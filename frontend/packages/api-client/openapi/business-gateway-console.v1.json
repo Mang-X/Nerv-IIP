@@ -24293,6 +24293,10 @@
             "type": "string",
             "nullable": true
           },
+          "failureCode": {
+            "type": "string",
+            "nullable": true
+          },
           "correlationId": {
             "type": "string"
           },

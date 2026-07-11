@@ -97,3 +97,46 @@ public sealed class DeviceControlCommandFailedHandler(
             cancellationToken);
     }
 }
+
+[IntegrationEventConsumer("Nerv.IIP.Contracts.Ops.OperationApprovalRejectedIntegrationEvent", ConsumerName)]
+public sealed class DeviceControlCommandRejectedHandler(
+    ISender sender,
+    IIntegrationEventDeadLetterStore deadLetterStore)
+    : IIntegrationEventHandler<OperationApprovalRejectedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "business-industrial-telemetry.device-control-rejected";
+
+    private readonly IntegrationEventConsumerGuard<OperationApprovalRejectedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(ConsumerName, "ops.OperationApprovalRejected", 1));
+
+    public async Task HandleAsync(OperationApprovalRejectedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
+
+    [CapSubscribe("Nerv.IIP.Contracts.Ops.OperationApprovalRejectedIntegrationEvent", Group = ConsumerName)]
+    public Task HandleCapAsync(OperationApprovalRejectedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(OperationApprovalRejectedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        if (!DeviceControlOutcomeConsumer.IsDeviceControlCommand(integrationEvent.Payload.OperationCode))
+        {
+            return;
+        }
+
+        // Approval rejection is a terminal outcome for the command; advance the ledger to rejected so the
+        // history read-face stops showing the dispatch-time approval-pending snapshot.
+        await sender.Send(
+            new AdvanceDeviceControlCommandStatusCommand(
+                integrationEvent.Payload.OperationTaskId,
+                "rejected",
+                integrationEvent.Payload.DecidedAtUtc,
+                FailureCode: null),
+            cancellationToken);
+    }
+}

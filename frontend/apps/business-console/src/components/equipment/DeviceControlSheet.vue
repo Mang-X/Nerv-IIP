@@ -63,6 +63,7 @@ const {
   dispatchPending,
   trackedResult,
   trackedPending,
+  trackedError,
   startTracking,
   resetTracking,
 } = useBusinessDeviceControlCommands(deviceAssetId)
@@ -110,10 +111,12 @@ function tagByKey(tagKey: string): BusinessConsoleTelemetryTagItem | undefined {
   return writableTags.value.find((tag) => tag.tagKey === tagKey)
 }
 
-function currentValue(tagKey: string): string | null {
+// 只取最新一条原始采样（itemType==='sample'）。历史读面同时合并 raw 采样与 hourly/daily rollup，
+// 且值均为 bucket 平均值——没有专门的瞬时当前值 facade，故如实标注为「最近采样(均值)」，不冒充实时当前值。
+function latestSampleValue(tagKey: string): string | null {
   if (!tagKey) return null
   const matches = historyItems.value
-    .filter((item) => item.tagKey === tagKey && item.value)
+    .filter((item) => item.tagKey === tagKey && item.itemType === 'sample' && item.value)
     .sort(
       (a, b) => new Date(b.occurredAtUtc ?? 0).getTime() - new Date(a.occurredAtUtc ?? 0).getTime(),
     )
@@ -210,11 +213,30 @@ async function submit() {
 
 const trackedStatus = computed(() => trackedResult.value?.status)
 const trackedTerminal = computed(() => isTerminalDeviceControlStatus(trackedStatus.value))
-const trackedFailure = computed(() => {
+const trackedFailedStatus = computed(() => trackedStatus.value?.toLowerCase() === 'failed')
+
+// 优先展示 Connector 回执里的设备实际回执码（attempt.output.deviceReceiptCode，如 BadOutOfRange），
+// 其次回退 Ops 通用 failureCode（如 opcua.write.rejected）。
+const trackedReceipt = computed(() => {
   const attempts = trackedResult.value?.attempts ?? []
-  const failed = [...attempts].reverse().find((attempt) => attempt.failureCode)
-  return failed?.failureCode ?? null
+  const failed = [...attempts]
+    .reverse()
+    .find((attempt) => attempt.output?.deviceReceiptCode || attempt.failureCode)
+  if (!failed) return null
+  const deviceCode = failed.output?.deviceReceiptCode ?? null
+  const connectorCode = failed.failureCode ?? null
+  return {
+    code: deviceCode ?? connectorCode,
+    message: failed.output?.deviceReceiptMessage ?? null,
+    // 设备回执码与连接器通用码不同才另行展示连接器码，避免重复。
+    connectorCode:
+      deviceCode && connectorCode && deviceCode !== connectorCode ? connectorCode : null,
+  }
 })
+// 失败但没有 attempt 明细（Ops 不可用回退台账快照）时，给出明确反馈而非空白。
+const trackedFailedWithoutReceipt = computed(
+  () => trackedFailedStatus.value && !trackedReceipt.value,
+)
 
 const noWritableTags = computed(() => writableTags.value.length === 0)
 </script>
@@ -278,9 +300,9 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
                 </p>
               </div>
               <div>
-                <p class="text-muted-foreground">当前值</p>
+                <p class="text-muted-foreground">最近采样(均值)</p>
                 <p class="font-medium text-foreground">
-                  {{ currentValue(singleForm.tagKey) ?? '无最近样本' }}
+                  {{ latestSampleValue(singleForm.tagKey) ?? '无最近样本' }}
                 </p>
               </div>
             </div>
@@ -356,8 +378,8 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
                   />
                   <p v-if="row.tagKey" class="text-xs text-muted-foreground">
                     {{ rangeHint(tagByKey(row.tagKey)) }}
-                    <span v-if="currentValue(row.tagKey)">
-                      · 当前 {{ currentValue(row.tagKey) }}</span
+                    <span v-if="latestSampleValue(row.tagKey)">
+                      · 最近采样 {{ latestSampleValue(row.tagKey) }}</span
                     >
                   </p>
                   <p
@@ -450,6 +472,13 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
           <p v-if="trackedPending && !trackedResult" class="mt-3 text-sm text-muted-foreground">
             正在读取命令结果…
           </p>
+          <p
+            v-else-if="trackedError && !trackedResult"
+            class="mt-3 text-sm text-destructive"
+            role="alert"
+          >
+            读取命令结果失败，正在自动重试；也可稍后在「控制命令历史」查看。
+          </p>
         </div>
 
         <div class="grid gap-2 text-sm">
@@ -466,9 +495,26 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
             <span class="text-muted-foreground">审批意见</span>
             <span class="text-foreground">{{ trackedResult.approval.decisionReason }}</span>
           </div>
-          <div v-if="trackedFailure" class="grid grid-cols-[96px_minmax(0,1fr)] gap-2">
-            <span class="text-muted-foreground">回执错误码</span>
-            <span class="font-mono text-destructive">{{ trackedFailure }}</span>
+          <div v-if="trackedReceipt" class="grid grid-cols-[96px_minmax(0,1fr)] gap-2">
+            <span class="text-muted-foreground">设备回执码</span>
+            <span class="grid gap-0.5">
+              <span class="font-mono text-destructive">{{ trackedReceipt.code }}</span>
+              <span v-if="trackedReceipt.message" class="text-xs text-muted-foreground">{{
+                trackedReceipt.message
+              }}</span>
+              <span v-if="trackedReceipt.connectorCode" class="text-xs text-muted-foreground"
+                >连接器码 {{ trackedReceipt.connectorCode }}</span
+              >
+            </span>
+          </div>
+          <div
+            v-else-if="trackedFailedWithoutReceipt"
+            class="grid grid-cols-[96px_minmax(0,1fr)] gap-2"
+          >
+            <span class="text-muted-foreground">设备回执码</span>
+            <span class="text-xs text-muted-foreground"
+              >命令失败，但暂未获取到设备回执明细（Ops 回执尚未回传）。</span
+            >
           </div>
         </div>
 

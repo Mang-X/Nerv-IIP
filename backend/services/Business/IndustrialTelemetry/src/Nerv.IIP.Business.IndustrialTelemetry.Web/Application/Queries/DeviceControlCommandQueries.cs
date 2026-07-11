@@ -60,6 +60,7 @@ public sealed record DeviceControlCommandListItem(
     string Reason,
     string Status,
     string? ApprovalStatus,
+    string? FailureCode,
     string CorrelationId,
     DateTimeOffset RequestedAtUtc);
 
@@ -224,6 +225,7 @@ public sealed class ListDeviceControlCommandsQueryHandler(ApplicationDbContext d
                 x.Reason,
                 x.Status,
                 x.ApprovalStatus,
+                x.FailureCode,
                 x.CorrelationId,
                 x.RequestedAtUtc))
             .ToArrayAsync(cancellationToken);

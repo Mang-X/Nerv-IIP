@@ -30,7 +30,7 @@ const bindingState = vi.hoisted(() => ({
 const authState = vi.hoisted(() => ({
   permissionCodes: [
     'business.iiot.device-control.read',
-    'business.iiot.device-control.write',
+    'business.iiot.device-control.manage',
   ] as string[],
 }))
 
@@ -105,7 +105,7 @@ beforeEach(() => {
   ]
   authState.permissionCodes = [
     'business.iiot.device-control.read',
-    'business.iiot.device-control.write',
+    'business.iiot.device-control.manage',
   ]
   stub.saveBinding.mockClear()
   stub.disableBinding.mockClear()
