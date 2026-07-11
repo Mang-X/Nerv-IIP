@@ -1088,6 +1088,14 @@
     {
       "service": "Erp",
       "method": "POST",
+      "route": "/api/business/v1/erp/sales-return-authorizations",
+      "operationId": "createErpSalesReturnAuthorization",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; customer return authorization follows the ERP returns Business Console menu phase."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
       "route": "/api/business/v1/erp/sales-orders/{salesOrderNo}/cancel",
       "operationId": "cancelErpSalesOrder",
       "classification": "deferred",
@@ -1272,6 +1280,45 @@
     {
       "service": "IndustrialTelemetry",
       "method": "GET",
+      "route": "/api/business/v1/iiot/device-control-bindings",
+      "operationId": "listBusinessIiotDeviceControlBindings",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleTelemetryDeviceControlBindings"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/device-control-bindings",
+      "operationId": "createOrUpdateBusinessIiotDeviceControlBinding",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "createOrUpdateBusinessConsoleTelemetryDeviceControlBinding"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "POST",
+      "route": "/api/business/v1/iiot/device-control-bindings/{deviceAssetId}/disable",
+      "operationId": "disableBusinessIiotDeviceControlBinding",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "disableBusinessConsoleTelemetryDeviceControlBinding"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
       "route": "/api/business/v1/iiot/devices/{deviceAssetId}/current-state",
       "operationId": "getBusinessIiotDeviceCurrentState",
       "classification": "exposed",
@@ -1369,6 +1416,19 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleTelemetryTags"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/tags/current-value",
+      "operationId": "getBusinessIiotTelemetryTagCurrentValue",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleTelemetryTagCurrentValue"
       ]
     },
     {
@@ -1483,6 +1543,14 @@
       "operationId": "releaseInventoryReservation",
       "classification": "internal",
       "rationale": "Service-to-service reservation release API consumed by WMS outbound cancel (#412)."
+    },
+    {
+      "service": "Inventory",
+      "method": "POST",
+      "route": "/api/inventory/v1/reservations/{reservationId}/renew",
+      "operationId": "renewInventoryReservation",
+      "classification": "internal",
+      "rationale": "Service-to-service reservation renewal API consumed by active WMS picking progress; callers cannot renew after expiration (#703)."
     },
     {
       "service": "Inventory",
@@ -3849,6 +3917,22 @@
     {
       "service": "Wms",
       "method": "GET",
+      "route": "/api/business/v1/wms/backorder-orders",
+      "operationId": "listWmsBackorderOrders",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the remaining WMS deepening and Business Console operations tranche tracked by #707."
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/backorder-orders/{backorderOrderId}/close",
+      "operationId": "closeWmsBackorderOrder",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the remaining WMS deepening and Business Console operations tranche tracked by #707."
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
       "route": "/api/business/v1/wms/outbound-orders",
       "operationId": "listWmsOutboundOrders",
       "classification": "exposed",
@@ -3926,6 +4010,14 @@
       "gatewayOperationIds": [
         "listBusinessConsoleWmsPickingTasks"
       ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/replenishment-tasks",
+      "operationId": "listWmsReplenishmentTasks",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the remaining WMS deepening and Business Console operations tranche tracked by #707."
     },
     {
       "service": "Wms",

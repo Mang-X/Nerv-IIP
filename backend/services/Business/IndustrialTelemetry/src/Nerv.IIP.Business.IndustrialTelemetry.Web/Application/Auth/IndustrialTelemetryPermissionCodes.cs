@@ -7,6 +7,7 @@ public static class IndustrialTelemetryPermissionCodes
     public const string TelemetryRead = "business.iiot.telemetry.read";
     public const string TelemetryWrite = "business.iiot.telemetry.write";
     public const string DeviceControlWrite = "business.iiot.device-control.write";
+    public const string DeviceControlManage = "business.iiot.device-control.manage";
     public const string DeviceControlRead = "business.iiot.device-control.read";
     public const string AlarmsRead = "business.iiot.alarms.read";
     public const string AlarmsWrite = "business.iiot.alarms.write";
@@ -18,6 +19,7 @@ public static class IndustrialTelemetryPermissionCodes
         TelemetryRead,
         TelemetryWrite,
         DeviceControlWrite,
+        DeviceControlManage,
         DeviceControlRead,
         AlarmsRead,
         AlarmsWrite,

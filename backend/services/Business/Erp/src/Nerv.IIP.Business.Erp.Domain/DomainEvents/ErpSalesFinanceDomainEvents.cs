@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CostCandidateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggregate;
 
 namespace Nerv.IIP.Business.Erp.Domain.DomainEvents;
 
@@ -11,3 +12,4 @@ public sealed record AccountPayableCreatedDomainEvent(AccountPayable AccountPaya
 public sealed record AccountReceivableCreatedDomainEvent(AccountReceivable AccountReceivable) : IDomainEvent;
 public sealed record CostCandidateCreatedDomainEvent(CostCandidate CostCandidate) : IDomainEvent;
 public sealed record JournalVoucherPostedDomainEvent(JournalVoucher JournalVoucher) : IDomainEvent;
+public sealed record SalesReturnAuthorizedDomainEvent(SalesReturnAuthorization SalesReturnAuthorization) : IDomainEvent;

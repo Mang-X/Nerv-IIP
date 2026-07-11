@@ -2452,8 +2452,6 @@ public sealed class BusinessGatewayProxyTests
         {
             organizationId = "org-001",
             environmentId = "env-dev",
-            connectorHostId = "connector-host-001",
-            instanceKey = "opcua-cell-01",
             deviceAssetId = "DEV-CNC-01",
             commandType = "write-tag",
             tagKey = "spindle.speed",
@@ -2473,8 +2471,6 @@ public sealed class BusinessGatewayProxyTests
         var forwarded = industrialTelemetry.LastDeviceControlRequest!;
         Assert.Equal("org-001", forwarded.OrganizationId);
         Assert.Equal("env-dev", forwarded.EnvironmentId);
-        Assert.Equal("connector-host-001", forwarded.ConnectorHostId);
-        Assert.Equal("opcua-cell-01", forwarded.InstanceKey);
         Assert.Equal("DEV-CNC-01", forwarded.DeviceAssetId);
         Assert.Equal("write-tag", forwarded.CommandType);
         Assert.Equal("spindle.speed", forwarded.TagKey);
@@ -8199,6 +8195,16 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
         return Task.FromResult(new BusinessConsoleTelemetryTagListResponse([]));
     }
 
+    public Task<BusinessConsoleTelemetryTagCurrentValueResponse> GetTagCurrentValueAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryTagCurrentValueRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryTagCurrentValueResponse(
+            request.DeviceAssetId, request.TagKey, HasSample: true, Value: 42m, OccurredAtUtc: DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture)));
+    }
+
     public Task<BusinessConsoleTelemetryAlarmRuleListResponse> ListAlarmRulesAsync(
         string internalBearerToken,
         BusinessConsoleTelemetryAlarmRuleListRequest request,
@@ -8486,10 +8492,66 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
                     "speed adjustment",
                     "approval-pending",
                     "pending",
+                    null,
+                    null,
+                    null,
                     "corr-device-control-001",
                     DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture)),
             ],
             1));
+    }
+
+    public BusinessConsoleTelemetryDeviceControlBindingListRequest? LastDeviceControlBindingListRequest { get; private set; }
+
+    public BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest? LastCreateDeviceControlBindingRequest { get; private set; }
+
+    public BusinessConsoleDisableTelemetryDeviceControlBindingRequest? LastDisableDeviceControlBindingRequest { get; private set; }
+
+    public string? LastDisableDeviceControlBindingDeviceAssetId { get; private set; }
+
+    public Task<BusinessConsoleTelemetryDeviceControlBindingListResponse> ListDeviceControlBindingsAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryDeviceControlBindingListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDeviceControlBindingListRequest = request;
+        return Task.FromResult(new BusinessConsoleTelemetryDeviceControlBindingListResponse(
+            [
+                new BusinessConsoleTelemetryDeviceControlBindingItem(
+                    "binding-001",
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    request.DeviceAssetId ?? "DEV-CNC-01",
+                    "connector-host-001",
+                    "opcua-cell-01",
+                    IsActive: true,
+                    DisabledReason: null,
+                    DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture)),
+            ],
+            1));
+    }
+
+    public Task<BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse> CreateOrUpdateDeviceControlBindingAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateDeviceControlBindingRequest = request;
+        return Task.FromResult(new BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse("binding-001"));
+    }
+
+    public Task<BusinessConsoleDisableTelemetryDeviceControlBindingResponse> DisableDeviceControlBindingAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleDisableTelemetryDeviceControlBindingRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDisableDeviceControlBindingDeviceAssetId = deviceAssetId;
+        LastDisableDeviceControlBindingRequest = request;
+        return Task.FromResult(new BusinessConsoleDisableTelemetryDeviceControlBindingResponse("binding-001"));
     }
 }
 

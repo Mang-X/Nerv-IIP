@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 
 namespace Nerv.IIP.Business.Approval.Web.Application.Queries.Templates;
 
@@ -30,7 +31,10 @@ public sealed record ApprovalTemplateStepResponse(
     string? ParallelGroupKey,
     string ApproverType,
     string ApproverRef,
-    int? DueInHours);
+    int? DueInHours,
+    string CompletionPolicy,
+    string? ConditionExpression,
+    ApprovalRoutingCondition? Condition);
 
 public sealed class ListApprovalTemplatesQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListApprovalTemplatesQuery, ApprovalTemplateListResponse>
@@ -84,7 +88,12 @@ public sealed class ListApprovalTemplatesQueryHandler(ApplicationDbContext dbCon
                     step.ParallelGroupKey,
                     step.ApproverType,
                     step.ApproverRef,
-                    step.DueInHours))
+                    step.DueInHours,
+                    step.CompletionPolicy,
+                    step.ConditionExpression,
+                    step.ConditionExpression?.TrimStart().StartsWith('{') is true
+                        ? ApprovalRoutingCondition.Deserialize(step.ConditionExpression)
+                        : null))
                 .ToArray()))
             .ToArray();
         return new ApprovalTemplateListResponse(items, total);

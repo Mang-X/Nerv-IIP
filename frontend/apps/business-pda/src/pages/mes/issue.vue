@@ -18,6 +18,7 @@ import {
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMesMaterialIssue, useMesWorkOrders } from '@/composables/useBusinessMes'
+import RetryableListError from '@/components/RetryableListError.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 
 definePage({
@@ -32,10 +33,17 @@ type WorkOrder = BusinessConsoleMesWorkOrderItem
 
 const router = useRouter()
 
-const { filters, requests, total, pending, error, createIssue, confirmLineSideReceipt } =
+const { filters, requests, total, pending, error, refresh, createIssue, confirmLineSideReceipt } =
   useMesMaterialIssue()
 
-const { filters: workOrderFilters, workOrders, total: workOrderTotal } = useMesWorkOrders()
+const {
+  filters: workOrderFilters,
+  workOrders,
+  total: workOrderTotal,
+  pending: workOrdersPending,
+  error: workOrdersError,
+  refresh: refreshWorkOrders,
+} = useMesWorkOrders()
 
 // 可读中文状态标签 + 工单标题/副标题来自 @nerv-iip/business-core（不暴露原始状态码）。
 const statusLabel = materialIssueStatusLabel
@@ -52,13 +60,6 @@ function requestSubtitle(req: IssueRequest) {
   if (req.receivedQuantity !== undefined) parts.push(`已收 ${req.receivedQuantity}`)
   return parts.join(' · ')
 }
-
-// --- 列表加载错误 ---
-const errorMessage = computed(() => {
-  const e = error.value
-  if (!e) return ''
-  return e instanceof Error ? e.message : '加载领料申请失败，请下拉刷新或重试。'
-})
 
 // --- 结果反馈 ---
 type ResultState = {
@@ -314,7 +315,14 @@ function onScanWorkOrder(value: string) {
 
       <p class="text-sm text-muted-foreground">共 {{ total }} 条领料申请</p>
 
-      <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+      <RetryableListError
+        v-if="error"
+        :error="error"
+        :pending="pending"
+        fallback="加载领料申请失败，请下拉刷新或重试。"
+        test-id="issue-error"
+        @retry="() => refresh()"
+      />
 
       <div
         v-if="!pending && !error && requests.length === 0"
@@ -352,8 +360,16 @@ function onScanWorkOrder(value: string) {
         <div v-if="!selectedWorkOrder" class="space-y-2">
           <NvScanBar placeholder="扫描工单号" :active="false" @scan="onScanWorkOrder" />
           <p class="text-sm text-muted-foreground">选择领料的工单（共 {{ workOrderTotal }} 张）</p>
+          <RetryableListError
+            v-if="workOrdersError"
+            :error="workOrdersError"
+            :pending="workOrdersPending"
+            fallback="加载工单失败，请稍后重试。"
+            test-id="issue-work-orders-error"
+            @retry="() => refreshWorkOrders()"
+          />
           <div
-            v-if="workOrders.length === 0"
+            v-else-if="workOrders.length === 0"
             class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
           >
             暂无可领料的工单

@@ -20,6 +20,7 @@ import {
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMesReceipts, useMesWorkOrders } from '@/composables/useBusinessMes'
+import RetryableListError from '@/components/RetryableListError.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 
 definePage({
@@ -34,9 +35,16 @@ type WorkOrder = BusinessConsoleMesWorkOrderItem
 
 const router = useRouter()
 
-const { filters, receipts, total, pending, error, createReceipt } = useMesReceipts()
+const { filters, receipts, total, pending, error, refresh, createReceipt } = useMesReceipts()
 
-const { filters: workOrderFilters, workOrders, total: workOrderTotal } = useMesWorkOrders()
+const {
+  filters: workOrderFilters,
+  workOrders,
+  total: workOrderTotal,
+  pending: workOrdersPending,
+  error: workOrdersError,
+  refresh: refreshWorkOrders,
+} = useMesWorkOrders()
 
 // 可读中文状态标签 + 工单标题/副标题来自 @nerv-iip/business-core（不外显原始状态码 / GUID）。
 // 完工入库申请用工单 + 物料组合作可读标题；不把 receiptRequestId（GUID）当标签暴露，
@@ -57,13 +65,6 @@ function receiptSubtitle(req: Receipt) {
 function formatReceiptNumber(value: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 6 }).format(value)
 }
-
-// --- 列表加载错误 ---
-const errorMessage = computed(() => {
-  const e = error.value
-  if (!e) return ''
-  return e instanceof Error ? e.message : '加载完工入库申请失败，请下拉刷新或重试。'
-})
 
 // --- 流程上下文（finishedGoodsReceiptFlow 驱动当前步/进度）---
 const ctx = reactive<ReceiptCtx>({
@@ -296,7 +297,14 @@ function onScanWorkOrder(value: string) {
 
       <p class="text-sm text-muted-foreground">共 {{ total }} 条完工入库申请</p>
 
-      <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+      <RetryableListError
+        v-if="error"
+        :error="error"
+        :pending="pending"
+        fallback="加载完工入库申请失败，请下拉刷新或重试。"
+        test-id="receipt-error"
+        @retry="() => refresh()"
+      />
 
       <div
         v-if="!pending && !error && receipts.length === 0"
@@ -337,8 +345,16 @@ function onScanWorkOrder(value: string) {
           <p class="text-sm text-muted-foreground">
             选择完工入库的工单（共 {{ workOrderTotal }} 张）
           </p>
+          <RetryableListError
+            v-if="workOrdersError"
+            :error="workOrdersError"
+            :pending="workOrdersPending"
+            fallback="加载工单失败，请稍后重试。"
+            test-id="receipt-work-orders-error"
+            @retry="() => refreshWorkOrders()"
+          />
           <div
-            v-if="workOrders.length === 0"
+            v-else-if="workOrders.length === 0"
             class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
           >
             暂无可完工入库的工单

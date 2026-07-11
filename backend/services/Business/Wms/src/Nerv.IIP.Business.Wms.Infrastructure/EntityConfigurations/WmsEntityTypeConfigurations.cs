@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.BackorderOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
@@ -7,6 +8,31 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 
 namespace Nerv.IIP.Business.Wms.Infrastructure.EntityConfigurations;
+
+public sealed class BackorderOrderEntityTypeConfiguration : IEntityTypeConfiguration<BackorderOrder>
+{
+    public void Configure(EntityTypeBuilder<BackorderOrder> builder)
+    {
+        builder.ToTable("backorder_orders", table => table.HasComment("Durable WMS short-pick backorder facts that drive replenishment recommendations."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Backorder order aggregate id.");
+        InboundOrderEntityTypeConfiguration.AddTenantColumns(builder);
+        builder.Property(x => x.BackorderOrderNo).HasColumnName("backorder_order_no").IsRequired().HasMaxLength(100).HasComment("Stable WMS backorder order number.");
+        builder.Property(x => x.OutboundOrderNo).HasColumnName("outbound_order_no").IsRequired().HasMaxLength(100).HasComment("Short-picked WMS outbound order number.");
+        builder.Property(x => x.OutboundOrderLineNo).HasColumnName("outbound_order_line_no").IsRequired().HasMaxLength(100).HasComment("Short-picked WMS outbound order line number.");
+        builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("Short-picked SKU code.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("Short-picked unit of measure.");
+        builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("Site where the short pick occurred.");
+        builder.Property(x => x.PickLocationCode).HasColumnName("pick_location_code").IsRequired().HasMaxLength(100).HasComment("Pick face targeted by the replenishment recommendation.");
+        builder.Property(x => x.BackorderQuantity).HasColumnName("backorder_quantity").IsRequired().HasPrecision(18, 6).HasComment("Unfulfilled quantity recorded by pack review.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Backorder lifecycle status.");
+        builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the short pick created the backorder.");
+        builder.Property(x => x.ClosedAtUtc).HasColumnName("closed_at_utc").HasComment("UTC time when the backorder was closed.");
+        builder.Property(x => x.ClosureReason).HasColumnName("closure_reason").HasMaxLength(1000).HasComment("Audited reason for closing the backorder.");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.BackorderOrderNo }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OutboundOrderNo, x.OutboundOrderLineNo }).IsUnique();
+    }
+}
 
 public sealed class InboundOrderEntityTypeConfiguration : IEntityTypeConfiguration<InboundOrder>
 {
@@ -148,11 +174,11 @@ public sealed class WarehouseTaskEntityTypeConfiguration : IEntityTypeConfigurat
 {
     public void Configure(EntityTypeBuilder<WarehouseTask> builder)
     {
-        builder.ToTable("warehouse_tasks", table => table.HasComment("WMS putaway and picking warehouse tasks."));
+        builder.ToTable("warehouse_tasks", table => table.HasComment("WMS putaway, picking and replenishment recommendation tasks."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Warehouse task id.");
         InboundOrderEntityTypeConfiguration.AddTenantColumns(builder);
-        builder.Property(x => x.TaskType).HasColumnName("task_type").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Task type: putaway or picking.");
+        builder.Property(x => x.TaskType).HasColumnName("task_type").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Task type: putaway, picking or replenishment.");
         builder.Property(x => x.TaskNo).HasColumnName("task_no").IsRequired().HasMaxLength(100).HasComment("Warehouse task number.");
         builder.Property(x => x.SourceOrderNo).HasColumnName("source_order_no").IsRequired().HasMaxLength(100).HasComment("WMS source order number.");
         builder.Property(x => x.SourceOrderLineNo).HasColumnName("source_order_line_no").IsRequired().HasMaxLength(100).HasComment("WMS source order line number.");

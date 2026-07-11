@@ -48,6 +48,12 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("currency_code")
                         .HasComment("Currency code.");
 
+                    b.Property<decimal>("DebitNoteAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("debit_note_amount")
+                        .HasComment("Applied supplier debit-note amount.");
+
                     b.Property<DateOnly>("DueDate")
                         .HasColumnType("date")
                         .HasColumnName("due_date")
@@ -76,6 +82,12 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("local_amount")
                         .HasComment("Local currency amount at document exchange rate.");
+
+                    b.Property<decimal>("LocalDebitNoteAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("local_debit_note_amount")
+                        .HasComment("Applied supplier debit-note local amount.");
 
                     b.Property<decimal>("LocalPaidAmount")
                         .HasPrecision(18, 6)
@@ -159,6 +171,12 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC creation time.");
 
+                    b.Property<decimal>("CreditNoteAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("credit_note_amount")
+                        .HasComment("Applied customer credit-note amount.");
+
                     b.Property<string>("CurrencyCode")
                         .IsRequired()
                         .HasMaxLength(10)
@@ -207,6 +225,12 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("local_collected_amount")
                         .HasComment("Local currency collected amount at document exchange rate.");
+
+                    b.Property<decimal>("LocalCreditNoteAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("local_credit_note_amount")
+                        .HasComment("Applied customer credit-note local amount.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
@@ -550,6 +574,189 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.CreditNoteAggregate.CreditNote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Credit note aggregate id.");
+
+                    b.Property<string>("AccountReceivableNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("account_receivable_no")
+                        .HasComment("AR document settled by this credit.");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("amount")
+                        .HasComment("Credit amount.");
+
+                    b.Property<string>("CreditNoteNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("credit_note_no")
+                        .HasComment("Customer credit note number.");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("currency_code")
+                        .HasComment("Credit note currency.");
+
+                    b.Property<string>("CustomerCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("customer_code")
+                        .HasComment("Customer code.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<decimal>("ExchangeRate")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("numeric(18,8)")
+                        .HasColumnName("exchange_rate")
+                        .HasComment("Credit note exchange rate.");
+
+                    b.Property<DateTime>("IssuedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("issued_at_utc")
+                        .HasComment("UTC issue time.");
+
+                    b.Property<decimal>("LocalAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("local_amount")
+                        .HasComment("Credit local amount.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("RmaNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("rma_no")
+                        .HasComment("Source RMA number.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "CreditNoteNo")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "RmaNo")
+                        .IsUnique();
+
+                    b.ToTable("credit_notes", "erp", t =>
+                        {
+                            t.HasComment("ERP customer credit note issued after RMA Quality disposition.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.DebitNoteAggregate.DebitNote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Debit note aggregate id.");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("amount")
+                        .HasComment("Debit note amount.");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("currency_code")
+                        .HasComment("Debit note currency.");
+
+                    b.Property<string>("DebitNoteNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("debit_note_no")
+                        .HasComment("Supplier debit note number.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<decimal>("ExchangeRate")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("numeric(18,8)")
+                        .HasColumnName("exchange_rate")
+                        .HasComment("Debit note exchange rate.");
+
+                    b.Property<DateTime>("IssuedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("issued_at_utc")
+                        .HasComment("UTC issue time.");
+
+                    b.Property<decimal>("LocalAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("local_amount")
+                        .HasComment("Debit note local amount.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("PayableNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("payable_no")
+                        .HasComment("AP document reduced by this note.");
+
+                    b.Property<string>("PurchaseReturnNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("purchase_return_no")
+                        .HasComment("Source purchase return number.");
+
+                    b.Property<string>("SupplierCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("supplier_code")
+                        .HasComment("Supplier code.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DebitNoteNo")
+                        .IsUnique();
+
+                    b.ToTable("debit_notes", "erp", t =>
+                        {
+                            t.HasComment("ERP supplier debit note applied to an open AP after purchase return.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate.DeliveryOrder", b =>
                 {
                     b.Property<Guid>("Id")
@@ -688,6 +895,65 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate.GLAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("GL account aggregate id.");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("code")
+                        .HasComment("Tenant-unique GL account code.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment boundary.");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name")
+                        .HasComment("GL account display name.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization boundary.");
+
+                    b.Property<string>("ParentCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("parent_code")
+                        .HasComment("Optional parent GL account code in the same tenant.");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("account_type")
+                        .HasComment("Asset, liability, equity, revenue, or expense classification.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("gl_accounts", "erp", t =>
+                        {
+                            t.HasComment("ERP general-ledger account hierarchy.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate.JournalVoucher", b =>
                 {
                     b.Property<Guid>("Id")
@@ -770,6 +1036,13 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("debit_amount")
                         .HasComment("Debit amount.");
 
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment boundary copied from the voucher for GL account linkage.");
+
                     b.Property<decimal>("ExchangeRate")
                         .HasPrecision(18, 8)
                         .HasColumnType("numeric(18,8)")
@@ -800,9 +1073,18 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("memo")
                         .HasComment("Voucher line memo.");
 
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization boundary copied from the voucher for GL account linkage.");
+
                     b.HasKey("Id");
 
                     b.HasIndex("JournalVoucherId");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "AccountCode");
 
                     b.ToTable("journal_voucher_lines", "erp", t =>
                         {
@@ -1612,6 +1894,154 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReturnAggregate.PurchaseReturn", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Purchase return aggregate id.");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("currency_code")
+                        .HasComment("Return currency copied from the source receipt.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<decimal>("ExchangeRate")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("numeric(18,8)")
+                        .HasColumnName("exchange_rate")
+                        .HasComment("Return exchange rate to local currency.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("PurchaseReceiptNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("purchase_receipt_no")
+                        .HasComment("Immutable ERP receipt being compensated.");
+
+                    b.Property<string>("PurchaseReturnNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("purchase_return_no")
+                        .HasComment("ERP purchase return document number.");
+
+                    b.Property<DateTime>("RecordedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recorded_at_utc")
+                        .HasComment("UTC time ERP recorded the completed physical return.");
+
+                    b.Property<string>("SupplierCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("supplier_code")
+                        .HasComment("Supplier copied from the source receipt.");
+
+                    b.Property<string>("WmsOutboundOrderNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("wms_outbound_order_no")
+                        .HasComment("Completed WMS supplier-return outbound reference.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "PurchaseReturnNo")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WmsOutboundOrderNo")
+                        .IsUnique();
+
+                    b.ToTable("purchase_returns", "erp", t =>
+                        {
+                            t.HasComment("ERP immutable supplier purchase return recorded from completed WMS outbound.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReturnAggregate.PurchaseReturnLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Purchase return line id.");
+
+                    b.Property<decimal>("DebitNoteQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("debit_note_quantity")
+                        .HasComment("Invoice-matched returned quantity settled by debit note.");
+
+                    b.Property<decimal>("GrIrReversalQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("gr_ir_reversal_quantity")
+                        .HasComment("Uninvoiced returned quantity reversing GR/IR.");
+
+                    b.Property<string>("PurchaseOrderLineNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("purchase_order_line_no")
+                        .HasComment("Source purchase receipt purchase-order line reference.");
+
+                    b.Property<Guid>("PurchaseReturnId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("purchase_return_id")
+                        .HasComment("Owning purchase return id.");
+
+                    b.Property<decimal>("ReturnedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("returned_quantity")
+                        .HasComment("Physically returned WMS quantity.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
+                        .HasComment("Source SKU code.");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("unit_price")
+                        .HasComment("Source invoice unit price for debit-note segments or purchase-order unit price for GR/IR segments.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("uom_code")
+                        .HasComment("Source UOM code.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PurchaseReturnId");
+
+                    b.ToTable("purchase_return_lines", "erp", t =>
+                        {
+                            t.HasComment("ERP purchase return line with GR/IR and debit-note quantity split.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate.Quotation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2083,6 +2513,204 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggregate.SalesReturnAuthorization", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("RMA aggregate id.");
+
+                    b.Property<string>("AccountReceivableNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("account_receivable_no")
+                        .HasComment("Open AR to settle by credit note.");
+
+                    b.Property<DateTime>("AuthorizedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("authorized_at_utc")
+                        .HasComment("UTC authorization time.");
+
+                    b.Property<DateTime?>("CreditIssuedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("credit_issued_at_utc")
+                        .HasComment("UTC credit note issuance time.");
+
+                    b.Property<string>("CreditNoteNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("credit_note_no")
+                        .HasComment("Issued ERP credit note reference.");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("currency_code")
+                        .HasComment("RMA credit currency.");
+
+                    b.Property<string>("CustomerCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("customer_code")
+                        .HasComment("Source customer code.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<decimal>("ExchangeRate")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("numeric(18,8)")
+                        .HasColumnName("exchange_rate")
+                        .HasComment("RMA exchange rate to local currency.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("QualityDisposition")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("quality_disposition")
+                        .HasComment("Quality result that permits or denies the credit.");
+
+                    b.Property<DateTime?>("QualityDispositionAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("quality_disposition_at_utc")
+                        .HasComment("UTC Quality disposition projection time.");
+
+                    b.Property<string>("RmaNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("rma_no")
+                        .HasComment("Customer return authorization number.");
+
+                    b.Property<string>("SalesOrderNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sales_order_no")
+                        .HasComment("Source ERP sales order number.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Return receiving site.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("RMA lifecycle status.");
+
+                    b.Property<DateTime?>("WarehouseReceivedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("warehouse_received_at_utc")
+                        .HasComment("UTC WMS inbound completion projection time.");
+
+                    b.Property<string>("WmsInboundOrderNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("wms_inbound_order_no")
+                        .HasComment("Actual WMS customer-return inbound order reference.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "RmaNo")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WmsInboundOrderNo")
+                        .IsUnique()
+                        .HasDatabaseName("IX_sales_return_authorizations_organization_id_environment_id~1")
+                        .HasFilter("wms_inbound_order_no IS NOT NULL");
+
+                    b.ToTable("sales_return_authorizations", "erp", t =>
+                        {
+                            t.HasComment("ERP customer RMA authorization and Quality-gated credit lifecycle.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggregate.SalesReturnAuthorizationLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("RMA line id.");
+
+                    b.Property<string>("LocationCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("location_code")
+                        .HasComment("WMS return receiving location.");
+
+                    b.Property<string>("LotNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("lot_no")
+                        .HasComment("Optional expected return lot.");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("quantity")
+                        .HasComment("Authorized return quantity.");
+
+                    b.Property<string>("SalesOrderLineNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sales_order_line_no")
+                        .HasComment("Source sales order line number.");
+
+                    b.Property<Guid>("SalesReturnAuthorizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sales_return_authorization_id")
+                        .HasComment("Owning RMA id.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
+                        .HasComment("Source SKU code.");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("unit_price")
+                        .HasComment("Source sales unit price for credit.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("uom_code")
+                        .HasComment("Source UOM code.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SalesReturnAuthorizationId");
+
+                    b.ToTable("sales_return_authorization_lines", "erp", t =>
+                        {
+                            t.HasComment("ERP RMA source sales line and requested return quantity.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate.SupplierInvoice", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2367,6 +2995,296 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                     b.ToTable("supplier_quotation_lines", "erp", t =>
                         {
                             t.HasComment("ERP supplier quotation lines.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.PendingMaterialCost", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Pending material cost id.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment boundary.");
+
+                    b.Property<string>("MovementId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("movement_id")
+                        .HasComment("Inventory movement public id.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization boundary.");
+
+                    b.Property<DateTimeOffset>("PostedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("posted_at_utc")
+                        .HasComment("Inventory posting timestamp.");
+
+                    b.Property<string>("ReportNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("report_no")
+                        .HasComment("MES report number used for later correlation.");
+
+                    b.Property<decimal>("SignedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("signed_quantity")
+                        .HasComment("Positive actual consumption or negative reversal quantity.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
+                        .HasComment("Consumed material SKU.");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("unit_cost")
+                        .HasComment("Inventory moving-average unit cost.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "MovementId")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ReportNo");
+
+                    b.ToTable("pending_material_costs", "erp", t =>
+                        {
+                            t.HasComment("Order-independent Inventory material cost awaiting its MES report projection.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.WorkCenterCostRate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Work-center cost-rate id.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment boundary.");
+
+                    b.Property<decimal>("HourlyRate")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("hourly_rate")
+                        .HasComment("Actual labor rate per hour in local currency.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization boundary.");
+
+                    b.Property<string>("WorkCenterId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("MES work-center public identifier.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkCenterId")
+                        .IsUnique();
+
+                    b.ToTable("work_center_cost_rates", "erp", t =>
+                        {
+                            t.HasComment("ERP phase-one actual labor hourly rates by work center.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.WorkOrderCost", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Work-order cost aggregate id.");
+
+                    b.Property<bool>("CapitalizationPublished")
+                        .HasColumnType("boolean")
+                        .HasColumnName("capitalization_published")
+                        .HasComment("Whether the cost-ready capitalization event has been published.");
+
+                    b.Property<decimal>("CapitalizedCost")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("capitalized_cost")
+                        .HasComment("Finished-goods inventory value posted for this work order.");
+
+                    b.Property<decimal>("CapitalizedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("capitalized_quantity")
+                        .HasComment("Finished-goods quantity posted for this work order.");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at_utc")
+                        .HasComment("MES completion timestamp.");
+
+                    b.Property<decimal>("CompletedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("completed_quantity")
+                        .HasComment("MES good quantity at completion.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment boundary.");
+
+                    b.Property<int>("ExpectedMaterialMovementCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("expected_material_movement_count")
+                        .HasComment("MES completion count of expected material postings.");
+
+                    b.Property<int>("ExpectedReportCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("expected_report_count")
+                        .HasComment("MES completion count of cost-bearing reports.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization boundary.");
+
+                    b.Property<int>("ReceivedMaterialMovementCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("received_material_movement_count")
+                        .HasComment("Actual Inventory material postings received by ERP.");
+
+                    b.Property<int>("ReceivedReportCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("received_report_count")
+                        .HasComment("Cost-bearing reports received by ERP.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
+                        .HasComment("Finished-good SKU code.");
+
+                    b.Property<decimal>("WipClearedCost")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("wip_cleared_cost")
+                        .HasComment("Cumulative WIP amount cleared by capitalization vouchers.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES work-order public identifier.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId")
+                        .IsUnique();
+
+                    b.ToTable("work_order_costs", "erp", t =>
+                        {
+                            t.HasComment("ERP actual work-order cost accumulation and capitalization fact.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.WorkOrderCostDetail", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Cost detail id.");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("amount")
+                        .HasComment("Signed actual cost amount.");
+
+                    b.Property<string>("DimensionCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("dimension_code")
+                        .HasComment("Work center or material SKU dimension.");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc")
+                        .HasComment("Source fact occurrence timestamp.");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("quantity")
+                        .HasComment("Labor hours or material quantity.");
+
+                    b.Property<decimal>("Rate")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("rate")
+                        .HasComment("Hourly rate or moving-average unit cost.");
+
+                    b.Property<string>("ReportNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("report_no")
+                        .HasComment("MES report number for material-to-work-order correlation.");
+
+                    b.Property<string>("SourceDocumentId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("source_document_id")
+                        .HasComment("Public source event document id.");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("cost_type")
+                        .HasComment("Labor or material cost type.");
+
+                    b.Property<Guid>("WorkOrderCostId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("work_order_cost_id")
+                        .HasComment("Owning work-order cost id.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkOrderCostId", "SourceDocumentId")
+                        .IsUnique();
+
+                    b.ToTable("work_order_cost_details", "erp", t =>
+                        {
+                            t.HasComment("ERP auditable labor or material cost detail.");
                         });
                 });
 
@@ -2799,6 +3717,13 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasForeignKey("JournalVoucherId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate.GLAccount", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "EnvironmentId", "AccountCode")
+                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "Code")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate.PaymentExecutionAllocation", b =>
@@ -2855,6 +3780,15 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReturnAggregate.PurchaseReturnLine", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReturnAggregate.PurchaseReturn", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("PurchaseReturnId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate.QuotationLine", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate.Quotation", null)
@@ -2900,6 +3834,15 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggregate.SalesReturnAuthorizationLine", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggregate.SalesReturnAuthorization", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("SalesReturnAuthorizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate.SupplierInvoiceLine", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate.SupplierInvoice", null)
@@ -2914,6 +3857,15 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                     b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate.SupplierQuotation", null)
                         .WithMany("Lines")
                         .HasForeignKey("SupplierQuotationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.WorkOrderCostDetail", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.WorkOrderCost", null)
+                        .WithMany("Details")
+                        .HasForeignKey("WorkOrderCostId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -2960,6 +3912,11 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                     b.Navigation("Lines");
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReturnAggregate.PurchaseReturn", b =>
+                {
+                    b.Navigation("Lines");
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate.Quotation", b =>
                 {
                     b.Navigation("Lines");
@@ -2979,6 +3936,11 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                     b.Navigation("Lines");
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggregate.SalesReturnAuthorization", b =>
+                {
+                    b.Navigation("Lines");
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate.SupplierInvoice", b =>
                 {
                     b.Navigation("Lines");
@@ -2987,6 +3949,11 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate.SupplierQuotation", b =>
                 {
                     b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate.WorkOrderCost", b =>
+                {
+                    b.Navigation("Details");
                 });
 #pragma warning restore 612, 618
         }

@@ -30,7 +30,7 @@ public sealed class JournalVoucher : Entity<JournalVoucherId>, IAggregateRoot
         EnvironmentId = ErpText.Required(environmentId, nameof(environmentId));
         VoucherNo = ErpText.Required(voucherNo, nameof(voucherNo));
         PostingDate = postingDate;
-        lines.AddRange(lineDrafts.Select(JournalVoucherLine.Create));
+        lines.AddRange(lineDrafts.Select(x => JournalVoucherLine.Create(OrganizationId, EnvironmentId, x)));
         if (lines.Count < 2)
         {
             throw new ArgumentException("At least two voucher lines are required.", nameof(lineDrafts));
@@ -71,8 +71,10 @@ public sealed class JournalVoucherLine : Entity<JournalVoucherLineId>
     {
     }
 
-    private JournalVoucherLine(JournalVoucherLineDraft draft)
+    private JournalVoucherLine(string organizationId, string environmentId, JournalVoucherLineDraft draft)
     {
+        OrganizationId = ErpText.Required(organizationId, nameof(organizationId));
+        EnvironmentId = ErpText.Required(environmentId, nameof(environmentId));
         AccountCode = ErpText.Required(draft.AccountCode, nameof(draft.AccountCode));
         DebitAmount = draft.DebitAmount;
         CreditAmount = draft.CreditAmount;
@@ -92,6 +94,8 @@ public sealed class JournalVoucherLine : Entity<JournalVoucherLineId>
         }
     }
 
+    public string OrganizationId { get; private set; } = string.Empty;
+    public string EnvironmentId { get; private set; } = string.Empty;
     public string AccountCode { get; private set; } = string.Empty;
     public decimal DebitAmount { get; private set; }
     public decimal CreditAmount { get; private set; }
@@ -101,8 +105,8 @@ public sealed class JournalVoucherLine : Entity<JournalVoucherLineId>
     public decimal LocalCreditAmount { get; private set; }
     public string Memo { get; private set; } = string.Empty;
 
-    public static JournalVoucherLine Create(JournalVoucherLineDraft draft)
+    public static JournalVoucherLine Create(string organizationId, string environmentId, JournalVoucherLineDraft draft)
     {
-        return new JournalVoucherLine(draft);
+        return new JournalVoucherLine(organizationId, environmentId, draft);
     }
 }

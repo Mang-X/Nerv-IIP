@@ -50,7 +50,8 @@ public sealed class ProductionReportRecordedIntegrationEventConverter
                 // OEE nets reversals through their negative quantities and distinct report number;
                 // retain correction lineage for audit and downstream projections that need it.
                 report.IsReversal,
-                report.ReversedReportNo));
+                report.ReversedReportNo,
+                report.MaterialMovementCount));
     }
 }
 
@@ -469,7 +470,9 @@ public sealed class WorkOrderCompletedIntegrationEventConverter
                 workOrder.Quantity,
                 workOrder.CompletedQuantity,
                 workOrder.ScrapQuantity,
-                domainEvent.CompletedAtUtc));
+                domainEvent.CompletedAtUtc,
+                workOrder.CostReportCount,
+                workOrder.MaterialMovementCount));
     }
 }
 

@@ -215,6 +215,46 @@ public sealed class OperationTaskFailedNotificationConsumerTests
     }
 
     [Fact]
+    public async Task Handle_approval_rejected_notifies_initiator_once_on_redelivery()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+        var integrationEvent = CreateBusinessApprovalRejectedEvent();
+
+        await HandleBusinessApprovalRejectedAsync(factory, integrationEvent);
+        await HandleBusinessApprovalRejectedAsync(factory, integrationEvent);
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents.Include(x => x.Messages).SingleAsync();
+        Assert.Equal("businessApproval.ApprovalRejected", intent.SourceEventType);
+        Assert.Equal("user:requester-001", Assert.Single(intent.Messages).RecipientRef);
+    }
+
+    [Fact]
+    public async Task Approval_rejection_consumer_ignores_other_completion_types_without_dead_letter()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+        await HandleBusinessApprovalRejectedAsync(factory, CreateBusinessApprovalCompletedEvent(ApprovalIntegrationEventTypes.ApprovalApproved, ApprovalResults.Approved));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        Assert.Empty(await dbContext.NotificationIntents.ToListAsync());
+        Assert.Empty(await deadLetters.ListAsync(ApprovalRejectedIntegrationEventHandlerForNotification.ConsumerName, null, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Approval_rejection_consumer_tolerates_legacy_event_without_initiator()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+        await HandleBusinessApprovalRejectedAsync(factory, CreateBusinessApprovalCompletedEvent(ApprovalIntegrationEventTypes.ApprovalRejected, ApprovalResults.Rejected, initiatorRef: null));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(await dbContext.NotificationIntents.ToListAsync());
+    }
+
+    [Fact]
     public async Task Handle_approval_action_recorded_creates_task_for_new_assignee()
     {
         using var factory = new NotificationConsumerWebApplicationFactory();
@@ -579,6 +619,41 @@ public sealed class OperationTaskFailedNotificationConsumerTests
             ActivatorUtilities.CreateInstance<ApprovalStepOverdueIntegrationEventHandlerForNotification>(scope.ServiceProvider);
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
     }
+
+    private static async Task HandleBusinessApprovalRejectedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        ApprovalCompletedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<ApprovalCompletedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<ApprovalRejectedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static ApprovalCompletedIntegrationEvent CreateBusinessApprovalRejectedEvent() =>
+        CreateBusinessApprovalCompletedEvent(ApprovalIntegrationEventTypes.ApprovalRejected, ApprovalResults.Rejected, "user:requester-001");
+
+    private static ApprovalCompletedIntegrationEvent CreateBusinessApprovalCompletedEvent(string eventType, string result, string? initiatorRef = "user:requester-001") => new(
+        "event-business-approval-rejected",
+        eventType,
+        ApprovalIntegrationEventVersions.V1,
+        DateTimeOffset.Parse("2026-07-11T00:00:00Z"),
+        ApprovalIntegrationEventSources.BusinessApproval,
+        "chain-001",
+        "decision-001",
+        "org-001",
+        "env-dev",
+        "user:approver-001",
+        "approval-rejected:chain-001",
+        new ApprovalCompletedPayload(
+            "chain-001",
+            result,
+            "user",
+            "approver-001",
+            null,
+            null,
+            new ApprovalDocumentReferencePayload("business-erp", "purchase-order", "PO-001", null),
+            initiatorRef));
 
     private static async Task HandleApprovalStepResolvedAsync(
         NotificationConsumerWebApplicationFactory factory,
