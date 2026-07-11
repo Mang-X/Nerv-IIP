@@ -14,6 +14,7 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
+using NetCorePal.Extensions.AspNetCore;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -56,6 +57,11 @@ builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProdu
 builder.Services.AddMediatR(configuration => configuration
     .RegisterServicesFromAssembly(typeof(Program).Assembly)
     .AddUnitOfWorkBehaviors());
+// Surface KnownException (business-rule violations, e.g. cancelling a work order whose received
+// material has no returnable lot) as the standard success=false envelope instead of an unhandled
+// HTTP 500 — matching every other business service. Without it the gateway sees a 500 and returns
+// a generic "downstream-request-failed", hiding the business message from the user.
+builder.Services.AddKnownExceptionErrorModelInterceptor();
 var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
 if (!builder.Environment.IsProduction() && string.IsNullOrWhiteSpace(connectionString))
 {
@@ -95,6 +101,7 @@ if (autoMigrate)
     await dbContext.Database.MigrateAsync();
 }
 
+app.UseKnownExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseFastEndpoints(c =>
