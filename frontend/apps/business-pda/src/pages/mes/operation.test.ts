@@ -16,6 +16,7 @@ const pauseTask = vi.fn(async (_id: string, _options: ActionOptions) => {})
 const resumeTask = vi.fn(async (_id: string, _options: ActionOptions) => {})
 const refresh = vi.fn(async () => {})
 const refreshSops = vi.fn()
+const createSopFileDownloadGrant = vi.fn()
 
 const filters = reactive({ keyword: undefined as string | undefined })
 const tasksErrorRef = ref<unknown>(null)
@@ -39,6 +40,7 @@ const defaultTasks = [
   },
 ]
 const operationTasksRef = ref<(typeof defaultTasks)[number][]>(defaultTasks)
+const currentSopsRef = ref<Array<Record<string, unknown>>>([])
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesOperationTasks: () => ({
@@ -61,10 +63,11 @@ vi.mock('@/composables/useBusinessMes', () => ({
       operationCode: '',
       workCenterCode: '',
     },
-    currentSops: ref([]),
+    currentSops: currentSopsRef,
     pending: ref(false),
     error: sopsErrorRef,
     refresh: refreshSops,
+    createSopFileDownloadGrant,
   }),
 }))
 
@@ -80,6 +83,8 @@ describe('PDA MES operation execution page', () => {
     tasksErrorRef.value = null
     sopsErrorRef.value = null
     operationTasksRef.value = defaultTasks
+    currentSopsRef.value = []
+    createSopFileDownloadGrant.mockClear()
     filters.keyword = undefined
   })
 
@@ -219,6 +224,32 @@ describe('PDA MES operation execution page', () => {
     const wrapper = mount(OperationPage)
     expect(wrapper.find('[data-testid="operation-tasks-error"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('暂无工序任务')
+    wrapper.unmount()
+  })
+
+  // P1：SOP 打开文件失败（超时/离线）时不隐藏 SOP 列表——保留"查看SOP"作为重试入口。
+  it('打开 SOP 失败（超时）时保留 SOP 列表与"查看SOP"按钮以便重试', async () => {
+    currentSopsRef.value = [
+      { fileId: 'F1', fileName: 'SOP-1', documentNumber: 'D1', revision: 'A', effectiveDate: null },
+    ]
+    createSopFileDownloadGrant.mockRejectedValueOnce(new Error('网络超时，请检查连接后重试'))
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    const viewBtn = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
+      b.textContent?.includes('查看SOP'),
+    )!
+    expect(viewBtn).toBeTruthy()
+    viewBtn.click()
+    await flushPromises()
+    // 打开失败文案出现
+    expect(document.body.querySelector('[data-testid="sop-file-error"]')?.textContent).toContain(
+      '网络超时，请检查连接后重试',
+    )
+    // 且 SOP 列表与"查看SOP"按钮仍在（可再次点击重试），不被错误文本隐藏
+    expect(
+      [...document.body.querySelectorAll('button')].some((b) => b.textContent?.includes('查看SOP')),
+    ).toBe(true)
     wrapper.unmount()
   })
 })

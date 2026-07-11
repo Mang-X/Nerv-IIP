@@ -357,32 +357,40 @@ function formatDate(value?: string | null) {
             test-id="sops-error"
             @retry="() => refreshSops()"
           />
-          <p v-else-if="sopFileError" class="text-sm text-destructive" role="alert">
-            {{ sopFileError }}
-          </p>
-          <p v-else-if="sopsPending" class="text-sm text-muted-foreground">正在加载SOP...</p>
-          <div v-else-if="currentSops.length" class="space-y-2">
-            <div
-              v-for="sop in currentSops"
-              :key="`${sop.documentNumber}-${sop.revision}-${sop.fileId}`"
-              class="rounded-md bg-muted px-3 py-2 text-sm"
-            >
-              <p class="font-medium text-foreground">{{ sop.fileName || sop.documentNumber }}</p>
-              <p class="text-xs text-muted-foreground">
-                {{ sop.documentNumber }} · rev {{ sop.revision }} · 生效
-                {{ formatDate(sop.effectiveDate) }}
-              </p>
-              <button
-                type="button"
-                class="mt-2 min-h-touch rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground disabled:opacity-60"
-                :disabled="openingSopFileId === sop.fileId"
-                @click="openSopFile(sop)"
+          <template v-else>
+            <p v-if="sopsPending" class="text-sm text-muted-foreground">正在加载SOP...</p>
+            <div v-else-if="currentSops.length" class="space-y-2">
+              <div
+                v-for="sop in currentSops"
+                :key="`${sop.documentNumber}-${sop.revision}-${sop.fileId}`"
+                class="rounded-md bg-muted px-3 py-2 text-sm"
               >
-                查看SOP
-              </button>
+                <p class="font-medium text-foreground">{{ sop.fileName || sop.documentNumber }}</p>
+                <p class="text-xs text-muted-foreground">
+                  {{ sop.documentNumber }} · rev {{ sop.revision }} · 生效
+                  {{ formatDate(sop.effectiveDate) }}
+                </p>
+                <button
+                  type="button"
+                  class="mt-2 min-h-touch rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground disabled:opacity-60"
+                  :disabled="openingSopFileId === sop.fileId"
+                  @click="openSopFile(sop)"
+                >
+                  查看SOP
+                </button>
+              </div>
             </div>
-          </div>
-          <p v-else class="text-sm text-muted-foreground">当前没有已生效SOP。</p>
+            <p v-else class="text-sm text-muted-foreground">当前没有已生效SOP。</p>
+            <!-- 打开文件失败（含超时/离线）：独立展示，保留 SOP 列表与“查看SOP”按钮以便再次尝试。 -->
+            <p
+              v-if="sopFileError"
+              data-testid="sop-file-error"
+              class="text-sm text-destructive"
+              role="alert"
+            >
+              {{ sopFileError }}
+            </p>
+          </template>
         </section>
 
         <!-- 完成的二次确认 -->

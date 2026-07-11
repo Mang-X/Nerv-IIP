@@ -13,6 +13,7 @@ const recordReport = vi.fn(async (_input: Record<string, unknown>) => {})
 const refreshWorkOrders = vi.fn(async () => {})
 const refreshTasks = vi.fn(async () => {})
 const workOrdersErrorRef = ref<unknown>(null)
+const tasksErrorRef = ref<unknown>(null)
 
 const workOrderFilters = reactive({
   keyword: undefined as string | undefined,
@@ -23,12 +24,13 @@ const taskFilters = reactive({
   workOrderId: undefined as string | undefined,
 })
 
-const workOrders = [
+const defaultWorkOrders = [
   { workOrderId: 'WO-2026-0001', skuId: 'SKU-A', quantity: 100, status: 'Released' },
   { workOrderId: 'WO-2026-0002', skuId: 'SKU-B', quantity: 50, status: 'Released' },
 ]
+const workOrdersRef = ref<Array<Record<string, unknown>>>(defaultWorkOrders)
 
-const operationTasks = [
+const defaultOperationTasks = [
   {
     operationTaskId: 'OP-1',
     workOrderId: 'WO-2026-0001',
@@ -44,22 +46,23 @@ const operationTasks = [
     workCenterId: 'WC-B',
   },
 ]
+const operationTasksRef = ref<Array<Record<string, unknown>>>(defaultOperationTasks)
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesWorkOrders: () => ({
     filters: workOrderFilters,
-    workOrders: computed(() => workOrders),
-    total: computed(() => workOrders.length),
+    workOrders: computed(() => workOrdersRef.value),
+    total: computed(() => workOrdersRef.value.length),
     pending: ref(false),
     error: workOrdersErrorRef,
     refresh: refreshWorkOrders,
   }),
   useMesOperationTasks: () => ({
     filters: taskFilters,
-    operationTasks: computed(() => operationTasks),
-    total: computed(() => operationTasks.length),
+    operationTasks: computed(() => operationTasksRef.value),
+    total: computed(() => operationTasksRef.value.length),
     pending: ref(false),
-    error: ref(null),
+    error: tasksErrorRef,
     refresh: refreshTasks,
     startTask: vi.fn(),
     pauseTask: vi.fn(),
@@ -92,7 +95,11 @@ describe('PDA MES production reporting page', () => {
     recordReport.mockResolvedValue(undefined)
     push.mockClear()
     refreshWorkOrders.mockClear()
+    refreshTasks.mockClear()
     workOrdersErrorRef.value = null
+    tasksErrorRef.value = null
+    workOrdersRef.value = defaultWorkOrders
+    operationTasksRef.value = defaultOperationTasks
     workOrderFilters.keyword = undefined
     taskFilters.workOrderId = undefined
   })
@@ -240,5 +247,23 @@ describe('PDA MES production reporting page', () => {
     expect(banner.text()).toContain('网络超时，请检查连接后重试')
     await wrapper.get('[data-testid="retry-list"]').trigger('click')
     expect(refreshWorkOrders).toHaveBeenCalledTimes(1)
+  })
+
+  // P2：加载失败时空态与错误态互斥，不把网络错误误报成"暂无"。
+  it('工单加载失败时不显示"暂无可报工的工单"空态', () => {
+    workOrdersRef.value = []
+    workOrdersErrorRef.value = new RequestTimeoutError()
+    const wrapper = mount(ReportPage)
+    expect(wrapper.find('[data-testid="work-orders-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('暂无可报工的工单')
+  })
+
+  it('工序加载失败时不显示"该工单暂无工序"空态', async () => {
+    operationTasksRef.value = []
+    tasksErrorRef.value = new RequestTimeoutError()
+    const wrapper = mount(ReportPage)
+    await selectWorkOrder(wrapper, 0) // 进入选工序步
+    expect(wrapper.find('[data-testid="tasks-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('该工单暂无工序')
   })
 })

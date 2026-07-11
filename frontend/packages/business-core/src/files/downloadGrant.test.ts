@@ -47,12 +47,12 @@ describe('openDownloadGrantBlob', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/business-console/v1/files/download-grants/grant-1/content',
-      {
+      expect.objectContaining({
         headers: {
           'X-Organization-Id': 'org-001',
           'X-Environment-Id': 'env-dev',
         },
-      },
+      }),
     )
     expect(link.href).toBe('blob:sop')
     expect(link.target).toBe('_blank')
@@ -79,6 +79,30 @@ describe('openDownloadGrantBlob', () => {
     ).rejects.toThrow('网络超时')
     expect(injectedFetch).toHaveBeenCalledTimes(1)
     expect(globalFetch).not.toHaveBeenCalled()
+  })
+
+  it('bounds a body read that stalls after headers arrive (aborts + timeout copy)', async () => {
+    vi.useFakeTimers()
+    // Headers arrive immediately, but blob() only settles when the signal aborts —
+    // i.e. the body stream stalls. The overall ceiling must still abort it.
+    const fetchMock = vi.fn((_url: string, init: { signal: AbortSignal }) =>
+      Promise.resolve({
+        ok: true,
+        blob: () =>
+          new Promise((_resolve, reject) => {
+            init.signal.addEventListener('abort', () =>
+              reject(new DOMException('The operation was aborted.', 'AbortError')),
+            )
+          }),
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const pending = openDownloadGrantBlob({ downloadUrl: '/x' }, { timeoutMs: 1_000 })
+    const assertion = expect(pending).rejects.toThrow('网络超时')
+    await vi.advanceTimersByTimeAsync(1_000)
+    await assertion
+    vi.useRealTimers()
   })
 
   it('rejects grants without a download URL', async () => {
