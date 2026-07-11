@@ -1,9 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
 using MediatR;
+using Microsoft.Data.Sqlite;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
@@ -538,6 +540,35 @@ public sealed class ApprovalEndpointContractTests
     }
 
     [Fact]
+    public async Task Concurrent_start_chain_loser_returns_persisted_winner_after_unique_conflict()
+    {
+        const string connectionString = "Data Source=approval-start-race;Mode=Memory;Cache=Shared";
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        await using (var setup = new ApplicationDbContext(options, mediator: null!))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            setup.ApprovalTemplates.Add(NewTemplate());
+            await setup.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var command = new StartApprovalChainCommand(
+            "org-001", "env-dev", "ECO-DEFAULT", "eco", "engineering-change-order", "ECO-RACE", null, "user:requester");
+        var loserOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(connectionString)
+            .AddInterceptors(new InsertApprovalWinnerBeforeSaveInterceptor(connectionString, command))
+            .Options;
+        await using var loserContext = new ApplicationDbContext(loserOptions, mediator: null!);
+
+        var returnedId = await new StartApprovalChainCommandHandler(loserContext).Handle(command, CancellationToken.None);
+
+        await using var verification = new ApplicationDbContext(options, mediator: null!);
+        var winner = await verification.ApprovalChains.SingleAsync(CancellationToken.None);
+        Assert.Equal(winner.Id, returnedId);
+    }
+
+    [Fact]
     public async Task Pending_tasks_query_only_returns_actor_current_sequence_tasks()
     {
         await using var provider = CreateInMemoryProvider();
@@ -664,5 +695,33 @@ public sealed class ApprovalEndpointContractTests
     private sealed class FixedApprovalClock(DateTimeOffset utcNow) : IApprovalClock
     {
         public DateTimeOffset UtcNow { get; set; } = utcNow;
+    }
+
+    private sealed class InsertApprovalWinnerBeforeSaveInterceptor(
+        string connectionString,
+        StartApprovalChainCommand command) : SaveChangesInterceptor
+    {
+        private bool winnerInserted;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!winnerInserted && eventData.Context!.ChangeTracker.Entries<ApprovalChain>().Any(x => x.State == EntityState.Added))
+            {
+                winnerInserted = true;
+                var winnerOptions = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connectionString).Options;
+                await using var winnerContext = new ApplicationDbContext(winnerOptions, mediator: null!);
+                var template = await winnerContext.ApprovalTemplates.Include(x => x.Steps).SingleAsync(cancellationToken);
+                winnerContext.ApprovalChains.Add(ApprovalChain.Start(
+                    template,
+                    new ApprovalDocumentReference(command.SourceService, command.DocumentType, command.DocumentId, command.DocumentLineId),
+                    command.StartedBy));
+                await winnerContext.SaveChangesAsync(cancellationToken);
+            }
+
+            return await base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
     }
 }

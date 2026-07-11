@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 using Nerv.IIP.Business.Approval.Web.Application.Validation;
+using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Approval.Web.Application.Commands.Chains;
 
@@ -39,6 +40,9 @@ public sealed class StartApprovalChainCommandValidator : AbstractValidator<Start
 public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<StartApprovalChainCommand, ApprovalChainId>
 {
+    private const string PendingIdentityUniqueIndex = "IX_approval_chains_pending_identity_key";
+    private const string DuplicateRecoverySavepoint = "approval_chain_start_duplicate";
+
     public async Task<ApprovalChainId> Handle(StartApprovalChainCommand request, CancellationToken cancellationToken)
     {
         var documentReference = new ApprovalDocumentReference(
@@ -91,6 +95,56 @@ public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbCont
         }
 
         dbContext.ApprovalChains.Add(chain);
-        return chain.Id;
+        var transaction = dbContext.Database.CurrentTransaction;
+        if (transaction is not null)
+        {
+            await transaction.CreateSavepointAsync(DuplicateRecoverySavepoint, cancellationToken);
+        }
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.ReleaseSavepointAsync(DuplicateRecoverySavepoint, cancellationToken);
+            }
+
+            return chain.Id;
+        }
+        catch (DbUpdateException exception) when (IsPendingIdentityConflict(exception))
+        {
+            if (transaction is not null)
+            {
+                await transaction.RollbackToSavepointAsync(DuplicateRecoverySavepoint, cancellationToken);
+            }
+
+            dbContext.ChangeTracker.Clear();
+            return await dbContext.ApprovalChains
+                .AsNoTracking()
+                .Where(x => x.PendingIdentityKey == pendingIdentityKey)
+                .Select(x => x.Id)
+                .SingleOrDefaultAsync(cancellationToken)
+                ?? RethrowDuplicateConflict(exception);
+        }
+    }
+
+    private bool IsPendingIdentityConflict(DbUpdateException exception)
+    {
+        if (!dbContext.ChangeTracker.Entries<ApprovalChain>().Any(x =>
+                x.State == EntityState.Added && x.Entity.PendingIdentityKey is not null))
+        {
+            return false;
+        }
+
+        var indexName = dbContext.Database.ProviderName?.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) == true
+            ? null
+            : PendingIdentityUniqueIndex;
+        return ProcessedIntegrationEventInbox.IsUniqueConflict(exception, dbContext, indexName);
+    }
+
+    private static ApprovalChainId RethrowDuplicateConflict(DbUpdateException exception)
+    {
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
+        throw new InvalidOperationException("Unreachable duplicate conflict rethrow path.");
     }
 }
