@@ -47,7 +47,7 @@ public sealed class WorkOrderCostEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.ExpectedMaterialMovementCount).HasColumnName("expected_material_movement_count").HasComment("MES completion count of expected material postings.");
         builder.Property(x => x.ReceivedMaterialMovementCount).HasColumnName("received_material_movement_count").HasComment("Actual Inventory material postings received by ERP.");
         builder.Property(x => x.CapitalizationPublished).HasColumnName("capitalization_published").HasComment("Whether the cost-ready capitalization event has been published.");
-        builder.Ignore(x => x.LaborCost); builder.Ignore(x => x.MaterialCost); builder.Ignore(x => x.TotalAccumulatedCost); builder.Ignore(x => x.VarianceCost); builder.Ignore(x => x.IsReconciled);
+        builder.Ignore(x => x.LaborCost); builder.Ignore(x => x.MaterialCost); builder.Ignore(x => x.TotalAccumulatedCost); builder.Ignore(x => x.VarianceCost);
         builder.HasMany(x => x.Details).WithOne().HasForeignKey("WorkOrderCostId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Details).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId }).IsUnique();

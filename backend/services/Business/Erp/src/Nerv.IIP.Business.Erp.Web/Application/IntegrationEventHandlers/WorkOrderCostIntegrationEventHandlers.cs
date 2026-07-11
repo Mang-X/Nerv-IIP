@@ -8,12 +8,13 @@ using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
+using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Mes.ProductionReportRecordedIntegrationEvent", ConsumerName)]
-public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(ApplicationDbContext dbContext)
+public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(ApplicationDbContext dbContext, IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<ProductionReportRecordedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.production-report-labor-cost";
@@ -24,20 +25,30 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
     private async Task HandleValidAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         if (!string.Equals(integrationEvent.SourceService, MesIntegrationEventSources.BusinessMes, StringComparison.OrdinalIgnoreCase)) return;
-        if (string.IsNullOrWhiteSpace(integrationEvent.Payload.WorkCenterId) || integrationEvent.Payload.TheoreticalRatePerHour is null or <= 0m) return;
+        var outputQuantity = Math.Abs(integrationEvent.Payload.GoodQuantity + integrationEvent.Payload.ScrapQuantity + integrationEvent.Payload.ReworkQuantity);
+        var hasLaborBasis = !string.IsNullOrWhiteSpace(integrationEvent.Payload.WorkCenterId) && integrationEvent.Payload.TheoreticalRatePerHour is > 0m && outputQuantity > 0m;
+        WorkCenterCostRate? rate = null;
+        if (hasLaborBasis)
+        {
+            rate = await dbContext.WorkCenterCostRates.SingleOrDefaultAsync(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.WorkCenterId == integrationEvent.Payload.WorkCenterId, cancellationToken);
+            if (rate is null)
+            {
+                await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(ConsumerName, integrationEvent, "missing-work-center-cost-rate", $"Work-center cost rate '{integrationEvent.Payload.WorkCenterId}' is not configured."), cancellationToken);
+                return;
+            }
+        }
         if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken)) return;
-        var rate = await dbContext.WorkCenterCostRates.SingleOrDefaultAsync(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.WorkCenterId == integrationEvent.Payload.WorkCenterId, cancellationToken);
-        if (rate is null) throw new InvalidOperationException($"Work-center cost rate '{integrationEvent.Payload.WorkCenterId}' is not configured.");
         var cost = await dbContext.WorkOrderCosts.Include(x => x.Details).SingleOrDefaultAsync(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.WorkOrderId == integrationEvent.Payload.WorkOrderId, cancellationToken);
         if (cost is null)
         {
             cost = WorkOrderCost.Open(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, integrationEvent.Payload.WorkOrderId, integrationEvent.Payload.WorkOrderId);
             dbContext.WorkOrderCosts.Add(cost);
         }
-        var outputQuantity = Math.Abs(integrationEvent.Payload.GoodQuantity + integrationEvent.Payload.ScrapQuantity + integrationEvent.Payload.ReworkQuantity);
-        if (outputQuantity <= 0m) return;
         var priorTotal = cost.TotalAccumulatedCost;
-        cost.RecordLabor(integrationEvent.Payload.ReportNo, integrationEvent.Payload.WorkCenterId, outputQuantity / integrationEvent.Payload.TheoreticalRatePerHour.Value, rate.HourlyRate, integrationEvent.Payload.IsReversal, integrationEvent.Payload.ReportedAtUtc);
+        if (hasLaborBasis)
+            cost.RecordLabor(integrationEvent.Payload.ReportNo, integrationEvent.Payload.WorkCenterId, outputQuantity / integrationEvent.Payload.TheoreticalRatePerHour!.Value, rate!.HourlyRate, integrationEvent.Payload.IsReversal, integrationEvent.Payload.ReportedAtUtc);
+        else
+            cost.RecordUncostedReport(integrationEvent.Payload.ReportNo, integrationEvent.Payload.IsReversal, integrationEvent.Payload.ReportedAtUtc);
         if (cost.CapitalizationPublished && integrationEvent.Payload.IsReversal)
             await CostVariancePosting.PostLateAdjustmentAsync(dbContext, cost, cost.TotalAccumulatedCost - priorTotal, integrationEvent.Payload.ReportNo, integrationEvent.Payload.ReportedAtUtc, cancellationToken);
         var pending = await dbContext.PendingMaterialCosts.Where(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.ReportNo == integrationEvent.Payload.ReportNo).ToListAsync(cancellationToken);
@@ -53,7 +64,7 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
 }
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Inventory.StockMovementPostedIntegrationEvent", ConsumerName)]
-public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(ApplicationDbContext dbContext)
+public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(ApplicationDbContext dbContext, IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<StockMovementPostedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.production-material-cost";
@@ -68,11 +79,19 @@ public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMater
         var isProductionMaterial = payload.IdempotencyKey.StartsWith("mes:production-consumption:", StringComparison.OrdinalIgnoreCase);
         if (!isFinishedGoods && !isProductionMaterial) return;
         var unitCost = payload.UnitCost ?? (payload.MovementAmount is not null && payload.Quantity != 0m ? Math.Abs(payload.MovementAmount.Value / payload.Quantity) : null);
-        if (unitCost is null or <= 0m) throw new InvalidOperationException($"Inventory movement '{payload.InventoryMovementId}' has no actual moving-average cost.");
+        if (unitCost is null or <= 0m)
+        {
+            await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(ConsumerName, integrationEvent, "missing-actual-unit-cost", $"Inventory movement '{payload.InventoryMovementId}' has no actual moving-average cost."), cancellationToken);
+            return;
+        }
         if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken)) return;
         if (isFinishedGoods)
         {
-            if (string.IsNullOrWhiteSpace(payload.SourceDocumentLineId)) throw new InvalidOperationException("Finished-goods Inventory posting must carry the MES work-order id.");
+            if (string.IsNullOrWhiteSpace(payload.SourceDocumentLineId))
+            {
+                await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(ConsumerName, integrationEvent, "missing-work-order-id", "Finished-goods Inventory posting must carry the MES work-order id."), cancellationToken);
+                return;
+            }
             var completedCost = await dbContext.WorkOrderCosts.Include(x => x.Details).SingleOrDefaultAsync(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.WorkOrderId == payload.SourceDocumentLineId, cancellationToken)
                 ?? throw new InvalidOperationException($"Work-order cost '{payload.SourceDocumentLineId}' was not found for capitalization posting.");
             var priorCapitalized = completedCost.CapitalizedCost;

@@ -37,13 +37,14 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         cost.RecordMaterial("MOVE-PG-RM", "RPT-PG-001", "RM-PG", 3m, 20m, DateTimeOffset.UtcNow);
         cost.Complete(8m, 1, 1, DateTimeOffset.UtcNow);
         cost.Capitalize("MOVE-PG-FG", 8m, 20m, DateTimeOffset.UtcNow);
+        cost.RecordWipClearance(160m);
         db.WorkOrderCosts.Add(cost);
         await db.SaveChangesAsync();
 
         db.ChangeTracker.Clear();
         var persisted = await db.WorkOrderCosts.Include(x => x.Details).SingleAsync();
         Assert.Equal(160m, persisted.TotalAccumulatedCost);
-        Assert.True(persisted.IsReconciled);
+        Assert.Equal(persisted.TotalAccumulatedCost, persisted.WipClearedCost);
         Assert.Equal(2, await db.JournalVouchers.SelectMany(x => x.Lines).CountAsync());
     }
 

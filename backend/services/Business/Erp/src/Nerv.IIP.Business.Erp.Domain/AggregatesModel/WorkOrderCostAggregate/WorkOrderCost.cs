@@ -38,7 +38,6 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
     public decimal LaborCost => details.Where(x => x.Type == WorkOrderCostDetailType.Labor).Sum(x => x.Amount);
     public decimal MaterialCost => details.Where(x => x.Type == WorkOrderCostDetailType.Material).Sum(x => x.Amount);
     public decimal TotalAccumulatedCost => LaborCost + MaterialCost;
-    public bool IsReconciled => CompletedAtUtc.HasValue && TotalAccumulatedCost == CapitalizedCost + VarianceCost;
     public IReadOnlyCollection<WorkOrderCostDetail> Details => details;
 
     public static WorkOrderCost Open(string organizationId, string environmentId, string workOrderId, string skuCode)
@@ -55,10 +54,10 @@ public sealed class WorkOrderCost : Entity<WorkOrderCostId>, IAggregateRoot
         TryPublishCapitalization();
     }
 
-    public void ExpectMaterialMovements(int count)
+    public void RecordUncostedReport(string sourceDocumentId, bool isReversal, DateTimeOffset occurredAtUtc)
     {
-        if (count < 0) throw new ArgumentOutOfRangeException(nameof(count));
-        ExpectedMaterialMovementCount += count;
+        details.Add(WorkOrderCostDetail.Create(WorkOrderCostDetailType.Labor, sourceDocumentId, "UNSPECIFIED", 0m, 0m, 0m, occurredAtUtc));
+        if (!isReversal) ReceivedReportCount++;
         TryPublishCapitalization();
     }
 

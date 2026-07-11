@@ -24,13 +24,14 @@ public sealed class ErpCostAccountingAggregateTests
 
         cost.Complete(8m, 1, 1, new DateTimeOffset(2026, 7, 11, 3, 0, 0, TimeSpan.Zero));
         cost.Capitalize("MOVE-FG-001", 8m, 19m, new DateTimeOffset(2026, 7, 11, 4, 0, 0, TimeSpan.Zero));
+        cost.RecordWipClearance(160m);
 
         Assert.Equal(100m, cost.LaborCost);
         Assert.Equal(60m, cost.MaterialCost);
         Assert.Equal(160m, cost.TotalAccumulatedCost);
         Assert.Equal(152m, cost.CapitalizedCost);
         Assert.Equal(8m, cost.VarianceCost);
-        Assert.True(cost.IsReconciled);
+        Assert.Equal(cost.TotalAccumulatedCost, cost.WipClearedCost);
         Assert.Equal(2, cost.Details.Count);
     }
 
