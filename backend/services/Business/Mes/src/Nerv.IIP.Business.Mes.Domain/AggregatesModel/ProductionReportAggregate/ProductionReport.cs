@@ -6,6 +6,9 @@ public partial record ProductionReportId : IGuidStronglyTypedId;
 
 public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoot
 {
+    public const string ManualSource = "manual";
+    public const string TelemetrySource = "telemetry";
+
     private ProductionReport()
     {
     }
@@ -27,7 +30,8 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         string? serialNo,
         string? reversedReportNo,
         string? reversalReason,
-        ProductionReportOeeProjection? oeeProjection)
+        ProductionReportOeeProjection? oeeProjection,
+        string source)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -54,6 +58,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         OeeDeviceAssetId = string.IsNullOrWhiteSpace(oeeProjection?.DeviceAssetId) ? null : oeeProjection.DeviceAssetId.Trim();
         OeeUomCode = string.IsNullOrWhiteSpace(oeeProjection?.UomCode) ? null : oeeProjection.UomCode.Trim();
         OeeTheoreticalRatePerHour = oeeProjection?.TheoreticalRatePerHour;
+        Source = NormalizeSource(source);
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -74,6 +79,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     public string? OeeDeviceAssetId { get; private set; }
     public string? OeeUomCode { get; private set; }
     public decimal? OeeTheoreticalRatePerHour { get; private set; }
+    public string Source { get; private set; } = ManualSource;
     public bool CompletesOperation { get; private set; }
     public DateTimeOffset ReportedAtUtc { get; private set; }
 
@@ -101,7 +107,8 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         string? defectRecordNo = null,
         string? producedLotNo = null,
         string? serialNo = null,
-        ProductionReportOeeProjection? oeeProjection = null)
+        ProductionReportOeeProjection? oeeProjection = null,
+        string source = ManualSource)
     {
         DomainGuard.NonNegative(goodQuantity, nameof(goodQuantity));
         DomainGuard.NonNegative(scrapQuantity, nameof(scrapQuantity));
@@ -128,7 +135,8 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             serialNo,
             null,
             null,
-            oeeProjection);
+            oeeProjection,
+            source);
         report.AddDomainEvent(new ProductionReportRecordedDomainEvent(report, report.GetOeeProjection()));
         return report;
     }
@@ -163,8 +171,24 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             original.SerialNo,
             original.ReportNo,
             reason,
-            originalOeeProjection);
+            originalOeeProjection,
+            original.Source);
         report.AddDomainEvent(new ProductionReportRecordedDomainEvent(report, report.GetOeeProjection()));
         return report;
+    }
+
+    public static bool IsSupportedSource(string source) =>
+        string.Equals(source, ManualSource, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(source, TelemetrySource, StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeSource(string source)
+    {
+        var normalized = DomainGuard.Required(source, nameof(source)).ToLowerInvariant();
+        if (!IsSupportedSource(normalized))
+        {
+            throw new ArgumentOutOfRangeException(nameof(source), "Production report source must be manual or telemetry.");
+        }
+
+        return normalized;
     }
 }

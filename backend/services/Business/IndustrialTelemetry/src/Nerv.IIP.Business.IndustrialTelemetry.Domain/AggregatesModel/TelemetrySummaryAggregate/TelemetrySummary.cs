@@ -112,4 +112,18 @@ public sealed class TelemetrySummary : Entity<TelemetrySummaryId>, IAggregateRoo
             && MaxValue == other.MaxValue
             && AverageValue == other.AverageValue;
     }
+
+    public void RaiseProductionCountDeltaEvent(decimal deltaQuantity, string reportingMode, bool hasActiveAlarm)
+    {
+        if (deltaQuantity <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(deltaQuantity), "Production count delta must be positive.");
+        }
+
+        this.AddDomainEvent(new TelemetryProductionCountDeltaDomainEvent(
+            this,
+            deltaQuantity,
+            IndustrialTelemetryText.RequiredLower(reportingMode, nameof(reportingMode)),
+            hasActiveAlarm));
+    }
 }
