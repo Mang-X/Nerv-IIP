@@ -150,6 +150,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/equipment/alarms/{alarmEventId}/shelve", "post", "shelveBusinessConsoleEquipmentAlarm");
         AssertOperationId(paths, "/api/business-console/v1/equipment/alarms/{alarmEventId}/unshelve", "post", "unshelveBusinessConsoleEquipmentAlarm");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/tags", "get", "listBusinessConsoleTelemetryTags");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/tags/current-value", "get", "getBusinessConsoleTelemetryTagCurrentValue");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "get", "listBusinessConsoleTelemetryAlarmRules");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "post", "createOrUpdateBusinessConsoleTelemetryAlarmRule");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/device-control-commands", "post", "createBusinessConsoleTelemetryDeviceControlCommand");

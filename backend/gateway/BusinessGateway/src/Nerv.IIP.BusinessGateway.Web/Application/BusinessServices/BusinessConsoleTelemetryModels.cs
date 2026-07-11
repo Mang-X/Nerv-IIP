@@ -11,6 +11,19 @@ public sealed record BusinessConsoleTelemetryTagListResponse(
     IReadOnlyCollection<BusinessConsoleTelemetryTagItem> Items,
     int Total = 0);
 
+public sealed record BusinessConsoleTelemetryTagCurrentValueRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string TagKey);
+
+public sealed record BusinessConsoleTelemetryTagCurrentValueResponse(
+    string DeviceAssetId,
+    string TagKey,
+    bool HasSample,
+    decimal? Value,
+    DateTimeOffset? OccurredAtUtc);
+
 public sealed record BusinessConsoleTelemetryTagItem(
     string TelemetryTagId,
     string OrganizationId,
@@ -136,6 +149,8 @@ public sealed record BusinessConsoleTelemetryDeviceControlCommandListItem(
     string Status,
     string? ApprovalStatus,
     string? FailureCode,
+    string? DeviceReceiptCode,
+    string? DeviceReceiptMessage,
     string CorrelationId,
     DateTimeOffset RequestedAtUtc);
 

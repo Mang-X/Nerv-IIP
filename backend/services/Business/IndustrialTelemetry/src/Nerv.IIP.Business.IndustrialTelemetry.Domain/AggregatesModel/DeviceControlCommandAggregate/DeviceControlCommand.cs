@@ -91,6 +91,12 @@ public sealed class DeviceControlCommand : Entity<DeviceControlCommandId>, IAggr
     /// <summary>Machine-readable failure code from Ops when the command failed; null otherwise.</summary>
     public string? FailureCode { get; private set; }
 
+    /// <summary>Device-reported receipt code from the connector attempt output (e.g. Good/BadOutOfRange); null when no attempt output was captured.</summary>
+    public string? DeviceReceiptCode { get; private set; }
+
+    /// <summary>Human-readable device receipt message from the connector attempt output; null otherwise.</summary>
+    public string? DeviceReceiptMessage { get; private set; }
+
     private static readonly string[] TerminalStatuses = ["completed", "failed", "rejected"];
 
     /// <summary>Whether the command has reached a terminal Ops outcome and must not transition again.</summary>
@@ -101,7 +107,12 @@ public sealed class DeviceControlCommand : Entity<DeviceControlCommandId>, IAggr
     /// OperationTaskCompleted/Failed/ApprovalRejected events. Idempotent: the first terminal outcome
     /// wins, so duplicate or out-of-order delivery does not overwrite the recorded result.
     /// </summary>
-    public void ApplyOpsOutcome(string terminalStatus, DateTimeOffset finishedAtUtc, string? failureCode)
+    public void ApplyOpsOutcome(
+        string terminalStatus,
+        DateTimeOffset finishedAtUtc,
+        string? failureCode,
+        string? deviceReceiptCode = null,
+        string? deviceReceiptMessage = null)
     {
         var normalized = IndustrialTelemetryText.RequiredLower(terminalStatus, nameof(terminalStatus));
         if (!TerminalStatuses.Contains(normalized))
@@ -117,6 +128,8 @@ public sealed class DeviceControlCommand : Entity<DeviceControlCommandId>, IAggr
         Status = normalized;
         FinishedAtUtc = finishedAtUtc;
         FailureCode = IndustrialTelemetryText.Optional(failureCode);
+        DeviceReceiptCode = IndustrialTelemetryText.Optional(deviceReceiptCode);
+        DeviceReceiptMessage = IndustrialTelemetryText.Optional(deviceReceiptMessage);
         ApprovalStatus = ResolveApprovalStatus(normalized, ApprovalStatus);
     }
 

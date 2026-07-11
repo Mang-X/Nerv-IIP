@@ -30,6 +30,8 @@ public sealed class DeviceControlCommandEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.RecordedAtUtc).HasColumnName("recorded_at_utc").HasComment("UTC time when the ledger row was recorded.");
         builder.Property(x => x.FinishedAtUtc).HasColumnName("finished_at_utc").HasComment("UTC time the Ops task reached a terminal outcome (completed/failed/rejected); null while in flight.");
         builder.Property(x => x.FailureCode).HasMaxLength(100).HasColumnName("failure_code").HasComment("Machine-readable failure code from Ops when the command failed; null otherwise.");
+        builder.Property(x => x.DeviceReceiptCode).HasMaxLength(100).HasColumnName("device_receipt_code").HasComment("Device-reported receipt code from the connector attempt output (e.g. Good/BadOutOfRange); null when no attempt output was captured.");
+        builder.Property(x => x.DeviceReceiptMessage).HasMaxLength(500).HasColumnName("device_receipt_message").HasComment("Human-readable device receipt message from the connector attempt output; null otherwise.");
         builder.HasIndex(x => x.OperationTaskId).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.RequestedAtUnixTimeMilliseconds });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.RequestedAtUnixTimeMilliseconds });

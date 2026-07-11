@@ -8195,6 +8195,16 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
         return Task.FromResult(new BusinessConsoleTelemetryTagListResponse([]));
     }
 
+    public Task<BusinessConsoleTelemetryTagCurrentValueResponse> GetTagCurrentValueAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryTagCurrentValueRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryTagCurrentValueResponse(
+            request.DeviceAssetId, request.TagKey, HasSample: true, Value: 42m, OccurredAtUtc: DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture)));
+    }
+
     public Task<BusinessConsoleTelemetryAlarmRuleListResponse> ListAlarmRulesAsync(
         string internalBearerToken,
         BusinessConsoleTelemetryAlarmRuleListRequest request,
@@ -8482,6 +8492,8 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
                     "speed adjustment",
                     "approval-pending",
                     "pending",
+                    null,
+                    null,
                     null,
                     "corr-device-control-001",
                     DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture)),

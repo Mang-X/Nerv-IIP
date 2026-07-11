@@ -929,6 +929,11 @@ public interface IBusinessIndustrialTelemetryClient
         BusinessConsoleTelemetryTagListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleTelemetryTagCurrentValueResponse> GetTagCurrentValueAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryTagCurrentValueRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleTelemetryAlarmRuleListResponse> ListAlarmRulesAsync(
         string internalBearerToken,
         BusinessConsoleTelemetryAlarmRuleListRequest request,
@@ -4164,6 +4169,21 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 tag.ControlMaxValue,
                 tag.ControlAllowedValues ?? [])).ToArray(), page.Total);
     }
+
+    public Task<BusinessConsoleTelemetryTagCurrentValueResponse> GetTagCurrentValueAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryTagCurrentValueRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleTelemetryTagCurrentValueResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/iiot/tags/current-value?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("deviceAssetId", request.DeviceAssetId),
+                ("tagKey", request.TagKey)),
+            null,
+            cancellationToken);
 
     public async Task<BusinessConsoleTelemetryAlarmRuleListResponse> ListAlarmRulesAsync(
         string internalBearerToken,

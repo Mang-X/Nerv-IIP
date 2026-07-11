@@ -421,8 +421,13 @@ describe('equipment pages', () => {
     expect(wrapper.find('[data-testid="device-control-sheet"]').exists()).toBe(true)
   })
 
-  it('hides the device control action when the user lacks the manage permission', () => {
-    authState.permissionCodes = ['business.iiot.telemetry.read']
+  it('hides the device control dispatch action without the device-control write permission', () => {
+    // Command dispatch is gated by device-control.write; read + manage (binding maintenance) is not enough.
+    authState.permissionCodes = [
+      'business.iiot.telemetry.read',
+      'business.iiot.device-control.read',
+      'business.iiot.device-control.manage',
+    ]
     const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
 
     // The control-command history section still renders (read-scoped), but the dispatch action does not.

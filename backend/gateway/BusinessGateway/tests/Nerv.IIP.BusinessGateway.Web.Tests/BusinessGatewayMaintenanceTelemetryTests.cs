@@ -876,6 +876,16 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
         ], 42));
     }
 
+    public Task<BusinessConsoleTelemetryTagCurrentValueResponse> GetTagCurrentValueAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryTagCurrentValueRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryTagCurrentValueResponse(
+            request.DeviceAssetId, request.TagKey, HasSample: false, Value: null, OccurredAtUtc: null));
+    }
+
     public Task<BusinessConsoleTelemetryAlarmEventListResponse> ListAlarmsAsync(
         string internalBearerToken,
         BusinessConsoleTelemetryAlarmListRequest request,

@@ -374,7 +374,9 @@ public sealed record AdvanceDeviceControlCommandStatusCommand(
     string OperationTaskId,
     string TerminalStatus,
     DateTimeOffset FinishedAtUtc,
-    string? FailureCode) : ICommand<bool>;
+    string? FailureCode,
+    string? DeviceReceiptCode = null,
+    string? DeviceReceiptMessage = null) : ICommand<bool>;
 
 public sealed class AdvanceDeviceControlCommandStatusCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<AdvanceDeviceControlCommandStatusCommand, bool>
@@ -388,7 +390,12 @@ public sealed class AdvanceDeviceControlCommandStatusCommandHandler(ApplicationD
             return false;
         }
 
-        command.ApplyOpsOutcome(request.TerminalStatus, request.FinishedAtUtc, request.FailureCode);
+        command.ApplyOpsOutcome(
+            request.TerminalStatus,
+            request.FinishedAtUtc,
+            request.FailureCode,
+            request.DeviceReceiptCode,
+            request.DeviceReceiptMessage);
         return true;
     }
 }

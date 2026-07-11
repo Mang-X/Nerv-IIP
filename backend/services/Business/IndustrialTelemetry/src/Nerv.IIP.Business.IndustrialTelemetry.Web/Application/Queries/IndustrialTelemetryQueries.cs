@@ -92,6 +92,40 @@ public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext
         string ControlAllowedValuesJson);
 }
 
+// Latest instantaneous tag value for the device-control write form. Sources the newest raw sample's
+// LastValue (the last instantaneous reading in the bucket), not the bucket average, so operators see a
+// real "current value" rather than an aggregate. HasSample is false when no raw sample exists yet.
+public sealed record GetTelemetryTagCurrentValueQuery(string OrganizationId, string EnvironmentId, string DeviceAssetId, string TagKey)
+    : IQuery<TelemetryTagCurrentValueResponse>;
+
+public sealed record TelemetryTagCurrentValueResponse(
+    string DeviceAssetId,
+    string TagKey,
+    bool HasSample,
+    decimal? Value,
+    DateTimeOffset? OccurredAtUtc);
+
+public sealed class GetTelemetryTagCurrentValueQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetTelemetryTagCurrentValueQuery, TelemetryTagCurrentValueResponse>
+{
+    public async Task<TelemetryTagCurrentValueResponse> Handle(GetTelemetryTagCurrentValueQuery request, CancellationToken cancellationToken)
+    {
+        var normalizedTagKey = request.TagKey.Trim().ToLowerInvariant();
+        var latest = await dbContext.TelemetryRawSamples
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId
+                && x.TagKey == normalizedTagKey)
+            .OrderByDescending(x => x.BucketEndUnixTimeMilliseconds)
+            .Select(x => new { x.LastValue, x.BucketEndUtc })
+            .FirstOrDefaultAsync(cancellationToken);
+        return latest is null
+            ? new TelemetryTagCurrentValueResponse(request.DeviceAssetId, normalizedTagKey, false, null, null)
+            : new TelemetryTagCurrentValueResponse(request.DeviceAssetId, normalizedTagKey, true, latest.LastValue, latest.BucketEndUtc);
+    }
+}
+
 public sealed record ListAlarmRulesQuery(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, bool? IsEnabled, int Skip = 0, int Take = 100) : IQuery<PagedListResponse<AlarmRuleListItem>>;
 
 public sealed record AlarmRuleListItem(

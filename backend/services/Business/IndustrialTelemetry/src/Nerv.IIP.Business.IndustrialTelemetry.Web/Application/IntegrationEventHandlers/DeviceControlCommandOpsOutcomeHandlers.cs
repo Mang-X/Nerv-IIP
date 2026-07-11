@@ -14,11 +14,44 @@ internal static class DeviceControlOutcomeConsumer
 
     public static bool IsDeviceControlCommand(string? operationCode) =>
         string.Equals(operationCode, DeviceControlOperationCode, StringComparison.Ordinal);
+
+    // The Ops completed/failed events carry only the generic FailureCode; the device-reported receipt
+    // (e.g. Good/BadOutOfRange) lives on the connector attempt output. Fetch the Ops task and read the
+    // attempt output so the ledger persists the real device receipt. Degrades to (null,null) if Ops is
+    // unavailable or the output is absent — the generic FailureCode still lands via the event.
+    public static async Task<(string? DeviceReceiptCode, string? DeviceReceiptMessage)> ResolveDeviceReceiptAsync(
+        IDeviceControlOpsClient opsClient,
+        string operationTaskId,
+        string? attemptId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var task = await opsClient.GetDeviceControlTaskAsync(operationTaskId, cancellationToken);
+            var attempt = task.Attempts.FirstOrDefault(x => string.Equals(x.AttemptId, attemptId, StringComparison.Ordinal))
+                ?? task.Attempts.FirstOrDefault(x => string.Equals(x.AttemptId, task.CurrentAttemptId, StringComparison.Ordinal))
+                ?? task.Attempts.LastOrDefault();
+            var output = attempt?.Output;
+            if (output is null)
+            {
+                return (null, null);
+            }
+
+            output.TryGetValue("deviceReceiptCode", out var code);
+            output.TryGetValue("deviceReceiptMessage", out var message);
+            return (code, message);
+        }
+        catch (Exception)
+        {
+            return (null, null);
+        }
+    }
 }
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Ops.OperationTaskCompletedIntegrationEvent", ConsumerName)]
 public sealed class DeviceControlCommandCompletedHandler(
     ISender sender,
+    IDeviceControlOpsClient opsClient,
     IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<OperationTaskCompletedIntegrationEvent>, ICapSubscribe
 {
@@ -47,12 +80,16 @@ public sealed class DeviceControlCommandCompletedHandler(
             return;
         }
 
+        var (deviceReceiptCode, deviceReceiptMessage) = await DeviceControlOutcomeConsumer.ResolveDeviceReceiptAsync(
+            opsClient, integrationEvent.Payload.OperationTaskId, integrationEvent.Payload.AttemptId, cancellationToken);
         await sender.Send(
             new AdvanceDeviceControlCommandStatusCommand(
                 integrationEvent.Payload.OperationTaskId,
                 "completed",
                 integrationEvent.Payload.FinishedAtUtc,
-                FailureCode: null),
+                FailureCode: null,
+                deviceReceiptCode,
+                deviceReceiptMessage),
             cancellationToken);
     }
 }
@@ -60,6 +97,7 @@ public sealed class DeviceControlCommandCompletedHandler(
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Ops.OperationTaskFailedIntegrationEvent", ConsumerName)]
 public sealed class DeviceControlCommandFailedHandler(
     ISender sender,
+    IDeviceControlOpsClient opsClient,
     IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<OperationTaskFailedIntegrationEvent>, ICapSubscribe
 {
@@ -88,12 +126,16 @@ public sealed class DeviceControlCommandFailedHandler(
             return;
         }
 
+        var (deviceReceiptCode, deviceReceiptMessage) = await DeviceControlOutcomeConsumer.ResolveDeviceReceiptAsync(
+            opsClient, integrationEvent.Payload.OperationTaskId, integrationEvent.Payload.AttemptId, cancellationToken);
         await sender.Send(
             new AdvanceDeviceControlCommandStatusCommand(
                 integrationEvent.Payload.OperationTaskId,
                 "failed",
                 integrationEvent.Payload.FinishedAtUtc,
-                integrationEvent.Payload.FailureCode),
+                integrationEvent.Payload.FailureCode,
+                deviceReceiptCode,
+                deviceReceiptMessage),
             cancellationToken);
     }
 }

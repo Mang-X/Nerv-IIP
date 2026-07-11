@@ -11,6 +11,7 @@ import {
 } from '@/composables/useBusinessDeviceControl'
 import {
   useBusinessTelemetryHistory,
+  useBusinessTelemetryTagCurrentValue,
   useBusinessTelemetryTags,
 } from '@/composables/useBusinessTelemetry'
 import { notifyError } from '@/utils/notify'
@@ -86,6 +87,13 @@ interface ParameterRow {
 const parameterRows = reactive<ParameterRow[]>([{ tagKey: '', value: '' }])
 const reason = ref('')
 const showErrors = ref(false)
+
+// 写值单 tag 的真实当前值（最新原始采样 LastValue，来自专门 current-value 读面），区别于历史合并读面的 bucket 均值。
+const singleTagKey = computed(() => singleForm.tagKey)
+const { currentValue: singleCurrentValue } = useBusinessTelemetryTagCurrentValue(
+  deviceAssetId,
+  singleTagKey,
+)
 
 function resetForm() {
   phase.value = 'form'
@@ -300,9 +308,9 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
                 </p>
               </div>
               <div>
-                <p class="text-muted-foreground">最近采样(均值)</p>
+                <p class="text-muted-foreground">当前值</p>
                 <p class="font-medium text-foreground">
-                  {{ latestSampleValue(singleForm.tagKey) ?? '无最近样本' }}
+                  {{ singleCurrentValue?.hasSample ? singleCurrentValue.value : '无采样' }}
                 </p>
               </div>
             </div>
@@ -379,7 +387,7 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
                   <p v-if="row.tagKey" class="text-xs text-muted-foreground">
                     {{ rangeHint(tagByKey(row.tagKey)) }}
                     <span v-if="latestSampleValue(row.tagKey)">
-                      · 最近采样 {{ latestSampleValue(row.tagKey) }}</span
+                      · 最近采样(均值) {{ latestSampleValue(row.tagKey) }}</span
                     >
                   </p>
                   <p

@@ -1412,6 +1412,19 @@
     },
     {
       "service": "IndustrialTelemetry",
+      "method": "GET",
+      "route": "/api/business/v1/iiot/tags/current-value",
+      "operationId": "getBusinessIiotTelemetryTagCurrentValue",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleTelemetryTagCurrentValue"
+      ]
+    },
+    {
+      "service": "IndustrialTelemetry",
       "method": "POST",
       "route": "/api/business/v1/iiot/tags",
       "operationId": "createBusinessIiotTelemetryTag",

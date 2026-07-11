@@ -1048,9 +1048,17 @@ function formatError(error: unknown) {
                 :variant="deviceControlStatusTone(row.status)"
                 >{{ deviceControlStatusLabel(row.status) }}</NvBadge
               >
-              <span v-if="row.failureCode" class="font-mono text-xs text-destructive">{{
-                row.failureCode
-              }}</span>
+              <span
+                v-if="row.deviceReceiptCode || row.failureCode"
+                class="font-mono text-xs"
+                :class="
+                  row.status?.toLowerCase() === 'failed'
+                    ? 'text-destructive'
+                    : 'text-muted-foreground'
+                "
+                :title="row.deviceReceiptMessage ?? undefined"
+                >{{ row.deviceReceiptCode ?? row.failureCode }}</span
+              >
             </div>
           </template>
         </NvDataTable>

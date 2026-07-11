@@ -79,20 +79,47 @@ public sealed class IndustrialTelemetryDeviceControlOutcomeTests
     }
 
     [Fact]
-    public async Task Completed_handler_advances_only_device_control_operation_tasks()
+    public async Task Completed_handler_advances_and_persists_device_receipt_only_for_device_control_tasks()
     {
         var deviceControlSender = new CapturingSender();
-        var deviceControlHandler = new DeviceControlCommandCompletedHandler(deviceControlSender, new InMemoryIntegrationEventDeadLetterStore());
+        var opsClient = new StubDeviceControlOpsClient("attempt-001", "Good", "write accepted");
+        var deviceControlHandler = new DeviceControlCommandCompletedHandler(deviceControlSender, opsClient, new InMemoryIntegrationEventDeadLetterStore());
         await deviceControlHandler.HandleAsync(CompletedEvent("op-c1", "device.control.command"), CancellationToken.None);
 
         var otherSender = new CapturingSender();
-        var otherHandler = new DeviceControlCommandCompletedHandler(otherSender, new InMemoryIntegrationEventDeadLetterStore());
+        var otherHandler = new DeviceControlCommandCompletedHandler(otherSender, opsClient, new InMemoryIntegrationEventDeadLetterStore());
         await otherHandler.HandleAsync(CompletedEvent("op-restart", "instance.restart"), CancellationToken.None);
 
         var command = Assert.IsType<AdvanceDeviceControlCommandStatusCommand>(Assert.Single(deviceControlSender.Sent));
         Assert.Equal("op-c1", command.OperationTaskId);
         Assert.Equal("completed", command.TerminalStatus);
+        // The real device receipt comes from the connector attempt output, not the completion event.
+        Assert.Equal("Good", command.DeviceReceiptCode);
+        Assert.Equal("write accepted", command.DeviceReceiptMessage);
         Assert.Empty(otherSender.Sent);
+    }
+
+    [Fact]
+    public async Task Failed_handler_persists_device_receipt_code_from_attempt_output()
+    {
+        var sender = new CapturingSender();
+        var opsClient = new StubDeviceControlOpsClient("attempt-001", "BadOutOfRange", "value exceeds node range");
+        var handler = new DeviceControlCommandFailedHandler(sender, opsClient, new InMemoryIntegrationEventDeadLetterStore());
+        await handler.HandleAsync(FailedEvent("op-f9", "device.control.command", "opcua.write.rejected"), CancellationToken.None);
+
+        var command = Assert.IsType<AdvanceDeviceControlCommandStatusCommand>(Assert.Single(sender.Sent));
+        Assert.Equal("failed", command.TerminalStatus);
+        Assert.Equal("opcua.write.rejected", command.FailureCode);
+        Assert.Equal("BadOutOfRange", command.DeviceReceiptCode);
+
+        await using var dbContext = CreateDbContext(nameof(Failed_handler_persists_device_receipt_code_from_attempt_output));
+        await SeedAsync(dbContext, "op-f9", "DEV-A", "approval-pending");
+        await new AdvanceDeviceControlCommandStatusCommandHandler(dbContext).Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var row = await dbContext.DeviceControlCommands.SingleAsync();
+        Assert.Equal("BadOutOfRange", row.DeviceReceiptCode);
+        Assert.Equal("value exceeds node range", row.DeviceReceiptMessage);
     }
 
     [Fact]
@@ -215,6 +242,67 @@ public sealed class IndustrialTelemetryDeviceControlOutcomeTests
             "user:supervisor-001",
             $"ops:operation-approval-rejected:{operationTaskId}",
             new OperationApprovalDecidedPayload(operationTaskId, "opcua-cell-01", operationCode, "user:supervisor-001", "not safe to write", BaseTime.AddMinutes(3)));
+    }
+
+    private static OperationTaskFailedIntegrationEvent FailedEvent(string operationTaskId, string operationCode, string failureCode)
+    {
+        return new OperationTaskFailedIntegrationEvent(
+            $"evt-{operationTaskId}",
+            "ops.OperationTaskFailed",
+            1,
+            BaseTime.AddMinutes(5),
+            "ops",
+            $"corr-{operationTaskId}",
+            $"cause-{operationTaskId}",
+            "org-001",
+            "env-dev",
+            "connector-host-001",
+            $"ops:operation-task-failed:{operationTaskId}",
+            new OperationTaskFailedPayload(operationTaskId, "attempt-001", "opcua-cell-01", operationCode, BaseTime.AddMinutes(5), failureCode));
+    }
+
+    // Returns an Ops task whose attempt output carries the device receipt, mirroring the connector executor.
+    private sealed class StubDeviceControlOpsClient(string attemptId, string deviceReceiptCode, string deviceReceiptMessage)
+        : IDeviceControlOpsClient
+    {
+        public Task<OperationTaskResponse> CreateDeviceControlTaskAsync(CreateOperationTaskRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<OperationTaskResponse> GetDeviceControlTaskAsync(string operationTaskId, CancellationToken cancellationToken)
+        {
+            var attempt = new OperationAttemptSummary(
+                attemptId,
+                "succeeded",
+                BaseTime.AddMinutes(3),
+                BaseTime.AddMinutes(5),
+                null,
+                "lease-001",
+                BaseTime.AddMinutes(3),
+                BaseTime.AddMinutes(8),
+                1,
+                300,
+                3,
+                null,
+                new Dictionary<string, string>
+                {
+                    ["deviceReceiptCode"] = deviceReceiptCode,
+                    ["deviceReceiptMessage"] = deviceReceiptMessage,
+                });
+            var response = new OperationTaskResponse(
+                operationTaskId,
+                "org-001",
+                "env-dev",
+                "opcua-cell-01",
+                "device.control.command",
+                "completed",
+                "user:operator-001",
+                BaseTime,
+                null,
+                attemptId,
+                [attempt],
+                []);
+            return Task.FromResult(response);
+        }
     }
 
     private static ApplicationDbContext CreateDbContext(string databaseName)

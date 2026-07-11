@@ -523,6 +523,22 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryTagCurrentValueResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryTagCurrentValueResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryTagCurrentValueResponse = {
+    deviceAssetId?: string;
+    tagKey?: string;
+    hasSample?: boolean;
+    value?: number | null;
+    occurredAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryTagCurrentValueRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryAlarmRuleListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryAlarmRuleListResponse | null;
 };
@@ -677,6 +693,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     status?: string;
     approvalStatus?: string | null;
     failureCode?: string | null;
+    deviceReceiptCode?: string | null;
+    deviceReceiptMessage?: string | null;
     correlationId?: string;
     requestedAtUtc?: string;
 };
@@ -6563,6 +6581,44 @@ export type ListBusinessConsoleTelemetryTagsResponses = {
 };
 
 export type ListBusinessConsoleTelemetryTagsResponse = ListBusinessConsoleTelemetryTagsResponses[keyof ListBusinessConsoleTelemetryTagsResponses];
+
+export type GetBusinessConsoleTelemetryTagCurrentValueData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        deviceAssetId: string;
+        tagKey: string;
+    };
+    url: '/api/business-console/v1/telemetry/tags/current-value';
+};
+
+export type GetBusinessConsoleTelemetryTagCurrentValueErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleTelemetryTagCurrentValueError = GetBusinessConsoleTelemetryTagCurrentValueErrors[keyof GetBusinessConsoleTelemetryTagCurrentValueErrors];
+
+export type GetBusinessConsoleTelemetryTagCurrentValueResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryTagCurrentValueResponse;
+};
+
+export type GetBusinessConsoleTelemetryTagCurrentValueResponse = GetBusinessConsoleTelemetryTagCurrentValueResponses[keyof GetBusinessConsoleTelemetryTagCurrentValueResponses];
 
 export type ListBusinessConsoleTelemetryAlarmRulesData = {
     body?: never;

@@ -51,6 +51,7 @@ public sealed record CreateTelemetryTagRequest(
     IReadOnlyCollection<string>? ControlAllowedValues = null);
 public sealed record CreateTelemetryTagResponse(TelemetryTagId TelemetryTagId);
 public sealed record ListTelemetryTagsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, int Skip = 0, int Take = 100);
+public sealed record GetTelemetryTagCurrentValueRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, string TagKey);
 public sealed record CreateDeviceControlCommandRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -266,6 +267,17 @@ public sealed class ListTelemetryTagsEndpoint(ISender sender) : IndustrialTeleme
     }
 }
 
+public sealed class GetTelemetryTagCurrentValueEndpoint(ISender sender) : IndustrialTelemetryEndpoint<GetTelemetryTagCurrentValueRequest, ResponseData<TelemetryTagCurrentValueResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<GetTelemetryTagCurrentValueEndpoint>());
+
+    public override async Task HandleAsync(GetTelemetryTagCurrentValueRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new GetTelemetryTagCurrentValueQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.TagKey), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class CreateOrUpdateAlarmRuleEndpoint(ISender sender) : IndustrialTelemetryEndpoint<CreateOrUpdateAlarmRuleRequest, ResponseData<CreateOrUpdateAlarmRuleResponse>>
 {
     public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<CreateOrUpdateAlarmRuleEndpoint>());
@@ -471,6 +483,17 @@ public sealed class ListTelemetryTagsRequestValidator : Validator<ListTelemetryT
     }
 }
 
+public sealed class GetTelemetryTagCurrentValueRequestValidator : Validator<GetTelemetryTagCurrentValueRequest>
+{
+    public GetTelemetryTagCurrentValueRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
+    }
+}
+
 public sealed class CreateDeviceControlCommandRequestValidator : Validator<CreateDeviceControlCommandRequest>
 {
     public CreateDeviceControlCommandRequestValidator()
@@ -585,6 +608,7 @@ public static class IndustrialTelemetryEndpointContracts
     [
         new(typeof(CreateTelemetryTagEndpoint), "POST", "/api/business/v1/iiot/tags", IndustrialTelemetryPermissionCodes.TagsManage, InternalServiceAuthorizationPolicy.Name, "createBusinessIiotTelemetryTag"),
         new(typeof(ListTelemetryTagsEndpoint), "GET", "/api/business/v1/iiot/tags", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotTelemetryTags"),
+        new(typeof(GetTelemetryTagCurrentValueEndpoint), "GET", "/api/business/v1/iiot/tags/current-value", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotTelemetryTagCurrentValue"),
         new(typeof(CreateDeviceControlCommandEndpoint), "POST", "/api/business/v1/iiot/device-control-commands", IndustrialTelemetryPermissionCodes.DeviceControlWrite, InternalServiceAuthorizationPolicy.Name, "createBusinessIiotDeviceControlCommand"),
         new(typeof(GetDeviceControlCommandEndpoint), "GET", "/api/business/v1/iiot/device-control-commands/{commandId}", IndustrialTelemetryPermissionCodes.DeviceControlRead, InternalServiceAuthorizationPolicy.Name, "getBusinessIiotDeviceControlCommand"),
         new(typeof(ListDeviceControlCommandsEndpoint), "GET", "/api/business/v1/iiot/device-control-commands", IndustrialTelemetryPermissionCodes.DeviceControlRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotDeviceControlCommands"),

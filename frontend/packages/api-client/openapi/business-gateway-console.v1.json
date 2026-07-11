@@ -1882,6 +1882,82 @@
         ]
       }
     },
+    "/api/business-console/v1/telemetry/tags/current-value": {
+      "get": {
+        "tags": [
+          "Business Console Telemetry",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleTelemetryTagCurrentValue",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceAssetId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tagKey",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryTagCurrentValueResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/telemetry/alarm-rules": {
       "get": {
         "tags": [
@@ -23722,6 +23798,56 @@
         "type": "object",
         "additionalProperties": false
       },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryTagCurrentValueResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryTagCurrentValueResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryTagCurrentValueResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "deviceAssetId": {
+            "type": "string"
+          },
+          "tagKey": {
+            "type": "string"
+          },
+          "hasSample": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "occurredAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryTagCurrentValueRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryAlarmRuleListResponse": {
         "allOf": [
           {
@@ -24294,6 +24420,14 @@
             "nullable": true
           },
           "failureCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "deviceReceiptCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "deviceReceiptMessage": {
             "type": "string",
             "nullable": true
           },

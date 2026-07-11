@@ -55,14 +55,17 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
         value: '42',
         occurredAtUtc: '2026-07-01T06:00:00Z',
       },
-      // A daily rollup average must NOT be shown as the latest sample.
-      {
-        itemType: 'daily',
-        tagKey: 'spindle.speed',
-        value: '999',
-        occurredAtUtc: '2026-07-02T06:00:00Z',
-      },
     ]),
+  }),
+  useBusinessTelemetryTagCurrentValue: () => ({
+    currentValue: computed(() => ({
+      deviceAssetId: 'DEV-CNC-01',
+      tagKey: 'spindle.speed',
+      hasSample: true,
+      value: 55,
+      occurredAtUtc: '2026-07-01T07:00:00Z',
+    })),
+    currentValuePending: shallowRef(false),
   }),
 }))
 
@@ -110,14 +113,13 @@ beforeEach(() => {
 })
 
 describe('DeviceControlSheet', () => {
-  it('shows the tag value range and the latest raw sample (not a rollup average)', async () => {
+  it('shows the tag value range and the real current value from the current-value read-face', async () => {
     const wrapper = mountSheet()
     await selectTag(wrapper)
 
     expect(wrapper.text()).toContain('值域：0 ~ 100 rpm')
-    expect(wrapper.text()).toContain('最近采样(均值)')
-    expect(wrapper.text()).toContain('42')
-    expect(wrapper.text()).not.toContain('999')
+    expect(wrapper.text()).toContain('当前值')
+    expect(wrapper.text()).toContain('55')
   })
 
   it('blocks submit and shows an error for an out-of-range value', async () => {

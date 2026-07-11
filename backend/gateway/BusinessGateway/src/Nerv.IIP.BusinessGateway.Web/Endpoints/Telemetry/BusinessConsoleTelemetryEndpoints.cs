@@ -45,6 +45,32 @@ public sealed class ListBusinessConsoleTelemetryTagsEndpoint(
 }
 
 [Tags("Business Console Telemetry")]
+[HttpGet("/api/business-console/v1/telemetry/tags/current-value")]
+[BusinessGatewayOperationId("getBusinessConsoleTelemetryTagCurrentValue")]
+public sealed class GetBusinessConsoleTelemetryTagCurrentValueEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient telemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleTelemetryTagCurrentValueRequest, BusinessConsoleTelemetryTagCurrentValueResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotTelemetryRead)
+{
+    protected override string OrganizationId(BusinessConsoleTelemetryTagCurrentValueRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleTelemetryTagCurrentValueRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleTelemetryTagCurrentValueRequest request) => "device-asset";
+
+    protected override string ResourceId(BusinessConsoleTelemetryTagCurrentValueRequest request) => request.DeviceAssetId;
+
+    protected override Task<BusinessConsoleTelemetryTagCurrentValueResponse> ForwardAsync(
+        BusinessConsoleTelemetryTagCurrentValueRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        telemetry.GetTagCurrentValueAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Telemetry")]
 [HttpGet("/api/business-console/v1/telemetry/alarm-rules")]
 [BusinessGatewayOperationId("listBusinessConsoleTelemetryAlarmRules")]
 public sealed class ListBusinessConsoleTelemetryAlarmRulesEndpoint(
@@ -563,6 +589,18 @@ public sealed class BusinessConsoleTelemetryDeviceControlCommandListRequestValid
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 500);
         RuleFor(x => x.ToUtc).GreaterThan(x => x.FromUtc).When(x => x.FromUtc is not null && x.ToUtc is not null);
+    }
+}
+
+public sealed class BusinessConsoleTelemetryTagCurrentValueRequestValidator
+    : Validator<BusinessConsoleTelemetryTagCurrentValueRequest>
+{
+    public BusinessConsoleTelemetryTagCurrentValueRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
     }
 }
 
