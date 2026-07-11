@@ -124,6 +124,39 @@ public sealed class AlarmEscalatedIntegrationEventConverter
     }
 }
 
+public sealed class TelemetryProductionCountDeltaIntegrationEventConverter
+    : IIntegrationEventConverter<TelemetryProductionCountDeltaDomainEvent, TelemetryProductionCountDeltaIntegrationEvent>
+{
+    public TelemetryProductionCountDeltaIntegrationEvent Convert(TelemetryProductionCountDeltaDomainEvent domainEvent)
+    {
+        var summary = domainEvent.TelemetrySummary;
+        var sourceSystem = summary.SourceSystem ?? "unknown";
+        var sourceConnector = summary.SourceConnector ?? "unknown";
+        var sourceSequence = summary.SourceSequence ?? throw new InvalidOperationException("Production count delta requires source sequence.");
+        return new TelemetryProductionCountDeltaIntegrationEvent(
+            EventIdFactory.New(),
+            IndustrialTelemetryIntegrationEventTypes.ProductionCountDeltaRecorded,
+            IndustrialTelemetryIntegrationEventVersions.V1,
+            summary.BucketEndUtc,
+            IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
+            $"industrialTelemetry:production-count:{summary.OrganizationId}:{summary.EnvironmentId}:{summary.DeviceAssetId}:{summary.TagKey}:{sourceSequence}",
+            summary.Id.Id.ToString("D"),
+            summary.OrganizationId,
+            summary.EnvironmentId,
+            "system:industrial-telemetry",
+            $"industrialTelemetry:production-count:{summary.OrganizationId}:{summary.EnvironmentId}:{summary.DeviceAssetId}:{summary.TagKey}:{sourceSystem}:{sourceConnector}:{sourceSequence}",
+            new TelemetryProductionCountDeltaPayload(
+                summary.DeviceAssetId,
+                summary.TagKey,
+                domainEvent.ReportingMode,
+                domainEvent.DeltaQuantity,
+                summary.BucketStartUtc,
+                summary.BucketEndUtc,
+                sourceSequence,
+                domainEvent.HasActiveAlarm));
+    }
+}
+
 internal static class EventIdFactory
 {
     public static string New() => $"evt-{Guid.CreateVersion7():N}";
