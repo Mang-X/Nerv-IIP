@@ -211,7 +211,7 @@ public sealed class OperationTaskCompletedIntegrationEventConverter
             task.OrganizationId,
             task.EnvironmentId,
             task.OperationTaskId,
-            completedAtUtc.ToString("O", CultureInfo.InvariantCulture));
+            completedAtUtc.UtcTicks.ToString(CultureInfo.InvariantCulture));
         return new OperationTaskCompletedIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}",
             MesIntegrationEventTypes.OperationTaskCompleted,
@@ -319,7 +319,7 @@ public sealed class MaterialLineSideReturnRequestedIntegrationEventConverter
             request.RequestNo,
             domainEvent.MaterialLotId,
             domainEvent.ReturnedQuantity.ToString("0.######", CultureInfo.InvariantCulture),
-            occurredAtUtc.ToString("O", CultureInfo.InvariantCulture));
+            occurredAtUtc.UtcTicks.ToString(CultureInfo.InvariantCulture));
         EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
@@ -352,7 +352,7 @@ public sealed class MaterialReturnedToWarehouseIntegrationEventConverter
             request.RequestNo,
             domainEvent.MaterialLotId,
             domainEvent.ReturnedQuantity.ToString("0.######", CultureInfo.InvariantCulture),
-            occurredAtUtc.ToString("O", CultureInfo.InvariantCulture));
+            occurredAtUtc.UtcTicks.ToString(CultureInfo.InvariantCulture));
         EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
