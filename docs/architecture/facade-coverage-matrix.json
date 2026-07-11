@@ -3865,6 +3865,22 @@
     {
       "service": "Wms",
       "method": "GET",
+      "route": "/api/business/v1/wms/backorder-orders",
+      "operationId": "listWmsBackorderOrders",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the remaining WMS deepening and Business Console operations tranche tracked by #707."
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/backorder-orders/{backorderOrderId}/close",
+      "operationId": "closeWmsBackorderOrder",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the remaining WMS deepening and Business Console operations tranche tracked by #707."
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
       "route": "/api/business/v1/wms/outbound-orders",
       "operationId": "listWmsOutboundOrders",
       "classification": "exposed",
@@ -3942,6 +3958,14 @@
       "gatewayOperationIds": [
         "listBusinessConsoleWmsPickingTasks"
       ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/replenishment-tasks",
+      "operationId": "listWmsReplenishmentTasks",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; follows the remaining WMS deepening and Business Console operations tranche tracked by #707."
     },
     {
       "service": "Wms",

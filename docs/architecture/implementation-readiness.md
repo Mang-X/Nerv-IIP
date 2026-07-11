@@ -392,6 +392,10 @@
 
 Ops 任务事实当前以 PostgreSQL `operation_tasks`、`operation_attempts`、`operation_templates` 和 `audit_records` 为恢复来源；本切片只补齐通用 operation type registry 的内置类型，新增 `device.control.command` 注册占位用于后续 #687 设备控制命令接入审批/租约骨架，不在 Ops 或 Connector Host 内实现设备控制业务。AppHub `application_instances` 新增 Connector Host 归属列和索引，PostgreSQL profile 可启用 `AppHub:HeartbeatTimeoutScan` 扫描器：Connector Host 心跳超时会发布 `apphub.ConnectorHostUnreachable`，下一次 reachable heartbeat 发布 `apphub.ConnectorHostRestored`。Notification 消费这两个 AppHub 事件，分别生成 critical task 和 info message intent；该链路复用 #735 已落地的站内任务/消息与告警承载能力，但不替代 Observability 进程级阈值告警。
 
+### 2026-07-11 WMS 短拣欠交与补货建议记录（MAN-391 / #707）
+
+WMS 出库复核现在按 WarehouseTask 实际执行量识别短拣，在释放剩余 Inventory reservation 的同时，以同一 WMS 事务创建耐久 `BackorderOrder` 和 `Replenishment` 类型的 WarehouseTask 建议。欠交单按组织、环境、原出库单行保持唯一，可通过内部服务 API 分页查询并带审计原因幂等关闭；补货建议也可通过独立的内部服务 API 按任务状态、库位与关键字分页查询。完成命令按原幂等键重放不会重复创建欠交或补货建议。本 tranche 只记录目标拣货位与欠交数量，不选择或伪造补货来源库位；移库任务、库位容量/混放规则和波次拣货仍属于后续 #707 子项。
+
 ### 可以并行但不阻塞开工的事项
 
 1. Ops 持久化 outbox、复杂失败重试、审批 Console 管理入口和生产级调度策略。
