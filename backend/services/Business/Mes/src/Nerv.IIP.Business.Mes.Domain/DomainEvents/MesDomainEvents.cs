@@ -45,13 +45,13 @@ public sealed record MaterialLineSideReceiptConfirmedDomainEvent(MaterialIssueRe
 public sealed record MaterialLineSideReturnRequestedDomainEvent(
     MaterialIssueRequest MaterialIssueRequest,
     decimal ReturnedQuantity,
-    string? MaterialLotId,
+    string MaterialLotId,
     DateTimeOffset ReturnedAtUtc) : IDomainEvent;
 
 public sealed record MaterialReturnedToWarehouseDomainEvent(
     MaterialIssueRequest MaterialIssueRequest,
     decimal ReturnedQuantity,
-    string? MaterialLotId,
+    string MaterialLotId,
     DateTimeOffset ReturnedAtUtc) : IDomainEvent;
 
 public sealed record FinishedGoodsReceiptRequestedDomainEvent(

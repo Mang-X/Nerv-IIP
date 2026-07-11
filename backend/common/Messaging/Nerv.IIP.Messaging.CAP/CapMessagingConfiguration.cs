@@ -71,7 +71,7 @@ public static class CapMessagingConfiguration
     /// endpoint is unknown and CAP falls back to localhost:5672, which is unreachable for
     /// container-hosted brokers and silently breaks all cross-service consumption.
     /// </summary>
-    private static void ApplyRabbitMqConnection(RabbitMQOptions rabbitMqOptions, IConfiguration configuration)
+    internal static void ApplyRabbitMqConnection(RabbitMQOptions rabbitMqOptions, IConfiguration configuration)
     {
         var connectionString = configuration[RabbitMqConnectionStringConfigurationKey];
         if (string.IsNullOrWhiteSpace(connectionString))

@@ -374,7 +374,7 @@ public sealed class MesAggregateTests
     }
 
     [Fact]
-    public void MaterialIssueRequest_cancel_returns_received_material_that_has_no_lot()
+    public void MaterialIssueRequest_cancel_of_received_material_without_lot_is_a_business_rule_violation()
     {
         var request = MaterialIssueRequest.Create(
             "org-001",
@@ -390,19 +390,12 @@ public sealed class MesAggregateTests
         request.ConfirmLineSideReceipt(DateTimeOffset.Parse("2026-05-23T08:30:00Z"), 5m);
         request.ClearDomainEvents();
 
-        // Cancelling the work order must not throw even though the received material carries no lot
-        // (previously threw InvalidOperationException -> escaped as HTTP 500 from the cancel path).
-        var exception = Record.Exception(
+        // Received material without a lot cannot be returned to warehouse stock (#557); cancelling
+        // must raise a business-rule violation that WorkOrderCancellationOrchestrator maps to a
+        // KnownException rather than silently succeeding.
+        var exception = Assert.Throws<InvalidOperationException>(
             () => request.CancelForWorkOrderCancellation(DateTimeOffset.Parse("2026-05-23T09:00:00Z")));
-        Assert.Null(exception);
-
-        Assert.Equal(MaterialIssueRequest.ReturnRequestedStatus, request.Status);
-        var events = request.GetDomainEvents().ToArray();
-        Assert.Contains(events, e => e is MaterialLineSideReturnRequestedDomainEvent);
-        var toWarehouse = Assert.IsType<MaterialReturnedToWarehouseDomainEvent>(
-            events.Single(e => e is MaterialReturnedToWarehouseDomainEvent));
-        Assert.Equal(5m, toWarehouse.ReturnedQuantity);
-        Assert.Null(toWarehouse.MaterialLotId);
+        Assert.Contains("received material lot", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

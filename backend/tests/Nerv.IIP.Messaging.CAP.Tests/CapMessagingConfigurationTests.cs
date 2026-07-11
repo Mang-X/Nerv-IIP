@@ -63,6 +63,61 @@ public sealed class CapMessagingConfigurationTests
     }
 
     [Fact]
+    public void ApplyRabbitMqConnection_ParsesAspireAmqpConnectionString()
+    {
+        // The orchestrator (Aspire) injects the broker endpoint as ConnectionStrings:rabbitmq (AMQP URI).
+        // Without parsing it, CAP falls back to localhost:5672 -> Broker Unreachable for every service.
+        var options = new RabbitMQOptions();
+
+        CapMessagingConfiguration.ApplyRabbitMqConnection(
+            options,
+            CreateConfiguration(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:rabbitmq"] = "amqp://nerv:s3cr3t%21@broker.host:5699/vh1",
+            }));
+
+        Assert.Equal("broker.host", options.HostName);
+        Assert.Equal(5699, options.Port);
+        Assert.Equal("nerv", options.UserName);
+        Assert.Equal("s3cr3t!", options.Password); // URL-decoded
+        Assert.Equal("vh1", options.VirtualHost);
+    }
+
+    [Fact]
+    public void ApplyRabbitMqConnection_ExplicitKeysOverrideConnectionString()
+    {
+        var options = new RabbitMQOptions();
+
+        CapMessagingConfiguration.ApplyRabbitMqConnection(
+            options,
+            CreateConfiguration(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:rabbitmq"] = "amqp://nerv:s3cr3t@broker.host:5699/vh1",
+                ["RabbitMQ:HostName"] = "override.host",
+                ["RabbitMQ:Port"] = "5673",
+                ["RabbitMQ:UserName"] = "override-user",
+            }));
+
+        Assert.Equal("override.host", options.HostName);
+        Assert.Equal(5673, options.Port);
+        Assert.Equal("override-user", options.UserName);
+        Assert.Equal("s3cr3t", options.Password); // not overridden -> from connection string
+    }
+
+    [Fact]
+    public void ApplyRabbitMqConnection_NoConfiguration_UsesLocalhostGuestDefaults()
+    {
+        var options = new RabbitMQOptions();
+
+        CapMessagingConfiguration.ApplyRabbitMqConnection(options, CreateConfiguration());
+
+        Assert.Equal("localhost", options.HostName);
+        Assert.Equal(5672, options.Port);
+        Assert.Equal("guest", options.UserName);
+        Assert.Equal("guest", options.Password);
+    }
+
+    [Fact]
     public void UseConfiguredTransport_RedisProvider_RegistersRedisStreamsTransport()
     {
         var options = new CapOptions();
