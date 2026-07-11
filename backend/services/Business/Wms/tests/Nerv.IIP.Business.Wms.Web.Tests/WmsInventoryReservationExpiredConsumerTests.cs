@@ -1,5 +1,8 @@
+using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.DomainEvents;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
@@ -15,7 +18,8 @@ public sealed class WmsInventoryReservationExpiredConsumerTests
     public async Task Expired_reservation_cancels_the_open_picking_and_wcs_tasks_and_clears_the_public_reservation_id()
     {
         var options = CreateOptions();
-        await using var dbContext = CreateContext(options);
+        var mediator = new RecordingMediator();
+        await using var dbContext = CreateContext(options, mediator);
         var outbound = OutboundOrder.Create(
             "org-001",
             "env-dev",
@@ -59,6 +63,7 @@ public sealed class WmsInventoryReservationExpiredConsumerTests
         Assert.Equal(WarehouseTaskStatus.Cancelled, persistedPickingTask.Status);
         Assert.Equal(WcsTaskStatus.Cancelled, persistedWcsTask.Status);
         Assert.Single(persistedDbContext.ProcessedIntegrationEvents);
+        Assert.Contains(mediator.PublishedNotifications, notification => notification is WcsTaskCancelledDomainEvent);
     }
 
     [Fact]
@@ -123,9 +128,46 @@ public sealed class WmsInventoryReservationExpiredConsumerTests
     {
         return new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"wms-reservation-expired-{Guid.NewGuid():N}")
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
     }
 
-    private static ApplicationDbContext CreateContext(DbContextOptions<ApplicationDbContext> options) =>
-        new(options, new NoopMediator());
+    private static ApplicationDbContext CreateContext(
+        DbContextOptions<ApplicationDbContext> options,
+        IMediator? mediator = null) =>
+        new(options, mediator ?? new NoopMediator());
+
+    private sealed class RecordingMediator : IMediator
+    {
+        public List<object> PublishedNotifications { get; } = [];
+
+        public Task Publish(object notification, CancellationToken cancellationToken = default)
+        {
+            PublishedNotifications.Add(notification);
+            return Task.CompletedTask;
+        }
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification
+        {
+            PublishedNotifications.Add(notification);
+            return Task.CompletedTask;
+        }
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("Recording mediator cannot send requests.");
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException("Recording mediator cannot send requests.");
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("Recording mediator cannot send requests.");
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("Recording mediator cannot stream requests.");
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("Recording mediator cannot stream requests.");
+    }
 }

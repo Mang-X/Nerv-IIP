@@ -81,7 +81,7 @@ public sealed class InventoryReservationExpiredIntegrationEventHandlerForCancelW
             }
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await dbContext.SaveEntitiesAsync(cancellationToken);
     }
 
     private static bool IsWmsReservation(string sourceService) =>
