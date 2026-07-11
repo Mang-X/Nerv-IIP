@@ -19,7 +19,7 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
 {
     public const string ConsumerName = "business-erp.production-report-labor-cost";
     public Task HandleAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleValidAsync(integrationEvent, cancellationToken);
-    [CapSubscribe("Nerv.IIP.Contracts.Mes.ProductionReportRecordedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(ProductionReportRecordedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleAsync(integrationEvent, cancellationToken);
 
     private async Task HandleValidAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
@@ -69,7 +69,7 @@ public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMater
 {
     public const string ConsumerName = "business-erp.production-material-cost";
     public Task HandleAsync(StockMovementPostedIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleValidAsync(integrationEvent, cancellationToken);
-    [CapSubscribe("Nerv.IIP.Contracts.Inventory.StockMovementPostedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(StockMovementPostedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(StockMovementPostedIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleAsync(integrationEvent, cancellationToken);
     private async Task HandleValidAsync(StockMovementPostedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
@@ -164,7 +164,7 @@ public sealed class WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(A
 {
     public const string ConsumerName = "business-erp.work-order-cost-capitalization";
     public Task HandleAsync(WorkOrderCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleValidAsync(integrationEvent, cancellationToken);
-    [CapSubscribe("Nerv.IIP.Contracts.Mes.WorkOrderCompletedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(WorkOrderCompletedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(WorkOrderCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleAsync(integrationEvent, cancellationToken);
     private async Task HandleValidAsync(WorkOrderCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {

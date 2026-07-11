@@ -28,7 +28,7 @@ public sealed class ErpSalesReturnAuthorizedIntegrationEventHandler(
     public Task HandleAsync(SalesReturnAuthorizedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         => consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
 
-    [CapSubscribe("Nerv.IIP.Contracts.Erp.SalesReturnAuthorizedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(SalesReturnAuthorizedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(SalesReturnAuthorizedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         => HandleAsync(integrationEvent, cancellationToken);
 

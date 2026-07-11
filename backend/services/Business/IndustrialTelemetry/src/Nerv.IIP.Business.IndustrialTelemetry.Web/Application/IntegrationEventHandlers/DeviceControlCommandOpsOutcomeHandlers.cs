@@ -157,7 +157,7 @@ public sealed class DeviceControlCommandRejectedHandler(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Ops.OperationApprovalRejectedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(OperationApprovalRejectedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(OperationApprovalRejectedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

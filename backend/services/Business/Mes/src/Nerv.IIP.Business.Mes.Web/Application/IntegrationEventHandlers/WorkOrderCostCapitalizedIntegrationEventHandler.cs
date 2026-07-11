@@ -22,7 +22,7 @@ public sealed class WorkOrderCostCapitalizedIntegrationEventHandler(
     public Task HandleAsync(WorkOrderCostCapitalizedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         => consumerGuard.HandleAsync(integrationEvent, HandleValidAsync, cancellationToken);
 
-    [CapSubscribe("Nerv.IIP.Contracts.Erp.WorkOrderCostCapitalizedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(WorkOrderCostCapitalizedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(WorkOrderCostCapitalizedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         => HandleAsync(integrationEvent, cancellationToken);
 
