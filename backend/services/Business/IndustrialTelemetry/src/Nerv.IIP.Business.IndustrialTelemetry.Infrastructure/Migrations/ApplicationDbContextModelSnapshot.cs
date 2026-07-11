@@ -338,6 +338,79 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlChannelBindingAggregate.DeviceControlChannelBinding", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Device control channel binding identifier.");
+
+                    b.Property<string>("ConnectorHostId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("connector_host_id")
+                        .HasComment("Connector host that owns the device's control channel.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the binding was created.");
+
+                    b.Property<string>("DeviceAssetId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("device_asset_id")
+                        .HasComment("Referenced MasterData device asset identifier bound to a control channel.");
+
+                    b.Property<string>("DisabledReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("disabled_reason")
+                        .HasComment("Reason captured when the binding was disabled, retained for audit.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Owning environment identifier.");
+
+                    b.Property<string>("InstanceKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("instance_key")
+                        .HasComment("Connector instance key routed by the Ops operation task for this device.");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active")
+                        .HasComment("Whether the control channel binding is active and usable for dispatch.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Owning organization identifier.");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the binding was last updated.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId")
+                        .IsUnique();
+
+                    b.ToTable("device_control_channel_bindings", "industrial_telemetry", t =>
+                        {
+                            t.HasComment("BusinessIndustrialTelemetry device control channel routing binding (device to connector host/instance).");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlCommandAggregate.DeviceControlCommand", b =>
                 {
                     b.Property<Guid>("Id")
@@ -377,6 +450,18 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnType("character varying(150)")
                         .HasColumnName("device_asset_id")
                         .HasComment("Referenced MasterData device asset identifier.");
+
+                    b.Property<string>("DeviceReceiptCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("device_receipt_code")
+                        .HasComment("Device-reported receipt code from the connector attempt output (e.g. Good/BadOutOfRange); null when no attempt output was captured.");
+
+                    b.Property<string>("DeviceReceiptMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("device_receipt_message")
+                        .HasComment("Human-readable device receipt message from the connector attempt output; null otherwise.");
 
                     b.Property<string>("EnvironmentId")
                         .IsRequired()

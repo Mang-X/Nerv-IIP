@@ -76,7 +76,7 @@ public sealed class MesIntegrationEventTests
     }
 
     [Fact]
-    public void Finished_goods_receipt_converter_keeps_legacy_null_unit_cost_compatible()
+    public void Finished_goods_receipt_waits_for_erp_cost_before_emitting_inventory_request()
     {
         var request = FinishedGoodsReceiptRequest.Create(
             "org-001",
@@ -89,6 +89,10 @@ public sealed class MesIntegrationEventTests
             DateTimeOffset.Parse("2026-06-15T09:00:00Z"),
             "LOT-FG-001");
 
+        Assert.Empty(request.GetDomainEvents());
+
+        request.ApplyCapitalizedUnitCost(12.34m);
+
         var domainEvent = Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(request.GetDomainEvents().Single());
         var integrationEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
             .Convert(domainEvent);
@@ -96,7 +100,7 @@ public sealed class MesIntegrationEventTests
         Assert.Equal(InventoryIntegrationEventTypes.InventoryMovementRequested, integrationEvent.EventType);
         Assert.Equal("inbound", integrationEvent.Payload.MovementType);
         Assert.Equal("FGR-LEGACY", integrationEvent.Payload.SourceDocumentId);
-        Assert.Null(integrationEvent.Payload.UnitCost);
+        Assert.Equal(12.34m, integrationEvent.Payload.UnitCost);
     }
 
     [Fact]

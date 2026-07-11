@@ -75,7 +75,9 @@ public sealed record WorkOrderCompletedPayload(
     decimal PlannedQuantity,
     decimal GoodQuantity,
     decimal ScrapQuantity,
-    DateTimeOffset CompletedAtUtc);
+    DateTimeOffset CompletedAtUtc,
+    int ExpectedCostReportCount = 0,
+    int ExpectedMaterialMovementCount = 0);
 
 public sealed record WorkOrderClosedIntegrationEvent(
     string EventId,
@@ -194,7 +196,8 @@ public sealed record ProductionReportRecordedPayload(
     decimal? TheoreticalRatePerHour,
     DateTimeOffset ReportedAtUtc,
     bool IsReversal,
-    string? ReversedReportNo = null);
+    string? ReversedReportNo = null,
+    int MaterialMovementCount = 0);
 
 public sealed record FinishedGoodsReceiptRequestedIntegrationEvent(
     string EventId,

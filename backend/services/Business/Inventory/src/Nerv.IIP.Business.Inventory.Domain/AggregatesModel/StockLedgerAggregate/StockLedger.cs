@@ -219,6 +219,30 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
         this.AddDomainEvent(new StockAvailabilityChangedDomainEvent(this));
     }
 
+    public decimal ExpireReservation(StockReservation reservation, DateTime expiredAtUtc)
+    {
+        ArgumentNullException.ThrowIfNull(reservation);
+        EnsureSameDimension(reservation);
+        var expiredQuantity = reservation.Expire(expiredAtUtc);
+        if (expiredQuantity <= 0m)
+        {
+            return 0m;
+        }
+
+        ReservedQuantity -= expiredQuantity;
+        if (ReservedQuantity < 0m)
+        {
+            throw new InventoryDomainException(
+                InventoryDomainFailureReason.ReservationAllocationRejected,
+                "Ledger committed quantity cannot be negative.");
+        }
+
+        LedgerVersion++;
+        UpdatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new StockAvailabilityChangedDomainEvent(this));
+        return expiredQuantity;
+    }
+
     public void FreezeForCount(string countTaskCode)
     {
         if (IsFrozenForCount && FrozenCountTaskCode != countTaskCode)

@@ -646,6 +646,30 @@ public sealed class ErpProcurementEndpointContractTests
     }
 
     [Fact]
+    public async Task Rejected_purchase_order_change_endpoint_revises_and_resubmits_the_source_order()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = PurchaseOrder.Create("org-001", "env-dev", "PO-REVISE-001", "SUP-001", "SITE-01",
+            [new PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 3m, 12m, new DateOnly(2026, 6, 5))]);
+        order.MarkApprovalRequested("approval-rejected-001");
+        order.ReturnToEditableAfterApprovalRejected("approval-rejected-001");
+        dbContext.PurchaseOrders.Add(order);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var approvalClient = new CapturingPurchaseOrderApprovalClient();
+
+        var chainId = await new RequestPurchaseOrderChangeCommandHandler(dbContext, approvalClient).Handle(
+            new RequestPurchaseOrderChangeCommand("org-001", "env-dev", "PO-REVISE-001",
+                [new PurchaseOrderLineChangeDraft("LINE-001", 5m, 14m, new DateOnly(2026, 7, 20))], "revise after rejection", "user:buyer-001"),
+            CancellationToken.None);
+
+        Assert.Equal(chainId, order.ApprovalChainId);
+        Assert.Equal(70m, order.TotalAmount);
+        Assert.Equal(70m, approvalClient.LastRequest!.Amount);
+    }
+
+    [Fact]
     public async Task Cancelling_a_purchase_order_closes_its_open_wms_inbound_expectations_first()
     {
         await using var provider = CreateInMemoryProvider();

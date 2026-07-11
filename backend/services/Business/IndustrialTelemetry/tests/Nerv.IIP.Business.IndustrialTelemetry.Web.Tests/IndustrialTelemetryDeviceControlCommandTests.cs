@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlChannelBindingAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
@@ -34,8 +35,6 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
         {
             organizationId = "org-001",
             environmentId = "env-dev",
-            connectorHostId = "connector-host-001",
-            instanceKey = "opcua-cell-01",
             deviceAssetId = "DEV-CNC-01",
             commandType = "write-tag",
             tagKey = "spindle.speed",
@@ -44,6 +43,32 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
             reason = "speed adjustment",
             idempotencyKey = "idem-device-control-out-of-range-001",
             correlationId = "corr-device-control-out-of-range-001",
+        });
+
+        Assert.Empty(factory.OpsClient.CreatedRequests);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Device_control_command_rejects_write_when_device_has_no_control_channel_binding()
+    {
+        await using var factory = new DeviceControlHttpTestFactory();
+        await factory.SeedWritableTagAsync("DEV-CNC-01", "spindle.speed", "number", minValue: 0m, maxValue: 100m);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var response = await client.PostAsJsonAsync("/api/business/v1/iiot/device-control-commands", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-CNC-01",
+            commandType = "write-tag",
+            tagKey = "spindle.speed",
+            value = "80",
+            requestedBy = "user:operator-001",
+            reason = "speed adjustment",
+            idempotencyKey = "idem-device-control-no-binding-001",
+            correlationId = "corr-device-control-no-binding-001",
         });
 
         Assert.Empty(factory.OpsClient.CreatedRequests);
@@ -61,8 +86,6 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
         {
             organizationId = "org-001",
             environmentId = "env-dev",
-            connectorHostId = "connector-host-001",
-            instanceKey = "opcua-cell-01",
             deviceAssetId = "DEV-CNC-01",
             commandType = "calibrate",
             requestedBy = "user:operator-001",
@@ -86,8 +109,6 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
         {
             organizationId = "org-001",
             environmentId = "env-dev",
-            connectorHostId = "connector-host-001",
-            instanceKey = "opcua-cell-01",
             deviceAssetId = "DEV-CNC-01",
             commandType = "write-tag",
             requestedBy = "user:operator-001",
@@ -105,6 +126,7 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
     {
         await using var factory = new DeviceControlHttpTestFactory();
         await factory.SeedWritableTagAsync("DEV-CNC-01", "spindle.speed", "number", minValue: 0m, maxValue: 100m);
+        await factory.SeedBindingAsync("DEV-CNC-01");
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
 
@@ -112,8 +134,6 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
         {
             organizationId = "org-001",
             environmentId = "env-dev",
-            connectorHostId = "connector-host-001",
-            instanceKey = "opcua-cell-01",
             deviceAssetId = "DEV-CNC-01",
             commandType = "write-tag",
             tagKey = "spindle.speed",
@@ -141,6 +161,7 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
     {
         await using var factory = new DeviceControlHttpTestFactory();
         await factory.SeedWritableTagAsync("DEV-CNC-01", "spindle.speed", "number", minValue: 0m, maxValue: 100m);
+        await factory.SeedBindingAsync("DEV-CNC-01");
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
 
@@ -175,6 +196,7 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
     {
         await using var factory = new DeviceControlHttpTestFactory();
         await factory.SeedWritableTagAsync("DEV-CNC-01", "spindle.speed", "number", minValue: 0m, maxValue: 100m);
+        await factory.SeedBindingAsync("DEV-CNC-01");
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
 
@@ -200,6 +222,8 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
         await using var factory = new DeviceControlHttpTestFactory();
         await factory.SeedWritableTagAsync("DEV-CNC-01", "spindle.speed", "number", minValue: 0m, maxValue: 100m);
         await factory.SeedWritableTagAsync("DEV-CNC-02", "feed.rate", "number", minValue: 0m, maxValue: 500m);
+        await factory.SeedBindingAsync("DEV-CNC-01");
+        await factory.SeedBindingAsync("DEV-CNC-02", "connector-host-002", "opcua-cell-02");
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
 
@@ -228,8 +252,6 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
         {
             organizationId = "org-001",
             environmentId = "env-dev",
-            connectorHostId = "connector-host-001",
-            instanceKey = "opcua-cell-01",
             deviceAssetId,
             commandType = "write-tag",
             tagKey,
@@ -294,6 +316,15 @@ public sealed class IndustrialTelemetryDeviceControlCommandTests
             var tag = TelemetryTag.Create("org-001", "env-dev", deviceAssetId, tagKey, valueType, "rpm", "sample-10s");
             tag.ConfigureControl(isWritable: true, minValue, maxValue, allowedValues: []);
             dbContext.TelemetryTags.Add(tag);
+            await dbContext.SaveChangesAsync();
+        }
+
+        public async Task SeedBindingAsync(string deviceAssetId, string connectorHostId = "connector-host-001", string instanceKey = "opcua-cell-01")
+        {
+            using var scope = Services.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.DeviceControlChannelBindings.Add(
+                DeviceControlChannelBinding.Configure("org-001", "env-dev", deviceAssetId, connectorHostId, instanceKey));
             await dbContext.SaveChangesAsync();
         }
 

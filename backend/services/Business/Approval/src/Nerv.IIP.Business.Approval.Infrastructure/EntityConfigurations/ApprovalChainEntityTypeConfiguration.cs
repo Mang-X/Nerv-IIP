@@ -20,13 +20,18 @@ public sealed class ApprovalChainEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC time when the chain reached a terminal result.");
         builder.Property(x => x.RoundNo).HasColumnName("round_no").IsRequired().HasComment("Current submission round number; increments when a returned or withdrawn chain is resubmitted.");
         builder.Property(x => x.RowVersion).HasColumnName("row_version").IsRequired().IsConcurrencyToken().HasComment("Optimistic concurrency token for approval chain decisions and runtime step changes.");
+        builder.Property(x => x.PendingIdentityKey).HasColumnName("pending_identity_key").HasMaxLength(64).HasComment("Stable unique identity held only while the source document approval chain is pending.");
         builder.OwnsOne(x => x.DocumentReference, document =>
         {
             document.Property(x => x.SourceService).HasColumnName("source_service").IsRequired().HasMaxLength(100).HasComment("Source business service that owns the document.");
             document.Property(x => x.DocumentType).HasColumnName("document_type").IsRequired().HasMaxLength(100).HasComment("Source document type.");
             document.Property(x => x.DocumentId).HasColumnName("document_id").IsRequired().HasMaxLength(150).HasComment("Source document id supplied by the owning service.");
             document.Property(x => x.DocumentLineId).HasColumnName("document_line_id").HasMaxLength(150).HasComment("Optional source document line id supplied by the owning service.");
+            document.Property(x => x.Amount).HasColumnName("routing_amount").HasPrecision(18, 6).HasComment("Optional source amount used for structured approval routing and audit.");
+            document.Property(x => x.OrganizationId).HasColumnName("routing_organization_id").HasMaxLength(100).HasComment("Optional organization dimension used for structured approval routing and audit.");
+            document.Property(x => x.DepartmentId).HasColumnName("routing_department_id").HasMaxLength(100).HasComment("Optional department dimension used for structured approval routing and audit.");
         });
+        builder.HasIndex(x => x.PendingIdentityKey).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.TemplateCode, x.Status });
         builder.HasMany(x => x.Steps).WithOne().HasForeignKey(x => x.ChainId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.Decisions).WithOne().HasForeignKey(x => x.ChainId).OnDelete(DeleteBehavior.Cascade);

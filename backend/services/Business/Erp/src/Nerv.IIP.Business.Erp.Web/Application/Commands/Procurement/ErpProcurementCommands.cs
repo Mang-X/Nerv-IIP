@@ -293,7 +293,8 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
                 allocation.Code,
                 null,
                 "system:erp",
-                GeneratedPurchaseOrderApprovalClient.BuildChainId(request.OrganizationId, request.EnvironmentId, allocation.Code)),
+                GeneratedPurchaseOrderApprovalClient.BuildChainId(request.OrganizationId, request.EnvironmentId, allocation.Code),
+                lineDrafts.Sum(x => x.Quantity * x.UnitPrice)),
             cancellationToken);
         order.MarkApprovalRequested(approvalResult.ChainId);
         foreach (var requisition in requisitions)
@@ -701,7 +702,8 @@ public sealed class CreatePurchaseOrderCommandHandler(
                 allocation.Code,
                 null,
                 "system:erp",
-                GeneratedPurchaseOrderApprovalClient.BuildChainId(request.OrganizationId, request.EnvironmentId, allocation.Code)),
+                GeneratedPurchaseOrderApprovalClient.BuildChainId(request.OrganizationId, request.EnvironmentId, allocation.Code),
+                request.Lines.Sum(x => x.Quantity * x.UnitPrice)),
             cancellationToken);
         order.MarkApprovalRequested(approvalResult.ChainId);
         dbContext.PurchaseOrders.Add(order);
@@ -1175,6 +1177,30 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
             ?? throw new KnownException($"Purchase order '{request.PurchaseOrderNo}' was not found.");
         try
         {
+            if (order.Status == PurchaseOrderStatus.PendingApproval && order.ApprovalChainId is null)
+            {
+                order.ReviseBeforeApproval(request.Lines);
+                var revisedChainId = GeneratedPurchaseOrderApprovalClient.BuildChainId(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    $"{request.PurchaseOrderNo}:revision:{order.Version}");
+                var revisedApproval = await _approvalClient.StartApprovalAsync(
+                    new PurchaseOrderApprovalRequest(
+                        request.OrganizationId,
+                        request.EnvironmentId,
+                        "erp-purchase-order-release",
+                        "business-erp",
+                        "purchase-order",
+                        request.PurchaseOrderNo,
+                        null,
+                        request.StartedBy,
+                        revisedChainId,
+                        order.TotalAmount),
+                    cancellationToken);
+                order.MarkApprovalRequested(revisedApproval.ChainId);
+                return revisedApproval.ChainId;
+            }
+
             var change = order.RequestChange(request.Lines, request.Reason);
             var chainId = GeneratedPurchaseOrderApprovalClient.BuildChainId(
                 request.OrganizationId,

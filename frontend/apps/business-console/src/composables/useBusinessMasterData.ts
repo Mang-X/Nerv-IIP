@@ -44,7 +44,13 @@ import {
   type BusinessConsoleWorkerDirectoryEnvelope,
   type BusinessConsoleWorkerDirectoryItem,
 } from '@nerv-iip/api-client'
-import { useMutation, useQuery, useQueryCache, type UseMutationOptions, type UseQueryEntry } from '@pinia/colada'
+import {
+  useMutation,
+  useQuery,
+  useQueryCache,
+  type UseMutationOptions,
+  type UseQueryEntry,
+} from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import {
   bindBusinessContext,
@@ -84,30 +90,36 @@ export interface BusinessMasterDataGroupDefinition {
 }
 
 function defaultContext(): BusinessContextFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+    }),
+  )
 }
 
 function defaultListFilters(): MasterDataListFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    skip: 0,
-    take: DEFAULT_TAKE,
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      skip: 0,
+      take: DEFAULT_TAKE,
+    }),
+  )
 }
 
 function defaultResourceFilters(resourceType: string, codeSet?: string): MasterDataResourceFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    ...optionalQuery('codeSet', codeSet),
-    resourceType,
-    skip: 0,
-    take: DEFAULT_TAKE,
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      ...optionalQuery('codeSet', codeSet),
+      resourceType,
+      skip: 0,
+      take: DEFAULT_TAKE,
+    }),
+  )
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -172,15 +184,18 @@ export function useBusinessSkus() {
   const queryCache = useQueryCache()
 
   const skusQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleSkusQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        ...optionalQuery('includeDisabled', filters.includeDisabled),
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleSkusQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          ...optionalQuery('includeDisabled', filters.includeDisabled),
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
   )
 
   const createSkuMutation = useMutation({
@@ -215,16 +230,19 @@ export function useBusinessPartners() {
   const queryCache = useQueryCache()
 
   const partnersQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMasterDataResourcesQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        resourceType: filters.resourceType,
-        ...optionalQuery('includeDisabled', filters.includeDisabled),
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMasterDataResourcesQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          resourceType: filters.resourceType,
+          ...optionalQuery('includeDisabled', filters.includeDisabled),
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
   )
 
   const createPartnerMutation = useMutation({
@@ -243,7 +261,9 @@ export function useBusinessPartners() {
     createPartnerPending: createPartnerMutation.isLoading,
     filters,
     refreshPartners: () => refetchWithBusinessContext(filters, partnersQuery),
-    partners: computed<BusinessConsoleResourceItem[]>(() => resourceItems(partnersQuery.data.value)),
+    partners: computed<BusinessConsoleResourceItem[]>(() =>
+      resourceItems(partnersQuery.data.value),
+    ),
     partnersError: partnersQuery.error,
     partnersPending: partnersQuery.isLoading,
     partnersTotal: computed(() => resourceTotal(partnersQuery.data.value)),
@@ -261,16 +281,19 @@ export function useBusinessUoms() {
   const queryCache = useQueryCache()
 
   const uomsQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMasterDataResourcesQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        resourceType: filters.resourceType,
-        ...optionalQuery('includeDisabled', filters.includeDisabled),
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMasterDataResourcesQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          resourceType: filters.resourceType,
+          ...optionalQuery('includeDisabled', filters.includeDisabled),
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
   )
 
   const createUomMutation = useMutation({
@@ -283,7 +306,8 @@ export function useBusinessUoms() {
   })
 
   return {
-    createUom: (body: BusinessConsoleCreateUnitOfMeasureRequest) => createUomMutation.mutateAsync({ body }),
+    createUom: (body: BusinessConsoleCreateUnitOfMeasureRequest) =>
+      createUomMutation.mutateAsync({ body }),
     createUomError: createUomMutation.error,
     createUomPending: createUomMutation.isLoading,
     filters,
@@ -306,22 +330,27 @@ export function useBusinessWorkshops() {
   const queryCache = useQueryCache()
 
   const workshopsQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleWorkshopsQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        ...optionalQuery('includeDisabled', filters.includeDisabled),
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleWorkshopsQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          ...optionalQuery('includeDisabled', filters.includeDisabled),
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
   )
 
   const createWorkshopMutation = useMutation({
     ...createBusinessConsoleWorkshopMutationOptions(),
     onSuccess() {
       for (const id of ['listBusinessConsoleWorkshops', 'listBusinessConsoleMasterDataResources']) {
-        void queryCache.invalidateQueries({ predicate: isBusinessQuery(id) }).catch(ignoreBackgroundError)
+        void queryCache
+          .invalidateQueries({ predicate: isBusinessQuery(id) })
+          .catch(ignoreBackgroundError)
       }
     },
   })
@@ -333,7 +362,9 @@ export function useBusinessWorkshops() {
     createWorkshopPending: createWorkshopMutation.isLoading,
     filters,
     refreshWorkshops: () => refetchWithBusinessContext(filters, workshopsQuery),
-    workshops: computed<BusinessConsoleResourceItem[]>(() => resourceItems(workshopsQuery.data.value)),
+    workshops: computed<BusinessConsoleResourceItem[]>(() =>
+      resourceItems(workshopsQuery.data.value),
+    ),
     workshopsError: workshopsQuery.error,
     workshopsPending: workshopsQuery.isLoading,
     workshopsTotal: computed(() => resourceTotal(workshopsQuery.data.value)),
@@ -350,17 +381,20 @@ export function useReferenceDataCodes() {
   const queryCache = useQueryCache()
 
   const codesQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMasterDataResourcesQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        resourceType: filters.resourceType,
-        ...optionalQuery('includeDisabled', filters.includeDisabled),
-        ...optionalQuery('codeSet', filters.codeSet),
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMasterDataResourcesQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          resourceType: filters.resourceType,
+          ...optionalQuery('includeDisabled', filters.includeDisabled),
+          ...optionalQuery('codeSet', filters.codeSet),
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
   )
 
   const createCodeMutation = useMutation({
@@ -373,7 +407,8 @@ export function useReferenceDataCodes() {
   })
 
   return {
-    createCode: (body: BusinessConsoleCreateReferenceDataCodeRequest) => createCodeMutation.mutateAsync({ body }),
+    createCode: (body: BusinessConsoleCreateReferenceDataCodeRequest) =>
+      createCodeMutation.mutateAsync({ body }),
     createCodeError: createCodeMutation.error,
     createCodePending: createCodeMutation.isLoading,
     filters,
@@ -385,21 +420,27 @@ export function useReferenceDataCodes() {
   }
 }
 
-export function useBusinessMasterDataResources(resourceType: string, options: { codeSet?: string } = {}) {
+export function useBusinessMasterDataResources(
+  resourceType: string,
+  options: { codeSet?: string } = {},
+) {
   const filters = defaultResourceFilters(resourceType, options.codeSet)
 
   const resourcesQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMasterDataResourcesQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        resourceType: filters.resourceType,
-        ...optionalQuery('codeSet', filters.codeSet),
-        ...optionalQuery('includeDisabled', filters.includeDisabled),
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMasterDataResourcesQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          resourceType: filters.resourceType,
+          ...optionalQuery('codeSet', filters.codeSet),
+          ...optionalQuery('includeDisabled', filters.includeDisabled),
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
   )
 
   return {
@@ -418,16 +459,19 @@ export function useBusinessMasterDataGroups(definitions: BusinessMasterDataGroup
   const filters = defaultListFilters()
   const queries = definitions.map((definition) =>
     useQuery(() =>
-      withBusinessContextEnabled(listBusinessConsoleMasterDataResourcesQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          resourceType: definition.resourceType ?? definition.key,
-          ...optionalQuery('includeDisabled', filters.includeDisabled),
-          skip: filters.skip,
-          take: filters.take,
-        },
-      }), filters),
+      withBusinessContextEnabled(
+        listBusinessConsoleMasterDataResourcesQueryOptions({
+          query: {
+            organizationId: filters.organizationId,
+            environmentId: filters.environmentId,
+            resourceType: definition.resourceType ?? definition.key,
+            ...optionalQuery('includeDisabled', filters.includeDisabled),
+            skip: filters.skip,
+            take: filters.take,
+          },
+        }),
+        filters,
+      ),
     ),
   )
 
@@ -455,14 +499,14 @@ export function useBusinessMasterDataGroups(definitions: BusinessMasterDataGroup
 
 // 各工厂/组织资源的「新建」mutation options（barrel 已接出，generated 提供）。
 const RESOURCE_CREATE_OPTIONS = {
-  'site': createBusinessConsoleSiteMutationOptions,
+  site: createBusinessConsoleSiteMutationOptions,
   'production-line': createBusinessConsoleProductionLineMutationOptions,
   'work-center': createBusinessConsoleWorkCenterMutationOptions,
   'device-asset': registerBusinessConsoleDeviceAssetMutationOptions,
-  'shift': createBusinessConsoleShiftMutationOptions,
+  shift: createBusinessConsoleShiftMutationOptions,
   'work-calendar': createBusinessConsoleWorkCalendarMutationOptions,
-  'team': createBusinessConsoleTeamMutationOptions,
-  'department': createBusinessConsoleDepartmentMutationOptions,
+  team: createBusinessConsoleTeamMutationOptions,
+  department: createBusinessConsoleDepartmentMutationOptions,
 } as const
 
 export type MasterDataResourceType = keyof typeof RESOURCE_CREATE_OPTIONS
@@ -477,25 +521,28 @@ export function useMasterDataResource<TBody>(resourceType: MasterDataResourceTyp
   const queryCache = useQueryCache()
 
   const listQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMasterDataResourcesQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        resourceType: filters.resourceType,
-        ...optionalQuery('includeDisabled', filters.includeDisabled),
-        ...optionalQuery('codeSet', filters.codeSet),
-        // #375 服务端过滤——页面按需写入 filters.xxx，未设则不带（保持旧行为）。
-        ...optionalQuery('parentCode', filters.parentCode),
-        ...optionalQuery('siteCode', filters.siteCode),
-        ...optionalQuery('lineCode', filters.lineCode),
-        ...optionalQuery('workCenterCode', filters.workCenterCode),
-        ...optionalQuery('category', filters.category),
-        ...optionalQuery('partnerType', filters.partnerType),
-        ...optionalQuery('keyword', filters.keyword),
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMasterDataResourcesQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          resourceType: filters.resourceType,
+          ...optionalQuery('includeDisabled', filters.includeDisabled),
+          ...optionalQuery('codeSet', filters.codeSet),
+          // #375 服务端过滤——页面按需写入 filters.xxx，未设则不带（保持旧行为）。
+          ...optionalQuery('parentCode', filters.parentCode),
+          ...optionalQuery('siteCode', filters.siteCode),
+          ...optionalQuery('lineCode', filters.lineCode),
+          ...optionalQuery('workCenterCode', filters.workCenterCode),
+          ...optionalQuery('category', filters.category),
+          ...optionalQuery('partnerType', filters.partnerType),
+          ...optionalQuery('keyword', filters.keyword),
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
   )
 
   // 各实体 mutation options 仅 body 泛型不同，统一经本工厂收敛，故此处收窄类型。
@@ -534,35 +581,66 @@ export function useMasterDataResourceActions(resourceType: string) {
   const queryCache = useQueryCache()
   function invalidate() {
     for (const id of ['listBusinessConsoleMasterDataResources', 'listBusinessConsoleSkus']) {
-      void queryCache.invalidateQueries({ predicate: isBusinessQuery(id) }).catch(ignoreBackgroundError)
+      void queryCache
+        .invalidateQueries({ predicate: isBusinessQuery(id) })
+        .catch(ignoreBackgroundError)
     }
   }
-  const updateMutation = useMutation({ ...updateBusinessConsoleMasterDataResourceMutationOptions(), onSuccess: invalidate } as unknown as UseMutationOptions)
-  const disableMutation = useMutation({ ...disableBusinessConsoleMasterDataResourceMutationOptions(), onSuccess: invalidate } as unknown as UseMutationOptions)
-  const enableMutation = useMutation({ ...enableBusinessConsoleMasterDataResourceMutationOptions(), onSuccess: invalidate } as unknown as UseMutationOptions)
-  const withCtx = (extra: Record<string, unknown>) => ({ organizationId: ctx.organizationId, environmentId: ctx.environmentId, ...extra })
+  const updateMutation = useMutation({
+    ...updateBusinessConsoleMasterDataResourceMutationOptions(),
+    onSuccess: invalidate,
+  } as unknown as UseMutationOptions)
+  const disableMutation = useMutation({
+    ...disableBusinessConsoleMasterDataResourceMutationOptions(),
+    onSuccess: invalidate,
+  } as unknown as UseMutationOptions)
+  const enableMutation = useMutation({
+    ...enableBusinessConsoleMasterDataResourceMutationOptions(),
+    onSuccess: invalidate,
+  } as unknown as UseMutationOptions)
+  const withCtx = (extra: Record<string, unknown>) => ({
+    organizationId: ctx.organizationId,
+    environmentId: ctx.environmentId,
+    ...extra,
+  })
   const callPathBody = (m: typeof updateMutation, code: string, extra: Record<string, unknown>) =>
-    (m.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ path: { resourceType, code }, body: withCtx(extra) })
+    (m.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({
+      path: { resourceType, code },
+      body: withCtx(extra),
+    })
 
   // 编辑前拉全字段详情用于回填(列表项只含部分 typed 字段)。
-  async function fetchDetail(code: string): Promise<BusinessConsoleMasterDataResourceDetail | undefined> {
+  async function fetchDetail(
+    code: string,
+  ): Promise<BusinessConsoleMasterDataResourceDetail | undefined> {
     const res = await getBusinessConsoleMasterDataResourceDetail({
       path: { resourceType, code },
       query: { organizationId: ctx.organizationId, environmentId: ctx.environmentId },
     })
-    const envelope = (res as { data?: { success?: boolean; data?: BusinessConsoleMasterDataResourceDetail | null } }).data
-    return envelope?.success ? envelope.data ?? undefined : undefined
+    const envelope = (
+      res as { data?: { success?: boolean; data?: BusinessConsoleMasterDataResourceDetail | null } }
+    ).data
+    return envelope?.success ? (envelope.data ?? undefined) : undefined
   }
 
   return {
-    update: (code: string, patch: Partial<BusinessConsoleUpdateMasterDataResourceRequest>) => callPathBody(updateMutation, code, patch),
-    disable: (code: string, patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {}) => callPathBody(disableMutation, code, patch),
-    enable: (code: string, patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {}) => callPathBody(enableMutation, code, patch),
+    update: (code: string, patch: Partial<BusinessConsoleUpdateMasterDataResourceRequest>) =>
+      callPathBody(updateMutation, code, patch),
+    disable: (
+      code: string,
+      patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {},
+    ) => callPathBody(disableMutation, code, patch),
+    enable: (
+      code: string,
+      patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {},
+    ) => callPathBody(enableMutation, code, patch),
     fetchDetail,
     updatePending: updateMutation.isLoading,
     disablePending: disableMutation.isLoading,
     enablePending: enableMutation.isLoading,
-    actionError: computed(() => updateMutation.error.value ?? disableMutation.error.value ?? enableMutation.error.value),
+    actionError: computed(
+      () => updateMutation.error.value ?? disableMutation.error.value ?? enableMutation.error.value,
+    ),
   }
 }
 
@@ -593,30 +671,39 @@ function workerTotal(envelope: BusinessConsoleWorkerDirectoryEnvelope | undefine
  * 非 skip/take），支持服务端 keyword 检索。仅暴露姓名 / 工号 / 部门给 UI，userId 内部使用。
  */
 export function useBusinessWorkers() {
-  const filters = bindBusinessContext(reactive<WorkerDirectoryFilters>({
-    organizationId: '',
-    environmentId: '',
-    keyword: undefined,
-    pageIndex: 0,
-    pageSize: DEFAULT_TAKE,
-  }))
+  const filters = bindBusinessContext(
+    reactive<WorkerDirectoryFilters>({
+      organizationId: '',
+      environmentId: '',
+      keyword: undefined,
+      // 网关 BusinessConsoleWorkerDirectoryRequestValidator 校验 PageIndex > 0（1-based，
+      // 默认 PageIndex=1，与 useBusinessScheduling 等一致）。发 0 会被后端拒为 400，人员选择器静默空。
+      pageIndex: 1,
+      pageSize: DEFAULT_TAKE,
+    }),
+  )
 
   const workersQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleWorkersQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        ...optionalQuery('keyword', filters.keyword),
-        pageIndex: filters.pageIndex,
-        pageSize: filters.pageSize,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleWorkersQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          ...optionalQuery('keyword', filters.keyword),
+          pageIndex: filters.pageIndex,
+          pageSize: filters.pageSize,
+        },
+      }),
+      filters,
+    ),
   )
 
   return {
     filters,
     refresh: () => refetchWithBusinessContext(filters, workersQuery),
-    workers: computed<BusinessConsoleWorkerDirectoryItem[]>(() => workerItems(workersQuery.data.value)),
+    workers: computed<BusinessConsoleWorkerDirectoryItem[]>(() =>
+      workerItems(workersQuery.data.value),
+    ),
     workersError: workersQuery.error,
     workersPending: workersQuery.isLoading,
     workersTotal: computed(() => workerTotal(workersQuery.data.value)),
@@ -662,15 +749,25 @@ export function useTeamMembers(teamCode: MaybeRefOrGetter<string | undefined>) {
     }
   })
 
-  const addMutation = useMutation({ ...addBusinessConsoleTeamMemberMutationOptions(), onSuccess: invalidate } as unknown as UseMutationOptions)
-  const removeMutation = useMutation({ ...removeBusinessConsoleTeamMemberMutationOptions(), onSuccess: invalidate } as unknown as UseMutationOptions)
+  const addMutation = useMutation({
+    ...addBusinessConsoleTeamMemberMutationOptions(),
+    onSuccess: invalidate,
+  } as unknown as UseMutationOptions)
+  const removeMutation = useMutation({
+    ...removeBusinessConsoleTeamMemberMutationOptions(),
+    onSuccess: invalidate,
+  } as unknown as UseMutationOptions)
 
   return {
-    members: computed<BusinessConsoleTeamMemberItem[]>(() => teamMemberItems(membersQuery.data.value)),
+    members: computed<BusinessConsoleTeamMemberItem[]>(() =>
+      teamMemberItems(membersQuery.data.value),
+    ),
     membersError: membersQuery.error,
     membersPending: membersQuery.isLoading,
     refresh: () =>
-      Boolean(toValue(teamCode)) && hasBusinessContext(ctx) ? membersQuery.refetch() : Promise.resolve(),
+      Boolean(toValue(teamCode)) && hasBusinessContext(ctx)
+        ? membersQuery.refetch()
+        : Promise.resolve(),
     addMember: (input: TeamMemberAddInput) =>
       (addMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({
         path: { teamCode: toValue(teamCode) ?? '' },
@@ -757,31 +854,38 @@ function skillMatrixData(envelope: BusinessConsolePersonnelSkillMatrixEnvelope |
  * 支持服务端 userId / skillCode 过滤。登记技能仍走 `usePersonnelSkillAssignment()`。
  */
 export function usePersonnelSkillMatrix() {
-  const filters = bindBusinessContext(reactive<PersonnelSkillMatrixFilters>({
-    organizationId: '',
-    environmentId: '',
-    userId: undefined,
-    skillCode: undefined,
-    includeDisabled: undefined,
-  }))
+  const filters = bindBusinessContext(
+    reactive<PersonnelSkillMatrixFilters>({
+      organizationId: '',
+      environmentId: '',
+      userId: undefined,
+      skillCode: undefined,
+      includeDisabled: undefined,
+    }),
+  )
 
   const matrixQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsolePersonnelSkillMatrixQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        ...optionalQuery('userId', filters.userId),
-        ...optionalQuery('skillCode', filters.skillCode),
-        ...optionalQuery('includeDisabled', filters.includeDisabled),
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsolePersonnelSkillMatrixQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          ...optionalQuery('userId', filters.userId),
+          ...optionalQuery('skillCode', filters.skillCode),
+          ...optionalQuery('includeDisabled', filters.includeDisabled),
+        },
+      }),
+      filters,
+    ),
   )
 
   return {
     filters,
     refresh: () => refetchWithBusinessContext(filters, matrixQuery),
     skillCodes: computed<string[]>(() => skillMatrixData(matrixQuery.data.value).skillCodes),
-    rows: computed<BusinessConsolePersonnelSkillMatrixRow[]>(() => skillMatrixData(matrixQuery.data.value).rows),
+    rows: computed<BusinessConsolePersonnelSkillMatrixRow[]>(
+      () => skillMatrixData(matrixQuery.data.value).rows,
+    ),
     matrixError: matrixQuery.error,
     matrixPending: matrixQuery.isLoading,
   }
@@ -799,17 +903,20 @@ export function useUomConversions() {
   const queryCache = useQueryCache()
 
   const conversionsQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleMasterDataResourcesQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        resourceType: filters.resourceType,
-        ...optionalQuery('includeDisabled', filters.includeDisabled),
-        ...optionalQuery('keyword', filters.keyword),
-        skip: filters.skip,
-        take: filters.take,
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleMasterDataResourcesQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          resourceType: filters.resourceType,
+          ...optionalQuery('includeDisabled', filters.includeDisabled),
+          ...optionalQuery('keyword', filters.keyword),
+          skip: filters.skip,
+          take: filters.take,
+        },
+      }),
+      filters,
+    ),
   )
 
   const createConversionMutation = useMutation({
@@ -828,7 +935,9 @@ export function useUomConversions() {
     createUomConversionPending: createConversionMutation.isLoading,
     filters,
     refreshConversions: () => refetchWithBusinessContext(filters, conversionsQuery),
-    conversions: computed<BusinessConsoleResourceItem[]>(() => resourceItems(conversionsQuery.data.value)),
+    conversions: computed<BusinessConsoleResourceItem[]>(() =>
+      resourceItems(conversionsQuery.data.value),
+    ),
     conversionsError: conversionsQuery.error,
     conversionsPending: conversionsQuery.isLoading,
     conversionsTotal: computed(() => resourceTotal(conversionsQuery.data.value)),

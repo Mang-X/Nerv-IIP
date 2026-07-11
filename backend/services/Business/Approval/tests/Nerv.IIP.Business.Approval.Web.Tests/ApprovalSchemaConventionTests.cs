@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Approval.Domain;
@@ -62,6 +63,21 @@ public sealed class ApprovalSchemaConventionTests
             .ToArray();
 
         Assert.DoesNotContain(referencedAssemblies, x => x.Contains(".Ops", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Approval_chain_persists_routing_context_and_uniquely_guards_pending_identity()
+    {
+        using var fixture = CreateFixture();
+        var chain = fixture.DbContext.Model.FindEntityType(typeof(ApprovalChain))!;
+        var document = chain.FindNavigation(nameof(ApprovalChain.DocumentReference))!.TargetEntityType;
+
+        Assert.Equal("routing_amount", document.FindProperty(nameof(ApprovalDocumentReference.Amount))!.GetColumnName());
+        Assert.Equal("routing_organization_id", document.FindProperty(nameof(ApprovalDocumentReference.OrganizationId))!.GetColumnName());
+        Assert.Equal("routing_department_id", document.FindProperty(nameof(ApprovalDocumentReference.DepartmentId))!.GetColumnName());
+        var pendingIdentity = chain.FindProperty(nameof(ApprovalChain.PendingIdentityKey))!;
+        Assert.Equal("pending_identity_key", pendingIdentity.GetColumnName());
+        Assert.Contains(chain.GetIndexes(), index => index.IsUnique && index.Properties.SequenceEqual([pendingIdentity]));
     }
 
     private static SchemaFixture CreateFixture()

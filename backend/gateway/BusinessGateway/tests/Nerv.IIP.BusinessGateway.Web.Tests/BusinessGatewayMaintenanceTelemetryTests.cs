@@ -876,6 +876,16 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
         ], 42));
     }
 
+    public Task<BusinessConsoleTelemetryTagCurrentValueResponse> GetTagCurrentValueAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryTagCurrentValueRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryTagCurrentValueResponse(
+            request.DeviceAssetId, request.TagKey, HasSample: false, Value: null, OccurredAtUtc: null));
+    }
+
     public Task<BusinessConsoleTelemetryAlarmEventListResponse> ListAlarmsAsync(
         string internalBearerToken,
         BusinessConsoleTelemetryAlarmListRequest request,
@@ -1110,5 +1120,33 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleTelemetryDeviceControlCommandListResponse([], 0));
+    }
+
+    public Task<BusinessConsoleTelemetryDeviceControlBindingListResponse> ListDeviceControlBindingsAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryDeviceControlBindingListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryDeviceControlBindingListResponse([], 0));
+    }
+
+    public Task<BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse> CreateOrUpdateDeviceControlBindingAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse("binding-001"));
+    }
+
+    public Task<BusinessConsoleDisableTelemetryDeviceControlBindingResponse> DisableDeviceControlBindingAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleDisableTelemetryDeviceControlBindingRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleDisableTelemetryDeviceControlBindingResponse("binding-001"));
     }
 }

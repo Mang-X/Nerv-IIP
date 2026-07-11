@@ -177,8 +177,10 @@ public sealed class AccountPayableEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.SupplierCode).HasColumnName("supplier_code").IsRequired().HasMaxLength(100).HasComment("MasterData supplier code.");
         builder.Property(x => x.Amount).HasColumnName("amount").IsRequired().HasPrecision(18, 6).HasComment("Document amount.");
         builder.Property(x => x.PaidAmount).HasColumnName("paid_amount").IsRequired().HasPrecision(18, 6).HasComment("Paid amount.");
+        builder.Property(x => x.DebitNoteAmount).HasColumnName("debit_note_amount").IsRequired().HasPrecision(18, 6).HasComment("Applied supplier debit-note amount.");
         builder.Property(x => x.LocalAmount).HasColumnName("local_amount").IsRequired().HasPrecision(18, 6).HasComment("Local currency amount at document exchange rate.");
         builder.Property(x => x.LocalPaidAmount).HasColumnName("local_paid_amount").IsRequired().HasPrecision(18, 6).HasComment("Local currency paid amount at document exchange rate.");
+        builder.Property(x => x.LocalDebitNoteAmount).HasColumnName("local_debit_note_amount").IsRequired().HasPrecision(18, 6).HasComment("Applied supplier debit-note local amount.");
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Currency code.");
         builder.Property(x => x.ExchangeRate).HasColumnName("exchange_rate").IsRequired().HasPrecision(18, 8).HasComment("Document exchange rate to local currency.");
         builder.Property(x => x.InvoiceDate).HasColumnName("invoice_date").IsRequired().HasComment("Supplier invoice date.");
@@ -203,8 +205,10 @@ public sealed class AccountReceivableEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.CustomerCode).HasColumnName("customer_code").IsRequired().HasMaxLength(100).HasComment("MasterData customer code.");
         builder.Property(x => x.Amount).HasColumnName("amount").IsRequired().HasPrecision(18, 6).HasComment("Document amount.");
         builder.Property(x => x.CollectedAmount).HasColumnName("collected_amount").IsRequired().HasPrecision(18, 6).HasComment("Collected amount.");
+        builder.Property(x => x.CreditNoteAmount).HasColumnName("credit_note_amount").IsRequired().HasPrecision(18, 6).HasComment("Applied customer credit-note amount.");
         builder.Property(x => x.LocalAmount).HasColumnName("local_amount").IsRequired().HasPrecision(18, 6).HasComment("Local currency amount at document exchange rate.");
         builder.Property(x => x.LocalCollectedAmount).HasColumnName("local_collected_amount").IsRequired().HasPrecision(18, 6).HasComment("Local currency collected amount at document exchange rate.");
+        builder.Property(x => x.LocalCreditNoteAmount).HasColumnName("local_credit_note_amount").IsRequired().HasPrecision(18, 6).HasComment("Applied customer credit-note local amount.");
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Currency code.");
         builder.Property(x => x.ExchangeRate).HasColumnName("exchange_rate").IsRequired().HasPrecision(18, 8).HasComment("Document exchange rate to local currency.");
         builder.Property(x => x.InvoiceDate).HasColumnName("invoice_date").IsRequired().HasComment("Customer invoice date.");
@@ -361,6 +365,8 @@ public sealed class JournalVoucherLineEntityTypeConfiguration : IEntityTypeConfi
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Journal voucher line id.");
         builder.Property<JournalVoucherId>("JournalVoucherId").HasColumnName("journal_voucher_id").IsRequired().HasComment("Owning journal voucher id.");
+        builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization boundary copied from the voucher for GL account linkage.");
+        builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment boundary copied from the voucher for GL account linkage.");
         builder.Property(x => x.AccountCode).HasColumnName("account_code").IsRequired().HasMaxLength(100).HasComment("Accounting subject code.");
         builder.Property(x => x.DebitAmount).HasColumnName("debit_amount").IsRequired().HasPrecision(18, 6).HasComment("Debit amount.");
         builder.Property(x => x.CreditAmount).HasColumnName("credit_amount").IsRequired().HasPrecision(18, 6).HasComment("Credit amount.");
@@ -369,5 +375,10 @@ public sealed class JournalVoucherLineEntityTypeConfiguration : IEntityTypeConfi
         builder.Property(x => x.LocalDebitAmount).HasColumnName("local_debit_amount").IsRequired().HasPrecision(18, 6).HasComment("Debit amount in local currency.");
         builder.Property(x => x.LocalCreditAmount).HasColumnName("local_credit_amount").IsRequired().HasPrecision(18, 6).HasComment("Credit amount in local currency.");
         builder.Property(x => x.Memo).HasColumnName("memo").IsRequired().HasMaxLength(300).HasComment("Voucher line memo.");
+        builder.HasOne<Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate.GLAccount>()
+            .WithMany()
+            .HasForeignKey(x => new { x.OrganizationId, x.EnvironmentId, x.AccountCode })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.Code })
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
