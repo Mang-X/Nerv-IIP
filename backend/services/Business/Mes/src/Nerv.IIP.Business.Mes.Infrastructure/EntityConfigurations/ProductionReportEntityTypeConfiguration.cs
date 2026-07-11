@@ -33,6 +33,7 @@ public sealed class ProductionReportEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.Source).HasColumnName("source").IsRequired().HasMaxLength(50).HasDefaultValue("manual").HasComment("Report origin: manual operator entry or telemetry count automation.");
         builder.Property(x => x.CompletesOperation).HasColumnName("completes_operation").IsRequired().HasComment("Whether this report marks the operation as completed.");
         builder.Property(x => x.ReportedAtUtc).HasColumnName("reported_at_utc").IsRequired().HasComment("UTC time when production was reported.");
+        builder.Property(x => x.MaterialMovementCount).HasColumnName("material_movement_count").IsRequired().HasComment("Count of production-consumption Inventory movements emitted for cost closure.");
         builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo })
             .HasName("ak_production_reports_scope_report_no");
         builder.HasOne<WorkOrder>()

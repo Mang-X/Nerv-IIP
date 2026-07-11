@@ -31,7 +31,8 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         string? reversedReportNo,
         string? reversalReason,
         ProductionReportOeeProjection? oeeProjection,
-        string source)
+        string source,
+        int materialMovementCount)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -59,6 +60,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         OeeUomCode = string.IsNullOrWhiteSpace(oeeProjection?.UomCode) ? null : oeeProjection.UomCode.Trim();
         OeeTheoreticalRatePerHour = oeeProjection?.TheoreticalRatePerHour;
         Source = NormalizeSource(source);
+        MaterialMovementCount = materialMovementCount >= 0 ? materialMovementCount : throw new ArgumentOutOfRangeException(nameof(materialMovementCount));
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -82,6 +84,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     public string Source { get; private set; } = ManualSource;
     public bool CompletesOperation { get; private set; }
     public DateTimeOffset ReportedAtUtc { get; private set; }
+    public int MaterialMovementCount { get; private set; }
 
     public bool IsReversal => !string.IsNullOrWhiteSpace(ReversedReportNo);
 
@@ -108,7 +111,8 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         string? producedLotNo = null,
         string? serialNo = null,
         ProductionReportOeeProjection? oeeProjection = null,
-        string source = ManualSource)
+        string source = ManualSource,
+        int materialMovementCount = 0)
     {
         DomainGuard.NonNegative(goodQuantity, nameof(goodQuantity));
         DomainGuard.NonNegative(scrapQuantity, nameof(scrapQuantity));
@@ -136,7 +140,8 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             null,
             null,
             oeeProjection,
-            source);
+            source,
+            materialMovementCount);
         report.AddDomainEvent(new ProductionReportRecordedDomainEvent(report, report.GetOeeProjection()));
         return report;
     }
@@ -172,7 +177,8 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             original.ReportNo,
             reason,
             originalOeeProjection,
-            original.Source);
+            original.Source,
+            original.MaterialMovementCount);
         report.AddDomainEvent(new ProductionReportRecordedDomainEvent(report, report.GetOeeProjection()));
         return report;
     }
