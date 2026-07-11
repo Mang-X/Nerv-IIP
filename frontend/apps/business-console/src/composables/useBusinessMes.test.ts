@@ -892,4 +892,43 @@ describe('business MES composables', () => {
       { requestId: 'MIR-2', workOrderId: 'WO-CANCEL', receivedQuantity: 0, status: 'Requested' },
     ])
   })
+
+  it('filters both cancel compensation lists server-side by the current work order', () => {
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-CANCEL'
+    detail.activateCancelPreview()
+
+    // 重新求值 query 工厂，拿到当前 workOrderId 下发送给 facade 的查询参数（服务端过滤，避免组织级前 100 条截断漏报）
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesMaterialIssueRequests')?.()
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesFinishedGoodsReceiptRequests')?.()
+
+    expect(listBusinessConsoleMesMaterialIssueRequestsQueryOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ query: expect.objectContaining({ workOrderId: 'WO-CANCEL' }) }),
+    )
+    expect(listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ query: expect.objectContaining({ workOrderId: 'WO-CANCEL' }) }),
+    )
+  })
+
+  it('marks cancel preview ready only after both compensation lists return data', () => {
+    const pending = useMesWorkOrderDetail()
+    pending.filters.workOrderId = 'WO-CANCEL'
+    pending.activateCancelPreview()
+    // 两项列表都未返回数据 → 未就绪，破坏性确认按钮应被禁用（慢网/失败不允许在空数据上确认）
+    expect(pending.cancelPreviewReady.value).toBe(false)
+
+    coladaState.queryDataById.set('listBusinessConsoleMesFinishedGoodsReceiptRequests', {
+      success: true,
+      data: { total: 0, items: [] },
+    })
+    coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
+      success: true,
+      data: { total: 0, items: [] },
+    })
+
+    const ready = useMesWorkOrderDetail()
+    ready.filters.workOrderId = 'WO-CANCEL'
+    ready.activateCancelPreview()
+    expect(ready.cancelPreviewReady.value).toBe(true)
+  })
 })

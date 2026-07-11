@@ -6341,6 +6341,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("workCenterId", request.WorkCenterId),
             ("shiftId", request.ShiftId),
             ("deviceAssetId", request.DeviceAssetId),
+            ("workOrderId", request.WorkOrderId),
             ("skip", request.Skip),
             ("take", request.Take));
 

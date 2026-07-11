@@ -636,11 +636,13 @@ export function useMesWorkOrderDetail() {
     enabled: detailEnabled.value,
   }))
 
+  // 服务端按 workOrderId 过滤（facade/底层 MES 均支持），避免只取组织级前 100 条再客户端过滤导致的漏报。
   const receiptQuery = useQuery(() => ({
     ...listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
+        workOrderId: filters.workOrderId,
         skip: 0,
         take: DEFAULT_TAKE,
       },
@@ -655,6 +657,7 @@ export function useMesWorkOrderDetail() {
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
+        workOrderId: filters.workOrderId,
         skip: 0,
         take: DEFAULT_TAKE,
       },
@@ -694,6 +697,27 @@ export function useMesWorkOrderDetail() {
       }),
     cancelWorkOrderError: cancelMutation.error,
     cancelWorkOrderPending: cancelMutation.isLoading,
+    // 补偿预览两项查询的加载/失败/就绪态，供破坏性确认按钮门禁：两项都成功拿到数据前禁用确认，失败可重试。
+    cancelPreviewPending: computed(
+      () =>
+        receiptPreviewEnabled.value &&
+        (receiptQuery.isLoading.value || materialIssueQuery.isLoading.value),
+    ),
+    cancelPreviewError: computed(() => receiptQuery.error.value ?? materialIssueQuery.error.value),
+    cancelPreviewReady: computed(
+      () =>
+        receiptPreviewEnabled.value &&
+        !receiptQuery.isLoading.value &&
+        !materialIssueQuery.isLoading.value &&
+        receiptQuery.error.value == null &&
+        materialIssueQuery.error.value == null &&
+        receiptQuery.data.value !== undefined &&
+        materialIssueQuery.data.value !== undefined,
+    ),
+    retryCancelPreview: () => {
+      void receiptQuery.refetch()
+      void materialIssueQuery.refetch()
+    },
     detail: computed<BusinessConsoleMesWorkOrderDetailResponse | undefined>(() =>
       unwrapData<
         BusinessConsoleMesWorkOrderDetailResponse,

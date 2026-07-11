@@ -1250,10 +1250,10 @@ public sealed class MesEndpointContractTests
     {
         // Regression guard for the MES command-validation wiring (AddValidatorsFromAssembly +
         // AddKnownExceptionValidationBehavior in Program.cs). Reason is validated only by
-        // CancelWorkOrderCommandValidator — WorkOrderReasonRequest has no FastEndpoints Validator<> — so a clean
-        // 400 here proves the MediatR validation pipeline runs. Without the wiring the command validators are dead
-        // and the request would fall through to the handler instead. Validation short-circuits before any database
-        // access, so this needs no Postgres.
+        // CancelWorkOrderCommandValidator — WorkOrderReasonRequest has no FastEndpoints Validator<> — so the
+        // success=false envelope here proves the MediatR validation pipeline runs. Without the wiring the command
+        // validators are dead and the request would fall through to the handler instead. Validation short-circuits
+        // before any database access, so this needs no Postgres.
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
                 builder.UseSetting("InternalService:BearerToken", "test-internal-service-token"));
@@ -1269,10 +1269,12 @@ public sealed class MesEndpointContractTests
                 reason = string.Empty,
             });
 
+        // MES uses the plain UseKnownExceptionHandler(), so a KnownException is returned at the SERVICE level as
+        // HTTP 200 + a success=false envelope; the BusinessGateway is what maps that success=false to a 400
+        // downstream. Lock the service-level contract (200) so a status-code regression fails this test, and assert
+        // the envelope carries the "Reason" validation message the command validator produced.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
-        // MES uses the plain UseKnownExceptionHandler(), so a KnownException is returned at the service level as a
-        // success=false envelope (the gateway maps that to HTTP 400 downstream). The command validator is what
-        // rejects the empty reason, so the envelope must carry the "Reason" validation message.
         Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Reason", body, StringComparison.OrdinalIgnoreCase);
     }

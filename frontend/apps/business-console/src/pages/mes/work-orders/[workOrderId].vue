@@ -53,6 +53,9 @@ const route = useRoute()
 const router = useRouter()
 const {
   activateCancelPreview,
+  cancelPreviewError,
+  cancelPreviewPending,
+  cancelPreviewReady,
   cancelWorkOrder,
   cancelWorkOrderPending,
   detail,
@@ -66,6 +69,7 @@ const {
   materialReadinessPending,
   refreshDetail,
   refreshMaterialReadiness,
+  retryCancelPreview,
 } = useMesWorkOrderDetail()
 
 watch(
@@ -172,8 +176,15 @@ const cancelDisabledReason = computed(() => {
 // 权威来源是本工单的领料申请（取消 handler 遍历的对象）：已收料→退料指引，未收料且未终结→释放预留；
 // 齐套快照仅在有已发布 MBOM 时才有行，无法覆盖无 MBOM 直接领料的工单，故不用它做补偿汇总。
 const TERMINAL_ISSUE_STATUSES = new Set(['cancelled', 'closed', 'returned', 'completed'])
+// 与后端取消退料规则一致：可退数量 = max(0, receivedQuantity - consumedQuantity)，且无 materialLotId 不可退
+// （后端 #557：无批次退料抛业务错误）。仅当可退数量>0 且有批次时才计为退料指引，避免预览/toast 误报。
+function returnableQuantityOf(row: (typeof materialIssueRequests.value)[number]): number {
+  return Math.max(0, (row.receivedQuantity ?? 0) - (row.consumedQuantity ?? 0))
+}
 const lineSideReturnRows = computed(() =>
-  materialIssueRequests.value.filter((row) => (row.receivedQuantity ?? 0) > 0),
+  materialIssueRequests.value.filter(
+    (row) => (row.materialLotId ?? '').trim().length > 0 && returnableQuantityOf(row) > 0,
+  ),
 )
 const reservationRows = computed(() =>
   materialIssueRequests.value.filter(
@@ -203,9 +214,27 @@ const hasCompensation = computed(
 )
 
 const requiresRemark = computed(() => cancelForm.reasonCode === 'other')
+// 后端 CancelWorkOrderCommandValidator 对最终 reason 限 500 字符。最终 reason = 「原因标签[：备注]」，
+// 与 submitCancel 的拼接完全一致，据此前置限制与计数，避免用户填满后才收到后端 400。
+const REASON_MAX_LENGTH = 500
+const cancelReasonLabel = computed(
+  () =>
+    CANCEL_REASONS.find((option) => option.value === cancelForm.reasonCode)?.label ??
+    cancelForm.reasonCode,
+)
+const finalReasonLength = computed(() => {
+  const remark = cancelForm.remark.trim()
+  return remark ? cancelReasonLabel.value.length + 1 + remark.length : cancelReasonLabel.value.length
+})
+const remarkMaxLength = computed(() =>
+  Math.max(0, REASON_MAX_LENGTH - cancelReasonLabel.value.length - 1),
+)
 const canSubmitCancel = computed(() => {
+  // 破坏性动作：两项补偿预览成功拿到数据前禁用确认（慢网/失败时不允许在空数据上确认）。
+  if (!cancelPreviewReady.value) return false
   if (!cancelForm.reasonCode) return false
   if (requiresRemark.value && !cancelForm.remark.trim()) return false
+  if (finalReasonLength.value > REASON_MAX_LENGTH) return false
   return true
 })
 
@@ -446,9 +475,29 @@ function formatError(error: unknown) {
         <section aria-label="补偿预览" class="grid gap-3 rounded-lg border bg-muted/30 p-3 text-sm">
           <div class="flex items-center justify-between">
             <span class="font-semibold text-foreground">补偿预览</span>
-            <span class="text-xs text-muted-foreground">按关联单据汇总（预估）</span>
+            <span class="text-xs text-muted-foreground">按关联单据汇总</span>
           </div>
 
+          <div v-if="cancelPreviewPending" class="flex items-center gap-2 text-muted-foreground">
+            <Spinner aria-hidden="true" />
+            <span>正在加载补偿预览…</span>
+          </div>
+          <div
+            v-else-if="cancelPreviewError"
+            class="grid gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2"
+          >
+            <p class="text-destructive">补偿预览加载失败，为避免误操作已禁用确认。请重试后再确认取消。</p>
+            <NvButton
+              type="button"
+              variant="outline"
+              size="sm"
+              class="justify-self-start"
+              @click="retryCancelPreview"
+            >
+              重试
+            </NvButton>
+          </div>
+          <template v-else>
           <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div class="rounded-md border bg-background p-2">
               <p class="text-xs text-muted-foreground">预留释放</p>
@@ -512,7 +561,7 @@ function formatError(error: unknown) {
                   ></span
                 >
                 <span class="shrink-0 tabular-nums">{{
-                  formatQuantity(row.receivedQuantity)
+                  formatQuantity(returnableQuantityOf(row))
                 }}</span>
               </li>
             </ul>
@@ -521,6 +570,7 @@ function formatError(error: unknown) {
           <p v-if="!hasCompensation" class="text-muted-foreground">
             该工单当前无可释放的预留或待退回线边物料，取消仅流转工单状态。
           </p>
+          </template>
         </section>
 
         <NvFieldGroup class="grid gap-3">
@@ -550,8 +600,15 @@ function formatError(error: unknown) {
             <NvInput
               id="cancel-remark"
               v-model="cancelForm.remark"
+              :maxlength="remarkMaxLength"
               placeholder="补充取消说明，随请求提交并进入审计"
             />
+            <p
+              class="text-xs"
+              :class="finalReasonLength > REASON_MAX_LENGTH ? 'text-destructive' : 'text-muted-foreground'"
+            >
+              取消原因（含标签）共 {{ finalReasonLength }} / {{ REASON_MAX_LENGTH }} 字符
+            </p>
           </NvField>
         </NvFieldGroup>
 

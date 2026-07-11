@@ -695,6 +695,7 @@ public sealed record MesMaterialIssueRequestRow(
     string? MaterialLotId,
     decimal RequestedQuantity,
     decimal ReceivedQuantity,
+    decimal ConsumedQuantity,
     string Status,
     DateTimeOffset RequestedAtUtc,
     string? WorkOrderNo = null,
@@ -767,6 +768,16 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
                 x.MaterialLotId,
                 x.RequestedQuantity,
                 x.ReceivedQuantity,
+                // Authoritative consumed-so-far, matching WorkOrderCancellation's derivation
+                // (sum of production-report consumptions for this request/material/lot). Lets the cancel
+                // preview compute returnable = max(0, received - consumed) instead of assuming received.
+                dbContext.ProductionReportMaterialConsumptions
+                    .Where(c => c.OrganizationId == x.OrganizationId
+                        && c.EnvironmentId == x.EnvironmentId
+                        && c.MaterialIssueRequestNo == x.RequestNo
+                        && c.MaterialId == x.MaterialId
+                        && c.MaterialLotId == x.MaterialLotId)
+                    .Sum(c => (decimal?)c.ConsumedQuantity) ?? 0m,
                 x.Status,
                 x.RequestedAtUtc,
                 x.WorkOrderId,

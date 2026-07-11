@@ -10465,6 +10465,14 @@
             }
           },
           {
+            "name": "workOrderId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "skip",
             "in": "query",
             "schema": {
@@ -10675,6 +10683,14 @@
             }
           },
           {
+            "name": "workOrderId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "skip",
             "in": "query",
             "schema": {
@@ -10878,6 +10894,14 @@
           },
           {
             "name": "deviceAssetId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "workOrderId",
             "in": "query",
             "schema": {
               "type": "string",
@@ -11399,6 +11423,14 @@
             }
           },
           {
+            "name": "workOrderId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "skip",
             "in": "query",
             "schema": {
@@ -11728,6 +11760,14 @@
             }
           },
           {
+            "name": "workOrderId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "skip",
             "in": "query",
             "schema": {
@@ -11860,6 +11900,14 @@
           },
           {
             "name": "deviceAssetId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "workOrderId",
             "in": "query",
             "schema": {
               "type": "string",
@@ -12042,6 +12090,14 @@
           },
           {
             "name": "deviceAssetId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "workOrderId",
             "in": "query",
             "schema": {
               "type": "string",
@@ -12295,6 +12351,14 @@
           },
           {
             "name": "deviceAssetId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "workOrderId",
             "in": "query",
             "schema": {
               "type": "string",
@@ -12722,6 +12786,14 @@
           },
           {
             "name": "deviceAssetId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "workOrderId",
             "in": "query",
             "schema": {
               "type": "string",
@@ -32260,6 +32332,10 @@
             "format": "decimal"
           },
           "receivedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "consumedQuantity": {
             "type": "number",
             "format": "decimal"
           },
