@@ -36,7 +36,7 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
         return consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Approval.ApprovalCompletedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(ApprovalCompletedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(ApprovalCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

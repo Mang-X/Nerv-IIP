@@ -38,7 +38,7 @@ public sealed class InspectionTaskOverdueIntegrationEventHandlerForNotification(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Quality.InspectionTaskOverdueIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(InspectionTaskOverdueIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(
         InspectionTaskOverdueIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)

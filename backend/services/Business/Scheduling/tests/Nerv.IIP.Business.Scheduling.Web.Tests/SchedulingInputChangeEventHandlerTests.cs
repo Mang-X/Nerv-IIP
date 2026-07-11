@@ -307,22 +307,22 @@ public sealed class SchedulingInputChangeEventHandlerTests
     public void Scheduling_input_change_handlers_have_cap_subscriptions()
     {
         AssertSubscription<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>(
-            "Nerv.IIP.Contracts.Maintenance.AssetUnavailableIntegrationEvent",
+            "AssetUnavailableIntegrationEvent",
             AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
         AssertSubscription<AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans>(
-            "Nerv.IIP.Contracts.Maintenance.AssetRestoredIntegrationEvent",
+            "AssetRestoredIntegrationEvent",
             AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
         AssertSubscription<DeviceStateChangedIntegrationEventHandlerForInvalidateSchedulePlans>(
-            "Nerv.IIP.Contracts.IndustrialTelemetry.DeviceStateChangedIntegrationEvent",
+            "DeviceStateChangedIntegrationEvent",
             DeviceStateChangedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
         AssertSubscription<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>(
-            "Nerv.IIP.Contracts.Inventory.StockAvailabilityChangedIntegrationEvent",
+            "StockAvailabilityChangedIntegrationEvent",
             StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
         AssertSubscription<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans>(
-            "Nerv.IIP.Contracts.Quality.InspectionResultIntegrationEvent",
+            "InspectionResultIntegrationEvent",
             QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
         AssertSubscription<WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans>(
-            "Nerv.IIP.Contracts.Mes.WorkOrderReleasedIntegrationEvent",
+            "WorkOrderReleasedIntegrationEvent",
             WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
     }
 

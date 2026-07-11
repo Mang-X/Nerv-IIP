@@ -42,7 +42,7 @@ public sealed class AssetUnavailableIntegrationEventHandlerForReschedule(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Maintenance.AssetUnavailableIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(AssetUnavailableIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(AssetUnavailableIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -105,7 +105,7 @@ public sealed class AssetRestoredIntegrationEventHandlerForReschedule(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Maintenance.AssetRestoredIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(AssetRestoredIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(AssetRestoredIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

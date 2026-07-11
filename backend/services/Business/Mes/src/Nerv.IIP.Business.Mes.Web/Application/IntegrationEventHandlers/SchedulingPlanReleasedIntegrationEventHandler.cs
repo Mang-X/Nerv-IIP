@@ -143,7 +143,7 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
 
 public static class SchedulePlanReleasedIntegrationEventTopic
 {
-    public const string TopicName = "Nerv.IIP.Contracts.Scheduling.SchedulePlanReleasedIntegrationEvent";
+    public const string TopicName = "SchedulePlanReleasedIntegrationEvent";
 }
 
 [IntegrationEventConsumer(SchedulePlanInvalidatedIntegrationEventTopic.TopicName, ConsumerName)]
@@ -217,5 +217,5 @@ public sealed class SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalid
 
 public static class SchedulePlanInvalidatedIntegrationEventTopic
 {
-    public const string TopicName = "Nerv.IIP.Contracts.Scheduling.SchedulePlanInvalidatedIntegrationEvent";
+    public const string TopicName = "SchedulePlanInvalidatedIntegrationEvent";
 }

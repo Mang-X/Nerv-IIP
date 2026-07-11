@@ -290,5 +290,5 @@ public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
 
 public static class EngineeringChangeReleasedIntegrationEventTopic
 {
-    public const string TopicName = "Nerv.IIP.Contracts.ProductEngineering.EngineeringChangeReleasedIntegrationEvent";
+    public const string TopicName = "EngineeringChangeReleasedIntegrationEvent";
 }

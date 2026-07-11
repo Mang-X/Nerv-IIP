@@ -42,7 +42,7 @@ public static class DemandPlanningSourceReferences
 
 public static class PlanningSuggestionAcceptedIntegrationEventTopic
 {
-    public const string TopicName = "Nerv.IIP.Contracts.DemandPlanning.PlanningSuggestionAcceptedIntegrationEvent";
+    public const string TopicName = "PlanningSuggestionAcceptedIntegrationEvent";
 }
 
 public sealed record DemandPlanningIntegrationEvent<TPayload>(

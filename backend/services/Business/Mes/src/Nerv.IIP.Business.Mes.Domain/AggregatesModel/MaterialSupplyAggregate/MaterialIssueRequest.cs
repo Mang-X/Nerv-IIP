@@ -160,10 +160,11 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         DomainGuard.Positive(returnedQuantity, nameof(returnedQuantity));
         DomainGuard.NonNegative(consumedQuantity, nameof(consumedQuantity));
 
-        if (string.IsNullOrWhiteSpace(MaterialLotId))
-        {
-            throw new InvalidOperationException("Line-side material return requires a received material lot.");
-        }
+        // A line-side receipt may be confirmed without a material lot (ConfirmLineSideReceipt makes
+        // materialLotId optional), so a lot-less return must be allowed too — otherwise cancelling a
+        // work order whose received issue request has no lot throws here and escapes as HTTP 500
+        // (WorkOrderCancellationOrchestrator does not wrap this call). The reverse warehouse movement
+        // simply carries a null lot, mirroring the original lot-less warehouse-out.
 
         var returnableQuantity = Math.Max(0m, ReceivedQuantity - consumedQuantity);
         if (returnedQuantity > returnableQuantity)

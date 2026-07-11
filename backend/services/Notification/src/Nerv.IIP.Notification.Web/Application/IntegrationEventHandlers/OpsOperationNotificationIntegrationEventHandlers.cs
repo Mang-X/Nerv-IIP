@@ -76,7 +76,7 @@ public sealed class OperationApprovalRequestedIntegrationEventHandlerForNotifica
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Ops.OperationApprovalRequestedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(OperationApprovalRequestedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(OperationApprovalRequestedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -119,7 +119,7 @@ public sealed class OperationApprovalApprovedIntegrationEventHandlerForNotificat
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Ops.OperationApprovalApprovedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(OperationApprovalApprovedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(OperationApprovalApprovedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -162,7 +162,7 @@ public sealed class OperationApprovalRejectedIntegrationEventHandlerForNotificat
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Ops.OperationApprovalRejectedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(OperationApprovalRejectedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(OperationApprovalRejectedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

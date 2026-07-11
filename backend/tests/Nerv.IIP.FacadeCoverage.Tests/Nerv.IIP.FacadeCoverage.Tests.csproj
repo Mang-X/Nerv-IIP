@@ -52,6 +52,9 @@
     <ProjectReference Include="..\..\services\Business\Quality\src\Nerv.IIP.Business.Quality.Web\Nerv.IIP.Business.Quality.Web.csproj" />
     <ProjectReference Include="..\..\services\Business\Scheduling\src\Nerv.IIP.Business.Scheduling.Web\Nerv.IIP.Business.Scheduling.Web.csproj" />
     <ProjectReference Include="..\..\services\Business\Wms\src\Nerv.IIP.Business.Wms.Web\Nerv.IIP.Business.Wms.Web.csproj" />
+    <!-- Non-business CAP-consumer hosts, referenced for CapSubscribeTopicConventionTests. -->
+    <ProjectReference Include="..\..\services\Notification\src\Nerv.IIP.Notification.Web\Nerv.IIP.Notification.Web.csproj" />
+    <ProjectReference Include="..\..\services\AppHub\src\Nerv.IIP.AppHub.Web\Nerv.IIP.AppHub.Web.csproj" />
   </ItemGroup>
 
 </Project>

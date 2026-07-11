@@ -31,7 +31,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Quality.InspectionResultIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(InspectionResultIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

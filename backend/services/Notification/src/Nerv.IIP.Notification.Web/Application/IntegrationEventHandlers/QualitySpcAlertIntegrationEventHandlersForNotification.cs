@@ -38,7 +38,7 @@ public sealed class SpcAlertRaisedIntegrationEventHandlerForNotification(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Quality.SpcAlertRaisedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(SpcAlertRaisedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(
         SpcAlertRaisedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)

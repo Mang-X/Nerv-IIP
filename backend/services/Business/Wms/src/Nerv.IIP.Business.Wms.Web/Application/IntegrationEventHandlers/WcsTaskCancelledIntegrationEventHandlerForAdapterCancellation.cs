@@ -38,7 +38,7 @@ public sealed class WcsTaskCancelledIntegrationEventHandlerForAdapterCancellatio
         return consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Wms.WmsIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(WmsIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

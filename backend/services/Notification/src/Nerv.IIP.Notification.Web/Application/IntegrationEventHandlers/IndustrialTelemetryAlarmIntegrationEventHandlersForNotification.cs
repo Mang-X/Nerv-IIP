@@ -39,7 +39,7 @@ public sealed class AlarmRaisedIntegrationEventHandlerForNotification(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.IndustrialTelemetry.AlarmRaisedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(AlarmRaisedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(
         AlarmRaisedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
@@ -178,7 +178,7 @@ public sealed class AlarmClearedIntegrationEventHandlerForNotification(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.IndustrialTelemetry.AlarmClearedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(AlarmClearedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(
         AlarmClearedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
@@ -256,7 +256,7 @@ public sealed class AlarmEscalatedIntegrationEventHandlerForNotification(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.IndustrialTelemetry.AlarmEscalatedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(AlarmEscalatedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(
         AlarmEscalatedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)

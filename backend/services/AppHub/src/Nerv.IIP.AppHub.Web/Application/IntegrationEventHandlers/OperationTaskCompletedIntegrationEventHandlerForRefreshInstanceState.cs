@@ -82,7 +82,7 @@ public sealed class OperationTaskFailedIntegrationEventHandlerForRefreshInstance
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Ops.OperationTaskFailedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(OperationTaskFailedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(OperationTaskFailedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

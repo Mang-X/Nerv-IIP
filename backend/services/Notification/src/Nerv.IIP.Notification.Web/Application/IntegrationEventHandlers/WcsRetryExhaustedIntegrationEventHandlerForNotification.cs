@@ -20,7 +20,7 @@ public sealed class WcsRetryExhaustedIntegrationEventHandlerForNotification(
 
     public Task HandleAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken) => consumerGuard.HandleAsync(integrationEvent, HandleValidAsync, cancellationToken);
 
-    [CapSubscribe("Nerv.IIP.Contracts.Wms.WmsIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(WmsIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleAsync(integrationEvent, cancellationToken);
 
     private async Task HandleValidAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken)

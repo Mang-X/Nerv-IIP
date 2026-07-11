@@ -374,6 +374,38 @@ public sealed class MesAggregateTests
     }
 
     [Fact]
+    public void MaterialIssueRequest_cancel_returns_received_material_that_has_no_lot()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-002",
+            "WO-002",
+            "OP-10",
+            "MAT-001",
+            "PCS",
+            5m,
+            DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
+        // A line-side receipt may be confirmed without a material lot.
+        request.ConfirmLineSideReceipt(DateTimeOffset.Parse("2026-05-23T08:30:00Z"), 5m);
+        request.ClearDomainEvents();
+
+        // Cancelling the work order must not throw even though the received material carries no lot
+        // (previously threw InvalidOperationException -> escaped as HTTP 500 from the cancel path).
+        var exception = Record.Exception(
+            () => request.CancelForWorkOrderCancellation(DateTimeOffset.Parse("2026-05-23T09:00:00Z")));
+        Assert.Null(exception);
+
+        Assert.Equal(MaterialIssueRequest.ReturnRequestedStatus, request.Status);
+        var events = request.GetDomainEvents().ToArray();
+        Assert.Contains(events, e => e is MaterialLineSideReturnRequestedDomainEvent);
+        var toWarehouse = Assert.IsType<MaterialReturnedToWarehouseDomainEvent>(
+            events.Single(e => e is MaterialReturnedToWarehouseDomainEvent));
+        Assert.Equal(5m, toWarehouse.ReturnedQuantity);
+        Assert.Null(toWarehouse.MaterialLotId);
+    }
+
+    [Fact]
     public void DefectRecord_tracks_ncr_request_and_disposition()
     {
         var defect = DefectRecord.Create(

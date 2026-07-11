@@ -29,7 +29,7 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForCreateInsp
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Wms.WmsIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(WmsIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
         HandleAsync(integrationEvent, cancellationToken);
 
@@ -95,7 +95,7 @@ public sealed class ErpPurchaseReceiptRecordedIntegrationEventHandlerForCreateIn
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Erp.PurchaseReceiptRecordedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(PurchaseReceiptRecordedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(PurchaseReceiptRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
         HandleAsync(integrationEvent, cancellationToken);
 
@@ -203,7 +203,7 @@ public sealed class MesFinishedGoodsReceiptRequestedIntegrationEventHandlerForCr
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Mes.FinishedGoodsReceiptRequestedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(FinishedGoodsReceiptRequestedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(FinishedGoodsReceiptRequestedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
         HandleAsync(integrationEvent, cancellationToken);
 

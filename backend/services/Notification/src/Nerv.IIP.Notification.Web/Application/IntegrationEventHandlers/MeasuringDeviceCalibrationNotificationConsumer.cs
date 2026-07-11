@@ -22,7 +22,7 @@ public sealed class MeasuringDeviceCalibrationNotificationConsumer(
         new IntegrationEventConsumerOptions(ConsumerName, QualityIntegrationEventTypes.MeasuringDeviceCalibrationDue, QualityIntegrationEventVersions.V1));
 
     public Task HandleAsync(MeasuringDeviceCalibrationDueIntegrationEvent integrationEvent, CancellationToken cancellationToken) => consumerGuard.HandleAsync(integrationEvent, HandleValidAsync, cancellationToken);
-    [CapSubscribe("Nerv.IIP.Contracts.Quality.MeasuringDeviceCalibrationDueIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(MeasuringDeviceCalibrationDueIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(MeasuringDeviceCalibrationDueIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleAsync(integrationEvent, cancellationToken);
 
     private async Task HandleValidAsync(MeasuringDeviceCalibrationDueIntegrationEvent integrationEvent, CancellationToken cancellationToken)
