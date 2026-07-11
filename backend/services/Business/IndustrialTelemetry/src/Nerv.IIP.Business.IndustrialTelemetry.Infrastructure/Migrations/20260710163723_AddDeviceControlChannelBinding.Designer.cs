@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260710163723_AddDeviceControlChannelBinding")]
+    partial class AddDeviceControlChannelBinding
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -450,18 +453,6 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnType("character varying(150)")
                         .HasColumnName("device_asset_id")
                         .HasComment("Referenced MasterData device asset identifier.");
-
-                    b.Property<string>("DeviceReceiptCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("device_receipt_code")
-                        .HasComment("Device-reported receipt code from the connector attempt output (e.g. Good/BadOutOfRange); null when no attempt output was captured.");
-
-                    b.Property<string>("DeviceReceiptMessage")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("device_receipt_message")
-                        .HasComment("Human-readable device receipt message from the connector attempt output; null otherwise.");
 
                     b.Property<string>("EnvironmentId")
                         .IsRequired()

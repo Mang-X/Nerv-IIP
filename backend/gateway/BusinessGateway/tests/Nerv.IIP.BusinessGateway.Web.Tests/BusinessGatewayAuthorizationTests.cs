@@ -234,6 +234,24 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
+    public async Task Tag_current_value_facade_returns_forbidden_scoped_to_the_device_when_iam_denies()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/telemetry/tags/current-value?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01&tagKey=spindle.speed");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Equal(BusinessGatewayPermissions.IiotTelemetryRead, auth.LastRequirement!.PermissionCode);
+        // The current-value read is a device-scoped surface: it authorizes on the device asset, not just org/env.
+        Assert.Equal("device-asset", auth.LastRequirement.ResourceType);
+        Assert.Equal("DEV-CNC-01", auth.LastRequirement.ResourceId);
+    }
+
+    [Fact]
     public async Task Business_console_endpoint_rejects_context_mismatch_before_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -552,6 +570,32 @@ public sealed class BusinessGatewayAuthorizationTests
             thresholdValue = 95m,
             unitCode = "celsius",
             isEnabled = true,
+        },
+        "/api/business-console/v1/telemetry/device-control-commands" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-OIL-01",
+            commandType = "write-tag",
+            tagKey = "temperature",
+            value = "80",
+            reason = "authorization test",
+            idempotencyKey = "idem-devctl-001",
+            correlationId = "corr-devctl-001",
+        },
+        "/api/business-console/v1/telemetry/device-control-bindings" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-OIL-01",
+            connectorHostId = "connector-host-001",
+            instanceKey = "opcua-cell-01",
+        },
+        "/api/business-console/v1/telemetry/device-control-bindings/DEV-OIL-01/disable" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reason = "authorization test",
         },
         "/api/business-console/v1/approval/delegations" => new
         {
@@ -971,10 +1015,15 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/equipment/alarms/alarm-001/shelve", BusinessGatewayPermissions.IiotAlarmsWrite);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/equipment/alarms/alarm-001/unshelve", BusinessGatewayPermissions.IiotAlarmsWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/tags?deviceAssetId=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/tags/current-value?deviceAssetId=DEV-OIL-01&tagKey=temperature", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/alarm-rules?deviceAssetId=DEV-OIL-01", BusinessGatewayPermissions.IiotAlarmsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/samples", BusinessGatewayPermissions.IiotTelemetryWrite);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/alarms", BusinessGatewayPermissions.IiotAlarmsWrite);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/alarm-rules", "business.iiot.alarm-rules.manage");
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/device-control-commands", BusinessGatewayPermissions.IiotDeviceControlWrite);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/device-control-bindings", BusinessGatewayPermissions.IiotDeviceControlRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/device-control-bindings", BusinessGatewayPermissions.IiotDeviceControlManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/device-control-bindings/DEV-OIL-01/disable", BusinessGatewayPermissions.IiotDeviceControlManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/alarms?deviceAssetId=DEV-OIL-01&status=raised", BusinessGatewayPermissions.IiotAlarmsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/devices/DEV-OIL-01/history?fromUtc=2026-06-01T08:00:00Z&toUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/oee?deviceAssetId=DEV-OIL-01&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.IiotTelemetryRead);

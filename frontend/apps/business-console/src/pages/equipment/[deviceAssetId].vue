@@ -15,6 +15,17 @@ import {
   useBusinessTelemetryOee,
 } from '@/composables/useBusinessTelemetry'
 import {
+  deviceControlApprovalLabel,
+  deviceControlCommandTypeLabel,
+  deviceControlStatusLabel,
+  deviceControlStatusTone,
+  useBusinessDeviceControlCommands,
+} from '@/composables/useBusinessDeviceControl'
+import { usePagedList } from '@/composables/usePagedList'
+import DeviceControlSheet from '@/components/equipment/DeviceControlSheet.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
+import {
   useMaintenanceAvailabilityWindows,
   useMaintenanceInspections,
   useMaintenancePlans,
@@ -40,10 +51,11 @@ import {
   PackageSearchIcon,
   RefreshCwIcon,
   Settings2Icon,
+  SlidersHorizontalIcon,
   TrendingUpIcon,
   WrenchIcon,
 } from 'lucide-vue-next'
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 definePage({
@@ -109,12 +121,47 @@ const { spareParts, sparePartsError, sparePartsPending } = useMaintenanceSparePa
   take: MAINTENANCE_DETAIL_TAKE,
 })
 
+const auth = useAuthStore()
+const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
+const canControlDevice = computed(() => permissionCodes.value.includes(P.iiotDeviceControlWrite))
+const controlSheetOpen = ref(false)
+const deviceAssetIdRef = computed(() => filters.deviceAssetId)
+const {
+  commands: controlCommands,
+  commandsError: controlCommandsError,
+  commandsPending: controlCommandsPending,
+  commandsTotal: controlCommandsTotal,
+  historyFilters: controlHistoryFilters,
+} = useBusinessDeviceControlCommands(deviceAssetIdRef)
+const { page: controlPage, pageSize: controlPageSize } = usePagedList(controlHistoryFilters)
+const controlCommandsErrorMessage = computed(() => formatError(controlCommandsError.value))
+
+type ControlCommandRow = (typeof controlCommands)['value'][number]
+const controlColumns: NvDataTableColumn<ControlCommandRow>[] = [
+  {
+    key: 'requestedAtUtc',
+    header: '时间',
+    width: 'w-44',
+    accessor: (r) => formatDateTime(r.requestedAtUtc),
+  },
+  { key: 'requestedBy', header: '操作人', accessor: (r) => r.requestedBy ?? '未知' },
+  { key: 'commandType', header: '命令' },
+  { key: 'value', header: '值', accessor: (r) => r.value ?? (r.tagKey ? '—' : '参数集') },
+  { key: 'approvalStatus', header: '审批状态', width: 'w-28' },
+  { key: 'status', header: '回执', width: 'w-24' },
+]
+function controlCommandRowKey(row: ControlCommandRow) {
+  return row.commandId ?? row.operationTaskId ?? row.correlationId ?? ''
+}
+
 const currentState = computed(() => device.value?.currentState)
 const errorMessage = computed(() => formatError(deviceError.value))
 const telemetryErrorMessage = computed(() =>
   formatError(historyError.value || oeeError.value || runtimeAvailabilityError.value),
 )
-const oeeDegradedReasons = computed(() => (oee.value?.degradedReasons ?? []).map(describeTelemetryOeeDegradation))
+const oeeDegradedReasons = computed(() =>
+  (oee.value?.degradedReasons ?? []).map(describeTelemetryOeeDegradation),
+)
 const maintenanceErrorMessage = computed(() =>
   formatError(
     maintenanceAvailabilityError.value ||
@@ -315,6 +362,15 @@ function formatError(error: unknown) {
       :breadcrumbs="[{ label: '设备监控（IoT）' }]"
     >
       <template #actions>
+        <NvButton
+          v-if="canControlDevice && filters.deviceAssetId"
+          size="sm"
+          type="button"
+          @click="controlSheetOpen = true"
+        >
+          <SlidersHorizontalIcon aria-hidden="true" />
+          设备控制
+        </NvButton>
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment"><ArrowLeftIcon aria-hidden="true" />返回看板</RouterLink>
         </NvButton>
@@ -689,9 +745,14 @@ function formatError(error: unknown) {
               </div>
               <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
                 <span class="text-muted-foreground">理论产出</span>
-                <span>{{ formatOeeQuantity(oee?.expectedOutputQuantity, oee?.outputUomCode) }}</span>
+                <span>{{
+                  formatOeeQuantity(oee?.expectedOutputQuantity, oee?.outputUomCode)
+                }}</span>
               </div>
-              <div v-if="oee?.isDegraded" class="rounded-md bg-muted p-3 text-xs text-muted-foreground">
+              <div
+                v-if="oee?.isDegraded"
+                class="rounded-md bg-muted p-3 text-xs text-muted-foreground"
+              >
                 <p class="font-medium text-foreground">当前 OEE 数据不完整</p>
                 <ul class="mt-1 list-disc pl-4">
                   <li v-for="reason in oeeDegradedReasons" :key="reason">{{ reason }}</li>
@@ -926,6 +987,88 @@ function formatError(error: unknown) {
           </div>
         </div>
       </section>
+
+      <section class="grid gap-4">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="text-base font-semibold text-foreground">控制命令历史</h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              来源：设备控制命令台账（含 Ops 审批状态与执行回执）；倒序分页。命令下发需 Ops
+              审批门禁·全程审计。
+            </p>
+          </div>
+          <NvButton
+            v-if="canControlDevice"
+            size="sm"
+            type="button"
+            variant="outline"
+            @click="controlSheetOpen = true"
+          >
+            <SlidersHorizontalIcon aria-hidden="true" />
+            设备控制
+          </NvButton>
+        </div>
+
+        <p v-if="controlCommandsErrorMessage" class="text-sm text-destructive" role="alert">
+          {{ controlCommandsErrorMessage }}
+        </p>
+
+        <NvDataTable
+          manual
+          :page="controlPage"
+          :page-size="controlPageSize"
+          :total-items="controlCommandsTotal"
+          @update:page="controlPage = $event"
+          @update:page-size="(v) => (controlPageSize = String(v))"
+          :columns="controlColumns"
+          :rows="controlCommands"
+          :row-key="controlCommandRowKey"
+          :loading="controlCommandsPending"
+          :searchable="false"
+          :column-settings="false"
+          empty-message="该设备还没有控制命令记录。点击「设备控制」下发第一条命令。"
+        >
+          <template #cell-commandType="{ row }">
+            <div class="grid gap-0.5">
+              <span class="font-medium text-foreground">{{
+                deviceControlCommandTypeLabel(row.commandType)
+              }}</span>
+              <span v-if="row.tagKey" class="text-xs text-muted-foreground">{{ row.tagKey }}</span>
+            </div>
+          </template>
+          <template #cell-approvalStatus="{ row }">
+            <NvBadge class="rounded-sm" variant="neutral">{{
+              deviceControlApprovalLabel(row.approvalStatus)
+            }}</NvBadge>
+          </template>
+          <template #cell-status="{ row }">
+            <div class="grid gap-0.5">
+              <NvBadge
+                class="rounded-sm justify-self-start"
+                :variant="deviceControlStatusTone(row.status)"
+                >{{ deviceControlStatusLabel(row.status) }}</NvBadge
+              >
+              <span
+                v-if="row.deviceReceiptCode || row.failureCode"
+                class="font-mono text-xs"
+                :class="
+                  row.status?.toLowerCase() === 'failed'
+                    ? 'text-destructive'
+                    : 'text-muted-foreground'
+                "
+                :title="row.deviceReceiptMessage ?? undefined"
+                >{{ row.deviceReceiptCode ?? row.failureCode }}</span
+              >
+            </div>
+          </template>
+        </NvDataTable>
+      </section>
+
+      <DeviceControlSheet
+        v-if="filters.deviceAssetId"
+        v-model:open="controlSheetOpen"
+        :device-asset-id="filters.deviceAssetId"
+      />
     </template>
   </BusinessLayout>
 </template>

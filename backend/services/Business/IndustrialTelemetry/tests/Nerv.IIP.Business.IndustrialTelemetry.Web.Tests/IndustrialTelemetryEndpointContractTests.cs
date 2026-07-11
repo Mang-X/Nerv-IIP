@@ -41,12 +41,16 @@ public sealed class IndustrialTelemetryEndpointContractTests
     {
         var contracts = IndustrialTelemetryEndpointContracts.All.ToArray();
 
-        Assert.Equal(20, contracts.Length);
+        Assert.Equal(24, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/tags" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TagsManage && x.OperationId == "createBusinessIiotTelemetryTag");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/tags" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "listBusinessIiotTelemetryTags");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/tags/current-value" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "getBusinessIiotTelemetryTagCurrentValue");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/device-control-commands" && x.PermissionCode == IndustrialTelemetryPermissionCodes.DeviceControlWrite && x.OperationId == "createBusinessIiotDeviceControlCommand");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/device-control-commands/{commandId}" && x.PermissionCode == IndustrialTelemetryPermissionCodes.DeviceControlRead && x.OperationId == "getBusinessIiotDeviceControlCommand");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/device-control-commands" && x.PermissionCode == IndustrialTelemetryPermissionCodes.DeviceControlRead && x.OperationId == "listBusinessIiotDeviceControlCommands");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/device-control-bindings" && x.PermissionCode == IndustrialTelemetryPermissionCodes.DeviceControlManage && x.OperationId == "createOrUpdateBusinessIiotDeviceControlBinding");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/device-control-bindings/{deviceAssetId}/disable" && x.PermissionCode == IndustrialTelemetryPermissionCodes.DeviceControlManage && x.OperationId == "disableBusinessIiotDeviceControlBinding");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/device-control-bindings" && x.PermissionCode == IndustrialTelemetryPermissionCodes.DeviceControlRead && x.OperationId == "listBusinessIiotDeviceControlBindings");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarm-rules" && x.PermissionCode == "business.iiot.alarm-rules.manage" && x.OperationId == "createOrUpdateBusinessIiotAlarmRule");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/alarm-rules" && x.PermissionCode == "business.iiot.alarms.read" && x.OperationId == "listBusinessIiotAlarmRules");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/samples" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryWrite && x.OperationId == "recordBusinessIiotTelemetrySample");
