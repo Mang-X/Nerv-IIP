@@ -177,8 +177,10 @@ public sealed class AccountPayableEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.SupplierCode).HasColumnName("supplier_code").IsRequired().HasMaxLength(100).HasComment("MasterData supplier code.");
         builder.Property(x => x.Amount).HasColumnName("amount").IsRequired().HasPrecision(18, 6).HasComment("Document amount.");
         builder.Property(x => x.PaidAmount).HasColumnName("paid_amount").IsRequired().HasPrecision(18, 6).HasComment("Paid amount.");
+        builder.Property(x => x.DebitNoteAmount).HasColumnName("debit_note_amount").IsRequired().HasPrecision(18, 6).HasComment("Applied supplier debit-note amount.");
         builder.Property(x => x.LocalAmount).HasColumnName("local_amount").IsRequired().HasPrecision(18, 6).HasComment("Local currency amount at document exchange rate.");
         builder.Property(x => x.LocalPaidAmount).HasColumnName("local_paid_amount").IsRequired().HasPrecision(18, 6).HasComment("Local currency paid amount at document exchange rate.");
+        builder.Property(x => x.LocalDebitNoteAmount).HasColumnName("local_debit_note_amount").IsRequired().HasPrecision(18, 6).HasComment("Applied supplier debit-note local amount.");
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Currency code.");
         builder.Property(x => x.ExchangeRate).HasColumnName("exchange_rate").IsRequired().HasPrecision(18, 8).HasComment("Document exchange rate to local currency.");
         builder.Property(x => x.InvoiceDate).HasColumnName("invoice_date").IsRequired().HasComment("Supplier invoice date.");
@@ -203,8 +205,10 @@ public sealed class AccountReceivableEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.CustomerCode).HasColumnName("customer_code").IsRequired().HasMaxLength(100).HasComment("MasterData customer code.");
         builder.Property(x => x.Amount).HasColumnName("amount").IsRequired().HasPrecision(18, 6).HasComment("Document amount.");
         builder.Property(x => x.CollectedAmount).HasColumnName("collected_amount").IsRequired().HasPrecision(18, 6).HasComment("Collected amount.");
+        builder.Property(x => x.CreditNoteAmount).HasColumnName("credit_note_amount").IsRequired().HasPrecision(18, 6).HasComment("Applied customer credit-note amount.");
         builder.Property(x => x.LocalAmount).HasColumnName("local_amount").IsRequired().HasPrecision(18, 6).HasComment("Local currency amount at document exchange rate.");
         builder.Property(x => x.LocalCollectedAmount).HasColumnName("local_collected_amount").IsRequired().HasPrecision(18, 6).HasComment("Local currency collected amount at document exchange rate.");
+        builder.Property(x => x.LocalCreditNoteAmount).HasColumnName("local_credit_note_amount").IsRequired().HasPrecision(18, 6).HasComment("Applied customer credit-note local amount.");
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Currency code.");
         builder.Property(x => x.ExchangeRate).HasColumnName("exchange_rate").IsRequired().HasPrecision(18, 8).HasComment("Document exchange rate to local currency.");
         builder.Property(x => x.InvoiceDate).HasColumnName("invoice_date").IsRequired().HasComment("Customer invoice date.");

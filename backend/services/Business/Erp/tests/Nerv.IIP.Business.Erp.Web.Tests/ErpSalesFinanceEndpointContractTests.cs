@@ -22,7 +22,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
     {
         var contracts = ErpSalesEndpointContracts.All.ToArray();
 
-        Assert.Equal(11, contracts.Length);
+        Assert.Equal(12, contracts.Length);
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/opportunities" && x.PermissionCode == ErpPermissionCodes.SalesManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "openErpOpportunity");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/opportunities" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.SalesRead && x.OperationId == "listErpOpportunities");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/quotations" && x.OperationId == "createErpQuotation");
@@ -32,6 +32,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/sales-orders/{salesOrderNo}/lines/{lineNo}" && x.OperationId == "changeErpSalesOrderLine");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/sales-orders/{salesOrderNo}/cancel" && x.OperationId == "cancelErpSalesOrder");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/delivery-orders" && x.OperationId == "releaseErpDeliveryOrder");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/sales-return-authorizations" && x.PermissionCode == ErpPermissionCodes.SalesManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createErpSalesReturnAuthorization");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/delivery-orders" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.SalesRead && x.OperationId == "listErpDeliveryOrders");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/sales-orders" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.SalesRead && x.OperationId == "listErpSalesOrders");
     }

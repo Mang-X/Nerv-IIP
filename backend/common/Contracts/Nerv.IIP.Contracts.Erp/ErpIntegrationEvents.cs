@@ -7,6 +7,7 @@ public static class ErpIntegrationEventTypes
     public const string PurchaseRequisitionCreated = "erp.PurchaseRequisitionCreated";
     public const string PurchaseOrderReleased = "erp.PurchaseOrderReleased";
     public const string PurchaseReceiptRecorded = "erp.PurchaseReceiptRecorded";
+    public const string SalesReturnAuthorized = "erp.SalesReturnAuthorized";
     public const string DeliveryOrderReleased = "erp.DeliveryOrderReleased";
     public const string AccountPayableCreated = "erp.AccountPayableCreated";
     public const string AccountReceivableCreated = "erp.AccountReceivableCreated";
@@ -89,6 +90,38 @@ public sealed record PurchaseReceiptRecordedIntegrationEvent(
     string Actor,
     string IdempotencyKey,
     PurchaseReceiptRecordedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record SalesReturnAuthorizedPayload(
+    string RmaNo,
+    string SalesOrderNo,
+    string CustomerCode,
+    string SiteCode,
+    IReadOnlyCollection<SalesReturnAuthorizedLinePayload> Lines);
+
+public sealed record SalesReturnAuthorizedLinePayload(
+    string SalesOrderLineNo,
+    string SkuCode,
+    string UomCode,
+    decimal Quantity,
+    string LocationCode,
+    string? LotNo);
+
+public sealed record SalesReturnAuthorizedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    SalesReturnAuthorizedPayload Payload) : IIntegrationEventEnvelope
 {
     object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
@@ -82,6 +83,39 @@ public sealed class WmsQualityInspectionGateConsumerTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => new CreatePutawayTaskCommandHandler(assertionContext).Handle(
             new CreatePutawayTaskCommand(persistedInbound.Id, "PUT-QA-REJ-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m),
             CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Quality_rejected_event_creates_supplier_return_outbound_with_immutable_receipt_reference()
+    {
+        var databaseName = nameof(Quality_rejected_event_creates_supplier_return_outbound_with_immutable_receipt_reference);
+        var databaseRoot = new InMemoryDatabaseRoot();
+        await using (var dbContext = CreateContext(databaseName, databaseRoot))
+        {
+            var createdInbound = QualityRequiredInboundOrder("IN-QA-RETURN-001");
+            dbContext.InboundOrders.Add(createdInbound);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+                new CompleteInboundOrderCommand(createdInbound.Id, "idem-in-return-001"),
+                CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+
+            var handler = new QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate(
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(
+                CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected, "IN-QA-RETURN-001"),
+                CancellationToken.None);
+        }
+
+        await using var assertionContext = CreateContext(databaseName, databaseRoot);
+        var outbound = Assert.Single(await assertionContext.OutboundOrders.Include(x => x.Lines).ToListAsync());
+        Assert.Equal("RTS-IN-QA-RETURN-001-LINE-001-QI-001", outbound.OutboundOrderNo);
+        Assert.Equal("purchase-receipt-return", outbound.SourceDocumentType);
+        Assert.Equal("IN-QA-RETURN-001", outbound.SourceDocumentId);
+        var line = Assert.Single(outbound.Lines);
+        Assert.Equal("LINE-001", line.LineNo);
+        Assert.Equal(5m, line.RequestedQuantity);
     }
 
     [Fact]

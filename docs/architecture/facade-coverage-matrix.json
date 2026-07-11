@@ -1088,6 +1088,14 @@
     {
       "service": "Erp",
       "method": "POST",
+      "route": "/api/business/v1/erp/sales-return-authorizations",
+      "operationId": "createErpSalesReturnAuthorization",
+      "classification": "deferred",
+      "followUp": "BusinessGateway facade pending; customer return authorization follows the ERP returns Business Console menu phase."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
       "route": "/api/business/v1/erp/sales-orders/{salesOrderNo}/cancel",
       "operationId": "cancelErpSalesOrder",
       "classification": "deferred",

@@ -1,6 +1,9 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
 using Nerv.IIP.Contracts.Quality;
+using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
 
@@ -85,6 +88,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
                 && !await SupplierReturnExistsAsync(supplierReturn.SupplierReturnNo, integrationEvent, cancellationToken))
             {
                 dbContext.SupplierReturnRequests.Add(supplierReturn);
+                dbContext.OutboundOrders.Add(CreateSupplierReturnOutboundOrder(supplierReturn));
             }
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
@@ -105,6 +109,28 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
                 && x.EnvironmentId == integrationEvent.EnvironmentId
                 && x.SupplierReturnNo == supplierReturnNo,
             cancellationToken);
+    }
+
+    private static OutboundOrder CreateSupplierReturnOutboundOrder(SupplierReturnRequest supplierReturn)
+    {
+        return OutboundOrder.Create(
+            supplierReturn.OrganizationId,
+            supplierReturn.EnvironmentId,
+            supplierReturn.SupplierReturnNo,
+            WmsSourceDocumentTypes.PurchaseReceiptReturn,
+            supplierReturn.InboundOrderNo,
+            supplierReturn.SiteCode,
+            [new OutboundOrderLineDraft(
+                supplierReturn.InboundOrderLineNo,
+                supplierReturn.SkuCode,
+                supplierReturn.UomCode,
+                supplierReturn.Quantity,
+                supplierReturn.LocationCode,
+                supplierReturn.LotNo,
+                supplierReturn.SerialNo,
+                "quality",
+                supplierReturn.OwnerType,
+                supplierReturn.OwnerId)]);
     }
 
     private Task DeadLetterAsync(
