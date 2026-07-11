@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel;
+using System.Text.Json;
 
 namespace Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 
@@ -145,7 +146,9 @@ public sealed class ApprovalTemplateStep : Entity<ApprovalTemplateStepId>
         StepName = ApprovalText.Required(definition.StepName);
         ParallelGroupKey = ApprovalText.Optional(definition.ParallelGroupKey);
         CompletionPolicy = ApprovalCompletionPolicies.Normalize(definition.CompletionPolicy);
-        ConditionExpression = ApprovalText.Optional(definition.ConditionExpression);
+        ConditionExpression = definition.Condition is null
+            ? ApprovalText.Optional(definition.ConditionExpression)
+            : ApprovalRoutingCondition.Serialize(definition.Condition);
         ApproverType = ApprovalText.RequiredLower(definition.ApproverType);
         ApproverRef = ApprovalText.Required(definition.ApproverRef);
         DueInHours = definition.DueInHours;
@@ -174,7 +177,52 @@ public sealed record ApprovalTemplateStepDefinition(
     string ApproverRef,
     int? DueInHours,
     string CompletionPolicy = ApprovalCompletionPolicies.All,
-    string? ConditionExpression = null);
+    string? ConditionExpression = null,
+    ApprovalRoutingCondition? Condition = null);
+
+public sealed record ApprovalRoutingCondition(
+    decimal? MinimumAmount = null,
+    decimal? MaximumAmount = null,
+    IReadOnlyCollection<string>? DocumentTypes = null,
+    IReadOnlyCollection<string>? OrganizationIds = null,
+    IReadOnlyCollection<string>? DepartmentIds = null)
+{
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+
+    public static string Serialize(ApprovalRoutingCondition condition)
+    {
+        condition.Validate();
+        return JsonSerializer.Serialize(condition, SerializerOptions);
+    }
+
+    public static ApprovalRoutingCondition Deserialize(string value)
+    {
+        var condition = JsonSerializer.Deserialize<ApprovalRoutingCondition>(value, SerializerOptions)
+            ?? throw new InvalidOperationException("Structured approval condition is required.");
+        condition.Validate();
+        return condition;
+    }
+
+    public void Validate()
+    {
+        if (MinimumAmount is < 0 || MaximumAmount is < 0 || (MinimumAmount.HasValue && MaximumAmount.HasValue && MinimumAmount > MaximumAmount))
+        {
+            throw new InvalidOperationException("Approval amount condition requires a non-negative range with minimum not greater than maximum.");
+        }
+
+        ValidateDimension(DocumentTypes, nameof(DocumentTypes));
+        ValidateDimension(OrganizationIds, nameof(OrganizationIds));
+        ValidateDimension(DepartmentIds, nameof(DepartmentIds));
+    }
+
+    private static void ValidateDimension(IReadOnlyCollection<string>? values, string name)
+    {
+        if (values?.Any(string.IsNullOrWhiteSpace) is true)
+        {
+            throw new InvalidOperationException($"Approval condition {name} cannot contain empty values.");
+        }
+    }
+}
 
 public static class ApprovalCompletionPolicies
 {

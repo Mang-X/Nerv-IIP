@@ -108,6 +108,7 @@ public sealed class ApprovalIntegrationEventTests
         Assert.Equal(ApprovalIntegrationEventTypes.ApprovalRejected, integrationEvent.EventType);
         Assert.Equal(ApprovalChainStatuses.Rejected, integrationEvent.Payload.Result);
         Assert.Equal("u-engineering", integrationEvent.Payload.ActorRef);
+        Assert.Equal("system:eco", integrationEvent.Payload.InitiatorRef);
     }
 
     [Fact]

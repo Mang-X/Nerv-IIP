@@ -23,7 +23,8 @@ public sealed record StockCountApprovalRequest(
     string SourceService,
     string DocumentType,
     string DocumentId,
-    string StartedBy);
+    string StartedBy,
+    decimal Amount = 0m);
 
 public sealed record StockCountApprovalResult(string ChainId);
 
@@ -48,7 +49,10 @@ public sealed class HttpStockCountApprovalClient(
                 request.DocumentType,
                 request.DocumentId,
                 null,
-                request.StartedBy)),
+                request.StartedBy,
+                request.Amount,
+                request.OrganizationId,
+                null)),
         };
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
 
@@ -71,7 +75,10 @@ public sealed class HttpStockCountApprovalClient(
         string DocumentType,
         string DocumentId,
         string? DocumentLineId,
-        string StartedBy);
+        string StartedBy,
+        decimal? Amount,
+        string? RoutingOrganizationId,
+        string? DepartmentId);
 
     private sealed record StartApprovalChainHttpResponse(string ChainId);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);

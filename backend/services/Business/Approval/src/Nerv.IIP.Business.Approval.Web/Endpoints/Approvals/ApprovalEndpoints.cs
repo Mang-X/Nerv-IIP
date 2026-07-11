@@ -53,7 +53,8 @@ public sealed record ApprovalTemplateStepRequest(
     string ApproverRef,
     int? DueInHours,
     string? CompletionPolicy = null,
-    string? ConditionExpression = null);
+    string? ConditionExpression = null,
+    ApprovalRoutingConditionInput? Condition = null);
 
 public sealed record CreateOrUpdateApprovalTemplateResponse(ApprovalTemplateId TemplateId);
 
@@ -84,7 +85,10 @@ public sealed record StartApprovalChainRequest(
     string DocumentType,
     string DocumentId,
     string? DocumentLineId,
-    string StartedBy);
+    string StartedBy,
+    decimal? Amount = null,
+    string? RoutingOrganizationId = null,
+    string? DepartmentId = null);
 
 public sealed record StartApprovalChainResponse(ApprovalChainId ChainId);
 
@@ -220,7 +224,8 @@ public sealed class CreateOrUpdateApprovalTemplateEndpoint(ISender sender)
                 x.ApproverRef,
                 x.DueInHours,
                 x.CompletionPolicy,
-                x.ConditionExpression)).ToArray()), ct);
+                x.ConditionExpression,
+                x.Condition)).ToArray()), ct);
         await Send.OkAsync(new CreateOrUpdateApprovalTemplateResponse(templateId).AsResponseData(), cancellation: ct);
     }
 }
@@ -282,7 +287,10 @@ public sealed class StartApprovalChainEndpoint(ISender sender)
             req.DocumentType,
             req.DocumentId,
             req.DocumentLineId,
-            req.StartedBy), ct);
+            req.StartedBy,
+            req.Amount,
+            req.RoutingOrganizationId,
+            req.DepartmentId), ct);
         await Send.OkAsync(new StartApprovalChainResponse(chainId).AsResponseData(), cancellation: ct);
     }
 }

@@ -1,6 +1,8 @@
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 using Nerv.IIP.Business.Approval.Domain.DomainEvents;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 
@@ -30,6 +32,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         TemplateCode = template.TemplateCode;
         TemplateVersion = template.Version;
         DocumentReference = documentReference;
+        PendingIdentityKey = BuildPendingIdentityKey(template.OrganizationId, template.EnvironmentId, template.TemplateCode, documentReference);
         Status = ApprovalChainStatuses.Pending;
         StartedBy = ApprovalText.Required(startedBy);
         StartedAtUtc = DateTimeOffset.UtcNow;
@@ -63,12 +66,26 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
     public DateTimeOffset? CompletedAtUtc { get; private set; }
     public int RoundNo { get; private set; }
     public int RowVersion { get; private set; }
+    public string? PendingIdentityKey { get; private set; }
     public IReadOnlyCollection<ApprovalStep> Steps => steps;
     public IReadOnlyCollection<ApprovalDecision> Decisions => decisions;
 
     public static ApprovalChain Start(ApprovalTemplate template, ApprovalDocumentReference documentReference, string startedBy)
     {
         return new ApprovalChain(template, documentReference, startedBy);
+    }
+
+    public static string BuildPendingIdentityKey(string organizationId, string environmentId, string templateCode, ApprovalDocumentReference documentReference)
+    {
+        var identity = string.Join('\n',
+            ApprovalText.Required(organizationId),
+            ApprovalText.Required(environmentId),
+            ApprovalText.Required(templateCode),
+            documentReference.SourceService,
+            documentReference.DocumentType,
+            documentReference.DocumentId,
+            documentReference.DocumentLineId ?? string.Empty);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity))).ToLowerInvariant();
     }
 
     public ApprovalDecision ResolveStep(
@@ -145,6 +162,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         if (normalizedDecision == ApprovalDecisions.Reject)
         {
             Status = ApprovalChainStatuses.Rejected;
+            PendingIdentityKey = null;
             CompletedAtUtc = decidedAtUtc;
             this.AddDomainEvent(new ApprovalRejectedDomainEvent(this, approvalDecision));
             return approvalDecision;
@@ -153,6 +171,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         if (normalizedDecision == ApprovalDecisions.Return)
         {
             Status = ApprovalChainStatuses.Returned;
+            PendingIdentityKey = null;
             CompletedAtUtc = decidedAtUtc;
             this.AddDomainEvent(new ApprovalReturnedDomainEvent(this, approvalDecision));
             return approvalDecision;
@@ -169,6 +188,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         if (steps.GroupBy(x => x.StepNo).All(ApprovalStep.IsGroupComplete))
         {
             Status = ApprovalChainStatuses.Approved;
+            PendingIdentityKey = null;
             CompletedAtUtc = decidedAtUtc;
             this.AddDomainEvent(new ApprovalApprovedDomainEvent(this, approvalDecision));
         }
@@ -201,6 +221,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
             normalizedReason,
             withdrawnAtUtc);
         Status = ApprovalChainStatuses.Withdrawn;
+        PendingIdentityKey = null;
         CompletedAtUtc = withdrawnAtUtc;
         IncrementRowVersion();
         this.AddDomainEvent(new ApprovalChainActionRecordedDomainEvent(this, decision, recipientRefs));
@@ -229,6 +250,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         }
 
         Status = ApprovalChainStatuses.Pending;
+        PendingIdentityKey = BuildPendingIdentityKey(OrganizationId, EnvironmentId, TemplateCode, DocumentReference);
         StartedAtUtc = resubmittedAtUtc;
         CompletedAtUtc = null;
         RoundNo++;
@@ -687,18 +709,31 @@ public sealed class ApprovalDocumentReference
     {
     }
 
-    public ApprovalDocumentReference(string sourceService, string documentType, string documentId, string? documentLineId)
+    public ApprovalDocumentReference(
+        string sourceService,
+        string documentType,
+        string documentId,
+        string? documentLineId,
+        decimal? amount = null,
+        string? organizationId = null,
+        string? departmentId = null)
     {
         SourceService = ApprovalText.RequiredLower(sourceService);
         DocumentType = ApprovalText.Required(documentType);
         DocumentId = ApprovalText.Required(documentId);
         DocumentLineId = ApprovalText.Optional(documentLineId);
+        Amount = amount;
+        OrganizationId = ApprovalText.Optional(organizationId);
+        DepartmentId = ApprovalText.Optional(departmentId);
     }
 
     public string SourceService { get; private set; } = string.Empty;
     public string DocumentType { get; private set; } = string.Empty;
     public string DocumentId { get; private set; } = string.Empty;
     public string? DocumentLineId { get; private set; }
+    public decimal? Amount { get; private set; }
+    public string? OrganizationId { get; private set; }
+    public string? DepartmentId { get; private set; }
 }
 
 public static class ApprovalChainStatuses
@@ -740,7 +775,7 @@ public static class ApprovalConditionMatcher
             _ = Parse(conditionExpression);
             return true;
         }
-        catch (InvalidOperationException)
+        catch (Exception exception) when (exception is InvalidOperationException or System.Text.Json.JsonException)
         {
             return false;
         }
@@ -748,6 +783,11 @@ public static class ApprovalConditionMatcher
 
     public static bool Matches(string? conditionExpression, ApprovalDocumentReference documentReference)
     {
+        if (conditionExpression?.TrimStart().StartsWith('{') is true)
+        {
+            return Matches(ApprovalRoutingCondition.Deserialize(conditionExpression), documentReference);
+        }
+
         var parsedCondition = Parse(conditionExpression);
         if (parsedCondition is null)
         {
@@ -763,11 +803,33 @@ public static class ApprovalConditionMatcher
         };
     }
 
+    public static bool Matches(ApprovalRoutingCondition condition, ApprovalDocumentReference documentReference)
+    {
+        condition.Validate();
+        return (!condition.MinimumAmount.HasValue || documentReference.Amount >= condition.MinimumAmount)
+            && (!condition.MaximumAmount.HasValue || documentReference.Amount <= condition.MaximumAmount)
+            && MatchesDimension(condition.DocumentTypes, documentReference.DocumentType)
+            && MatchesDimension(condition.OrganizationIds, documentReference.OrganizationId)
+            && MatchesDimension(condition.DepartmentIds, documentReference.DepartmentId);
+    }
+
+    private static bool MatchesDimension(IReadOnlyCollection<string>? accepted, string? actual)
+    {
+        return accepted is null || accepted.Count == 0
+            || (!string.IsNullOrWhiteSpace(actual) && accepted.Contains(actual, StringComparer.OrdinalIgnoreCase));
+    }
+
     private static (string Key, string Value)? Parse(string? conditionExpression)
     {
         if (string.IsNullOrWhiteSpace(conditionExpression))
         {
             return null;
+        }
+
+        if (conditionExpression.TrimStart().StartsWith('{'))
+        {
+            _ = ApprovalRoutingCondition.Deserialize(conditionExpression);
+            return ("structured", conditionExpression);
         }
 
         var parts = conditionExpression.Split('=', 2, StringSplitOptions.TrimEntries);

@@ -13,7 +13,9 @@ public sealed record PurchaseOrderApprovalRequest(
     string DocumentId,
     string? DocumentLineId,
     string StartedBy,
-    string ChainId);
+    string ChainId,
+    decimal? Amount = null,
+    string? DepartmentId = null);
 
 public sealed record PurchaseOrderApprovalResult(string ChainId);
 
@@ -38,7 +40,10 @@ public sealed class HttpPurchaseOrderApprovalClient(
                 request.DocumentType,
                 request.DocumentId,
                 request.DocumentLineId,
-                request.StartedBy)),
+                request.StartedBy,
+                request.Amount,
+                request.OrganizationId,
+                request.DepartmentId)),
         };
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
 
@@ -61,7 +66,10 @@ public sealed class HttpPurchaseOrderApprovalClient(
         string DocumentType,
         string DocumentId,
         string? DocumentLineId,
-        string StartedBy);
+        string StartedBy,
+        decimal? Amount,
+        string? RoutingOrganizationId,
+        string? DepartmentId);
 
     private sealed record StartApprovalChainHttpResponse(string ChainId);
 
