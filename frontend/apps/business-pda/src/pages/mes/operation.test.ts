@@ -1,3 +1,4 @@
+import { RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
@@ -8,21 +9,25 @@ vi.mock('vue-router', () => ({
 }))
 
 // --- composable mock: 2 operation tasks with different statuses ---
-type ActionOptions = { reasonCode?: string, idempotencyKey: string }
+type ActionOptions = { reasonCode?: string; idempotencyKey: string }
 const completeTask = vi.fn(async (_id: string, _options: ActionOptions) => {})
 const startTask = vi.fn(async (_id: string, _options: ActionOptions) => {})
 const pauseTask = vi.fn(async (_id: string, _options: ActionOptions) => {})
 const resumeTask = vi.fn(async (_id: string, _options: ActionOptions) => {})
 const refresh = vi.fn(async () => {})
+const refreshSops = vi.fn()
 
 const filters = reactive({ keyword: undefined as string | undefined })
+const tasksErrorRef = ref<unknown>(null)
+const sopsErrorRef = ref<unknown>(null)
 
-const tasks = [
+const defaultTasks = [
   {
     operationTaskId: 'OP-1',
     workOrderId: 'WO-2026-0001',
     status: 'Running',
     operationSequence: 10,
+    operationCode: 'OP-CODE-1',
     workCenterId: 'WC-A',
   },
   {
@@ -33,14 +38,15 @@ const tasks = [
     workCenterId: 'WC-B',
   },
 ]
+const operationTasksRef = ref<(typeof defaultTasks)[number][]>(defaultTasks)
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesOperationTasks: () => ({
     filters,
-    operationTasks: computed(() => tasks),
-    total: computed(() => tasks.length),
+    operationTasks: computed(() => operationTasksRef.value),
+    total: computed(() => operationTasksRef.value.length),
     pending: ref(false),
-    error: ref(null),
+    error: tasksErrorRef,
     refresh,
     startTask,
     pauseTask,
@@ -57,8 +63,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
     },
     currentSops: ref([]),
     pending: ref(false),
-    error: ref(null),
-    refresh: vi.fn(),
+    error: sopsErrorRef,
+    refresh: refreshSops,
   }),
 }))
 
@@ -70,6 +76,10 @@ describe('PDA MES operation execution page', () => {
     startTask.mockClear()
     pauseTask.mockClear()
     resumeTask.mockClear()
+    refreshSops.mockClear()
+    tasksErrorRef.value = null
+    sopsErrorRef.value = null
+    operationTasksRef.value = defaultTasks
     filters.keyword = undefined
   })
 
@@ -116,7 +126,10 @@ describe('PDA MES operation execution page', () => {
     const confirmBtn = document.body.querySelector<HTMLElement>('[data-testid="confirm-complete"]')!
     confirmBtn.click()
     await flushPromises()
-    expect(completeTask).toHaveBeenCalledWith('OP-1', expect.objectContaining({ idempotencyKey: expect.any(String) }))
+    expect(completeTask).toHaveBeenCalledWith(
+      'OP-1',
+      expect.objectContaining({ idempotencyKey: expect.any(String) }),
+    )
     expect(completeTask.mock.calls[0][1].idempotencyKey).toBeTruthy()
 
     // 成功后显示 Result 成功文案
@@ -167,7 +180,10 @@ describe('PDA MES operation execution page', () => {
     expect(retryKey).toBe(firstKey)
 
     // 成功后继续 → 重新打开面板并发起新动作（暂停）→ 新键
-    wrapper.findAll('button').find((b) => b.text() === '继续')!.trigger('click')
+    wrapper
+      .findAll('button')
+      .find((b) => b.text() === '继续')!
+      .trigger('click')
     await flushPromises()
     const rows2 = wrapper.findAll('[data-row]')
     await rows2[0].trigger('click')
@@ -179,6 +195,30 @@ describe('PDA MES operation execution page', () => {
     const pauseKey = pauseTask.mock.calls[0][1].idempotencyKey
     expect(pauseKey).toBeTruthy()
     expect(pauseKey).not.toBe(firstKey)
+    wrapper.unmount()
+  })
+
+  // P1：SOP 查询失败也要有可操作错误态 + 重试入口（#814 所有 facade）。
+  it('SOP 查询超时：SOP 区显示可操作错误面板 + 重试调 refresh', async () => {
+    sopsErrorRef.value = new RequestTimeoutError()
+    const wrapper = mount(OperationPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click') // OP-1 绑定了标准工序
+    await flushPromises()
+    const panel = document.body.querySelector<HTMLElement>('[data-testid="sops-error"]')!
+    expect(panel).toBeTruthy()
+    expect(panel.textContent).toContain('网络超时，请检查连接后重试')
+    panel.querySelector<HTMLElement>('[data-testid="retry-list"]')!.click()
+    expect(refreshSops).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  // P2：加载失败时空态与错误态互斥，不把网络错误误报成"暂无"。
+  it('工序列表加载失败时不显示"暂无工序任务"空态', () => {
+    operationTasksRef.value = []
+    tasksErrorRef.value = new RequestTimeoutError()
+    const wrapper = mount(OperationPage)
+    expect(wrapper.find('[data-testid="operation-tasks-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('暂无工序任务')
     wrapper.unmount()
   })
 })

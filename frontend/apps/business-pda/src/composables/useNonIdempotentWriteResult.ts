@@ -1,5 +1,5 @@
 import { describeRequestError } from '@/api/request-timeout'
-import { computed, ref } from 'vue'
+import { computed, readonly, ref } from 'vue'
 
 /**
  * Result state machine for a write whose endpoint has NO server-side idempotency key
@@ -27,6 +27,8 @@ export interface NonIdempotentWriteResultOptions {
 export type WritePhase = 'form' | 'success' | 'error'
 
 export function useNonIdempotentWriteResult(options: NonIdempotentWriteResultOptions) {
+  // Internal, never exposed: callers must go through run/retry/verify/reset so they
+  // cannot forge phase or the error and bypass the submit / verify semantics.
   const phase = ref<WritePhase>('form')
   const lastError = ref<unknown>(null)
 
@@ -82,10 +84,11 @@ export function useNonIdempotentWriteResult(options: NonIdempotentWriteResultOpt
     phase.value = 'form'
   }
 
+  // Public API: a read-only phase + read-only derived display state + explicit actions.
+  // `phase` is `readonly` and `lastError`/`errorInfo` stay internal so no caller can
+  // fake a success/error state or skip the verify path.
   return {
-    phase,
-    lastError,
-    errorInfo,
+    phase: readonly(phase),
     errorTitle,
     errorDescription,
     canRetry,

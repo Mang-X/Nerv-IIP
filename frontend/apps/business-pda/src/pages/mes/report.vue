@@ -305,7 +305,7 @@ function onScanWorkOrder(value: string) {
           @retry="() => refreshWorkOrders()"
         />
         <div
-          v-if="!workOrdersPending && workOrders.length === 0"
+          v-else-if="!workOrdersPending && workOrders.length === 0"
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
         >
           暂无可报工的工单
@@ -352,7 +352,7 @@ function onScanWorkOrder(value: string) {
           @retry="() => refreshTasks()"
         />
         <div
-          v-if="!tasksPending && operationTasks.length === 0"
+          v-else-if="!tasksPending && operationTasks.length === 0"
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
         >
           该工单暂无工序

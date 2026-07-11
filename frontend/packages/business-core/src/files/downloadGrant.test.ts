@@ -63,7 +63,27 @@ describe('openDownloadGrantBlob', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:sop')
   })
 
+  it('uses an injected fetch (e.g. the PDA timeout fetch) and propagates its error', async () => {
+    // A hung download on flaky Wi-Fi must fail via the injected timeout fetch, not hang.
+    const globalFetch = vi.fn()
+    vi.stubGlobal('fetch', globalFetch)
+    const injectedFetch = vi.fn(async () => {
+      throw new Error('网络超时，请检查连接后重试')
+    })
+
+    await expect(
+      openDownloadGrantBlob(
+        { downloadUrl: '/api/business-console/v1/files/download-grants/grant-1/content' },
+        { fetch: injectedFetch as unknown as typeof fetch },
+      ),
+    ).rejects.toThrow('网络超时')
+    expect(injectedFetch).toHaveBeenCalledTimes(1)
+    expect(globalFetch).not.toHaveBeenCalled()
+  })
+
   it('rejects grants without a download URL', async () => {
-    await expect(openDownloadGrantBlob({ downloadUrl: ' ' })).rejects.toThrow('文件服务未返回可用的SOP查看链接。')
+    await expect(openDownloadGrantBlob({ downloadUrl: ' ' })).rejects.toThrow(
+      '文件服务未返回可用的SOP查看链接。',
+    )
   })
 })

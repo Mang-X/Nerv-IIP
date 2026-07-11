@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
 import { openDownloadGrantBlob, operationTaskStatusLabel } from '@nerv-iip/business-core'
+import { createTimeoutFetch } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
@@ -42,10 +43,14 @@ const {
   currentSops,
   pending: sopsPending,
   error: sopsError,
+  refresh: refreshSops,
   createSopFileDownloadGrant,
 } = useMesCurrentOperationSops()
 
 const router = useRouter()
+
+// SOP 文件下载走 PDA 全局超时 fetch —— 弱网/离线有界失败，不无限挂起（#814）。
+const downloadFetch = createTimeoutFetch()
 
 // 可读中文状态标签来自 @nerv-iip/business-core（不暴露原始状态码）。
 const statusLabel = operationTaskStatusLabel
@@ -162,7 +167,7 @@ async function openSopFile(sop: CurrentSop) {
   try {
     const grant = await createSopFileDownloadGrant(fileId)
     if (!grant) throw new Error('无法获取SOP查看授权。')
-    await openDownloadGrantBlob(grant)
+    await openDownloadGrantBlob(grant, { fetch: downloadFetch })
   } catch (error) {
     sopFileError.value = error instanceof Error ? error.message : '无法打开SOP。'
   } finally {
@@ -235,11 +240,6 @@ function backToList() {
 function onScan(value: string) {
   filters.keyword = value
 }
-const sopsErrorMessage = computed(() => {
-  const e = sopsError.value
-  if (!e) return ''
-  return e instanceof Error ? e.message : '加载SOP失败，请稍后重试。'
-})
 function formatDate(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
@@ -313,7 +313,7 @@ function formatDate(value?: string | null) {
       />
 
       <div
-        v-if="!pending && operationTasks.length === 0"
+        v-else-if="!pending && operationTasks.length === 0"
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
         暂无工序任务
@@ -349,12 +349,16 @@ function formatDate(value?: string | null) {
           <p v-if="!selected.operationCode" class="text-sm text-muted-foreground">
             当前任务未绑定标准工序。
           </p>
-          <p
-            v-else-if="sopsErrorMessage || sopFileError"
-            class="text-sm text-destructive"
-            role="alert"
-          >
-            {{ sopsErrorMessage || sopFileError }}
+          <RetryableListError
+            v-else-if="sopsError"
+            :error="sopsError"
+            :pending="sopsPending"
+            fallback="加载SOP失败，请稍后重试。"
+            test-id="sops-error"
+            @retry="() => refreshSops()"
+          />
+          <p v-else-if="sopFileError" class="text-sm text-destructive" role="alert">
+            {{ sopFileError }}
           </p>
           <p v-else-if="sopsPending" class="text-sm text-muted-foreground">正在加载SOP...</p>
           <div v-else-if="currentSops.length" class="space-y-2">

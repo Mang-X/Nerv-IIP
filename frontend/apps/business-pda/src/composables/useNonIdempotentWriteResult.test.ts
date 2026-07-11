@@ -58,7 +58,6 @@ describe('useNonIdempotentWriteResult', () => {
     })
     write.retry()
     expect(write.phase.value).toBe('form')
-    expect(write.lastError.value).toBe(null)
   })
 
   it('verify refreshes the list and returns to the form WITHOUT resubmitting', async () => {
@@ -70,6 +69,11 @@ describe('useNonIdempotentWriteResult', () => {
     write.verify()
     expect(onVerify).toHaveBeenCalledTimes(1)
     expect(write.phase.value).toBe('form')
-    expect(write.lastError.value).toBe(null)
+  })
+
+  it('does not expose writable phase or the internal error (encapsulation)', () => {
+    const write = make() as Record<string, unknown>
+    expect(write.lastError).toBeUndefined()
+    expect(write.errorInfo).toBeUndefined()
   })
 })
