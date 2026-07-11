@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RetryableListError from '@/components/RetryableListError.vue'
 import { useWmsPutaway } from '@/composables/useBusinessWms'
 import { warehouseTaskStatusLabel } from '@nerv-iip/business-core'
 import { NvAppShellMobile, NvListRow, NvScanBar } from '@nerv-iip/ui-mobile'
@@ -12,7 +13,7 @@ definePage({
 })
 
 // 只读任务清单：上架无逐任务 complete 端点，写闭环经父单收货入库过账。
-const { filters, tasks, pending, error } = useWmsPutaway()
+const { filters, tasks, pending, error, refresh } = useWmsPutaway()
 
 // 空态仅在「无任务且无加载/错误」时出现，避免与错误/加载态打架。
 const showEmpty = computed(() => !pending.value && !error.value && tasks.value.length === 0)
@@ -78,13 +79,14 @@ function rowSubtitle(task: {
 
       <p class="text-xs text-muted-foreground">上架完成经收货入库过账</p>
 
-      <p
+      <RetryableListError
         v-if="error"
-        data-testid="error-banner"
-        class="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-      >
-        任务加载失败，请下拉重试或检查网络。
-      </p>
+        :error="error"
+        :pending="pending"
+        fallback="任务加载失败，请下拉重试或检查网络。"
+        test-id="error-banner"
+        @retry="() => refresh()"
+      />
 
       <div
         v-if="showEmpty"
