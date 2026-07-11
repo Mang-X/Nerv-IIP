@@ -37,7 +37,7 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
     public Task HandleAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         => consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
 
-    [CapSubscribe("Nerv.IIP.Contracts.Wms.WmsIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(WmsIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         => HandleAsync(integrationEvent, cancellationToken);
 
@@ -312,7 +312,7 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordSale
     public Task HandleAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         => consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
 
-    [CapSubscribe("Nerv.IIP.Contracts.Wms.WmsIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(WmsIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         => HandleAsync(integrationEvent, cancellationToken);
 
@@ -381,7 +381,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForSettleSales
     public Task HandleAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         => consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
 
-    [CapSubscribe("Nerv.IIP.Contracts.Quality.InspectionResultIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(InspectionResultIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         => HandleAsync(integrationEvent, cancellationToken);
 

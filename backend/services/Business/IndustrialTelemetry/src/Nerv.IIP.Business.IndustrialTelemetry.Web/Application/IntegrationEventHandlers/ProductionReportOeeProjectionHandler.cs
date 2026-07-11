@@ -26,7 +26,7 @@ public sealed class ProductionReportOeeProjectionHandler(
         return consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Mes.ProductionReportRecordedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(ProductionReportRecordedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(ProductionReportRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

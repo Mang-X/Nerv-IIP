@@ -1,5 +1,6 @@
 using FastEndpoints;
 using FastEndpoints.Swagger;
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
@@ -14,6 +15,7 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
+using NetCorePal.Extensions.AspNetCore;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -53,9 +55,19 @@ builder.Services.AddHttpClient<MesMasterDataHttpClient>(client =>
     client.BaseAddress = masterDataBaseAddress;
 });
 builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
+// Register the FluentValidation command validators (CancelWorkOrder/ReturnLineSideMaterial/... — 11 in total)
+// so the MediatR AddKnownExceptionValidationBehavior below can execute them. Without both lines the validators
+// are dead code and command-level validation never runs — matching every other business service.
+builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 builder.Services.AddMediatR(configuration => configuration
     .RegisterServicesFromAssembly(typeof(Program).Assembly)
+    .AddKnownExceptionValidationBehavior()
     .AddUnitOfWorkBehaviors());
+// Surface KnownException (business-rule violations, e.g. cancelling a work order whose received
+// material has no returnable lot) as the standard success=false envelope instead of an unhandled
+// HTTP 500 — matching every other business service. Without it the gateway sees a 500 and returns
+// a generic "downstream-request-failed", hiding the business message from the user.
+builder.Services.AddKnownExceptionErrorModelInterceptor();
 var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
 if (!builder.Environment.IsProduction() && string.IsNullOrWhiteSpace(connectionString))
 {
@@ -95,6 +107,7 @@ if (autoMigrate)
     await dbContext.Database.MigrateAsync();
 }
 
+app.UseKnownExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseFastEndpoints(c =>

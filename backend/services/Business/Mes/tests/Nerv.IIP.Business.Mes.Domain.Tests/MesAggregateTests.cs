@@ -374,6 +374,31 @@ public sealed class MesAggregateTests
     }
 
     [Fact]
+    public void MaterialIssueRequest_cancel_of_received_material_without_lot_is_a_business_rule_violation()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-002",
+            "WO-002",
+            "OP-10",
+            "MAT-001",
+            "PCS",
+            5m,
+            DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
+        // A line-side receipt may be confirmed without a material lot.
+        request.ConfirmLineSideReceipt(DateTimeOffset.Parse("2026-05-23T08:30:00Z"), 5m);
+        request.ClearDomainEvents();
+
+        // Received material without a lot cannot be returned to warehouse stock (#557); cancelling
+        // must raise a business-rule violation that WorkOrderCancellationOrchestrator maps to a
+        // KnownException rather than silently succeeding.
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => request.CancelForWorkOrderCancellation(DateTimeOffset.Parse("2026-05-23T09:00:00Z")));
+        Assert.Contains("received material lot", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void DefectRecord_tracks_ncr_request_and_disposition()
     {
         var defect = DefectRecord.Create(

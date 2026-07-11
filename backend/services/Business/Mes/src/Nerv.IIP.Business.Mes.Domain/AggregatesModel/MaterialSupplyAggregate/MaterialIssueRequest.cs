@@ -168,6 +168,9 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
 
         if (string.IsNullOrWhiteSpace(MaterialLotId))
         {
+            // Received material without a lot cannot be returned to warehouse stock. Per #557 this is a
+            // business rule: WorkOrderCancellationOrchestrator wraps this into a KnownException so the
+            // cancel surfaces as a clear business error rather than a silent success.
             throw new InvalidOperationException("Line-side material return requires a received material lot.");
         }
 

@@ -238,14 +238,8 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
         workOrder.RegisterCostReport(consumedMaterialLots.Count);
         if (isOutputOperation)
         {
-            try
-            {
-                workOrder.RecordProductionProgress(request.GoodQuantity, request.ScrapQuantity, request.ReportedAtUtc);
-            }
-            catch (InvalidOperationException exception)
-            {
-                throw new KnownException(exception.Message);
-            }
+            MesDomainRuleGuard.Enforce(() =>
+                workOrder.RecordProductionProgress(request.GoodQuantity, request.ScrapQuantity, request.ReportedAtUtc));
         }
 
         if (request.CompletesOperation)
@@ -254,14 +248,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 dbContext,
                 operationTask,
                 cancellationToken);
-            try
-            {
-                operationTask.Complete(request.ReportedAtUtc);
-            }
-            catch (InvalidOperationException exception)
-            {
-                throw new KnownException(exception.Message);
-            }
+            MesDomainRuleGuard.Enforce(() => operationTask.Complete(request.ReportedAtUtc));
         }
 
         dbContext.ProductionReports.Add(report);
@@ -408,17 +395,10 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
         var progressQuantity = Math.Abs(original.GoodQuantity) + Math.Abs(original.ScrapQuantity);
         if (isOutputOperation && progressQuantity > 0m)
         {
-            try
-            {
-                workOrder.ReverseProductionProgress(
-                    Math.Abs(original.GoodQuantity),
-                    Math.Abs(original.ScrapQuantity),
-                    request.ReversedAtUtc);
-            }
-            catch (InvalidOperationException exception)
-            {
-                throw new KnownException(exception.Message);
-            }
+            MesDomainRuleGuard.Enforce(() => workOrder.ReverseProductionProgress(
+                Math.Abs(original.GoodQuantity),
+                Math.Abs(original.ScrapQuantity),
+                request.ReversedAtUtc));
         }
 
         if (original.CompletesOperation)
@@ -503,7 +483,10 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandValidator : Abstract
         RuleFor(x => x.SkuId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Quantity).GreaterThan(0);
         RuleFor(x => x.UomCode).NotEmpty().MaximumLength(30);
-        RuleFor(x => x.UnitCost).NotNull().GreaterThan(0);
+        // UnitCost is optional by design — FinishedGoodsReceiptRequest.Create stores null as-is and only guards
+        // positivity when a value is provided. Validate the same way (positive only when present) so the API
+        // does not reject a cost-less receipt the domain accepts.
+        RuleFor(x => x.UnitCost).GreaterThan(0).When(x => x.UnitCost.HasValue);
     }
 }
 

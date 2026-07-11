@@ -29,7 +29,7 @@ public sealed class NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefe
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Quality.NcrDispositionDecidedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(NcrDispositionDecidedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(NcrDispositionDecidedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

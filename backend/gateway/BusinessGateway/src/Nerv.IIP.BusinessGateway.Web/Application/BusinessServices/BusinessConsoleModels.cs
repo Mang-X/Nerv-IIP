@@ -3053,6 +3053,7 @@ public sealed record BusinessConsoleMesListRequest(
     string? WorkCenterId = null,
     string? ShiftId = null,
     string? DeviceAssetId = null,
+    string? WorkOrderId = null,
     int Skip = 0,
     int Take = 100);
 
@@ -3388,6 +3389,7 @@ public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     string? MaterialLotId,
     decimal RequestedQuantity,
     decimal ReceivedQuantity,
+    decimal ConsumedQuantity,
     string Status,
     string? WmsRequestId,
     DateTimeOffset RequestedAtUtc,

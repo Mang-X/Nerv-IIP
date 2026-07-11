@@ -37,7 +37,7 @@ public sealed class ApprovalStepOverdueIntegrationEventHandlerForNotification(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Approval.ApprovalStepOverdueIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(ApprovalStepOverdueIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(ApprovalStepOverdueIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -109,7 +109,7 @@ public sealed class ApprovalStepResolvedIntegrationEventHandlerForNotification(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Approval.ApprovalStepResolvedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(ApprovalStepResolvedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(ApprovalStepResolvedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -177,7 +177,7 @@ public sealed class ApprovalActionRecordedIntegrationEventHandlerForNotification
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Approval.ApprovalActionRecordedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(ApprovalActionRecordedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(ApprovalActionRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -255,7 +255,7 @@ public sealed class ApprovalRejectedIntegrationEventHandlerForNotification(
     public Task HandleAsync(ApprovalCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         => consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
 
-    [CapSubscribe("Nerv.IIP.Contracts.Approval.ApprovalCompletedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(ApprovalCompletedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(ApprovalCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         => HandleAsync(integrationEvent, cancellationToken);
 

@@ -29,7 +29,7 @@ public sealed class InventoryReservationReleaseRequestedIntegrationEventHandlerF
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Inventory.InventoryReservationReleaseRequestedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(InventoryReservationReleaseRequestedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(InventoryReservationReleaseRequestedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

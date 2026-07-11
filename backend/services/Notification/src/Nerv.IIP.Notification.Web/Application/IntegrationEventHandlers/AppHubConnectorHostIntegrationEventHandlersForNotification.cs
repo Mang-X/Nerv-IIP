@@ -36,7 +36,7 @@ public sealed class ConnectorHostUnreachableIntegrationEventHandlerForNotificati
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.AppHubQueries.ConnectorHostUnreachableIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(ConnectorHostUnreachableIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(
         ConnectorHostUnreachableIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
@@ -117,7 +117,7 @@ public sealed class ConnectorHostRestoredIntegrationEventHandlerForNotification(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.AppHubQueries.ConnectorHostRestoredIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(ConnectorHostRestoredIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(
         ConnectorHostRestoredIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)

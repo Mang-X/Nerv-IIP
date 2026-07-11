@@ -362,14 +362,7 @@ internal static class WorkOrderLifecycleCommandGuards
 
     public static void ApplyTransition(WorkOrder workOrder, Action<WorkOrder> transition)
     {
-        try
-        {
-            transition(workOrder);
-        }
-        catch (InvalidOperationException exception)
-        {
-            throw new KnownException(exception.Message, exception);
-        }
+        MesDomainRuleGuard.Enforce(() => transition(workOrder));
     }
 }
 
@@ -792,7 +785,8 @@ public sealed class ConfirmLineSideMaterialReceiptCommandHandler(ApplicationDbCo
             throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
         }
 
-        materialRequest.ConfirmLineSideReceipt(request.ReceivedAtUtc, request.ReceivedQuantity, request.MaterialLotId);
+        MesDomainRuleGuard.Enforce(() =>
+            materialRequest.ConfirmLineSideReceipt(request.ReceivedAtUtc, request.ReceivedQuantity, request.MaterialLotId));
         return new MesAcceptedResponse("Accepted", materialRequest.RequestNo, request.ReceivedAtUtc);
     }
 }
@@ -907,7 +901,8 @@ public sealed class AssignDispatchTaskCommandHandler(ApplicationDbContext dbCont
             throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
         }
 
-        task.Assign(request.AssignedUserId, request.DeviceAssetId, request.ShiftId, request.AssignedAtUtc);
+        MesDomainRuleGuard.Enforce(() =>
+            task.Assign(request.AssignedUserId, request.DeviceAssetId, request.ShiftId, request.AssignedAtUtc));
         dbContext.Entry(task).Property(x => x.AssignedUserId).IsModified = true;
         dbContext.Entry(task).Property(x => x.DeviceAssetId).IsModified = true;
         dbContext.Entry(task).Property(x => x.ShiftId).IsModified = true;
@@ -993,11 +988,14 @@ public sealed class ChangeOperationTaskStateCommandHandler(
                 }
             }
 
-            task.Start(request.ChangedAtUtc);
-            if (workOrder.Status is WorkOrder.ReleasedStatus or WorkOrder.HoldStatus)
+            MesDomainRuleGuard.Enforce(() =>
             {
-                workOrder.Start(request.ChangedAtUtc);
-            }
+                task.Start(request.ChangedAtUtc);
+                if (workOrder.Status is WorkOrder.ReleasedStatus or WorkOrder.HoldStatus)
+                {
+                    workOrder.Start(request.ChangedAtUtc);
+                }
+            });
 
             return new MesOperationActionResponse(task.OperationTaskIdValue, task.Status.ToString(), request.ChangedAtUtc);
         }
@@ -1005,14 +1003,14 @@ public sealed class ChangeOperationTaskStateCommandHandler(
         switch (request.Action)
         {
             case "pause":
-                task.Pause(request.ChangedAtUtc);
+                MesDomainRuleGuard.Enforce(() => task.Pause(request.ChangedAtUtc));
                 break;
             case "resume":
-                task.Resume(request.ChangedAtUtc);
+                MesDomainRuleGuard.Enforce(() => task.Resume(request.ChangedAtUtc));
                 break;
             case "complete":
                 await EnsurePreviousOperationsCompletedAsync(dbContext, task, cancellationToken);
-                task.Complete(request.ChangedAtUtc);
+                MesDomainRuleGuard.Enforce(() => task.Complete(request.ChangedAtUtc));
                 break;
             default:
                 throw new KnownException($"不支持的工序动作：{request.Action}");

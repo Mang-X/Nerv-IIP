@@ -66,7 +66,7 @@ public sealed class DeviceControlCommandCompletedHandler(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Ops.OperationTaskCompletedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(OperationTaskCompletedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(OperationTaskCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -112,7 +112,7 @@ public sealed class DeviceControlCommandFailedHandler(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Ops.OperationTaskFailedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(OperationTaskFailedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(OperationTaskFailedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -157,7 +157,7 @@ public sealed class DeviceControlCommandRejectedHandler(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Ops.OperationApprovalRejectedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(OperationApprovalRejectedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(OperationApprovalRejectedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

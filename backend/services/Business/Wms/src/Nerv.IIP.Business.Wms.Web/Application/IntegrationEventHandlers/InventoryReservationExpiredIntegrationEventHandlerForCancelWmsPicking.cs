@@ -28,7 +28,7 @@ public sealed class InventoryReservationExpiredIntegrationEventHandlerForCancelW
     public Task HandleAsync(InventoryReservationExpiredIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
         consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
 
-    [CapSubscribe("Nerv.IIP.Contracts.Inventory.InventoryReservationExpiredIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(InventoryReservationExpiredIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(InventoryReservationExpiredIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
         HandleAsync(integrationEvent, cancellationToken);
 

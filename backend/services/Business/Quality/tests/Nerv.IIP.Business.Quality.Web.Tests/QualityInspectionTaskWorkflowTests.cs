@@ -426,9 +426,9 @@ public sealed class QualityInspectionTaskWorkflowTests
                 ]));
     }
 
-    private static OperationTaskCompletedIntegrationEvent MesOperationCompleted(bool requiresQualityInspection)
+    private static MesOperationTaskCompletedIntegrationEvent MesOperationCompleted(bool requiresQualityInspection)
     {
-        return new OperationTaskCompletedIntegrationEvent(
+        return new MesOperationTaskCompletedIntegrationEvent(
             "evt-mes-op-001",
             MesIntegrationEventTypes.OperationTaskCompleted,
             MesIntegrationEventVersions.V1,

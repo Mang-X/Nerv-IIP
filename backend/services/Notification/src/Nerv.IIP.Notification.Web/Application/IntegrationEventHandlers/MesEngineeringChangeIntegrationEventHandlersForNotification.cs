@@ -37,7 +37,7 @@ public sealed class WorkOrderEngineeringChangeImpactDetectedIntegrationEventHand
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Mes.WorkOrderEngineeringChangeImpactDetectedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(WorkOrderEngineeringChangeImpactDetectedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(
         WorkOrderEngineeringChangeImpactDetectedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)

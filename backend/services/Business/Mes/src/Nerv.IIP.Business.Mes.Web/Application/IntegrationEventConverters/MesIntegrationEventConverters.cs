@@ -201,9 +201,9 @@ public sealed class FinishedGoodsReceiptRequestedForQualityIntegrationEventConve
 }
 
 public sealed class OperationTaskCompletedIntegrationEventConverter
-    : IIntegrationEventConverter<OperationTaskCompletedDomainEvent, OperationTaskCompletedIntegrationEvent>
+    : IIntegrationEventConverter<OperationTaskCompletedDomainEvent, MesOperationTaskCompletedIntegrationEvent>
 {
-    public OperationTaskCompletedIntegrationEvent Convert(OperationTaskCompletedDomainEvent domainEvent)
+    public MesOperationTaskCompletedIntegrationEvent Convert(OperationTaskCompletedDomainEvent domainEvent)
     {
         var task = domainEvent.OperationTask;
         var completedAtUtc = task.ExistingEndUtc ?? DateTimeOffset.UtcNow;
@@ -212,8 +212,8 @@ public sealed class OperationTaskCompletedIntegrationEventConverter
             task.OrganizationId,
             task.EnvironmentId,
             task.OperationTaskId,
-            completedAtUtc.ToString("O", CultureInfo.InvariantCulture));
-        return new OperationTaskCompletedIntegrationEvent(
+            completedAtUtc.UtcTicks.ToString(CultureInfo.InvariantCulture));
+        return new MesOperationTaskCompletedIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}",
             MesIntegrationEventTypes.OperationTaskCompleted,
             MesIntegrationEventVersions.V1,
@@ -320,7 +320,7 @@ public sealed class MaterialLineSideReturnRequestedIntegrationEventConverter
             request.RequestNo,
             domainEvent.MaterialLotId,
             domainEvent.ReturnedQuantity.ToString("0.######", CultureInfo.InvariantCulture),
-            occurredAtUtc.ToString("O", CultureInfo.InvariantCulture));
+            occurredAtUtc.UtcTicks.ToString(CultureInfo.InvariantCulture));
         EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
@@ -353,7 +353,7 @@ public sealed class MaterialReturnedToWarehouseIntegrationEventConverter
             request.RequestNo,
             domainEvent.MaterialLotId,
             domainEvent.ReturnedQuantity.ToString("0.######", CultureInfo.InvariantCulture),
-            occurredAtUtc.ToString("O", CultureInfo.InvariantCulture));
+            occurredAtUtc.UtcTicks.ToString(CultureInfo.InvariantCulture));
         EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,

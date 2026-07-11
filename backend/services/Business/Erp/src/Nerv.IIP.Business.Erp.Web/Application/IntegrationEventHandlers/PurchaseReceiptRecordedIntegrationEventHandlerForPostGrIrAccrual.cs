@@ -38,7 +38,7 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
         return consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Erp.PurchaseReceiptRecordedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(PurchaseReceiptRecordedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(
         PurchaseReceiptRecordedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)

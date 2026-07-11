@@ -18,7 +18,7 @@ public sealed class TelemetryProductionCountDeltaIntegrationEventHandlerForAutom
     ISender sender)
     : IIntegrationEventHandler<TelemetryProductionCountDeltaIntegrationEvent>, ICapSubscribe
 {
-    public const string TopicName = "Nerv.IIP.Contracts.IndustrialTelemetry.TelemetryProductionCountDeltaIntegrationEvent";
+    public const string TopicName = nameof(TelemetryProductionCountDeltaIntegrationEvent);
     public const string ConsumerName = "business-mes.industrial-telemetry-production-count";
 
     private readonly IntegrationEventConsumerGuard<TelemetryProductionCountDeltaIntegrationEvent> consumerGuard = new(

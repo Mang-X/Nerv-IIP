@@ -643,7 +643,7 @@ public sealed class GatewayConsoleNotificationTests
                 1,
                 "ops",
                 "operation-task-failed:task-001",
-                "Nerv.IIP.Contracts.Ops.OperationTaskFailedIntegrationEvent",
+                "OperationTaskFailedIntegrationEvent",
                 "{\"eventId\":\"event-001\"}",
                 status == "Ignored" ? "ignored" : "handler-retry-exhausted",
                 status == "Ignored" ? "known replacement processed" : "Handler failed.",
