@@ -24,6 +24,8 @@ public sealed class WorkOrderEntityTypeConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the MES work order fact was created.");
         builder.Property(x => x.CompletedQuantity).HasColumnName("completed_quantity").HasPrecision(18, 6).IsRequired().HasComment("Cumulative good production quantity reported against the work order.");
         builder.Property(x => x.ScrapQuantity).HasColumnName("scrap_quantity").HasPrecision(18, 6).IsRequired().HasComment("Cumulative scrap quantity reported against the work order.");
+        builder.Property(x => x.CostReportCount).HasColumnName("cost_report_count").IsRequired().HasComment("Count of MES reports expected by downstream actual-cost closure.");
+        builder.Property(x => x.MaterialMovementCount).HasColumnName("material_movement_count").IsRequired().HasComment("Count of Inventory material postings expected by downstream actual-cost closure.");
         builder.Property(x => x.OverReceiptTolerancePercent).HasColumnName("over_receipt_tolerance_percent").HasPrecision(9, 4).IsRequired().HasComment("Allowed over-production tolerance percentage for cumulative reported quantity.");
         builder.Property(x => x.ClosedAtUtc).HasColumnName("closed_at_utc").HasComment("UTC time when the completed work order was closed.");
         builder.Property(x => x.HoldReason).HasColumnName("hold_reason").HasMaxLength(200).HasComment("Reason code or text for holding the work order.");

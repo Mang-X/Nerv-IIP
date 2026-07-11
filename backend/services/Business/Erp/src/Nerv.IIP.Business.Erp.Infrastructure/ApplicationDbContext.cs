@@ -21,6 +21,8 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
@@ -52,6 +54,10 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<CashReceipt> CashReceipts => Set<CashReceipt>();
     public DbSet<JournalVoucher> JournalVouchers => Set<JournalVoucher>();
     public DbSet<CostCandidate> CostCandidates => Set<CostCandidate>();
+    public DbSet<GLAccount> GLAccounts => Set<GLAccount>();
+    public DbSet<WorkOrderCost> WorkOrderCosts => Set<WorkOrderCost>();
+    public DbSet<WorkCenterCostRate> WorkCenterCostRates => Set<WorkCenterCostRate>();
+    public DbSet<PendingMaterialCost> PendingMaterialCosts => Set<PendingMaterialCost>();
     public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
     public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
     public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
@@ -77,11 +83,43 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
     {
-        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
+        return SaveChangesWithAccountLinkageAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private async Task<int> SaveChangesWithAccountLinkageAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken)
+    {
+        await EnsureAddedVoucherAccountsAsync(cancellationToken);
+        return await ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
             this,
             token => base.SaveChangesAsync(acceptAllChangesOnSuccess, token),
             cancellationToken);
     }
+
+    private async Task EnsureAddedVoucherAccountsAsync(CancellationToken cancellationToken)
+    {
+        var required = ChangeTracker.Entries<JournalVoucherLine>()
+            .Where(x => x.State == EntityState.Added)
+            .Select(x => new { x.Entity.OrganizationId, x.Entity.EnvironmentId, x.Entity.AccountCode })
+            .Distinct()
+            .ToArray();
+        foreach (var account in required)
+        {
+            var exists = await GLAccounts.AnyAsync(x => x.OrganizationId == account.OrganizationId && x.EnvironmentId == account.EnvironmentId && x.Code == account.AccountCode, cancellationToken);
+            if (!exists && !GLAccounts.Local.Any(x => x.OrganizationId == account.OrganizationId && x.EnvironmentId == account.EnvironmentId && x.Code == account.AccountCode))
+            {
+                GLAccounts.Add(GLAccount.Create(account.OrganizationId, account.EnvironmentId, account.AccountCode, account.AccountCode, InferAccountType(account.AccountCode)));
+            }
+        }
+    }
+
+    private static GLAccountType InferAccountType(string accountCode) => accountCode.Length > 0 ? accountCode[0] switch
+    {
+        '1' => GLAccountType.Asset,
+        '2' => GLAccountType.Liability,
+        '3' => GLAccountType.Equity,
+        '4' => GLAccountType.Revenue,
+        _ => GLAccountType.Expense,
+    } : GLAccountType.Expense;
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {

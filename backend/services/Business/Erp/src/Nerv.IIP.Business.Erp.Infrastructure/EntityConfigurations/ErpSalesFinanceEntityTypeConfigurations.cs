@@ -365,6 +365,8 @@ public sealed class JournalVoucherLineEntityTypeConfiguration : IEntityTypeConfi
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Journal voucher line id.");
         builder.Property<JournalVoucherId>("JournalVoucherId").HasColumnName("journal_voucher_id").IsRequired().HasComment("Owning journal voucher id.");
+        builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization boundary copied from the voucher for GL account linkage.");
+        builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment boundary copied from the voucher for GL account linkage.");
         builder.Property(x => x.AccountCode).HasColumnName("account_code").IsRequired().HasMaxLength(100).HasComment("Accounting subject code.");
         builder.Property(x => x.DebitAmount).HasColumnName("debit_amount").IsRequired().HasPrecision(18, 6).HasComment("Debit amount.");
         builder.Property(x => x.CreditAmount).HasColumnName("credit_amount").IsRequired().HasPrecision(18, 6).HasComment("Credit amount.");
@@ -373,5 +375,10 @@ public sealed class JournalVoucherLineEntityTypeConfiguration : IEntityTypeConfi
         builder.Property(x => x.LocalDebitAmount).HasColumnName("local_debit_amount").IsRequired().HasPrecision(18, 6).HasComment("Debit amount in local currency.");
         builder.Property(x => x.LocalCreditAmount).HasColumnName("local_credit_amount").IsRequired().HasPrecision(18, 6).HasComment("Credit amount in local currency.");
         builder.Property(x => x.Memo).HasColumnName("memo").IsRequired().HasMaxLength(300).HasComment("Voucher line memo.");
+        builder.HasOne<Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate.GLAccount>()
+            .WithMany()
+            .HasForeignKey(x => new { x.OrganizationId, x.EnvironmentId, x.AccountCode })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.Code })
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

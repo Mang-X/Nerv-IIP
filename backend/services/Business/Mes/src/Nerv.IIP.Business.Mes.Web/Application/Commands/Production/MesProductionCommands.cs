@@ -155,7 +155,8 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             producedLotNo,
             request.SerialNo,
             ProductionReportOeeProjectionFactory.Create(operationTask),
-            request.Source);
+            request.Source,
+            consumedMaterialLots.Count);
 
         var duplicateLot = consumedMaterialLots
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId.ToUpperInvariant()}", StringComparer.Ordinal)
@@ -234,6 +235,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 lot.MaterialIssueRequestNo));
         }
 
+        workOrder.RegisterCostReport(consumedMaterialLots.Count);
         if (isOutputOperation)
         {
             try
