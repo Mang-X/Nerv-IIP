@@ -389,7 +389,8 @@ var businessIndustrialTelemetry = WithNervIipTelemetry(WithLocalDevelopmentEnvir
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessIndustrialTelemetryDatabase, "PostgreSQL")
     .WithReference(ops)
-    .WaitFor(businessIndustrialTelemetryDatabase);
+    .WaitFor(businessIndustrialTelemetryDatabase)
+    .WaitFor(ops);
 businessIndustrialTelemetry = WithRedisMessagingTransport(businessIndustrialTelemetry);
 if (rabbitmq is not null)
 {
