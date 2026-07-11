@@ -88,7 +88,10 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
                 && !await SupplierReturnExistsAsync(supplierReturn.SupplierReturnNo, integrationEvent, cancellationToken))
             {
                 dbContext.SupplierReturnRequests.Add(supplierReturn);
-                dbContext.OutboundOrders.Add(CreateSupplierReturnOutboundOrder(supplierReturn));
+                var sourceDocumentId = string.Equals(inbound.SourceDocumentType, WmsSourceDocumentTypes.PurchaseReceipt, StringComparison.OrdinalIgnoreCase)
+                    ? inbound.SourceDocumentId
+                    : inbound.InboundOrderNo;
+                dbContext.OutboundOrders.Add(CreateSupplierReturnOutboundOrder(supplierReturn, sourceDocumentId));
             }
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
@@ -111,14 +114,14 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
             cancellationToken);
     }
 
-    private static OutboundOrder CreateSupplierReturnOutboundOrder(SupplierReturnRequest supplierReturn)
+    private static OutboundOrder CreateSupplierReturnOutboundOrder(SupplierReturnRequest supplierReturn, string sourceDocumentId)
     {
         return OutboundOrder.Create(
             supplierReturn.OrganizationId,
             supplierReturn.EnvironmentId,
             supplierReturn.SupplierReturnNo,
             WmsSourceDocumentTypes.PurchaseReceiptReturn,
-            supplierReturn.InboundOrderNo,
+            sourceDocumentId,
             supplierReturn.SiteCode,
             [new OutboundOrderLineDraft(
                 supplierReturn.InboundOrderLineNo,

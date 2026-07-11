@@ -37,7 +37,9 @@ public sealed class ErpSalesReturnAuthorizedConsumerTests
                 [new SalesReturnAuthorizedLinePayload("LINE-001", "SKU-001", "EA", 2m, "LOC-RETURN", "LOT-001")]));
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var inbound = Assert.Single(await dbContext.InboundOrders.Include(x => x.Lines).ToListAsync());
         Assert.Equal("RMA-001", inbound.InboundOrderNo);

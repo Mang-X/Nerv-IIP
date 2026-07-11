@@ -112,7 +112,7 @@ public sealed class WmsQualityInspectionGateConsumerTests
         var outbound = Assert.Single(await assertionContext.OutboundOrders.Include(x => x.Lines).ToListAsync());
         Assert.Equal("RTS-IN-QA-RETURN-001-LINE-001-QI-001", outbound.OutboundOrderNo);
         Assert.Equal("purchase-receipt-return", outbound.SourceDocumentType);
-        Assert.Equal("IN-QA-RETURN-001", outbound.SourceDocumentId);
+        Assert.Equal("PO-001", outbound.SourceDocumentId);
         var line = Assert.Single(outbound.Lines);
         Assert.Equal("LINE-001", line.LineNo);
         Assert.Equal(5m, line.RequestedQuantity);

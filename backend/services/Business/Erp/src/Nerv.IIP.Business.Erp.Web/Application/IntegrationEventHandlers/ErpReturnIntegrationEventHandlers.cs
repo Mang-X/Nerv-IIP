@@ -1,9 +1,11 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CreditNoteAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DebitNoteAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReturnAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
@@ -47,8 +49,8 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
         }
         catch (Exception exception) when (exception is KnownException or ArgumentException or InvalidOperationException)
         {
+            dbContext.ChangeTracker.Clear();
             await DeadLetterAsync(integrationEvent, "invalid-purchase-return-projection", exception.Message, cancellationToken);
-            await dbContext.SaveChangesAsync(cancellationToken);
         }
     }
 
@@ -143,14 +145,53 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
                 .Where(x => x.PurchaseOrderLineNo == wmsLine.LineReference)
                 .Sum(x => x.DebitNoteQuantity);
             var debitNoteQuantity = Math.Min(wmsLine.Quantity, Math.Max(0m, invoicedQuantity - alreadyDebitedQuantity));
-            returnLines.Add(new PurchaseReturnLineDraft(
-                wmsLine.LineReference,
-                receiptLine.SkuCode,
-                receiptLine.UomCode,
-                wmsLine.Quantity,
-                orderLine.UnitPrice,
-                wmsLine.Quantity - debitNoteQuantity,
-                debitNoteQuantity));
+            var debitQuantityRemaining = debitNoteQuantity;
+            var alreadyDebitedRemaining = alreadyDebitedQuantity;
+            foreach (var invoiceLine in invoices
+                .SelectMany(invoice => invoice.Lines)
+                .Where(line => line.PurchaseOrderLineNo == wmsLine.LineReference))
+            {
+                if (alreadyDebitedRemaining >= invoiceLine.InvoiceQuantity)
+                {
+                    alreadyDebitedRemaining -= invoiceLine.InvoiceQuantity;
+                    continue;
+                }
+
+                var invoiceQuantityAvailable = invoiceLine.InvoiceQuantity - alreadyDebitedRemaining;
+                alreadyDebitedRemaining = 0m;
+                var lineDebitQuantity = Math.Min(debitQuantityRemaining, invoiceQuantityAvailable);
+                if (lineDebitQuantity <= 0m)
+                {
+                    break;
+                }
+
+                returnLines.Add(new PurchaseReturnLineDraft(
+                    wmsLine.LineReference,
+                    receiptLine.SkuCode,
+                    receiptLine.UomCode,
+                    lineDebitQuantity,
+                    invoiceLine.UnitPrice,
+                    0m,
+                    lineDebitQuantity));
+                debitQuantityRemaining -= lineDebitQuantity;
+                if (debitQuantityRemaining <= 0m)
+                {
+                    break;
+                }
+            }
+
+            var grIrReversalQuantity = wmsLine.Quantity - debitNoteQuantity;
+            if (grIrReversalQuantity > 0m)
+            {
+                returnLines.Add(new PurchaseReturnLineDraft(
+                    wmsLine.LineReference,
+                    receiptLine.SkuCode,
+                    receiptLine.UomCode,
+                    grIrReversalQuantity,
+                    orderLine.UnitPrice,
+                    grIrReversalQuantity,
+                    0m));
+            }
         }
 
         await AccountingPeriodPostingGuard.EnsureOpenAsync(
@@ -160,6 +201,38 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
             DateOnly.FromDateTime(integrationEvent.OccurredAtUtc.UtcDateTime),
             "supplier purchase return voucher",
             cancellationToken);
+        var remainingDebitAmount = returnLines.Sum(x => x.DebitNoteQuantity * x.UnitPrice);
+        var payablesByInvoiceNo = await dbContext.AccountPayables
+            .Where(x => x.OrganizationId == receipt.OrganizationId && x.EnvironmentId == receipt.EnvironmentId && x.SupplierCode == receipt.SupplierCode)
+            .ToDictionaryAsync(x => x.SourceDocumentNo, StringComparer.Ordinal, cancellationToken);
+        var debitApplications = new List<(SupplierInvoice Invoice, AccountPayable Payable, decimal Amount)>();
+        foreach (var invoice in invoices)
+        {
+            if (remainingDebitAmount <= 0m)
+            {
+                break;
+            }
+
+            if (!payablesByInvoiceNo.TryGetValue(invoice.InvoiceNo, out var payable))
+            {
+                continue;
+            }
+
+            var appliedAmount = Math.Min(remainingDebitAmount, payable.OpenAmount);
+            if (appliedAmount <= 0m)
+            {
+                continue;
+            }
+
+            debitApplications.Add((invoice, payable, appliedAmount));
+            remainingDebitAmount -= appliedAmount;
+        }
+
+        if (remainingDebitAmount > 0m)
+        {
+            throw new KnownException("Supplier return debit-note amount cannot be applied because matching AP is absent or already settled.");
+        }
+
         if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
         {
             return;
@@ -184,54 +257,28 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
             receipt.ExchangeRate,
             returnLines);
 
-        var remainingDebitAmount = purchaseReturn.DebitNoteAmount;
-        var payablesByInvoiceNo = await dbContext.AccountPayables
-            .Where(x => x.OrganizationId == receipt.OrganizationId && x.EnvironmentId == receipt.EnvironmentId && x.SupplierCode == receipt.SupplierCode)
-            .ToDictionaryAsync(x => x.SourceDocumentNo, StringComparer.Ordinal, cancellationToken);
         var debitNotes = new List<DebitNote>();
-        foreach (var invoice in invoices)
+        foreach (var application in debitApplications)
         {
-            if (remainingDebitAmount <= 0m)
-            {
-                break;
-            }
-
-            if (!payablesByInvoiceNo.TryGetValue(invoice.InvoiceNo, out var payable))
-            {
-                continue;
-            }
-
-            var appliedAmount = Math.Min(remainingDebitAmount, payable.OpenAmount);
-            if (appliedAmount <= 0m)
-            {
-                continue;
-            }
-
             var debitAllocation = await codingService.AllocateAsync(
                 receipt.OrganizationId,
                 receipt.EnvironmentId,
                 "debit-note",
                 null,
-                $"{ConsumerName}:{integrationEvent.IdempotencyKey}:{invoice.InvoiceNo}",
-                ErpCodingService.Fingerprint(returnAllocation.Code, invoice.InvoiceNo, payable.PayableNo, appliedAmount),
+                $"{ConsumerName}:{integrationEvent.IdempotencyKey}:{application.Invoice.InvoiceNo}",
+                ErpCodingService.Fingerprint(returnAllocation.Code, application.Invoice.InvoiceNo, application.Payable.PayableNo, application.Amount),
                 cancellationToken);
-            payable.ApplyDebitNote(appliedAmount);
+            application.Payable.ApplyDebitNote(application.Amount);
             debitNotes.Add(DebitNote.Issue(
                 receipt.OrganizationId,
                 receipt.EnvironmentId,
                 debitAllocation.Code,
                 purchaseReturn.PurchaseReturnNo,
-                payable.PayableNo,
+                application.Payable.PayableNo,
                 receipt.SupplierCode,
-                appliedAmount,
+                application.Amount,
                 receipt.CurrencyCode,
                 receipt.ExchangeRate));
-            remainingDebitAmount -= appliedAmount;
-        }
-
-        if (remainingDebitAmount > 0m)
-        {
-            throw new KnownException("Supplier return debit-note amount cannot be applied because matching AP is absent or already settled.");
         }
 
         dbContext.PurchaseReturns.Add(purchaseReturn);
@@ -240,7 +287,6 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
             purchaseReturn,
             $"JV-PRTN-{purchaseReturn.PurchaseReturnNo}",
             DateOnly.FromDateTime(integrationEvent.OccurredAtUtc.UtcDateTime)));
-        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private Task DeadLetterAsync(WmsIntegrationEvent integrationEvent, string failureCode, string failureMessage, CancellationToken cancellationToken)
@@ -303,12 +349,11 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordSale
         try
         {
             rma.MarkWarehouseReceived(integrationEvent.Payload.PublicReference);
-            await dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (InvalidOperationException exception)
         {
+            dbContext.ChangeTracker.Clear();
             await DeadLetterAsync(integrationEvent, "rma-receipt-rejected", exception.Message, cancellationToken);
-            await dbContext.SaveChangesAsync(cancellationToken);
         }
     }
 
@@ -343,8 +388,8 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForSettleSales
     private async Task HandleValidEventAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
-        if (!string.Equals(payload.SourceService, "wms", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(payload.SourceType, "receiving", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(payload.SourceService, QualityInspectionSourceTypes.Wms, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(payload.SourceType, QualityInspectionSourceTypes.Receiving, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
@@ -368,15 +413,14 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForSettleSales
         {
             var disposition = integrationEvent.EventType switch
             {
-                QualityIntegrationEventTypes.InspectionPassed => "passed",
-                QualityIntegrationEventTypes.InspectionConditionalReleased => "conditional-release",
-                QualityIntegrationEventTypes.InspectionRejected => "rejected",
+                QualityIntegrationEventTypes.InspectionPassed => SalesReturnQualityDispositions.Passed,
+                QualityIntegrationEventTypes.InspectionConditionalReleased => SalesReturnQualityDispositions.ConditionalRelease,
+                QualityIntegrationEventTypes.InspectionRejected => SalesReturnQualityDispositions.Rejected,
                 _ => throw new KnownException($"Unsupported RMA Quality event type '{integrationEvent.EventType}'."),
             };
             rma.ApplyQualityDisposition(disposition);
             if (rma.Status == SalesReturnAuthorizationStatus.CreditDenied)
             {
-                await dbContext.SaveChangesAsync(cancellationToken);
                 return;
             }
 
@@ -413,12 +457,11 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForSettleSales
             dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForCreditNote(
                 creditNote,
                 DateOnly.FromDateTime(integrationEvent.OccurredAtUtc.UtcDateTime)));
-            await dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (Exception exception) when (exception is KnownException or ArgumentException or ArgumentOutOfRangeException or InvalidOperationException)
         {
+            dbContext.ChangeTracker.Clear();
             await DeadLetterAsync(integrationEvent, "rma-credit-settlement-rejected", exception.Message, cancellationToken);
-            await dbContext.SaveChangesAsync(cancellationToken);
         }
     }
 

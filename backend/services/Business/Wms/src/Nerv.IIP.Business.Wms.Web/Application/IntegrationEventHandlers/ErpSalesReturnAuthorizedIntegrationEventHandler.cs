@@ -40,16 +40,15 @@ public sealed class ErpSalesReturnAuthorizedIntegrationEventHandler(
             return;
         }
 
-        if (!await WmsProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
-        {
-            return;
-        }
-
         var payload = integrationEvent.Payload;
         if (payload.Lines.Count == 0)
         {
             await DeadLetterAsync(integrationEvent, "missing-payload-field", "ERP sales return authorization must contain at least one return line.", cancellationToken);
-            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        if (!await WmsProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        {
             return;
         }
 
@@ -82,7 +81,6 @@ public sealed class ErpSalesReturnAuthorizedIntegrationEventHandler(
             dbContext.InboundOrders.Add(inbound);
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private Task DeadLetterAsync(

@@ -29,6 +29,7 @@ public static class WmsIntegrationEventSources
 
 public static class WmsSourceDocumentTypes
 {
+    public const string PurchaseReceipt = "purchase-receipt";
     public const string PurchaseReceiptReturn = "purchase-receipt-return";
     public const string SalesReturnRma = "sales-return-rma";
 }

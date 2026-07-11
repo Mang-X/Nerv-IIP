@@ -15,6 +15,13 @@ public enum SalesReturnAuthorizationStatus
     CreditDenied = 4,
 }
 
+public static class SalesReturnQualityDispositions
+{
+    public const string Passed = "passed";
+    public const string ConditionalRelease = "conditional-release";
+    public const string Rejected = "rejected";
+}
+
 public sealed record SalesReturnAuthorizationLineDraft(
     string SalesOrderLineNo,
     string SkuCode,
@@ -142,8 +149,8 @@ public sealed class SalesReturnAuthorization : Entity<SalesReturnAuthorizationId
         var normalizedDisposition = ErpText.Required(disposition, nameof(disposition)).Trim().ToLowerInvariant();
         Status = normalizedDisposition switch
         {
-            "passed" or "conditional-release" => SalesReturnAuthorizationStatus.CreditApproved,
-            "rejected" => SalesReturnAuthorizationStatus.CreditDenied,
+            SalesReturnQualityDispositions.Passed or SalesReturnQualityDispositions.ConditionalRelease => SalesReturnAuthorizationStatus.CreditApproved,
+            SalesReturnQualityDispositions.Rejected => SalesReturnAuthorizationStatus.CreditDenied,
             _ => throw new ArgumentOutOfRangeException(nameof(disposition), disposition, "RMA quality disposition must be passed, conditional-release, or rejected."),
         };
         QualityDisposition = normalizedDisposition;

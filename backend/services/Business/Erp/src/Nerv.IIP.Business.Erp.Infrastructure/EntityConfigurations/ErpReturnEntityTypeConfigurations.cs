@@ -39,7 +39,7 @@ public sealed class PurchaseReturnLineEntityTypeConfiguration : IEntityTypeConfi
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("Source SKU code.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("Source UOM code.");
         builder.Property(x => x.ReturnedQuantity).HasColumnName("returned_quantity").IsRequired().HasPrecision(18, 6).HasComment("Physically returned WMS quantity.");
-        builder.Property(x => x.UnitPrice).HasColumnName("unit_price").IsRequired().HasPrecision(18, 6).HasComment("ERP source purchase order unit price.");
+        builder.Property(x => x.UnitPrice).HasColumnName("unit_price").IsRequired().HasPrecision(18, 6).HasComment("Source invoice unit price for debit-note segments or purchase-order unit price for GR/IR segments.");
         builder.Property(x => x.GrIrReversalQuantity).HasColumnName("gr_ir_reversal_quantity").IsRequired().HasPrecision(18, 6).HasComment("Uninvoiced returned quantity reversing GR/IR.");
         builder.Property(x => x.DebitNoteQuantity).HasColumnName("debit_note_quantity").IsRequired().HasPrecision(18, 6).HasComment("Invoice-matched returned quantity settled by debit note.");
         builder.Ignore(x => x.GrIrReversalAmount);
