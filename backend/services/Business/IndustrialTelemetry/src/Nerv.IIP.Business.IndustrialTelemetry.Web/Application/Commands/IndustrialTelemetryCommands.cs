@@ -516,7 +516,7 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         var normalizedSourceSequence = IndustrialTelemetryText.Required(request.SourceSequence, nameof(request.SourceSequence));
         var normalizedSourceSystem = IndustrialTelemetryText.Optional(request.SourceSystem);
         var normalizedSourceConnector = IndustrialTelemetryText.Optional(request.SourceConnector);
-        await ValidateSamplingPolicyAsync(request, normalizedTagKey, cancellationToken);
+        var productionCountMode = await ValidateSamplingPolicyAsync(request, normalizedTagKey, cancellationToken);
         await RecordRawSampleAsync(request, normalizedTagKey, normalizedSourceSequence, normalizedSourceSystem, normalizedSourceConnector, cancellationToken);
         var existingSummary = await dbContext.TelemetrySummaries.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
@@ -555,33 +555,110 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
 
         dbContext.TelemetrySummaries.Add(incoming);
         await EvaluateAlarmRulesAsync(request, normalizedTagKey, cancellationToken);
+        await RaiseProductionCountDeltaIfApplicableAsync(request, normalizedTagKey, incoming, productionCountMode, cancellationToken);
 
         return new RecordTelemetrySampleResult(incoming.Id, stateId);
     }
 
-    private async Task ValidateSamplingPolicyAsync(
+    private async Task<string?> ValidateSamplingPolicyAsync(
         RecordTelemetrySampleCommand request,
         string normalizedTagKey,
         CancellationToken cancellationToken)
     {
-        var tagPolicy = await dbContext.TelemetryTags
+        var tag = await dbContext.TelemetryTags
             .Where(x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
                 && x.DeviceAssetId == request.DeviceAssetId
                 && x.TagKey == normalizedTagKey)
-            .Select(x => x.SamplingPolicy)
+            .Select(x => new { x.SamplingPolicy, x.ValueType })
             .SingleOrDefaultAsync(cancellationToken);
-        if (tagPolicy is null)
+        if (tag is null)
+        {
+            return null;
+        }
+
+        var bucketSeconds = TelemetrySamplingPolicy.Parse(tag.SamplingPolicy).BucketSeconds;
+        var actualSeconds = (int)(request.BucketEndUtc - request.BucketStartUtc).TotalSeconds;
+        if (actualSeconds != bucketSeconds)
+        {
+            throw new KnownException($"Telemetry bucket duration does not match sampling policy '{tag.SamplingPolicy}'.");
+        }
+
+        return ResolveProductionCountMode(tag.ValueType);
+    }
+
+    private async Task RaiseProductionCountDeltaIfApplicableAsync(
+        RecordTelemetrySampleCommand request,
+        string normalizedTagKey,
+        TelemetrySummary incoming,
+        string? productionCountMode,
+        CancellationToken cancellationToken)
+    {
+        if (productionCountMode is null)
         {
             return;
         }
 
-        var bucketSeconds = TelemetrySamplingPolicy.Parse(tagPolicy).BucketSeconds;
-        var actualSeconds = (int)(request.BucketEndUtc - request.BucketStartUtc).TotalSeconds;
-        if (actualSeconds != bucketSeconds)
+        var hasNewerRawSample = await dbContext.TelemetryRawSamples.AnyAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.DeviceAssetId == request.DeviceAssetId &&
+                x.TagKey == normalizedTagKey &&
+                x.BucketEndUtc > request.BucketEndUtc,
+            cancellationToken) || dbContext.TelemetryRawSamples.Local.Any(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.DeviceAssetId == request.DeviceAssetId &&
+                    x.TagKey == normalizedTagKey &&
+                    x.BucketEndUtc > request.BucketEndUtc);
+        if (hasNewerRawSample)
         {
-            throw new KnownException($"Telemetry bucket duration does not match sampling policy '{tagPolicy}'.");
+            return;
         }
+
+        var previous = await dbContext.TelemetryRawSamples
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.TagKey == normalizedTagKey)
+            .Where(x => x.BucketEndUtc <= request.BucketStartUtc)
+            .OrderByDescending(x => x.BucketEndUtc)
+            .ThenByDescending(x => x.SourceSequence)
+            .Select(x => new { x.LastValue })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (previous is null)
+        {
+            return;
+        }
+
+        var currentValue = request.LastValue ?? request.AverageValue;
+        var delta = currentValue - previous.LastValue;
+        if (delta <= 0m)
+        {
+            return;
+        }
+
+        var hasActiveAlarm = await dbContext.AlarmEvents.AnyAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.DeviceAssetId == request.DeviceAssetId &&
+                x.Status != "cleared",
+            cancellationToken) || dbContext.AlarmEvents.Local.Any(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.DeviceAssetId == request.DeviceAssetId &&
+                    x.Status != "cleared");
+        incoming.RaiseProductionCountDeltaEvent(delta, productionCountMode, hasActiveAlarm);
+    }
+
+    private static string? ResolveProductionCountMode(string valueType)
+    {
+        return valueType.Trim().ToLowerInvariant() switch
+        {
+            "production-count-posted" => "posted",
+            "production-count-draft" => "draft",
+            _ => null,
+        };
     }
 
     private async Task<TelemetryRawSampleId> RecordRawSampleAsync(

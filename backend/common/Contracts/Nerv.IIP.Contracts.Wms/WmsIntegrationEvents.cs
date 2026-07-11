@@ -27,6 +27,13 @@ public static class WmsIntegrationEventSources
     public const string BusinessErp = "business-erp";
 }
 
+public static class WmsSourceDocumentTypes
+{
+    public const string PurchaseReceipt = "purchase-receipt";
+    public const string PurchaseReceiptReturn = "purchase-receipt-return";
+    public const string SalesReturnRma = "sales-return-rma";
+}
+
 public static class WmsReceivingQualityStatuses
 {
     public const string Quality = "quality";

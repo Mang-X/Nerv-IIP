@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.BackorderOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
@@ -8,6 +9,68 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Queries;
+
+public sealed record ListBackorderOrdersQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? Keyword = null) : IQuery<ListBackorderOrdersResponse>;
+
+public sealed record ListBackorderOrdersResponse(IReadOnlyCollection<BackorderOrderFact> Items, int Total);
+
+public sealed record BackorderOrderFact(
+    BackorderOrderId BackorderOrderId,
+    string BackorderOrderNo,
+    string OutboundOrderNo,
+    string OutboundOrderLineNo,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string PickLocationCode,
+    decimal BackorderQuantity,
+    string Status,
+    DateTime CreatedAtUtc,
+    DateTime? ClosedAtUtc,
+    string? ClosureReason);
+
+public sealed class ListBackorderOrdersQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListBackorderOrdersQuery, ListBackorderOrdersResponse>
+{
+    public async Task<ListBackorderOrdersResponse> Handle(ListBackorderOrdersQuery request, CancellationToken cancellationToken)
+    {
+        var query = dbContext.BackorderOrders.AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+        if (WmsListQueryFilters.TryParseStatus<BackorderOrderStatus>(request.Status, out var status))
+        {
+            query = query.Where(x => x.Status == status);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            return new ListBackorderOrdersResponse([], 0);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
+            query = query.Where(x => x.BackorderOrderNo.ToUpper().Contains(keyword)
+                || x.OutboundOrderNo.ToUpper().Contains(keyword)
+                || x.SkuCode.ToUpper().Contains(keyword));
+        }
+
+        var skip = Math.Max(0, request.Skip);
+        var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query.OrderByDescending(x => x.CreatedAtUtc).ThenBy(x => x.BackorderOrderNo)
+            .Skip(skip).Take(take)
+            .Select(x => new BackorderOrderFact(x.Id, x.BackorderOrderNo, x.OutboundOrderNo, x.OutboundOrderLineNo,
+                x.SkuCode, x.UomCode, x.SiteCode, x.PickLocationCode, x.BackorderQuantity, x.Status.ToString(),
+                x.CreatedAtUtc, x.ClosedAtUtc, x.ClosureReason))
+            .ToArrayAsync(cancellationToken);
+        return new ListBackorderOrdersResponse(items, total);
+    }
+}
 
 public sealed record ListInboundOrdersQuery(
     string? OrganizationId,

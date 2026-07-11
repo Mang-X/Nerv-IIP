@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.BackorderOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
@@ -307,14 +308,56 @@ public sealed record PickingReservationResult(string ReservationId, string Locat
 
 public sealed record RecordWarehouseTaskProgressCommand(WarehouseTaskId WarehouseTaskId, decimal ExecutedQuantity) : ICommand;
 
-public sealed class RecordWarehouseTaskProgressCommandHandler(ApplicationDbContext dbContext)
+public sealed class RecordWarehouseTaskProgressCommandHandler(
+    ApplicationDbContext dbContext,
+    IWmsInventoryReservationClient? inventoryReservationClient = null,
+    ILogger<RecordWarehouseTaskProgressCommandHandler>? logger = null)
     : ICommandHandler<RecordWarehouseTaskProgressCommand>
 {
     public async Task Handle(RecordWarehouseTaskProgressCommand request, CancellationToken cancellationToken)
     {
         var task = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == request.WarehouseTaskId, cancellationToken)
             ?? throw new KnownException($"Warehouse task was not found: {request.WarehouseTaskId}");
+        var previouslyExecutedQuantity = task.ExecutedQuantity;
         task.RecordProgress(request.ExecutedQuantity);
+        if (inventoryReservationClient is null ||
+            task.TaskType != WarehouseTaskType.Picking ||
+            task.Status != WarehouseTaskStatus.Open ||
+            task.ExecutedQuantity <= previouslyExecutedQuantity)
+        {
+            return;
+        }
+
+        var reservationId = await dbContext.OutboundOrders
+            .Where(x => x.OrganizationId == task.OrganizationId
+                && x.EnvironmentId == task.EnvironmentId
+                && x.OutboundOrderNo == task.SourceOrderNo)
+            .SelectMany(x => x.Lines)
+            .Where(x => x.LineNo == task.SourceOrderLineNo)
+            .Select(x => x.InventoryReservationId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(reservationId))
+        {
+            try
+            {
+                await inventoryReservationClient.RenewAsync(
+                    new WmsInventoryReservationRenewalRequest(reservationId),
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                logger?.LogWarning(
+                    "Inventory reservation renewal timed out for open WMS picking task {WarehouseTaskId}; preserving recorded task progress.",
+                    task.Id);
+            }
+            catch (Exception exception) when (exception is HttpRequestException or KnownException)
+            {
+                logger?.LogWarning(
+                    exception,
+                    "Inventory reservation renewal failed for open WMS picking task {WarehouseTaskId}; preserving recorded task progress.",
+                    task.Id);
+            }
+        }
     }
 }
 
@@ -333,6 +376,35 @@ public sealed class CompleteWarehouseTaskCommandHandler(ApplicationDbContext dbC
 
 public sealed record CompleteOutboundOrderCommand(OutboundOrderId OutboundOrderId, string PackReviewNo, bool Passed, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
 
+public sealed record CloseBackorderOrderCommand(BackorderOrderId BackorderOrderId, string Reason) : ICommand;
+
+public sealed class CloseBackorderOrderCommandValidator : AbstractValidator<CloseBackorderOrderCommand>
+{
+    public CloseBackorderOrderCommandValidator()
+    {
+        RuleFor(x => x.BackorderOrderId).NotEmpty();
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(1000);
+    }
+}
+
+public sealed class CloseBackorderOrderCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CloseBackorderOrderCommand>
+{
+    public async Task Handle(CloseBackorderOrderCommand request, CancellationToken cancellationToken)
+    {
+        var backorder = await dbContext.BackorderOrders.SingleOrDefaultAsync(x => x.Id == request.BackorderOrderId, cancellationToken)
+            ?? throw new KnownException($"Backorder order was not found: {request.BackorderOrderId}");
+        try
+        {
+            backorder.Close(request.Reason);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+    }
+}
+
 public sealed class CompleteOutboundOrderCommandHandler(
     ApplicationDbContext dbContext,
     IWmsInventoryReservationClient? inventoryReservationClient = null)
@@ -342,11 +414,42 @@ public sealed class CompleteOutboundOrderCommandHandler(
     {
         var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.OutboundOrderId, cancellationToken)
             ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
+        if (outbound.Status == OutboundOrderStatus.Completed)
+        {
+            var existingRequest = await dbContext.InventoryMovementRequests
+                .Where(x => x.OrganizationId == outbound.OrganizationId
+                    && x.EnvironmentId == outbound.EnvironmentId
+                    && x.SourceDocumentId == outbound.OutboundOrderNo
+                    && (x.IdempotencyKey == request.IdempotencyKey || x.IdempotencyKey.StartsWith(request.IdempotencyKey + ":")))
+                .OrderBy(x => x.SourceDocumentLineId)
+                .FirstOrDefaultAsync(cancellationToken)
+                ?? throw new KnownException("Completed outbound order does not match the supplied idempotency key.");
+            return new CompleteWmsMovementResult(existingRequest.Id, null);
+        }
+
         var executedQuantitiesByLine = await GetExecutedPickingQuantitiesAsync(outbound, cancellationToken);
         EnsureInventoryClientAvailableForShortPickRelease(outbound, executedQuantitiesByLine);
         var movementRequests = outbound.CompletePackReview(request.PackReviewNo, request.Passed, request.IdempotencyKey, executedQuantitiesByLine);
         await ReleaseShortPickedReservationBalancesAsync(outbound, cancellationToken);
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
+        foreach (var line in outbound.Lines.Where(x => x.BackorderQuantity > 0))
+        {
+            var backorderNo = WmsText.StableOperationalCode("BO", outbound.OutboundOrderNo, line.LineNo);
+            var backorder = BackorderOrder.Create(
+                outbound.OrganizationId,
+                outbound.EnvironmentId,
+                backorderNo,
+                outbound.OutboundOrderNo,
+                line.LineNo,
+                line.SkuCode,
+                line.UomCode,
+                outbound.SiteCode,
+                line.PickLocationCode,
+                line.BackorderQuantity);
+            dbContext.BackorderOrders.Add(backorder);
+            dbContext.WarehouseTasks.Add(backorder.CreateReplenishmentRecommendation(WmsText.StableOperationalCode("RPL", outbound.OutboundOrderNo, line.LineNo)));
+        }
+
         return new CompleteWmsMovementResult(movementRequests.First().Id, null);
     }
 
