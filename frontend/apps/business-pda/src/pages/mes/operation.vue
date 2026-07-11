@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
 import { openDownloadGrantBlob, operationTaskStatusLabel } from '@nerv-iip/business-core'
-import { createTimeoutFetch } from '@/api/request-timeout'
+import { createTimeoutFetch, REQUEST_TIMEOUT_MS } from '@/api/request-timeout'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useMesCurrentOperationSops, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
@@ -167,7 +167,7 @@ async function openSopFile(sop: CurrentSop) {
   try {
     const grant = await createSopFileDownloadGrant(fileId)
     if (!grant) throw new Error('无法获取SOP查看授权。')
-    await openDownloadGrantBlob(grant, { fetch: downloadFetch })
+    await openDownloadGrantBlob(grant, { fetch: downloadFetch, timeoutMs: REQUEST_TIMEOUT_MS })
   } catch (error) {
     sopFileError.value = error instanceof Error ? error.message : '无法打开SOP。'
   } finally {

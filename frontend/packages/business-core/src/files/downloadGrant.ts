@@ -3,8 +3,6 @@ export interface DownloadGrantLike {
   downloadHeaders?: Record<string, string> | null
 }
 
-const DEFAULT_DOWNLOAD_TIMEOUT_MS = 30_000
-
 export interface OpenDownloadGrantOptions {
   /**
    * Fetch used for the blob download. Inject a timeout/offline-aware fetch (e.g. the PDA
@@ -12,10 +10,14 @@ export interface OpenDownloadGrantOptions {
    */
   fetch?: typeof fetch
   /**
-   * Overall ceiling (ms) for the WHOLE download, including the response body read. The
-   * injected fetch only bounds time-to-headers, but `response.blob()` below can stall
-   * after headers arrive — this AbortController-backed ceiling covers that too. Defaults
-   * to 30s.
+   * Overall ceiling (ms) for the WHOLE download, INCLUDING the response body read.
+   *
+   * OPT-IN: when omitted the download stays UNBOUNDED — this preserves existing
+   * PC/console behavior so a legitimately large SOP download is never cut off (#814 is
+   * a PDA-scoped fallback and must not silently tighten other callers). PDA passes its
+   * 30s ceiling together with a timeout/offline-aware `fetch`; the AbortController's
+   * signal is forwarded to that fetch, which keeps the caller→signal link alive past
+   * headers so a body stalling after headers is aborted too.
    */
   timeoutMs?: number
 }
@@ -28,21 +30,23 @@ export async function openDownloadGrantBlob(
   if (!downloadUrl) throw new Error('文件服务未返回可用的SOP查看链接。')
 
   const doFetch = options.fetch ?? globalThis.fetch
-  const timeoutMs = options.timeoutMs ?? DEFAULT_DOWNLOAD_TIMEOUT_MS
+  const { timeoutMs } = options
 
-  // Bound headers AND body: aborting the signal also aborts an in-flight `blob()` read,
-  // so a body that stalls after the headers arrive still fails within the ceiling.
-  const controller = new AbortController()
+  // Only arm an overall ceiling when the caller opted in; otherwise stay unbounded.
+  const controller = timeoutMs === undefined ? undefined : new AbortController()
   let timedOut = false
-  const timer = setTimeout(() => {
-    timedOut = true
-    controller.abort()
-  }, timeoutMs)
+  const timer =
+    controller === undefined
+      ? undefined
+      : setTimeout(() => {
+          timedOut = true
+          controller.abort()
+        }, timeoutMs)
 
   try {
     const response = await doFetch(downloadUrl, {
       headers: normalizeHeaders(grant.downloadHeaders),
-      signal: controller.signal,
+      ...(controller ? { signal: controller.signal } : {}),
     })
     if (!response.ok) throw new Error('无法下载SOP文件，请稍后重试。')
 
@@ -56,11 +60,11 @@ export async function openDownloadGrantBlob(
     link.remove()
     window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
   } catch (error) {
-    // Our ceiling fired (headers or a stalled body) → actionable, retryable copy.
+    // Our opted-in ceiling fired (headers or a stalled body) → actionable, retryable copy.
     if (timedOut) throw new Error('网络超时，请检查连接后重试')
     throw error
   } finally {
-    clearTimeout(timer)
+    if (timer !== undefined) clearTimeout(timer)
   }
 }
 

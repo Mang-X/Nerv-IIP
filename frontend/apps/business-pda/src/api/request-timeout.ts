@@ -128,7 +128,13 @@ export function createTimeoutFetch(config: TimeoutFetchConfig = {}): typeof fetc
       throw error
     } finally {
       clearTimeout(timer)
-      callerSignal?.removeEventListener('abort', onCallerAbort)
+      // NOTE: intentionally do NOT detach onCallerAbort here. fetch() resolves at HEADERS,
+      // but the caller may still read a large body afterwards (e.g. a SOP blob download),
+      // and that body stream is tied to `controller.signal`. Keeping the caller→controller
+      // link alive lets the caller's own abort/timeout still cancel a stalled body read —
+      // otherwise the link would be severed at headers and the body could hang unbounded.
+      // The `{ once: true }` listener self-removes when it fires; otherwise it is GC'd with
+      // the (short-lived, per-request) caller signal.
     }
   }
 }
