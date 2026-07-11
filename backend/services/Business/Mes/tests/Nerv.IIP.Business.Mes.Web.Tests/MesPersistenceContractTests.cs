@@ -859,6 +859,34 @@ public sealed class MesPersistenceContractTests
     }
 
     [Fact]
+    public void FinishedGoodsReceipt_validator_treats_unit_cost_as_optional()
+    {
+        // Now that the command validators actually run in the request pipeline, this guards against the validator
+        // over-constraining an optional field: FinishedGoodsReceiptRequest.Create accepts a null UnitCost, so the
+        // validator must accept it too (and only require positivity when a value is supplied).
+        var validator = new CreateFinishedGoodsReceiptRequestCommandValidator();
+        var command = new CreateFinishedGoodsReceiptRequestCommand(
+            "org-001",
+            "env-dev",
+            "WO-FG",
+            "SKU-FG",
+            5m,
+            "PCS",
+            DateTimeOffset.Parse("2026-05-27T08:00:00Z"),
+            UnitCost: null,
+            IdempotencyKey: "idem-fg",
+            ProducedLotNo: "LOT-FG-1");
+
+        Assert.True(validator.Validate(command).IsValid);
+        Assert.True(validator.Validate(command with { UnitCost = 12.34m }).IsValid);
+
+        // Every other field is valid, so a negative unit cost is the only thing that can fail here — exactly one error.
+        var negative = validator.Validate(command with { UnitCost = -1m });
+        Assert.False(negative.IsValid);
+        Assert.Single(negative.Errors);
+    }
+
+    [Fact]
     public async Task Foundation_readiness_reports_quality_plan_and_equipment_blocking_reason_codes()
     {
         var services = CreateServices(nameof(Foundation_readiness_reports_quality_plan_and_equipment_blocking_reason_codes));

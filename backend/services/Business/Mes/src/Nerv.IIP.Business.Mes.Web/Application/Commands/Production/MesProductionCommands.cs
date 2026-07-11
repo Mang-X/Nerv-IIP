@@ -496,7 +496,10 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandValidator : Abstract
         RuleFor(x => x.SkuId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Quantity).GreaterThan(0);
         RuleFor(x => x.UomCode).NotEmpty().MaximumLength(30);
-        RuleFor(x => x.UnitCost).NotNull().GreaterThan(0);
+        // UnitCost is optional by design — FinishedGoodsReceiptRequest.Create stores null as-is and only guards
+        // positivity when a value is provided. Validate the same way (positive only when present) so the API
+        // does not reject a cost-less receipt the domain accepts.
+        RuleFor(x => x.UnitCost).GreaterThan(0).When(x => x.UnitCost.HasValue);
     }
 }
 
