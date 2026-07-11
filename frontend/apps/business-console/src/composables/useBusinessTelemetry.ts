@@ -1,11 +1,14 @@
 import {
   createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions,
+  getBusinessConsoleTelemetryTagCurrentValueQueryOptions,
   listBusinessConsoleTelemetryAlarmRulesQueryOptions,
   listBusinessConsoleTelemetryTagsQueryOptions,
   queryBusinessConsoleTelemetryDeviceHistoryQueryOptions,
   queryBusinessConsoleTelemetryOeeQueryOptions,
   queryBusinessConsoleTelemetryRuntimeAvailabilityQueryOptions,
   type BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest,
+  type BusinessConsoleTelemetryTagCurrentValueEnvelope,
+  type BusinessConsoleTelemetryTagCurrentValueResponse,
   type BusinessConsoleTelemetryAlarmRuleItem,
   type BusinessConsoleTelemetryAlarmRuleListEnvelope,
   type BusinessConsoleTelemetryHistoryEnvelope,
@@ -18,7 +21,7 @@ import {
   type EquipmentRuntimeAvailabilityWindow,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, type Ref } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 
@@ -55,7 +58,9 @@ function defaultListFilters(initial: Partial<TelemetryListFilters> = {}): Teleme
   })
 }
 
-function defaultWindowFilters(initial: Partial<TelemetryWindowFilters> = {}): TelemetryWindowFilters {
+function defaultWindowFilters(
+  initial: Partial<TelemetryWindowFilters> = {},
+): TelemetryWindowFilters {
   const end = new Date()
   const start = new Date(end)
   start.setHours(start.getHours() - 8)
@@ -87,16 +92,18 @@ function toContextQuery(businessContext: ReturnType<typeof useBusinessContextSto
   }
 }
 
-function listItems<TItem>(envelope: { success?: boolean, data?: { items?: TItem[] } | null } | undefined) {
-  return envelope?.success ? envelope.data?.items ?? [] : []
+function listItems<TItem>(
+  envelope: { success?: boolean; data?: { items?: TItem[] } | null } | undefined,
+) {
+  return envelope?.success ? (envelope.data?.items ?? []) : []
 }
 
-function listTotal(envelope: { success?: boolean, data?: { total?: number } | null } | undefined) {
-  return envelope?.success ? envelope.data?.total ?? 0 : 0
+function listTotal(envelope: { success?: boolean; data?: { total?: number } | null } | undefined) {
+  return envelope?.success ? (envelope.data?.total ?? 0) : 0
 }
 
-function unwrapData<TData>(envelope: { success?: boolean, data?: TData | null } | undefined) {
-  return envelope?.success ? envelope.data ?? undefined : undefined
+function unwrapData<TData>(envelope: { success?: boolean; data?: TData | null } | undefined) {
+  return envelope?.success ? (envelope.data ?? undefined) : undefined
 }
 
 export function formatOeeRate(value: number | null | undefined) {
@@ -144,11 +151,15 @@ export function useBusinessTelemetryTags(initialFilters: Partial<TelemetryListFi
     filters,
     refreshTags: () => refetchWithBusinessContext(businessContext, tagsQuery),
     tags: computed<BusinessConsoleTelemetryTagItem[]>(() =>
-      listItems<BusinessConsoleTelemetryTagItem>(tagsQuery.data.value as BusinessConsoleTelemetryTagListEnvelope | undefined),
+      listItems<BusinessConsoleTelemetryTagItem>(
+        tagsQuery.data.value as BusinessConsoleTelemetryTagListEnvelope | undefined,
+      ),
     ),
     tagsError: tagsQuery.error,
     tagsPending: tagsQuery.isLoading,
-    tagsTotal: computed(() => listTotal(tagsQuery.data.value as BusinessConsoleTelemetryTagListEnvelope | undefined)),
+    tagsTotal: computed(() =>
+      listTotal(tagsQuery.data.value as BusinessConsoleTelemetryTagListEnvelope | undefined),
+    ),
   }
 }
 
@@ -183,7 +194,9 @@ export function useBusinessTelemetryAlarmRules(initialFilters: Partial<Telemetry
     alarmRulesError: alarmRulesQuery.error,
     alarmRulesPending: alarmRulesQuery.isLoading,
     alarmRulesTotal: computed(() =>
-      listTotal(alarmRulesQuery.data.value as BusinessConsoleTelemetryAlarmRuleListEnvelope | undefined),
+      listTotal(
+        alarmRulesQuery.data.value as BusinessConsoleTelemetryAlarmRuleListEnvelope | undefined,
+      ),
     ),
     filters,
     refreshAlarmRules: () => refetchWithBusinessContext(businessContext, alarmRulesQuery),
@@ -200,11 +213,52 @@ export function useBusinessTelemetryAlarmRules(initialFilters: Partial<Telemetry
   }
 }
 
+/**
+ * 某设备某 tag 的当前值（最新原始采样 LastValue）。用于设备控制写值表单展示真实当前值，区别于历史
+ * 曲线的 bucket 均值。tagKey 为空时不发请求。
+ */
+export function useBusinessTelemetryTagCurrentValue(
+  deviceAssetId: Ref<string>,
+  tagKey: Ref<string>,
+) {
+  const businessContext = useBusinessContextStore()
+  const enabled = computed(
+    () =>
+      hasBusinessContext(businessContext) &&
+      deviceAssetId.value.trim().length > 0 &&
+      tagKey.value.trim().length > 0,
+  )
+  const currentValueQuery = useQuery(() => ({
+    ...getBusinessConsoleTelemetryTagCurrentValueQueryOptions({
+      query: {
+        ...toContextQuery(businessContext),
+        deviceAssetId: deviceAssetId.value,
+        tagKey: tagKey.value,
+      },
+    }),
+    enabled: enabled.value,
+  }))
+  const currentValue = computed<BusinessConsoleTelemetryTagCurrentValueResponse | undefined>(() =>
+    unwrapData<BusinessConsoleTelemetryTagCurrentValueResponse>(
+      currentValueQuery.data.value as BusinessConsoleTelemetryTagCurrentValueEnvelope | undefined,
+    ),
+  )
+
+  return {
+    currentValue,
+    currentValueError: currentValueQuery.error,
+    currentValuePending: currentValueQuery.isLoading,
+    refreshCurrentValue: () => (enabled.value ? currentValueQuery.refetch() : Promise.resolve()),
+  }
+}
+
 export function useBusinessTelemetryHistory(initialFilters: Partial<TelemetryWindowFilters> = {}) {
   const businessContext = useBusinessContextStore()
   const filters = defaultWindowFilters(initialFilters)
   const deviceAssetId = computed(() => filters.deviceAssetId.trim())
-  const historyEnabled = computed(() => hasBusinessContext(businessContext) && deviceAssetId.value.length > 0)
+  const historyEnabled = computed(
+    () => hasBusinessContext(businessContext) && deviceAssetId.value.length > 0,
+  )
   const historyQuery = useQuery(() => ({
     ...queryBusinessConsoleTelemetryDeviceHistoryQueryOptions({
       path: { deviceAssetId: deviceAssetId.value },
@@ -233,7 +287,7 @@ export function useBusinessTelemetryHistory(initialFilters: Partial<TelemetryWin
     historyError: historyQuery.error,
     historyItems,
     historyPending: historyQuery.isLoading,
-    refreshHistory: () => historyEnabled.value ? historyQuery.refetch() : Promise.resolve(),
+    refreshHistory: () => (historyEnabled.value ? historyQuery.refetch() : Promise.resolve()),
     visibleHistoryItems,
   }
 }
@@ -242,7 +296,9 @@ export function useBusinessTelemetryOee(initialFilters: Partial<TelemetryWindowF
   const businessContext = useBusinessContextStore()
   const filters = defaultWindowFilters(initialFilters)
   const deviceAssetId = computed(() => filters.deviceAssetId.trim())
-  const oeeEnabled = computed(() => hasBusinessContext(businessContext) && deviceAssetId.value.length > 0)
+  const oeeEnabled = computed(
+    () => hasBusinessContext(businessContext) && deviceAssetId.value.length > 0,
+  )
   const oeeQuery = useQuery(() => ({
     ...queryBusinessConsoleTelemetryOeeQueryOptions({
       query: {
@@ -274,13 +330,18 @@ export function useBusinessTelemetryOee(initialFilters: Partial<TelemetryWindowF
     ),
     filters,
     oee: computed<BusinessConsoleTelemetryOeeResponse | undefined>(() =>
-      unwrapData<BusinessConsoleTelemetryOeeResponse>(oeeQuery.data.value as BusinessConsoleTelemetryOeeEnvelope | undefined),
+      unwrapData<BusinessConsoleTelemetryOeeResponse>(
+        oeeQuery.data.value as BusinessConsoleTelemetryOeeEnvelope | undefined,
+      ),
     ),
     oeeError: oeeQuery.error,
-    oeePending: computed(() => oeeQuery.isLoading.value || runtimeAvailabilityQuery.isLoading.value),
-    refreshOee: () => oeeEnabled.value
-      ? Promise.all([oeeQuery.refetch(), runtimeAvailabilityQuery.refetch()])
-      : Promise.resolve(),
+    oeePending: computed(
+      () => oeeQuery.isLoading.value || runtimeAvailabilityQuery.isLoading.value,
+    ),
+    refreshOee: () =>
+      oeeEnabled.value
+        ? Promise.all([oeeQuery.refetch(), runtimeAvailabilityQuery.refetch()])
+        : Promise.resolve(),
     runtimeAvailabilityError: runtimeAvailabilityQuery.error,
   }
 }

@@ -150,11 +150,15 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/equipment/alarms/{alarmEventId}/shelve", "post", "shelveBusinessConsoleEquipmentAlarm");
         AssertOperationId(paths, "/api/business-console/v1/equipment/alarms/{alarmEventId}/unshelve", "post", "unshelveBusinessConsoleEquipmentAlarm");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/tags", "get", "listBusinessConsoleTelemetryTags");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/tags/current-value", "get", "getBusinessConsoleTelemetryTagCurrentValue");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "get", "listBusinessConsoleTelemetryAlarmRules");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "post", "createOrUpdateBusinessConsoleTelemetryAlarmRule");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/device-control-commands", "post", "createBusinessConsoleTelemetryDeviceControlCommand");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/device-control-commands", "get", "listBusinessConsoleTelemetryDeviceControlCommands");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/device-control-commands/{commandId}", "get", "getBusinessConsoleTelemetryDeviceControlCommand");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/device-control-bindings", "get", "listBusinessConsoleTelemetryDeviceControlBindings");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/device-control-bindings", "post", "createOrUpdateBusinessConsoleTelemetryDeviceControlBinding");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/device-control-bindings/{deviceAssetId}/disable", "post", "disableBusinessConsoleTelemetryDeviceControlBinding");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/samples", "post", "recordBusinessConsoleTelemetrySample");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarms", "post", "postBusinessConsoleTelemetryAlarm");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarms", "get", "listBusinessConsoleTelemetryAlarms");

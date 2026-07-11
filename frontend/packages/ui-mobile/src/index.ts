@@ -21,6 +21,7 @@ export { default as NvMobileTabs, type MobileTabItem } from './components/tabs/M
 export { default as NvMobileSteps, type StepItem } from './components/steps/Steps.vue'
 export { default as NvMobileCheckbox } from './components/checkbox/MobileCheckbox.vue'
 export { default as NvMobileEmpty } from './components/empty/Empty.vue'
+export { default as NvMobileErrorRetry } from './components/error-retry/ErrorRetry.vue'
 export { default as NvMobileBadge } from './components/badge/Badge.vue'
 export {
   default as NvActionSheet,
