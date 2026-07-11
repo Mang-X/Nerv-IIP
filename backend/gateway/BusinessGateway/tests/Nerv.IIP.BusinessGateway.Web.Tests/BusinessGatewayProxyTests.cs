@@ -5694,6 +5694,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessServiceProxyException? Failure { get; init; }
 
+    public BusinessServiceProxyException? DetailFailure { get; init; }
+
     public Task<BusinessConsoleResourceListResponse> ListResourcesAsync(
         string internalBearerToken,
         BusinessConsoleListResourcesRequest request,
@@ -5729,6 +5731,11 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         LastInternalToken = internalBearerToken;
         LastDetailRequest = request;
         DetailRequests.Add(request);
+        if (DetailFailure is not null)
+        {
+            throw DetailFailure;
+        }
+
         return Task.FromResult(ResourceDetail(request.ResourceType, request.Code, request.CodeSet, true));
     }
 

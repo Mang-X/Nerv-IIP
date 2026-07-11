@@ -136,6 +136,30 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public async Task Maintenance_work_order_warranty_enrichment_propagates_master_data_outages()
+    {
+        var masterData = new RecordingMasterDataClient
+        {
+            DetailFailure = new BusinessServiceProxyException(HttpStatusCode.BadGateway, "master-data-unavailable"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(new RecordingMaintenanceFacadeClient());
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=10");
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Maintenance_work_order_detail_reads_existing_work_order_surface_by_id()
     {
         var maintenance = new RecordingMaintenanceFacadeClient();

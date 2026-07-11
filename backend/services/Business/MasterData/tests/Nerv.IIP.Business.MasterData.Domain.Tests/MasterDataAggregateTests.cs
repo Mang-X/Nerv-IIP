@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
+using Nerv.IIP.Business.MasterData.Domain.DomainEvents;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
@@ -639,6 +640,42 @@ public sealed class MasterDataAggregateTests
         Assert.False(asset.Retired);
         Assert.Equal(2, asset.Components.Count);
         Assert.Contains(asset.Components, x => x.ComponentCode == "MOTOR" && x.Quantity == 1m);
+    }
+
+    [Fact]
+    public void Device_asset_ledger_registration_emits_created_event_once()
+    {
+        var asset = DeviceAsset.RegisterCapability(
+            "org-001",
+            "env-dev",
+            "DEV-MIX-01",
+            "Mixing Vessel",
+            "LINE-MIX-01",
+            "WC-MIX-01",
+            "mixer",
+            "Acme",
+            "SN-001",
+            null,
+            null,
+            string.Empty,
+            "high",
+            true,
+            true,
+            new Dictionary<string, string>())
+            .WithLedger(
+                new DateOnly(2024, 1, 15),
+                125000m,
+                "CNY",
+                new DateOnly(2027, 1, 14),
+                "SUP-ACME",
+                "SITE-001",
+                "WS-MIX",
+                "LINE-MIX-01",
+                "ST-MIX-01",
+                parentDeviceId: null,
+                retiredOn: null);
+
+        Assert.Single(asset.GetDomainEvents().OfType<MasterDataAggregateCreatedDomainEvent>());
     }
 
     [Fact]

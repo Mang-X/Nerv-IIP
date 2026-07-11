@@ -206,8 +206,6 @@ public class DeviceAsset : Entity<DeviceAssetId>, IAggregateRoot
             stationCode,
             parentDeviceId,
             retiredOn);
-        this.AddDomainEvent(new MasterDataAggregateCreatedDomainEvent(nameof(DeviceAsset), OrganizationId, EnvironmentId, Code));
-        this.AddDomainEvent(new DeviceAssetChangedDomainEvent(OrganizationId, EnvironmentId, Code));
         return this;
     }
 

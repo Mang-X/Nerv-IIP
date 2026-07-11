@@ -222,7 +222,7 @@ internal static class MaintenanceDeviceAssetWarrantyEnricher
                 new BusinessConsoleMasterDataResourceRequest(organizationId, environmentId, "device-asset", deviceAssetId),
                 cancellationToken);
         }
-        catch (BusinessServiceProxyException)
+        catch (BusinessServiceProxyException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             return null;
         }
