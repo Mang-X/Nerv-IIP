@@ -953,6 +953,23 @@ describe('business MES composables', () => {
     expect(result.data?.items).toHaveLength(250)
   })
 
+  it('rejects the compensation pagination on a success:false envelope so confirm stays gated', async () => {
+    // 服务以 HTTP 200 返回 success:false 时，分页回调必须抛错（而非合成空 success:true），
+    // 让 useQuery.error → cancelPreviewError 生效、cancelPreviewReady 保持 false、禁用破坏性确认。
+    vi.mocked(listBusinessConsoleMesMaterialIssueRequests).mockImplementation((() =>
+      Promise.resolve({
+        data: { success: false, message: '业务失败', data: null },
+      })) as unknown as typeof listBusinessConsoleMesMaterialIssueRequests)
+
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-CANCEL'
+    detail.activateCancelPreview()
+
+    const factory = coladaState.queryFactoriesById.get('listBusinessConsoleMesMaterialIssueRequests')
+    const options = factory?.() as { query: () => Promise<unknown> }
+    await expect(options.query()).rejects.toThrow()
+  })
+
   it('marks cancel preview ready only after both compensation lists return data', () => {
     const pending = useMesWorkOrderDetail()
     pending.filters.workOrderId = 'WO-CANCEL'

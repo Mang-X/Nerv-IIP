@@ -677,7 +677,12 @@ export function useMesWorkOrderDetail() {
               query: { ...scope, skip, take },
               throwOnError: true,
             })
-            return data?.success ? (data.data?.items ?? []) : []
+            // throwOnError 只处理非 2xx；服务可能以 HTTP 200 返回 success:false 信封。此时必须抛错，
+            // 让 useQuery.error → cancelPreviewError 生效并禁用确认，而非合成空页 + success:true 放行破坏性取消。
+            if (data?.success !== true || !data.data) {
+              throw new Error(data?.message ?? '完工入库补偿预览请求失败')
+            }
+            return data.data.items ?? []
           },
         )
         return {
@@ -708,7 +713,11 @@ export function useMesWorkOrderDetail() {
               query: { ...scope, skip, take },
               throwOnError: true,
             })
-            return data?.success ? (data.data?.items ?? []) : []
+            // 同上：HTTP 200 + success:false 也必须抛错，避免在失败/空预览上放行破坏性取消。
+            if (data?.success !== true || !data.data) {
+              throw new Error(data?.message ?? '领料补偿预览请求失败')
+            }
+            return data.data.items ?? []
           },
         )
         return {
