@@ -99,10 +99,11 @@ See `components/install-backlog.md` for full list and install commands.
 
 ## Roadmaps
 
-| Scenario                                    | File                                            |
-| ------------------------------------------- | ----------------------------------------------- |
-| Business console component readiness (#143) | `roadmaps/business-console-readiness.md`        |
-| Business Console MES PC workbench           | `roadmaps/business-console-mes-pc-workbench.md` |
+| Scenario                                            | File                                             |
+| --------------------------------------------------- | ------------------------------------------------ |
+| Business console component readiness (#143)         | `roadmaps/business-console-readiness.md`         |
+| Business Console MES PC workbench                   | `roadmaps/business-console-mes-pc-workbench.md`  |
+| UX 走查发现 console + PDA（#815 / A1 验收事实来源） | `roadmaps/2026-07-11-ux-walkthrough-findings.md` |
 
 ---
 
