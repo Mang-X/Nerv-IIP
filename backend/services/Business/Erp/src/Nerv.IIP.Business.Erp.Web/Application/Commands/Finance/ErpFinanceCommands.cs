@@ -3,10 +3,12 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CashReceiptAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CreditNoteAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CostCandidateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReturnAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
@@ -851,6 +853,8 @@ public static class FinanceVoucherFactory
 {
     public const string InventoryAccountCode = "1401";
     public const string AccountsPayableAccountCode = "2202";
+    public const string AccountsReceivableAccountCode = "1122";
+    public const string SalesReturnsAccountCode = "6001";
     public const string DirectPayableExpenseAccountCode = "5001";
     public const string GoodsReceiptInvoiceReceiptAccountCode = "GR-IR";
     public const string RealizedExchangeLossAccountCode = "6603";
@@ -872,6 +876,36 @@ public static class FinanceVoucherFactory
             [
                 LocalDebit(InventoryAccountCode, amount, receipt.CurrencyCode, receipt.ExchangeRate, $"Goods receipt {receipt.PurchaseReceiptNo}"),
                 LocalCredit(GoodsReceiptInvoiceReceiptAccountCode, amount, receipt.CurrencyCode, receipt.ExchangeRate, $"GR/IR accrual {receipt.PurchaseReceiptNo}"),
+            ]);
+    }
+
+    public static JournalVoucher ForPurchaseReturn(PurchaseReturn purchaseReturn, string voucherNo, DateOnly postingDate)
+    {
+        var lines = new List<JournalVoucherLineDraft>();
+        if (purchaseReturn.GrIrReversalAmount > 0m)
+        {
+            lines.Add(LocalDebit(GoodsReceiptInvoiceReceiptAccountCode, purchaseReturn.GrIrReversalAmount, purchaseReturn.CurrencyCode, purchaseReturn.ExchangeRate, $"Reverse GR/IR {purchaseReturn.PurchaseReturnNo}"));
+        }
+
+        if (purchaseReturn.DebitNoteAmount > 0m)
+        {
+            lines.Add(LocalDebit(AccountsPayableAccountCode, purchaseReturn.DebitNoteAmount, purchaseReturn.CurrencyCode, purchaseReturn.ExchangeRate, $"Debit note {purchaseReturn.PurchaseReturnNo}"));
+        }
+
+        lines.Add(LocalCredit(InventoryAccountCode, purchaseReturn.TotalAmount, purchaseReturn.CurrencyCode, purchaseReturn.ExchangeRate, $"Supplier return {purchaseReturn.PurchaseReturnNo}"));
+        return JournalVoucher.Post(purchaseReturn.OrganizationId, purchaseReturn.EnvironmentId, voucherNo, postingDate, lines);
+    }
+
+    public static JournalVoucher ForCreditNote(CreditNote creditNote, DateOnly postingDate)
+    {
+        return JournalVoucher.Post(
+            creditNote.OrganizationId,
+            creditNote.EnvironmentId,
+            $"JV-CN-{creditNote.CreditNoteNo}",
+            postingDate,
+            [
+                LocalDebit(SalesReturnsAccountCode, creditNote.Amount, creditNote.CurrencyCode, creditNote.ExchangeRate, $"Credit note {creditNote.CreditNoteNo}"),
+                LocalCredit(AccountsReceivableAccountCode, creditNote.Amount, creditNote.CurrencyCode, creditNote.ExchangeRate, $"Settle AR {creditNote.AccountReceivableNo}"),
             ]);
     }
 
@@ -928,8 +962,8 @@ public static class FinanceVoucherFactory
             $"JV-AR-{receivable.ReceivableNo}",
             receivable.InvoiceDate,
             [
-                LocalDebit("1122", receivable.Amount, receivable.CurrencyCode, receivable.ExchangeRate, $"AR {receivable.ReceivableNo}"),
-                LocalCredit("6001", receivable.Amount, receivable.CurrencyCode, receivable.ExchangeRate, $"AR source {receivable.SourceDocumentNo}"),
+                LocalDebit(AccountsReceivableAccountCode, receivable.Amount, receivable.CurrencyCode, receivable.ExchangeRate, $"AR {receivable.ReceivableNo}"),
+                LocalCredit(SalesReturnsAccountCode, receivable.Amount, receivable.CurrencyCode, receivable.ExchangeRate, $"AR source {receivable.SourceDocumentNo}"),
             ]);
     }
 

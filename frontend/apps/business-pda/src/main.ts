@@ -7,6 +7,7 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import './assets/main.css'
 import { resolveGatewayBaseUrl } from './api/gateway-base-url'
+import { createTimeoutFetch } from './api/request-timeout'
 import { router } from './router'
 import { useAuthStore } from './stores/auth'
 
@@ -31,6 +32,9 @@ configureAuthenticatedApiClient({
     configureApiClient({
       ...options,
       baseUrl: resolveGatewayBaseUrl(),
+      // Every facade call flows through this fetch, so the 30s timeout + offline
+      // pre-check live here once — never per page. See ./api/request-timeout.
+      fetch: createTimeoutFetch(),
     }),
   loginPath: '/login',
   router,

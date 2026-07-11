@@ -95,6 +95,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public decimal CompletedQuantity { get; private set; }
     public decimal ScrapQuantity { get; private set; }
+    public int CostReportCount { get; private set; }
+    public int MaterialMovementCount { get; private set; }
     public decimal OverReceiptTolerancePercent { get; private set; }
     public DateTimeOffset? ClosedAtUtc { get; private set; }
     public string? HoldReason { get; private set; }
@@ -311,6 +313,13 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         {
             AddDomainEvent(new WorkOrderCompletedDomainEvent(this, reportedAtUtc));
         }
+    }
+
+    public void RegisterCostReport(int materialMovementCount)
+    {
+        if (materialMovementCount < 0) throw new ArgumentOutOfRangeException(nameof(materialMovementCount));
+        CostReportCount++;
+        MaterialMovementCount += materialMovementCount;
     }
 
     public void ReverseProductionProgress(decimal goodQuantity, decimal scrapQuantity, DateTimeOffset reversedAtUtc)

@@ -83,6 +83,35 @@ public sealed class StockCountVarianceConfirmedIntegrationEventConverter(IInvent
     }
 }
 
+public sealed class StockReservationExpiredIntegrationEventConverter(IInventoryIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<StockReservationExpiredDomainEvent, InventoryReservationExpiredIntegrationEvent>
+{
+    public InventoryReservationExpiredIntegrationEvent Convert(StockReservationExpiredDomainEvent domainEvent)
+    {
+        var reservation = domainEvent.StockReservation;
+        var context = contextAccessor.GetContext();
+        return new InventoryReservationExpiredIntegrationEvent(
+            EventIds.New(),
+            InventoryIntegrationEventTypes.StockReservationExpired,
+            InventoryIntegrationEventVersions.V1,
+            new DateTimeOffset(domainEvent.ExpiredAtUtc),
+            InventoryIntegrationEventSources.BusinessInventory,
+            context.CorrelationId,
+            context.CausationId,
+            reservation.OrganizationId,
+            reservation.EnvironmentId,
+            context.Actor,
+            EventIds.Idempotency("stock-reservation-expired", reservation.OrganizationId, reservation.EnvironmentId, reservation.Id.ToString()),
+            new InventoryReservationExpiredPayload(
+                reservation.Id.ToString(),
+                reservation.SourceService,
+                reservation.SourceDocumentId,
+                reservation.SourceDocumentLineId,
+                domainEvent.ReleasedQuantity,
+                new DateTimeOffset(reservation.ExpiresAtUtc)));
+    }
+}
+
 public sealed class StockAvailabilityChangedIntegrationEventConverter(IInventoryIntegrationEventContextAccessor contextAccessor)
     : IIntegrationEventConverter<StockAvailabilityChangedDomainEvent, StockAvailabilityChangedIntegrationEvent>
 {

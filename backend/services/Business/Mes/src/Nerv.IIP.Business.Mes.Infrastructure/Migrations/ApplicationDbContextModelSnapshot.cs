@@ -830,6 +830,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("good_quantity")
                         .HasComment("Good quantity reported for the operation.");
 
+                    b.Property<int>("MaterialMovementCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("material_movement_count")
+                        .HasComment("Count of production-consumption Inventory movements emitted for cost closure.");
+
                     b.Property<string>("OeeDeviceAssetId")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
@@ -921,6 +926,15 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("serial_no")
                         .HasComment("Optional produced serial number for genealogy.");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasDefaultValue("manual")
+                        .HasColumnName("source")
+                        .HasComment("Report origin: manual operator entry or telemetry count automation.");
 
                     b.Property<string>("WorkOrderId")
                         .IsRequired()
@@ -1073,6 +1087,122 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.ToTable("production_report_material_consumptions", "mes", t =>
                         {
                             t.HasComment("MES material lot consumption facts referenced by production reports for work order and material traceability.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.TelemetryProductionReportCandidate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Telemetry production report candidate aggregate id.");
+
+                    b.Property<DateTimeOffset>("BucketEndUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("bucket_end_utc")
+                        .HasComment("Exclusive UTC telemetry counter bucket end.");
+
+                    b.Property<DateTimeOffset>("BucketStartUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("bucket_start_utc")
+                        .HasComment("Inclusive UTC telemetry counter bucket start.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when MES received the telemetry count delta.");
+
+                    b.Property<string>("DeviceAssetId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("device_asset_id")
+                        .HasComment("Device asset that produced the counter delta.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id for the candidate.");
+
+                    b.Property<decimal>("GoodQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("good_quantity")
+                        .HasComment("Positive good-quantity delta derived from the monotonic telemetry counter.");
+
+                    b.Property<string>("OperationTaskId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_task_id")
+                        .HasComment("Current MES operation task resolved for the counter delta when unambiguous.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("ReportingMode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("reporting_mode")
+                        .HasComment("Configured telemetry report mode: posted or draft.");
+
+                    b.Property<string>("SourceIdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("source_idempotency_key")
+                        .HasComment("IndustrialTelemetry event idempotency key; unique candidate source boundary.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("Candidate status: draft or pending-confirmation.");
+
+                    b.Property<string>("SuspensionReason")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("suspension_reason")
+                        .HasComment("Reason direct posting was suspended, such as active-alarm or no-current-work-order.");
+
+                    b.Property<string>("TagKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("tag_key")
+                        .HasComment("Production-count telemetry tag key.");
+
+                    b.Property<string>("WorkCenterId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("MES-local mapped work center when available.");
+
+                    b.Property<string>("WorkOrderId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("Current MES work order resolved for the counter delta when unambiguous.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceIdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_telemetry_report_candidates_scope_source");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Status", "CreatedAtUtc")
+                        .HasDatabaseName("ix_telemetry_report_candidates_scope_status_created");
+
+                    b.ToTable("telemetry_production_report_candidates", "mes", t =>
+                        {
+                            t.HasComment("MES telemetry count deltas awaiting manual confirmation or retained as configured report drafts.");
                         });
                 });
 
@@ -1620,6 +1750,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("completed_quantity")
                         .HasComment("Cumulative good production quantity reported against the work order.");
 
+                    b.Property<int>("CostReportCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("cost_report_count")
+                        .HasComment("Count of MES reports expected by downstream actual-cost closure.");
+
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc")
@@ -1642,6 +1777,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("hold_reason")
                         .HasComment("Reason code or text for holding the work order.");
+
+                    b.Property<int>("MaterialMovementCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("material_movement_count")
+                        .HasComment("Count of Inventory material postings expected by downstream actual-cost closure.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()

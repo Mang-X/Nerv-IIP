@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
+using Nerv.IIP.Business.Inventory.Web.Application.Expiry;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
 
@@ -91,9 +93,13 @@ public sealed class ReserveStockCommandValidator : AbstractValidator<ReserveStoc
     }
 }
 
-public sealed class ReserveStockCommandHandler(ApplicationDbContext dbContext)
+public sealed class ReserveStockCommandHandler(
+    ApplicationDbContext dbContext,
+    IOptions<StockReservationExpirationOptions>? options = null)
     : ICommandHandler<ReserveStockCommand, ReserveStockResult>
 {
+    private readonly StockReservationExpirationOptions expirationOptions = options?.Value ?? new StockReservationExpirationOptions();
+
     public async Task<ReserveStockResult> Handle(ReserveStockCommand request, CancellationToken cancellationToken)
     {
         var qualityStatus = StockQualityStatus.Normalize(request.QualityStatus);
@@ -133,7 +139,8 @@ public sealed class ReserveStockCommandHandler(ApplicationDbContext dbContext)
             request.SourceDocumentId,
             request.SourceDocumentLineId,
             request.IdempotencyKey,
-            request.Quantity);
+            request.Quantity,
+            DateTime.UtcNow.Add(expirationOptions.ResolveLifetime(request.SourceService)));
         var existing = await dbContext.StockReservations.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
@@ -191,10 +198,13 @@ public sealed class ReserveFefoStockCommandValidator : AbstractValidator<Reserve
     }
 }
 
-public sealed class ReserveFefoStockCommandHandler(ApplicationDbContext dbContext)
+public sealed class ReserveFefoStockCommandHandler(
+    ApplicationDbContext dbContext,
+    IOptions<StockReservationExpirationOptions>? options = null)
     : ICommandHandler<ReserveFefoStockCommand, ReserveFefoStockResult>
 {
     private const int MaxFefoCandidateLedgers = 1000;
+    private readonly StockReservationExpirationOptions expirationOptions = options?.Value ?? new StockReservationExpirationOptions();
 
     public async Task<ReserveFefoStockResult> Handle(ReserveFefoStockCommand request, CancellationToken cancellationToken)
     {
@@ -278,7 +288,8 @@ public sealed class ReserveFefoStockCommandHandler(ApplicationDbContext dbContex
                 request.SourceDocumentId,
                 request.SourceDocumentLineId,
                 idempotencyKey,
-                quantity);
+                quantity,
+                DateTime.UtcNow.Add(expirationOptions.ResolveLifetime(request.SourceService)));
             ledger.Reserve(reservation);
             dbContext.StockReservations.Add(reservation);
             allocations.Add(new ReserveFefoStockAllocationResult(

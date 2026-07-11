@@ -15,6 +15,12 @@ public sealed record AlarmRuleConfiguredDomainEvent(AlarmRule AlarmRule) : IDoma
 
 public sealed record TelemetrySampleRecordedDomainEvent(TelemetrySummary TelemetrySummary) : IDomainEvent;
 
+public sealed record TelemetryProductionCountDeltaDomainEvent(
+    TelemetrySummary TelemetrySummary,
+    decimal DeltaQuantity,
+    string ReportingMode,
+    bool HasActiveAlarm) : IDomainEvent;
+
 public sealed record DeviceStateChangedDomainEvent(DeviceStateSnapshot DeviceStateSnapshot) : IDomainEvent;
 
 public sealed record AlarmRaisedDomainEvent(AlarmEvent AlarmEvent) : IDomainEvent;

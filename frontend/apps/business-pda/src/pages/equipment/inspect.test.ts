@@ -1,3 +1,4 @@
+import { RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
@@ -289,5 +290,24 @@ describe('PDA equipment inspect page', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+  })
+
+  // P1-2：点检端点无服务端幂等键。超时/离线后结果不确定 → 不给"重试"，改引导核实。
+  it('超时（结果不确定）时不给危险重试，改引导核实且绝不自动重提', async () => {
+    recordInspection.mockRejectedValueOnce(new RequestTimeoutError())
+    const wrapper = mount(InspectPage)
+    await wrapper.findAll('[data-testid="plan-option"]')[0].trigger('click')
+    await wrapper.get('[data-testid="result-pass"]').trigger('click')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('网络超时，请检查连接后重试')
+    expect(wrapper.text()).toContain('请勿重复提交')
+    expect(wrapper.find('[data-testid="retry"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="verify-list"]').trigger('click')
+    expect(refreshInspections).toHaveBeenCalled()
+    // 关键：核实动作不会重提 → recordInspection 仍只调用一次。
+    expect(recordInspection).toHaveBeenCalledTimes(1)
   })
 })

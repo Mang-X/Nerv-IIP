@@ -1,6 +1,7 @@
 using MediatR;
 using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.BackorderOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
@@ -17,6 +18,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage
 {
     public DbSet<InboundOrder> InboundOrders => Set<InboundOrder>();
+    public DbSet<BackorderOrder> BackorderOrders => Set<BackorderOrder>();
     public DbSet<InboundOrderLine> InboundOrderLines => Set<InboundOrderLine>();
     public DbSet<OutboundOrder> OutboundOrders => Set<OutboundOrder>();
     public DbSet<OutboundOrderLine> OutboundOrderLines => Set<OutboundOrderLine>();

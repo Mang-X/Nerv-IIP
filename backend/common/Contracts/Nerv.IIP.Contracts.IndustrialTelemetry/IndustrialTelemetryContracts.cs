@@ -8,6 +8,7 @@ public static class IndustrialTelemetryIntegrationEventTypes
     public const string AlarmRaised = "industrialTelemetry.AlarmRaised";
     public const string AlarmCleared = "industrialTelemetry.AlarmCleared";
     public const string AlarmEscalated = "industrialTelemetry.AlarmEscalated";
+    public const string ProductionCountDeltaRecorded = "industrialTelemetry.ProductionCountDeltaRecorded";
     public const string TelemetryTagCreated = "industrialTelemetry.TelemetryTagCreated";
     public const string TelemetrySampleRecorded = "industrialTelemetry.TelemetrySampleRecorded";
 }
@@ -129,3 +130,30 @@ public sealed record AlarmEscalatedPayload(
     string EscalationReason,
     IReadOnlyCollection<string> RecipientRefs,
     string? Priority = null);
+
+public sealed record TelemetryProductionCountDeltaIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    TelemetryProductionCountDeltaPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record TelemetryProductionCountDeltaPayload(
+    string DeviceAssetId,
+    string TagKey,
+    string ReportingMode,
+    decimal DeltaQuantity,
+    DateTimeOffset BucketStartUtc,
+    DateTimeOffset BucketEndUtc,
+    string SourceSequence,
+    bool HasActiveAlarm);

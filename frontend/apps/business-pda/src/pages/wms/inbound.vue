@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RetryableListError from '@/components/RetryableListError.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useWmsInbound } from '@/composables/useBusinessWms'
 import { inboundOrderStatusLabel, inboundReceiveFlow } from '@nerv-iip/business-core'
@@ -20,7 +21,8 @@ definePage({
 })
 
 const router = useRouter()
-const { filters, orders, pending, error, completeInbound, completePending } = useWmsInbound()
+const { filters, orders, pending, error, refresh, completeInbound, completePending } =
+  useWmsInbound()
 
 // 选中的收货单号 + GUID（GUID 仅用于 complete 调用与 :key，绝不展示）。
 const selectedOrderId = ref('')
@@ -134,13 +136,14 @@ function goHome() {
     <div v-else class="space-y-4 p-4">
       <NvScanBar placeholder="扫描收货单号" :active="scanActive" @scan="onScan" />
 
-      <p
+      <RetryableListError
         v-if="error"
-        data-testid="error-banner"
-        class="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-      >
-        单据加载失败，请下拉重试或检查网络。
-      </p>
+        :error="error"
+        :pending="pending"
+        fallback="单据加载失败，请下拉重试或检查网络。"
+        test-id="error-banner"
+        @retry="() => refresh()"
+      />
 
       <div
         v-if="showEmpty"

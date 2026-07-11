@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggregate;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Wms;
 using static Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters.ErpIntegrationEventConverterHelpers;
@@ -113,5 +114,42 @@ public sealed class JournalVoucherPostedIntegrationEventConverter
             voucher.EnvironmentId,
             EventIds.Idempotency("journal-voucher-posted", voucher.OrganizationId, voucher.EnvironmentId, voucher.VoucherNo),
             new JournalVoucherPostedPayload(PublicId(voucher.Id), voucher.VoucherNo, voucher.PostingDate));
+    }
+}
+
+public sealed class SalesReturnAuthorizedIntegrationEventConverter
+    : IIntegrationEventConverter<SalesReturnAuthorizedDomainEvent, SalesReturnAuthorizedIntegrationEvent>
+{
+    public SalesReturnAuthorizedIntegrationEvent Convert(SalesReturnAuthorizedDomainEvent domainEvent)
+    {
+        var rma = domainEvent.SalesReturnAuthorization;
+        var idempotencyKey = EventIds.Idempotency("sales-return-authorized", rma.OrganizationId, rma.EnvironmentId, rma.RmaNo);
+        return new SalesReturnAuthorizedIntegrationEvent(
+            EventIds.New(),
+            ErpIntegrationEventTypes.SalesReturnAuthorized,
+            ErpIntegrationEventVersions.V1,
+            DateTimeOffset.UtcNow,
+            ErpIntegrationEventSources.BusinessErp,
+            idempotencyKey,
+            rma.RmaNo,
+            rma.OrganizationId,
+            rma.EnvironmentId,
+            "system:erp",
+            idempotencyKey,
+            new SalesReturnAuthorizedPayload(
+                rma.RmaNo,
+                rma.SalesOrderNo,
+                rma.CustomerCode,
+                rma.SiteCode,
+                rma.Lines
+                    .OrderBy(x => x.SalesOrderLineNo, StringComparer.Ordinal)
+                    .Select(x => new SalesReturnAuthorizedLinePayload(
+                        x.SalesOrderLineNo,
+                        x.SkuCode,
+                        x.UomCode,
+                        x.Quantity,
+                        x.LocationCode,
+                        x.LotNo))
+                    .ToArray()));
     }
 }

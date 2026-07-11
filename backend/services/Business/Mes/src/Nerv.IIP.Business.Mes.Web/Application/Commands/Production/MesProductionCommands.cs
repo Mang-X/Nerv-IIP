@@ -38,7 +38,8 @@ public sealed record RecordProductionReportCommand(
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
-    string? SerialNo = null) : ICommand<ProductionReportCommandResult>;
+    string? SerialNo = null,
+    string Source = "manual") : ICommand<ProductionReportCommandResult>;
 
 public sealed class RecordProductionReportCommandValidator : AbstractValidator<RecordProductionReportCommand>
 {
@@ -53,6 +54,8 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
         RuleFor(x => x.ReworkQuantity).GreaterThanOrEqualTo(0);
         RuleFor(x => x).Must(x => x.GoodQuantity + x.ScrapQuantity + x.ReworkQuantity > 0)
             .WithMessage("At least one reported quantity must be positive.");
+        RuleFor(x => x.Source).NotEmpty().MaximumLength(50).Must(ProductionReport.IsSupportedSource)
+            .WithMessage("Production report source must be manual or telemetry.");
         RuleForEach(x => x.ConsumedMaterialLots).ChildRules(lot =>
         {
             lot.RuleFor(x => x.MaterialId).NotEmpty().MaximumLength(100);
@@ -87,6 +90,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 request.DefectRecordNo,
                 request.ProducedLotNo,
                 request.SerialNo,
+                request.Source,
                 ConsumedMaterialLotsFingerprint(request.ConsumedMaterialLots)),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
@@ -150,7 +154,9 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             request.DefectRecordNo,
             producedLotNo,
             request.SerialNo,
-            ProductionReportOeeProjectionFactory.Create(operationTask));
+            ProductionReportOeeProjectionFactory.Create(operationTask),
+            request.Source,
+            consumedMaterialLots.Count);
 
         var duplicateLot = consumedMaterialLots
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId.ToUpperInvariant()}", StringComparer.Ordinal)
@@ -229,6 +235,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 lot.MaterialIssueRequestNo));
         }
 
+        workOrder.RegisterCostReport(consumedMaterialLots.Count);
         if (isOutputOperation)
         {
             try

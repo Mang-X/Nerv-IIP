@@ -797,6 +797,11 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id where the reservation is valid.");
 
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at_utc")
+                        .HasComment("UTC deadline after which an open reservation is automatically released.");
+
                     b.Property<DateOnly?>("ExpiryDate")
                         .HasColumnType("date")
                         .HasColumnName("expiry_date")
@@ -872,6 +877,12 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasColumnName("reserved_quantity")
                         .HasComment("Original reserved quantity.");
 
+                    b.Property<int>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("row_version")
+                        .HasComment("Optimistic row version for concurrent reservation renewal and expiration.");
+
                     b.Property<string>("SerialNo")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -932,6 +943,9 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasComment("UTC time when the reservation was last changed.");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ExpiresAtUtc", "Status")
+                        .HasDatabaseName("ix_stock_reservations_expiration_scan");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceService", "SourceDocumentId", "IdempotencyKey")
                         .IsUnique();
