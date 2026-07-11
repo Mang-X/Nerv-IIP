@@ -6,6 +6,9 @@ public partial record ProductionReportId : IGuidStronglyTypedId;
 
 public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoot
 {
+    public const string ManualSource = "manual";
+    public const string TelemetrySource = "telemetry";
+
     private ProductionReport()
     {
     }
@@ -76,7 +79,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     public string? OeeDeviceAssetId { get; private set; }
     public string? OeeUomCode { get; private set; }
     public decimal? OeeTheoreticalRatePerHour { get; private set; }
-    public string Source { get; private set; } = "manual";
+    public string Source { get; private set; } = ManualSource;
     public bool CompletesOperation { get; private set; }
     public DateTimeOffset ReportedAtUtc { get; private set; }
 
@@ -105,7 +108,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         string? producedLotNo = null,
         string? serialNo = null,
         ProductionReportOeeProjection? oeeProjection = null,
-        string source = "manual")
+        string source = ManualSource)
     {
         DomainGuard.NonNegative(goodQuantity, nameof(goodQuantity));
         DomainGuard.NonNegative(scrapQuantity, nameof(scrapQuantity));
@@ -175,8 +178,8 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     }
 
     public static bool IsSupportedSource(string source) =>
-        string.Equals(source, "manual", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(source, "telemetry", StringComparison.OrdinalIgnoreCase);
+        string.Equals(source, ManualSource, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(source, TelemetrySource, StringComparison.OrdinalIgnoreCase);
 
     private static string NormalizeSource(string source)
     {

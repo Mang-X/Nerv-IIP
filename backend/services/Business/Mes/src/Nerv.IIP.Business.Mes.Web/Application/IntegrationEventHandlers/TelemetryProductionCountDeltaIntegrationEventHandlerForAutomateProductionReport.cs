@@ -38,6 +38,19 @@ public sealed class TelemetryProductionCountDeltaIntegrationEventHandlerForAutom
 
     private async Task HandleValidEventAsync(TelemetryProductionCountDeltaIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
+        var payloadValidation = ValidatePayload(integrationEvent.Payload);
+        if (!payloadValidation.IsValid)
+        {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    payloadValidation.FailureCode,
+                    payloadValidation.Message),
+                cancellationToken);
+            return;
+        }
+
         if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
         {
             return;
@@ -51,17 +64,29 @@ public sealed class TelemetryProductionCountDeltaIntegrationEventHandlerForAutom
 
         if (payload.HasActiveAlarm)
         {
-            AddPendingCandidate(integrationEvent, workCenterId, operation, "active-alarm");
+            await AddPendingCandidateAsync(
+                integrationEvent,
+                workCenterId,
+                operation,
+                TelemetryProductionReportCandidate.ActiveAlarmSuspensionReason,
+                cancellationToken);
             return;
         }
 
         if (operation is null)
         {
-            AddPendingCandidate(integrationEvent, workCenterId, null, workCenterId is null ? "no-work-center-mapping" : "no-current-work-order");
+            await AddPendingCandidateAsync(
+                integrationEvent,
+                workCenterId,
+                null,
+                workCenterId is null
+                    ? TelemetryProductionReportCandidate.NoWorkCenterMappingSuspensionReason
+                    : TelemetryProductionReportCandidate.NoCurrentWorkOrderSuspensionReason,
+                cancellationToken);
             return;
         }
 
-        if (payload.ReportingMode == "draft")
+        if (string.Equals(payload.ReportingMode, TelemetryProductionReportCandidate.DraftReportingMode, StringComparison.OrdinalIgnoreCase))
         {
             dbContext.TelemetryProductionReportCandidates.Add(TelemetryProductionReportCandidate.CreateDraft(
                 integrationEvent.OrganizationId,
@@ -75,6 +100,7 @@ public sealed class TelemetryProductionCountDeltaIntegrationEventHandlerForAutom
                 workCenterId!,
                 operation.WorkOrderId,
                 operation.OperationTaskIdValue));
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
@@ -88,7 +114,48 @@ public sealed class TelemetryProductionCountDeltaIntegrationEventHandlerForAutom
             CompletesOperation: false,
             payload.BucketEndUtc,
             IdempotencyKey: $"telemetry:{integrationEvent.IdempotencyKey}",
-            Source: "telemetry"), cancellationToken);
+            Source: ProductionReport.TelemetrySource), cancellationToken);
+    }
+
+    private static PayloadValidationResult ValidatePayload(TelemetryProductionCountDeltaPayload? payload)
+    {
+        if (payload is null)
+        {
+            return PayloadValidationResult.Invalid("missing-payload", "Telemetry production count event payload is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(payload.DeviceAssetId) ||
+            string.IsNullOrWhiteSpace(payload.TagKey) ||
+            string.IsNullOrWhiteSpace(payload.SourceSequence))
+        {
+            return PayloadValidationResult.Invalid(
+                "missing-payload-field",
+                "Telemetry production count payload must include device, tag, and source sequence.");
+        }
+
+        if (!string.Equals(payload.ReportingMode, TelemetryProductionReportCandidate.DraftReportingMode, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(payload.ReportingMode, TelemetryProductionReportCandidate.PostedReportingMode, StringComparison.OrdinalIgnoreCase))
+        {
+            return PayloadValidationResult.Invalid(
+                "unsupported-reporting-mode",
+                "Telemetry production count reporting mode must be draft or posted.");
+        }
+
+        if (payload.DeltaQuantity <= 0m)
+        {
+            return PayloadValidationResult.Invalid(
+                "non-positive-count-delta",
+                "Telemetry production count delta must be positive.");
+        }
+
+        if (payload.BucketEndUtc <= payload.BucketStartUtc)
+        {
+            return PayloadValidationResult.Invalid(
+                "invalid-count-bucket",
+                "Telemetry production count bucket end must be after its start.");
+        }
+
+        return PayloadValidationResult.Valid;
     }
 
     private async Task<string?> ResolveWorkCenterIdAsync(TelemetryProductionCountDeltaIntegrationEvent integrationEvent, CancellationToken cancellationToken)
@@ -132,11 +199,12 @@ public sealed class TelemetryProductionCountDeltaIntegrationEventHandlerForAutom
         return isWorkOrderStarted ? operation : null;
     }
 
-    private void AddPendingCandidate(
+    private async Task AddPendingCandidateAsync(
         TelemetryProductionCountDeltaIntegrationEvent integrationEvent,
         string? workCenterId,
         OperationTask? operation,
-        string reason)
+        string reason,
+        CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
         dbContext.TelemetryProductionReportCandidates.Add(TelemetryProductionReportCandidate.CreatePendingConfirmation(
@@ -153,5 +221,14 @@ public sealed class TelemetryProductionCountDeltaIntegrationEventHandlerForAutom
             operation?.WorkOrderId,
             operation?.OperationTaskIdValue,
             reason));
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private readonly record struct PayloadValidationResult(bool IsValid, string FailureCode, string Message)
+    {
+        public static PayloadValidationResult Valid => new(true, string.Empty, string.Empty);
+
+        public static PayloadValidationResult Invalid(string failureCode, string message) =>
+            new(false, failureCode, message);
     }
 }

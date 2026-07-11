@@ -4,8 +4,13 @@ public partial record TelemetryProductionReportCandidateId : IGuidStronglyTypedI
 
 public sealed class TelemetryProductionReportCandidate : Entity<TelemetryProductionReportCandidateId>, IAggregateRoot
 {
+    public const string DraftReportingMode = "draft";
+    public const string PostedReportingMode = "posted";
     public const string DraftStatus = "draft";
     public const string PendingConfirmationStatus = "pending-confirmation";
+    public const string ActiveAlarmSuspensionReason = "active-alarm";
+    public const string NoWorkCenterMappingSuspensionReason = "no-work-center-mapping";
+    public const string NoCurrentWorkOrderSuspensionReason = "no-current-work-order";
 
     private TelemetryProductionReportCandidate()
     {
@@ -86,7 +91,7 @@ public sealed class TelemetryProductionReportCandidate : Entity<TelemetryProduct
             sourceIdempotencyKey,
             deviceAssetId,
             tagKey,
-            "draft",
+            DraftReportingMode,
             goodQuantity,
             bucketStartUtc,
             bucketEndUtc,
@@ -131,8 +136,8 @@ public sealed class TelemetryProductionReportCandidate : Entity<TelemetryProduct
 
     private static string NormalizeReportingMode(string value) => value.Trim().ToLowerInvariant() switch
     {
-        "posted" => "posted",
-        "draft" => "draft",
+        PostedReportingMode => PostedReportingMode,
+        DraftReportingMode => DraftReportingMode,
         _ => throw new ArgumentOutOfRangeException(nameof(value), "Telemetry reporting mode must be posted or draft."),
     };
 

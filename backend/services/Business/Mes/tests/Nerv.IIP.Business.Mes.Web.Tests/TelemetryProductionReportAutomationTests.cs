@@ -27,7 +27,6 @@ public sealed class TelemetryProductionReportAutomationTests
             sender);
 
         await handler.HandleAsync(CreateEvent(reportingMode: "posted", hasActiveAlarm: false), CancellationToken.None);
-        await dbContext.SaveChangesAsync();
 
         var report = await dbContext.ProductionReports.SingleAsync();
         var workOrder = await dbContext.WorkOrders.SingleAsync();
@@ -36,7 +35,6 @@ public sealed class TelemetryProductionReportAutomationTests
         Assert.Equal(3m, workOrder.CompletedQuantity);
 
         await handler.HandleAsync(CreateEvent(reportingMode: "posted", hasActiveAlarm: false), CancellationToken.None);
-        await dbContext.SaveChangesAsync();
         Assert.Equal(1, await dbContext.ProductionReports.CountAsync());
 
         await new ReverseProductionReportCommandHandler(dbContext, sender.CodingService).Handle(
@@ -57,7 +55,8 @@ public sealed class TelemetryProductionReportAutomationTests
     [Fact]
     public async Task Production_count_delta_during_active_alarm_creates_pending_confirmation_without_report()
     {
-        await using var dbContext = CreateDbContext(nameof(Production_count_delta_during_active_alarm_creates_pending_confirmation_without_report));
+        var databaseName = nameof(Production_count_delta_during_active_alarm_creates_pending_confirmation_without_report);
+        await using var dbContext = CreateDbContext(databaseName);
         SeedRunningOperation(dbContext);
         await dbContext.SaveChangesAsync();
         var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
@@ -66,18 +65,42 @@ public sealed class TelemetryProductionReportAutomationTests
             new ProductionReportSender(dbContext));
 
         await handler.HandleAsync(CreateEvent(reportingMode: "posted", hasActiveAlarm: true), CancellationToken.None);
-        await dbContext.SaveChangesAsync();
-
-        var pending = await dbContext.TelemetryProductionReportCandidates.SingleAsync();
+        await using var verificationDbContext = CreateDbContext(databaseName);
+        var pending = await verificationDbContext.TelemetryProductionReportCandidates.SingleAsync();
         Assert.Equal("pending-confirmation", pending.Status);
         Assert.Equal("active-alarm", pending.SuspensionReason);
-        Assert.Equal(0, await dbContext.ProductionReports.CountAsync());
+        Assert.Equal(0, await verificationDbContext.ProductionReports.CountAsync());
+    }
+
+    [Fact]
+    public async Task Production_count_delta_without_current_work_order_creates_pending_confirmation()
+    {
+        var databaseName = nameof(Production_count_delta_without_current_work_order_creates_pending_confirmation);
+        await using var dbContext = CreateDbContext(databaseName);
+        dbContext.DeviceAssetWorkCenterMappings.Add(
+            DeviceAssetWorkCenterMapping.Create("org-001", "env-dev", "DEV-PACK-01", "WC-PACK-01"));
+        await dbContext.SaveChangesAsync();
+        var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new ProductionReportSender(dbContext));
+
+        await handler.HandleAsync(CreateEvent(reportingMode: "posted", hasActiveAlarm: false), CancellationToken.None);
+
+        await using var verificationDbContext = CreateDbContext(databaseName);
+        var pending = await verificationDbContext.TelemetryProductionReportCandidates.SingleAsync();
+        Assert.Equal("pending-confirmation", pending.Status);
+        Assert.Equal("no-current-work-order", pending.SuspensionReason);
+        Assert.Equal("WC-PACK-01", pending.WorkCenterId);
+        Assert.Null(pending.WorkOrderId);
+        Assert.Empty(await verificationDbContext.ProductionReports.ToArrayAsync());
     }
 
     [Fact]
     public async Task Production_count_delta_in_draft_mode_creates_draft_without_advancing_progress()
     {
-        await using var dbContext = CreateDbContext(nameof(Production_count_delta_in_draft_mode_creates_draft_without_advancing_progress));
+        var databaseName = nameof(Production_count_delta_in_draft_mode_creates_draft_without_advancing_progress);
+        await using var dbContext = CreateDbContext(databaseName);
         SeedRunningOperation(dbContext);
         await dbContext.SaveChangesAsync();
         var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
@@ -86,17 +109,40 @@ public sealed class TelemetryProductionReportAutomationTests
             new ProductionReportSender(dbContext));
 
         await handler.HandleAsync(CreateEvent(reportingMode: "draft", hasActiveAlarm: false), CancellationToken.None);
-        await dbContext.SaveChangesAsync();
-
-        var draft = await dbContext.TelemetryProductionReportCandidates.SingleAsync();
+        await using var verificationDbContext = CreateDbContext(databaseName);
+        var draft = await verificationDbContext.TelemetryProductionReportCandidates.SingleAsync();
         Assert.Equal("draft", draft.Status);
         Assert.Equal("WO-001", draft.WorkOrderId);
         Assert.Equal("OP-10", draft.OperationTaskId);
-        Assert.Equal(0, await dbContext.ProductionReports.CountAsync());
-        Assert.Equal(0m, (await dbContext.WorkOrders.SingleAsync()).CompletedQuantity);
+        Assert.Equal(0, await verificationDbContext.ProductionReports.CountAsync());
+        Assert.Equal(0m, (await verificationDbContext.WorkOrders.SingleAsync()).CompletedQuantity);
     }
 
-    private static TelemetryProductionCountDeltaIntegrationEvent CreateEvent(string reportingMode, bool hasActiveAlarm) => new(
+    [Fact]
+    public async Task Invalid_production_count_payload_is_dead_lettered_without_recording_inbox_or_candidate()
+    {
+        var databaseName = nameof(Invalid_production_count_payload_is_dead_lettered_without_recording_inbox_or_candidate);
+        await using var dbContext = CreateDbContext(databaseName);
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new TelemetryProductionCountDeltaIntegrationEventHandlerForAutomateProductionReport(
+            dbContext,
+            deadLetterStore,
+            new ProductionReportSender(dbContext));
+
+        await handler.HandleAsync(CreateEvent(reportingMode: "posted", hasActiveAlarm: false, deltaQuantity: 0m), CancellationToken.None);
+
+        await using var verificationDbContext = CreateDbContext(databaseName);
+        Assert.Empty(await verificationDbContext.ProcessedIntegrationEvents.ToArrayAsync());
+        Assert.Empty(await verificationDbContext.TelemetryProductionReportCandidates.ToArrayAsync());
+        var deadLetters = await deadLetterStore.ListAsync(null, null, CancellationToken.None);
+        var deadLetter = Assert.Single(deadLetters);
+        Assert.Equal("non-positive-count-delta", deadLetter.FailureCode);
+    }
+
+    private static TelemetryProductionCountDeltaIntegrationEvent CreateEvent(
+        string reportingMode,
+        bool hasActiveAlarm,
+        decimal deltaQuantity = 3m) => new(
         "evt-production-count-001",
         IndustrialTelemetryIntegrationEventTypes.ProductionCountDeltaRecorded,
         IndustrialTelemetryIntegrationEventVersions.V1,
@@ -112,7 +158,7 @@ public sealed class TelemetryProductionReportAutomationTests
             "DEV-PACK-01",
             "parts_count",
             reportingMode,
-            3m,
+            deltaQuantity,
             DateTimeOffset.Parse("2026-07-11T08:00:00Z"),
             DateTimeOffset.Parse("2026-07-11T08:01:00Z"),
             "seq-002",
@@ -159,6 +205,7 @@ public sealed class TelemetryProductionReportAutomationTests
             if (request is RecordProductionReportCommand command)
             {
                 var response = await new RecordProductionReportCommandHandler(dbContext, CodingService).Handle(command, cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
                 return (TResponse)(object)response;
             }
 
