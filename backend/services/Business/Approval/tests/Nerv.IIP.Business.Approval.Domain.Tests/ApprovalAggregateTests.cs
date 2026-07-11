@@ -328,6 +328,36 @@ public sealed class ApprovalAggregateTests
     }
 
     [Fact]
+    public void Structured_conditions_route_by_amount_document_and_organization_dimensions()
+    {
+        var template = ApprovalTemplate.Create(
+            "org-001", "env-dev", "PO-STRUCTURED", "purchase-order", 1, true,
+            [
+                new ApprovalTemplateStepDefinition(1, "Buyer review", null, "user", "u-buyer", 24),
+                new ApprovalTemplateStepDefinition(
+                    2, "Finance review", null, "user", "u-finance", 24,
+                    Condition: new ApprovalRoutingCondition(
+                        MinimumAmount: 10_000m,
+                        MaximumAmount: 50_000m,
+                        DocumentTypes: ["purchase-order"],
+                        OrganizationIds: ["org-001"],
+                        DepartmentIds: ["dept-procurement"])),
+            ]);
+
+        var matching = ApprovalChain.Start(
+            template,
+            new ApprovalDocumentReference("business-erp", "purchase-order", "PO-001", null, 25_000m, "org-001", "dept-procurement"),
+            "user:requester");
+        var outsideAmount = ApprovalChain.Start(
+            template,
+            new ApprovalDocumentReference("business-erp", "purchase-order", "PO-002", null, 9_999m, "org-001", "dept-procurement"),
+            "user:requester");
+
+        Assert.Equal(2, matching.Steps.Count);
+        Assert.Single(outsideAmount.Steps);
+    }
+
+    [Fact]
     public void Overdue_pending_steps_emit_once()
     {
         var chain = NewChain();

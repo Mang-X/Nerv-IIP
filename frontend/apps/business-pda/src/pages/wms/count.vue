@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import RetryableListError from '@/components/RetryableListError.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useWmsCount } from '@/composables/useBusinessWms'
 import { countExecutionFlow, countExecutionStatusLabel } from '@nerv-iip/business-core'
@@ -20,7 +21,8 @@ definePage({
 })
 
 const router = useRouter()
-const { filters, executions, pending, error, completeCount, completePending } = useWmsCount()
+const { filters, executions, pending, error, refresh, completeCount, completePending } =
+  useWmsCount()
 
 // 选中的盘点号 + GUID（GUID 仅用于 complete 调用与 :key，绝不展示）。
 const selectedExecutionId = ref('')
@@ -163,13 +165,14 @@ function goHome() {
     <div v-else class="space-y-4 p-4">
       <NvScanBar placeholder="扫描库位" :active="scanActive" @scan="onScan" />
 
-      <p
+      <RetryableListError
         v-if="error"
-        data-testid="error-banner"
-        class="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-      >
-        盘点任务加载失败，请下拉重试或检查网络。
-      </p>
+        :error="error"
+        :pending="pending"
+        fallback="盘点任务加载失败，请下拉重试或检查网络。"
+        test-id="error-banner"
+        @retry="() => refresh()"
+      />
 
       <div
         v-if="showEmpty"

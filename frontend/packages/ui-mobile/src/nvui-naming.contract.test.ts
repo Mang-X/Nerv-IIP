@@ -34,6 +34,7 @@ const NV_ALL = [
   'NvMobileDropdownMenu',
   'NvMobileDropdownMenuItem',
   'NvMobileEmpty',
+  'NvMobileErrorRetry',
   'NvMobileGrid',
   'NvMobileImage',
   'NvMobileInput',

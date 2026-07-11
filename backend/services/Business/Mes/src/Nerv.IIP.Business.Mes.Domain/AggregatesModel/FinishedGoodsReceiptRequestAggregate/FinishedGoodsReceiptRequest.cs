@@ -100,11 +100,38 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
             serialNo,
             ProductionDate,
             ExpiryDate);
-        request.AddDomainEvent(new FinishedGoodsReceiptRequestedDomainEvent(
-            request,
-            request.Quantity,
-            BuildInventoryPostingIdempotencyKey(organizationId, environmentId, requestNo)));
+        if (request.UnitCost.HasValue)
+        {
+            request.AddDomainEvent(new FinishedGoodsReceiptRequestedDomainEvent(
+                request,
+                request.Quantity,
+                BuildInventoryPostingIdempotencyKey(organizationId, environmentId, requestNo)));
+        }
         return request;
+    }
+
+    public void ApplyCapitalizedUnitCost(decimal unitCost)
+    {
+        if (Status != RequestedStatus || PostedQuantity > QuantityTolerance)
+        {
+            throw new InvalidOperationException("Capitalized unit cost can only be applied before Inventory posting starts.");
+        }
+
+        var normalizedUnitCost = DomainGuard.Positive(unitCost, nameof(unitCost));
+        if (UnitCost.HasValue)
+        {
+            if (UnitCost.Value != normalizedUnitCost)
+            {
+                throw new InvalidOperationException("Finished-goods receipt already has a different unit cost.");
+            }
+            return;
+        }
+
+        UnitCost = normalizedUnitCost;
+        AddDomainEvent(new FinishedGoodsReceiptRequestedDomainEvent(
+            this,
+            Quantity,
+            BuildInventoryPostingIdempotencyKey(OrganizationId, EnvironmentId, RequestNo)));
     }
 
     public void MarkPosted(string inventoryMovementId, DateTimeOffset postedAtUtc)

@@ -1002,8 +1002,32 @@ public sealed class ErpBusinessGapClosureTests
                 [new DeliveryOrderCommandLine("LINE-001", 1m, "FG-SHIP", "LOT-FG-001")]),
             CancellationToken.None));
 
-        await new ReleaseSalesOrderCreditHoldCommandHandler(dbContext).Handle(
+        await new ReleaseSalesOrderCreditHoldCommandHandler(dbContext, new CapturingPurchaseOrderApprovalClient()).Handle(
             new ReleaseSalesOrderCreditHoldCommand("org-001", "env-dev", "SO-001"),
+            CancellationToken.None);
+        Assert.Equal("credit-held", dbContext.SalesOrders.Single().Status);
+        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
+            new ApprovalCompletedIntegrationEvent(
+                "evt-sales-credit-approved-001",
+                ApprovalIntegrationEventTypes.ApprovalApproved,
+                ApprovalIntegrationEventVersions.V1,
+                DateTimeOffset.UtcNow,
+                ApprovalIntegrationEventSources.BusinessApproval,
+                "chain-sales-credit-001",
+                "decision-sales-credit-001",
+                "org-001",
+                "env-dev",
+                "user:credit-manager",
+                "sales-credit-approved:SO-001",
+                new ApprovalCompletedPayload(
+                    "chain-sales-credit-001",
+                    ApprovalResults.Approved,
+                    "user",
+                    "credit-manager",
+                    null,
+                    null,
+                    new ApprovalDocumentReferencePayload("business-erp", "sales-order-credit-release", "SO-001", null),
+                    "user:sales-001")),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 

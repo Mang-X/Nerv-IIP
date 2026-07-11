@@ -30,6 +30,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<ProductionReport> ProductionReports => Set<ProductionReport>();
 
+    public DbSet<TelemetryProductionReportCandidate> TelemetryProductionReportCandidates => Set<TelemetryProductionReportCandidate>();
+
     public DbSet<ProductionReportMaterialConsumption> ProductionReportMaterialConsumptions => Set<ProductionReportMaterialConsumption>();
 
     public DbSet<OutputLotGenealogy> OutputLotGenealogies => Set<OutputLotGenealogy>();

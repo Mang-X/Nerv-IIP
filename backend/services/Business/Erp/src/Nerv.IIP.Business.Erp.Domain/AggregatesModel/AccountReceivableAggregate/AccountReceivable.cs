@@ -47,16 +47,18 @@ public sealed class AccountReceivable : Entity<AccountReceivableId>, IAggregateR
     public string CustomerCode { get; private set; } = string.Empty;
     public decimal Amount { get; private set; }
     public decimal CollectedAmount { get; private set; }
+    public decimal CreditNoteAmount { get; private set; }
     public decimal LocalAmount { get; private set; }
     public decimal LocalCollectedAmount { get; private set; }
+    public decimal LocalCreditNoteAmount { get; private set; }
     public string CurrencyCode { get; private set; } = string.Empty;
     public decimal ExchangeRate { get; private set; }
     public DateOnly InvoiceDate { get; private set; }
     public DateOnly DueDate { get; private set; }
     public string PaymentTermCode { get; private set; } = string.Empty;
     public DateTime CreatedAtUtc { get; private set; }
-    public decimal OpenAmount => Amount - CollectedAmount;
-    public decimal LocalOpenAmount => LocalAmount - LocalCollectedAmount;
+    public decimal OpenAmount => Amount - CollectedAmount - CreditNoteAmount;
+    public decimal LocalOpenAmount => LocalAmount - LocalCollectedAmount - LocalCreditNoteAmount;
 
     public static AccountReceivable Create(
         string organizationId,
@@ -84,6 +86,18 @@ public sealed class AccountReceivable : Entity<AccountReceivableId>, IAggregateR
 
         CollectedAmount += amount;
         LocalCollectedAmount += amount * ExchangeRate;
+    }
+
+    public void ApplyCreditNote(decimal amount)
+    {
+        _ = ErpText.Positive(amount, nameof(amount));
+        if (amount > OpenAmount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(amount), amount, "Credit note amount cannot exceed open receivable amount.");
+        }
+
+        CreditNoteAmount += amount;
+        LocalCreditNoteAmount += amount * ExchangeRate;
     }
 
     public string GetAgingBucket(DateOnly asOfDate)

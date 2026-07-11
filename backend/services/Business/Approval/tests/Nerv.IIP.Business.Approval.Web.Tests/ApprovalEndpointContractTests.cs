@@ -1,9 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
 using MediatR;
+using Microsoft.Data.Sqlite;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
@@ -453,6 +455,38 @@ public sealed class ApprovalEndpointContractTests
     }
 
     [Fact]
+    public void Template_validator_accepts_structured_amount_and_organization_condition()
+    {
+        var command = NewTemplateCommand() with
+        {
+            Steps =
+            [
+                new ApprovalTemplateStepInput(
+                    1, "Finance review", null, "user", "u-finance", 24,
+                    Condition: new ApprovalRoutingConditionInput(
+                        MinimumAmount: 10_000m,
+                        MaximumAmount: 50_000m,
+                        DocumentTypes: ["purchase-order"],
+                        OrganizationIds: ["org-001"],
+                        DepartmentIds: ["dept-procurement"])),
+            ],
+        };
+
+        Assert.True(new CreateOrUpdateApprovalTemplateCommandValidator().Validate(command).IsValid);
+    }
+
+    [Fact]
+    public void Template_validator_rejects_malformed_structured_condition_json()
+    {
+        var command = NewTemplateCommand() with
+        {
+            Steps = [new ApprovalTemplateStepInput(1, "Finance review", null, "user", "u-finance", 24, ConditionExpression: "{bad")],
+        };
+
+        Assert.False(new CreateOrUpdateApprovalTemplateCommandValidator().Validate(command).IsValid);
+    }
+
+    [Fact]
     public async Task Start_chain_reports_condition_routing_without_active_steps_as_known_exception()
     {
         await using var provider = CreateInMemoryProvider();
@@ -484,6 +518,54 @@ public sealed class ApprovalEndpointContractTests
             CancellationToken.None));
 
         Assert.Contains("active step", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Start_chain_reuses_pending_chain_for_same_source_document()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ApprovalTemplates.Add(NewTemplate());
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new StartApprovalChainCommandHandler(dbContext);
+        var command = new StartApprovalChainCommand("org-001", "env-dev", "ECO-DEFAULT", "eco", "engineering-change-order", "ECO-IDEMPOTENT", null, "user:requester");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var second = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(first, second);
+        Assert.Single(dbContext.ApprovalChains);
+    }
+
+    [Fact]
+    public async Task Concurrent_start_chain_loser_returns_persisted_winner_after_unique_conflict()
+    {
+        const string connectionString = "Data Source=approval-start-race;Mode=Memory;Cache=Shared";
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        await using (var setup = new ApplicationDbContext(options, mediator: null!))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            setup.ApprovalTemplates.Add(NewTemplate());
+            await setup.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var command = new StartApprovalChainCommand(
+            "org-001", "env-dev", "ECO-DEFAULT", "eco", "engineering-change-order", "ECO-RACE", null, "user:requester");
+        var loserOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(connectionString)
+            .AddInterceptors(new InsertApprovalWinnerBeforeSaveInterceptor(connectionString, command))
+            .Options;
+        await using var loserContext = new ApplicationDbContext(loserOptions, mediator: null!);
+
+        var returnedId = await new StartApprovalChainCommandHandler(loserContext).Handle(command, CancellationToken.None);
+
+        await using var verification = new ApplicationDbContext(options, mediator: null!);
+        var winner = await verification.ApprovalChains.SingleAsync(CancellationToken.None);
+        Assert.Equal(winner.Id, returnedId);
     }
 
     [Fact]
@@ -613,5 +695,33 @@ public sealed class ApprovalEndpointContractTests
     private sealed class FixedApprovalClock(DateTimeOffset utcNow) : IApprovalClock
     {
         public DateTimeOffset UtcNow { get; set; } = utcNow;
+    }
+
+    private sealed class InsertApprovalWinnerBeforeSaveInterceptor(
+        string connectionString,
+        StartApprovalChainCommand command) : SaveChangesInterceptor
+    {
+        private bool winnerInserted;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!winnerInserted && eventData.Context!.ChangeTracker.Entries<ApprovalChain>().Any(x => x.State == EntityState.Added))
+            {
+                winnerInserted = true;
+                var winnerOptions = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connectionString).Options;
+                await using var winnerContext = new ApplicationDbContext(winnerOptions, mediator: null!);
+                var template = await winnerContext.ApprovalTemplates.Include(x => x.Steps).SingleAsync(cancellationToken);
+                winnerContext.ApprovalChains.Add(ApprovalChain.Start(
+                    template,
+                    new ApprovalDocumentReference(command.SourceService, command.DocumentType, command.DocumentId, command.DocumentLineId),
+                    command.StartedBy));
+                await winnerContext.SaveChangesAsync(cancellationToken);
+            }
+
+            return await base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
     }
 }

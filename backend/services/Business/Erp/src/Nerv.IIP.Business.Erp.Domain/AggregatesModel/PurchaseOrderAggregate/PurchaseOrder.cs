@@ -155,25 +155,48 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         this.AddDomainEvent(new PurchaseOrderReleasedDomainEvent(this));
     }
 
-    public void CancelAfterApprovalRejected(string approvalChainId)
+    public void ReturnToEditableAfterApprovalRejected(string approvalChainId)
     {
         var normalizedApprovalChainId = ErpText.Required(approvalChainId, nameof(approvalChainId));
+        if (Status == PurchaseOrderStatus.PendingApproval && ApprovalChainId is null)
+        {
+            return;
+        }
+
         if (!string.Equals(ApprovalChainId, normalizedApprovalChainId, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Purchase order approval chain does not match.");
         }
 
-        if (Status == PurchaseOrderStatus.Cancelled)
-        {
-            return;
-        }
-
         if (Status != PurchaseOrderStatus.PendingApproval)
         {
-            throw new InvalidOperationException("Only pending purchase orders can be cancelled after approval rejection.");
+            throw new InvalidOperationException("Only pending purchase orders can return to editable state after approval rejection.");
         }
 
-        Status = PurchaseOrderStatus.Cancelled;
+        ApprovalChainId = null;
+    }
+
+    public void ReviseBeforeApproval(IReadOnlyCollection<PurchaseOrderLineChangeDraft> lineChanges)
+    {
+        if (Status != PurchaseOrderStatus.PendingApproval || ApprovalChainId is not null)
+        {
+            throw new InvalidOperationException("Only a rejected editable purchase order can be revised before resubmission.");
+        }
+
+        if (lineChanges.Count == 0 || lineChanges.Select(x => x.LineNo).Distinct(StringComparer.Ordinal).Count() != lineChanges.Count)
+        {
+            throw new InvalidOperationException("Purchase order revision requires unique existing lines.");
+        }
+
+        foreach (var change in lineChanges)
+        {
+            var line = lines.SingleOrDefault(x => x.LineNo == ErpText.Required(change.LineNo, nameof(change.LineNo)))
+                ?? throw new InvalidOperationException($"Purchase order line '{change.LineNo}' was not found.");
+            line.ApplyChange(change.OrderedQuantity, change.UnitPrice, change.PromisedDate);
+        }
+
+        TotalAmount = lines.Sum(x => x.LineAmount);
+        Version++;
     }
 
     public PurchaseOrderLine RegisterReceipt(string lineNo, decimal quantity, bool finalDelivery = false)

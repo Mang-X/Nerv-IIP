@@ -23,6 +23,119 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Nerv.IIP.Business.Wms.Domain.AggregatesModel.BackorderOrderAggregate.BackorderOrder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Backorder order aggregate id.");
+
+                    b.Property<string>("BackorderOrderNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("backorder_order_no")
+                        .HasComment("Stable WMS backorder order number.");
+
+                    b.Property<decimal>("BackorderQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("backorder_quantity")
+                        .HasComment("Unfulfilled quantity recorded by pack review.");
+
+                    b.Property<DateTime?>("ClosedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at_utc")
+                        .HasComment("UTC time when the backorder was closed.");
+
+                    b.Property<string>("ClosureReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("closure_reason")
+                        .HasComment("Audited reason for closing the backorder.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the short pick created the backorder.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("OutboundOrderLineNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("outbound_order_line_no")
+                        .HasComment("Short-picked WMS outbound order line number.");
+
+                    b.Property<string>("OutboundOrderNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("outbound_order_no")
+                        .HasComment("Short-picked WMS outbound order number.");
+
+                    b.Property<string>("PickLocationCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("pick_location_code")
+                        .HasComment("Pick face targeted by the replenishment recommendation.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Site where the short pick occurred.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
+                        .HasComment("Short-picked SKU code.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("Backorder lifecycle status.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("uom_code")
+                        .HasComment("Short-picked unit of measure.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "BackorderOrderNo")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "OutboundOrderNo", "OutboundOrderLineNo")
+                        .IsUnique();
+
+                    b.ToTable("backorder_orders", "wms", t =>
+                        {
+                            t.HasComment("Durable WMS short-pick backorder facts that drive replenishment recommendations.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate.CountExecution", b =>
                 {
                     b.Property<Guid>("Id")
@@ -968,7 +1081,7 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("task_type")
-                        .HasComment("Task type: putaway or picking.");
+                        .HasComment("Task type: putaway, picking or replenishment.");
 
                     b.Property<string>("ToLocationCode")
                         .IsRequired()
@@ -991,7 +1104,7 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 
                     b.ToTable("warehouse_tasks", "wms", t =>
                         {
-                            t.HasComment("WMS putaway and picking warehouse tasks.");
+                            t.HasComment("WMS putaway, picking and replenishment recommendation tasks.");
                         });
                 });
 

@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.OpportunityAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggregate;
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
@@ -26,6 +27,8 @@ public sealed record ChangeSalesOrderLineRequest(string OrganizationId, string E
 public sealed record CancelSalesOrderRequest(string OrganizationId, string EnvironmentId, string SalesOrderNo, string Reason);
 public sealed record ReleaseDeliveryOrderRequest(string OrganizationId, string EnvironmentId, string? DeliveryOrderNo, string SalesOrderNo, IReadOnlyCollection<DeliveryOrderCommandLine> Lines, string? IdempotencyKey = null);
 public sealed record ReleaseDeliveryOrderResponse(DeliveryOrderId DeliveryOrderId);
+public sealed record CreateSalesReturnAuthorizationRequest(string OrganizationId, string EnvironmentId, string? RmaNo, string SalesOrderNo, string AccountReceivableNo, string SiteCode, IReadOnlyCollection<SalesReturnAuthorizationCommandLine> Lines, string? IdempotencyKey = null);
+public sealed record CreateSalesReturnAuthorizationResponse(SalesReturnAuthorizationId SalesReturnAuthorizationId);
 public sealed record ListSalesOrdersRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -201,6 +204,19 @@ public sealed class ReleaseDeliveryOrderEndpoint(ISender sender) : ErpEndpoint<R
     {
         var id = await sender.Send(new ReleaseDeliveryOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeliveryOrderNo, req.SalesOrderNo, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new ReleaseDeliveryOrderResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CreateSalesReturnAuthorizationEndpoint(ISender sender) : ErpEndpoint<CreateSalesReturnAuthorizationRequest, ResponseData<CreateSalesReturnAuthorizationResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpSalesEndpointContracts.Get<CreateSalesReturnAuthorizationEndpoint>());
+
+    public override async Task HandleAsync(CreateSalesReturnAuthorizationRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(
+            new CreateSalesReturnAuthorizationCommand(req.OrganizationId, req.EnvironmentId, req.RmaNo, req.SalesOrderNo, req.AccountReceivableNo, req.SiteCode, req.Lines, req.IdempotencyKey),
+            ct);
+        await Send.OkAsync(new CreateSalesReturnAuthorizationResponse(id).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -494,6 +510,7 @@ public static class ErpSalesEndpointContracts
         new(typeof(ChangeSalesOrderLineEndpoint), "POST", "/api/business/v1/erp/sales-orders/{salesOrderNo}/lines/{lineNo}", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "changeErpSalesOrderLine"),
         new(typeof(CancelSalesOrderEndpoint), "POST", "/api/business/v1/erp/sales-orders/{salesOrderNo}/cancel", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "cancelErpSalesOrder"),
         new(typeof(ReleaseDeliveryOrderEndpoint), "POST", "/api/business/v1/erp/delivery-orders", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "releaseErpDeliveryOrder"),
+        new(typeof(CreateSalesReturnAuthorizationEndpoint), "POST", "/api/business/v1/erp/sales-return-authorizations", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "createErpSalesReturnAuthorization"),
         new(typeof(ListDeliveryOrdersEndpoint), "GET", "/api/business/v1/erp/delivery-orders", ErpPermissionCodes.SalesRead, InternalServiceAuthorizationPolicy.Name, "listErpDeliveryOrders"),
         new(typeof(ListSalesOrdersEndpoint), "GET", "/api/business/v1/erp/sales-orders", ErpPermissionCodes.SalesRead, InternalServiceAuthorizationPolicy.Name, "listErpSalesOrders"),
     ];

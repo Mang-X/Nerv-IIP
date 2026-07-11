@@ -368,6 +368,13 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             throw new NotSupportedException("This test does not release reservations.");
         }
 
+        public Task<WmsInventoryReservationRenewalResult> RenewAsync(
+            WmsInventoryReservationRenewalRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException("This test does not renew reservations.");
+        }
+
         public async Task<WmsInventoryCountTaskResult> CreateCountTaskAsync(
             WmsInventoryCountTaskRequest request,
             CancellationToken cancellationToken)
@@ -476,6 +483,13 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             CancellationToken cancellationToken)
         {
             throw new NotSupportedException("This test does not release reservations.");
+        }
+
+        public Task<WmsInventoryReservationRenewalResult> RenewAsync(
+            WmsInventoryReservationRenewalRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException("This test does not renew reservations.");
         }
 
         public async Task<WmsInventoryCountTaskResult> CreateCountTaskAsync(

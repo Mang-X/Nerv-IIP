@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.DomainEvents;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
@@ -9,6 +10,34 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
 public sealed class IndustrialTelemetryIntegrationEventTests
 {
+    [Fact]
+    public void Production_count_delta_event_keeps_source_sequence_and_reporting_mode_in_stable_envelope()
+    {
+        var summary = TelemetrySummary.Record(
+            "org-001",
+            "env-dev",
+            "DEV-PACK-01",
+            "parts_count",
+            DateTimeOffset.Parse("2026-07-11T08:00:00Z"),
+            DateTimeOffset.Parse("2026-07-11T08:01:00Z"),
+            1,
+            103m,
+            103m,
+            103m,
+            "seq-002",
+            "opcua",
+            "opcua-cell-01");
+
+        var integrationEvent = new TelemetryProductionCountDeltaIntegrationEventConverter().Convert(
+            new TelemetryProductionCountDeltaDomainEvent(summary, 3m, "posted", HasActiveAlarm: false));
+
+        Assert.Equal(IndustrialTelemetryIntegrationEventTypes.ProductionCountDeltaRecorded, integrationEvent.EventType);
+        Assert.Equal("posted", integrationEvent.Payload.ReportingMode);
+        Assert.Equal("seq-002", integrationEvent.Payload.SourceSequence);
+        Assert.Equal(3m, integrationEvent.Payload.DeltaQuantity);
+        Assert.Equal("industrialTelemetry:production-count:org-001:env-dev:DEV-PACK-01:parts_count:opcua:opcua-cell-01:seq-002", integrationEvent.IdempotencyKey);
+    }
+
     [Fact]
     public void Device_state_changed_event_serializes_required_event_type()
     {

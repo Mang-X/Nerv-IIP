@@ -12,6 +12,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     public const string ReceivedStatus = "Received";
     public const string CancelledStatus = "Cancelled";
     public const string ReturnRequestedStatus = "ReturnRequested";
+    public const string ReservationExpiredStatus = "ReservationExpired";
     public const int FailureMessageMaxLength = 500;
 
     private MaterialIssueRequest()
@@ -86,6 +87,11 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
 
     public void ConfirmLineSideReceipt(DateTimeOffset receivedAtUtc, decimal? receivedQuantity = null, string? materialLotId = null)
     {
+        if (Status == ReservationExpiredStatus)
+        {
+            throw new InvalidOperationException("已失效的领料预留不能确认收料。");
+        }
+
         var quantity = receivedQuantity ?? RequestedQuantity - ReceivedQuantity;
         DomainGuard.Positive(quantity, nameof(receivedQuantity));
         if (ReceivedQuantity + quantity > RequestedQuantity)
@@ -213,6 +219,17 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         }
 
         Status = ReturnRequestedStatus;
+    }
+
+    public void MarkInventoryReservationExpired(DateTimeOffset expiredAtUtc)
+    {
+        _ = expiredAtUtc;
+        if (Status is CancelledStatus or ReturnRequestedStatus or ReservationExpiredStatus || ReceivedQuantity > 0m)
+        {
+            return;
+        }
+
+        Status = ReservationExpiredStatus;
     }
 
     private static string NormalizeFailureMessage(string failureMessage)
