@@ -231,14 +231,8 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
 
         if (isOutputOperation)
         {
-            try
-            {
-                workOrder.RecordProductionProgress(request.GoodQuantity, request.ScrapQuantity, request.ReportedAtUtc);
-            }
-            catch (InvalidOperationException exception)
-            {
-                throw new KnownException(exception.Message);
-            }
+            MesDomainRuleGuard.Enforce(() =>
+                workOrder.RecordProductionProgress(request.GoodQuantity, request.ScrapQuantity, request.ReportedAtUtc));
         }
 
         if (request.CompletesOperation)
@@ -247,14 +241,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 dbContext,
                 operationTask,
                 cancellationToken);
-            try
-            {
-                operationTask.Complete(request.ReportedAtUtc);
-            }
-            catch (InvalidOperationException exception)
-            {
-                throw new KnownException(exception.Message);
-            }
+            MesDomainRuleGuard.Enforce(() => operationTask.Complete(request.ReportedAtUtc));
         }
 
         dbContext.ProductionReports.Add(report);
@@ -401,17 +388,10 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
         var progressQuantity = Math.Abs(original.GoodQuantity) + Math.Abs(original.ScrapQuantity);
         if (isOutputOperation && progressQuantity > 0m)
         {
-            try
-            {
-                workOrder.ReverseProductionProgress(
-                    Math.Abs(original.GoodQuantity),
-                    Math.Abs(original.ScrapQuantity),
-                    request.ReversedAtUtc);
-            }
-            catch (InvalidOperationException exception)
-            {
-                throw new KnownException(exception.Message);
-            }
+            MesDomainRuleGuard.Enforce(() => workOrder.ReverseProductionProgress(
+                Math.Abs(original.GoodQuantity),
+                Math.Abs(original.ScrapQuantity),
+                request.ReversedAtUtc));
         }
 
         if (original.CompletesOperation)

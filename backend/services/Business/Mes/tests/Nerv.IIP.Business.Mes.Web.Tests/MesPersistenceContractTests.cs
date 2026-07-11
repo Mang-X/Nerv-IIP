@@ -1427,13 +1427,15 @@ public sealed class MesPersistenceContractTests
 
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        // Invalid lifecycle transitions are domain-rule violations and must surface as a clean KnownException
+        // business error, not an unhandled InvalidOperationException (which would become an HTTP 500).
+        await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "complete", now.AddMinutes(1)), CancellationToken.None));
 
         await handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "start", now.AddMinutes(2)), CancellationToken.None);
         await handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "complete", now.AddMinutes(45)), CancellationToken.None);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "pause", now.AddMinutes(46)), CancellationToken.None));
     }
 
