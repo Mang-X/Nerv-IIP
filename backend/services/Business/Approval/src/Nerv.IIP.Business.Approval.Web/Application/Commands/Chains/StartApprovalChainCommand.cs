@@ -41,15 +41,26 @@ public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbCont
 {
     public async Task<ApprovalChainId> Handle(StartApprovalChainCommand request, CancellationToken cancellationToken)
     {
+        var documentReference = new ApprovalDocumentReference(
+            request.SourceService,
+            request.DocumentType,
+            request.DocumentId,
+            request.DocumentLineId,
+            request.Amount,
+            request.RoutingOrganizationId ?? request.OrganizationId,
+            request.DepartmentId);
+        var pendingIdentityKey = ApprovalChain.BuildPendingIdentityKey(request.OrganizationId, request.EnvironmentId, request.TemplateCode, documentReference);
         var existingChainId = await dbContext.ApprovalChains
-            .Where(x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.TemplateCode == request.TemplateCode
-                && x.Status == ApprovalChainStatuses.Pending
-                && x.DocumentReference.SourceService == request.SourceService.ToLower()
-                && x.DocumentReference.DocumentType == request.DocumentType
-                && x.DocumentReference.DocumentId == request.DocumentId
-                && x.DocumentReference.DocumentLineId == request.DocumentLineId)
+            .Where(x => x.PendingIdentityKey == pendingIdentityKey
+                || (x.PendingIdentityKey == null
+                    && x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.TemplateCode == request.TemplateCode
+                    && x.Status == ApprovalChainStatuses.Pending
+                    && x.DocumentReference.SourceService == documentReference.SourceService
+                    && x.DocumentReference.DocumentType == documentReference.DocumentType
+                    && x.DocumentReference.DocumentId == documentReference.DocumentId
+                    && x.DocumentReference.DocumentLineId == documentReference.DocumentLineId))
             .Select(x => x.Id)
             .SingleOrDefaultAsync(cancellationToken);
         if (existingChainId is not null)
@@ -71,14 +82,7 @@ public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbCont
         {
             chain = ApprovalChain.Start(
                 template,
-                new ApprovalDocumentReference(
-                    request.SourceService,
-                    request.DocumentType,
-                    request.DocumentId,
-                    request.DocumentLineId,
-                    request.Amount,
-                    request.RoutingOrganizationId ?? request.OrganizationId,
-                    request.DepartmentId),
+                documentReference,
                 request.StartedBy);
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)

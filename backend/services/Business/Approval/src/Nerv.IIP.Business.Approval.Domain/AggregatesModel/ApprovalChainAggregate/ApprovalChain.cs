@@ -1,7 +1,8 @@
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 using Nerv.IIP.Business.Approval.Domain.DomainEvents;
-using System.ComponentModel.DataAnnotations.Schema;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 
@@ -31,6 +32,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         TemplateCode = template.TemplateCode;
         TemplateVersion = template.Version;
         DocumentReference = documentReference;
+        PendingIdentityKey = BuildPendingIdentityKey(template.OrganizationId, template.EnvironmentId, template.TemplateCode, documentReference);
         Status = ApprovalChainStatuses.Pending;
         StartedBy = ApprovalText.Required(startedBy);
         StartedAtUtc = DateTimeOffset.UtcNow;
@@ -64,12 +66,26 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
     public DateTimeOffset? CompletedAtUtc { get; private set; }
     public int RoundNo { get; private set; }
     public int RowVersion { get; private set; }
+    public string? PendingIdentityKey { get; private set; }
     public IReadOnlyCollection<ApprovalStep> Steps => steps;
     public IReadOnlyCollection<ApprovalDecision> Decisions => decisions;
 
     public static ApprovalChain Start(ApprovalTemplate template, ApprovalDocumentReference documentReference, string startedBy)
     {
         return new ApprovalChain(template, documentReference, startedBy);
+    }
+
+    public static string BuildPendingIdentityKey(string organizationId, string environmentId, string templateCode, ApprovalDocumentReference documentReference)
+    {
+        var identity = string.Join('\n',
+            ApprovalText.Required(organizationId),
+            ApprovalText.Required(environmentId),
+            ApprovalText.Required(templateCode),
+            documentReference.SourceService,
+            documentReference.DocumentType,
+            documentReference.DocumentId,
+            documentReference.DocumentLineId ?? string.Empty);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity))).ToLowerInvariant();
     }
 
     public ApprovalDecision ResolveStep(
@@ -146,6 +162,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         if (normalizedDecision == ApprovalDecisions.Reject)
         {
             Status = ApprovalChainStatuses.Rejected;
+            PendingIdentityKey = null;
             CompletedAtUtc = decidedAtUtc;
             this.AddDomainEvent(new ApprovalRejectedDomainEvent(this, approvalDecision));
             return approvalDecision;
@@ -154,6 +171,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         if (normalizedDecision == ApprovalDecisions.Return)
         {
             Status = ApprovalChainStatuses.Returned;
+            PendingIdentityKey = null;
             CompletedAtUtc = decidedAtUtc;
             this.AddDomainEvent(new ApprovalReturnedDomainEvent(this, approvalDecision));
             return approvalDecision;
@@ -170,6 +188,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         if (steps.GroupBy(x => x.StepNo).All(ApprovalStep.IsGroupComplete))
         {
             Status = ApprovalChainStatuses.Approved;
+            PendingIdentityKey = null;
             CompletedAtUtc = decidedAtUtc;
             this.AddDomainEvent(new ApprovalApprovedDomainEvent(this, approvalDecision));
         }
@@ -202,6 +221,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
             normalizedReason,
             withdrawnAtUtc);
         Status = ApprovalChainStatuses.Withdrawn;
+        PendingIdentityKey = null;
         CompletedAtUtc = withdrawnAtUtc;
         IncrementRowVersion();
         this.AddDomainEvent(new ApprovalChainActionRecordedDomainEvent(this, decision, recipientRefs));
@@ -230,6 +250,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         }
 
         Status = ApprovalChainStatuses.Pending;
+        PendingIdentityKey = BuildPendingIdentityKey(OrganizationId, EnvironmentId, TemplateCode, DocumentReference);
         StartedAtUtc = resubmittedAtUtc;
         CompletedAtUtc = null;
         RoundNo++;
@@ -710,9 +731,9 @@ public sealed class ApprovalDocumentReference
     public string DocumentType { get; private set; } = string.Empty;
     public string DocumentId { get; private set; } = string.Empty;
     public string? DocumentLineId { get; private set; }
-    [NotMapped] public decimal? Amount { get; private set; }
-    [NotMapped] public string? OrganizationId { get; private set; }
-    [NotMapped] public string? DepartmentId { get; private set; }
+    public decimal? Amount { get; private set; }
+    public string? OrganizationId { get; private set; }
+    public string? DepartmentId { get; private set; }
 }
 
 public static class ApprovalChainStatuses

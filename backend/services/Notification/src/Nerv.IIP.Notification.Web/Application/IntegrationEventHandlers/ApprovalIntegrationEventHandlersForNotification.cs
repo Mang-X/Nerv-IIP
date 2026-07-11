@@ -247,7 +247,10 @@ public sealed class ApprovalRejectedIntegrationEventHandlerForNotification(
         new IntegrationEventConsumerOptions(
             ConsumerName,
             ApprovalIntegrationEventTypes.ApprovalRejected,
-            ApprovalIntegrationEventVersions.V1));
+            ApprovalIntegrationEventVersions.V1)
+        {
+            IgnoreUnsupportedEventTypes = true,
+        });
 
     public Task HandleAsync(ApprovalCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         => consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
@@ -259,7 +262,12 @@ public sealed class ApprovalRejectedIntegrationEventHandlerForNotification(
     private async Task HandleValidEventAsync(ApprovalCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload ?? throw new KnownException("Approval rejected payload is required.");
-        var initiatorRef = NotificationIntegrationEventRequired.Value(payload.InitiatorRef, "Approval initiator is required for rejection notification.");
+        if (string.IsNullOrWhiteSpace(payload.InitiatorRef))
+        {
+            return;
+        }
+
+        var initiatorRef = payload.InitiatorRef;
         if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, timeProvider.GetUtcNow(), cancellationToken))
         {
             return;

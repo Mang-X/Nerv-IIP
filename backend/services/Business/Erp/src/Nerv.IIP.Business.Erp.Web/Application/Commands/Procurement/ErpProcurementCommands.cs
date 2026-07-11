@@ -1177,6 +1177,30 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
             ?? throw new KnownException($"Purchase order '{request.PurchaseOrderNo}' was not found.");
         try
         {
+            if (order.Status == PurchaseOrderStatus.PendingApproval && order.ApprovalChainId is null)
+            {
+                order.ReviseBeforeApproval(request.Lines);
+                var revisedChainId = GeneratedPurchaseOrderApprovalClient.BuildChainId(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    $"{request.PurchaseOrderNo}:revision:{order.Version}");
+                var revisedApproval = await _approvalClient.StartApprovalAsync(
+                    new PurchaseOrderApprovalRequest(
+                        request.OrganizationId,
+                        request.EnvironmentId,
+                        "erp-purchase-order-release",
+                        "business-erp",
+                        "purchase-order",
+                        request.PurchaseOrderNo,
+                        null,
+                        request.StartedBy,
+                        revisedChainId,
+                        order.TotalAmount),
+                    cancellationToken);
+                order.MarkApprovalRequested(revisedApproval.ChainId);
+                return revisedApproval.ChainId;
+            }
+
             var change = order.RequestChange(request.Lines, request.Reason);
             var chainId = GeneratedPurchaseOrderApprovalClient.BuildChainId(
                 request.OrganizationId,

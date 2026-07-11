@@ -71,7 +71,14 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
 
             if (string.Equals(integrationEvent.Payload.Result, ApprovalResults.Approved, StringComparison.OrdinalIgnoreCase))
             {
-                salesOrder.ReleaseCreditHold();
+                try
+                {
+                    salesOrder.ReleaseCreditHold();
+                }
+                catch (InvalidOperationException exception)
+                {
+                    throw new KnownException(exception.Message, exception);
+                }
             }
 
             return;

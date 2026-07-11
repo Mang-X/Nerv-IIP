@@ -162,6 +162,22 @@ public sealed class ErpProcurementAggregateTests
     }
 
     [Fact]
+    public void Rejected_purchase_order_can_revise_lines_before_resubmission()
+    {
+        var order = PurchaseOrder.Create("org-001", "env-dev", "PO-REVISE-001", "SUP-001", "SITE-01", [NewPurchaseOrderLine(quantity: 10m)]);
+        order.MarkApprovalRequested("approval-reject-001");
+        order.ReturnToEditableAfterApprovalRejected("approval-reject-001");
+
+        order.ReviseBeforeApproval([new PurchaseOrderLineChangeDraft("LINE-001", 12m, 15m, new DateOnly(2026, 7, 20))]);
+
+        var line = Assert.Single(order.Lines);
+        Assert.Equal(12m, line.OrderedQuantity);
+        Assert.Equal(15m, line.UnitPrice);
+        Assert.Equal(new DateOnly(2026, 7, 20), line.PromisedDate);
+        Assert.Equal(180m, order.TotalAmount);
+    }
+
+    [Fact]
     public void Purchase_order_final_delivery_closes_remaining_quantity_and_cancellation_rejects_received_orders()
     {
         var order = PurchaseOrder.Create(
