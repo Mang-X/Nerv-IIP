@@ -248,8 +248,12 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         }
     }
 
-    public void Close(string? reworkWorkOrderId, string? scrapMovementId, string? returnDocumentId)
+    public void Close(string? reworkWorkOrderId, string? scrapMovementId, string? returnDocumentId) =>
+        Close(reworkWorkOrderId, scrapMovementId, returnDocumentId, "system closure");
+
+    public void Close(string? reworkWorkOrderId, string? scrapMovementId, string? returnDocumentId, string reason)
     {
+        var validReason = Required(reason);
         EnsureNotClosed();
         if (string.IsNullOrWhiteSpace(DispositionType))
         {
@@ -262,7 +266,7 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         EnsureClosureReferences();
         Status = "closed";
         Touch();
-        this.AddDomainEvent(new NonconformanceReportClosedDomainEvent(this));
+        this.AddDomainEvent(new NonconformanceReportClosedDomainEvent(this, validReason));
     }
 
     public void CompleteScrapDisposition(string scrapMovementId)

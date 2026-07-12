@@ -902,7 +902,7 @@ public sealed class QualityInspectionEndpointContractTests
             new CorrectiveActionRepository(dbContext));
 
         await closeHandler.Handle(
-            new CloseNonconformanceReportCommand(ncr.Id, null, null, null),
+            new CloseNonconformanceReportCommand(ncr.Id, null, null, null, "Disposition completed"),
             CancellationToken.None);
 
         Assert.Equal("closed", ncr.Status);
@@ -1161,7 +1161,8 @@ public sealed class QualityInspectionEndpointContractTests
                 ncr.Id,
                 null,
                 "SM-FULL-001",
-                null),
+                null,
+                "Disposition completed"),
             CancellationToken.None));
 
         Assert.Contains("CAPA", exception.Message, StringComparison.OrdinalIgnoreCase);

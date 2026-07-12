@@ -801,6 +801,11 @@ public sealed record BusinessConsoleNotificationListRequest(
     string? Status,
     int Take = 20);
 
+public sealed record BusinessConsoleMarkNotificationMessageReadRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string MessageId);
+
 public sealed record BusinessConsoleInventoryAvailabilityRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1189,7 +1194,8 @@ public sealed record BusinessConsoleNcrCloseRequest(
     [property: QueryParam] string EnvironmentId,
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
-    string? ReturnDocumentId);
+    string? ReturnDocumentId,
+    string Reason);
 
 public sealed record BusinessConsoleAcceptedResponse(
     bool Accepted,

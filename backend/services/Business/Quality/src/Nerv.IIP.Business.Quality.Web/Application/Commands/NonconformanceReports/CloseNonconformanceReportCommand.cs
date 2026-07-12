@@ -7,7 +7,8 @@ public sealed record CloseNonconformanceReportCommand(
     NonconformanceReportId NcrId,
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
-    string? ReturnDocumentId) : ICommand;
+    string? ReturnDocumentId,
+    string Reason) : ICommand;
 
 public sealed class CloseNonconformanceReportCommandValidator : AbstractValidator<CloseNonconformanceReportCommand>
 {
@@ -17,6 +18,7 @@ public sealed class CloseNonconformanceReportCommandValidator : AbstractValidato
         RuleFor(x => x.ReworkWorkOrderId).MaximumLength(150);
         RuleFor(x => x.ScrapMovementId).MaximumLength(150);
         RuleFor(x => x.ReturnDocumentId).MaximumLength(150);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
     }
 }
 
@@ -39,6 +41,6 @@ public sealed class CloseNonconformanceReportCommandHandler(
             throw new KnownException("NCR requires a linked effective CAPA before closure.");
         }
 
-        ncr.Close(request.ReworkWorkOrderId, request.ScrapMovementId, request.ReturnDocumentId);
+        ncr.Close(request.ReworkWorkOrderId, request.ScrapMovementId, request.ReturnDocumentId, request.Reason);
     }
 }

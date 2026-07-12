@@ -7,6 +7,23 @@ namespace Nerv.IIP.Business.Quality.Domain.Tests;
 public sealed class NonconformanceReportAggregateTests
 {
     [Fact]
+    public void Close_records_required_reason_in_durable_audit_event()
+    {
+        var ncr = NewNcr();
+        ncr.SubmitDisposition(
+            "rework",
+            "approval-chain-001",
+            [],
+            [MrbReviewInput.Approve("qa-manager-001", "approved", DateTimeOffset.UtcNow)]);
+
+        ncr.Close("RW-001", null, null, "Engineering concession approved");
+
+        var audit = Assert.IsType<NonconformanceReportClosedDomainEvent>(
+            Assert.Single(ncr.GetDomainEvents().OfType<NonconformanceReportClosedDomainEvent>()));
+        Assert.Equal("Engineering concession approved", audit.Reason);
+    }
+
+    [Fact]
     public void Open_requires_positive_defect_quantity_and_defect_reason()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => NewNcr(defectQuantity: 0));

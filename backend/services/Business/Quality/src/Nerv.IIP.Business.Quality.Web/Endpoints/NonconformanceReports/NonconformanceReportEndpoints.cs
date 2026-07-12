@@ -100,7 +100,8 @@ public sealed record CloseNonconformanceReportRequest(
     NonconformanceReportId NcrId,
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
-    string? ReturnDocumentId);
+    string? ReturnDocumentId,
+    string Reason);
 
 public sealed record AcceptedResponse(bool Accepted);
 
@@ -225,7 +226,8 @@ public sealed class CloseNonconformanceReportEndpoint(ISender sender)
             req.NcrId,
             req.ReworkWorkOrderId,
             req.ScrapMovementId,
-            req.ReturnDocumentId), ct);
+            req.ReturnDocumentId,
+            req.Reason), ct);
         await Send.OkAsync(new AcceptedResponse(true).AsResponseData(), cancellation: ct);
     }
 }

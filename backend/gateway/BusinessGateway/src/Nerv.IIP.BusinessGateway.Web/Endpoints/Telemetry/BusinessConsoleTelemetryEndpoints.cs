@@ -442,6 +442,28 @@ public sealed class QueryBusinessConsoleTelemetryRuntimeAvailabilityEndpoint(
         telemetry.GetRuntimeAvailabilityAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+[Tags("Business Console Telemetry")]
+[HttpGet("/api/business-console/v1/telemetry/runtime-hours")]
+[BusinessGatewayOperationId("queryBusinessConsoleTelemetryRuntimeHours")]
+public sealed class QueryBusinessConsoleTelemetryRuntimeHoursEndpoint(IBusinessGatewayAuthorizationClient auth, IBusinessIndustrialTelemetryClient telemetry, IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleTelemetryRuntimeHoursRequest, BusinessConsoleTelemetryRuntimeHoursResponse>(auth, BusinessGatewayPermissions.IiotTelemetryRead)
+{
+    protected override string OrganizationId(BusinessConsoleTelemetryRuntimeHoursRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleTelemetryRuntimeHoursRequest request) => request.EnvironmentId;
+    protected override Task<BusinessConsoleTelemetryRuntimeHoursResponse> ForwardAsync(BusinessConsoleTelemetryRuntimeHoursRequest request, string bearerToken, CancellationToken cancellationToken) => telemetry.QueryRuntimeHoursAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed class BusinessConsoleTelemetryRuntimeHoursRequestValidator : Validator<BusinessConsoleTelemetryRuntimeHoursRequest>
+{
+    public BusinessConsoleTelemetryRuntimeHoursRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
+    }
+}
+
 public sealed class BusinessConsoleTelemetryTagListRequestValidator : Validator<BusinessConsoleTelemetryTagListRequest>
 {
     public BusinessConsoleTelemetryTagListRequestValidator()

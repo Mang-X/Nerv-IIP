@@ -26,6 +26,30 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayProxyTests
 {
     [Fact]
+    public async Task Quality_ncr_close_forwards_reason_with_authenticated_actor()
+    {
+        var quality = new RecordingQualityClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/quality/ncrs/ncr-001/close", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reason = "Engineering concession approved",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Engineering concession approved", quality.LastCloseNcrRequest!.Reason);
+        Assert.False(string.IsNullOrWhiteSpace(quality.LastCloseNcrActor));
+    }
+
+    [Fact]
     public async Task List_skus_uses_internal_service_token_for_downstream_business_service()
     {
         var masterData = new RecordingMasterDataClient
@@ -6257,6 +6281,8 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
 
 internal sealed class RecordingQualityClient : IBusinessQualityClient
 {
+    public BusinessConsoleNcrCloseRequest? LastCloseNcrRequest { get; private set; }
+    public string? LastCloseNcrActor { get; private set; }
     public int NcrListCallCount { get; private set; }
 
     public string? LastInternalToken { get; private set; }
@@ -6530,8 +6556,13 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         string internalBearerToken,
         string ncrId,
         BusinessConsoleNcrCloseRequest request,
-        CancellationToken cancellationToken) =>
-        Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        LastCloseNcrRequest = request;
+        LastCloseNcrActor = actor;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
 
     private static BusinessConsoleQualityReasonItem QualityReasonItem(
         string reasonCode,

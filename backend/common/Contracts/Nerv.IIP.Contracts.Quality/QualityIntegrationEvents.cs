@@ -372,6 +372,7 @@ public sealed record NcrClosedPayload(
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId,
+    string Reason,
     DateTimeOffset ClosedAtUtc);
 
 public sealed record CapaOpenedPayload(

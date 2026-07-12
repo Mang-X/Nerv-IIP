@@ -93,7 +93,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | BarcodeLabel | 12 | 9 | 0 | 3 |
 | DemandPlanning | 15 | 15 | 0 | 0 |
 | Erp | 51 | 39 | 11 | 1 |
-| IndustrialTelemetry | 24 | 21 | 1 | 2 |
+| IndustrialTelemetry | 24 | 22 | 1 | 1 |
 | Inventory | 12 | 5 | 2 | 5 |
 | Maintenance | 20 | 15 | 5 | 0 |
 | MasterData | 46 | 38 | 4 | 4 |
@@ -169,7 +169,6 @@ governance decisions, are listed in full below.
 | Approval | POST | `/api/business/v1/approvals/tasks/overdue/check` | Internal server-clock overdue scheduler endpoint invoked by the Approval OverdueCheck background scanner (#488); not a user action. |
 | Erp | GET | `/api/business/v1/erp/purchase-receipts/{purchaseReceiptNo}/source-document` | Service-to-service source-document read contract consumed by Quality to validate receipt line SKU/qty/UOM/lot (#77). |
 | IndustrialTelemetry | POST | `/api/business/v1/iiot/alarms/escalations/run` | Internal alarm-escalation scheduler endpoint (IndustrialTelemetry:AlarmEscalation opt-in scanner, #686); not a user action. |
-| IndustrialTelemetry | GET | `/api/business/v1/iiot/runtime-hours` | By-design internal API consumed by Maintenance PM day-interval generation (#688). Canonical internal precedent - never a Console facade. |
 | Inventory | POST | `/api/inventory/v1/reservations` | Service-to-service reservation API consumed by WMS pick-task creation (#412). |
 | Inventory | POST | `/api/inventory/v1/reservations/fefo` | Service-to-service FEFO reservation API consumed by WMS (#412). |
 | Inventory | POST | `/api/inventory/v1/reservations/{reservationId}/release` | Service-to-service reservation release API consumed by WMS outbound cancel (#412). |

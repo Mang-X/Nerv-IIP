@@ -545,6 +545,35 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public async Task Telemetry_runtime_hours_enforces_read_permission_and_preserves_cumulative_facts()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var telemetry = new RecordingTelemetryFacadeClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/telemetry/runtime-hours?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T12:00:00Z");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var body = document.RootElement.GetProperty("data");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.IiotTelemetryRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("internal-test-token", telemetry.LastInternalToken);
+        Assert.Equal("org-001", telemetry.LastRuntimeHoursRequest!.OrganizationId);
+        Assert.Equal(2.5m, body.GetProperty("totalRuntimeHours").GetDecimal());
+        Assert.Equal(3m, body.GetProperty("totalLoadingHours").GetDecimal());
+        Assert.True(body.GetProperty("hasRuntimeSamples").GetBoolean());
+        Assert.Single(body.GetProperty("daily").EnumerateArray());
+    }
+
+    [Fact]
     public async Task Telemetry_tags_and_alarms_use_their_industrial_telemetry_permissions()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -1005,6 +1034,15 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
     public string? LastHistoryDeviceAssetId { get; private set; }
 
     public BusinessConsoleTelemetryHistoryRequest? LastHistoryRequest { get; private set; }
+    public BusinessConsoleTelemetryRuntimeHoursRequest? LastRuntimeHoursRequest { get; private set; }
+
+    public Task<BusinessConsoleTelemetryRuntimeHoursResponse> QueryRuntimeHoursAsync(string internalBearerToken, BusinessConsoleTelemetryRuntimeHoursRequest request, CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastRuntimeHoursRequest = request;
+        return Task.FromResult(new BusinessConsoleTelemetryRuntimeHoursResponse(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, request.WindowStartUtc, request.WindowEndUtc, 3, 2.5m, 3m, true,
+            [new BusinessConsoleTelemetryRuntimeHoursDailyItem("2026-06-01", 2.5m, 3m, 3)]));
+    }
 
     public Task<BusinessConsoleTelemetryTagListResponse> ListTagsAsync(
         string internalBearerToken,

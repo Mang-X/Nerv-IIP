@@ -931,6 +931,34 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryRuntimeHoursResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryRuntimeHoursResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryRuntimeHoursResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    deviceAssetId?: string;
+    windowStartUtc?: string;
+    windowEndUtc?: string;
+    stateSampleCount?: number;
+    totalRuntimeHours?: number;
+    totalLoadingHours?: number;
+    hasRuntimeSamples?: boolean;
+    daily?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryRuntimeHoursDailyItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryRuntimeHoursDailyItem = {
+    businessDate?: string;
+    runtimeHours?: number;
+    loadingHours?: number;
+    stateSampleCount?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryRuntimeHoursRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSearchResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSearchResponse | null;
 };
@@ -1496,6 +1524,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleN
     reworkWorkOrderId?: string | null;
     scrapMovementId?: string | null;
     returnDocumentId?: string | null;
+    reason?: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringEntityResponse = NetCorePalExtensionsDtoResponseData & {
@@ -2509,6 +2538,70 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     downstreamDocumentType: string;
     downstreamDocumentId?: string | null;
     idempotencyKey?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationMessageListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationMessageListResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationMessageListResponse = {
+    items?: Array<NervIipContractsNotificationNotificationMessageResponse>;
+};
+
+export type NervIipContractsNotificationNotificationMessageResponse = {
+    messageId?: string;
+    intentId?: string;
+    recipientRef?: string;
+    status?: string;
+    severity?: string;
+    title?: string;
+    summary?: string;
+    resource?: NervIipContractsNotificationNotificationResourceRef | null;
+    createdAtUtc?: string;
+    readAtUtc?: string | null;
+};
+
+export type NervIipContractsNotificationNotificationResourceRef = {
+    resourceType?: string;
+    resourceId?: string;
+    fileId?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNotificationListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationTaskListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationTaskListResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationTaskListResponse = {
+    items?: Array<NervIipContractsNotificationNotificationTaskResponse>;
+};
+
+export type NervIipContractsNotificationNotificationTaskResponse = {
+    taskId?: string;
+    messageId?: string;
+    recipientRef?: string;
+    taskType?: string;
+    status?: string;
+    actionRef?: string | null;
+    createdAtUtc?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfMarkNotificationMessageReadResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationMarkNotificationMessageReadResponse | null;
+};
+
+export type NervIipContractsNotificationMarkNotificationMessageReadResponse = {
+    messageId?: string;
+    status?: string;
+    readAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMarkNotificationMessageReadRequest = {
+    organizationId?: string;
+    environmentId?: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesFoundationReadinessResponse = NetCorePalExtensionsDtoResponseData & {
@@ -7275,6 +7368,45 @@ export type QueryBusinessConsoleTelemetryRuntimeAvailabilityResponses = {
 
 export type QueryBusinessConsoleTelemetryRuntimeAvailabilityResponse = QueryBusinessConsoleTelemetryRuntimeAvailabilityResponses[keyof QueryBusinessConsoleTelemetryRuntimeAvailabilityResponses];
 
+export type QueryBusinessConsoleTelemetryRuntimeHoursData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        deviceAssetId: string;
+        windowStartUtc: string;
+        windowEndUtc: string;
+    };
+    url: '/api/business-console/v1/telemetry/runtime-hours';
+};
+
+export type QueryBusinessConsoleTelemetryRuntimeHoursErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type QueryBusinessConsoleTelemetryRuntimeHoursError = QueryBusinessConsoleTelemetryRuntimeHoursErrors[keyof QueryBusinessConsoleTelemetryRuntimeHoursErrors];
+
+export type QueryBusinessConsoleTelemetryRuntimeHoursResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryRuntimeHoursResponse;
+};
+
+export type QueryBusinessConsoleTelemetryRuntimeHoursResponse = QueryBusinessConsoleTelemetryRuntimeHoursResponses[keyof QueryBusinessConsoleTelemetryRuntimeHoursResponses];
+
 export type SearchBusinessConsoleObjectsData = {
     body?: never;
     path?: never;
@@ -9934,6 +10066,101 @@ export type AcceptBusinessConsolePlanningSuggestionResponses = {
 };
 
 export type AcceptBusinessConsolePlanningSuggestionResponse = AcceptBusinessConsolePlanningSuggestionResponses[keyof AcceptBusinessConsolePlanningSuggestionResponses];
+
+export type ListBusinessConsoleNotificationMessagesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        recipientRef?: string | null;
+        status?: string | null;
+        take?: number;
+    };
+    url: '/api/business-console/v1/notifications/messages';
+};
+
+export type ListBusinessConsoleNotificationMessagesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleNotificationMessagesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationMessageListResponse;
+};
+
+export type ListBusinessConsoleNotificationMessagesResponse = ListBusinessConsoleNotificationMessagesResponses[keyof ListBusinessConsoleNotificationMessagesResponses];
+
+export type ListBusinessConsoleNotificationTasksData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        recipientRef?: string | null;
+        status?: string | null;
+        take?: number;
+    };
+    url: '/api/business-console/v1/notifications/tasks';
+};
+
+export type ListBusinessConsoleNotificationTasksErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleNotificationTasksResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationTaskListResponse;
+};
+
+export type ListBusinessConsoleNotificationTasksResponse = ListBusinessConsoleNotificationTasksResponses[keyof ListBusinessConsoleNotificationTasksResponses];
+
+export type MarkBusinessConsoleNotificationMessageReadData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMarkNotificationMessageReadRequest;
+    path: {
+        messageId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/notifications/messages/{messageId}/read';
+};
+
+export type MarkBusinessConsoleNotificationMessageReadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type MarkBusinessConsoleNotificationMessageReadResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfMarkNotificationMessageReadResponse;
+};
+
+export type MarkBusinessConsoleNotificationMessageReadResponse = MarkBusinessConsoleNotificationMessageReadResponses[keyof MarkBusinessConsoleNotificationMessageReadResponses];
 
 export type GetBusinessConsoleMesFoundationReadinessData = {
     body?: never;
