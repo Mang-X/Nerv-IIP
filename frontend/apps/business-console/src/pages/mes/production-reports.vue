@@ -579,7 +579,7 @@ function formatError(error: unknown) {
             v-if="reverseReasonLocked"
             class="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-muted-foreground"
           >
-            本次冲销已提交但结果未确定,重试将沿用首次的冲销原因(幂等),原因已锁定。若确需换原因,请「返回」放弃后重新发起。
+            本次冲销已提交但结果未确定。为保证幂等重放,只能沿用首次的冲销原因重试,不能更换原因——「返回」也不会放弃本次请求。如需改用其它原因,请先在报工列表核实上次冲销是否已生效,再据实处理。
           </p>
           <NvField>
             <NvFieldLabel for="reverse-reason">

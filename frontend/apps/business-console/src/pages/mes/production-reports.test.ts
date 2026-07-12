@@ -369,6 +369,38 @@ describe('production reports page — reversal permission & cross-page interlink
     expect(second?.reversedAtUtc).toBe(first?.reversedAtUtc)
   })
 
+  it('keeps a submitted-but-unknown intent locked after 返回 (cancel) then reopen — 返回 does not discard it', async () => {
+    mesState.reverseProductionReport.mockRejectedValue(new Error('timeout'))
+    const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as {
+      openReverse: (row: (typeof rows)[number]) => void
+      cancelReverse: () => void
+      submitReverse: () => Promise<void>
+      reverseReasonLocked: boolean
+      reverseForm: { reasonCode: string; remark: string }
+    }
+
+    // 首次:原因「误报工」提交失败(结果未知)→ reason 已冻结
+    vm.openReverse(rows[0])
+    vm.reverseForm.reasonCode = 'mis-report'
+    await vm.submitReverse()
+    const first = mesState.reverseProductionReport.mock.calls[0]?.[1]
+
+    // 点「返回」:已提交(结果未知)的意图有意保留,不丢弃
+    vm.cancelReverse()
+    // 重开同一报工:仍锁定、仍恢复原原因,不能借「返回」换原因
+    vm.openReverse(rows[0])
+    expect(vm.reverseReasonLocked).toBe(true)
+    expect(vm.reverseForm.reasonCode).toBe('mis-report')
+    vm.reverseForm.reasonCode = 'duplicate' // 试图更改
+    await vm.submitReverse()
+    const second = mesState.reverseProductionReport.mock.calls[1]?.[1]
+    expect(second?.reason).toBe(first?.reason)
+    expect(second?.idempotencyKey).toBe(first?.idempotencyKey)
+  })
+
   it('blocks closing the reverse dialog while the request is pending', async () => {
     const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
     await flushPromises()
