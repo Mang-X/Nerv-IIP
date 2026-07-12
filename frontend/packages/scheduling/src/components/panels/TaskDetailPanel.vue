@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button } from '@nerv-iip/ui'
+import { NvButton } from '@nerv-iip/ui'
 import { LockIcon, UnlockIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { conflictReasonLabel } from '../../model/labels'
@@ -13,10 +13,10 @@ const isOrder = computed(() => props.task?.type === 'order')
 const isBlock = computed(() => !!props.task?.blockKind)
 const PRIO = { high: ['高', 'danger'], medium: ['中', 'warning'], low: ['低', 'muted'] } as const
 const BLOCK = {
-  maintenance: { label: '设备维护', desc: '设备保养期,该时段不排产', tone: 'var(--sched-block-maintenance)' },
-  downtime: { label: '计划停机', desc: '计划性停机,资源不可用', tone: 'var(--sched-block-downtime)' },
-  lineChange: { label: '换线窗口', desc: '产线切换准备,占用资源', tone: 'var(--sched-block-linechange)' },
-  changeover: { label: '换型窗口', desc: '工装/模具换型,占用资源', tone: 'var(--sched-block-changeover)' },
+  maintenance: { label: '设备维护', desc: '设备保养期,该时段不排产', tone: 'var(--nv-scheduling-block-maintenance)' },
+  downtime: { label: '计划停机', desc: '计划性停机,资源不可用', tone: 'var(--nv-scheduling-block-downtime)' },
+  lineChange: { label: '换线窗口', desc: '产线切换准备,占用资源', tone: 'var(--nv-scheduling-block-linechange)' },
+  changeover: { label: '换型窗口', desc: '工装/模具换型,占用资源', tone: 'var(--nv-scheduling-block-changeover)' },
 } as const
 
 function fmt(iso?: string) {
@@ -72,7 +72,7 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
             'bg-muted text-muted-foreground': task.priority === 'low',
           }"
         >{{ PRIO[task.priority][0] }}优先</span>
-        <span v-if="task.isRush" class="inline-flex items-center gap-0.5 rounded px-1.5 py-px text-[0.65rem] font-semibold" style="color: var(--sched-rush); background: color-mix(in oklch, var(--sched-rush), transparent 85%)">⚡ 插单</span>
+        <span v-if="task.isRush" class="inline-flex items-center gap-0.5 rounded px-1.5 py-px text-[0.65rem] font-semibold" style="color: var(--nv-scheduling-rush); background: color-mix(in oklch, var(--nv-scheduling-rush), transparent 85%)">⚡ 插单</span>
         <span v-if="task.locked" class="inline-flex items-center gap-0.5 rounded bg-brand/12 px-1.5 py-px text-[0.65rem] font-semibold text-brand">已锁定</span>
       </div>
       <p class="mt-1 text-[0.82rem] text-foreground">
@@ -81,7 +81,7 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
       </p>
 
       <!-- 锁定/解锁:锁定后不可拖拽,这里提供解锁交互 -->
-      <Button
+      <NvButton
         v-if="!isOrder"
         size="sm"
         :variant="task.locked ? 'secondary' : 'outline'"
@@ -90,7 +90,7 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
       >
         <component :is="task.locked ? UnlockIcon : LockIcon" class="size-3.5" aria-hidden="true" />
         {{ task.locked ? '解锁(允许拖拽)' : '锁定此工序' }}
-      </Button>
+      </NvButton>
 
       <!-- 冲突横幅 -->
       <div
@@ -129,6 +129,7 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
 </template>
 
 <style scoped>
+@layer nv-components {
 .nerv-blk-dot {
   background-color: color-mix(in srgb, var(--bk) 18%, transparent);
   background-image: repeating-linear-gradient(
@@ -139,5 +140,6 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
     color-mix(in srgb, var(--bk) 60%, transparent) 3px
   );
   border: 1px solid color-mix(in srgb, var(--bk) 55%, transparent);
+}
 }
 </style>

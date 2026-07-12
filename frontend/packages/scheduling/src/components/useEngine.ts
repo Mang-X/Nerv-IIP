@@ -13,10 +13,10 @@ import type { ScheduleModel } from '../model/types'
 export type EngineKind = 'auto' | 'dhtmlx'
 
 const TOKEN_NAMES = [
-  '--brand',
+  '--nv-brand',
   '--destructive',
-  '--warning',
-  '--success',
+  '--nv-warning',
+  '--nv-success',
   '--muted',
   '--muted-foreground',
   '--border',

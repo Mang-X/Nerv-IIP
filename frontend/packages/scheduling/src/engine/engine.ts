@@ -7,7 +7,7 @@ export type { TimeScale } from '../model/types'
 
 export interface ThemeBinding {
   isDark: boolean
-  /** 关键设计 token 的解析值(--brand / --destructive / ...),引擎据此渲染,绝不内置色。 */
+  /** 关键设计 token 的解析值(--nv-brand / --destructive / ...),引擎据此渲染,绝不内置色。 */
   tokens: Record<string, string>
 }
 

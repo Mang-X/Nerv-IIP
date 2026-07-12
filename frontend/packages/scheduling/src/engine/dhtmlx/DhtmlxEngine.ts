@@ -244,7 +244,7 @@ function tooltipHtml(t: ScheduleTask): string {
   const badges = [
     prio ? chip(`${prio}优先`, 'var(--destructive)') : '',
     t.isRush ? chip('插单', 'oklch(0.7 0.17 60)') : '',
-    t.locked ? chip('已锁定', 'var(--brand)') : '',
+    t.locked ? chip('已锁定', 'var(--nv-brand)') : '',
     t.hasConflict ? chip('冲突', 'var(--destructive)') : '',
   ]
     .filter(Boolean)
@@ -409,7 +409,7 @@ export class DhtmlxEngine implements SchedulingEngine {
       tip.style.pointerEvents = 'none'
       tip.style.opacity = '0'
       tip.style.display = 'none'
-      if (!prefersReducedMotion()) tip.style.transition = 'opacity 120ms var(--nerv-ease, ease)'
+      if (!prefersReducedMotion()) tip.style.transition = 'opacity 120ms var(--nv-ease-out-expo, ease)'
       document.body.appendChild(tip)
       this.tipEl = tip
 
@@ -1117,7 +1117,7 @@ export class DhtmlxEngine implements SchedulingEngine {
       const offset = Math.max(0, (rowH - barH) / 2)
       const el = document.createElement('div')
       el.className = 'nerv-baseline'
-      if (task.nerv?.colorKey) el.style.setProperty('--bl', `var(--nerv-cat-${task.nerv.colorKey})`)
+      if (task.nerv?.colorKey) el.style.setProperty('--bl', `var(--nv-scheduling-category-${task.nerv.colorKey})`)
       el.style.left = `${pos.left}px`
       el.style.top = `${pos.top + offset}px`
       el.style.width = `${Math.max(3, pos.width)}px`
@@ -1148,6 +1148,7 @@ export class DhtmlxEngine implements SchedulingEngine {
       }
       const groups = new Map<string, string>()
       const laneOf = (t: ScheduleTask) => t.dimensions?.[dim]?.id ?? t.resourceId ?? '__none__'
+      const resourcesByLane = new Map<string, Set<string>>()
       // 先用全部资源播种泳道(工作中心维度=资源本身),保证空泳道也常驻——拖走最后一个工序时该行不消失。
       if (dim === 'workCenter') {
         for (const r of model.resources) if (!groups.has(r.id)) groups.set(r.id, r.text)
@@ -1156,6 +1157,11 @@ export class DhtmlxEngine implements SchedulingEngine {
         const id = laneOf(t)
         // 工序携带的维度标签(如「切割中心」)优先于资源原始名(如「激光切割-01」)。
         groups.set(id, t.dimensions?.[dim]?.label ?? t.resourceId ?? groups.get(id) ?? '未分配')
+        if (t.resourceId) {
+          const resources = resourcesByLane.get(id) ?? new Set<string>()
+          resources.add(t.resourceId)
+          resourcesByLane.set(id, resources)
+        }
       }
       // 时间块:按当前维度算出所属泳道 + 时段窗口,供 timeline_cell_class 给单元格上底纹;
       // 同时播种泳道(块所在资源即使没工序,泳道也要在)。
@@ -1177,7 +1183,19 @@ export class DhtmlxEngine implements SchedulingEngine {
       )
       for (const [id, label] of sortedGroups) {
         const res = resById.get(id)
-        const load = loadByResource.get(id)
+        const resourceIds = resourcesByLane.get(id) ?? new Set([id])
+        const load = [...resourceIds].reduce<{ assigned: number; available: number; utilization: number } | undefined>(
+          (total, resourceId) => {
+            const next = loadByResource.get(resourceId)
+            if (!next) return total
+            return {
+              assigned: (total?.assigned ?? 0) + next.assigned,
+              available: (total?.available ?? 0) + next.available,
+              utilization: Math.max(total?.utilization ?? 0, next.utilization),
+            }
+          },
+          undefined,
+        )
         const utilization = load
           ? load.available > 0 ? load.assigned / load.available : load.utilization
           : undefined
@@ -1187,8 +1205,8 @@ export class DhtmlxEngine implements SchedulingEngine {
           type: 'project',
           render: 'split',
           open: true,
-          kpi: res
-            ? { utilization: res.utilization ?? utilization, oee: res.oee, changeoverCount: res.changeoverCount, materialRisk: res.materialRisk }
+          kpi: res || utilization != null
+            ? { utilization: res?.utilization ?? utilization, oee: res?.oee, changeoverCount: res?.changeoverCount, materialRisk: res?.materialRisk }
             : undefined,
           nerv: { type: 'order', orderId: id, operationId: '', operationSequence: 0, text: label, startUtc: '', endUtc: '', locked: false, hasConflict: false },
         })

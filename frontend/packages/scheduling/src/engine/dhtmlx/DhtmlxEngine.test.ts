@@ -91,6 +91,22 @@ describe('DhtmlxEngine (fake factory)', () => {
     expect(fake.state.parsed.data.find((task) => task.id === 'lane:WC-001')?.kpi?.utilization).toBe(0.25)
   })
 
+  it('aggregates underlying resource loads for a non-resource grouping dimension', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    const model = toModel(samplePlan)
+    for (const task of model.tasks) {
+      if (task.type === 'operation' && task.resourceId === 'WC-001') {
+        task.dimensions = { device: { id: 'DEVICE-A', label: '设备 A' } }
+      }
+    }
+
+    engine.mount(el(), { ...options(), view: 'resource', groupBy: 'device' })
+    engine.setData(model)
+
+    expect(fake.state.parsed.data.find((task) => task.id === 'lane:DEVICE-A')?.kpi?.utilization).toBe(0.25)
+  })
+
   it('selectTask command selects in gantt and emits taskSelected', () => {
     const fake = makeFakeGantt()
     const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })

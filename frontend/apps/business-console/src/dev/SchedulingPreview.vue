@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { Button, useColorMode } from '@nerv-iip/ui'
-import { toModel } from '@nerv-iip/scheduling'
-import SchedulingWorkbench from '../../../../packages/scheduling/src/components/SchedulingWorkbench.vue'
+import { NvButton, useColorMode } from '@nerv-iip/ui'
+import { GanttChart, ResourceSchedulerBoard, toModel } from '@nerv-iip/scheduling'
 import { computed, ref } from 'vue'
 import { previewPlan } from './schedulingPreviewData'
 
@@ -168,7 +167,9 @@ const model = computed(() => {
 })
 const { isDark, toggle } = useColorMode()
 const readOnly = ref(false)
-const defaultView = new URLSearchParams(window.location.search).get('view') === 'resource' ? 'resource' : 'order'
+const view = ref<'order' | 'resource'>(
+  new URLSearchParams(window.location.search).get('view') === 'resource' ? 'resource' : 'order',
+)
 </script>
 
 <template>
@@ -176,15 +177,18 @@ const defaultView = new URLSearchParams(window.location.search).get('view') === 
     <div class="mx-auto flex max-w-[1400px] flex-col gap-4">
       <header class="flex flex-wrap items-center gap-3">
         <div class="mr-auto">
-          <h1 class="text-2xl font-semibold tracking-tight">排产工作台 · 组件预览</h1>
+          <h1 class="text-2xl font-semibold tracking-tight">甘特图组件预览</h1>
           <p class="text-sm text-muted-foreground">@nerv-iip/scheduling · 样例数据 · DHTMLX 试用引擎渲染</p>
         </div>
-        <Button size="sm" variant="outline" @click="toggle()">{{ isDark ? '切到亮色' : '切到暗色' }}</Button>
-        <Button size="sm" variant="outline" @click="readOnly = !readOnly">{{ readOnly ? '允许编辑' : '设为只读' }}</Button>
+        <NvButton size="sm" :variant="view === 'order' ? 'default' : 'outline'" @click="view = 'order'">工单甘特图</NvButton>
+        <NvButton size="sm" :variant="view === 'resource' ? 'default' : 'outline'" @click="view = 'resource'">资源甘特图</NvButton>
+        <NvButton size="sm" variant="outline" @click="toggle()">{{ isDark ? '切到亮色' : '切到暗色' }}</NvButton>
+        <NvButton size="sm" variant="outline" @click="readOnly = !readOnly">{{ readOnly ? '允许编辑' : '设为只读' }}</NvButton>
       </header>
 
       <div class="h-[calc(100vh-9rem)] min-h-[520px]">
-        <SchedulingWorkbench :model="model" :read-only="readOnly" :default-view="defaultView" engine-kind="auto" />
+        <GanttChart v-if="view === 'order'" :model="model" :read-only="readOnly" engine-kind="auto" />
+        <ResourceSchedulerBoard v-else :model="model" :read-only="readOnly" engine-kind="auto" />
       </div>
     </div>
   </div>

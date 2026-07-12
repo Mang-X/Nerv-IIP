@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 图例:讲清当前视图的视觉语言。分色与条形共用 --nerv-cat-* 全局变量,保证图例与条形一致。
+// 图例:讲清当前视图的视觉语言。分色与条形共用 --nv-scheduling-category-* 全局变量,保证图例与条形一致。
 // 视图感知:资源排产板隐藏甘特专属(计划基线/依赖/里程碑),改讲齐套/换型/瓶颈。
 // 结构:按分类分组、每类一行(分类标题 + 该类图例项)。每类可折叠(本地 ref)、可显隐(emit + 自身淡化)。
 import { ChevronRightIcon, EyeIcon, EyeOffIcon } from 'lucide-vue-next'
@@ -55,7 +55,7 @@ function toggleVisible(key: GroupKey) {
       </button>
       <div v-show="!collapsed.category" class="nerv-leg-items">
         <span v-for="c in categories" :key="c.key" class="inline-flex items-center gap-1.5">
-          <span class="h-2.5 w-6 rounded-[3px]" :style="{ background: `var(--nerv-cat-${c.key})` }"></span>
+          <span class="h-2.5 w-6 rounded-[3px]" :style="{ background: `var(--nv-scheduling-category-${c.key})` }"></span>
           {{ c.label }}
         </span>
       </div>
@@ -169,14 +169,14 @@ function toggleVisible(key: GroupKey) {
           <span class="inline-flex items-center gap-1.5">
             <span class="rounded bg-destructive/15 px-1 py-px text-[0.58rem] font-bold text-destructive">高</span>优先级
           </span>
-          <span class="inline-flex items-center gap-1" style="color: var(--sched-rush)">
+          <span class="inline-flex items-center gap-1" style="color: var(--nv-scheduling-rush)">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg>
             <span class="text-muted-foreground">插单</span>
           </span>
           <span class="inline-flex items-center gap-1">
-            <span class="size-1.5 rounded-full" style="background: var(--sched-kit-ok)"></span>
-            <span class="size-1.5 rounded-full" style="background: var(--sched-kit-warn)"></span>
-            <span class="size-1.5 rounded-full" style="background: var(--sched-kit-bad)"></span>
+            <span class="size-1.5 rounded-full" style="background: var(--nv-scheduling-kit-ok)"></span>
+            <span class="size-1.5 rounded-full" style="background: var(--nv-scheduling-kit-warn)"></span>
+            <span class="size-1.5 rounded-full" style="background: var(--nv-scheduling-kit-bad)"></span>
             齐套 足 / 缺 / 危
           </span>
           <span class="inline-flex items-center gap-1.5">
@@ -230,16 +230,16 @@ function toggleVisible(key: GroupKey) {
         </button>
         <div v-show="!collapsed.block" class="nerv-leg-items">
           <span class="inline-flex items-center gap-1.5">
-            <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: var(--sched-block-maintenance)"></span>设备维护
+            <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: var(--nv-scheduling-block-maintenance)"></span>设备维护
           </span>
           <span class="inline-flex items-center gap-1.5">
-            <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: var(--sched-block-downtime)"></span>计划停机
+            <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: var(--nv-scheduling-block-downtime)"></span>计划停机
           </span>
           <span class="inline-flex items-center gap-1.5">
-            <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: var(--sched-block-linechange)"></span>换线窗口
+            <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: var(--nv-scheduling-block-linechange)"></span>换线窗口
           </span>
           <span class="inline-flex items-center gap-1.5">
-            <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: var(--sched-block-changeover)"></span>换型窗口
+            <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: var(--nv-scheduling-block-changeover)"></span>换型窗口
           </span>
         </div>
       </div>
@@ -273,6 +273,7 @@ function toggleVisible(key: GroupKey) {
 </template>
 
 <style scoped>
+@layer nv-components {
 /* 每类一行:标题 | 显隐开关 | 图例项。行与行之间清晰发丝分隔(比 border/50 更实,应用户"分割线不明显")。 */
 .nerv-leg-row {
   display: grid;
@@ -280,7 +281,7 @@ function toggleVisible(key: GroupKey) {
   align-items: start;
   gap: 0.5rem 0.75rem;
   padding: 0.4rem 1rem;
-  transition: opacity var(--nerv-dur) var(--nerv-ease);
+  transition: opacity var(--nv-duration-base) var(--nv-ease-out-expo);
 }
 .nerv-leg-row + .nerv-leg-row {
   border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%);
@@ -301,10 +302,10 @@ function toggleVisible(key: GroupKey) {
   font-weight: 600;
   letter-spacing: 0.01em;
   cursor: pointer;
-  transition: color var(--nerv-dur) var(--nerv-ease);
+  transition: color var(--nv-duration-base) var(--nv-ease-out-expo);
 }
 .nerv-leg-head:hover {
-  color: var(--brand);
+  color: var(--nv-brand);
 }
 .nerv-leg-head:focus-visible {
   outline: 2px solid var(--ring);
@@ -318,7 +319,7 @@ function toggleVisible(key: GroupKey) {
   width: 0.85rem;
   height: 0.85rem;
   flex: none;
-  transition: transform var(--nerv-dur) var(--nerv-ease);
+  transition: transform var(--nv-duration-base) var(--nv-ease-out-expo);
 }
 .nerv-leg-chevron-open {
   transform: rotate(90deg);
@@ -332,7 +333,7 @@ function toggleVisible(key: GroupKey) {
   align-self: center;
   color: var(--muted-foreground);
   cursor: pointer;
-  transition: color var(--nerv-dur) var(--nerv-ease);
+  transition: color var(--nv-duration-base) var(--nv-ease-out-expo);
 }
 .nerv-leg-eye:hover,
 .nerv-leg-eye[aria-pressed='true'] {
@@ -374,5 +375,6 @@ function toggleVisible(key: GroupKey) {
   .nerv-leg-eye {
     transition: none;
   }
+}
 }
 </style>
