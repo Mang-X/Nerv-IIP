@@ -1190,8 +1190,16 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("env-dev", mes.LastProductionReportContext?.EnvironmentId);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var data = document.RootElement.GetProperty("data");
-        Assert.Equal("LOT-FG-001", data.GetProperty("report").GetProperty("producedLotNo").GetString());
-        Assert.Equal("KG", data.GetProperty("consumedMaterialLots")[0].GetProperty("uomCode").GetString());
+        var report = data.GetProperty("report");
+        Assert.Equal("LOT-FG-001", report.GetProperty("producedLotNo").GetString());
+        Assert.Equal("PR-REV-001", report.GetProperty("reversalReportNo").GetString());
+        Assert.Equal("posting-failed", report.GetProperty("inventoryPostingFailureCode").GetString());
+        var consumedLot = data.GetProperty("consumedMaterialLots")[0];
+        Assert.Equal("MAT-001", consumedLot.GetProperty("materialId").GetString());
+        Assert.Equal("LOT-RM-001", consumedLot.GetProperty("materialLotId").GetString());
+        Assert.Equal(2.5m, consumedLot.GetProperty("consumedQuantity").GetDecimal());
+        Assert.Equal("KG", consumedLot.GetProperty("uomCode").GetString());
+        Assert.Equal("MIR-001", consumedLot.GetProperty("materialIssueRequestNo").GetString());
     }
 
     [Fact]
@@ -4749,6 +4757,13 @@ public sealed class BusinessGatewayProxyTests
                 scrapQuantity = 1,
                 reworkQuantity = 0,
                 reportedAtUtc = DateTimeOffset.Parse("2026-07-12T00:00:00Z"),
+                reversedReportNo = "PR-ORIG-001",
+                reversalReason = "incorrect lot",
+                inventoryPostingFailureCode = "posting-failed",
+                inventoryPostingFailureMessage = "inventory unavailable",
+                inventoryPostingFailedAtUtc = DateTimeOffset.Parse("2026-07-12T00:05:00Z"),
+                workOrderStatus = "released",
+                reversalReportNo = "PR-REV-001",
             },
             consumedMaterialLots = new[]
             {
@@ -4771,7 +4786,18 @@ public sealed class BusinessGatewayProxyTests
             new BusinessConsoleMesContextRequest("org-001", "env-dev"),
             CancellationToken.None);
 
-        Assert.Equal("KG", response.ConsumedMaterialLots.Single().UomCode);
+        Assert.Equal("PR-ORIG-001", response.Report.ReversedReportNo);
+        Assert.Equal("incorrect lot", response.Report.ReversalReason);
+        Assert.Equal("posting-failed", response.Report.InventoryPostingFailureCode);
+        Assert.Equal("inventory unavailable", response.Report.InventoryPostingFailureMessage);
+        Assert.Equal("released", response.Report.WorkOrderStatus);
+        Assert.Equal("PR-REV-001", response.Report.ReversalReportNo);
+        var consumedLot = response.ConsumedMaterialLots.Single();
+        Assert.Equal("MAT-001", consumedLot.MaterialId);
+        Assert.Equal("LOT-RM-001", consumedLot.MaterialLotId);
+        Assert.Equal(2.5m, consumedLot.ConsumedQuantity);
+        Assert.Equal("KG", consumedLot.UomCode);
+        Assert.Equal("MIR-001", consumedLot.MaterialIssueRequestNo);
         var request = Assert.Single(handler.Requests);
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Equal("/api/business/v1/mes/production-reports/PR%2F001?organizationId=org-001&environmentId=env-dev", request.RequestUri!.PathAndQuery);
@@ -9209,7 +9235,10 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         return Task.FromResult(new BusinessConsoleMesProductionReportDetailResponse(
             new BusinessConsoleMesProductionReportDetail(
                 "report-id", reportNo, "WO-001", "OP-10", 8m, 1m, 0m,
-                DateTimeOffset.Parse("2026-07-12T00:00:00Z"), ProducedLotNo: "LOT-FG-001"),
+                DateTimeOffset.Parse("2026-07-12T00:00:00Z"),
+                ProducedLotNo: "LOT-FG-001",
+                InventoryPostingFailureCode: "posting-failed",
+                ReversalReportNo: "PR-REV-001"),
             [new BusinessConsoleMesConsumedMaterialLot("MAT-001", "LOT-RM-001", 2.5m, "KG", "MIR-001")]));
     }
 
