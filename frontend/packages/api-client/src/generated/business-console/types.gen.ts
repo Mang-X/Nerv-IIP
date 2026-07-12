@@ -4101,6 +4101,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     sparePartCostAmount?: number | null;
     externalServiceCostAmount?: number | null;
     costCurrencyCode?: string | null;
+    actualTechnicianUserId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceSparePartInput = {
@@ -4137,6 +4138,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     warrantyStatus?: string | null;
     warrantyExpiresOn?: string | null;
     supplierPartnerCode?: string | null;
+    actualTechnicianUserId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderListRequest = {
@@ -4379,6 +4381,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     sparePartCostAmount?: number;
     externalServiceCostAmount?: number;
     totalCostAmount?: number;
+    actualTechnicianUserId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQueryMaintenanceReliabilitySummaryRequest = {
