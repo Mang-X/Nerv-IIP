@@ -33,7 +33,7 @@ public sealed class ListTelemetryProductionReportCandidatesQueryHandler(Applicat
     {
         var query = dbContext.TelemetryProductionReportCandidates.AsNoTracking().Include(x => x.Transitions)
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
-        if (!string.IsNullOrWhiteSpace(request.Status)) query = query.Where(x => x.Status == request.Status.Trim().ToLower());
+        if (!string.IsNullOrWhiteSpace(request.Status)) query = query.Where(x => x.Status == request.Status.Trim().ToLowerInvariant());
         if (!string.IsNullOrWhiteSpace(request.WorkCenterId)) query = query.Where(x => x.WorkCenterId == request.WorkCenterId.Trim());
         if (!string.IsNullOrWhiteSpace(request.DeviceAssetId)) query = query.Where(x => x.DeviceAssetId == request.DeviceAssetId.Trim());
         if (request.FromUtc is not null) query = query.Where(x => x.BucketEndUtc >= request.FromUtc);
