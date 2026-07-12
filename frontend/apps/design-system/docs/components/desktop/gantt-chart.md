@@ -6,7 +6,7 @@ pageClass: ds-wide
 <script setup>
 import { GanttChart } from '@nerv-iip/scheduling'
 import SchedulingLegend from '../../../../../packages/scheduling/src/components/panels/SchedulingLegend.vue'
-import { Button } from '@nerv-iip/ui'
+import { NvButton } from '@nerv-iip/ui'
 import { computed, ref } from 'vue'
 import { makeModel, makeCalendarModel } from '../../.vitepress/schedulingDemo'
 
@@ -114,13 +114,13 @@ function onDrag(p) {
 
 <Demo block>
   <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:.75rem">
-    <Button
+    <NvButton
       v-for="[val, label] in scales"
       :key="val"
       :variant="scale === val ? 'default' : 'outline'"
       size="sm"
       @click="scale = val"
-    >{{ label }}</Button>
+    >{{ label }}</NvButton>
   </div>
   <div style="height: 420px; width: 100%">
     <GanttChart :model="model" :scale="scale" @task-drag-end="onDrag" @task-select="selectedId = $event" />
