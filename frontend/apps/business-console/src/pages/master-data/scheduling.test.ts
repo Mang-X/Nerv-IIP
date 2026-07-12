@@ -72,55 +72,55 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 // 班次行操作：保留 RowActions 内的下拉项（编辑/停用）以便点击「编辑」。
-// 下拉项已迁到 Pro（DropdownMenuProItem 是真 .vue 包装，stub 按 Pro 名）。
+// 下拉项已迁到 Pro（NvDropdownMenuItem 是真 .vue 包装，stub 按 Pro 名）。
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
-  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // 工作日历左列：压平行尾「⋯」菜单 + StatusBadge，让整行按钮的可见文本就是日历名。
 const calRowActionStubs = {
   MasterDataRowActions: { template: '<span data-testid="row-actions" />' },
-  StatusBadgePro: { template: '<span />' },
+  NvStatusBadge: { template: '<span />' },
 }
 const dialogStubs = {
-  DialogPro: { template: '<div><slot /></div>' },
+  NvDialog: { template: '<div><slot /></div>' },
   DialogRoot: { template: '<div><slot /></div>' },
-  DialogProTrigger: { template: '<div><slot /></div>' },
+  NvDialogTrigger: { template: '<div><slot /></div>' },
   DialogTrigger: { template: '<div><slot /></div>' },
-  DialogProContent: { template: '<div><slot /></div>' },
-  DialogProHeader: { template: '<div><slot /></div>' },
-  DialogProFooter: { template: '<div><slot /></div>' },
-  DialogProTitle: { template: '<h2><slot /></h2>' },
-  DialogProDescription: { template: '<p><slot /></p>' },
-  // 班次表行操作里 RowActions 的下拉内容已迁到 Pro（DropdownMenuProContent 含 reka portal/Teleport，
-  // jsdom 卸载会崩）就地渲染；下拉项 DropdownMenuProItem 也一并桩，避免脱离 MenuContent 上下文报错。
-  DropdownMenuProContent: { template: '<div><slot /></div>' },
-  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
-  // 班次表行操作里的 AlertDialog 已迁到 Pro（AlertDialogProContent 含 reka portal/Teleport，jsdom 卸载会崩）就地渲染。
-  AlertDialogPro: { template: '<div><slot /></div>' },
-  AlertDialogProTrigger: { template: '<div><slot /></div>' },
-  AlertDialogProContent: { template: '<div><slot /></div>' },
-  AlertDialogProHeader: { template: '<div><slot /></div>' },
-  AlertDialogProFooter: { template: '<div><slot /></div>' },
-  AlertDialogProTitle: { template: '<h2><slot /></h2>' },
-  AlertDialogProDescription: { template: '<p><slot /></p>' },
-  AlertDialogProCancel: { template: '<button type="button"><slot /></button>' },
-  AlertDialogProAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogHeader: { template: '<div><slot /></div>' },
+  NvDialogFooter: { template: '<div><slot /></div>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
+  // 班次表行操作里 RowActions 的下拉内容已迁到 Pro（NvDropdownMenuContent 含 reka portal/Teleport，
+  // jsdom 卸载会崩）就地渲染；下拉项 NvDropdownMenuItem 也一并桩，避免脱离 MenuContent 上下文报错。
+  NvDropdownMenuContent: { template: '<div><slot /></div>' },
+  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  // 班次表行操作里的 AlertDialog 已迁到 Pro（NvAlertDialogContent 含 reka portal/Teleport，jsdom 卸载会崩）就地渲染。
+  NvAlertDialog: { template: '<div><slot /></div>' },
+  NvAlertDialogTrigger: { template: '<div><slot /></div>' },
+  NvAlertDialogContent: { template: '<div><slot /></div>' },
+  NvAlertDialogHeader: { template: '<div><slot /></div>' },
+  NvAlertDialogFooter: { template: '<div><slot /></div>' },
+  NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
+  NvAlertDialogDescription: { template: '<p><slot /></p>' },
+  NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
+  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // 抽屉照 dialog 风格内联展开，使其内容在挂载后即可断言。
-// Sheet 已迁到 Pro：SheetPro/SheetProTrigger/SheetProClose 是 reka-ui 原语再导出（组件名仍是
-// DialogRoot/DialogTrigger/DialogClose），SheetProContent 等是真 .vue 包装（含 Teleport，就地渲染）。
+// Sheet 已迁到 Pro：NvSheet/NvSheetTrigger/NvSheetClose 是 reka-ui 原语再导出（组件名仍是
+// DialogRoot/DialogTrigger/DialogClose），NvSheetContent 等是真 .vue 包装（含 Teleport，就地渲染）。
 const sheetStubs = {
-  SheetPro: { template: '<div><slot /></div>' },
+  NvSheet: { template: '<div><slot /></div>' },
   DialogRoot: { template: '<div><slot /></div>' },
-  SheetProContent: { template: '<div><slot /></div>' },
-  SheetProHeader: { template: '<div><slot /></div>' },
-  SheetProTitle: { template: '<h2><slot /></h2>' },
-  SheetProDescription: { template: '<p><slot /></p>' },
+  NvSheetContent: { template: '<div><slot /></div>' },
+  NvSheetHeader: { template: '<div><slot /></div>' },
+  NvSheetTitle: { template: '<h2><slot /></h2>' },
+  NvSheetDescription: { template: '<p><slot /></p>' },
 }
 // DatePicker 暴露一个原生 date input，让测试可 setValue 完成日期录入。
 const datePickerStub = {
-  DatePickerPro: {
+  NvDatePicker: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
@@ -128,43 +128,43 @@ const datePickerStub = {
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue。
 const formSelectStubs = {
-  SelectPro: {
+  NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectProTrigger: { template: '<span><slot /></span>' },
-  SelectProValue: { template: '<span />' },
+  NvSelectTrigger: { template: '<span><slot /></span>' },
+  NvSelectValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
-  SelectProContent: { template: '<slot />' },
-  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  NvSelectContent: { template: '<slot />' },
+  NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
 // AlertDialog 内联展开（已迁到 Pro）：Trigger 渲染其插槽（即垃圾桶按钮），Action 渲染为可点击按钮，
 // 让测试能断言「点删 → 出现确认 → 确认后才调 remove」。data-testid（confirm / confirm-delete）保留不变，仅换组件名。
 const alertDialogStubs = {
-  AlertDialogPro: { template: '<div><slot /></div>' },
-  AlertDialogProTrigger: { template: '<div><slot /></div>' },
-  AlertDialogProContent: { template: '<div data-testid="confirm"><slot /></div>' },
-  AlertDialogProHeader: { template: '<div><slot /></div>' },
-  AlertDialogProFooter: { template: '<div><slot /></div>' },
-  AlertDialogProTitle: { template: '<h2><slot /></h2>' },
-  AlertDialogProDescription: { template: '<p><slot /></p>' },
-  AlertDialogProCancel: { template: '<button type="button"><slot /></button>' },
-  AlertDialogProAction: { emits: ['click'], template: '<button type="button" data-testid="confirm-delete" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvAlertDialog: { template: '<div><slot /></div>' },
+  NvAlertDialogTrigger: { template: '<div><slot /></div>' },
+  NvAlertDialogContent: { template: '<div data-testid="confirm"><slot /></div>' },
+  NvAlertDialogHeader: { template: '<div><slot /></div>' },
+  NvAlertDialogFooter: { template: '<div><slot /></div>' },
+  NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
+  NvAlertDialogDescription: { template: '<p><slot /></p>' },
+  NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
+  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" data-testid="confirm-delete" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 
-// 班次 / 工作日历的新建对话框（已迁到 Pro）。TabsProContent 对未激活页签 force-mount，
-// 故在工作日历用例下「班次」页签里的 DialogProContent 仍会挂载；其 reka Teleport 在 jsdom 卸载会崩，
-// 全部就地渲染避免崩溃（DialogPro/DialogProTrigger 是 reka 再导出，根 DialogRoot/DialogTrigger 同样桩）。
+// 班次 / 工作日历的新建对话框（已迁到 Pro）。NvTabsContent 对未激活页签 force-mount，
+// 故在工作日历用例下「班次」页签里的 NvDialogContent 仍会挂载；其 reka Teleport 在 jsdom 卸载会崩，
+// 全部就地渲染避免崩溃（NvDialog/NvDialogTrigger 是 reka 再导出，根 DialogRoot/DialogTrigger 同样桩）。
 const dialogContentStubs = {
-  DialogProTrigger: { template: '<div><slot /></div>' },
+  NvDialogTrigger: { template: '<div><slot /></div>' },
   DialogTrigger: { template: '<div><slot /></div>' },
-  DialogProContent: { template: '<div><slot /></div>' },
-  DialogProHeader: { template: '<div><slot /></div>' },
-  DialogProFooter: { template: '<div><slot /></div>' },
-  DialogProTitle: { template: '<h2><slot /></h2>' },
-  DialogProDescription: { template: '<p><slot /></p>' },
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogHeader: { template: '<div><slot /></div>' },
+  NvDialogFooter: { template: '<div><slot /></div>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
 }
 
 const calStubs = { ...layoutStub, ...calRowActionStubs, ...sheetStubs, ...dialogContentStubs, ...datePickerStub, ...formSelectStubs, ...alertDialogStubs }

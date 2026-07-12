@@ -17,19 +17,19 @@ const open = defineModel<boolean>('open', { default: false })
     <button
       type="button"
       :aria-expanded="open"
-      class="ds-collapse-head flex min-h-touch w-full items-center gap-3 px-4 py-3 text-left text-[15px] active:bg-accent"
+      class="nv-m-collapse-head flex min-h-touch w-full items-center gap-3 px-4 py-3 text-left text-[15px] active:bg-accent"
       @click="open = !open"
     >
       <span class="min-w-0 flex-1"
         ><slot name="title">{{ title }}</slot></span
       >
       <ChevronDown
-        class="ds-collapse-chevron size-5 shrink-0 text-muted-foreground"
+        class="nv-m-collapse-chevron size-5 shrink-0 text-muted-foreground"
         :class="open && 'rotate-180'"
         aria-hidden="true"
       />
     </button>
-    <div class="ds-collapse-wrap grid" :class="open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
+    <div class="nv-m-collapse-wrap grid" :class="open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'">
       <div class="min-h-0 overflow-hidden">
         <div class="px-4 pb-3 text-sm text-muted-foreground"><slot /></div>
       </div>
@@ -39,19 +39,19 @@ const open = defineModel<boolean>('open', { default: false })
 
 <style scoped>
 @layer nv-components {
-  .ds-collapse-head {
+  .nv-m-collapse-head {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
   }
-  .ds-collapse-chevron {
+  .nv-m-collapse-chevron {
     transition: transform 0.24s var(--nv-ease-out-quart, ease-out);
   }
-  .ds-collapse-wrap {
+  .nv-m-collapse-wrap {
     transition: grid-template-rows 0.28s var(--nv-ease-out-expo);
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-collapse-chevron,
-    .ds-collapse-wrap {
+    .nv-m-collapse-chevron,
+    .nv-m-collapse-wrap {
       transition: none;
     }
   }

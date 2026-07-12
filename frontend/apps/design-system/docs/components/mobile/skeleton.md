@@ -12,7 +12,7 @@ import { NvMobileSkeleton } from '@nerv-iip/ui-mobile'
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础形状</p>
+    <p class="nv-mdoc-label">基础形状</p>
     <div class="space-y-2">
       <NvMobileSkeleton variant="text" />
       <NvMobileSkeleton variant="text" class="w-3/5" />
@@ -21,7 +21,7 @@ import { NvMobileSkeleton } from '@nerv-iip/ui-mobile'
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">组合占位</p>
+    <p class="nv-mdoc-label">组合占位</p>
     <div class="flex items-center gap-3">
       <NvMobileSkeleton variant="circle" />
       <div class="flex-1 space-y-2">

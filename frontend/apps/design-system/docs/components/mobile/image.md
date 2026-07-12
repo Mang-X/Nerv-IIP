@@ -16,7 +16,7 @@ const broken = 'https://invalid.nerv-iip.local/not-found.jpg'
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">填充模式</p>
+    <p class="nv-mdoc-label">填充模式</p>
     <div class="grid grid-cols-2 gap-3">
       <div>
         <NvMobileImage :src="photo" fit="cover" ratio="1" radius="lg" alt="设备照片" />
@@ -29,14 +29,14 @@ const broken = 'https://invalid.nerv-iip.local/not-found.jpg'
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">圆角 / 比例</p>
+    <p class="nv-mdoc-label">圆角 / 比例</p>
     <div class="flex items-center gap-3">
       <NvMobileImage :src="photo" radius="full" class="size-16" alt="操作员头像" />
       <NvMobileImage :src="photo" ratio="16/9" radius="md" alt="工位看板" class="flex-1" />
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">加载失败回退</p>
+    <p class="nv-mdoc-label">加载失败回退</p>
     <NvMobileImage :src="broken" ratio="16/9" radius="lg" alt="缺图示例" />
   </section>
 </template>

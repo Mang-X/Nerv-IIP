@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Screen — big-board button. The same premium craft as the PC `ButtonPro` — a
+ * Screen — big-board button. The same premium craft as the PC `NvButton` — a
  * layered surface with a white top highlight, a defined contact shadow (NOT an
  * outer glow), and a sheen that wipes across on hover — re-skinned to the dark
  * board palette. `primary` is a cyan gradient; `secondary` an indigo hairline;
@@ -107,7 +107,7 @@ withDefaults(
       inset 0 1px 0 rgba(255, 255, 255, 0.5),
       0 2px 7px rgba(0, 0, 0, 0.55);
   }
-  /* a faint sheen that wipes across the solid fill on hover (same as ButtonPro) */
+  /* a faint sheen that wipes across the solid fill on hover (same as NvButton) */
   .nv-scr-btn-sheen {
     position: absolute;
     inset: 0;

@@ -16,11 +16,11 @@ const keyword2 = ref('')
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <NvSearchBar v-model="keyword" placeholder="搜索工单 / 物料 / 设备" />
   </section>
   <section>
-    <p class="ds-mdoc-label">可取消</p>
+    <p class="nv-mdoc-label">可取消</p>
     <NvSearchBar v-model="keyword2" cancelable placeholder="搜索工单 / 物料 / 设备" />
   </section>
 </template>

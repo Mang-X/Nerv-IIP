@@ -55,10 +55,10 @@ function confirm() {
   <!-- `defer` lets the target resolve after the tree mounts, so a scoped target
        that is an ancestor (docs phone sim) is found instead of erroring. -->
   <Teleport defer :to="overlayTarget">
-    <Transition name="ds-nk-fade">
+    <Transition name="nv-m-nk-fade">
       <div v-if="show" class="fixed inset-0 z-40 bg-black/30" @click="emit('update:show', false)" />
     </Transition>
-    <Transition name="ds-nk-slide">
+    <Transition name="nv-m-nk-slide">
       <div
         v-if="show"
         data-slot="number-keyboard"
@@ -73,7 +73,7 @@ function confirm() {
           <span class="text-sm text-muted-foreground">{{ title ?? '请输入' }}</span>
           <button
             type="button"
-            class="ds-nk-key rounded-md px-2 py-1 text-[15px] font-medium text-brand"
+            class="nv-m-nk-key rounded-md px-2 py-1 text-[15px] font-medium text-brand"
             @click="confirm"
           >
             {{ confirmText }}
@@ -85,7 +85,7 @@ function confirm() {
             v-for="k in keys"
             :key="k"
             type="button"
-            class="ds-nk-key col-span-1 grid h-14 place-items-center rounded-xl bg-muted text-2xl font-medium text-foreground tabular-nums"
+            class="nv-m-nk-key col-span-1 grid h-14 place-items-center rounded-xl bg-muted text-2xl font-medium text-foreground tabular-nums"
             @click="input(k)"
           >
             {{ k }}
@@ -93,7 +93,7 @@ function confirm() {
           <!-- backspace, spanning the right column across the top two rows -->
           <button
             type="button"
-            class="ds-nk-key col-start-4 row-start-1 row-span-2 grid h-auto place-items-center rounded-xl bg-muted text-foreground"
+            class="nv-m-nk-key col-start-4 row-start-1 row-span-2 grid h-auto place-items-center rounded-xl bg-muted text-foreground"
             aria-label="删除"
             @click="backspace"
           >
@@ -102,7 +102,7 @@ function confirm() {
           <!-- confirm, spanning the right column across the bottom two rows -->
           <button
             type="button"
-            class="ds-nk-key col-start-4 row-start-3 row-span-2 grid h-auto place-items-center rounded-xl bg-brand text-base font-medium text-brand-foreground"
+            class="nv-m-nk-key col-start-4 row-start-3 row-span-2 grid h-auto place-items-center rounded-xl bg-brand text-base font-medium text-brand-foreground"
             @click="confirm"
           >
             {{ confirmText }}
@@ -111,7 +111,7 @@ function confirm() {
           <button
             v-if="extraKey"
             type="button"
-            class="ds-nk-key col-span-1 grid h-14 place-items-center rounded-xl bg-muted text-2xl font-medium text-foreground"
+            class="nv-m-nk-key col-span-1 grid h-14 place-items-center rounded-xl bg-muted text-2xl font-medium text-foreground"
             @click="input(extraKey)"
           >
             {{ extraKey }}
@@ -119,7 +119,7 @@ function confirm() {
           <!-- zero, widening to fill when there is no extra key -->
           <button
             type="button"
-            class="ds-nk-key grid h-14 place-items-center rounded-xl bg-muted text-2xl font-medium text-foreground tabular-nums"
+            class="nv-m-nk-key grid h-14 place-items-center rounded-xl bg-muted text-2xl font-medium text-foreground tabular-nums"
             :class="extraKey ? 'col-span-2' : 'col-span-3'"
             @click="input('0')"
           >
@@ -133,34 +133,34 @@ function confirm() {
 
 <style scoped>
 @layer nv-components {
-  .ds-nk-key {
+  .nv-m-nk-key {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
   }
-  .ds-nk-key:active {
+  .nv-m-nk-key:active {
     opacity: 0.6;
   }
-  .ds-nk-fade-enter-active,
-  .ds-nk-fade-leave-active {
+  .nv-m-nk-fade-enter-active,
+  .nv-m-nk-fade-leave-active {
     transition: opacity 0.25s var(--nv-ease-out-quart, ease-out);
   }
-  .ds-nk-fade-enter-from,
-  .ds-nk-fade-leave-to {
+  .nv-m-nk-fade-enter-from,
+  .nv-m-nk-fade-leave-to {
     opacity: 0;
   }
-  .ds-nk-slide-enter-active,
-  .ds-nk-slide-leave-active {
+  .nv-m-nk-slide-enter-active,
+  .nv-m-nk-slide-leave-active {
     transition: transform 0.3s var(--nv-ease-out-expo);
   }
-  .ds-nk-slide-enter-from,
-  .ds-nk-slide-leave-to {
+  .nv-m-nk-slide-enter-from,
+  .nv-m-nk-slide-leave-to {
     transform: translateY(100%);
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-nk-fade-enter-active,
-    .ds-nk-fade-leave-active,
-    .ds-nk-slide-enter-active,
-    .ds-nk-slide-leave-active {
+    .nv-m-nk-fade-enter-active,
+    .nv-m-nk-fade-leave-active,
+    .nv-m-nk-slide-enter-active,
+    .nv-m-nk-slide-leave-active {
       transition: none;
     }
   }

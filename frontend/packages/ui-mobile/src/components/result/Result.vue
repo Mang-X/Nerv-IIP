@@ -23,7 +23,7 @@ const tone = computed(() => (props.status === 'success' ? 'text-success' : 'text
   >
     <component
       :is="status === 'success' ? CircleCheck : CircleX"
-      :class="cn('ds-result-icon size-16', tone)"
+      :class="cn('nv-m-result-icon size-16', tone)"
       aria-hidden="true"
     />
     <div class="space-y-1">
@@ -38,10 +38,10 @@ const tone = computed(() => (props.status === 'success' ? 'text-success' : 'text
 
 <style scoped>
 @layer nv-components {
-  .ds-result-icon {
-    animation: ds-result-pop 0.42s var(--nv-ease-out-quart) both;
+  .nv-m-result-icon {
+    animation: nv-m-result-pop 0.42s var(--nv-ease-out-quart) both;
   }
-  @keyframes ds-result-pop {
+  @keyframes nv-m-result-pop {
     from {
       opacity: 0;
       transform: scale(0.4);
@@ -52,7 +52,7 @@ const tone = computed(() => (props.status === 'success' ? 'text-success' : 'text
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-result-icon {
+    .nv-m-result-icon {
       animation: none;
     }
   }

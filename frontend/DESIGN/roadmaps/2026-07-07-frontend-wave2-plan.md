@@ -125,7 +125,7 @@
 
 ### 横切质量项（随批次搭车做）
 - 列表批量操作模式（复选框 + 批量动作栏）：报警确认、DLQ 重放先用
-- 加载态 Skeleton 替代空白（DataTablePro 层统一）
+- 加载态 Skeleton 替代空白（NvDataTable 层统一）
 - 跨域操作后关联查询失效刷新（取消工单→物料/预留列表）
 
 ---
@@ -250,9 +250,9 @@
 
 ## 8. 专项 B：组件库品牌化 + 四场景文档重构
 
-**核实后的体系事实**：base（shadcn 原版，零改动）+ 四场景层——PC `pro/`（35 目录 95+ 件，Pro 后缀）、mobile（独立 `ui-mobile` 包 43 件，Mobile 前缀+裸名混杂）、screen（28+ 件，Screen 前缀）、touch（5 件，平板工位）。命名三种风格并存；console/screen app 无合约测试守护；docs 站 desktop 45 页 vs mobile/screen 明显偏科；token 文档不分场景（`--sb-*` 等场景差异只在组件层体现）。
+**核实后的体系事实**：base（shadcn 原版，零改动）+ 四场景层——PC `pc/`（35 目录 95+ 件，Pro 后缀）、mobile（独立 `ui-mobile` 包 43 件，Mobile 前缀+裸名混杂）、screen（28+ 件，Screen 前缀）、touch（5 件，平板工位）。命名三种风格并存；console/screen app 无合约测试守护；docs 站 desktop 45 页 vs mobile/screen 明显偏科；token 文档不分场景（`--nv-scr-*` 等场景差异只在组件层体现）。
 
-> **已决策（2026-07-07）**：品牌前缀 `Nv`，组件库品牌名 **NvUI**（包名方案在 ADR 定：`@nerv-iip/nvui` / 保持 `@nerv-iip/ui` 仅改组件名，倾向前者）；**迁移在业务批（C/P）之前完成**；token 允许跨场景取值相同（设计理念一致，如动效统一 motion-v 封装），但**名称必须按场景命名空间隔离**（primitive 层共享，semantic 层按场景前缀：PC `--nv-*`、screen `--nv-scr-*`（现 `--sb-*` 迁移）、mobile `--nv-m-*`、touch `--nv-t-*`，具体在 ADR 冻结）；**样式隔离制度化**：全部组件样式进 CSS cascade layer，解决 VitePress 文档站 `--vp-*` 覆盖/revert-layer 嵌入坑，文档站嵌入规范写入 governance。
+> **已决策（2026-07-07）**：品牌前缀 `Nv`，组件库品牌名 **NvUI**（包名方案在 ADR 定：`@nerv-iip/nvui` / 保持 `@nerv-iip/ui` 仅改组件名，倾向前者）；**迁移在业务批（C/P）之前完成**；token 允许跨场景取值相同（设计理念一致，如动效统一 motion-v 封装），但**名称必须按场景命名空间隔离**（primitive 层共享，semantic 层按场景前缀：PC `--nv-*`、screen `--nv-scr-*`（现 `--nv-scr-*` 迁移）、mobile `--nv-m-*`、touch `--nv-t-*`，具体在 ADR 冻结）；**样式隔离制度化**：全部组件样式进 CSS cascade layer，解决 VitePress 文档站 `--vp-*` 覆盖/revert-layer 嵌入坑，文档站嵌入规范写入 governance。
 
 **B1 命名规范 ADR（先决策再动手）**——品牌前缀候选：
 - 方案甲（推荐）：统一 `Nv` 前缀。PC 层素名（`NvButton`/`NvDataTable`）；mobile/screen/touch 中与 PC 潜在同名者保留场景词根（`NvScreenButton`/`NvMobileDialog`/`NvTouchButton`），天然独有名直接 Nv（`NvScanBar`/`NvNumberKeyboard`/`NvOeeHero`）。优点：短、品牌统一、auto-import 无歧义。
@@ -268,7 +268,7 @@
 5. **AGENTS.md + CLAUDE.md 写入组件库使用规范**（这是治 codex 误用的根本：明确"业务代码只允许 Nv* 与 blocks/layout，原版 ui/ 仅组件库内部可引"）
 
 **B3 文档站四场景重构**：
-- token 文档拆分：统一哲学页（OKLCH 三层体系不变）+ 四场景参数附录（PC 令牌/screen `--sb-*` 全表/mobile 触控尺寸 40-48px 与安全区/touch 56-72px），颜色、圆角、间距、字号、动效逐项给"场景 × 值"矩阵
+- token 文档拆分：统一哲学页（OKLCH 三层体系不变）+ 四场景参数附录（PC 令牌/screen `--nv-scr-*` 全表/mobile 触控尺寸 40-48px 与安全区/touch 56-72px），颜色、圆角、间距、字号、动效逐项给"场景 × 值"矩阵
 - 每组件页头部加**场景可用性徽章**（此组件属于哪个场景层、其他场景的对应件是什么）
 - mobile/screen/touch 补齐与 desktop 同规格的组件页（用法/API/变体/完整页示例）；PC 的"组件完整页示例"模式推广到四场景各一套
 - 组件覆盖表（component-coverage.md）升级为四场景矩阵视图

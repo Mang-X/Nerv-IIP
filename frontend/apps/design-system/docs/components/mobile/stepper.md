@@ -16,18 +16,18 @@ const batch = ref(50)
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <NvStepper v-model="qty" :min="1" :max="999" />
   </section>
   <section>
-    <p class="ds-mdoc-label">配合表单行</p>
+    <p class="nv-mdoc-label">配合表单行</p>
     <div style="display:flex;align-items:center;justify-content:space-between;width:100%;border:1px solid var(--border);border-radius:12px;background:var(--card);padding:12px 16px">
       <span style="font-size:15px">报工数量</span>
       <NvStepper v-model="qty" :min="1" :max="999" />
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">自定义步长</p>
+    <p class="nv-mdoc-label">自定义步长</p>
     <NvStepper v-model="batch" :min="0" :max="500" :step="10" />
   </section>
 </template>

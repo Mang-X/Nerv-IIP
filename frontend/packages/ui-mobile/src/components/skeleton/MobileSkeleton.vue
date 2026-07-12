@@ -28,17 +28,17 @@ const variantClass: Record<Variant, string> = {
   <span
     data-slot="skeleton"
     aria-hidden="true"
-    :class="cn('ds-skeleton block bg-muted', variantClass[variant], $props.class)"
+    :class="cn('nv-m-skeleton block bg-muted', variantClass[variant], $props.class)"
   />
 </template>
 
 <style scoped>
 @layer nv-components {
-  .ds-skeleton {
+  .nv-m-skeleton {
     position: relative;
     overflow: hidden;
   }
-  .ds-skeleton::after {
+  .nv-m-skeleton::after {
     content: '';
     position: absolute;
     inset: 0;
@@ -49,15 +49,15 @@ const variantClass: Record<Variant, string> = {
       color-mix(in oklab, var(--foreground) 8%, transparent),
       transparent
     );
-    animation: ds-skeleton-shimmer 1.4s var(--nv-ease-out-quart, ease-out) infinite;
+    animation: nv-m-skeleton-shimmer 1.4s var(--nv-ease-out-quart, ease-out) infinite;
   }
-  @keyframes ds-skeleton-shimmer {
+  @keyframes nv-m-skeleton-shimmer {
     100% {
       transform: translateX(100%);
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-skeleton::after {
+    .nv-m-skeleton::after {
       animation: none;
     }
   }

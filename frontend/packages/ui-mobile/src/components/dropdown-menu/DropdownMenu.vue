@@ -29,17 +29,17 @@ provide(dropdownMenuKey, { openId, toggle, close })
     data-slot="dropdown-menu"
     :class="
       cn(
-        'ds-ddm relative z-10 flex h-11 items-stretch border-b border-border bg-card',
+        'nv-m-ddm relative z-10 flex h-11 items-stretch border-b border-border bg-card',
         $props.class,
       )
     "
   >
     <slot />
     <!-- shared tap-away scrim below the bar, rendered only while a panel is open -->
-    <Transition name="ds-ddm-scrim">
+    <Transition name="nv-m-ddm-scrim">
       <div
         v-if="openId !== null"
-        class="ds-ddm-scrim absolute inset-x-0 top-full z-30 h-screen bg-black/30"
+        class="nv-m-ddm-scrim absolute inset-x-0 top-full z-30 h-screen bg-black/30"
         aria-hidden="true"
         @click="close"
       />
@@ -49,17 +49,17 @@ provide(dropdownMenuKey, { openId, toggle, close })
 
 <style scoped>
 @layer nv-components {
-  .ds-ddm-scrim-enter-active,
-  .ds-ddm-scrim-leave-active {
+  .nv-m-ddm-scrim-enter-active,
+  .nv-m-ddm-scrim-leave-active {
     transition: opacity 0.22s var(--nv-ease-out-expo);
   }
-  .ds-ddm-scrim-enter-from,
-  .ds-ddm-scrim-leave-to {
+  .nv-m-ddm-scrim-enter-from,
+  .nv-m-ddm-scrim-leave-to {
     opacity: 0;
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-ddm-scrim-enter-active,
-    .ds-ddm-scrim-leave-active {
+    .nv-m-ddm-scrim-enter-active,
+    .nv-m-ddm-scrim-leave-active {
       transition: none;
     }
   }

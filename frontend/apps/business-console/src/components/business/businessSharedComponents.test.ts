@@ -25,7 +25,7 @@ vi.mock('@nerv-iip/ui', () => {
 
   return {
     NvBadge: defineComponent({
-      name: 'BadgePro',
+      name: 'NvBadge',
       props: {
         variant: {
           default: 'neutral',
@@ -37,7 +37,7 @@ vi.mock('@nerv-iip/ui', () => {
       },
     }),
     NvButton: defineComponent({
-      name: 'ButtonPro',
+      name: 'NvButton',
       props: {
         disabled: Boolean,
         type: String,
@@ -48,9 +48,9 @@ vi.mock('@nerv-iip/ui', () => {
       },
     }),
     // BusinessRowActions 已迁到 Pro 下拉，整模块 mock 按 Pro 导出名打桩。
-    NvDropdownMenu: passthrough('DropdownMenuPro'),
-    NvDropdownMenuContent: passthrough('DropdownMenuProContent'),
-    NvDropdownMenuTrigger: passthrough('DropdownMenuProTrigger'),
+    NvDropdownMenu: passthrough('NvDropdownMenu'),
+    NvDropdownMenuContent: passthrough('NvDropdownMenuContent'),
+    NvDropdownMenuTrigger: passthrough('NvDropdownMenuTrigger'),
     Pagination: defineComponent({
       name: 'Pagination',
       props: {
@@ -70,7 +70,7 @@ vi.mock('@nerv-iip/ui', () => {
     PaginationNext: passthrough('PaginationNext'),
     PaginationPrevious: passthrough('PaginationPrevious'),
     NvSelect: defineComponent({
-      name: 'SelectPro',
+      name: 'NvSelect',
       emits: ['update:modelValue'],
       setup(_props, { emit, slots }) {
         return () =>
@@ -81,9 +81,9 @@ vi.mock('@nerv-iip/ui', () => {
           )
       },
     }),
-    NvSelectContent: passthrough('SelectProContent'),
+    NvSelectContent: passthrough('NvSelectContent'),
     NvSelectItem: defineComponent({
-      name: 'SelectProItem',
+      name: 'NvSelectItem',
       props: {
         value: String,
       },
@@ -91,8 +91,8 @@ vi.mock('@nerv-iip/ui', () => {
         return () => h('div', { 'data-value': props.value }, slots.default?.())
       },
     }),
-    NvSelectTrigger: passthrough('SelectProTrigger'),
-    NvSelectValue: passthrough('SelectProValue'),
+    NvSelectTrigger: passthrough('NvSelectTrigger'),
+    NvSelectValue: passthrough('NvSelectValue'),
   }
 })
 

@@ -19,7 +19,7 @@ const workerShow = ref(false)
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">录入数量（带小数点）</p>
+    <p class="nv-mdoc-label">录入数量（带小数点）</p>
     <div
       class="flex h-11 items-center justify-between rounded-xl border border-border bg-card px-3"
       @click="qtyShow = true"
@@ -32,7 +32,7 @@ const workerShow = ref(false)
     <NvNumberKeyboard v-model="qty" v-model:show="qtyShow" title="录入完工数量" extra-key="." />
   </section>
   <section>
-    <p class="ds-mdoc-label">录入工号（纯数字、无小数点）</p>
+    <p class="nv-mdoc-label">录入工号（纯数字、无小数点）</p>
     <div
       class="flex h-11 items-center justify-between rounded-xl border border-border bg-card px-3"
       @click="workerShow = true"

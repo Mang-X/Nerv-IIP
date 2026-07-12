@@ -24,7 +24,7 @@ function onFabSelect(action) {
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">速拨菜单</p>
+    <p class="nv-mdoc-label">速拨菜单</p>
     <div class="relative h-64 w-full overflow-hidden rounded-xl border border-border bg-background">
       <div class="space-y-2 p-3">
         <div v-for="n in 4" :key="n" class="h-12 rounded-lg bg-card" />

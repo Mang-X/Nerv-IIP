@@ -13,13 +13,13 @@ import { EllipsisIcon } from 'lucide-vue-next'
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <div class="border-b border-border bg-card">
       <NvNavBar title="工单详情" />
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">返回与右侧操作</p>
+    <p class="nv-mdoc-label">返回与右侧操作</p>
     <div class="border-b border-border bg-card">
       <NvNavBar title="WO-2406-0413" back>
         <template #right>

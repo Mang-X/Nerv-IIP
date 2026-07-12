@@ -94,31 +94,31 @@ vi.mock('vue-router', () => ({
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const selectStubs = {
-  SelectPro: { props: ['modelValue'], emits: ['update:modelValue'], template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>' },
-  SelectProTrigger: { template: '<span><slot /></span>' },
-  SelectProValue: { template: '<span />' },
+  NvSelect: { props: ['modelValue'], emits: ['update:modelValue'], template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>' },
+  NvSelectTrigger: { template: '<span><slot /></span>' },
+  NvSelectValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
-  SelectProContent: { template: '<slot />' },
-  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  NvSelectContent: { template: '<slot />' },
+  NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 const dialogStubs = {
-  DialogPro: { props: ['open'], emits: ['update:open'], template: '<section v-if="open" class="dialog"><slot /></section>' },
-  DialogProClose: { template: '<span><slot /></span>' },
-  DialogProContent: { template: '<div><slot /></div>' },
-  DialogProDescription: { template: '<p><slot /></p>' },
-  DialogProFooter: { template: '<footer><slot /></footer>' },
-  DialogProHeader: { template: '<header><slot /></header>' },
-  DialogProTitle: { template: '<h2><slot /></h2>' },
+  NvDialog: { props: ['open'], emits: ['update:open'], template: '<section v-if="open" class="dialog"><slot /></section>' },
+  NvDialogClose: { template: '<span><slot /></span>' },
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
+  NvDialogFooter: { template: '<footer><slot /></footer>' },
+  NvDialogHeader: { template: '<header><slot /></header>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
 }
 const checkboxStubs = {
-  CheckboxPro: {
+  NvCheckbox: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<input type="checkbox" :checked="modelValue" @change="$emit(\'update:modelValue\', $event.target.checked)" />',
   },
 }
 const tableStub = {
-  DataTablePro: {
+  NvDataTable: {
     props: ['rows', 'totalItems'],
     template: `
       <section class="data-table" :data-total="totalItems">

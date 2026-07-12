@@ -12,7 +12,7 @@ import { NvNoticeBar } from '@nerv-iip/ui-mobile'
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">色调</p>
+    <p class="nv-mdoc-label">色调</p>
     <div class="w-full space-y-2">
       <NvNoticeBar tone="info">今日计划已重排，受影响工单 6 张</NvNoticeBar>
       <NvNoticeBar tone="warning">B 线物料不足：液压阀体 V3 缺口 452 件</NvNoticeBar>

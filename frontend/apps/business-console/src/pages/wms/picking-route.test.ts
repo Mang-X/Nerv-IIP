@@ -69,8 +69,8 @@ vi.mock('@/composables/useBusinessWms', () => ({
 
 const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
-  ButtonPro: { template: '<button v-bind="$attrs"><slot /></button>' },
-  DataTablePro: {
+  NvButton: { template: '<button v-bind="$attrs"><slot /></button>' },
+  NvDataTable: {
     props: ['rows', 'columns'],
     template: `<table data-ui-table><tbody><tr v-for="(row, i) in rows" :key="i">
       <td v-for="column in columns" :key="column.key" :data-cell="column.key">
@@ -78,24 +78,24 @@ const uiStubs = {
       </td>
     </tr></tbody></table>`,
   },
-  DialogPro: { template: '<div><slot /></div>' },
-  DialogProClose: { template: '<div><slot /></div>' },
-  DialogProContent: { template: '<div><slot /></div>' },
-  DialogProDescription: { template: '<p><slot /></p>' },
-  DialogProFooter: { template: '<div><slot /></div>' },
-  DialogProHeader: { template: '<div><slot /></div>' },
-  DialogProTitle: { template: '<h2><slot /></h2>' },
-  FieldPro: { template: '<div><slot /></div>' },
-  FieldProError: true,
-  FieldProGroup: { template: '<div><slot /></div>' },
-  FieldProLabel: { template: '<label><slot /></label>' },
-  InputPro: {
+  NvDialog: { template: '<div><slot /></div>' },
+  NvDialogClose: { template: '<div><slot /></div>' },
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
+  NvDialogFooter: { template: '<div><slot /></div>' },
+  NvDialogHeader: { template: '<div><slot /></div>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
+  NvField: { template: '<div><slot /></div>' },
+  NvFieldError: true,
+  NvFieldGroup: { template: '<div><slot /></div>' },
+  NvFieldLabel: { template: '<label><slot /></label>' },
+  NvInput: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
   PageHeader: { props: ['title', 'count'], template: '<header><h1>{{ title }}</h1>{{ count }}<slot name="actions" /></header>' },
-  StatusBadgePro: { props: ['value'], template: '<span>{{ value }}</span>' },
+  NvStatusBadge: { props: ['value'], template: '<span>{{ value }}</span>' },
   Toolbar: { template: '<div><slot name="filters" /></div>' },
 }
 

@@ -165,12 +165,12 @@ watch(() => props.autoplay, startAutoplay)
 </script>
 
 <template>
-  <div class="ds-swiper w-full" data-slot="swiper">
+  <div class="nv-m-swiper w-full" data-slot="swiper">
     <div
       ref="viewportEl"
       :class="
         cn(
-          'ds-swiper-viewport relative w-full overflow-hidden',
+          'nv-m-swiper-viewport relative w-full overflow-hidden',
           frame && 'rounded-2xl bg-muted',
           $props.class,
         )
@@ -179,8 +179,8 @@ watch(() => props.autoplay, startAutoplay)
       <!-- h-full + items-stretch make every slide fill the viewport height -->
       <div
         ref="trackEl"
-        class="ds-swiper-track flex h-full items-stretch"
-        :class="!dragging && 'ds-swiper-snap'"
+        class="nv-m-swiper-track flex h-full items-stretch"
+        :class="!dragging && 'nv-m-swiper-snap'"
         :style="trackStyle"
         @pointerdown="onDown"
         @pointermove="onMove"
@@ -188,7 +188,7 @@ watch(() => props.autoplay, startAutoplay)
         @pointercancel="onUp"
       >
         <template v-if="items">
-          <div v-for="(item, i) in items" :key="i" class="ds-swiper-item w-full shrink-0">
+          <div v-for="(item, i) in items" :key="i" class="nv-m-swiper-item w-full shrink-0">
             <slot :item="item" :index="i" />
           </div>
         </template>
@@ -198,14 +198,14 @@ watch(() => props.autoplay, startAutoplay)
       <!-- overlay dots float over the slide (banner / image carousels) -->
       <div
         v-if="dots && count > 1 && indicator === 'overlay'"
-        class="ds-swiper-dots pointer-events-none absolute inset-x-0 bottom-3 flex justify-center gap-1.5"
+        class="nv-m-swiper-dots pointer-events-none absolute inset-x-0 bottom-3 flex justify-center gap-1.5"
         aria-hidden="true"
       >
         <span
           v-for="i in count"
           :key="i"
-          class="ds-swiper-dot"
-          :class="i - 1 === active ? 'ds-swiper-dot-active' : ''"
+          class="nv-m-swiper-dot"
+          :class="i - 1 === active ? 'nv-m-swiper-dot-active' : ''"
         />
       </div>
     </div>
@@ -213,14 +213,14 @@ watch(() => props.autoplay, startAutoplay)
     <!-- outside dots sit below the slide so they never cover interactive content -->
     <div
       v-if="dots && count > 1 && indicator === 'outside'"
-      class="ds-swiper-dots ds-swiper-dots-outside mt-2.5 flex justify-center gap-1.5"
+      class="nv-m-swiper-dots nv-m-swiper-dots-outside mt-2.5 flex justify-center gap-1.5"
       aria-hidden="true"
     >
       <span
         v-for="i in count"
         :key="i"
-        class="ds-swiper-dot"
-        :class="i - 1 === active ? 'ds-swiper-dot-active' : ''"
+        class="nv-m-swiper-dot"
+        :class="i - 1 === active ? 'nv-m-swiper-dot-active' : ''"
       />
     </div>
   </div>
@@ -228,13 +228,13 @@ watch(() => props.autoplay, startAutoplay)
 
 <style scoped>
 @layer nv-components {
-  .ds-swiper-track {
+  .nv-m-swiper-track {
     touch-action: pan-y;
   }
-  .ds-swiper-snap {
+  .nv-m-swiper-snap {
     transition: transform 0.34s var(--nv-ease-out-expo);
   }
-  .ds-swiper-dot {
+  .nv-m-swiper-dot {
     height: 6px;
     width: 6px;
     border-radius: 9999px;
@@ -247,21 +247,21 @@ watch(() => props.autoplay, startAutoplay)
       width 0.3s var(--nv-ease-out-expo),
       background-color 0.3s ease;
   }
-  .ds-swiper-dot-active {
+  .nv-m-swiper-dot-active {
     width: 16px;
     background: var(--nv-brand);
   }
   /* outside dots sit on the page surface, not over an image — use a muted fill */
-  .ds-swiper-dots-outside .ds-swiper-dot {
+  .nv-m-swiper-dots-outside .nv-m-swiper-dot {
     background: color-mix(in oklch, var(--muted-foreground) 32%, transparent);
     box-shadow: none;
   }
-  .ds-swiper-dots-outside .ds-swiper-dot-active {
+  .nv-m-swiper-dots-outside .nv-m-swiper-dot-active {
     background: var(--nv-brand);
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-swiper-snap,
-    .ds-swiper-dot {
+    .nv-m-swiper-snap,
+    .nv-m-swiper-dot {
       transition: none;
     }
   }
