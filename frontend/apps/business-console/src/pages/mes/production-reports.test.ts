@@ -291,10 +291,15 @@ describe('production reports page — reversal permission & cross-page interlink
     expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
     expect(wrapper.text()).toContain('PRPT-000899')
 
-    // 清除筛选恢复原列表
+    // 清除筛选:keyword 清空 + 原三行列表恢复 + 定位高亮清除
     const clearBtn = wrapper.findAll('button').find((b) => b.text().includes('清除筛选'))!
     await clearBtn.trigger('click')
+    await flushPromises()
     expect(mesState.filters.keyword).toBe('')
+    const restored = wrapper.findAll('[data-testid="row"]')
+    expect(restored).toHaveLength(3)
+    expect(wrapper.text()).toContain('PRPT-000001')
+    expect(wrapper.html()).not.toContain('ring-brand')
   })
 
   it('freezes both idempotencyKey and reversedAtUtc across close (e.g. Escape) and reopen for the same report until success', async () => {
