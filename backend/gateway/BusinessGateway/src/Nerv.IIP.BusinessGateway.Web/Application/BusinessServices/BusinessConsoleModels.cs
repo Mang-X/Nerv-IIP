@@ -3511,7 +3511,10 @@ public sealed record BusinessConsoleMesProductionReportRow(
     string? ReversedReportNo = null,
     string? ReversalReason = null,
     // 报工所属工单状态,供 Console 冲销按钮分级(已关闭工单前端禁用,与后端拒绝构成双层拦截,MAN-444/#798)。
-    string? WorkOrderStatus = null);
+    string? WorkOrderStatus = null,
+    // 冲销本报工的负向记录单号(服务端逐行反查):非空即"已冲销",供 Console 跨分页稳定判定已冲销与
+    // 原单→冲销单互链,不再从当前页推断(MAN-444/#798 review)。
+    string? ReversalReportNo = null);
 
 public sealed record BusinessConsoleMesRecordDefectRequest(
     string OrganizationId,

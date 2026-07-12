@@ -5,6 +5,8 @@ import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { useMesProductionReports } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvAlertDialog,
@@ -33,6 +35,7 @@ import {
   Spinner,
 } from '@nerv-iip/ui'
 import { ClipboardPenIcon, RefreshCwIcon, Undo2Icon } from 'lucide-vue-next'
+import { storeToRefs } from 'pinia'
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -57,26 +60,29 @@ const {
 } = useMesProductionReports()
 const { page, pageSize } = usePagedList(filters)
 
+// 冲销是写操作(网关按 business.mes.reporting.write 鉴权)。页面准入只需 read,故写权限需单独门控:
+// 无写权限的只读角色不展示冲销/重新报工入口,避免看到必然 403 的破坏性动作(AGENTS.md §5 权限同步)。
+const auth = useAuthStore()
+const { principal } = storeToRefs(auth)
+const canReport = computed(() =>
+  (principal.value?.permissionCodes ?? []).includes(P.mesReportingWrite),
+)
+
 const quickViewWorkOrderId = ref<string | null>(null)
 
 const errorMessage = computed(() => formatError(productionReportsError.value))
 
 type ReportRow = BusinessConsoleMesProductionReportRow
 
-// 冲销互链索引:原报工号 -> 冲销该报工的负向记录行。冲销行 reversedReportNo 指向原报工号(MES 事实层透传)。
-const reversalByOriginal = computed(() => {
-  const map = new Map<string, ReportRow>()
-  for (const row of productionReports.value) {
-    const target = row.reversedReportNo?.trim()
-    if (target) map.set(target, row)
-  }
-  return map
-})
+// 冲销互链两个方向均由后端逐行投影,跨服务端分页稳定,不从当前页推断:
+//   冲销行  → reversedReportNo(指向被冲销的原报工)
+//   已冲销原报工 → reversalReportNo(指向冲销它的负向记录),非空即"已冲销"
+// 原单与冲销单常因 ReportedAtUtc 倒序分处不同页,靠当前页 map 会误判原单未冲销、错误重开冲销(review 修复)。
 function isReversalRow(row: ReportRow) {
   return Boolean(row.reversedReportNo?.trim())
 }
 function isAlreadyReversed(row: ReportRow) {
-  return Boolean(row.reportNo && reversalByOriginal.value.has(row.reportNo))
+  return Boolean(row.reversalReportNo?.trim())
 }
 function isClosedWorkOrder(row: ReportRow) {
   return (row.workOrderStatus ?? '').toLowerCase() === 'closed'
@@ -105,7 +111,7 @@ function hasLink(row: ReportRow) {
 }
 function counterpartReportNo(row: ReportRow): string | undefined {
   if (isReversalRow(row)) return row.reversedReportNo?.trim() || undefined
-  return row.reportNo ? reversalByOriginal.value.get(row.reportNo)?.reportNo : undefined
+  return row.reversalReportNo?.trim() || undefined
 }
 
 // 双向互链高亮:悬停/点击互链的一行时,原单与冲销单两行的报工单列同时高亮。
@@ -145,6 +151,9 @@ const REASON_MAX_LENGTH = 500
 const reverseOpen = ref(false)
 const reverseTarget = ref<ReportRow | null>(null)
 const reverseForm = reactive({ reasonCode: '', remark: '' })
+// 幂等键标识"一次冲销意图":打开确认框时生成并保存,同意图的重试(响应超时/发布阶段失败,真机记录里
+// 出现过提交成功却返回 502)复用同一 key,命中后端 handler 的幂等重放分支;成功或关闭确认框后清除。
+const reverseIdempotencyKey = ref('')
 const requiresRemark = computed(() => reverseForm.reasonCode === 'other')
 const reverseReasonLabel = computed(
   () =>
@@ -169,11 +178,18 @@ const canSubmitReverse = computed(() => {
 })
 
 function openReverse(row: ReportRow) {
-  if (!canReverse(row)) return
+  if (!canReport.value || !canReverse(row)) return
   reverseTarget.value = row
   reverseForm.reasonCode = ''
   reverseForm.remark = ''
+  // 一次意图一把 key,贯穿本次确认框的所有重试
+  reverseIdempotencyKey.value = `reverse-${row.reportNo}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   reverseOpen.value = true
+}
+function closeReverse() {
+  reverseOpen.value = false
+  // 用户显式放弃本次冲销意图:清除 key,下次打开重新生成
+  reverseIdempotencyKey.value = ''
 }
 async function submitReverse() {
   const row = reverseTarget.value
@@ -183,14 +199,17 @@ async function submitReverse() {
   try {
     const response = await reverseProductionReport(row.reportNo, {
       reason,
-      idempotencyKey: `reverse-${row.reportNo}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      // 复用本次意图的 key(不每次重新生成),重试可命中后端幂等重放
+      idempotencyKey: reverseIdempotencyKey.value,
     })
     reverseOpen.value = false
+    reverseIdempotencyKey.value = ''
     const reversalNo = response?.data?.reportNo
     notifySuccess(
       `已冲销报工 ${row.reportNo}${reversalNo ? `,生成冲销单 ${reversalNo}` : ''}；工单累计数量已回退。`,
     )
   } catch (error) {
+    // 失败保留 key:用户在同一确认框重试时复用,命中后端幂等重放,不产生第二次冲销意图
     notifyError(error, '冲销报工失败,请稍后重试。')
   }
 }
@@ -301,7 +320,7 @@ function formatError(error: unknown) {
             @click="linkToCounterpart(row)"
           >
             <Undo2Icon class="size-3" aria-hidden="true" />
-            查看冲销单 {{ reversalByOriginal.get(row.reportNo ?? '')?.reportNo }}
+            查看冲销单 {{ row.reversalReportNo }}
           </button>
         </div>
       </template>
@@ -345,7 +364,8 @@ function formatError(error: unknown) {
       <template #cell-reportedAtUtc="{ row }">{{ formatDateTime(row.reportedAtUtc) }}</template>
 
       <template #cell-actions="{ row }">
-        <div class="flex items-center justify-end gap-1">
+        <!-- 冲销/重新报工都是写操作:无 reporting.write 权限的只读角色不展示,避免必然 403 的破坏性入口 -->
+        <div v-if="canReport" class="flex items-center justify-end gap-1">
           <!-- 冲销记录行:唯一有意义的后续动作是重新报工(冲销单不可再冲销) -->
           <NvButton
             v-if="isReversalRow(row)"
@@ -383,6 +403,7 @@ function formatError(error: unknown) {
             </NvTooltip>
           </NvTooltipProvider>
         </div>
+        <span v-else class="text-muted-foreground">—</span>
       </template>
     </NvDataTable>
 
@@ -492,7 +513,7 @@ function formatError(error: unknown) {
             type="button"
             variant="outline"
             :disabled="reverseProductionReportPending"
-            @click="reverseOpen = false"
+            @click="closeReverse"
           >
             返回
           </NvButton>

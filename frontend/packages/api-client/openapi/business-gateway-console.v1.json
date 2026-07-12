@@ -32871,6 +32871,10 @@
           "workOrderStatus": {
             "type": "string",
             "nullable": true
+          },
+          "reversalReportNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

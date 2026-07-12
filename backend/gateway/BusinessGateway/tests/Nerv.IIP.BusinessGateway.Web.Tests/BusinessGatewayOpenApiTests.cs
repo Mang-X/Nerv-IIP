@@ -790,7 +790,9 @@ public sealed class BusinessGatewayOpenApiTests
             // MAN-444/#798: 冲销互链与工单状态字段,支撑 Console 负向记录标记、原单⇄冲销单双向高亮与冲销按钮分级。
             "reversedReportNo",
             "reversalReason",
-            "workOrderStatus");
+            "workOrderStatus",
+            // 服务端逐行反查的已冲销互链,支撑跨分页稳定的"已冲销"判定与原单→冲销单互链(review 修复)。
+            "reversalReportNo");
 
         AssertMesDisplayProperties(
             document,
