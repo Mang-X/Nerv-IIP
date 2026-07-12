@@ -27,6 +27,8 @@ const props = withDefaults(
     loading?: boolean
     id?: string
     ariaLabel?: string
+    /** 弹层内搜索框的可访问名称；缺省时从字段 ariaLabel 派生（读屏可知搜的是哪个字段）。 */
+    searchAriaLabel?: string
     class?: HTMLAttributes['class']
   }>(),
   {
@@ -53,6 +55,11 @@ const filtered = computed(() => {
     `${o.label} ${o.hint ?? ''} ${o.value}`.toLowerCase().includes(q),
   )
 })
+
+const searchLabel = computed(
+  () =>
+    props.searchAriaLabel ?? (props.ariaLabel ? `搜索${props.ariaLabel}` : props.searchPlaceholder),
+)
 
 const listboxId = useId()
 const optionId = (index: number) => `${listboxId}-opt-${index}`
@@ -128,6 +135,7 @@ function onKeydown(e: KeyboardEvent) {
             ref="inputEl"
             v-model="query"
             :placeholder="searchPlaceholder"
+            :aria-label="searchLabel"
             autocomplete="off"
             role="combobox"
             aria-autocomplete="list"

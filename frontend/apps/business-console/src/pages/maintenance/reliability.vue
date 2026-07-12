@@ -23,7 +23,6 @@ import {
   NvInput,
   NvLineChart,
   NvPageHeader,
-  NvSearchSelect,
   NvSectionCard,
   NvSectionCards,
 } from '@nerv-iip/ui'
@@ -58,8 +57,9 @@ const deviceSuggestions = computed(() =>
     .map((r) => ({ value: (r.code ?? '').trim(), label: r.displayName ?? r.code ?? '' }))
     .filter((s) => s.value.length > 0),
 )
-// 测量特性下拉候选：常用特性 + 点检历史里真实出现过的特性（含 PDA 自定义，后端同源），
-// 去重。这样动态/自定义特性也能在趋势里选到，而非只限 15 个预置项。
+// 趋势查询是筛选面，用输入联想框（NvCombobox）：允许输入**任意**特性查趋势（含分页外/较早的
+// PDA 自定义特性），下方建议 = 常用特性 + 已加载点检历史里真实出现过的特性（后端同源）去重，仅作快填。
+// （录入表单是"从已知项里选"，用 NvSearchSelect；查询面是"任意特性可查"，故此处放开自由输入。）
 const { inspections } = useMaintenanceInspections()
 const characteristicOptions = computed(() => {
   const seen = new Set<string>()
@@ -331,13 +331,11 @@ function refreshAll() {
           </div>
           <NvField class="w-full sm:w-64">
             <NvFieldLabel for="rel-characteristic">测量特性</NvFieldLabel>
-            <NvSearchSelect
+            <NvCombobox
               id="rel-characteristic"
               v-model="trend.filters.characteristicCode"
-              :options="characteristicOptions"
-              aria-label="测量特性"
-              placeholder="选择特性"
-              search-placeholder="搜索特性…"
+              :suggestions="characteristicOptions"
+              placeholder="输入或选择特性查趋势，如 轴承温度"
             />
           </NvField>
         </div>

@@ -124,7 +124,7 @@ const deviceSuggestions = computed(() =>
 // 指派技师选项：未指派 + 工人目录（姓名 + 工号）。
 // 注：技师只能在**建单**时写 assignedTechnicianUserId——CompleteMaintenanceWorkOrderRequest
 // 契约无该字段、Maintenance 域也无 assign/reassign 端点，故"完工时记录/改选实际技师"是待补的
-// 后端缺口（见 #793 审核，已建后端 follow-up）。可靠性汇总按建单指派技师聚合。
+// 后端缺口，追踪于 #897（本 PR 因此 refs #793 而非 closes）。可靠性汇总按建单指派技师聚合。
 const technicianOptions = computed(() => [
   { value: UNASSIGNED, label: '未指派' },
   ...workers.value

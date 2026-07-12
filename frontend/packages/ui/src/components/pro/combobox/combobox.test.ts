@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import NvCombobox from './NvCombobox.vue'
 import NvSearchSelect from './NvSearchSelect.vue'
@@ -30,6 +30,20 @@ describe('NvSearchSelect', () => {
     const trigger = wrapper.get('button[type="button"]')
     expect(trigger.attributes('aria-haspopup')).toBe('listbox')
     expect(trigger.attributes('aria-expanded')).toBe('false')
+  })
+
+  // 审核复审:弹层内搜索框只有 placeholder(不是 label),读屏不知搜的是哪个字段。
+  it('gives the popover search input an accessible name derived from the field', async () => {
+    const wrapper = mount(NvSearchSelect, {
+      props: { options, ariaLabel: '指派技师' },
+      attachTo: document.body,
+    })
+    await wrapper.get('button[type="button"]').trigger('click')
+    await flushPromises()
+    const searchInput = document.body.querySelector<HTMLInputElement>('input[role="combobox"]')
+    expect(searchInput).not.toBeNull()
+    expect(searchInput?.getAttribute('aria-label')).toBe('搜索指派技师')
+    wrapper.unmount()
   })
 })
 
