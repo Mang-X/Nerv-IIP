@@ -14,7 +14,7 @@ import {
   NvCard,
   NvCheckbox,
   NvCommand,
-  NvDataTablePagination,
+  NvPagination,
   NvDataTable,
   NvDataTableToolbar,
   NvDatePicker,
@@ -35,9 +35,9 @@ import {
   NvSwitch,
   NvLineChart,
   NvLoader,
-  messagePro,
+  nvMessage,
   NvMetricCard,
-  notificationPro,
+  nvNotification,
   NvNotifierHost,
   NvPopconfirm,
   Progress,
@@ -194,7 +194,7 @@ function runProAction() {
   proLoading.value = true
   window.setTimeout(() => {
     proLoading.value = false
-    notificationPro.success('工单已派发', {
+    nvNotification.success('工单已派发', {
       description: 'WO-2406-0431 已进入 A 线排队队列，物料已锁定。',
     })
   }, 1500)
@@ -241,35 +241,35 @@ const loaderVariants = [
 // ---- Feedback ----
 function fireMessage(kind: 'info' | 'success' | 'warning' | 'error') {
   const map = {
-    info: () => messagePro.info('已同步 MES 网关'),
-    success: () => messagePro.success('保存成功'),
-    warning: () => messagePro.warning('库存接近下限'),
-    error: () => messagePro.error('网络连接中断'),
+    info: () => nvMessage.info('已同步 MES 网关'),
+    success: () => nvMessage.success('保存成功'),
+    warning: () => nvMessage.warning('库存接近下限'),
+    error: () => nvMessage.error('网络连接中断'),
   }
   map[kind]()
 }
 function fireLongMessage() {
-  messagePro.info(
+  nvMessage.info(
     'WO-2406-0413 前桥壳体 A2 已下发至 A 线排队队列，物料已锁定，预计 14:20 开工，请关注节拍与首检结果。',
   )
 }
 function fireBurst() {
-  messagePro.success('已保存草稿')
-  window.setTimeout(() => messagePro.info('已同步 MES 网关'), 140)
-  window.setTimeout(() => messagePro.warning('库存接近下限'), 280)
+  nvMessage.success('已保存草稿')
+  window.setTimeout(() => nvMessage.info('已同步 MES 网关'), 140)
+  window.setTimeout(() => nvMessage.warning('库存接近下限'), 280)
 }
 function fireNotification(kind: 'info' | 'success' | 'warning' | 'error') {
   const map = {
     info: () =>
-      notificationPro.info('排产已更新', { description: '今日计划重排，受影响工单 6 张。' }),
+      nvNotification.info('排产已更新', { description: '今日计划重排，受影响工单 6 张。' }),
     success: () =>
-      notificationPro.success('保养工单已创建', { description: 'CNC-07 · 今晚 22:00 执行。' }),
+      nvNotification.success('保养工单已创建', { description: 'CNC-07 · 今晚 22:00 执行。' }),
     warning: () =>
-      notificationPro.warning('B 线物料不足', {
+      nvNotification.warning('B 线物料不足', {
         description: '液压阀体 V3 缺口 452 件，已转采购申请。',
       }),
     error: () =>
-      notificationPro.error('派工失败', { description: '工作中心 WC-ASM-04 处于阻塞状态。' }),
+      nvNotification.error('派工失败', { description: '工作中心 WC-ASM-04 处于阻塞状态。' }),
   }
   map[kind]()
 }
@@ -301,7 +301,7 @@ const cmdGroups: CommandGroup[] = [
   },
 ]
 function onCommandSelect(item: CommandItem) {
-  messagePro.success(`执行：${item.label}`)
+  nvMessage.success(`执行：${item.label}`)
 }
 
 // ---- Charts ----
@@ -464,7 +464,7 @@ const tableTabs = [
   { label: '阻塞', value: 'blocked' },
 ]
 function onTableRefresh() {
-  messagePro.success('已刷新工单列表')
+  nvMessage.success('已刷新工单列表')
 }
 
 // ---- 独立操作栏 NvToolbar 演示 ----
@@ -594,7 +594,7 @@ const progress = computed(
 
       <!-- Hero -->
       <section class="relative overflow-hidden border-b border-border/70">
-        <div class="ds-hero-glow" aria-hidden="true" />
+        <div class="nv-hero-glow" aria-hidden="true" />
         <div class="relative mx-auto max-w-6xl px-6 py-20">
           <p class="flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <NvStatusDot tone="info" pulse /> 工业智能平台 · 控制平面组件库
@@ -627,7 +627,7 @@ const progress = computed(
       <main class="mx-auto max-w-6xl space-y-20 px-6 py-20">
         <!-- ============ 基础 ============ -->
         <section id="foundations" v-reveal class="scroll-mt-20">
-          <div class="ds-eyebrow">
+          <div class="nv-eyebrow">
             <h2 class="text-xl font-semibold tracking-tight">设计基础</h2>
             <p class="mt-1.5 text-sm text-muted-foreground">
               颜色、品牌色板、圆角、阴影、排印 —— 全部来自单一 OKLCH 令牌源。
@@ -767,7 +767,7 @@ const progress = computed(
 
         <!-- ============ 组件 ============ -->
         <section id="components" v-reveal class="scroll-mt-20">
-          <div class="ds-eyebrow">
+          <div class="nv-eyebrow">
             <div class="flex flex-wrap items-center gap-2">
               <h2 class="text-xl font-semibold tracking-tight">组件</h2>
               <NvBadge variant="brand">Pro</NvBadge>
@@ -831,8 +831,8 @@ const progress = computed(
               <h3 class="text-sm font-semibold">表单控件</h3>
               <div class="mt-4 grid gap-4">
                 <div class="grid gap-2">
-                  <Label for="ds-search">搜索</Label>
-                  <NvInput id="ds-search" v-model="searchValue" placeholder="搜索工单号 / 产品">
+                  <Label for="nv-search">搜索</Label>
+                  <NvInput id="nv-search" v-model="searchValue" placeholder="搜索工单号 / 产品">
                     <template #leading><SearchIcon aria-hidden="true" /></template>
                     <template #trailing>
                       <kbd
@@ -843,9 +843,9 @@ const progress = computed(
                   </NvInput>
                 </div>
                 <div class="grid gap-2">
-                  <Label for="ds-line">目标产线</Label>
+                  <Label for="nv-line">目标产线</Label>
                   <NvSelect v-model="lineValue">
-                    <NvSelectTrigger id="ds-line"
+                    <NvSelectTrigger id="nv-line"
                       ><NvSelectValue placeholder="选择产线"
                     /></NvSelectTrigger>
                     <NvSelectContent>
@@ -1030,7 +1030,7 @@ const progress = computed(
 
         <!-- ============ 数据可视化 ============ -->
         <section id="charts" v-reveal class="scroll-mt-20">
-          <div class="ds-eyebrow">
+          <div class="nv-eyebrow">
             <h2 class="text-xl font-semibold tracking-tight">数据可视化</h2>
             <p class="mt-1.5 text-sm text-muted-foreground">
               基于 unovis：面积、折线、柱状、环形覆盖常见工厂场景；颜色走令牌，随品牌色重着色。
@@ -1167,7 +1167,7 @@ const progress = computed(
                 :title="`确认作废选中的 ${tableSelected.length} 张工单？`"
                 description="作废后不可恢复，已领用物料需手动退库。"
                 confirm-text="作废"
-                @confirm="messagePro.error('已作废所选工单')"
+                @confirm="nvMessage.error('已作废所选工单')"
               >
                 <NvButton variant="outline" size="sm">作废</NvButton>
               </NvPopconfirm>
@@ -1202,9 +1202,9 @@ const progress = computed(
             show-density
             refreshable
             show-more
-            @refresh="messagePro.info('正在刷新…')"
-            @export="messagePro.success('已导出 CSV')"
-            @print="messagePro.info('已发送到打印机')"
+            @refresh="nvMessage.info('正在刷新…')"
+            @export="nvMessage.success('已导出 CSV')"
+            @print="nvMessage.info('已发送到打印机')"
           >
             <template #filters>
               <NvButton variant="outline" size="sm">
@@ -1233,7 +1233,7 @@ const progress = computed(
               <p class="mb-2.5 text-xs text-muted-foreground">
                 多页（528 条 · 53 页，含省略号 + 跳页）
               </p>
-              <NvDataTablePagination
+              <NvPagination
                 :page="pgManyPage"
                 :page-size="pgManySize"
                 :total-items="528"
@@ -1244,7 +1244,7 @@ const progress = computed(
             </div>
             <div class="rounded-xl border bg-card px-3 py-3 shadow-sm sm:px-4">
               <p class="mb-2.5 text-xs text-muted-foreground">少页（36 条 · 4 页，无省略号）</p>
-              <NvDataTablePagination
+              <NvPagination
                 :page="pgFewPage"
                 :page-size="pgFewSize"
                 :total-items="36"
@@ -1258,7 +1258,7 @@ const progress = computed(
 
         <!-- ============ 详情展示 ============ -->
         <section id="detail" v-reveal class="scroll-mt-20">
-          <div class="ds-eyebrow">
+          <div class="nv-eyebrow">
             <h2 class="text-xl font-semibold tracking-tight">详情展示</h2>
             <p class="mt-1.5 text-sm text-muted-foreground">
               键值详情（Descriptions）与工序流转（Timeline）—— 工单 / 设备详情页核心。
@@ -1323,7 +1323,7 @@ const progress = computed(
                 title="确认删除该工单？"
                 description="删除后不可恢复。"
                 confirm-text="删除"
-                @confirm="messagePro.error('工单已删除')"
+                @confirm="nvMessage.error('工单已删除')"
               >
                 <NvButton variant="outline" size="sm">删除工单</NvButton>
               </NvPopconfirm>
@@ -1331,7 +1331,7 @@ const progress = computed(
                 title="确认下发到产线？"
                 confirm-text="下发"
                 confirm-tone="brand"
-                @confirm="messagePro.success('已下发排产')"
+                @confirm="nvMessage.success('已下发排产')"
               >
                 <NvButton variant="brand" size="sm">下发排产</NvButton>
               </NvPopconfirm>
@@ -1342,7 +1342,7 @@ const progress = computed(
 
         <!-- ============ 动效 ============ -->
         <section id="motion" v-reveal class="scroll-mt-20">
-          <div class="ds-eyebrow">
+          <div class="nv-eyebrow">
             <h2 class="text-xl font-semibold tracking-tight">动效</h2>
             <p class="mt-1.5 text-sm text-muted-foreground">
               指数级 ease-out 缓动，150–320ms 区间，列表入场错峰；reduced-motion 下全部降级。
@@ -1357,7 +1357,7 @@ const progress = computed(
               ]"
               :key="curve.name"
               v-reveal="i"
-              class="ds-motion-card group p-5"
+              class="nv-motion-card group p-5"
             >
               <div class="flex items-center gap-2">
                 <ActivityIcon class="size-4 text-brand" aria-hidden="true" />
@@ -1365,7 +1365,7 @@ const progress = computed(
               </div>
               <div class="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-muted">
                 <span
-                  class="ds-motion-bar block h-full w-1/3 rounded-full bg-brand"
+                  class="nv-motion-bar block h-full w-1/3 rounded-full bg-brand"
                   :class="curve.cls"
                 />
               </div>
@@ -1400,7 +1400,7 @@ const progress = computed(
 </template>
 
 <style scoped>
-.ds-hero-glow {
+.nv-hero-glow {
   position: absolute;
   inset: 0;
   background:
@@ -1417,11 +1417,11 @@ const progress = computed(
   pointer-events: none;
 }
 
-.ds-eyebrow {
+.nv-eyebrow {
   position: relative;
   padding-left: 0.875rem;
 }
-.ds-eyebrow::before {
+.nv-eyebrow::before {
   content: '';
   position: absolute;
   left: 0;
@@ -1446,17 +1446,17 @@ const progress = computed(
   transition-delay: var(--reveal-delay, 0ms);
 }
 
-.ds-motion-bar {
+.nv-motion-bar {
   transform: translateX(0);
   transition: transform 1.1s var(--nv-ease-out-quart);
 }
-.ds-motion-card:hover .ds-motion-bar {
+.nv-motion-card:hover .nv-motion-bar {
   transform: translateX(200%);
 }
-.ds-motion-card:hover .ds-motion-bar.ease-out-expo {
+.nv-motion-card:hover .nv-motion-bar.ease-out-expo {
   transition-timing-function: var(--nv-ease-out-expo);
 }
-.ds-motion-card:hover .ds-motion-bar.ease-in-out-quart {
+.nv-motion-card:hover .nv-motion-bar.ease-in-out-quart {
   transition-timing-function: var(--nv-ease-in-out-quart);
 }
 
@@ -1465,7 +1465,7 @@ const progress = computed(
     opacity: 1;
     transform: none;
   }
-  .ds-motion-bar {
+  .nv-motion-bar {
     transition: none;
   }
 }

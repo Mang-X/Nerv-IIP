@@ -32,7 +32,7 @@ function onGrid(item) {
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <div class="w-full overflow-hidden rounded-xl border border-border bg-card">
       <NvMobileGrid :items="gridItems" :columns="4" @select="onGrid" />
     </div>

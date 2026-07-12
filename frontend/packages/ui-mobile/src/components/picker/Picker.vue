@@ -48,7 +48,7 @@ watch(open, (isOpen) => {
 
 <template>
   <BottomSheet :open="open" @update:open="open = $event">
-    <div class="ds-picker">
+    <div class="nv-m-picker">
       <div class="flex items-center justify-between pb-1">
         <MobileButton variant="text" size="md" class="text-muted-foreground" @click="open = false">
           取消
@@ -57,21 +57,21 @@ watch(open, (isOpen) => {
         <MobileButton variant="text" size="md" @click="confirm">确定</MobileButton>
       </div>
 
-      <div class="ds-picker-wheel">
-        <div class="ds-picker-band" aria-hidden="true" />
-        <div ref="scroller" class="ds-picker-scroll" @scroll="onScroll">
-          <div class="ds-picker-pad" />
+      <div class="nv-m-picker-wheel">
+        <div class="nv-m-picker-band" aria-hidden="true" />
+        <div ref="scroller" class="nv-m-picker-scroll" @scroll="onScroll">
+          <div class="nv-m-picker-pad" />
           <div
             v-for="(opt, i) in options"
             :key="opt.value"
             :class="[
-              'ds-picker-item',
+              'nv-m-picker-item',
               i === draftIndex ? 'font-medium text-foreground' : 'text-muted-foreground',
             ]"
           >
             {{ opt.label }}
           </div>
-          <div class="ds-picker-pad" />
+          <div class="nv-m-picker-pad" />
         </div>
       </div>
     </div>
@@ -80,11 +80,11 @@ watch(open, (isOpen) => {
 
 <style scoped>
 @layer nv-components {
-  .ds-picker-wheel {
+  .nv-m-picker-wheel {
     position: relative;
     height: 200px;
   }
-  .ds-picker-band {
+  .nv-m-picker-band {
     position: absolute;
     top: 80px;
     right: 0;
@@ -94,19 +94,19 @@ watch(open, (isOpen) => {
     border-bottom: 1px solid var(--border);
     pointer-events: none;
   }
-  .ds-picker-scroll {
+  .nv-m-picker-scroll {
     height: 100%;
     overflow-y: auto;
     scroll-snap-type: y mandatory;
     scrollbar-width: none;
   }
-  .ds-picker-scroll::-webkit-scrollbar {
+  .nv-m-picker-scroll::-webkit-scrollbar {
     display: none;
   }
-  .ds-picker-pad {
+  .nv-m-picker-pad {
     height: 80px;
   }
-  .ds-picker-item {
+  .nv-m-picker-item {
     display: flex;
     height: 40px;
     align-items: center;

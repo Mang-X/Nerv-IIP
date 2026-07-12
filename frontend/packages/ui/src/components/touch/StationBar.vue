@@ -2,7 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { cn } from '../../lib/utils'
 import type { StatusTone } from '../blocks/status-badge/statusMap'
-import StatusDot from '../pro/status/StatusDot.vue'
+import NvStatusDot from '../pc/status/NvStatusDot.vue'
 
 /**
  * Touch — station board header for tablet/kiosk. Big station identity + live
@@ -36,7 +36,7 @@ withDefaults(
         v-if="statusLabel"
         class="inline-flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1 text-sm font-medium"
       >
-        <StatusDot :tone="tone" :pulse="pulse" />
+        <NvStatusDot :tone="tone" :pulse="pulse" />
         {{ statusLabel }}
       </span>
     </div>

@@ -69,10 +69,10 @@ const tableStub = {
 }
 
 const tabsStubs = {
-  TabsPro: { template: '<section><slot /></section>' },
-  TabsProList: { template: '<nav><slot /></nav>' },
-  TabsProTrigger: { props: ['value'], template: '<button type="button"><slot /></button>' },
-  TabsProContent: { props: ['value'], template: '<section><slot /></section>' },
+  NvTabs: { template: '<section><slot /></section>' },
+  NvTabsList: { template: '<nav><slot /></nav>' },
+  NvTabsTrigger: { props: ['value'], template: '<button type="button"><slot /></button>' },
+  NvTabsContent: { props: ['value'], template: '<section><slot /></section>' },
 }
 
 function mountApproval(permissionCodes: string[]) {
@@ -94,20 +94,20 @@ function mountApproval(permissionCodes: string[]) {
       plugins: [pinia],
       stubs: {
         BusinessLayout: { template: '<main><slot /></main>' },
-        DataTablePro: tableStub,
-        DialogPro: { props: ['open'], template: '<section v-if="open"><slot /></section>' },
-        DialogProClose: { template: '<span><slot /></span>' },
-        DialogProContent: { template: '<section><slot /></section>' },
-        DialogProDescription: { template: '<p><slot /></p>' },
-        DialogProFooter: { template: '<footer><slot /></footer>' },
-        DialogProHeader: { template: '<header><slot /></header>' },
-        DialogProTitle: { template: '<h2><slot /></h2>' },
+        NvDataTable: tableStub,
+        NvDialog: { props: ['open'], template: '<section v-if="open"><slot /></section>' },
+        NvDialogClose: { template: '<span><slot /></span>' },
+        NvDialogContent: { template: '<section><slot /></section>' },
+        NvDialogDescription: { template: '<p><slot /></p>' },
+        NvDialogFooter: { template: '<footer><slot /></footer>' },
+        NvDialogHeader: { template: '<header><slot /></header>' },
+        NvDialogTitle: { template: '<h2><slot /></h2>' },
         RowActions: { template: '<div data-testid="row-actions"><slot /></div>' },
-        DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+        NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
         PageHeader: { props: ['title'], template: '<header><h1>{{ title }}</h1><slot /><slot name="actions" /></header>' },
         SectionCard: true,
         SectionCards: { template: '<section><slot /></section>' },
-        StatusBadgePro: { props: ['value'], template: '<span>{{ value }}</span>' },
+        NvStatusBadge: { props: ['value'], template: '<span>{{ value }}</span>' },
         ...tabsStubs,
       },
     },

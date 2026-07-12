@@ -2,12 +2,12 @@
 import type { HTMLAttributes } from 'vue'
 import { MoreHorizontalIcon } from 'lucide-vue-next'
 import { cn } from '../../../lib/utils'
-import { NvButton } from '../../pro/button'
+import { NvButton } from '../../pc/button'
 import {
   NvDropdownMenu,
   NvDropdownMenuContent,
   NvDropdownMenuTrigger,
-} from '../../pro/dropdown-menu'
+} from '../../pc/dropdown-menu'
 
 withDefaults(
   defineProps<{

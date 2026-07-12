@@ -17,21 +17,21 @@ const quality = ref(0)
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础（点按选择，再点当前星清零）</p>
+    <p class="nv-mdoc-label">基础（点按选择，再点当前星清零）</p>
     <NvMobileRate v-model="score" />
     <p class="mt-1 text-sm text-muted-foreground">当前评分：{{ score }} 星</p>
   </section>
   <section>
-    <p class="ds-mdoc-label">半星</p>
+    <p class="nv-mdoc-label">半星</p>
     <NvMobileRate v-model="halfScore" allow-half />
     <p class="mt-1 text-sm text-muted-foreground">当前评分：{{ halfScore }} 星</p>
   </section>
   <section>
-    <p class="ds-mdoc-label">只读</p>
+    <p class="nv-mdoc-label">只读</p>
     <NvMobileRate :model-value="4" readonly />
   </section>
   <section>
-    <p class="ds-mdoc-label">质检评级</p>
+    <p class="nv-mdoc-label">质检评级</p>
     <div class="rounded-xl border border-border bg-card p-3">
       <div class="mb-2 flex items-center justify-between text-sm">
         <span class="font-medium text-foreground">QC-20260617-118</span>

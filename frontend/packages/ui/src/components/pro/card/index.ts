@@ -1,8 +1,0 @@
-export { default as NvCard } from './CardPro.vue'
-export { default as NvCardAction } from './CardProAction.vue'
-export { default as NvCardContent } from './CardProContent.vue'
-export { default as NvCardDescription } from './CardProDescription.vue'
-export { default as NvCardFooter } from './CardProFooter.vue'
-export { default as NvCardHeader } from './CardProHeader.vue'
-export { default as NvCardTitle } from './CardProTitle.vue'
-export { default as NvMetricCard } from './MetricCardPro.vue'

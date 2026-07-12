@@ -12,7 +12,7 @@ import { NvMobileCollapse } from '@nerv-iip/ui-mobile'
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <div class="mx-3 divide-y divide-border overflow-hidden rounded-xl border border-border">
       <NvMobileCollapse title="工艺参数" :open="true">
         主轴转速 2400 rpm · 进给 180 mm/min · 冷却液开
@@ -26,7 +26,7 @@ import { NvMobileCollapse } from '@nerv-iip/ui-mobile'
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">受控展开</p>
+    <p class="nv-mdoc-label">受控展开</p>
     <div class="mx-3 overflow-hidden rounded-xl border border-border">
       <NvMobileCollapse title="异常处理记录">
         WC-ASM-04 报警 → 已派单维修 → 12:40 恢复

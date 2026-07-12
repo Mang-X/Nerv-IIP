@@ -16,7 +16,7 @@ const dangerOpen = ref(false)
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">居中确认</p>
+    <p class="nv-mdoc-label">居中确认</p>
     <NvMobileButton variant="default" size="md" block @click="confirmOpen = true">
       居中确认
     </NvMobileButton>
@@ -28,7 +28,7 @@ const dangerOpen = ref(false)
     />
   </section>
   <section>
-    <p class="ds-mdoc-label">危险确认</p>
+    <p class="nv-mdoc-label">危险确认</p>
     <NvMobileButton variant="danger" size="md" block @click="dangerOpen = true">
       危险确认
     </NvMobileButton>

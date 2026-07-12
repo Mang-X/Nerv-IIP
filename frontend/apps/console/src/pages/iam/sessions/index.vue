@@ -9,7 +9,7 @@ import { useAuthStore } from '@/stores/auth'
 import {
   Button,
   NvDataTable,
-  NvDataTablePagination,
+  NvPagination,
   NvPageHeader,
   Select,
   SelectContent,
@@ -232,7 +232,7 @@ async function confirmRevoke(sessionId: string) {
         </template>
       </NvDataTable>
 
-      <NvDataTablePagination
+      <NvPagination
         v-model:page="page"
         v-model:page-size="pageSize"
         :total-items="sessions.totalCount.value"

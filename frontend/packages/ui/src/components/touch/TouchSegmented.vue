@@ -33,7 +33,7 @@ const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
       :aria-selected="modelValue === opt.value"
       :class="
         cn(
-          'ds-seg h-full rounded-lg px-5 text-base font-medium whitespace-nowrap transition-colors',
+          'nv-seg h-full rounded-lg px-5 text-base font-medium whitespace-nowrap transition-colors',
           modelValue === opt.value
             ? 'bg-card text-foreground shadow-sm'
             : 'text-muted-foreground hover:text-foreground',
@@ -48,7 +48,7 @@ const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
 
 <style scoped>
 @layer nv-components {
-  .ds-seg {
+  .nv-seg {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
   }

@@ -99,72 +99,72 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 // RowActions 下拉就地渲染，让「编辑」可点。
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
-  // RowActions 内的下拉项已迁到 Pro（DropdownMenuProItem 是真 .vue 包装，stub 按 Pro 名）。
-  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  // RowActions 内的下拉项已迁到 Pro（NvDropdownMenuItem 是真 .vue 包装，stub 按 Pro 名）。
+  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // RowActions / MasterDataRowActions 内的 Pro 下拉与确认弹层均含 reka portal/Teleport，
 // jsdom 卸载会崩；仅挂 layoutStub 的用例需把这些就地渲染。
 const rowActionsTeleportStubs = {
-  DropdownMenuProContent: { template: '<div><slot /></div>' },
-  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
-  AlertDialogPro: { template: '<div><slot /></div>' },
-  AlertDialogProContent: { template: '<div><slot /></div>' },
-  AlertDialogProHeader: { template: '<div><slot /></div>' },
-  AlertDialogProFooter: { template: '<div><slot /></div>' },
-  AlertDialogProTitle: { template: '<h2><slot /></h2>' },
-  AlertDialogProDescription: { template: '<p><slot /></p>' },
-  AlertDialogProCancel: { template: '<button type="button"><slot /></button>' },
-  AlertDialogProAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuContent: { template: '<div><slot /></div>' },
+  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvAlertDialog: { template: '<div><slot /></div>' },
+  NvAlertDialogContent: { template: '<div><slot /></div>' },
+  NvAlertDialogHeader: { template: '<div><slot /></div>' },
+  NvAlertDialogFooter: { template: '<div><slot /></div>' },
+  NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
+  NvAlertDialogDescription: { template: '<p><slot /></p>' },
+  NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
+  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // 对话框就地渲染（不 teleport），便于断言/填写表单内容。
 const dialogStubs = {
-  DialogPro: { template: '<div><slot /></div>' },
+  NvDialog: { template: '<div><slot /></div>' },
   DialogRoot: { template: '<div><slot /></div>' },
-  DialogProTrigger: { template: '<div><slot /></div>' },
+  NvDialogTrigger: { template: '<div><slot /></div>' },
   DialogTrigger: { template: '<div><slot /></div>' },
-  DialogProContent: { template: '<div><slot /></div>' },
-  DialogProHeader: { template: '<div><slot /></div>' },
-  DialogProFooter: { template: '<div><slot /></div>' },
-  DialogProTitle: { template: '<h2><slot /></h2>' },
-  DialogProDescription: { template: '<p><slot /></p>' },
-  // 行操作里 RowActions 的下拉内容已迁到 Pro（DropdownMenuProContent 含 reka portal/Teleport，
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogHeader: { template: '<div><slot /></div>' },
+  NvDialogFooter: { template: '<div><slot /></div>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
+  // 行操作里 RowActions 的下拉内容已迁到 Pro（NvDropdownMenuContent 含 reka portal/Teleport，
   // jsdom 卸载会崩）就地渲染，避免渲染崩溃。
-  DropdownMenuProContent: { template: '<div><slot /></div>' },
-  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
-  // 行操作里的 AlertDialog 已迁到 Pro（AlertDialogProContent 含 reka portal/Teleport，jsdom 卸载会崩）就地渲染。
-  AlertDialogPro: { template: '<div><slot /></div>' },
-  AlertDialogProTrigger: { template: '<div><slot /></div>' },
-  AlertDialogProContent: { template: '<div><slot /></div>' },
-  AlertDialogProHeader: { template: '<div><slot /></div>' },
-  AlertDialogProFooter: { template: '<div><slot /></div>' },
-  AlertDialogProTitle: { template: '<h2><slot /></h2>' },
-  AlertDialogProDescription: { template: '<p><slot /></p>' },
-  AlertDialogProCancel: { template: '<button type="button"><slot /></button>' },
-  AlertDialogProAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuContent: { template: '<div><slot /></div>' },
+  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  // 行操作里的 AlertDialog 已迁到 Pro（NvAlertDialogContent 含 reka portal/Teleport，jsdom 卸载会崩）就地渲染。
+  NvAlertDialog: { template: '<div><slot /></div>' },
+  NvAlertDialogTrigger: { template: '<div><slot /></div>' },
+  NvAlertDialogContent: { template: '<div><slot /></div>' },
+  NvAlertDialogHeader: { template: '<div><slot /></div>' },
+  NvAlertDialogFooter: { template: '<div><slot /></div>' },
+  NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
+  NvAlertDialogDescription: { template: '<p><slot /></p>' },
+  NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
+  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // 停用/启用二次确认弹窗（已迁到 Pro AlertDialog）就地渲染（不 teleport），便于点「确认停用」。
 const alertDialogStubs = {
-  AlertDialogPro: { template: '<div><slot /></div>' },
-  AlertDialogProContent: { template: '<div><slot /></div>' },
-  AlertDialogProHeader: { template: '<div><slot /></div>' },
-  AlertDialogProFooter: { template: '<div><slot /></div>' },
-  AlertDialogProTitle: { template: '<h2><slot /></h2>' },
-  AlertDialogProDescription: { template: '<p><slot /></p>' },
-  AlertDialogProCancel: { template: '<button type="button"><slot /></button>' },
-  AlertDialogProAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvAlertDialog: { template: '<div><slot /></div>' },
+  NvAlertDialogContent: { template: '<div><slot /></div>' },
+  NvAlertDialogHeader: { template: '<div><slot /></div>' },
+  NvAlertDialogFooter: { template: '<div><slot /></div>' },
+  NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
+  NvAlertDialogDescription: { template: '<p><slot /></p>' },
+  NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
+  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue 完成"填表→提交"。
 const selectStubs = {
-  SelectPro: {
+  NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectProTrigger: { template: '<span><slot /></span>' },
-  SelectProValue: { template: '<span />' },
+  NvSelectTrigger: { template: '<span><slot /></span>' },
+  NvSelectValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
-  SelectProContent: { template: '<slot />' },
-  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  NvSelectContent: { template: '<slot />' },
+  NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
 // 打开「新建计量单位」并填合法值（名称为文本，量纲/取整为常量回退下拉；编码由系统自动生成）。

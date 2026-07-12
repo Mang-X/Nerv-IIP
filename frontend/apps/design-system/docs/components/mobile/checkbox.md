@@ -17,12 +17,12 @@ const checkC = ref(false)
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <NvMobileCheckbox v-model="checkA">首检合格后转批量</NvMobileCheckbox>
     <NvMobileCheckbox v-model="checkB">完工自动生成入库单</NvMobileCheckbox>
   </section>
   <section>
-    <p class="ds-mdoc-label">禁用</p>
+    <p class="nv-mdoc-label">禁用</p>
     <NvMobileCheckbox v-model="checkC" disabled>需主管授权（暂不可选）</NvMobileCheckbox>
   </section>
 </template>

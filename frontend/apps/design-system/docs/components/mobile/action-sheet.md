@@ -24,7 +24,7 @@ function onAction(value) {
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <NvMobileButton variant="default" size="md" block @click="actionOpen = true">
       打开动作面板
     </NvMobileButton>

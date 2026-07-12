@@ -13,7 +13,7 @@ import { BellIcon, ClipboardListIcon, UserIcon } from 'lucide-vue-next'
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">计数</p>
+    <p class="nv-mdoc-label">计数</p>
     <div class="flex items-center gap-7 px-5">
       <NvMobileBadge :count="5">
         <BellIcon class="size-6 text-foreground" aria-hidden="true" />
@@ -24,7 +24,7 @@ import { BellIcon, ClipboardListIcon, UserIcon } from 'lucide-vue-next'
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">圆点</p>
+    <p class="nv-mdoc-label">圆点</p>
     <div class="flex items-center gap-7 px-5">
       <NvMobileBadge dot>
         <UserIcon class="size-6 text-foreground" aria-hidden="true" />

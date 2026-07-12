@@ -30,7 +30,7 @@ function toggle() {
     :disabled="disabled"
     :class="
       cn(
-        'ds-mcheck flex min-h-11 w-full items-center gap-3 text-left text-[15px] select-none disabled:opacity-40',
+        'nv-m-mcheck flex min-h-11 w-full items-center gap-3 text-left text-[15px] select-none disabled:opacity-40',
         $props.class,
       )
     "
@@ -39,7 +39,7 @@ function toggle() {
     <span
       :class="
         cn(
-          'ds-mcheck-box grid size-[22px] shrink-0 place-items-center rounded-md border-2 transition-[colors,transform]',
+          'nv-m-mcheck-box grid size-[22px] shrink-0 place-items-center rounded-md border-2 transition-[colors,transform]',
           model
             ? 'border-brand bg-brand text-brand-foreground'
             : 'border-muted-foreground/40 bg-transparent',
@@ -47,7 +47,7 @@ function toggle() {
       "
     >
       <Check
-        class="ds-mcheck-tick size-3.5"
+        class="nv-m-mcheck-tick size-3.5"
         :class="model ? 'scale-100 opacity-100' : 'scale-0 opacity-0'"
         stroke-width="3"
         aria-hidden="true"
@@ -59,27 +59,27 @@ function toggle() {
 
 <style scoped>
 @layer nv-components {
-  .ds-mcheck {
+  .nv-m-mcheck {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
   }
   /* WinUI3-style press: the box depresses (shrinks) while held, then springs back. */
-  .ds-mcheck-box {
+  .nv-m-mcheck-box {
     transition:
       background-color 0.18s ease,
       border-color 0.18s ease,
       transform 0.2s var(--nv-ease-out-quart);
   }
-  .ds-mcheck:active:not(:disabled) .ds-mcheck-box {
+  .nv-m-mcheck:active:not(:disabled) .nv-m-mcheck-box {
     transform: scale(0.88);
   }
-  .ds-mcheck-tick {
+  .nv-m-mcheck-tick {
     transition:
       transform 0.18s var(--nv-ease-out-quart),
       opacity 0.14s ease;
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-mcheck-tick {
+    .nv-m-mcheck-tick {
       transition: opacity 0.12s linear;
     }
   }

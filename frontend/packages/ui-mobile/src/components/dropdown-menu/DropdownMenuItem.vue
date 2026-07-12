@@ -54,7 +54,7 @@ function pick(value: string | number) {
   <div data-slot="dropdown-menu-item" class="relative flex min-w-0 flex-1 items-stretch">
     <button
       type="button"
-      class="ds-ddm-trigger flex h-full w-full min-w-0 items-center justify-center gap-1 px-3 text-[15px] transition-colors"
+      class="nv-m-ddm-trigger flex h-full w-full min-w-0 items-center justify-center gap-1 px-3 text-[15px] transition-colors"
       :class="
         cn(open || isActive ? 'text-brand' : 'text-foreground', 'active:bg-accent', $props.class)
       "
@@ -63,17 +63,17 @@ function pick(value: string | number) {
     >
       <span class="truncate">{{ selectedLabel }}</span>
       <ChevronDown
-        class="ds-ddm-chevron size-4 shrink-0 transition-transform"
+        class="nv-m-ddm-chevron size-4 shrink-0 transition-transform"
         :class="open && 'rotate-180'"
         aria-hidden="true"
       />
     </button>
 
     <!-- dropdown panel: slides down from under the bar -->
-    <Transition name="ds-ddm-panel">
+    <Transition name="nv-m-ddm-panel">
       <div
         v-if="open"
-        class="ds-ddm-panel absolute inset-x-0 top-full z-40 origin-top overflow-hidden border-b border-border bg-card shadow-[0_12px_28px_-12px_rgb(0_0_0/0.35)]"
+        class="nv-m-ddm-panel absolute inset-x-0 top-full z-40 origin-top overflow-hidden border-b border-border bg-card shadow-[0_12px_28px_-12px_rgb(0_0_0/0.35)]"
       >
         <button
           v-for="opt in options"
@@ -93,25 +93,25 @@ function pick(value: string | number) {
 
 <style scoped>
 @layer nv-components {
-  .ds-ddm-trigger {
+  .nv-m-ddm-trigger {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
   }
-  .ds-ddm-panel-enter-active,
-  .ds-ddm-panel-leave-active {
+  .nv-m-ddm-panel-enter-active,
+  .nv-m-ddm-panel-leave-active {
     transition:
       transform 0.26s var(--nv-ease-out-expo),
       opacity 0.26s var(--nv-ease-out-expo);
   }
-  .ds-ddm-panel-enter-from,
-  .ds-ddm-panel-leave-to {
+  .nv-m-ddm-panel-enter-from,
+  .nv-m-ddm-panel-leave-to {
     transform: translateY(-8px);
     opacity: 0;
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-ddm-panel-enter-active,
-    .ds-ddm-panel-leave-active,
-    .ds-ddm-chevron {
+    .nv-m-ddm-panel-enter-active,
+    .nv-m-ddm-panel-leave-active,
+    .nv-m-ddm-chevron {
       transition: none;
     }
   }

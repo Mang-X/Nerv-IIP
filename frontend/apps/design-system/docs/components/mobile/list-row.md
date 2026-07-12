@@ -12,7 +12,7 @@ import { NvListRow } from '@nerv-iip/ui-mobile'
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <div class="overflow-hidden border-y border-border">
       <NvListRow title="齿轮箱端盖" subtitle="WO-2406-0421 · 320 件" />
       <NvListRow title="液压阀体 V3" subtitle="WO-2406-0426 · 640 件" />
@@ -20,7 +20,7 @@ import { NvListRow } from '@nerv-iip/ui-mobile'
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">非交互行</p>
+    <p class="nv-mdoc-label">非交互行</p>
     <div class="overflow-hidden border-y border-border">
       <NvListRow title="班组" subtitle="精密一班 · 张伟" :interactive="false" />
     </div>

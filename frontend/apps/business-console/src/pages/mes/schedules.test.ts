@@ -39,39 +39,39 @@ const stubs = {
   BusinessLayout: {
     template: '<main><slot /></main>',
   },
-  ButtonPro: {
+  NvButton: {
     template: '<button v-bind="$attrs"><slot /></button>',
   },
-  DataTablePro: {
+  NvDataTable: {
     props: ['rows', 'columns', 'emptyMessage'],
     template: '<section>{{ emptyMessage }}<div v-for="row in rows" :key="row.operationTaskId">{{ row.workOrderId }} {{ row.workCenterId }}</div></section>',
   },
-  DialogPro: {
+  NvDialog: {
     props: ['open'],
     template: '<div><slot /></div>',
   },
-  DialogProContent: {
+  NvDialogContent: {
     template: '<div><slot /></div>',
   },
-  DialogProDescription: {
+  NvDialogDescription: {
     template: '<p><slot /></p>',
   },
-  DialogProFooter: {
+  NvDialogFooter: {
     template: '<div><slot /></div>',
   },
-  DialogProHeader: {
+  NvDialogHeader: {
     template: '<div><slot /></div>',
   },
-  DialogProTitle: {
+  NvDialogTitle: {
     template: '<h2><slot /></h2>',
   },
-  FieldPro: {
+  NvField: {
     template: '<div><slot /></div>',
   },
-  FieldProGroup: {
+  NvFieldGroup: {
     template: '<div><slot /></div>',
   },
-  FieldProLabel: {
+  NvFieldLabel: {
     template: '<label><slot /></label>',
   },
   PageHeader: {
@@ -89,25 +89,25 @@ const stubs = {
   SectionCards: {
     template: '<div><slot /></div>',
   },
-  SelectPro: {
+  NvSelect: {
     template: '<div><slot /></div>',
   },
-  SelectProContent: {
+  NvSelectContent: {
     template: '<div><slot /></div>',
   },
-  SelectProItem: {
+  NvSelectItem: {
     props: ['value'],
     template: '<div><slot /></div>',
   },
-  SelectProTrigger: {
+  NvSelectTrigger: {
     template: '<button><slot /></button>',
   },
-  // SelectProValue resolves to the underlying reka SelectValue component name in VTU.
+  // NvSelectValue resolves to the underlying reka SelectValue component name in VTU.
   SelectValue: {
     template: '<span />',
   },
   Spinner: true,
-  StatusBadgePro: {
+  NvStatusBadge: {
     props: ['label'],
     template: '<span>{{ label }}</span>',
   },

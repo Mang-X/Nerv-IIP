@@ -1,8 +1,0 @@
-export { default as NvNavigationMenu } from './NavigationMenuPro.vue'
-export { default as NvNavigationMenuContent } from './NavigationMenuProContent.vue'
-export { default as NvNavigationMenuIndicator } from './NavigationMenuProIndicator.vue'
-export { default as NvNavigationMenuItem } from './NavigationMenuProItem.vue'
-export { default as NvNavigationMenuLink } from './NavigationMenuProLink.vue'
-export { default as NvNavigationMenuList } from './NavigationMenuProList.vue'
-export { default as NvNavigationMenuTrigger } from './NavigationMenuProTrigger.vue'
-export { default as NvNavigationMenuViewport } from './NavigationMenuProViewport.vue'

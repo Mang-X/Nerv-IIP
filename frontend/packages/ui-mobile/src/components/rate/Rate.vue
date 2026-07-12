@@ -58,11 +58,11 @@ function pick(index: number, ev: PointerEvent | MouseEvent) {
       :key="i"
       type="button"
       :disabled="readonly"
-      class="ds-rate-star grid size-11 place-items-center disabled:cursor-default"
+      class="nv-m-rate-star grid size-11 place-items-center disabled:cursor-default"
       :aria-label="`${i} 星`"
       @click="pick(i, $event)"
     >
-      <span class="ds-rate-glyph relative block size-7">
+      <span class="nv-m-rate-glyph relative block size-7">
         <!-- empty base -->
         <Star class="absolute inset-0 size-7 text-muted-foreground/35" aria-hidden="true" />
         <!-- filled overlay, clipped to fill ratio -->
@@ -76,14 +76,14 @@ function pick(index: number, ev: PointerEvent | MouseEvent) {
 
 <style scoped>
 @layer nv-components {
-  .ds-rate-star {
+  .nv-m-rate-star {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
   }
-  .ds-rate-star:active:not(:disabled) .ds-rate-glyph {
-    animation: ds-rate-pop 0.26s var(--nv-ease-out-quart);
+  .nv-m-rate-star:active:not(:disabled) .nv-m-rate-glyph {
+    animation: nv-m-rate-pop 0.26s var(--nv-ease-out-quart);
   }
-  @keyframes ds-rate-pop {
+  @keyframes nv-m-rate-pop {
     0% {
       transform: scale(0.8);
     }
@@ -95,7 +95,7 @@ function pick(index: number, ev: PointerEvent | MouseEvent) {
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-rate-star:active:not(:disabled) .ds-rate-glyph {
+    .nv-m-rate-star:active:not(:disabled) .nv-m-rate-glyph {
       animation: none;
     }
   }

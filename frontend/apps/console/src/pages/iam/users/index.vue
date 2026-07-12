@@ -22,7 +22,7 @@ import {
   AlertDialogTitle,
   Button,
   NvDataTable,
-  NvDataTablePagination,
+  NvPagination,
   NvPageHeader,
   Select,
   SelectContent,
@@ -354,7 +354,7 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
         </template>
       </NvDataTable>
 
-      <NvDataTablePagination
+      <NvPagination
         v-model:page="page"
         v-model:page-size="pageSize"
         :total-items="totalCount"

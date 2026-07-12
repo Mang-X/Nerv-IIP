@@ -17,14 +17,14 @@ const locked = ref(true)
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <div style="display:flex;align-items:center;gap:16px">
       <NvMobileSwitch v-model="rush" />
       <NvMobileSwitch v-model="autoStock" />
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">配合单元格</p>
+    <p class="nv-mdoc-label">配合单元格</p>
     <NvCellGroup>
       <NvCell title="加急插单">
         <template #value><NvMobileSwitch v-model="rush" /></template>
@@ -35,7 +35,7 @@ const locked = ref(true)
     </NvCellGroup>
   </section>
   <section>
-    <p class="ds-mdoc-label">禁用</p>
+    <p class="nv-mdoc-label">禁用</p>
     <NvMobileSwitch v-model="locked" disabled />
   </section>
 </template>

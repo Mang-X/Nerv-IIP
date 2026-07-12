@@ -38,7 +38,7 @@ const todo = ref('待派工单')
 工作区品牌头 + 分组导航（计数徽标、在线状态点、品牌强调）+ 用户区。点击任意项即切换激活态；`collapsible="icon"` 折叠为图标条，标题文本隐藏（非压缩），悬停图标显示 Tooltip。
 
 <Demo>
-<div class="ds-sb ds-sb-collapse ds-sb-tall">
+<div class="nv-sb nv-nv-scr-collapse nv-nv-scr-tall">
   <TooltipProvider :delay-duration="0">
   <SidebarProvider>
     <Sidebar collapsible="icon">
@@ -90,19 +90,19 @@ const todo = ref('待派工单')
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
-    <SidebarInset class="ds-sb-inset">
-      <header class="ds-sb-topbar">
+    <SidebarInset class="nv-nv-scr-inset">
+      <header class="nv-nv-scr-topbar">
         <SidebarTrigger />
-        <span class="ds-sb-topbar-divider" aria-hidden="true" />
+        <span class="nv-nv-scr-topbar-divider" aria-hidden="true" />
         <span class="text-sm text-muted-foreground">控制台</span>
         <ChevronRightIcon class="size-3.5 text-muted-foreground/50" />
         <span class="text-sm font-medium">{{ nav }}</span>
       </header>
-      <div class="ds-sb-body">
-        <div class="ds-sb-tiles">
-          <div class="ds-sb-tile"><span class="ds-sb-tile-label">今日产出</span><span class="ds-sb-tile-value">412 <small>件</small></span></div>
-          <div class="ds-sb-tile"><span class="ds-sb-tile-label">在制工单</span><span class="ds-sb-tile-value">18</span></div>
-          <div class="ds-sb-tile"><span class="ds-sb-tile-label">设备 OEE</span><span class="ds-sb-tile-value ds-sb-tile-ok">78.6 <small>%</small></span></div>
+      <div class="nv-nv-scr-body">
+        <div class="nv-nv-scr-tiles">
+          <div class="nv-nv-scr-tile"><span class="nv-nv-scr-tile-label">今日产出</span><span class="nv-nv-scr-tile-value">412 <small>件</small></span></div>
+          <div class="nv-nv-scr-tile"><span class="nv-nv-scr-tile-label">在制工单</span><span class="nv-nv-scr-tile-value">18</span></div>
+          <div class="nv-nv-scr-tile"><span class="nv-nv-scr-tile-label">设备 OEE</span><span class="nv-nv-scr-tile-value nv-nv-scr-tile-ok">78.6 <small>%</small></span></div>
         </div>
       </div>
     </SidebarInset>
@@ -150,7 +150,7 @@ const todo = ref('待派工单')
 `SidebarMenuSub` 承载二级菜单（展开状态用你自己的 `ref` 驱动，并配合高度过渡动画）；二级项缩进并带导引线；`SidebarMenuBadge` 显示计数；`SidebarMenuAction` 是仅在悬停时浮现的行内操作；`SidebarGroupAction` 是分组级操作。
 
 <Demo>
-<div class="ds-sb">
+<div class="nv-sb">
   <SidebarProvider>
     <Sidebar collapsible="none">
       <SidebarContent>
@@ -161,7 +161,7 @@ const todo = ref('待派工单')
             <SidebarMenuItem>
               <SidebarMenuButton @click="press = !press">
                 <FactoryIcon /><span>冲压车间</span>
-                <ChevronRightIcon class="ds-sb-chevron ml-auto" :class="press && 'rotate-90'" />
+                <ChevronRightIcon class="nv-nv-scr-chevron ml-auto" :class="press && 'rotate-90'" />
               </SidebarMenuButton>
               <NvSidebarSub :open="press">
                 <SidebarMenuSub>
@@ -174,7 +174,7 @@ const todo = ref('待派工单')
             <SidebarMenuItem>
               <SidebarMenuButton @click="weld = !weld">
                 <FactoryIcon /><span>焊接车间</span>
-                <ChevronRightIcon class="ds-sb-chevron ml-auto" :class="weld && 'rotate-90'" />
+                <ChevronRightIcon class="nv-nv-scr-chevron ml-auto" :class="weld && 'rotate-90'" />
               </SidebarMenuButton>
               <NvSidebarSub :open="weld">
                 <SidebarMenuSub>
@@ -205,8 +205,8 @@ const todo = ref('待派工单')
         </SidebarGroup>
       </SidebarContent>
     </Sidebar>
-    <main class="ds-sb-main">
-      <span class="ds-sb-hint"><ActivityIcon class="size-4" />点击车间展开 / 收起，二级带高度动画</span>
+    <main class="nv-nv-scr-main">
+      <span class="nv-nv-scr-hint"><ActivityIcon class="size-4" />点击车间展开 / 收起，二级带高度动画</span>
     </main>
   </SidebarProvider>
 </div>
@@ -234,7 +234,7 @@ const todo = ref('待派工单')
 `SidebarInput` 是侧栏内的输入框样式，常置于 `SidebarHeader` 做快速过滤。
 
 <Demo>
-<div class="ds-sb ds-sb-short">
+<div class="nv-sb nv-nv-scr-short">
   <SidebarProvider>
     <Sidebar collapsible="none">
       <SidebarHeader>
@@ -254,8 +254,8 @@ const todo = ref('待派工单')
         </SidebarGroup>
       </SidebarContent>
     </Sidebar>
-    <main class="ds-sb-main">
-      <span class="ds-sb-hint"><SearchIcon class="size-4" />输入即过滤工单 / 工位</span>
+    <main class="nv-nv-scr-main">
+      <span class="nv-nv-scr-hint"><SearchIcon class="size-4" />输入即过滤工单 / 工位</span>
     </main>
   </SidebarProvider>
 </div>
@@ -299,27 +299,27 @@ const todo = ref('待派工单')
 
 <style>
 /* 有界预览框收纳整页外壳。 */
-.ds-sb {
+.nv-sb {
   height: 400px;
   overflow: hidden;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--background);
 }
-.ds-sb.ds-sb-short { height: 300px; }
-.ds-sb.ds-sb-tall { height: 460px; }
-.ds-sb [data-slot='sidebar-wrapper'],
-.ds-sb .group\/sidebar-wrapper { min-height: 0 !important; height: 100% !important; }
-.ds-sb-collapse { transform: translateZ(0); }
-.ds-sb-collapse [data-slot='sidebar-container'] { height: 100% !important; }
+.nv-sb.nv-nv-scr-short { height: 300px; }
+.nv-sb.nv-nv-scr-tall { height: 460px; }
+.nv-sb [data-slot='sidebar-wrapper'],
+.nv-sb .group\/sidebar-wrapper { min-height: 0 !important; height: 100% !important; }
+.nv-nv-scr-collapse { transform: translateZ(0); }
+.nv-nv-scr-collapse [data-slot='sidebar-container'] { height: 100% !important; }
 
 /* ── rhythm: give first-level items the same breathing room as sub-items ── */
-.ds-sb [data-slot='sidebar-menu'] { gap: 0.1875rem; }
-.ds-sb [data-slot='sidebar-menu'] :is(a, button) {
+.nv-sb [data-slot='sidebar-menu'] { gap: 0.1875rem; }
+.nv-sb [data-slot='sidebar-menu'] :is(a, button) {
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 /* hover: clean neutral wash — white-over-dark, no hue, so it never reads muddy */
-.ds-sb [data-slot='sidebar-menu'] :is(a, button):hover {
+.nv-sb [data-slot='sidebar-menu'] :is(a, button):hover {
   background: color-mix(in oklch, var(--sidebar-foreground) 6%, transparent);
 }
 
@@ -330,13 +330,13 @@ const todo = ref('待派工单')
    the surface. Matches [data-active] in any sidebar-menu so level-1, sub, and
    tooltip-wrapped rows are identical, and out-specifies the primitive gray default.
    The :hover twin keeps the active fill from reverting when hovered. */
-.ds-sb [data-slot='sidebar-menu'] [data-active='true'],
-.ds-sb [data-slot='sidebar-menu'] [data-active='true']:hover {
+.nv-sb [data-slot='sidebar-menu'] [data-active='true'],
+.nv-sb [data-slot='sidebar-menu'] [data-active='true']:hover {
   background: color-mix(in oklch, var(--sidebar-foreground) 12%, transparent);
   color: var(--sidebar-foreground);
   font-weight: 500;
 }
-.ds-sb [data-slot='sidebar-menu'] [data-active='true'] svg {
+.nv-sb [data-slot='sidebar-menu'] [data-active='true'] svg {
   color: var(--nv-brand-strong);
 }
 
@@ -345,8 +345,8 @@ const todo = ref('待派工单')
    NvSidebarSub — so this demo composes them instead of re-styling locally. */
 
 /* ── inset canvas (top bar + KPI tiles) ────────────────────────────────── */
-.ds-sb-inset { display: flex; min-width: 0; flex: 1; flex-direction: column; }
-.ds-sb-topbar {
+.nv-nv-scr-inset { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.nv-nv-scr-topbar {
   display: flex;
   height: 3.25rem;
   flex-shrink: 0;
@@ -355,10 +355,10 @@ const todo = ref('待派工单')
   border-bottom: 1px solid var(--border);
   padding-inline: 0.875rem;
 }
-.ds-sb-topbar-divider { width: 1px; height: 1rem; background: var(--border); margin-inline: 0.125rem; }
-.ds-sb-body { flex: 1; min-height: 0; padding: 1rem; }
-.ds-sb-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.625rem; }
-.ds-sb-tile {
+.nv-nv-scr-topbar-divider { width: 1px; height: 1rem; background: var(--border); margin-inline: 0.125rem; }
+.nv-nv-scr-body { flex: 1; min-height: 0; padding: 1rem; }
+.nv-nv-scr-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.625rem; }
+.nv-nv-scr-tile {
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
@@ -367,12 +367,12 @@ const todo = ref('待派工单')
   background: var(--card);
   padding: 0.75rem;
 }
-.ds-sb-tile-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.6875rem; color: var(--muted-foreground); }
-.ds-sb-tile-value { white-space: nowrap; font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
-.ds-sb-tile-value small { font-size: 0.75rem; font-weight: 500; color: var(--muted-foreground); }
-.ds-sb-tile-ok { color: oklch(0.74 0.16 152); }
+.nv-nv-scr-tile-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.6875rem; color: var(--muted-foreground); }
+.nv-nv-scr-tile-value { white-space: nowrap; font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
+.nv-nv-scr-tile-value small { font-size: 0.75rem; font-weight: 500; color: var(--muted-foreground); }
+.nv-nv-scr-tile-ok { color: oklch(0.74 0.16 152); }
 
-.ds-sb-chevron {
+.nv-nv-scr-chevron {
   width: 1rem;
   height: 1rem;
   /* Tailwind v4 `rotate-90` animates the `rotate` property (not `transform`), so
@@ -380,6 +380,6 @@ const todo = ref('待派工单')
   transition: rotate 0.2s var(--nv-ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
 }
 @media (prefers-reduced-motion: reduce) {
-  .ds-sb-chevron, .ds-sb-sub { transition: none; }
+  .nv-nv-scr-chevron, .nv-nv-scr-sub { transition: none; }
 }
 </style>

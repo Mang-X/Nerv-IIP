@@ -4,7 +4,7 @@ import {
   NvAppShellInset,
   Button,
   NvDataTable,
-  NvDataTablePagination,
+  NvPagination,
   DropdownMenuItem,
   NvPageHeader,
   NvRowActions,
@@ -183,7 +183,7 @@ const navItems = [
       </template>
     </NvDataTable>
 
-    <NvDataTablePagination
+    <NvPagination
       v-model:page="page"
       v-model:page-size="pageSize"
       :total-items="filtered.length"

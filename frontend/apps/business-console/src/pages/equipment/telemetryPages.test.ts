@@ -187,9 +187,9 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
 
 const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
-  BadgePro: { template: '<span><slot /></span>' },
-  ButtonPro: { template: '<button><slot /></button>' },
-  DataTablePro: {
+  NvBadge: { template: '<span><slot /></span>' },
+  NvButton: { template: '<button><slot /></button>' },
+  NvDataTable: {
     props: ['rows', 'columns'],
     template: `
       <div>
@@ -202,12 +202,12 @@ const stubs = {
       </div>
     `,
   },
-  DropdownMenuProItem: { template: '<div><slot /></div>' },
-  FieldPro: { template: '<div><slot /></div>' },
-  FieldProError: { props: ['errors'], template: '<div>{{ errors?.join(" ") }}</div>' },
-  FieldProGroup: { template: '<div><slot /></div>' },
-  FieldProLabel: { template: '<label><slot /></label>' },
-  InputPro: { template: '<input />' },
+  NvDropdownMenuItem: { template: '<div><slot /></div>' },
+  NvField: { template: '<div><slot /></div>' },
+  NvFieldError: { props: ['errors'], template: '<div>{{ errors?.join(" ") }}</div>' },
+  NvFieldGroup: { template: '<div><slot /></div>' },
+  NvFieldLabel: { template: '<label><slot /></label>' },
+  NvInput: { template: '<input />' },
   PageHeader: {
     props: ['title', 'count'],
     template:
@@ -222,18 +222,18 @@ const stubs = {
   SectionCards: { template: '<section><slot /></section>' },
   Spinner: { template: '<span />' },
   Toolbar: { template: '<div><slot name="filters" /></div>' },
-  DialogPro: { template: '<div><slot /></div>' },
-  DialogProContent: { template: '<div><slot /></div>' },
-  DialogProHeader: { template: '<div><slot /></div>' },
-  DialogProTitle: { template: '<h2><slot /></h2>' },
-  DialogProDescription: { template: '<p><slot /></p>' },
-  DialogProFooter: { template: '<div><slot /></div>' },
-  DialogProClose: { template: '<div><slot /></div>' },
-  SelectPro: { template: '<div><slot /></div>' },
-  SelectProContent: { template: '<div><slot /></div>' },
-  SelectProItem: { template: '<div><slot /></div>' },
-  SelectProTrigger: { template: '<button><slot /></button>' },
-  SelectProValue: { template: '<span><slot /></span>' },
+  NvDialog: { template: '<div><slot /></div>' },
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogHeader: { template: '<div><slot /></div>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
+  NvDialogFooter: { template: '<div><slot /></div>' },
+  NvDialogClose: { template: '<div><slot /></div>' },
+  NvSelect: { template: '<div><slot /></div>' },
+  NvSelectContent: { template: '<div><slot /></div>' },
+  NvSelectItem: { template: '<div><slot /></div>' },
+  NvSelectTrigger: { template: '<button><slot /></button>' },
+  NvSelectValue: { template: '<span><slot /></span>' },
 }
 
 describe('equipment telemetry pages', () => {

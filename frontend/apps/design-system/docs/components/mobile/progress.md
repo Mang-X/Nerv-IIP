@@ -12,18 +12,18 @@ import { NvMobileProgress } from '@nerv-iip/ui-mobile'
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础</p>
+    <p class="nv-mdoc-label">基础</p>
     <NvMobileProgress :value="42" />
   </section>
   <section>
-    <p class="ds-mdoc-label">带百分比</p>
+    <p class="nv-mdoc-label">带百分比</p>
     <div class="flex flex-col gap-3">
       <NvMobileProgress :value="72" show-label />
       <NvMobileProgress :value="100" show-label />
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">语义色</p>
+    <p class="nv-mdoc-label">语义色</p>
     <div class="flex flex-col gap-3">
       <NvMobileProgress :value="68" tone="brand" show-label />
       <NvMobileProgress :value="100" tone="success" show-label />
@@ -32,7 +32,7 @@ import { NvMobileProgress } from '@nerv-iip/ui-mobile'
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">工单报工进度</p>
+    <p class="nv-mdoc-label">工单报工进度</p>
     <div class="rounded-xl border border-border bg-card p-3">
       <div class="mb-1.5 flex items-center justify-between text-sm">
         <span class="font-medium text-foreground">WO-20260617-0382</span>
