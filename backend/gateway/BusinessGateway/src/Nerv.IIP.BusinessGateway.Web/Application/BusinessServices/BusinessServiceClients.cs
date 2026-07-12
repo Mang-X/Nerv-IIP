@@ -1359,6 +1359,11 @@ public interface IBusinessMesClient
         BusinessConsoleMesListWithoutStatusRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMesTelemetryCandidateListResponse> ListTelemetryCandidatesAsync(string internalBearerToken, BusinessConsoleMesTelemetryCandidateListRequest request, CancellationToken cancellationToken);
+    Task<BusinessConsoleMesTelemetryCandidateRow> GetTelemetryCandidateAsync(string internalBearerToken, string candidateId, string organizationId, string environmentId, CancellationToken cancellationToken);
+    Task<BusinessConsoleRecordProductionReportResponse> PromoteTelemetryCandidateAsync(string internalBearerToken, string candidateId, BusinessConsoleMesTelemetryCandidatePromoteRequest request, string actor, CancellationToken cancellationToken);
+    Task<BusinessConsoleAcceptedResponse> DismissTelemetryCandidateAsync(string internalBearerToken, string candidateId, BusinessConsoleMesTelemetryCandidateDismissRequest request, string actor, CancellationToken cancellationToken);
+
     Task<BusinessConsoleMesScheduleResult> RunScheduleAsync(
         string internalBearerToken,
         BusinessConsoleRunScheduleRequest request,
@@ -4742,7 +4747,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 request.ActualLaborMinutes,
                 request.SparePartCostAmount,
                 request.ExternalServiceCostAmount,
-                request.CostCurrencyCode),
+                request.CostCurrencyCode,
+                request.ActualTechnicianUserId),
             cancellationToken);
         return new BusinessConsoleCompleteMaintenanceWorkOrderResponse(true);
     }
@@ -4777,7 +4783,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 workOrder.ActualLaborMinutes,
                 workOrder.SparePartCostAmount,
                 workOrder.ExternalServiceCostAmount,
-                workOrder.CostCurrencyCode)).ToArray(),
+                workOrder.CostCurrencyCode,
+                ActualTechnicianUserId: workOrder.ActualTechnicianUserId)).ToArray(),
             workOrders.Skip,
             workOrders.Take,
             workOrders.Total);
@@ -5087,7 +5094,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         int? ActualLaborMinutes = null,
         decimal? SparePartCostAmount = null,
         decimal? ExternalServiceCostAmount = null,
-        string? CostCurrencyCode = null);
+        string? CostCurrencyCode = null,
+        string? ActualTechnicianUserId = null);
 
     private sealed record DownstreamMaintenancePlanListItem(
         JsonElement PlanId,
@@ -5124,7 +5132,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         int? ActualLaborMinutes = null,
         decimal? SparePartCostAmount = null,
         decimal? ExternalServiceCostAmount = null,
-        string? CostCurrencyCode = null);
+        string? CostCurrencyCode = null,
+        string? ActualTechnicianUserId = null);
 
     private sealed record DownstreamCreateMaintenancePlanResponse(JsonElement PlanId);
 
@@ -6114,6 +6123,27 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             "/api/business/v1/mes/production-reports?" + ListQueryWithoutStatus(request),
             null,
             cancellationToken);
+
+    public Task<BusinessConsoleMesTelemetryCandidateListResponse> ListTelemetryCandidatesAsync(string internalBearerToken, BusinessConsoleMesTelemetryCandidateListRequest request, CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesTelemetryCandidateListResponse>(internalBearerToken, HttpMethod.Get,
+            "/api/business/v1/mes/telemetry-production-report-candidates?" + Query(
+                ("organizationId", request.OrganizationId), ("environmentId", request.EnvironmentId), ("status", request.Status),
+                ("workCenterId", request.WorkCenterId), ("deviceAssetId", request.DeviceAssetId),
+                ("fromUtc", request.FromUtc), ("toUtc", request.ToUtc), ("skip", request.Skip), ("take", request.Take)), null, cancellationToken);
+
+    public Task<BusinessConsoleMesTelemetryCandidateRow> GetTelemetryCandidateAsync(string internalBearerToken, string candidateId, string organizationId, string environmentId, CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesTelemetryCandidateRow>(internalBearerToken, HttpMethod.Get,
+            $"/api/business/v1/mes/telemetry-production-report-candidates/{Uri.EscapeDataString(candidateId)}?organizationId={Uri.EscapeDataString(organizationId)}&environmentId={Uri.EscapeDataString(environmentId)}", null, cancellationToken);
+
+    public Task<BusinessConsoleRecordProductionReportResponse> PromoteTelemetryCandidateAsync(string internalBearerToken, string candidateId, BusinessConsoleMesTelemetryCandidatePromoteRequest request, string actor, CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleRecordProductionReportResponse>(internalBearerToken, HttpMethod.Post,
+            $"/api/business/v1/mes/telemetry-production-report-candidates/{Uri.EscapeDataString(candidateId)}/promote",
+            new { request.OrganizationId, request.EnvironmentId, CandidateId = candidateId, request.WorkOrderId, request.OperationTaskId, Actor = actor }, cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> DismissTelemetryCandidateAsync(string internalBearerToken, string candidateId, BusinessConsoleMesTelemetryCandidateDismissRequest request, string actor, CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(internalBearerToken, HttpMethod.Post,
+            $"/api/business/v1/mes/telemetry-production-report-candidates/{Uri.EscapeDataString(candidateId)}/dismiss",
+            new { request.OrganizationId, request.EnvironmentId, CandidateId = candidateId, request.Reason, Actor = actor }, cancellationToken);
 
     public async Task<BusinessConsoleMesScheduleResult> RunScheduleAsync(
         string internalBearerToken,

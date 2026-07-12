@@ -38,6 +38,14 @@ public sealed record BusinessConsoleResourceItem(
     int? Precision = null,
     string? RoundingMode = null,
     string? DeviceAssetId = null,
+    DateOnly? PurchaseDate = null,
+    decimal? PurchaseCost = null,
+    string? PurchaseCurrencyCode = null,
+    DateOnly? WarrantyExpiresOn = null,
+    string? SupplierPartnerCode = null,
+    string? StationCode = null,
+    string? ParentDeviceId = null,
+    DateOnly? RetiredOn = null,
     decimal? CreditLimit = null,
     string? CreditCurrencyCode = null);
 
@@ -346,6 +354,12 @@ public sealed record BusinessConsoleTeamMemberListResponse(
     IReadOnlyCollection<BusinessConsoleTeamMemberItem> Members,
     int Total);
 
+public sealed record BusinessConsoleDeviceAssetComponent(
+    string ComponentCode,
+    string ComponentName,
+    decimal Quantity,
+    bool Critical);
+
 public sealed record BusinessConsoleRegisterDeviceAssetRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -363,7 +377,18 @@ public sealed record BusinessConsoleRegisterDeviceAssetRequest(
     bool Maintainable,
     bool TelemetryEnabled,
     IReadOnlyDictionary<string, string>? ExternalReferences,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    DateOnly? PurchaseDate = null,
+    decimal? PurchaseCost = null,
+    string? PurchaseCurrencyCode = null,
+    DateOnly? WarrantyExpiresOn = null,
+    string? SupplierPartnerCode = null,
+    string? SiteCode = null,
+    string? WorkshopCode = null,
+    string? StationCode = null,
+    string? ParentDeviceId = null,
+    DateOnly? RetiredOn = null,
+    IReadOnlyCollection<BusinessConsoleDeviceAssetComponent>? Components = null);
 
 public sealed record BusinessConsoleCreateShiftRequest(
     string OrganizationId,
@@ -538,6 +563,15 @@ public sealed record BusinessConsoleUpdateMasterDataResourceRequest(
     string? Model = null,
     string? Manufacturer = null,
     string? SerialNo = null,
+    DateOnly? PurchaseDate = null,
+    decimal? PurchaseCost = null,
+    string? PurchaseCurrencyCode = null,
+    DateOnly? WarrantyExpiresOn = null,
+    string? SupplierPartnerCode = null,
+    string? StationCode = null,
+    string? ParentDeviceId = null,
+    DateOnly? RetiredOn = null,
+    IReadOnlyCollection<BusinessConsoleDeviceAssetComponent>? Components = null,
     decimal? MinimumCapacity = null,
     decimal? MaximumCapacity = null,
     string? CapacityUomCode = null,
@@ -602,6 +636,7 @@ public sealed record BusinessConsoleMasterDataResourceDetail(
     int? PaidMinutes = null,
     string? PlantCode = null,
     string? LineCode = null,
+    string? WorkshopCode = null,
     int? CapacityMinutesPerDay = null,
     string? ResourceKind = null,
     string? DefaultCalendarCode = null,
@@ -612,6 +647,16 @@ public sealed record BusinessConsoleMasterDataResourceDetail(
     string? Model = null,
     string? Manufacturer = null,
     string? SerialNo = null,
+    DateOnly? PurchaseDate = null,
+    decimal? PurchaseCost = null,
+    string? PurchaseCurrencyCode = null,
+    DateOnly? WarrantyExpiresOn = null,
+    string? SupplierPartnerCode = null,
+    string? StationCode = null,
+    string? ParentDeviceId = null,
+    DateOnly? RetiredOn = null,
+    bool? Retired = null,
+    IReadOnlyCollection<BusinessConsoleDeviceAssetComponent>? Components = null,
     decimal? MinimumCapacity = null,
     decimal? MaximumCapacity = null,
     string? CapacityUomCode = null,
@@ -3495,6 +3540,22 @@ public sealed record BusinessConsoleMesProductionReportListResponse(
     IReadOnlyCollection<BusinessConsoleMesProductionReportRow> Items,
     int Total);
 
+public sealed record BusinessConsoleMesTelemetryCandidateListRequest(string OrganizationId, string EnvironmentId, string? Status = null,
+    string? WorkCenterId = null, string? DeviceAssetId = null, DateTimeOffset? FromUtc = null, DateTimeOffset? ToUtc = null, int Skip = 0, int Take = 50);
+public sealed record BusinessConsoleMesTelemetryCandidateDetailRequest([property: RouteParam] string CandidateId,
+    [property: QueryParam] string OrganizationId, [property: QueryParam] string EnvironmentId);
+public sealed record BusinessConsoleMesTelemetryCandidatePromoteRequest([property: RouteParam] string CandidateId,
+    [property: QueryParam] string OrganizationId, [property: QueryParam] string EnvironmentId, string WorkOrderId, string OperationTaskId);
+public sealed record BusinessConsoleMesTelemetryCandidateDismissRequest([property: RouteParam] string CandidateId,
+    [property: QueryParam] string OrganizationId, [property: QueryParam] string EnvironmentId, string Reason);
+public sealed record BusinessConsoleMesTelemetryCandidateListResponse(IReadOnlyCollection<BusinessConsoleMesTelemetryCandidateRow> Items, int Total);
+public sealed record BusinessConsoleMesTelemetryCandidateTransition(string FromStatus, string ToStatus, string Actor, string? Reason, DateTimeOffset OccurredAtUtc);
+public sealed record BusinessConsoleMesTelemetryCandidateRow(string CandidateId, string OrganizationId, string EnvironmentId, string Status,
+    string ReportingMode, string DeviceAssetId, string TagKey, decimal GoodQuantity, DateTimeOffset BucketStartUtc, DateTimeOffset BucketEndUtc,
+    string? WorkCenterId, string? WorkOrderId, string? OperationTaskId, string? SuspensionReason, string SourceIdempotencyKey,
+    string? ResolutionReason, string? ResolvedBy, DateTimeOffset? ResolvedAtUtc, string? ProductionReportId,
+    IReadOnlyCollection<BusinessConsoleMesTelemetryCandidateTransition> Transitions);
+
 public sealed record BusinessConsoleMesProductionReportRow(
     string ProductionReportId,
     string ReportNo,
@@ -3505,7 +3566,16 @@ public sealed record BusinessConsoleMesProductionReportRow(
     decimal ReworkQuantity,
     DateTimeOffset ReportedAtUtc,
     string? WorkOrderNo = null,
-    string? OperationTaskNo = null);
+    string? OperationTaskNo = null,
+    // 冲销互链(MAN-444/#798):冲销行携带被冲销的原报工号与冲销原因,供 Console 展示负向记录标记
+    // 与「原单 ⇄ 冲销单」双向高亮。MES 事实层 ProductionReportFact 已有这两个字段,facade 直接透传。
+    string? ReversedReportNo = null,
+    string? ReversalReason = null,
+    // 报工所属工单状态,供 Console 冲销按钮分级(已关闭工单前端禁用,与后端拒绝构成双层拦截,MAN-444/#798)。
+    string? WorkOrderStatus = null,
+    // 冲销本报工的负向记录单号(服务端逐行反查):非空即"已冲销",供 Console 跨分页稳定判定已冲销与
+    // 原单→冲销单互链,不再从当前页推断(MAN-444/#798 review)。
+    string? ReversalReportNo = null);
 
 public sealed record BusinessConsoleMesRecordDefectRequest(
     string OrganizationId,

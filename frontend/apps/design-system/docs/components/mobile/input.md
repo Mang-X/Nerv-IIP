@@ -17,11 +17,11 @@ const code = ref('WO-2406-0413')
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <NvMobileInput v-model="code" placeholder="请输入工单号" />
   </section>
   <section>
-    <p class="ds-mdoc-label">前缀插槽</p>
+    <p class="nv-mdoc-label">前缀插槽</p>
     <NvMobileInput v-model="search" placeholder="搜索工单 / 物料">
       <template #leading><ScanLineIcon aria-hidden="true" /></template>
     </NvMobileInput>

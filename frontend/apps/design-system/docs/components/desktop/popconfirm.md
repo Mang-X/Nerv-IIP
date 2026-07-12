@@ -3,7 +3,7 @@ title: NvPopconfirm 气泡确认
 ---
 
 <script setup>
-import { NvPopconfirm, NvButton, messagePro } from '@nerv-iip/ui'
+import { NvPopconfirm, NvButton, nvMessage } from '@nerv-iip/ui'
 </script>
 
 # NvPopconfirm 气泡确认
@@ -19,7 +19,7 @@ import { NvPopconfirm, NvButton, messagePro } from '@nerv-iip/ui'
     title="确认删除该工单？"
     description="删除后不可恢复。"
     confirm-text="删除"
-    @confirm="messagePro.error('工单已删除')"
+    @confirm="nvMessage.error('工单已删除')"
   >
     <NvButton variant="outline" size="sm">删除工单</NvButton>
   </NvPopconfirm>
@@ -30,7 +30,7 @@ import { NvPopconfirm, NvButton, messagePro } from '@nerv-iip/ui'
   title="确认删除该工单？"
   description="删除后不可恢复。"
   confirm-text="删除"
-  @confirm="messagePro.error('工单已删除')"
+  @confirm="nvMessage.error('工单已删除')"
 >
   <NvButton variant="outline" size="sm">删除工单</NvButton>
 </NvPopconfirm>
@@ -45,7 +45,7 @@ import { NvPopconfirm, NvButton, messagePro } from '@nerv-iip/ui'
     title="确认下发到产线？"
     confirm-text="下发"
     confirm-tone="brand"
-    @confirm="messagePro.success('已下发排产')"
+    @confirm="nvMessage.success('已下发排产')"
   >
     <NvButton variant="brand" size="sm">下发排产</NvButton>
   </NvPopconfirm>
@@ -56,7 +56,7 @@ import { NvPopconfirm, NvButton, messagePro } from '@nerv-iip/ui'
   title="确认下发到产线？"
   confirm-text="下发"
   confirm-tone="brand"
-  @confirm="messagePro.success('已下发排产')"
+  @confirm="nvMessage.success('已下发排产')"
 >
   <NvButton variant="brand" size="sm">下发排产</NvButton>
 </NvPopconfirm>

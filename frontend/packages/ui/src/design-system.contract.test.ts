@@ -89,7 +89,7 @@ describe('design system v2 token contract', () => {
 
 // ─── ADR 0020 §3 — scene token namespaces + one-cycle aliases ───────────────
 describe('ADR 0020 §3 — token scene namespaces', () => {
-  // Appendix B — the full --sb-* → --nv-scr-* screen table (30 tokens).
+  // Appendix B — the full canonical --nv-scr-* screen table (30 tokens).
   const SCREEN = [
     'bg',
     'bg-accent',
@@ -127,10 +127,8 @@ describe('ADR 0020 §3 — token scene namespaces', () => {
     for (const t of SCREEN) expect.soft(screenTokens).toMatch(new RegExp(`--nv-scr-${t}\\b`))
   })
 
-  it('keeps one-cycle --sb-* aliases that var-chain to --nv-scr-* (§5 S1)', () => {
-    for (const t of SCREEN) {
-      expect.soft(screenTokens).toContain(`--sb-${t}: var(--nv-scr-${t});`)
-    }
+  it('removes the transitional screen token namespace at S4 closeout', () => {
+    expect(screenTokens).not.toContain('--' + 'sb-')
   })
 
   it('expresses cross-scene equal values as var chains, not literals (§3.2)', () => {
@@ -290,9 +288,9 @@ describe('ADR 0020 §4.2 — VitePress isolation', () => {
   })
 
   it('wraps every demo container root in vp-raw', () => {
-    expect.soft(ds('docs/.vitepress/theme/Demo.vue')).toContain('ds-demo vp-raw')
-    expect.soft(ds('docs/.vitepress/theme/ScreenDemo.vue')).toContain('ds-sd vp-raw')
-    expect.soft(ds('docs/.vitepress/theme/MobileDoc.vue')).toContain('ds-mdoc-phone vp-raw')
+    expect.soft(ds('docs/.vitepress/theme/Demo.vue')).toContain('nv-demo vp-raw')
+    expect.soft(ds('docs/.vitepress/theme/ScreenDemo.vue')).toContain('nv-sd vp-raw')
+    expect.soft(ds('docs/.vitepress/theme/MobileDoc.vue')).toContain('nv-mdoc-phone vp-raw')
   })
 
   it('drops the old .vp-doc counter-hacks and never revives revert-layer', () => {

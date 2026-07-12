@@ -19,13 +19,13 @@ const procSteps = [
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <div class="px-3">
       <NvMobileSteps :steps="procSteps" :current="1" />
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">全部完成</p>
+    <p class="nv-mdoc-label">全部完成</p>
     <div class="px-3">
       <NvMobileSteps :steps="procSteps" :current="4" />
     </div>

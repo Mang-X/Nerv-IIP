@@ -105,7 +105,7 @@ describe('NvUI import hygiene (stable package boundary)', () => {
   }
 
   // #789 closeout: the library exposes NO `@deprecated` old-name aliases, so an old
-  // name (`ButtonPro`, `ScreenPanel`, `Badge` from ui-mobile, …) is no longer
+  // name (`NvButton`, `ScreenPanel`, `Badge` from ui-mobile, …) is no longer
   // importable — the old-name ratchet + per-app baseline are retired and typecheck is
   // the hard guard. This asserts the invariant so a regression re-adding an alias fails.
   it('the library exposes no @deprecated old-name aliases (closeout done)', () => {

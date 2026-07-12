@@ -38,8 +38,8 @@
 **press 反馈** —— 收缩、绝不膨胀、绝不位移、绝不回弹:
 
 - 按钮 `:active` → `scale(0.985)`（纯缩放;大屏上**不做**垂直位移,`translateY` 在暗底看着像跳动）
-- 开关手柄 `:active` → `scale(0.86)`（同 `SwitchPro`，**收缩**而非膨胀）
-- 勾选类如有 → `scale(0.88)`（同 `CheckboxPro` / `RadioGroupProItem`）
+- 开关手柄 `:active` → `scale(0.86)`（同 `NvSwitch`，**收缩**而非膨胀）
+- 勾选类如有 → `scale(0.88)`（同 `NvCheckbox` / `NvRadioGroupItem`）
 
 **滑动指示** —— 分段（`ScreenSegmented`）与标签（`ScreenTabs`）用滑动 thumb / 下划线（`--nv-scr-ease-emphasized`），与 PC 的滑动语言一致;thumb 从激活项**实测宽度**定位,**不做**硬背景切换。
 

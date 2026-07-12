@@ -12,7 +12,7 @@ import { NvMobileEmpty, NvMobileButton } from '@nerv-iip/ui-mobile'
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <div class="w-full rounded-xl border border-border bg-card">
       <NvMobileEmpty description="暂无待处理工单">
         <NvMobileButton variant="primary" size="sm">去接单</NvMobileButton>

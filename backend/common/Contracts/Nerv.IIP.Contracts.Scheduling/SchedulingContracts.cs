@@ -54,7 +54,8 @@ public sealed record SchedulingOperationContract(
     string? SourceReference,
     int SetupMinutes = 0,
     IReadOnlyCollection<string>? RequiredSkillCodes = null,
-    IReadOnlyCollection<string>? RequiredToolingIds = null);
+    IReadOnlyCollection<string>? RequiredToolingIds = null,
+    bool ToolingAvailable = true);
 
 public sealed record SchedulingResourceContract(
     string ResourceId,
@@ -340,7 +341,8 @@ public enum ScheduleConflictReasonCodeContract
     NoEligibleResource = 6,
     OutsideHorizon = 7,
     InvalidLockedAssignment = 8,
-    PredecessorUnscheduled = 9
+    PredecessorUnscheduled = 9,
+    Tooling = 10
 }
 
 public enum ScheduleConflictSeverityContract

@@ -40,6 +40,22 @@ export {
   inspectionResultLabel,
   inspectionResultLabels,
 } from './labels/equipmentLabels'
+export {
+  COMMON_INSPECTION_CHARACTERISTICS,
+  createMeasurementDraft,
+  hasMeasurementInput,
+  isMeasurementRowValid,
+  measurementOutOfTolerance,
+  measurementRowsValid,
+  parseOptionalNumber,
+  parseRequiredNumber,
+  toMeasurementPayload,
+} from './inspections/measurements'
+export type {
+  MeasurementDraftRow,
+  MeasurementPayloadLine,
+  ParsedNumber,
+} from './inspections/measurements'
 export { sanitizeRedirectPath } from './routing/sanitizeRedirectPath'
 export { PDA_TASK_KINDS, getPdaTaskKind } from './tasks/pdaTaskKinds'
 export type { PdaTaskKind } from './tasks/pdaTaskKinds'

@@ -46,7 +46,7 @@ function onLoad() {
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">上拉加载更多 · 工单流水</p>
+    <p class="nv-mdoc-label">上拉加载更多 · 工单流水</p>
     <div class="overflow-hidden rounded-xl border border-border">
       <NvInfiniteList
         v-model="loading"

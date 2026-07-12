@@ -1,7 +1,22 @@
+import { existsSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, postcssIsolateStyles } from 'vitepress'
 import wasm from 'vite-plugin-wasm'
+
+const dhxInstalled = existsSync(
+  fileURLToPath(new URL('../../../../node_modules/@dhx/trial-gantt/package.json', import.meta.url)),
+)
+const dhxVendor = fileURLToPath(new URL('../../../../packages/scheduling/vendor/dhtmlx/dhtmlxgantt.es.js', import.meta.url))
+const dhxCssVendor = fileURLToPath(new URL('../../../../packages/scheduling/vendor/dhtmlx/dhtmlxgantt.css', import.meta.url))
+const dhxStub = fileURLToPath(new URL('../../../../packages/scheduling/src/engine/dhtmlx/stub.ts', import.meta.url))
+const dhxCssStub = fileURLToPath(new URL('../../../../packages/scheduling/src/engine/dhtmlx/empty.css', import.meta.url))
+const dhxAlias: Record<string, string> = dhxInstalled
+  ? {}
+  : {
+      '@dhx/trial-gantt/codebase/dhtmlxgantt.css': existsSync(dhxCssVendor) ? dhxCssVendor : dhxCssStub,
+      '@dhx/trial-gantt': existsSync(dhxVendor) ? dhxVendor : dhxStub,
+    }
 
 // 一体机 / 工位触控侧栏 —— 复用给 /components/touch 与 /components/board（工位看板完整示例）。
 const touchSidebar = [
@@ -140,6 +155,7 @@ export default defineConfig({
             { text: 'Field 表单字段', link: '/components/desktop/field' },
             { text: 'FileUpload 文件上传', link: '/components/desktop/file-upload' },
             { text: 'Select 选择器', link: '/components/desktop/select' },
+            { text: 'Combobox 联想 / 搜索选择', link: '/components/desktop/combobox' },
             { text: 'Checkbox 复选框', link: '/components/desktop/checkbox' },
             { text: 'Radio 单选框', link: '/components/desktop/radio' },
             { text: 'Switch 开关', link: '/components/desktop/switch' },
@@ -178,6 +194,13 @@ export default defineConfig({
         {
           text: '图表',
           items: [{ text: 'Chart 图表', link: '/components/desktop/chart' }],
+        },
+        {
+          text: '排产 Scheduling',
+          items: [
+            { text: 'GanttChart 工单甘特图', link: '/components/desktop/gantt-chart' },
+            { text: 'ResourceSchedulerBoard 资源甘特图', link: '/components/desktop/resource-scheduler' },
+          ],
         },
       ],
       // PDA 移动 —— 组件库式：每个组件一页，按分类分组
@@ -382,6 +405,13 @@ export default defineConfig({
         '@nerv-iip/ui-mobile': fileURLToPath(
           new URL('../../../../packages/ui-mobile/src/index.ts', import.meta.url),
         ),
+        '@nerv-iip/scheduling': fileURLToPath(
+          new URL('../../../../packages/scheduling/src/index.ts', import.meta.url),
+        ),
+        '@nerv-iip/api-client': fileURLToPath(
+          new URL('../../../../packages/api-client/src/index.ts', import.meta.url),
+        ),
+        ...dhxAlias,
       },
     },
   },

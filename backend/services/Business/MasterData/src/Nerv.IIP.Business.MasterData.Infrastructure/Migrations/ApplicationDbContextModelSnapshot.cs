@@ -523,12 +523,63 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id that owns the device asset.");
 
+                    b.Property<string>("ParentDeviceId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("parent_device_id")
+                        .HasComment("Parent device asset public id when this asset is a child component or sub-asset.");
+
+                    b.Property<decimal?>("PurchaseCost")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("purchase_cost")
+                        .HasComment("Original purchase cost amount in purchase_currency_code.");
+
+                    b.Property<string>("PurchaseCurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("purchase_currency_code")
+                        .HasComment("Currency code for purchase_cost.");
+
+                    b.Property<DateOnly?>("PurchaseDate")
+                        .HasColumnType("date")
+                        .HasColumnName("purchase_date")
+                        .HasComment("Business date when the asset was purchased.");
+
+                    b.Property<DateOnly?>("RetiredOn")
+                        .HasColumnType("date")
+                        .HasColumnName("retired_on")
+                        .HasComment("Business date when the asset was retired from active use.");
+
                     b.Property<string>("SerialNo")
                         .IsRequired()
                         .HasMaxLength(160)
                         .HasColumnType("character varying(160)")
                         .HasColumnName("serial_no")
                         .HasComment("Manufacturer serial number or asset serial reference.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Site code where the device asset is installed.");
+
+                    b.Property<string>("StationCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("station_code")
+                        .HasComment("Station code or local position inside the production line.");
+
+                    b.Property<string>("SupplierPartnerCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("supplier_partner_code")
+                        .HasComment("BusinessPartner code for the equipment supplier.");
 
                     b.Property<bool>("TelemetryEnabled")
                         .HasColumnType("boolean")
@@ -540,12 +591,24 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("updated_at_utc")
                         .HasComment("UTC time when the device asset was last updated.");
 
+                    b.Property<DateOnly?>("WarrantyExpiresOn")
+                        .HasColumnType("date")
+                        .HasColumnName("warranty_expires_on")
+                        .HasComment("Business date when supplier warranty expires.");
+
                     b.Property<string>("WorkCenterCode")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("work_center_code")
                         .HasComment("Work center code where the device asset is assigned.");
+
+                    b.Property<string>("WorkshopCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("workshop_code")
+                        .HasComment("Workshop code where the device asset is installed.");
 
                     b.HasKey("Id");
 
@@ -554,9 +617,59 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "Code")
                         .IsUnique();
 
+                    b.HasIndex("SiteCode", "WorkshopCode", "LineCode", "Disabled");
+
                     b.ToTable("device_assets", "business_masterdata", t =>
                         {
                             t.HasComment("Business master data device assets assigned to production lines and work centers.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate.DeviceAssetComponent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Device asset component row id.");
+
+                    b.Property<string>("ComponentCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("component_code")
+                        .HasComment("Component code within the parent device asset.");
+
+                    b.Property<string>("ComponentName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("component_name")
+                        .HasComment("Operator-readable component name.");
+
+                    b.Property<bool>("Critical")
+                        .HasColumnType("boolean")
+                        .HasColumnName("critical")
+                        .HasComment("Whether the component is critical for maintenance decisions.");
+
+                    b.Property<Guid>("DeviceAssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("device_asset_id")
+                        .HasComment("Owning device asset id.");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("quantity")
+                        .HasComment("Component quantity installed in the parent asset.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeviceAssetId", "ComponentCode")
+                        .IsUnique();
+
+                    b.ToTable("device_asset_components", "business_masterdata", t =>
+                        {
+                            t.HasComment("Child component rows owned by a business master data device asset.");
                         });
                 });
 
@@ -1543,6 +1656,202 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate.ChangeoverMatrixEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Changeover matrix entry identifier.");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("boolean")
+                        .HasComment("Whether this matrix entry is active.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("Creation timestamp in UTC.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Environment scope.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Organization scope.");
+
+                    b.Property<int>("SetupMinutes")
+                        .HasColumnType("integer")
+                        .HasComment("Setup duration in minutes.");
+
+                    b.Property<string>("SourceCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Source SKU or product-category code.");
+
+                    b.Property<string>("SourceType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasComment("Source dimension: SKU or ProductCategory.");
+
+                    b.Property<string>("ToSkuCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Target SKU code.");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("Last update timestamp in UTC.");
+
+                    b.Property<string>("WorkCenterCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Work-center code.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkCenterCode", "SourceType", "SourceCode", "ToSkuCode")
+                        .IsUnique();
+
+                    b.ToTable("changeover_matrix_entries", "business_masterdata", t =>
+                        {
+                            t.HasComment("Authoritative setup duration and tooling requirements by work center and SKU transition.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate.ChangeoverRequiredTooling", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Required-tooling row identifier.");
+
+                    b.Property<Guid>("ChangeoverMatrixEntryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ToolingCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Required tooling code.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChangeoverMatrixEntryId", "ToolingCode")
+                        .IsUnique();
+
+                    b.ToTable("changeover_required_tooling", "business_masterdata", t =>
+                        {
+                            t.HasComment("Tooling assets required by a changeover matrix entry.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate.ToolingApplicability", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Applicability row identifier.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Applicable SKU code.");
+
+                    b.Property<Guid>("ToolingAssetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("WorkCenterCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Applicable work-center code.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ToolingAssetId", "WorkCenterCode", "SkuCode")
+                        .IsUnique();
+
+                    b.ToTable("tooling_applicability", "business_masterdata", t =>
+                        {
+                            t.HasComment("Work-center and SKU applicability of a tooling asset.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate.ToolingAsset", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Tooling asset identifier.");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Coding-engine allocated tooling code.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("Creation timestamp in UTC.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Environment scope.");
+
+                    b.Property<long?>("MaintenanceLifeCount")
+                        .HasColumnType("bigint")
+                        .HasComment("Usage count at which maintenance becomes due.");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasComment("Tooling display name.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Organization scope.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasComment("Lifecycle status: Available, Maintenance, or Retired.");
+
+                    b.Property<string>("ToolingType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Tooling type code.");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("Last update timestamp in UTC.");
+
+                    b.Property<long>("UsageCount")
+                        .HasColumnType("bigint")
+                        .HasComment("Accumulated governed usage count.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("tooling_assets", "business_masterdata", t =>
+                        {
+                            t.HasComment("Tooling and mould master assets governed by MasterData.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2290,6 +2599,33 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                     b.ToTable("cap_received_messages", "business_masterdata");
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate.DeviceAssetComponent", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset", null)
+                        .WithMany("Components")
+                        .HasForeignKey("DeviceAssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate.ChangeoverRequiredTooling", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate.ChangeoverMatrixEntry", null)
+                        .WithMany("RequiredTooling")
+                        .HasForeignKey("ChangeoverMatrixEntryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate.ToolingApplicability", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate.ToolingAsset", null)
+                        .WithMany("Applicability")
+                        .HasForeignKey("ToolingAssetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate.WorkCalendar", b =>
                 {
                     b.OwnsMany("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate.WorkCalendarException", "Exceptions", b1 =>
@@ -2421,6 +2757,21 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                     b.Navigation("Holidays");
 
                     b.Navigation("WorkingTimes");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset", b =>
+                {
+                    b.Navigation("Components");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate.ChangeoverMatrixEntry", b =>
+                {
+                    b.Navigation("RequiredTooling");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate.ToolingAsset", b =>
+                {
+                    b.Navigation("Applicability");
                 });
 #pragma warning restore 612, 618
         }

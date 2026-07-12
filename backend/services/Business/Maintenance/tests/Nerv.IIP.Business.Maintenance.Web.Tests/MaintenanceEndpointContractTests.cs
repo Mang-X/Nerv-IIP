@@ -104,6 +104,21 @@ public sealed class MaintenanceEndpointContractTests
     }
 
     [Fact]
+    public void Completion_validator_rejects_actual_technician_references_over_150_characters()
+    {
+        var result = new CompleteMaintenanceWorkOrderCommandValidator().Validate(
+            new CompleteMaintenanceWorkOrderCommand(
+                new MaintenanceWorkOrderId(Guid.CreateVersion7()),
+                "fixed",
+                "equipment-failure",
+                10,
+                [],
+                ActualTechnicianUserId: new string('x', 151)));
+
+        Assert.Contains(result.Errors, x => x.PropertyName == nameof(CompleteMaintenanceWorkOrderCommand.ActualTechnicianUserId));
+    }
+
+    [Fact]
     public async Task Maintenance_work_order_and_plan_lists_return_skip_take_and_total()
     {
         await using var dbContext = CreateDbContext();
@@ -1023,7 +1038,7 @@ public sealed class MaintenanceEndpointContractTests
         var otherCurrency = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-001", 15);
         var open = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-001", 60);
         var otherDevice = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-02", "normal", "operator-001", "worker-001", 45);
-        first.Complete("fixed", "equipment-failure", 10, [], actualLaborMinutes: 75, sparePartCostAmount: 120m, externalServiceCostAmount: 30m, costCurrencyCode: "CNY");
+        first.Complete("fixed", "equipment-failure", 10, [], actualLaborMinutes: 75, sparePartCostAmount: 120m, externalServiceCostAmount: 30m, costCurrencyCode: "CNY", actualTechnicianUserId: "worker-actual");
         second.Complete("fixed", "equipment-failure", 10, [], actualLaborMinutes: 20, sparePartCostAmount: 10m, externalServiceCostAmount: 5m, costCurrencyCode: "CNY");
         otherTechnician.Complete("fixed", "equipment-failure", 10, [], actualLaborMinutes: 25, sparePartCostAmount: 20m, externalServiceCostAmount: 0m, costCurrencyCode: "CNY");
         otherCurrency.Complete("fixed", "equipment-failure", 10, [], actualLaborMinutes: 10, sparePartCostAmount: 8m, externalServiceCostAmount: 2m, costCurrencyCode: "USD");
@@ -1041,19 +1056,22 @@ public sealed class MaintenanceEndpointContractTests
             new QueryMaintenanceReliabilitySummaryQuery("org-001", "env-dev", windowStart, windowEnd, DeviceAssetId: "DEV-CNC-01"),
             CancellationToken.None);
 
-        Assert.Equal(3, response.Items.Count);
+        Assert.Equal(4, response.Items.Count);
         Assert.DoesNotContain(response.Items, x => x.CostCurrencyCode is null);
-        var item = Assert.Single(response.Items, x => x.AssignedTechnicianUserId == "worker-001" && x.CostCurrencyCode == "CNY");
+        var item = Assert.Single(response.Items, x => x.ActualTechnicianUserId == "worker-001" && x.CostCurrencyCode == "CNY");
         Assert.Equal("DEV-CNC-01", item.DeviceAssetId);
         Assert.Equal("worker-001", item.AssignedTechnicianUserId);
-        Assert.Equal(2, item.WorkOrderCount);
-        Assert.Equal(120, item.EstimatedLaborMinutes);
-        Assert.Equal(95, item.ActualLaborMinutes);
-        Assert.Equal(130m, item.SparePartCostAmount);
-        Assert.Equal(35m, item.ExternalServiceCostAmount);
-        Assert.Equal(165m, item.TotalCostAmount);
-        Assert.Single(response.Items, x => x.AssignedTechnicianUserId == "worker-002" && x.CostCurrencyCode == "CNY");
-        Assert.Single(response.Items, x => x.AssignedTechnicianUserId == "worker-001" && x.CostCurrencyCode == "USD");
+        Assert.Equal(1, item.WorkOrderCount);
+        Assert.Equal(30, item.EstimatedLaborMinutes);
+        Assert.Equal(20, item.ActualLaborMinutes);
+        Assert.Equal(10m, item.SparePartCostAmount);
+        Assert.Equal(5m, item.ExternalServiceCostAmount);
+        Assert.Equal(15m, item.TotalCostAmount);
+        Assert.Single(response.Items, x => x.ActualTechnicianUserId == "worker-002" && x.CostCurrencyCode == "CNY");
+        Assert.Single(response.Items, x => x.ActualTechnicianUserId == "worker-001" && x.CostCurrencyCode == "USD");
+        var actualTechnician = Assert.Single(response.Items, x => x.ActualTechnicianUserId == "worker-actual" && x.CostCurrencyCode == "CNY");
+        Assert.Equal("worker-001", actualTechnician.AssignedTechnicianUserId);
+        Assert.Equal(75, actualTechnician.ActualLaborMinutes);
     }
 
     [Fact]

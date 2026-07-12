@@ -50,8 +50,8 @@ function submit() {
 </script>
 
 <template>
-  <NvCard class="border-none shadow-none">
-    <form class="flex flex-col gap-4" @submit.prevent="submit">
+  <NvCard>
+    <form class="flex flex-col gap-4 pt-6" @submit.prevent="submit">
       <NvCardHeader class="text-center">
         <NvCardTitle class="text-xl">{{ t('login.title') }}</NvCardTitle>
         <NvCardDescription>{{ t('login.description') }}</NvCardDescription>

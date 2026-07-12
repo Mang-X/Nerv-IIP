@@ -133,7 +133,8 @@ public sealed record CompleteMaintenanceWorkOrderCommand(
     int? ActualLaborMinutes = null,
     decimal? SparePartCostAmount = null,
     decimal? ExternalServiceCostAmount = null,
-    string? CostCurrencyCode = null) : ICommand;
+    string? CostCurrencyCode = null,
+    string? ActualTechnicianUserId = null) : ICommand;
 
 public sealed class CompleteMaintenanceWorkOrderCommandValidator : AbstractValidator<CompleteMaintenanceWorkOrderCommand>
 {
@@ -155,6 +156,7 @@ public sealed class CompleteMaintenanceWorkOrderCommandValidator : AbstractValid
             .WithMessage("External service cost amount must fit numeric(18,6).")
             .When(x => x.ExternalServiceCostAmount is not null);
         RuleFor(x => x.CostCurrencyCode).MaximumLength(10);
+        RuleFor(x => x.ActualTechnicianUserId).MaximumLength(150);
         RuleForEach(x => x.SpareParts).ChildRules(x =>
         {
             x.RuleFor(p => p.SkuCode).NotEmpty().MaximumLength(100);
@@ -200,7 +202,8 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
             request.ActualLaborMinutes,
             request.SparePartCostAmount,
             request.ExternalServiceCostAmount,
-            request.CostCurrencyCode);
+            request.CostCurrencyCode,
+            request.ActualTechnicianUserId);
     }
 }
 

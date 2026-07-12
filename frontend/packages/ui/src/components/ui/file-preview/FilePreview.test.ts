@@ -5,7 +5,7 @@ import { computed, defineComponent, h, shallowRef } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { FilePreview, getFilePreviewKindMeta } from '.'
-import { NvSelect } from '../../pro/select'
+import { NvSelect } from '../../pc/select'
 import OfficePreview from './OfficePreview.vue'
 import PdfPreview from './PdfPreview.vue'
 

@@ -1,4 +1,6 @@
 using FastEndpoints;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
@@ -214,6 +216,15 @@ public sealed record UpdateMasterDataResourceRequest(
     string? Model = null,
     string? Manufacturer = null,
     string? SerialNo = null,
+    DateOnly? PurchaseDate = null,
+    decimal? PurchaseCost = null,
+    string? PurchaseCurrencyCode = null,
+    DateOnly? WarrantyExpiresOn = null,
+    string? SupplierPartnerCode = null,
+    string? StationCode = null,
+    string? ParentDeviceId = null,
+    DateOnly? RetiredOn = null,
+    IReadOnlyCollection<DeviceAssetComponentDetail>? Components = null,
     decimal? MinimumCapacity = null,
     decimal? MaximumCapacity = null,
     string? CapacityUomCode = null,
@@ -326,6 +337,15 @@ public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
                 req.Model,
                 req.Manufacturer,
                 req.SerialNo,
+                req.PurchaseDate,
+                req.PurchaseCost,
+                req.PurchaseCurrencyCode,
+                req.WarrantyExpiresOn,
+                req.SupplierPartnerCode,
+                req.StationCode,
+                req.ParentDeviceId,
+                req.RetiredOn,
+                req.Components,
                 req.MinimumCapacity,
                 req.MaximumCapacity,
                 req.CapacityUomCode,
@@ -1076,7 +1096,20 @@ public sealed record RegisterDeviceAssetRequest(
     bool Maintainable,
     bool TelemetryEnabled,
     IReadOnlyDictionary<string, string>? ExternalReferences,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    DateOnly? PurchaseDate = null,
+    decimal? PurchaseCost = null,
+    string? PurchaseCurrencyCode = null,
+    DateOnly? WarrantyExpiresOn = null,
+    string? SupplierPartnerCode = null,
+    string? SiteCode = null,
+    string? WorkshopCode = null,
+    string? StationCode = null,
+    string? ParentDeviceId = null,
+    DateOnly? RetiredOn = null,
+    IReadOnlyCollection<DeviceAssetComponentRequest>? Components = null);
+
+public sealed record DeviceAssetComponentRequest(string ComponentCode, string ComponentName, decimal Quantity, bool Critical);
 
 public sealed class RegisterDeviceAssetEndpoint(ISender sender)
     : MasterDataEndpoint<RegisterDeviceAssetRequest, ResponseData<MasterDataResourceResponse>>
@@ -1106,7 +1139,18 @@ public sealed class RegisterDeviceAssetEndpoint(ISender sender)
             req.Maintainable,
             req.TelemetryEnabled,
             req.ExternalReferences ?? new Dictionary<string, string>(),
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            req.PurchaseDate,
+            req.PurchaseCost,
+            req.PurchaseCurrencyCode,
+            req.WarrantyExpiresOn,
+            req.SupplierPartnerCode,
+            req.SiteCode,
+            req.WorkshopCode,
+            req.StationCode,
+            req.ParentDeviceId,
+            req.RetiredOn,
+            req.Components?.Select(x => new DeviceAssetComponentDraft(x.ComponentCode, x.ComponentName, x.Quantity, x.Critical)).ToArray()), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -1533,6 +1577,47 @@ public sealed class ValidateMasterDataReferencesEndpoint(ISender sender)
     }
 }
 
+public sealed record RegisterToolingAssetRequest(string OrganizationId, string EnvironmentId, string? Code, string Name, string ToolingType,
+    IReadOnlyCollection<string> WorkCenterCodes, IReadOnlyCollection<string> SkuCodes, long? MaintenanceLifeCount, string? IdempotencyKey);
+
+public sealed class RegisterToolingAssetEndpoint(ISender sender) : MasterDataEndpoint<RegisterToolingAssetRequest, ResponseData<MasterDataResourceResponse>>
+{
+    public override void Configure() { var contract = MasterDataEndpointContracts.Get<RegisterToolingAssetEndpoint>(); ConfigureMasterDataContract(contract); }
+    public override async Task HandleAsync(RegisterToolingAssetRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new RegisterToolingAssetCommand(req.OrganizationId, req.EnvironmentId, req.Code, req.Name, req.ToolingType, req.WorkCenterCodes, req.SkuCodes, req.MaintenanceLifeCount, req.IdempotencyKey), ct);
+        await Send.OkAsync(new MasterDataResourceResponse(result.ResourceType, result.Code, result.DisplayName).AsResponseData(), ct);
+    }
+}
+
+public sealed record ChangeToolingStatusRequest(string OrganizationId, string EnvironmentId, string Code, ToolingAssetStatus Status, string Reason);
+public sealed class ChangeToolingStatusEndpoint(ISender sender) : MasterDataEndpoint<ChangeToolingStatusRequest, EmptyResponse>
+{
+    public override void Configure() { var contract = MasterDataEndpointContracts.Get<ChangeToolingStatusEndpoint>(); ConfigureMasterDataContract(contract); }
+    public override async Task HandleAsync(ChangeToolingStatusRequest req, CancellationToken ct) { await sender.Send(new ChangeToolingStatusCommand(req.OrganizationId, req.EnvironmentId, req.Code, req.Status, req.Reason), ct); await Send.NoContentAsync(ct); }
+}
+
+public sealed record RecordToolingUsageRequest(string OrganizationId, string EnvironmentId, string Code, long Count);
+public sealed class RecordToolingUsageEndpoint(ISender sender) : MasterDataEndpoint<RecordToolingUsageRequest, EmptyResponse>
+{
+    public override void Configure() { var contract = MasterDataEndpointContracts.Get<RecordToolingUsageEndpoint>(); ConfigureMasterDataContract(contract); }
+    public override async Task HandleAsync(RecordToolingUsageRequest req, CancellationToken ct) { await sender.Send(new RecordToolingUsageCommand(req.OrganizationId, req.EnvironmentId, req.Code, req.Count), ct); await Send.NoContentAsync(ct); }
+}
+
+public sealed record ImportChangeoverMatrixRequest(string OrganizationId, string EnvironmentId, IReadOnlyCollection<ChangeoverMatrixEntryDraft> Entries);
+public sealed record ImportChangeoverMatrixResponse(int ImportedCount);
+public sealed class ImportChangeoverMatrixEndpoint(ISender sender) : MasterDataEndpoint<ImportChangeoverMatrixRequest, ResponseData<ImportChangeoverMatrixResponse>>
+{
+    public override void Configure() { var contract = MasterDataEndpointContracts.Get<ImportChangeoverMatrixEndpoint>(); ConfigureMasterDataContract(contract); }
+    public override async Task HandleAsync(ImportChangeoverMatrixRequest req, CancellationToken ct) { var count = await sender.Send(new ImportChangeoverMatrixCommand(req.OrganizationId, req.EnvironmentId, req.Entries), ct); await Send.OkAsync(new ImportChangeoverMatrixResponse(count).AsResponseData(), ct); }
+}
+
+public sealed class ResolveSchedulingToolingFactsEndpoint(ISender sender) : MasterDataEndpoint<ResolveSchedulingToolingFactsQuery, ResponseData<ResolveSchedulingToolingFactsResponse>>
+{
+    public override void Configure() { var contract = MasterDataEndpointContracts.Get<ResolveSchedulingToolingFactsEndpoint>(); ConfigureMasterDataContract(contract); }
+    public override async Task HandleAsync(ResolveSchedulingToolingFactsQuery req, CancellationToken ct) { var response = await sender.Send(req, ct); await Send.OkAsync(response.AsResponseData(), ct); }
+}
+
 public sealed record MasterDataEndpointContract(
     Type EndpointType,
     string HttpMethod,
@@ -1568,6 +1653,11 @@ public static class MasterDataEndpointContracts
         new(typeof(CreateWorkCalendarEndpoint), "POST", "/api/business/v1/master-data/work-calendars", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataWorkCalendar"),
         new(typeof(CreateWorkCenterEndpoint), "POST", "/api/business/v1/master-data/work-centers", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataWorkCenter"),
         new(typeof(RegisterDeviceAssetEndpoint), "POST", "/api/business/v1/master-data/device-assets", BusinessPermissionCodes.MasterDataResourcesManage, "registerBusinessMasterDataDeviceAsset"),
+        new(typeof(RegisterToolingAssetEndpoint), "POST", "/api/business/v1/master-data/tooling-assets", BusinessPermissionCodes.MasterDataResourcesManage, "registerBusinessMasterDataToolingAsset"),
+        new(typeof(ChangeToolingStatusEndpoint), "POST", "/api/business/v1/master-data/tooling-assets/status", BusinessPermissionCodes.MasterDataResourcesManage, "changeBusinessMasterDataToolingStatus"),
+        new(typeof(RecordToolingUsageEndpoint), "POST", "/api/business/v1/master-data/tooling-assets/usage", BusinessPermissionCodes.MasterDataResourcesManage, "recordBusinessMasterDataToolingUsage"),
+        new(typeof(ImportChangeoverMatrixEndpoint), "POST", "/api/business/v1/master-data/changeover-matrix/import", BusinessPermissionCodes.MasterDataResourcesManage, "importBusinessMasterDataChangeoverMatrix"),
+        new(typeof(ResolveSchedulingToolingFactsEndpoint), "POST", "/api/business/v1/master-data/scheduling-tooling-facts/resolve", BusinessPermissionCodes.MasterDataResourcesRead, "resolveBusinessMasterDataSchedulingToolingFacts"),
         new(typeof(CreateReferenceDataCodeEndpoint), "POST", "/api/business/v1/master-data/reference-data", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataReferenceDataCode"),
         new(typeof(ListProductCategoriesEndpoint), "GET", "/api/business/v1/master-data/product-categories", BusinessPermissionCodes.MasterDataProductsRead, "listBusinessMasterDataProductCategories"),
         new(typeof(GetProductCategoryEndpoint), "GET", "/api/business/v1/master-data/product-categories/{categoryCode}", BusinessPermissionCodes.MasterDataProductsRead, "getBusinessMasterDataProductCategory"),

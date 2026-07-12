@@ -30,6 +30,9 @@ import {
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
+  listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions,
+  promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
+  dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
@@ -39,6 +42,7 @@ import {
   recordBusinessConsoleMesProductionReportMutationOptions,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
   resumeBusinessConsoleMesOperationTaskMutationOptions,
+  reverseBusinessConsoleMesProductionReportMutationOptions,
   runBusinessConsoleMesScheduleMutationOptions,
   startBusinessConsoleMesOperationTaskMutationOptions,
   type BusinessConsoleMesCapacityImpactListEnvelope,
@@ -65,6 +69,7 @@ import {
   type BusinessConsoleMesProductionPlanRow,
   type BusinessConsoleMesProductionReportListEnvelope,
   type BusinessConsoleMesProductionReportRow,
+  type BusinessConsoleMesTelemetryCandidateRow,
   type BusinessConsoleMesRecordDefectRequest,
   type BusinessConsoleMesRecordDowntimeEventRequest,
   type BusinessConsoleMesRelatedQualityItemListEnvelope,
@@ -1114,6 +1119,7 @@ export function useMesWipSummary() {
 
 export function useMesProductionReports() {
   const filters = defaultFilters()
+  const queryCache = useQueryCache()
 
   const reportsQuery = useQuery(() =>
     withBusinessContextEnabled(
@@ -1123,6 +1129,27 @@ export function useMesProductionReports() {
       filters,
     ),
   )
+
+  const reverseMutation = useMutation({
+    ...reverseBusinessConsoleMesProductionReportMutationOptions(),
+    onSuccess() {
+      void invalidateMesQueries(queryCache, [
+        // 本域:冲销新增负向记录行,并使原报工在列表中呈现为已冲销
+        'listBusinessConsoleMesProductionReports',
+        // 工单累计良品/报废回退(WorkOrder.ReverseProductionProgress),状态可能 Completed→Started
+        'getBusinessConsoleMesWorkOrderDetail',
+        'listBusinessConsoleMesWorkOrders',
+        'getBusinessConsoleMesOverview',
+        'getBusinessConsoleMesWipSummary',
+        // 冲销 reopen 报工所在工序任务(OperationTask.ReopenAfterReportReversal)
+        'listBusinessConsoleMesOperationTasks',
+        // 冲销取消该产出批次未过账的完工入库请求(FinishedGoodsReceiptRequest.Cancel)
+        'listBusinessConsoleMesFinishedGoodsReceiptRequests',
+      ]).catch(ignoreBackgroundError)
+      // 冲销仅持久化负向物料消耗,不发布库存过账/预留事件(见 MES ReverseProductionReportCommandHandler),
+      // 故不失效库存可用量读面——与取消工单(释放预留→需失效库存)语义不同,不做无据的跨域失效。
+    },
+  })
 
   return {
     filters,
@@ -1136,6 +1163,52 @@ export function useMesProductionReports() {
     productionReportsPending: reportsQuery.isLoading,
     productionReportsTotal: computed(() => envelopeTotal(reportsQuery.data.value)),
     refreshProductionReports: () => refetchWithBusinessContext(filters, reportsQuery),
+    reverseProductionReport: (
+      reportNo: string,
+      body: { reason: string; reversedAtUtc?: string; idempotencyKey?: string },
+    ) =>
+      reverseMutation.mutateAsync({
+        path: { reportNo },
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        body,
+      }),
+    reverseProductionReportError: reverseMutation.error,
+    reverseProductionReportPending: reverseMutation.isLoading,
+  }
+}
+
+export function useMesTelemetryProductionReportCandidates() {
+  const filters = Object.assign(defaultFilters(), { status: 'pending-confirmation', fromUtc: undefined as string | undefined, toUtc: undefined as string | undefined })
+  const queryCache = useQueryCache()
+  const candidatesQuery = useQuery(() => withBusinessContextEnabled(
+    listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions({ query: {
+      organizationId: filters.organizationId, environmentId: filters.environmentId, status: filters.status === 'all' ? undefined : filters.status || undefined,
+      workCenterId: filters.workCenterId || undefined, deviceAssetId: filters.deviceAssetId || undefined,
+      fromUtc: filters.fromUtc, toUtc: filters.toUtc, skip: filters.skip, take: filters.take,
+    } }), filters))
+  const promoteMutation = useMutation({
+    ...promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions(),
+    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesTelemetryProductionReportCandidates', 'listBusinessConsoleMesProductionReports', 'listBusinessConsoleMesWorkOrders']).catch(ignoreBackgroundError),
+  })
+  const dismissMutation = useMutation({
+    ...dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions(),
+    onSuccess: () => void invalidateMesQueries(queryCache, ['listBusinessConsoleMesTelemetryProductionReportCandidates']).catch(ignoreBackgroundError),
+  })
+  type CandidateEnvelope = { data?: { items?: BusinessConsoleMesTelemetryCandidateRow[]; total?: number } | null }
+  return {
+    filters,
+    candidates: computed(() => envelopeItems<BusinessConsoleMesTelemetryCandidateRow, CandidateEnvelope>(candidatesQuery.data.value as CandidateEnvelope | undefined)),
+    total: computed(() => envelopeTotal(candidatesQuery.data.value as CandidateEnvelope | undefined)),
+    pending: candidatesQuery.isLoading,
+    error: candidatesQuery.error,
+    refresh: () => refetchWithBusinessContext(filters, candidatesQuery),
+    promote: (candidateId: string, workOrderId: string, operationTaskId: string) => promoteMutation.mutateAsync({
+      path: { candidateId }, query: { organizationId: filters.organizationId, environmentId: filters.environmentId }, body: { workOrderId, operationTaskId },
+    }),
+    dismiss: (candidateId: string, reason: string) => dismissMutation.mutateAsync({
+      path: { candidateId }, query: { organizationId: filters.organizationId, environmentId: filters.environmentId }, body: { reason },
+    }),
+    actionPending: computed(() => promoteMutation.isLoading.value || dismissMutation.isLoading.value),
   }
 }
 

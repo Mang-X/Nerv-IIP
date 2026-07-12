@@ -33,7 +33,7 @@ const equipment = Array.from({ length: 6000 }, (_, i) => {
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">6000 台设备 · 仅渲染可视窗口</p>
+    <p class="nv-mdoc-label">6000 台设备 · 仅渲染可视窗口</p>
     <div class="overflow-hidden rounded-xl border border-border">
       <NvVirtualList :items="equipment" :item-height="64" class="h-[460px]">
         <template #default="{ item }">

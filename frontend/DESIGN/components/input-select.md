@@ -30,31 +30,31 @@ Text input and fixed-option selector. Always used inside a `Field` context.
 ```vue
 <Field>
   <FieldLabel for="role-type">Role type</FieldLabel>
-  <SelectPro v-model="form.roleType">
-    <SelectProTrigger id="role-type">
-      <SelectProValue placeholder="Choose a type…" />
-    </SelectProTrigger>
-    <SelectProContent>
-      <SelectProItem value="system">System</SelectProItem>
-      <SelectProItem value="custom">Custom</SelectProItem>
-    </SelectProContent>
-  </SelectPro>
+  <NvSelect v-model="form.roleType">
+    <NvSelectTrigger id="role-type">
+      <NvSelectValue placeholder="Choose a type…" />
+    </NvSelectTrigger>
+    <NvSelectContent>
+      <NvSelectItem value="system">System</NvSelectItem>
+      <NvSelectItem value="custom">Custom</NvSelectItem>
+    </NvSelectContent>
+  </NvSelect>
 </Field>
 
 <!-- Toolbar filter (no Field wrapper needed) -->
-<SelectPro v-model="statusFilter">
-  <SelectProTrigger class="w-36" aria-label="Filter by status">
-    <SelectProValue placeholder="Status" />
-  </SelectProTrigger>
-  <SelectProContent>
-    <SelectProItem value="all">All statuses</SelectProItem>
-    <SelectProItem value="enabled">Enabled</SelectProItem>
-    <SelectProItem value="disabled">Disabled</SelectProItem>
-  </SelectProContent>
-</SelectPro>
+<NvSelect v-model="statusFilter">
+  <NvSelectTrigger class="w-36" aria-label="Filter by status">
+    <NvSelectValue placeholder="Status" />
+  </NvSelectTrigger>
+  <NvSelectContent>
+    <NvSelectItem value="all">All statuses</NvSelectItem>
+    <NvSelectItem value="enabled">Enabled</NvSelectItem>
+    <NvSelectItem value="disabled">Disabled</NvSelectItem>
+  </NvSelectContent>
+</NvSelect>
 ```
 
-Use `SelectPro` for desktop product UI. Consumers may pass layout-only classes
+Use `NvSelect` for desktop product UI. Consumers may pass layout-only classes
 such as width or compact height, but should not restyle trigger/content/item
 colors; those states belong to the component contract.
 
@@ -71,6 +71,6 @@ colors; those states belong to the component contract.
 ## Do NOT
 
 - Do not use `<input>` directly — always use `<Input>` from `@nerv-iip/ui`.
-- Do not use Input for selecting from a fixed list — use `SelectPro`.
-- Do not use `SelectPro` for searching large datasets — that requires a Combobox (not yet installed).
+- Do not use Input for selecting from a fixed list — use `NvSelect`.
+- Do not use `NvSelect` for searching large datasets — that requires a Combobox (not yet installed).
 - Do not omit `for`/`id` pairing when inside a `Field`.

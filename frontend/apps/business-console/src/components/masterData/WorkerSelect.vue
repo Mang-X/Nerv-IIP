@@ -17,9 +17,10 @@ import { computed, watch } from 'vue'
  */
 const model = defineModel<string>({ default: '' })
 
-defineProps<{
+const props = defineProps<{
   id?: string
   placeholder?: string
+  keepOutOfRange?: boolean
 }>()
 
 const { workers, workersPending, filters } = useBusinessWorkers()
@@ -47,12 +48,14 @@ const options = computed(() =>
     }),
 )
 
-// 选中项已不在结果集时清空，避免显示空白选中态。
+// Most consumers must not retain a worker outside the active result set. Completion forms opt in
+// to preserving a planned/selected technician while server-side search or pagination changes.
 watch(options, (list) => {
-  if (model.value && !list.some((option) => option.value === model.value)) {
+  if (!props.keepOutOfRange && model.value && !list.some((option) => option.value === model.value)) {
     model.value = ''
   }
 })
+
 </script>
 
 <template>

@@ -16,7 +16,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-} from '../../pro/select'
+} from '../../pc/select'
 import { Button } from '../button'
 
 const props = defineProps<{

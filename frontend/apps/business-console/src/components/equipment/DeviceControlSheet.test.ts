@@ -77,25 +77,25 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
 vi.mock('@/utils/notify', () => ({ notifyError: vi.fn(), notifySuccess: vi.fn() }))
 
 const stubs = {
-  SheetPro: { template: '<div><slot /></div>' },
-  SheetProContent: { template: '<div><slot /></div>' },
-  SheetProHeader: { template: '<div><slot /></div>' },
-  SheetProTitle: { template: '<h2><slot /></h2>' },
-  SheetProDescription: { template: '<p><slot /></p>' },
-  SheetProFooter: { template: '<div><slot /></div>' },
-  TabsPro: { props: ['modelValue'], template: '<div><slot /></div>' },
-  TabsProList: { template: '<div><slot /></div>' },
-  TabsProTrigger: { props: ['value'], template: '<button type="button"><slot /></button>' },
-  SelectPro: {
+  NvSheet: { template: '<div><slot /></div>' },
+  NvSheetContent: { template: '<div><slot /></div>' },
+  NvSheetHeader: { template: '<div><slot /></div>' },
+  NvSheetTitle: { template: '<h2><slot /></h2>' },
+  NvSheetDescription: { template: '<p><slot /></p>' },
+  NvSheetFooter: { template: '<div><slot /></div>' },
+  NvTabs: { props: ['modelValue'], template: '<div><slot /></div>' },
+  NvTabsList: { template: '<div><slot /></div>' },
+  NvTabsTrigger: { props: ['value'], template: '<button type="button"><slot /></button>' },
+  NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template:
       '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectProTrigger: { template: '<span><slot /></span>' },
+  NvSelectTrigger: { template: '<span><slot /></span>' },
   SelectValue: { template: '<span />' },
-  SelectProContent: { template: '<slot />' },
-  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  NvSelectContent: { template: '<slot />' },
+  NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
 function mountSheet() {

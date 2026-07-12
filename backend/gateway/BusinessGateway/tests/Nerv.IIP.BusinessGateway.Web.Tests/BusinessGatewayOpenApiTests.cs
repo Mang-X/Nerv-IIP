@@ -564,7 +564,7 @@ public sealed class BusinessGatewayOpenApiTests
             "organizationId",
             "environmentId");
         AssertStringEnumSchema(document, "NervIIPContractsSchedulingSchedulePlanStatusContract", "preview", "generated", "released");
-        AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleConflictReasonCodeContract", "dueDate", "capacity", "calendar", "material", "quality", "equipment", "noEligibleResource", "outsideHorizon", "invalidLockedAssignment", "predecessorUnscheduled");
+        AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleConflictReasonCodeContract", "dueDate", "capacity", "calendar", "material", "quality", "equipment", "noEligibleResource", "outsideHorizon", "invalidLockedAssignment", "predecessorUnscheduled", "tooling");
         AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleConflictSeverityContract", "info", "warning", "error");
         AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleChangeTypeContract", "added", "moved", "delayed", "preserved", "blocked");
         AssertStringEnumSchema(document, "NervIIPContractsSchedulingScheduleSplitPolicyContract", "nonSplittable");
@@ -786,7 +786,13 @@ public sealed class BusinessGatewayOpenApiTests
             document,
             "BusinessConsoleMesProductionReportRow",
             "workOrderNo",
-            "operationTaskNo");
+            "operationTaskNo",
+            // MAN-444/#798: 冲销互链与工单状态字段,支撑 Console 负向记录标记、原单⇄冲销单双向高亮与冲销按钮分级。
+            "reversedReportNo",
+            "reversalReason",
+            "workOrderStatus",
+            // 服务端逐行反查的已冲销互链,支撑跨分页稳定的"已冲销"判定与原单→冲销单互链(review 修复)。
+            "reversalReportNo");
 
         AssertMesDisplayProperties(
             document,

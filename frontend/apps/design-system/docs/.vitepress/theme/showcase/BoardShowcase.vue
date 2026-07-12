@@ -2,8 +2,8 @@
 import {
   NvAreaChart,
   NvCard,
-  messagePro,
-  notificationPro,
+  nvMessage,
+  nvNotification,
   NvNotifierHost,
   Progress,
   NvQtyStepper,
@@ -40,20 +40,20 @@ const running = ref(true)
 
 function report() {
   done.value = Math.min(qty, done.value + reportQty.value)
-  notificationPro.success('报工成功', {
+  nvNotification.success('报工成功', {
     description: `本次 ${reportQty.value} 件，累计 ${done.value}/${qty}。`,
   })
   reportQty.value = 12
 }
 function pause() {
   running.value = !running.value
-  messagePro.warning(running.value ? '已恢复运行' : '已暂停')
+  nvMessage.warning(running.value ? '已恢复运行' : '已暂停')
 }
 function call() {
-  notificationPro.info('已呼叫班组长', { description: 'WC-CNC-07 请求支援，预计 3 分钟到位。' })
+  nvNotification.info('已呼叫班组长', { description: 'WC-CNC-07 请求支援，预计 3 分钟到位。' })
 }
 function finish() {
-  notificationPro.success('工单完工', { description: 'WO-2406-0413 已提交质检。' })
+  nvNotification.success('工单完工', { description: 'WO-2406-0413 已提交质检。' })
 }
 
 const view = ref('queue')
@@ -84,7 +84,7 @@ const takt = [
 </script>
 
 <template>
-  <div class="ds-board min-h-screen bg-background p-5 text-foreground">
+  <div class="nv-board min-h-screen bg-background p-5 text-foreground">
     <div class="mx-auto flex max-w-[1400px] flex-col gap-5">
       <NvStationBar
         station="WC-CNC-07 · 精密加工"

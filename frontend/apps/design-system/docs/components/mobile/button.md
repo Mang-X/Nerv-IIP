@@ -12,7 +12,7 @@ import { NvMobileButton } from '@nerv-iip/ui-mobile'
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">变体</p>
+    <p class="nv-mdoc-label">变体</p>
     <div class="flex flex-wrap items-center gap-2">
       <NvMobileButton variant="primary">主操作</NvMobileButton>
       <NvMobileButton variant="default">次要</NvMobileButton>
@@ -22,7 +22,7 @@ import { NvMobileButton } from '@nerv-iip/ui-mobile'
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">尺寸</p>
+    <p class="nv-mdoc-label">尺寸</p>
     <div class="flex flex-wrap items-center gap-2">
       <NvMobileButton variant="primary" size="sm">小号</NvMobileButton>
       <NvMobileButton variant="primary" size="md">中号</NvMobileButton>
@@ -30,7 +30,7 @@ import { NvMobileButton } from '@nerv-iip/ui-mobile'
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">整宽</p>
+    <p class="nv-mdoc-label">整宽</p>
     <NvMobileButton variant="primary" size="lg" block>整宽主按钮</NvMobileButton>
   </section>
 </template>

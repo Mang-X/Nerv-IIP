@@ -326,6 +326,12 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("actual_labor_minutes")
                         .HasComment("Actual technician labor minutes captured at completion.");
 
+                    b.Property<string>("ActualTechnicianUserId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("actual_technician_user_id")
+                        .HasComment("Actual primary technician user reference recorded at completion and owned outside Maintenance.");
+
                     b.Property<bool>("AlarmCleared")
                         .HasColumnType("boolean")
                         .HasColumnName("alarm_cleared")

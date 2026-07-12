@@ -21,7 +21,7 @@ const topTabs = [
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <NvMobileTabs v-model="topTab" :items="topTabs" />
     <p class="mt-3 px-4 text-sm text-muted-foreground">当前分类：{{ topTab }}</p>
   </section>
