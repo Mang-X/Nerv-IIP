@@ -15,7 +15,10 @@
     "paths": {
       "@/*": ["src/*"],
       "@nerv-iip/ui": ["../../packages/ui/src/index.ts"],
-      "@nerv-iip/ui-mobile": ["../../packages/ui-mobile/src/index.ts"]
+      "@nerv-iip/ui-mobile": ["../../packages/ui-mobile/src/index.ts"],
+      "@nerv-iip/scheduling": ["../../packages/scheduling/src/index.ts"],
+      "@nerv-iip/api-client": ["../../packages/api-client/src/index.ts"],
+      "@dhx/trial-gantt": ["../../packages/scheduling/src/engine/dhtmlx/stub.ts"]
     }
   },
   "vueCompilerOptions": {

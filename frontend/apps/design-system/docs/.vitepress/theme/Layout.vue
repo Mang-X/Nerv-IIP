@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { Button, NvThemePicker } from '@nerv-iip/ui'
+import { Button, NvThemePicker, useColorMode } from '@nerv-iip/ui'
 import { Moon, Search, Sun } from 'lucide-vue-next'
 import { useData } from 'vitepress'
 import DefaultTheme from 'vitepress/theme'
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import SceneBadge from './SceneBadge.vue'
 
 // Wrap the default layout and swap VitePress's built-in nav controls for our own
@@ -16,6 +16,8 @@ import SceneBadge from './SceneBadge.vue'
 // its modal + key listeners keep working — only its button is hidden).
 const { Layout } = DefaultTheme
 const { isDark } = useData()
+const { setMode } = useColorMode()
+watch(isDark, (dark) => setMode(dark ? 'dark' : 'light'), { immediate: true })
 
 const isMac = ref(false)
 onMounted(() => {
