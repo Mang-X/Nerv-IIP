@@ -1,12 +1,11 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, reactive, shallowRef } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import ProductionReportsPage from './production-reports.vue'
 
 // 报工列表 mock:同页只放三行,故意让"已冲销原单"(B)与其冲销行、"冲销行"(C)与其原单**不在同页**,
-// 以验证已冲销判定与互链改为读服务端逐行字段(reversalReportNo / reversedReportNo)后跨分页仍稳定。
+// 以验证已冲销判定/互链读服务端逐行字段(reversalReportNo / reversedReportNo)与跨页点击定位。
 const rows = [
   // A 可冲销原单(工单在制、无冲销互链字段)
   {
@@ -49,25 +48,43 @@ const rows = [
   },
 ]
 
+// filters / pending 在 mock 工厂里用真实 reactive/shallowRef 创建,供测试可控与断言。
+const mesState = vi.hoisted(() => ({
+  reverseProductionReport: vi.fn(
+    async (_reportNo: string, _body: { reason: string; reversedAtUtc?: string; idempotencyKey?: string }) => ({
+      data: { reportNo: 'PRPT-000902' },
+    }),
+  ),
+  filters: undefined as unknown as Record<string, string | number>,
+  pending: undefined as unknown as { value: boolean },
+}))
+
 const routerState = vi.hoisted(() => ({ push: vi.fn() }))
 vi.mock('vue-router', () => ({ useRouter: () => routerState }))
 
-const mesState = vi.hoisted(() => ({
-  reverseProductionReport: vi.fn(async () => ({ data: { reportNo: 'PRPT-000902' } })),
-}))
-
-vi.mock('@/composables/useBusinessMes', () => ({
-  useMesProductionReports: () => ({
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
-    productionReports: computed(() => rows),
-    productionReportsError: shallowRef(undefined),
-    productionReportsPending: shallowRef(false),
-    productionReportsTotal: computed(() => rows.length),
-    refreshProductionReports: vi.fn(),
-    reverseProductionReport: mesState.reverseProductionReport,
-    reverseProductionReportPending: shallowRef(false),
-  }),
-}))
+vi.mock('@/composables/useBusinessMes', async () => {
+  const { reactive, shallowRef, computed } = await import('vue')
+  mesState.filters = reactive({
+    organizationId: 'org-001',
+    environmentId: 'env-dev',
+    skip: 0,
+    take: 100,
+    keyword: '',
+  })
+  mesState.pending = shallowRef(false)
+  return {
+    useMesProductionReports: () => ({
+      filters: mesState.filters,
+      productionReports: computed(() => rows),
+      productionReportsError: shallowRef(undefined),
+      productionReportsPending: shallowRef(false),
+      productionReportsTotal: computed(() => rows.length),
+      refreshProductionReports: vi.fn(),
+      reverseProductionReport: mesState.reverseProductionReport,
+      reverseProductionReportPending: mesState.pending,
+    }),
+  }
+})
 
 // DataTablePro 桩:逐行渲染 cell-reportNo 与 cell-actions 两个插槽,便于断言徽章/互链/操作按钮。
 const tableStub = {
@@ -117,8 +134,9 @@ function mountReports(permissionCodes: string[]) {
         TooltipRoot: { template: '<div><slot /></div>' },
         TooltipTrigger: { template: '<div><slot /></div>' },
         TooltipProContent: { template: '<div><slot /></div>' },
-        // 冲销确认框默认关闭(open=false),这些测试不驱动它,故不渲染其内部表单
-        AlertDialogPro: { props: ['open'], template: '<section v-if="open"><slot /></section>' },
+        // 冲销确认框内容不渲染(否则 reka Dialog 内层需 DialogRoot context);key 复用/关闭路径测试
+        // 直接驱动 setup 方法(openReverse/submitReverse/onReverseOpenChange),不依赖弹窗 DOM。
+        AlertDialogPro: { props: ['open'], template: '<div />' },
         Spinner: true,
       },
     },
@@ -126,7 +144,10 @@ function mountReports(permissionCodes: string[]) {
 }
 
 beforeEach(() => {
-  mesState.reverseProductionReport.mockClear()
+  mesState.reverseProductionReport.mockReset()
+  mesState.reverseProductionReport.mockResolvedValue({ data: { reportNo: 'PRPT-000902' } })
+  if (mesState.filters) mesState.filters.keyword = ''
+  if (mesState.pending) mesState.pending.value = false
 })
 
 describe('production reports page — reversal permission & cross-page interlink', () => {
@@ -174,5 +195,68 @@ describe('production reports page — reversal permission & cross-page interlink
     expect(rowEls[2].text()).toContain('负向冲销')
     expect(rowEls[2].text()).toContain('冲销自 PRPT-000899')
     expect(rowEls[2].findAll('button').some((b) => b.text().includes('重新报工'))).toBe(true)
+  })
+
+  it('filters the list by the counterpart report no to locate it when it is on another server page', async () => {
+    const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
+    await flushPromises()
+
+    // B 行的互链对方 PRPT-000900 不在本页;点击「查看冲销单」应按其单号过滤定位(而非静默无响应)
+    const rowEls = wrapper.findAll('[data-testid="row"]')
+    const link = rowEls[1].findAll('button').find((b) => b.text().includes('查看冲销单'))!
+    await link.trigger('click')
+
+    expect(mesState.filters.keyword).toBe('PRPT-000900')
+  })
+
+  it('reuses the same idempotency key when the dialog is closed (e.g. Escape) and reopened for the same report until success', async () => {
+    mesState.reverseProductionReport.mockRejectedValue(new Error('timeout'))
+    const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as {
+      openReverse: (row: (typeof rows)[number]) => void
+      onReverseOpenChange: (next: boolean) => void
+      submitReverse: () => Promise<void>
+      reverseForm: { reasonCode: string; remark: string }
+    }
+
+    // 第一次:打开 A、选原因、提交失败(服务端未知结果)
+    vm.openReverse(rows[0])
+    vm.reverseForm.reasonCode = 'mis-report'
+    await vm.submitReverse()
+    const key1 = mesState.reverseProductionReport.mock.calls[0]?.[1]?.idempotencyKey
+
+    // 经 Escape / 组件自身 close 关闭(绕过「返回」),再对同一报工重开、重试
+    vm.onReverseOpenChange(false)
+    vm.openReverse(rows[0])
+    vm.reverseForm.reasonCode = 'mis-report'
+    await vm.submitReverse()
+    const key2 = mesState.reverseProductionReport.mock.calls[1]?.[1]?.idempotencyKey
+
+    expect(key1).toBeTruthy()
+    expect(key2).toBe(key1)
+  })
+
+  it('blocks closing the reverse dialog while the request is pending', async () => {
+    const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as {
+      openReverse: (row: (typeof rows)[number]) => void
+      onReverseOpenChange: (next: boolean) => void
+      reverseOpen: boolean
+    }
+
+    vm.openReverse(rows[0])
+    expect(vm.reverseOpen).toBe(true)
+    // 请求进行中:Escape / 组件自身 close 触发的 update:open=false 被拦下,弹窗保持打开
+    mesState.pending.value = true
+    vm.onReverseOpenChange(false)
+    expect(vm.reverseOpen).toBe(true)
+    // 请求结束后允许关闭
+    mesState.pending.value = false
+    vm.onReverseOpenChange(false)
+    expect(vm.reverseOpen).toBe(false)
   })
 })

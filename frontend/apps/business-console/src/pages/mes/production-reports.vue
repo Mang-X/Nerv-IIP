@@ -36,7 +36,7 @@ import {
 } from '@nerv-iip/ui'
 import { ClipboardPenIcon, RefreshCwIcon, Undo2Icon } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed, reactive, ref } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -129,13 +129,46 @@ function clearFocus() {
 function isFocused(row: ReportRow) {
   return Boolean(row.reportNo && focusedPair.value.has(row.reportNo))
 }
+// 跨页定位:对方记录在其它服务端分页时,scrollTo 找不到 DOM。此时按对方报工单号过滤列表(keyword 匹配
+// reportNo)并回到第一页,拉取到后由 watch 滚动高亮。pendingLocateReportNo 记录待定位目标。
+const pendingLocateReportNo = ref<string | null>(null)
+function scrollToReport(reportNo: string) {
+  // 用属性遍历匹配,避免依赖 CSS.escape(测试环境无该 API),reportNo 亦无需转义
+  const el = Array.from(document.querySelectorAll('[data-report-no]')).find(
+    (node) => node.getAttribute('data-report-no') === reportNo,
+  )
+  el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  return Boolean(el)
+}
 function linkToCounterpart(row: ReportRow) {
   const counterpart = counterpartReportNo(row)
   if (!counterpart) return
   focusPair(row)
-  const el = document.querySelector(`[data-report-no="${CSS.escape(counterpart)}"]`)
-  el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  // 对方已在当前页:直接滚动高亮
+  if (scrollToReport(counterpart)) return
+  // 对方在别的分页:按其报工单号筛选并回第一页,等结果返回后再定位(见下方 watch)
+  pendingLocateReportNo.value = counterpart
+  filters.keyword = counterpart
+  page.value = 1
 }
+function clearLocateFilter() {
+  pendingLocateReportNo.value = null
+  filters.keyword = ''
+  page.value = 1
+  clearFocus()
+}
+// 跨页定位过滤拉取到对方记录后:滚动到它并只高亮它(原单已不在本页,双向高亮退化为定位对方)
+watch(productionReports, (rows) => {
+  const target = pendingLocateReportNo.value
+  if (!target) return
+  if (rows.some((r) => r.reportNo === target)) {
+    void nextTick(() => {
+      scrollToReport(target)
+      focusedPair.value = new Set([target])
+      pendingLocateReportNo.value = null
+    })
+  }
+})
 
 // 冲销确认(破坏性动作,原因必填,A1 §2.5)。最终 reason = 原因标签[:备注],后端 MaximumLength(500)。
 const REVERSE_REASONS = [
@@ -151,9 +184,18 @@ const REASON_MAX_LENGTH = 500
 const reverseOpen = ref(false)
 const reverseTarget = ref<ReportRow | null>(null)
 const reverseForm = reactive({ reasonCode: '', remark: '' })
-// 幂等键标识"一次冲销意图":打开确认框时生成并保存,同意图的重试(响应超时/发布阶段失败,真机记录里
-// 出现过提交成功却返回 502)复用同一 key,命中后端 handler 的幂等重放分支;成功或关闭确认框后清除。
-const reverseIdempotencyKey = ref('')
+// 幂等键标识"一次冲销意图",以报工单号为准存活:同一报工从打开→(经确认框 Escape / 组件自身 close /
+// 「返回」后)重开→重试,始终复用同一 key,命中后端 handler 幂等重放分支(真机记录里出现过服务端已提交
+// 却返回 502)。**只在冲销成功后清除该报工的 key**,不因任何关闭路径(含 Escape)重置,避免未决意图换 key。
+const reverseKeys = new Map<string, string>()
+function reverseKeyFor(reportNo: string): string {
+  let key = reverseKeys.get(reportNo)
+  if (!key) {
+    key = `reverse-${reportNo}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    reverseKeys.set(reportNo, key)
+  }
+  return key
+}
 const requiresRemark = computed(() => reverseForm.reasonCode === 'other')
 const reverseReasonLabel = computed(
   () =>
@@ -178,18 +220,19 @@ const canSubmitReverse = computed(() => {
 })
 
 function openReverse(row: ReportRow) {
-  if (!canReport.value || !canReverse(row)) return
+  if (!canReport.value || !canReverse(row) || !row.reportNo) return
   reverseTarget.value = row
   reverseForm.reasonCode = ''
   reverseForm.remark = ''
-  // 一次意图一把 key,贯穿本次确认框的所有重试
-  reverseIdempotencyKey.value = `reverse-${row.reportNo}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  // 确保本意图 key 存在(重开复用同一 key,不重新生成)
+  reverseKeyFor(row.reportNo)
   reverseOpen.value = true
 }
-function closeReverse() {
-  reverseOpen.value = false
-  // 用户显式放弃本次冲销意图:清除 key,下次打开重新生成
-  reverseIdempotencyKey.value = ''
+// 统一处理确认框开关(替代 v-model:open):请求进行中禁止关闭——Escape / 点遮罩 / 组件自身 close 都拦下,
+// 避免未决冲销意图被中途关闭后重开换 key。
+function onReverseOpenChange(next: boolean) {
+  if (!next && reverseProductionReportPending.value) return
+  reverseOpen.value = next
 }
 async function submitReverse() {
   const row = reverseTarget.value
@@ -199,17 +242,18 @@ async function submitReverse() {
   try {
     const response = await reverseProductionReport(row.reportNo, {
       reason,
-      // 复用本次意图的 key(不每次重新生成),重试可命中后端幂等重放
-      idempotencyKey: reverseIdempotencyKey.value,
+      // 复用本报工意图的 key(不每次重新生成),超时/失败后重试或关闭重开都命中后端幂等重放
+      idempotencyKey: reverseKeyFor(row.reportNo),
     })
+    // 意图已成功兑现,清除该报工的 key
+    reverseKeys.delete(row.reportNo)
     reverseOpen.value = false
-    reverseIdempotencyKey.value = ''
     const reversalNo = response?.data?.reportNo
     notifySuccess(
       `已冲销报工 ${row.reportNo}${reversalNo ? `,生成冲销单 ${reversalNo}` : ''}；工单累计数量已回退。`,
     )
   } catch (error) {
-    // 失败保留 key:用户在同一确认框重试时复用,命中后端幂等重放,不产生第二次冲销意图
+    // 失败保留 key:同一确认框重试、或 Escape 关闭后重开,都复用同一 key 命中后端幂等重放,不产生第二次意图
     notifyError(error, '冲销报工失败,请稍后重试。')
   }
 }
@@ -275,6 +319,20 @@ function formatError(error: unknown) {
     </NvPageHeader>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+
+    <!-- 跨页互链定位:点击「查看冲销单/冲销自」时若对方在别页,按其单号筛选定位;给出可清除的说明 -->
+    <div
+      v-if="filters.keyword"
+      class="flex items-center justify-between gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm"
+    >
+      <span class="text-muted-foreground">
+        已按报工单「<span class="font-medium text-foreground">{{ filters.keyword }}</span
+        >」筛选以定位关联记录。
+      </span>
+      <NvButton size="sm" type="button" variant="outline" @click="clearLocateFilter">
+        清除筛选
+      </NvButton>
+    </div>
 
     <NvDataTable
       manual
@@ -407,8 +465,8 @@ function formatError(error: unknown) {
       </template>
     </NvDataTable>
 
-    <!-- 冲销确认(破坏性,原因必填),A1 §2.5 -->
-    <NvAlertDialog v-model:open="reverseOpen">
+    <!-- 冲销确认(破坏性,原因必填),A1 §2.5。用 :open + @update:open 统一拦截关闭(pending 时禁关) -->
+    <NvAlertDialog :open="reverseOpen" @update:open="onReverseOpenChange">
       <NvAlertDialogContent class="sm:max-w-lg">
         <NvAlertDialogHeader>
           <NvAlertDialogTitle>冲销报工 · {{ reverseTarget?.reportNo }}</NvAlertDialogTitle>
@@ -513,7 +571,7 @@ function formatError(error: unknown) {
             type="button"
             variant="outline"
             :disabled="reverseProductionReportPending"
-            @click="closeReverse"
+            @click="reverseOpen = false"
           >
             返回
           </NvButton>
