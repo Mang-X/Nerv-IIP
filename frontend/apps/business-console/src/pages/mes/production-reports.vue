@@ -58,6 +58,11 @@ const {
   productionReportsPending,
   productionReportsTotal,
   refreshProductionReports,
+  activateReverseDetail,
+  deactivateReverseDetail,
+  reverseProductionReportDetail,
+  reverseProductionReportDetailError,
+  reverseProductionReportDetailPending,
   reverseProductionReport,
   reverseProductionReportPending,
 } = useMesProductionReports()
@@ -256,7 +261,16 @@ const canSubmitReverse = computed(() => {
   if (!reverseForm.reasonCode) return false
   if (requiresRemark.value && !reverseForm.remark.trim()) return false
   if (finalReasonLength.value > REASON_MAX_LENGTH) return false
+  if (reverseProductionReportDetailPending.value || reverseProductionReportDetailError.value) return false
+  if (reverseProductionReportDetail.value?.report?.reportNo !== reverseTarget.value.reportNo)
+    return false
   return true
+})
+const reverseConsumedMaterialLots = computed(() => {
+  const detail = reverseProductionReportDetail.value
+  const targetReportNo = reverseTarget.value?.reportNo
+  if (!detail || !targetReportNo || detail.report?.reportNo !== targetReportNo) return []
+  return detail.consumedMaterialLots ?? []
 })
 
 function composeReason(reasonCode: string, remark: string): string {
@@ -272,6 +286,7 @@ function openReverse(row: ReportRow) {
   // 已提交过(reason 已冻结,结果未知)→ 恢复原因并锁定,重试沿用同一 fingerprint;否则空表单自由选。
   reverseForm.reasonCode = intent.reasonCode ?? ''
   reverseForm.remark = intent.remark ?? ''
+  activateReverseDetail(row.reportNo)
   reverseOpen.value = true
 }
 // 统一处理确认框开关(替代 v-model:open):请求进行中禁止关闭——Escape / 点遮罩 / 组件自身 close 都拦下,
@@ -279,6 +294,7 @@ function openReverse(row: ReportRow) {
 function onReverseOpenChange(next: boolean) {
   if (!next && reverseProductionReportPending.value) return
   reverseOpen.value = next
+  if (!next) deactivateReverseDetail()
 }
 // 「返回」= 明确放弃:该意图从未发送(reason 未冻结)则整个丢弃,下次打开生成新 key + timestamp + reason;
 // 已发送过的意图(结果未知)保留,以便重开沿用同一 fingerprint 命中幂等重放。
@@ -288,6 +304,7 @@ function cancelReverse() {
     reverseIntents.delete(reportNo)
   }
   reverseOpen.value = false
+  deactivateReverseDetail()
 }
 async function submitReverse() {
   const row = reverseTarget.value
@@ -315,6 +332,7 @@ async function submitReverse() {
     // 意图已成功兑现,清除该报工的意图
     reverseIntents.delete(row.reportNo)
     reverseOpen.value = false
+    deactivateReverseDetail()
     const reversalNo = response?.data?.reportNo
     notifySuccess(
       `已冲销报工 ${row.reportNo}${reversalNo ? `,生成冲销单 ${reversalNo}` : ''}；工单累计数量已回退。`,
@@ -606,9 +624,45 @@ async function dismissCandidate(candidateId?: string) {
               <dd class="font-medium">{{ formatDateTime(reverseTarget.reportedAtUtc) }}</dd>
             </div>
           </dl>
-          <p class="text-xs text-muted-foreground">
-            消耗批次与产出批次谱系将由后端随冲销整体回退(负向消耗),此处不逐条列示。
-          </p>
+          <div class="space-y-2 border-t pt-3">
+            <h3 class="text-sm font-medium">物料批次消耗</h3>
+            <p v-if="reverseProductionReportDetailPending" class="text-xs text-muted-foreground">
+              正在加载物料消耗明细…
+            </p>
+            <p
+              v-else-if="reverseProductionReportDetailError"
+              class="text-xs text-destructive"
+              role="alert"
+            >
+              物料消耗明细加载失败，请稍后重试。为避免不完整冲销，当前无法确认。
+            </p>
+            <p
+              v-else-if="reverseProductionReportDetail?.report?.reportNo !== reverseTarget.reportNo"
+              class="text-xs text-muted-foreground"
+            >
+              正在加载物料消耗明细…
+            </p>
+            <p
+              v-else-if="reverseConsumedMaterialLots.length === 0"
+              class="text-xs text-muted-foreground"
+            >
+              本次报工没有物料批次消耗。
+            </p>
+            <ul v-else class="space-y-2" aria-label="物料批次消耗明细">
+              <li
+                v-for="lot in reverseConsumedMaterialLots"
+                :key="`${lot.materialId}-${lot.materialLotId}-${lot.materialIssueRequestNo}`"
+                class="grid gap-1 rounded-md border px-3 py-2 text-xs sm:grid-cols-2"
+              >
+                <span>物料：{{ lot.materialId ?? '无' }}</span>
+                <span>物料批次：{{ lot.materialLotId ?? '无' }}</span>
+                <span>
+                  数量：{{ formatQuantity(lot.consumedQuantity) }} {{ lot.uomCode ?? '' }}
+                </span>
+                <span>领料申请：{{ lot.materialIssueRequestNo ?? '无' }}</span>
+              </li>
+            </ul>
+          </div>
         </section>
 
         <NvFieldGroup class="grid gap-3">

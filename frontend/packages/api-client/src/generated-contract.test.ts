@@ -83,6 +83,7 @@ import {
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
   getBusinessConsoleMesMaterialReadinessQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
+  getBusinessConsoleMesProductionReportQueryOptions,
   getBusinessConsoleMesProductionPlanReadinessQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
@@ -205,6 +206,7 @@ describe('generated API client contract', () => {
     expect(completeBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
     expect(getBusinessConsoleMesWipSummaryQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesProductionReportsQueryOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesProductionReportQueryOptions).toBeTypeOf('function')
     expect(recordBusinessConsoleMesDefectMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesRelatedQualityItemsQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions).toBeTypeOf('function')

@@ -17,6 +17,7 @@ import {
   getBusinessConsoleMesMaterialReadinessQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
   getBusinessConsoleMesProductionPlanReadinessQueryOptions,
+  getBusinessConsoleMesProductionReportQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
@@ -68,6 +69,8 @@ import {
   type BusinessConsoleMesProductionPlanListEnvelope,
   type BusinessConsoleMesProductionPlanRow,
   type BusinessConsoleMesProductionReportListEnvelope,
+  type BusinessConsoleMesProductionReportDetailEnvelope,
+  type BusinessConsoleMesProductionReportDetailResponse,
   type BusinessConsoleMesProductionReportRow,
   type BusinessConsoleMesTelemetryCandidateRow,
   type BusinessConsoleMesRecordDefectRequest,
@@ -1120,6 +1123,7 @@ export function useMesWipSummary() {
 export function useMesProductionReports() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
+  const reverseDetailReportNo = shallowRef('')
 
   const reportsQuery = useQuery(() =>
     withBusinessContextEnabled(
@@ -1129,6 +1133,17 @@ export function useMesProductionReports() {
       filters,
     ),
   )
+
+  const reverseDetailQuery = useQuery(() => ({
+    ...getBusinessConsoleMesProductionReportQueryOptions({
+      path: { reportNo: reverseDetailReportNo.value },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+      },
+    }),
+    enabled: hasBusinessContext(filters) && reverseDetailReportNo.value.trim().length > 0,
+  }))
 
   const reverseMutation = useMutation({
     ...reverseBusinessConsoleMesProductionReportMutationOptions(),
@@ -1163,6 +1178,24 @@ export function useMesProductionReports() {
     productionReportsPending: reportsQuery.isLoading,
     productionReportsTotal: computed(() => envelopeTotal(reportsQuery.data.value)),
     refreshProductionReports: () => refetchWithBusinessContext(filters, reportsQuery),
+    activateReverseDetail(reportNo: string) {
+      reverseDetailReportNo.value = reportNo.trim()
+    },
+    deactivateReverseDetail() {
+      reverseDetailReportNo.value = ''
+    },
+    reverseProductionReportDetail: computed<
+      BusinessConsoleMesProductionReportDetailResponse | undefined
+    >(() =>
+      reverseDetailReportNo.value
+        ? unwrapData<
+            BusinessConsoleMesProductionReportDetailResponse,
+            BusinessConsoleMesProductionReportDetailEnvelope
+          >(reverseDetailQuery.data.value)
+        : undefined,
+    ),
+    reverseProductionReportDetailError: reverseDetailQuery.error,
+    reverseProductionReportDetailPending: reverseDetailQuery.isLoading,
     reverseProductionReport: (
       reportNo: string,
       body: { reason: string; reversedAtUtc?: string; idempotencyKey?: string },
