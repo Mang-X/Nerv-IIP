@@ -26,7 +26,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(50, MesEndpointContracts.All.Count);
+        Assert.Equal(51, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -178,6 +178,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/production-reports"
             && x.PermissionCode == MesPermissionCodes.ReportingRead
             && x.OperationId == "listBusinessMesProductionReports");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/mes/production-reports/{reportNo}"
+            && x.PermissionCode == MesPermissionCodes.ReportingRead
+            && x.OperationId == "getBusinessMesProductionReport");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/mes/production-reports/{reportNo}/reverse"
@@ -1397,6 +1402,50 @@ public sealed class MesEndpointContractTests
         Assert.Equal("PRPT-002", Assert.Single(reports.Items).ReportNo);
         Assert.Equal(3, receipts.Total);
         Assert.Equal("FGR-002", Assert.Single(receipts.Items).RequestNo);
+    }
+
+    [Fact]
+    public async Task Production_report_detail_projects_all_consumed_lots_with_tenant_isolation()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-07-12T08:00:00Z");
+        dbContext.ProductionReports.AddRange(
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-001", "env-dev", "PRPT-DETAIL", "WO-001", "OP-10", 8m, 1m, false, now),
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-002", "env-dev", "PRPT-DETAIL", "WO-OTHER", "OP-20", 2m, 0m, false, now));
+        dbContext.ProductionReportMaterialConsumptions.AddRange(
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReportMaterialConsumption.Record("org-001", "env-dev", "PRPT-DETAIL", "WO-001", "OP-10", "MAT-001", "LOT-A", "KG", 2.5m, "MIR-001"),
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReportMaterialConsumption.Record("org-001", "env-dev", "PRPT-DETAIL", "WO-001", "OP-10", "MAT-001", "LOT-B", "KG", 3.5m, "MIR-002"),
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReportMaterialConsumption.Record("org-002", "env-dev", "PRPT-DETAIL", "WO-OTHER", "OP-20", "MAT-OTHER", "LOT-OTHER", "PCS", 1m, "MIR-OTHER"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var detail = await new GetProductionReportQueryHandler(dbContext).Handle(
+            new GetProductionReportQuery("org-001", "env-dev", "PRPT-DETAIL"),
+            CancellationToken.None);
+
+        Assert.Equal("PRPT-DETAIL", detail.Report.ReportNo);
+        Assert.Equal("WO-001", detail.Report.WorkOrderId);
+        Assert.Collection(detail.ConsumedMaterialLots.OrderBy(x => x.MaterialLotId),
+            first => Assert.Equal(new ConsumedMaterialLotFact("MAT-001", "LOT-A", 2.5m, "KG", "MIR-001"), first),
+            second => Assert.Equal(new ConsumedMaterialLotFact("MAT-001", "LOT-B", 3.5m, "KG", "MIR-002"), second));
+    }
+
+    [Fact]
+    public async Task Production_report_detail_rejects_missing_or_cross_tenant_report()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        dbContext.ProductionReports.Add(
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-002", "env-dev", "PRPT-HIDDEN", "WO-OTHER", "OP-20", 1m, 0m, false, DateTimeOffset.Parse("2026-07-12T08:00:00Z")));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new GetProductionReportQueryHandler(dbContext);
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new GetProductionReportQuery("org-001", "env-dev", "PRPT-MISSING"), CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new GetProductionReportQuery("org-001", "env-dev", "PRPT-HIDDEN"), CancellationToken.None));
     }
 
     [Fact]

@@ -108,6 +108,11 @@ public sealed record ListProductionReportsRequest(
     string? ShiftId = null,
     string? DeviceAssetId = null);
 
+public sealed record GetProductionReportRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string ReportNo);
+
 public sealed record ListTelemetryProductionReportCandidatesRequest(string OrganizationId, string EnvironmentId, string? Status = null,
     string? WorkCenterId = null, string? DeviceAssetId = null, DateTimeOffset? FromUtc = null, DateTimeOffset? ToUtc = null, int Skip = 0, int Take = 50);
 public sealed record GetTelemetryProductionReportCandidateRequest(string OrganizationId, string EnvironmentId, [property: RouteParam] TelemetryProductionReportCandidateId CandidateId);
@@ -981,6 +986,16 @@ public sealed class ListProductionReportsEndpoint(ISender sender)
     }
 }
 
+public sealed class GetProductionReportEndpoint(ISender sender)
+    : MesEndpoint<GetProductionReportRequest, GetProductionReportResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetProductionReportEndpoint>());
+
+    public override async Task HandleAsync(GetProductionReportRequest req, CancellationToken ct) =>
+        await Send.OkAsync(await sender.Send(
+            new GetProductionReportQuery(req.OrganizationId, req.EnvironmentId, req.ReportNo), ct), ct);
+}
+
 public sealed class ReverseProductionReportEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<ReverseProductionReportRequest, ReverseProductionReportResponse>
 {
@@ -1356,6 +1371,7 @@ public static class MesEndpointContracts
         new(typeof(GetWipSummaryEndpoint), "GET", "/api/business/v1/mes/wip", MesPermissionCodes.OperationsRead, "getBusinessMesWipSummary"),
         new(typeof(RecordProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingWrite, "recordBusinessMesProductionReport"),
         new(typeof(ListProductionReportsEndpoint), "GET", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingRead, "listBusinessMesProductionReports"),
+        new(typeof(GetProductionReportEndpoint), "GET", "/api/business/v1/mes/production-reports/{reportNo}", MesPermissionCodes.ReportingRead, "getBusinessMesProductionReport"),
         new(typeof(ReverseProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports/{reportNo}/reverse", MesPermissionCodes.ReportingWrite, "reverseBusinessMesProductionReport"),
         new(typeof(ListTelemetryProductionReportCandidatesEndpoint), "GET", "/api/business/v1/mes/telemetry-production-report-candidates", MesPermissionCodes.ReportingRead, "listBusinessMesTelemetryProductionReportCandidates"),
         new(typeof(GetTelemetryProductionReportCandidateEndpoint), "GET", "/api/business/v1/mes/telemetry-production-report-candidates/{candidateId}", MesPermissionCodes.ReportingRead, "getBusinessMesTelemetryProductionReportCandidate"),
