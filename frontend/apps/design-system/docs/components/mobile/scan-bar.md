@@ -18,7 +18,7 @@ function onScan(value) {
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <div style="display:flex;flex-direction:column;gap:12px;width:100%">
       <NvScanBar placeholder="对准条码 / 二维码" @scan="onScan" />
       <NvCellGroup>

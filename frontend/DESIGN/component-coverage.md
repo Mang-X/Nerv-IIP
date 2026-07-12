@@ -67,7 +67,7 @@
 | 下拉菜单        | `NvDropdownMenu`                                     | `NvMobileDropdownMenu`                  | `—`          | `—`                                              |
 | 气泡确认        | `NvPopconfirm`                                       | `—`                                     | `—`          | `—`                                              |
 | 文字提示        | `NvTooltip`                                          | `—`                                     | `—`          | `—`                                              |
-| 轻提示 / 通知   | `messagePro` · `notificationPro`（`NvNotifierHost`） | `NvMobileToast` · `NvNoticeBar`         | （复用 PC）  | `—`                                              |
+| 轻提示 / 通知   | `nvMessage` · `nvNotification`（`NvNotifierHost`） | `NvMobileToast` · `NvNoticeBar`         | （复用 PC）  | `—`                                              |
 | 告警表          | `—`                                                  | `—`                                     | `—`          | `NvAlarmTable`                                   |
 | 加载 / 骨架     | `NvLoader`                                           | `NvMobileSkeleton` · `NvMobileProgress` | `—`          | `—`                                              |
 | 空态 / 结果     | （原版 Empty 复用）                                  | `NvMobileEmpty` · `NvMobileResult`      | `—`          | `—`                                              |
@@ -87,7 +87,7 @@
 
 ## 经验总结（这轮重构沉淀）
 
-1. **三表面分层，尺寸/交互各自适配，勿混用**：桌面 `@nerv-iip/ui` 的 Pro 层（指针、紧凑 36–40px）/ 手机 `@nerv-iip/ui-mobile`（原生触控 40–48px）/ 平板看板 `ui/components/touch`（大触控 56–72px）。把看板大件用到手机会"肿大"。
+1. **三表面分层，尺寸/交互各自适配，勿混用**：桌面 `@nerv-iip/ui` 的 NvUI PC 层（指针、紧凑 36–40px）/ 手机 `@nerv-iip/ui-mobile`（原生触控 40–48px）/ 平板看板 `ui/components/touch`（大触控 56–72px）。把看板大件用到手机会"肿大"。
 2. **原版 shadcn 零改动**：所有定制走"复制重建 + 令牌"，不改 `components/ui/*`。新件命名避免与 ui 导出撞名。
 3. **令牌单一来源**：颜色只用语义令牌；填充色（`--brand`…）与**文字专用色（`--*-strong`）分离**，后者保证小号色调文字 ≥4.5:1（impeccable 对比度硬规则）。
 4. **动效成体系**：缓动令牌（`--ease-out-*`）、传达状态而非装饰、所有位移类动画带 `prefers-reduced-motion` 降级。手势件（SwipeCell/PullRefresh/Picker）pointer 驱动、仅水平手势接管。
@@ -96,14 +96,14 @@
 
 ## PC 覆盖度（对照 Arco Design）
 
-✅ 已建（Pro/原版）：Button · Badge/Tag · Card/Statistic(MetricCard) · Input · Select · Checkbox · Radio · Switch · TimePicker · **DatePicker(新)** · Tabs · Tooltip · Dialog(Modal) · Drawer(Sheet) · Popover · Dropdown · Breadcrumb · Pagination · **DataTablePro(新)** · **Descriptions(新)** · **Timeline(新)** · **Popconfirm(新)** · Progress · Skeleton · Spin(Loader) · Avatar · Alert · Message · Notification · Command(⌘K) · Table(基础) · Calendar · Charts(面积/折线/柱/环) · Empty(mobile有,PC可复用)
+✅ 已建（Pro/原版）：Button · Badge/Tag · Card/Statistic(MetricCard) · Input · Select · Checkbox · Radio · Switch · TimePicker · **DatePicker(新)** · Tabs · Tooltip · Dialog(Modal) · Drawer(Sheet) · Popover · Dropdown · Breadcrumb · Pagination · **NvDataTable(新)** · **Descriptions(新)** · **Timeline(新)** · **Popconfirm(新)** · Progress · Skeleton · Spin(Loader) · Avatar · Alert · Message · Notification · Command(⌘K) · Table(基础) · Calendar · Charts(面积/折线/柱/环) · Empty(mobile有,PC可复用)
 
 ⚠️ 部分 / ❌ 缺（按优先级）：
 
-- ~~**P1 DataTable Pro**~~ ✅ 已建 `pro/data-table/`，**三件独立可组合**：`DataTableToolbarPro`（标题+实时计数 · 快捷筛选分段 · 搜索 · 字段筛选 text/enum+chips+pip · 密度 · 刷新 · 更多菜单导出/打印 · 操作槽）、`DataTablePaginationPro`（可点击页码 · 首末/上下页 · **多页省略号，… 悬停切双 V 跳 5 页** · 每页 · 跳页）、`DataTablePro`（组合前两者 + 行选择/上下文批量条 + 排序 + 空态/加载骨架 + sticky 表头 + `tabs`/`tabKey` 快捷标签实时计数）。客户端管线，旧 `blocks/DataTable` 保留向后兼容。坑：reka Checkbox 是 `<button>`（labelable），套 `<label>` 会双触发抵消——选项行改纯 `<button role=checkbox>` + 装饰性 Checkbox；多语句内联 handler 会被 fmt 拆行致 Vue 解析失败，须收敛为命名方法。
-- ~~**P1 Descriptions 描述列表**~~ ✅ 已建 `pro/descriptions/`：键值详情，开放网格 + 带边框记录两态、列数响应式（窄屏单列）、item 跨列（带边框模式末项自动补满整行）、横/纵 label 布局、`#<key>` 值插槽。
-- ~~**P1 Timeline 时间线**~~ ✅ 已建 `pro/timeline/`：工序流转日志，不透明 tone 节点（线不穿节点）+ 连接线 + 标题/时间 label/描述、可选脉冲"进行中"尾节点、自定义 icon/空心点、`#<key>` 内容插槽。
-- ~~**P2 Popconfirm 气泡确认**~~ ✅ 已建 `pro/popconfirm/`：行内危险操作二次确认，Popover 锚定触发槽 + 警示图标 + 取消/确定（brand/danger 调）、`v-model:open` 可控 + async `loading`。
+- ~~**P1 DataTable**~~ ✅ 已建 `pc/data-table/`，并组合独立的 `pc/pagination/`：`NvDataTableToolbar`（标题+实时计数 · 快捷筛选分段 · 搜索 · 字段筛选 text/enum+chips+pip · 密度 · 刷新 · 更多菜单导出/打印 · 操作槽）、`NvPagination`（可点击页码 · 首末/上下页 · **多页省略号，… 悬停切双 V 跳 5 页** · 每页 · 跳页）、`NvDataTable`（组合前两者 + 行选择/上下文批量条 + 排序 + 空态/加载骨架 + sticky 表头 + `tabs`/`tabKey` 快捷标签实时计数）。客户端管线。坑：reka Checkbox 是 `<button>`（labelable），套 `<label>` 会双触发抵消——选项行改纯 `<button role=checkbox>` + 装饰性 Checkbox；多语句内联 handler 会被 fmt 拆行致 Vue 解析失败，须收敛为命名方法。
+- ~~**P1 Descriptions 描述列表**~~ ✅ 已建 `pc/descriptions/`：键值详情，开放网格 + 带边框记录两态、列数响应式（窄屏单列）、item 跨列（带边框模式末项自动补满整行）、横/纵 label 布局、`#<key>` 值插槽。
+- ~~**P1 Timeline 时间线**~~ ✅ 已建 `pc/timeline/`：工序流转日志，不透明 tone 节点（线不穿节点）+ 连接线 + 标题/时间 label/描述、可选脉冲"进行中"尾节点、自定义 icon/空心点、`#<key>` 内容插槽。
+- ~~**P2 Popconfirm 气泡确认**~~ ✅ 已建 `pc/popconfirm/`：行内危险操作二次确认，Popover 锚定触发槽 + 警示图标 + 取消/确定（brand/danger 调）、`v-model:open` 可控 + async `loading`。
 - **P2 Form 表单容器**：label/校验/错误信息编排（现有 Field 原版，未做 Pro 编排）。
 - **P2 InputNumber / Slider / Rate**：数值/范围/评分录入。
 - **P2 Result 结果页（PC）**：成功/失败/空大状态（mobile 已有，PC 未做）。
@@ -118,7 +118,7 @@
 
 - ~~**P1 Dialog 居中确认弹窗**~~ ✅ 已建 `ui-mobile/dialog/MobileDialog`：iOS 风居中确认（确认/取消），紧凑居中卡片 + hairline 分隔按钮行、brand/danger 调、默认模态（遮罩点击不关，可 `closeOnOverlay`）、zoom+fade 入场。
 - ~~**P2 Grid 宫格**~~ ✅ 已建 `ui-mobile/grid/MobileGrid`：图标+文字宫格，N 列、可选 hairline 边框/方形、角标(数字/点)、emit select。
-- ~~**P2 Toast 居中提示**~~ ✅ 已建 `ui-mobile/toast/MobileToast`：居中暗色 HUD（区别于顶部 messagePro），text/loading/success/error 图标态、自动消失(loading 持续)、可选遮罩、`v-model:show`。
+- ~~**P2 Toast 居中提示**~~ ✅ 已建 `ui-mobile/toast/MobileToast`：居中暗色 HUD（区别于顶部 nvMessage），text/loading/success/error 图标态、自动消失(loading 持续)、可选遮罩、`v-model:show`。
 - ~~**P2 Fab 悬浮按钮**~~ ✅ 已建 `ui-mobile/fab/Fab`：锚定容器右下角(absolute，留在设备框内)，单动作或速拨(actions)、扩展 pill 文字、brand/default 调、位置变体。
 - **P2 Skeleton / Progress（mobile 专版）**：可先复用 ui 的，必要时做移动尺度。
 - **P3 Swiper 轮播 · IndexBar 索引 · TextArea · Upload · CountDown · Sticky**。

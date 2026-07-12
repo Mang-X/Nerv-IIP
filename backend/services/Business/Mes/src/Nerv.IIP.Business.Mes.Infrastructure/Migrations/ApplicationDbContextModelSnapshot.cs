@@ -1145,12 +1145,35 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id.");
 
+                    b.Property<string>("ProductionReportId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("production_report_id")
+                        .HasComment("Production report aggregate id created by confirmation.");
+
                     b.Property<string>("ReportingMode")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("reporting_mode")
                         .HasComment("Configured telemetry report mode: posted or draft.");
+
+                    b.Property<string>("ResolutionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("resolution_reason")
+                        .HasComment("Operator supplied dismissal reason when dismissed.");
+
+                    b.Property<DateTimeOffset?>("ResolvedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolved_at_utc")
+                        .HasComment("UTC time when the candidate reached a terminal state.");
+
+                    b.Property<string>("ResolvedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("resolved_by")
+                        .HasComment("Authenticated actor that confirmed or dismissed the candidate.");
 
                     b.Property<string>("SourceIdempotencyKey")
                         .IsRequired()
@@ -1160,11 +1183,12 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasComment("IndustrialTelemetry event idempotency key; unique candidate source boundary.");
 
                     b.Property<string>("Status")
+                        .IsConcurrencyToken()
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("status")
-                        .HasComment("Candidate status: draft or pending-confirmation.");
+                        .HasComment("Candidate lifecycle status: draft, pending-confirmation, confirmed, or dismissed; used as an optimistic concurrency predicate.");
 
                     b.Property<string>("SuspensionReason")
                         .HasMaxLength(100)
@@ -1203,6 +1227,61 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.ToTable("telemetry_production_report_candidates", "mes", t =>
                         {
                             t.HasComment("MES telemetry count deltas awaiting manual confirmation or retained as configured report drafts.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.TelemetryProductionReportCandidateTransition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Transition id.");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("actor")
+                        .HasComment("Authenticated transition actor.");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("candidate_id")
+                        .HasComment("Owning telemetry candidate id.");
+
+                    b.Property<string>("FromStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("from_status")
+                        .HasComment("Status before the transition.");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc")
+                        .HasComment("UTC transition time.");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason")
+                        .HasComment("Optional human disposition reason.");
+
+                    b.Property<string>("ToStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("to_status")
+                        .HasComment("Status after the transition.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CandidateId", "OccurredAtUtc")
+                        .HasDatabaseName("ix_telemetry_candidate_transitions_candidate_time");
+
+                    b.ToTable("telemetry_production_report_candidate_transitions", "mes", t =>
+                        {
+                            t.HasComment("Immutable audit history for telemetry report candidate lifecycle transitions.");
                         });
                 });
 
@@ -2368,6 +2447,15 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasConstraintName("fk_report_material_consumptions_reports");
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.TelemetryProductionReportCandidateTransition", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.TelemetryProductionReportCandidate", null)
+                        .WithMany("Transitions")
+                        .HasForeignKey("CandidateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate.DefectRecord", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate.WorkOrder", null)
@@ -2436,6 +2524,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         });
 
                     b.Navigation("SourcePlanReference");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.TelemetryProductionReportCandidate", b =>
+                {
+                    b.Navigation("Transitions");
                 });
 #pragma warning restore 612, 618
         }

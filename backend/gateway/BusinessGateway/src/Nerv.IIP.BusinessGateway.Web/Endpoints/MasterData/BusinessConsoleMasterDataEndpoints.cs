@@ -661,6 +661,13 @@ public sealed class BusinessConsoleRegisterDeviceAssetRequestValidator : Validat
         RuleFor(x => x.AssetClassCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Manufacturer).NotEmpty().MaximumLength(200);
         RuleFor(x => x.SerialNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PurchaseCost).GreaterThanOrEqualTo(0).When(x => x.PurchaseCost.HasValue);
+        RuleFor(x => x.PurchaseCurrencyCode).MaximumLength(20);
+        RuleFor(x => x.SupplierPartnerCode).MaximumLength(100);
+        RuleFor(x => x.SiteCode).MaximumLength(100);
+        RuleFor(x => x.WorkshopCode).MaximumLength(100);
+        RuleFor(x => x.StationCode).MaximumLength(100);
+        RuleFor(x => x.ParentDeviceId).MaximumLength(100);
         RuleFor(x => x.CapacityUomCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.Criticality).NotEmpty().MaximumLength(100);
         RuleFor(x => x.MaximumCapacity).GreaterThanOrEqualTo(x => x.MinimumCapacity)

@@ -9,6 +9,7 @@ import DefaultTheme from 'vitepress/theme'
 // pagination / dialog collapse to zero padding). Importing style.css first pins the
 // order. Do NOT move this below the component imports.
 import './style.css'
+import '@dhx/trial-gantt/codebase/dhtmlxgantt.css'
 import Demo from './Demo.vue'
 import Layout from './Layout.vue'
 import MobileDoc from './MobileDoc.vue'

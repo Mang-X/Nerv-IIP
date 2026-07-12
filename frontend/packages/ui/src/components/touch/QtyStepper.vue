@@ -46,7 +46,7 @@ function inc() {
   >
     <button
       type="button"
-      class="ds-step flex w-14 items-center justify-center text-foreground transition-colors hover:bg-muted active:bg-accent disabled:opacity-40"
+      class="nv-step flex w-14 items-center justify-center text-foreground transition-colors hover:bg-muted active:bg-accent disabled:opacity-40"
       :disabled="!canDec"
       aria-label="减少"
       @click="dec"
@@ -60,7 +60,7 @@ function inc() {
     </div>
     <button
       type="button"
-      class="ds-step flex w-14 items-center justify-center text-foreground transition-colors hover:bg-muted active:bg-accent disabled:opacity-40"
+      class="nv-step flex w-14 items-center justify-center text-foreground transition-colors hover:bg-muted active:bg-accent disabled:opacity-40"
       :disabled="!canInc"
       aria-label="增加"
       @click="inc"
@@ -72,7 +72,7 @@ function inc() {
 
 <style scoped>
 @layer nv-components {
-  .ds-step {
+  .nv-step {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
   }

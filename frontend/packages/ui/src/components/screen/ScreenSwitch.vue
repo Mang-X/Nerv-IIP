@@ -89,7 +89,7 @@ function onKey(e: KeyboardEvent) {
     transform: translateX(22px);
     background: linear-gradient(180deg, #ffffff, #d8eef4);
   }
-  /* press — shrink the handle a hair, no bounce (unified with SwitchPro's scale 0.86) */
+  /* press — shrink the handle a hair, no bounce (unified with NvSwitch's scale 0.86) */
   .nv-scr-sw:active:not(:disabled) .nv-scr-sw-handle {
     transform: scale(0.86);
   }

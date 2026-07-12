@@ -19,7 +19,7 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
 ## 完整外壳
 
 <Demo>
-<div class="ds-shell-demo w-full">
+<div class="nv-shell-demo w-full">
   <NvAppShellInset collapsible="icon">
     <template #sidebar-header>
       <NvSidebarBrand name="Nerv-IIP" sub="总装一厂 · 早班" logo="N" />
@@ -72,17 +72,17 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
 /* 文档内把全屏外壳收进一个有界容器预览（真实使用时占满视口）。
    transform 让本容器成为 fixed 定位的包含块——Sidebar 的 `position:fixed` 容器
    于是锚定到这个预览框而非视口，icon 折叠交互即可在文档内正常工作。 */
-.ds-shell-demo {
+.nv-shell-demo {
   height: 480px;
   overflow: hidden;
   border-radius: 12px;
   border: 1px solid var(--border);
   transform: translateZ(0);
 }
-.ds-shell-demo [data-slot='sidebar-wrapper'],
-.ds-shell-demo .group\/sidebar-wrapper { min-height: 0 !important; height: 100% !important; }
+.nv-shell-demo [data-slot='sidebar-wrapper'],
+.nv-shell-demo .group\/sidebar-wrapper { min-height: 0 !important; height: 100% !important; }
 /* 固定定位的侧栏容器原为 h-svh（整屏高），收进预览框高度 */
-.ds-shell-demo [data-slot='sidebar-container'] { height: 100% !important; }
+.nv-shell-demo [data-slot='sidebar-container'] { height: 100% !important; }
 </style>
 
 ```vue

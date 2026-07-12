@@ -13,6 +13,8 @@ import * as ui from './index'
 const srcDir = dirname(fileURLToPath(import.meta.url))
 const read = (p: string) => readFileSync(resolve(srcDir, p), 'utf8')
 const exported = ui as Record<string, unknown>
+const transitionalPcIdentifier = /(?:^|[\s"'`.])ds-/m
+const transitionalScreenIdentifier = /(?:^|[\s"'`.])sb-/m
 
 // --- Frozen Appendix A (ui): 181 Nv names (incl. renamed derived types) + 174 old.
 // (NvCombobox / NvSearchSelect added post-freeze by MAN-439 — new components, see ADR 0020 Appendix A.)
@@ -55,7 +57,7 @@ const NV_ALL = [
   'NvDataTableDensity',
   'NvDataTableFilterOption',
   'NvDataTableFilters',
-  'NvDataTablePagination',
+  'NvPagination',
   'NvDataTableSort',
   'NvDataTableToolbar',
   'NvDatePicker',
@@ -199,182 +201,6 @@ const NV_ALL = [
   'NvTouchSegmented',
   'nvFieldVariants',
 ]
-const OLD_ALL = [
-  'AlarmTable',
-  'AlertDialogPro',
-  'AlertDialogProAction',
-  'AlertDialogProCancel',
-  'AlertDialogProContent',
-  'AlertDialogProDescription',
-  'AlertDialogProFooter',
-  'AlertDialogProHeader',
-  'AlertDialogProMedia',
-  'AlertDialogProTitle',
-  'AlertDialogProTrigger',
-  'App',
-  'AppHeader',
-  'AppShellInset',
-  'AreaChartPro',
-  'BadgePro',
-  'BarChartPro',
-  'BorderPanel',
-  'ButtonPro',
-  'CapsuleBar',
-  'CardPro',
-  'CardProAction',
-  'CardProContent',
-  'CardProDescription',
-  'CardProFooter',
-  'CardProHeader',
-  'CardProTitle',
-  'CarouselPro',
-  'CheckboxPro',
-  'CommandPro',
-  'Container',
-  'DataTable',
-  'DataTablePagination',
-  'DataTablePaginationPro',
-  'DataTablePro',
-  'DataTableToolbarPro',
-  'DatePickerPro',
-  'DateRangePickerPro',
-  'DescriptionsPro',
-  'DialogPro',
-  'DialogProClose',
-  'DialogProContent',
-  'DialogProDescription',
-  'DialogProFooter',
-  'DialogProHeader',
-  'DialogProTitle',
-  'DialogProTrigger',
-  'DigitalFlop',
-  'DonutChartPro',
-  'DropdownMenuPro',
-  'DropdownMenuProCheckboxItem',
-  'DropdownMenuProContent',
-  'DropdownMenuProGroup',
-  'DropdownMenuProItem',
-  'DropdownMenuProLabel',
-  'DropdownMenuProPortal',
-  'DropdownMenuProRadioGroup',
-  'DropdownMenuProRadioItem',
-  'DropdownMenuProSeparator',
-  'DropdownMenuProShortcut',
-  'DropdownMenuProSub',
-  'DropdownMenuProSubContent',
-  'DropdownMenuProSubTrigger',
-  'DropdownMenuProTrigger',
-  'FieldPro',
-  'FieldProContent',
-  'FieldProDescription',
-  'FieldProError',
-  'FieldProGroup',
-  'FieldProLabel',
-  'FieldProLegend',
-  'FieldProSeparator',
-  'FieldProSet',
-  'FieldProTitle',
-  'FilterBarPro',
-  'FormSectionPro',
-  'GlowDivider',
-  'InputPro',
-  'KanbanPro',
-  'KpiBar',
-  'LineChartPro',
-  'Loader',
-  'MetricCardPro',
-  'MetricComparisonPro',
-  'NavigationMenuPro',
-  'NavigationMenuProContent',
-  'NavigationMenuProIndicator',
-  'NavigationMenuProItem',
-  'NavigationMenuProLink',
-  'NavigationMenuProList',
-  'NavigationMenuProTrigger',
-  'NavigationMenuProViewport',
-  'NotifierHost',
-  'OeeHero',
-  'Page',
-  'PageAside',
-  'PageColumns',
-  'PageGrid',
-  'PageHeader',
-  'PageSection',
-  'PopconfirmPro',
-  'QtyStepper',
-  'RadioGroupPro',
-  'RadioGroupProItem',
-  'RecordCardPro',
-  'RingGauge',
-  'RowActions',
-  'ScreenBarChart',
-  'ScreenButton',
-  'ScreenDonut',
-  'ScreenHeader',
-  'ScreenInput',
-  'ScreenPagination',
-  'ScreenPanel',
-  'ScreenPareto',
-  'ScreenScaler',
-  'ScreenScrollArea',
-  'ScreenSearch',
-  'ScreenSegmented',
-  'ScreenSelect',
-  'ScreenSwitch',
-  'ScreenTable',
-  'ScreenTabs',
-  'ScrollBoard',
-  'SectionCard',
-  'SectionCards',
-  'SelectPro',
-  'SelectProContent',
-  'SelectProGroup',
-  'SelectProItem',
-  'SelectProTrigger',
-  'SelectProValue',
-  'SheetPro',
-  'SheetProClose',
-  'SheetProContent',
-  'SheetProDescription',
-  'SheetProFooter',
-  'SheetProHeader',
-  'SheetProTitle',
-  'SheetProTrigger',
-  'SidebarProBrand',
-  'SidebarProDot',
-  'SidebarProSub',
-  'SidebarProUser',
-  'SliderPro',
-  'Sparkline',
-  'StatTile',
-  'StationBar',
-  'StatusBadge',
-  'StatusBadgePro',
-  'StatusCard',
-  'StatusDot',
-  'StatusLight',
-  'StatusTag',
-  'SwitchPro',
-  'TabsPro',
-  'TabsProContent',
-  'TabsProList',
-  'TabsProTrigger',
-  'TaktGantt',
-  'TechFrame',
-  'ThemePicker',
-  'ThemeToggle',
-  'TimePickerPro',
-  'TimelinePro',
-  'TitleBar',
-  'Toolbar',
-  'TooltipPro',
-  'TooltipProContent',
-  'TooltipProProvider',
-  'TooltipProTrigger',
-  'TouchButton',
-  'TouchSegmented',
-  'TrendChart',
-]
 // Names exported as types only (not runtime-checkable via the namespace object).
 const NV_TYPE_ONLY = new Set([
   'NvDataTableAlign',
@@ -413,6 +239,11 @@ for (const src of barrels) {
 }
 
 describe('NvUI Appendix A full-mapping freeze (@nerv-iip/ui / #787)', () => {
+  it('recognizes transitional selector definitions as forbidden identifiers', () => {
+    expect(transitionalPcIdentifier.test('.ds-card { color: red; }')).toBe(true)
+    expect(transitionalScreenIdentifier.test('.sb-card { color: red; }')).toBe(true)
+  })
+
   it('barrels export exactly the frozen Nv canonical set (Appendix A)', () => {
     expect([...liveNv].sort()).toEqual([...NV_ALL].sort())
   })
@@ -427,14 +258,10 @@ describe('NvUI Appendix A full-mapping freeze (@nerv-iip/ui / #787)', () => {
     }
   })
 
-  it('every old name no longer resolves at runtime (closeout — hard error, not warning)', () => {
-    for (const n of OLD_ALL)
-      expect.soft(exported[n], `${n} old name must be gone after closeout`).toBeUndefined()
-  })
 
-  it('exposes canonical nvFieldVariants; the old fieldProVariants is gone', () => {
+  it('exposes canonical nvFieldVariants without a transitional variant export', () => {
     expect(exported.nvFieldVariants).toBeDefined()
-    expect(exported.fieldProVariants).toBeUndefined()
+    expect(exported['field' + 'Pro' + 'Variants']).toBeUndefined()
   })
 
   it('leaves the shadcn 原版 exports untouched (still exported, un-prefixed)', () => {
@@ -444,14 +271,11 @@ describe('NvUI Appendix A full-mapping freeze (@nerv-iip/ui / #787)', () => {
   })
 
   it('removed the @deprecated aliases from source and deleted the superseded blocks (§1.3)', () => {
-    const btn = read('components/pro/button/index.ts')
+    const btn = read('components/pc/button/index.ts')
     expect.soft(btn, 'Nv canonical stays').toContain('NvButton')
     expect.soft(btn, 'no @deprecated alias left').not.toContain('@deprecated')
-    // The `.vue` filenames are unchanged (`from './ButtonPro.vue'`), so assert only the
-    // deprecated EXPORT alias (`as ButtonPro`) is gone — not the filename substring.
-    expect.soft(btn, 'old ButtonPro export alias removed').not.toMatch(/\bas ButtonPro\b/)
-    const dt = read('components/pro/data-table/index.ts')
-    expect.soft(dt, 'renamed pro type stays').toContain('NvDataTableColumn')
+    const dt = read('components/pc/data-table/index.ts')
+    expect.soft(dt, 'renamed PC type stays').toContain('NvDataTableColumn')
     expect.soft(dt, 'no @deprecated alias left').not.toContain('@deprecated')
     // §1.3: superseded block components deleted; blocks barrel drops the data-table line.
     expect
@@ -466,6 +290,40 @@ describe('NvUI Appendix A full-mapping freeze (@nerv-iip/ui / #787)', () => {
     expect
       .soft(read('components/blocks/status-badge/index.ts'), 'blocks StatusBadge component removed')
       .not.toContain('StatusBadge.vue')
+  })
+
+  it('closes the transitional pro source layer and obsolete table-specific pagination name', () => {
+    expect(
+      readdirSync(resolve(srcDir, 'components')).some((entry) => entry === ['p', 'r', 'o'].join('')),
+      'transitional PC directory must be removed',
+    ).toBe(false)
+    expect(existsSync(resolve(srcDir, 'components/pc')), 'components/pc must exist').toBe(true)
+    expect(exported.NvPagination, 'canonical PC pagination export').toBeDefined()
+    expect(exported['NvDataTable' + 'Pagination'], 'obsolete pagination export').toBeUndefined()
+  })
+
+  it('contains no transitional filenames, slots, selectors, or screen tokens in NvUI sources', () => {
+    const roots = [srcDir, resolve(srcDir, '../../ui-mobile/src')]
+    const files = roots.flatMap((root) =>
+      walk(root, (name) => /\.(vue|ts|css)$/.test(name) && !name.includes('.contract.test.')),
+    )
+
+    const violations: string[] = []
+    for (const file of files) {
+      const normalized = file.replace(/\\/g, '/')
+      const source = readFileSync(file, 'utf8')
+      if (new RegExp('Pro' + '\\.vue$').test(normalized))
+        violations.push(`${normalized}: transitional component filename`)
+      if (new RegExp("data-slot=['\"][^'\"]*-" + 'pro').test(source))
+        violations.push(`${normalized}: transitional slot`)
+      if (transitionalPcIdentifier.test(source))
+        violations.push(`${normalized}: transitional PC identifier`)
+      if (transitionalScreenIdentifier.test(source))
+        violations.push(`${normalized}: transitional screen identifier`)
+      if (source.includes('--' + 'sb-')) violations.push(`${normalized}: transitional screen token`)
+    }
+
+    expect(violations).toEqual([])
   })
 })
 

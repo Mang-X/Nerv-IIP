@@ -3024,6 +3024,67 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     materialIssueRequestNo?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesTelemetryCandidateListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateRow>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateRow = {
+    candidateId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    status?: string;
+    reportingMode?: string;
+    deviceAssetId?: string;
+    tagKey?: string;
+    goodQuantity?: number;
+    bucketStartUtc?: string;
+    bucketEndUtc?: string;
+    workCenterId?: string | null;
+    workOrderId?: string | null;
+    operationTaskId?: string | null;
+    suspensionReason?: string | null;
+    sourceIdempotencyKey?: string;
+    resolutionReason?: string | null;
+    resolvedBy?: string | null;
+    resolvedAtUtc?: string | null;
+    productionReportId?: string | null;
+    transitions?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateTransition>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateTransition = {
+    fromStatus?: string;
+    toStatus?: string;
+    actor?: string;
+    reason?: string | null;
+    occurredAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesTelemetryCandidateRow = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateRow | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateDetailRequest = {
+    [key: string]: never;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidatePromoteRequest = {
+    workOrderId?: string;
+    operationTaskId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateDismissRequest = {
+    reason?: string;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectRequest = {
     organizationId?: string;
     environmentId?: string;
@@ -3277,6 +3338,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     precision?: number | null;
     roundingMode?: string | null;
     deviceAssetId?: string | null;
+    purchaseDate?: string | null;
+    purchaseCost?: number | null;
+    purchaseCurrencyCode?: string | null;
+    warrantyExpiresOn?: string | null;
+    supplierPartnerCode?: string | null;
+    stationCode?: string | null;
+    parentDeviceId?: string | null;
+    retiredOn?: string | null;
     creditLimit?: number | null;
     creditCurrencyCode?: string | null;
 };
@@ -3460,6 +3529,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     paidMinutes?: number | null;
     plantCode?: string | null;
     lineCode?: string | null;
+    workshopCode?: string | null;
     capacityMinutesPerDay?: number | null;
     resourceKind?: string | null;
     defaultCalendarCode?: string | null;
@@ -3470,6 +3540,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     model?: string | null;
     manufacturer?: string | null;
     serialNo?: string | null;
+    purchaseDate?: string | null;
+    purchaseCost?: number | null;
+    purchaseCurrencyCode?: string | null;
+    warrantyExpiresOn?: string | null;
+    supplierPartnerCode?: string | null;
+    stationCode?: string | null;
+    parentDeviceId?: string | null;
+    retiredOn?: string | null;
+    retired?: boolean | null;
+    components?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent> | null;
     minimumCapacity?: number | null;
     maximumCapacity?: number | null;
     capacityUomCode?: string | null;
@@ -3496,6 +3576,13 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     skillLevel?: string | null;
     creditLimit?: number | null;
     creditCurrencyCode?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent = {
+    componentCode?: string;
+    componentName?: string;
+    quantity?: number;
+    critical?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkCalendarWorkingTime = {
@@ -3559,6 +3646,15 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
     model?: string | null;
     manufacturer?: string | null;
     serialNo?: string | null;
+    purchaseDate?: string | null;
+    purchaseCost?: number | null;
+    purchaseCurrencyCode?: string | null;
+    warrantyExpiresOn?: string | null;
+    supplierPartnerCode?: string | null;
+    stationCode?: string | null;
+    parentDeviceId?: string | null;
+    retiredOn?: string | null;
+    components?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent> | null;
     minimumCapacity?: number | null;
     maximumCapacity?: number | null;
     capacityUomCode?: string | null;
@@ -3719,6 +3815,17 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
         [key: string]: string;
     } | null;
     idempotencyKey?: string | null;
+    purchaseDate?: string | null;
+    purchaseCost?: number | null;
+    purchaseCurrencyCode?: string | null;
+    warrantyExpiresOn?: string | null;
+    supplierPartnerCode?: string | null;
+    siteCode?: string | null;
+    workshopCode?: string | null;
+    stationCode?: string | null;
+    parentDeviceId?: string | null;
+    retiredOn?: string | null;
+    components?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateShiftRequest = {
@@ -4027,6 +4134,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     sparePartCostAmount?: number | null;
     externalServiceCostAmount?: number | null;
     costCurrencyCode?: string | null;
+    warrantyStatus?: string | null;
+    warrantyExpiresOn?: string | null;
+    supplierPartnerCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderListRequest = {
@@ -11003,6 +11113,139 @@ export type RecordBusinessConsoleMesProductionReportResponses = {
 };
 
 export type RecordBusinessConsoleMesProductionReportResponse = RecordBusinessConsoleMesProductionReportResponses[keyof RecordBusinessConsoleMesProductionReportResponses];
+
+export type ListBusinessConsoleMesTelemetryProductionReportCandidatesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        status?: string | null;
+        workCenterId?: string | null;
+        deviceAssetId?: string | null;
+        fromUtc?: string | null;
+        toUtc?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/mes/telemetry-production-report-candidates';
+};
+
+export type ListBusinessConsoleMesTelemetryProductionReportCandidatesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleMesTelemetryProductionReportCandidatesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesTelemetryCandidateListResponse;
+};
+
+export type ListBusinessConsoleMesTelemetryProductionReportCandidatesResponse = ListBusinessConsoleMesTelemetryProductionReportCandidatesResponses[keyof ListBusinessConsoleMesTelemetryProductionReportCandidatesResponses];
+
+export type GetBusinessConsoleMesTelemetryProductionReportCandidateData = {
+    body?: never;
+    path: {
+        candidateId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/telemetry-production-report-candidates/{candidateId}';
+};
+
+export type GetBusinessConsoleMesTelemetryProductionReportCandidateErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleMesTelemetryProductionReportCandidateResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesTelemetryCandidateRow;
+};
+
+export type GetBusinessConsoleMesTelemetryProductionReportCandidateResponse = GetBusinessConsoleMesTelemetryProductionReportCandidateResponses[keyof GetBusinessConsoleMesTelemetryProductionReportCandidateResponses];
+
+export type PromoteBusinessConsoleMesTelemetryProductionReportCandidateData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidatePromoteRequest;
+    path: {
+        candidateId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/telemetry-production-report-candidates/{candidateId}/promote';
+};
+
+export type PromoteBusinessConsoleMesTelemetryProductionReportCandidateErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PromoteBusinessConsoleMesTelemetryProductionReportCandidateResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordProductionReportResponse;
+};
+
+export type PromoteBusinessConsoleMesTelemetryProductionReportCandidateResponse = PromoteBusinessConsoleMesTelemetryProductionReportCandidateResponses[keyof PromoteBusinessConsoleMesTelemetryProductionReportCandidateResponses];
+
+export type DismissBusinessConsoleMesTelemetryProductionReportCandidateData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateDismissRequest;
+    path: {
+        candidateId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/telemetry-production-report-candidates/{candidateId}/dismiss';
+};
+
+export type DismissBusinessConsoleMesTelemetryProductionReportCandidateErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type DismissBusinessConsoleMesTelemetryProductionReportCandidateResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type DismissBusinessConsoleMesTelemetryProductionReportCandidateResponse = DismissBusinessConsoleMesTelemetryProductionReportCandidateResponses[keyof DismissBusinessConsoleMesTelemetryProductionReportCandidateResponses];
 
 export type RecordBusinessConsoleMesDefectData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectRequest;

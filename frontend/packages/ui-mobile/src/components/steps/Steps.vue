@@ -37,7 +37,7 @@ withDefaults(
         aria-hidden="true"
       >
         <span
-          class="ds-step-fill block h-full rounded-full bg-brand"
+          class="nv-m-step-fill block h-full rounded-full bg-brand"
           :style="{ width: i <= current ? '100%' : '0%' }"
         />
       </span>
@@ -45,14 +45,14 @@ withDefaults(
       <span
         :class="
           cn(
-            'ds-step-node relative z-10 grid size-7 place-items-center rounded-full border-2 text-xs font-medium tabular-nums',
+            'nv-m-step-node relative z-10 grid size-7 place-items-center rounded-full border-2 text-xs font-medium tabular-nums',
             i < current && 'border-brand bg-brand text-brand-foreground',
             i === current && 'border-brand bg-card text-brand ring-4 ring-brand/12',
             i > current && 'border-border bg-card text-muted-foreground',
           )
         "
       >
-        <Transition name="ds-step-check" mode="out-in">
+        <Transition name="nv-m-step-check" mode="out-in">
           <Check v-if="i < current" key="done" class="size-4" aria-hidden="true" />
           <span v-else :key="`n${i}`">{{ i + 1 }}</span>
         </Transition>
@@ -74,31 +74,31 @@ withDefaults(
 
 <style scoped>
 @layer nv-components {
-  .ds-step-fill {
+  .nv-m-step-fill {
     transition: width 0.45s var(--nv-ease-out-expo);
   }
-  .ds-step-node {
+  .nv-m-step-node {
     transition:
       background-color 0.3s var(--nv-ease-out-quart, ease-out),
       border-color 0.3s var(--nv-ease-out-quart, ease-out),
       box-shadow 0.3s var(--nv-ease-out-quart, ease-out);
   }
-  .ds-step-check-enter-active,
-  .ds-step-check-leave-active {
+  .nv-m-step-check-enter-active,
+  .nv-m-step-check-leave-active {
     transition:
       opacity 0.18s ease,
       transform 0.18s var(--nv-ease-out-quart);
   }
-  .ds-step-check-enter-from,
-  .ds-step-check-leave-to {
+  .nv-m-step-check-enter-from,
+  .nv-m-step-check-leave-to {
     opacity: 0;
     transform: scale(0.5);
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-step-fill,
-    .ds-step-node,
-    .ds-step-check-enter-active,
-    .ds-step-check-leave-active {
+    .nv-m-step-fill,
+    .nv-m-step-node,
+    .nv-m-step-check-enter-active,
+    .nv-m-step-check-leave-active {
       transition: none;
     }
   }

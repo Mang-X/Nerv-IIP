@@ -103,7 +103,19 @@ beforeEach(() => {
   state.recordInspection.mockClear()
   state.query = { deviceAssetId: 'DEV-PRESS-01', sourceAlarmId: 'ALARM-9001' }
   state.inspections = []
-  state.workOrders = []
+  // 默认一张在保工单：既覆盖保修列渲染（在保 / 供应商），也让列表非空。
+  state.workOrders = [
+    {
+      workOrderId: '11111111-2222-3333-4444-55555555abcd',
+      deviceAssetId: 'DEV-PRESS-01',
+      priority: 'high',
+      status: 'open',
+      openedAtUtc: '2026-07-06T00:00:00Z',
+      warrantyStatus: 'in-warranty',
+      warrantyExpiresOn: '2027-01-14',
+      supplierPartnerCode: 'SUP-ACME',
+    },
+  ]
   pinia = createPinia()
   setActivePinia(pinia)
   useAuthStore().$patch({
@@ -117,6 +129,8 @@ describe('maintenance work orders page', () => {
     await flushPromises()
 
     expect(document.body.textContent).toContain('新建维护工单')
+    expect(document.body.textContent).toContain('在保')
+    expect(document.body.textContent).toContain('SUP-ACME')
     expect(document.body.querySelector<HTMLInputElement>('#mwo-device')?.value).toBe('DEV-PRESS-01')
     expect(document.body.querySelector<HTMLInputElement>('#mwo-alarm')?.value).toBe('ALARM-9001')
   })

@@ -1,16 +1,16 @@
 ---
 title: NvDataTable 数据表格
-pageClass: ds-wide
+pageClass: nv-wide
 ---
 
 <script setup>
 import {
   NvDataTable,
   NvDataTableToolbar,
-  NvDataTablePagination,
+  NvPagination,
   NvButton,
   NvStatusBadge,
-  messagePro,
+  nvMessage,
 } from '@nerv-iip/ui'
 import { PlusIcon, ListFilterIcon } from 'lucide-vue-next'
 import { ref } from 'vue'
@@ -73,7 +73,7 @@ const pageSize = ref(10)
 
 # NvDataTable 数据表格
 
-完整的高级数据表体验。`NvDataTable` 内置工具栏（搜索 · 字段筛选 · 列显隐 · 密度）、可排序表头、行选择与可点击页码分页；默认在客户端处理筛选/排序/分页。工具栏 `NvDataTableToolbar` 与分页 `NvDataTablePagination` 也可独立使用。
+完整的高级数据表体验。`NvDataTable` 内置工具栏（搜索 · 字段筛选 · 列显隐 · 密度）、可排序表头、行选择与可点击页码分页；默认在客户端处理筛选/排序/分页。工具栏 `NvDataTableToolbar` 与分页 `NvPagination` 也可独立使用。
 
 ## 完整表格
 
@@ -91,7 +91,7 @@ const pageSize = ref(10)
     search-placeholder="搜索工单号 / 产品 / 工作中心…"
     :page-size="8"
     v-model:selected="selected"
-    @refresh="messagePro.success('已刷新工单列表')"
+    @refresh="nvMessage.success('已刷新工单列表')"
   >
     <template #cell-status="{ value }">
       <NvStatusBadge :value="String(value)" :pulse="value === 'running'" />
@@ -147,8 +147,8 @@ const pageSize = ref(10)
     show-density
     refreshable
     show-more
-    @refresh="messagePro.info('正在刷新…')"
-    @export="messagePro.success('已导出 CSV')"
+    @refresh="nvMessage.info('正在刷新…')"
+    @export="nvMessage.success('已导出 CSV')"
   >
     <template #filters>
       <NvButton variant="outline" size="sm">
@@ -182,7 +182,7 @@ const pageSize = ref(10)
 ## 分页 Pagination
 
 <Demo block>
-  <NvDataTablePagination
+  <NvPagination
     :page="page"
     :page-size="pageSize"
     :total-items="528"
@@ -193,7 +193,7 @@ const pageSize = ref(10)
 </Demo>
 
 ```vue
-<NvDataTablePagination
+<NvPagination
   :page="page"
   :page-size="pageSize"
   :total-items="528"
@@ -218,7 +218,7 @@ const pageSize = ref(10)
 | `pageSize`        | 初始每页条数                                          | `number`                              | —       |
 | `selected`        | 选中行主键（`v-model:selected`）                      | `(string \| number)[]`                | —       |
 
-### NvDataTablePagination
+### NvPagination
 
 | 属性         | 说明                            | 类型      | 默认    |
 | ------------ | ------------------------------- | --------- | ------- |

@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "scheduling-preview",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "frontend/apps/business-console", "exec", "vp", "dev", "--host", "127.0.0.1", "--port", "5217"],
+      "port": 5217
+    },
+    {
       "name": "console",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-C", "frontend/apps/console", "run", "dev"],

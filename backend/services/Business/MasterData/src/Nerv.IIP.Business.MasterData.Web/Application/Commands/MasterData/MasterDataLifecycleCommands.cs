@@ -62,6 +62,15 @@ public sealed record UpdateMasterDataResourceCommand(
     string? Model = null,
     string? Manufacturer = null,
     string? SerialNo = null,
+    DateOnly? PurchaseDate = null,
+    decimal? PurchaseCost = null,
+    string? PurchaseCurrencyCode = null,
+    DateOnly? WarrantyExpiresOn = null,
+    string? SupplierPartnerCode = null,
+    string? StationCode = null,
+    string? ParentDeviceId = null,
+    DateOnly? RetiredOn = null,
+    IReadOnlyCollection<DeviceAssetComponentDetail>? Components = null,
     decimal? MinimumCapacity = null,
     decimal? MaximumCapacity = null,
     string? CapacityUomCode = null,
@@ -334,6 +343,8 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                 return Detail(workCenter);
             case "device-asset":
                 var device = await FindDeviceAssetAsync(request, cancellationToken);
+                var purchaseCurrencyCode = DeviceAssetCommandValidator.NormalizeCurrencyCode(request.PurchaseCurrencyCode, device.PurchaseCurrencyCode);
+                DeviceAssetCommandValidator.EnsureValidComponents(request.Components?.Select(x => new DeviceAssetComponentDraft(x.ComponentCode, x.ComponentName, x.Quantity, x.Critical)).ToArray());
                 device.UpdateCapability(
                     request.Model ?? device.Model,
                     request.LineCode ?? device.LineCode,
@@ -347,6 +358,22 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     request.Criticality ?? device.Criticality,
                     request.Maintainable ?? device.Maintainable,
                     request.TelemetryEnabled ?? device.TelemetryEnabled);
+                device.UpdateLedger(
+                    request.PurchaseDate ?? device.PurchaseDate,
+                    request.PurchaseCost ?? device.PurchaseCost,
+                    purchaseCurrencyCode,
+                    request.WarrantyExpiresOn ?? device.WarrantyExpiresOn,
+                    request.SupplierPartnerCode ?? device.SupplierPartnerCode,
+                    request.SiteCode ?? device.SiteCode,
+                    request.WorkshopCode ?? device.WorkshopCode,
+                    request.LineCode ?? device.LineCode,
+                    request.StationCode ?? device.StationCode,
+                    request.ParentDeviceId ?? device.ParentDeviceId,
+                    request.RetiredOn ?? device.RetiredOn);
+                if (request.Components is not null)
+                {
+                    device.ReplaceComponents(request.Components.Select(x => new DeviceAssetComponentDraft(x.ComponentCode, x.ComponentName, x.Quantity, x.Critical)));
+                }
                 return Detail(device);
             case "reference-data":
                 var referenceData = await FindReferenceDataCodeAsync(request, cancellationToken);
@@ -427,7 +454,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
         ?? throw NotFound(request.ResourceType, request.Code);
 
     private async Task<DeviceAsset> FindDeviceAssetAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
-        await dbContext.DeviceAssets.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        await dbContext.DeviceAssets.Include(x => x.Components).SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
         ?? throw NotFound(request.ResourceType, request.Code);
 
     private async Task<ReferenceDataCode> FindReferenceDataCodeAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken)
@@ -589,7 +616,39 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
         new("work-center", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, PlantCode: x.PlantCode, LineCode: x.LineCode, WorkshopCode: x.WorkshopCode, CapacityMinutesPerDay: x.CapacityMinutesPerDay, ResourceKind: x.ResourceType, DefaultCalendarCode: x.DefaultCalendarCode, CapacityUnit: x.CapacityUnit, FiniteCapacity: x.FiniteCapacity, Status: x.Disabled ? "disabled" : "active", UtilizationRate: x.UtilizationRate, EfficiencyRate: x.EfficiencyRate, NumberOfCapacities: x.NumberOfCapacities, EffectiveCapacityMinutesPerDay: x.EffectiveCapacityMinutesPerDay, CostCenterCode: x.CostCenterCode, Bottleneck: x.Bottleneck);
 
     internal static MasterDataResourceDetail Detail(DeviceAsset x) =>
-        new("device-asset", x.Code, x.Model, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, Model: x.Model, LineCode: x.LineCode, WorkCenterCode: x.WorkCenterCode, AssetClassCode: x.AssetClassCode, Manufacturer: x.Manufacturer, SerialNo: x.SerialNo, MinimumCapacity: x.MinimumCapacity, MaximumCapacity: x.MaximumCapacity, CapacityUomCode: x.CapacityUomCode, Criticality: x.Criticality, Maintainable: x.Maintainable, TelemetryEnabled: x.TelemetryEnabled, Status: x.Disabled ? "disabled" : "active");
+        new(
+            "device-asset",
+            x.Code,
+            x.Model,
+            !x.Disabled,
+            x.UpdatedAtUtc.ToString("O"),
+            x.OrganizationId,
+            x.EnvironmentId,
+            Model: x.Model,
+            SiteCode: x.SiteCode,
+            WorkshopCode: x.WorkshopCode,
+            LineCode: x.LineCode,
+            WorkCenterCode: x.WorkCenterCode,
+            AssetClassCode: x.AssetClassCode,
+            Manufacturer: x.Manufacturer,
+            SerialNo: x.SerialNo,
+            PurchaseDate: x.PurchaseDate,
+            PurchaseCost: x.PurchaseCost,
+            PurchaseCurrencyCode: x.PurchaseCurrencyCode,
+            WarrantyExpiresOn: x.WarrantyExpiresOn,
+            SupplierPartnerCode: x.SupplierPartnerCode,
+            StationCode: x.StationCode,
+            ParentDeviceId: x.ParentDeviceId,
+            RetiredOn: x.RetiredOn,
+            Retired: x.Retired,
+            Components: x.Components.Select(y => new DeviceAssetComponentDetail(y.ComponentCode, y.ComponentName, y.Quantity, y.Critical)).ToArray(),
+            MinimumCapacity: x.MinimumCapacity,
+            MaximumCapacity: x.MaximumCapacity,
+            CapacityUomCode: x.CapacityUomCode,
+            Criticality: x.Criticality,
+            Maintainable: x.Maintainable,
+            TelemetryEnabled: x.TelemetryEnabled,
+            Status: x.Disabled ? "disabled" : "active");
 
     internal static MasterDataResourceDetail Detail(ReferenceDataCode x) =>
         new("reference-data", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, CodeSet: x.CodeSet, Status: x.Disabled ? "disabled" : "active");
@@ -633,6 +692,10 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                 return UpdateMasterDataResourceCommandHandler.Detail(conversion);
             case "business-partner":
                 var partner = await FindAsync(dbContext.BusinessPartners, request, cancellationToken);
+                if (!request.Enabled)
+                {
+                    await EnsureBusinessPartnerIsNotReferencedAsync(request, cancellationToken);
+                }
                 if (request.Enabled) partner.Enable(reason); else partner.Disable(reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(partner);
             case "site":
@@ -673,6 +736,10 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                 return UpdateMasterDataResourceCommandHandler.Detail(workCenter);
             case "device-asset":
                 var device = await FindAsync(dbContext.DeviceAssets, request, cancellationToken);
+                if (!request.Enabled)
+                {
+                    await EnsureDeviceAssetIsNotReferencedAsync(request, device.Id.ToString(), cancellationToken);
+                }
                 if (request.Enabled) device.Enable(reason); else device.Disable(reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(device);
             case "reference-data":
@@ -775,6 +842,34 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                 ? "unknown ProductEngineering reference"
                 : string.Join(", ", downstreamUsage.References.Take(5));
             throw new KnownException($"Work center '{request.Code}' cannot be disabled because ProductEngineering references it: {references}.");
+        }
+    }
+
+    private async Task EnsureBusinessPartnerIsNotReferencedAsync(SetMasterDataResourceEnabledCommand request, CancellationToken cancellationToken)
+    {
+        var referencedByDevice = await dbContext.DeviceAssets.AnyAsync(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId &&
+            !x.Disabled &&
+            x.SupplierPartnerCode == request.Code,
+            cancellationToken);
+        if (referencedByDevice)
+        {
+            throw new KnownException($"Business partner '{request.Code}' cannot be disabled because it is referenced by active device asset records.");
+        }
+    }
+
+    private async Task EnsureDeviceAssetIsNotReferencedAsync(SetMasterDataResourceEnabledCommand request, string publicId, CancellationToken cancellationToken)
+    {
+        var referencedByChildDevice = await dbContext.DeviceAssets.AnyAsync(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId &&
+            !x.Disabled &&
+            (x.ParentDeviceId == request.Code || x.ParentDeviceId == publicId),
+            cancellationToken);
+        if (referencedByChildDevice)
+        {
+            throw new KnownException($"Device asset '{request.Code}' cannot be disabled because it is referenced by active child device asset records.");
         }
     }
 }

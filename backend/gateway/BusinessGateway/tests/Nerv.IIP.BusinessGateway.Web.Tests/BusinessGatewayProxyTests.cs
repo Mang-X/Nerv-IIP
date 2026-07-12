@@ -5634,6 +5634,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessConsoleMasterDataResourceRequest? LastDetailRequest { get; private set; }
 
+    public List<BusinessConsoleMasterDataResourceRequest> DetailRequests { get; } = [];
+
     public BusinessConsoleUpdateMasterDataResourceRequest? LastUpdateRequest { get; private set; }
 
     public BusinessConsoleSetMasterDataResourceEnabledRequest? LastSetEnabledRequest { get; private set; }
@@ -5692,6 +5694,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessServiceProxyException? Failure { get; init; }
 
+    public Exception? DetailFailure { get; init; }
+
     public Task<BusinessConsoleResourceListResponse> ListResourcesAsync(
         string internalBearerToken,
         BusinessConsoleListResourcesRequest request,
@@ -5726,6 +5730,12 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     {
         LastInternalToken = internalBearerToken;
         LastDetailRequest = request;
+        DetailRequests.Add(request);
+        if (DetailFailure is not null)
+        {
+            throw DetailFailure;
+        }
+
         return Task.FromResult(ResourceDetail(request.ResourceType, request.Code, request.CodeSet, true));
     }
 
@@ -6108,8 +6118,25 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         string code,
         string? codeSet,
         bool active,
-        string? displayName = null) =>
-        new(
+        string? displayName = null)
+    {
+        if (string.Equals(resourceType, "device-asset", StringComparison.OrdinalIgnoreCase))
+        {
+            return new BusinessConsoleMasterDataResourceDetail(
+                resourceType,
+                code,
+                displayName ?? code,
+                active,
+                "v1",
+                "org-001",
+                "env-dev",
+                displayName ?? code,
+                WarrantyExpiresOn: new DateOnly(2027, 1, 14),
+                SupplierPartnerCode: "SUP-ACME",
+                Status: active ? "active" : "disabled");
+        }
+
+        return new(
             resourceType,
             code,
             displayName ?? code,
@@ -6120,6 +6147,7 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             displayName ?? code,
             CodeSet: codeSet,
             Status: active ? "active" : "disabled");
+    }
 }
 
 internal sealed class RecordingInventoryClient : IBusinessInventoryClient
@@ -9092,6 +9120,32 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleMesProductionReportListResponse([], 0));
     }
+
+    public Task<BusinessConsoleMesTelemetryCandidateListResponse> ListTelemetryCandidatesAsync(
+        string internalBearerToken,
+        BusinessConsoleMesTelemetryCandidateListRequest request,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesTelemetryCandidateRow> GetTelemetryCandidateAsync(
+        string internalBearerToken,
+        string candidateId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
+    public Task<BusinessConsoleRecordProductionReportResponse> PromoteTelemetryCandidateAsync(
+        string internalBearerToken,
+        string candidateId,
+        BusinessConsoleMesTelemetryCandidatePromoteRequest request,
+        string actor,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
+    public Task<BusinessConsoleAcceptedResponse> DismissTelemetryCandidateAsync(
+        string internalBearerToken,
+        string candidateId,
+        BusinessConsoleMesTelemetryCandidateDismissRequest request,
+        string actor,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
 
     public Task<BusinessConsoleMesScheduleResult> RunScheduleAsync(
         string internalBearerToken,

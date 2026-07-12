@@ -13,7 +13,7 @@ import {
   AlertTitle,
   Button,
   NvDataTable,
-  NvDataTablePagination,
+  NvPagination,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -217,7 +217,7 @@ async function savePermissions() {
         </template>
       </NvDataTable>
 
-      <NvDataTablePagination
+      <NvPagination
         v-model:page="page"
         v-model:page-size="pageSize"
         :total-items="roles.totalCount.value"

@@ -12,7 +12,7 @@ import { NvMobileTag } from '@nerv-iip/ui-mobile'
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">变体</p>
+    <p class="nv-mdoc-label">变体</p>
     <div class="flex flex-wrap items-center gap-1.5">
       <NvMobileTag>常规</NvMobileTag>
       <NvMobileTag variant="brand">优先</NvMobileTag>
@@ -22,14 +22,14 @@ import { NvMobileTag } from '@nerv-iip/ui-mobile'
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">尺寸</p>
+    <p class="nv-mdoc-label">尺寸</p>
     <div class="flex flex-wrap items-center gap-1.5">
       <NvMobileTag variant="brand" size="sm">小号</NvMobileTag>
       <NvMobileTag variant="brand" size="md">中号</NvMobileTag>
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">可关闭</p>
+    <p class="nv-mdoc-label">可关闭</p>
     <div class="flex flex-wrap items-center gap-1.5">
       <NvMobileTag variant="brand" closable>注塑</NvMobileTag>
       <NvMobileTag variant="success" closable>CNC</NvMobileTag>

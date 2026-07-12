@@ -40,7 +40,7 @@ const fillClass: Record<Tone, string> = {
       aria-valuemax="100"
     >
       <div
-        class="ds-progress-fill h-full rounded-full"
+        class="nv-m-progress-fill h-full rounded-full"
         :class="fillClass[tone]"
         :style="{ width: `${pct}%` }"
       />
@@ -56,11 +56,11 @@ const fillClass: Record<Tone, string> = {
 
 <style scoped>
 @layer nv-components {
-  .ds-progress-fill {
+  .nv-m-progress-fill {
     transition: width 0.4s var(--nv-ease-out-quart, ease-out);
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-progress-fill {
+    .nv-m-progress-fill {
       transition: none;
     }
   }

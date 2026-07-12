@@ -16,7 +16,7 @@ const dateVal = ref('2026-06-18')
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <NvCellGroup>
       <NvCell title="计划日期" :value="dateVal" arrow @click="dateOpen = true" />
     </NvCellGroup>

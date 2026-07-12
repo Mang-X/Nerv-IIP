@@ -1,4 +1,5 @@
 using FastEndpoints;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
@@ -214,6 +215,15 @@ public sealed record UpdateMasterDataResourceRequest(
     string? Model = null,
     string? Manufacturer = null,
     string? SerialNo = null,
+    DateOnly? PurchaseDate = null,
+    decimal? PurchaseCost = null,
+    string? PurchaseCurrencyCode = null,
+    DateOnly? WarrantyExpiresOn = null,
+    string? SupplierPartnerCode = null,
+    string? StationCode = null,
+    string? ParentDeviceId = null,
+    DateOnly? RetiredOn = null,
+    IReadOnlyCollection<DeviceAssetComponentDetail>? Components = null,
     decimal? MinimumCapacity = null,
     decimal? MaximumCapacity = null,
     string? CapacityUomCode = null,
@@ -326,6 +336,15 @@ public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
                 req.Model,
                 req.Manufacturer,
                 req.SerialNo,
+                req.PurchaseDate,
+                req.PurchaseCost,
+                req.PurchaseCurrencyCode,
+                req.WarrantyExpiresOn,
+                req.SupplierPartnerCode,
+                req.StationCode,
+                req.ParentDeviceId,
+                req.RetiredOn,
+                req.Components,
                 req.MinimumCapacity,
                 req.MaximumCapacity,
                 req.CapacityUomCode,
@@ -1076,7 +1095,20 @@ public sealed record RegisterDeviceAssetRequest(
     bool Maintainable,
     bool TelemetryEnabled,
     IReadOnlyDictionary<string, string>? ExternalReferences,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    DateOnly? PurchaseDate = null,
+    decimal? PurchaseCost = null,
+    string? PurchaseCurrencyCode = null,
+    DateOnly? WarrantyExpiresOn = null,
+    string? SupplierPartnerCode = null,
+    string? SiteCode = null,
+    string? WorkshopCode = null,
+    string? StationCode = null,
+    string? ParentDeviceId = null,
+    DateOnly? RetiredOn = null,
+    IReadOnlyCollection<DeviceAssetComponentRequest>? Components = null);
+
+public sealed record DeviceAssetComponentRequest(string ComponentCode, string ComponentName, decimal Quantity, bool Critical);
 
 public sealed class RegisterDeviceAssetEndpoint(ISender sender)
     : MasterDataEndpoint<RegisterDeviceAssetRequest, ResponseData<MasterDataResourceResponse>>
@@ -1106,7 +1138,18 @@ public sealed class RegisterDeviceAssetEndpoint(ISender sender)
             req.Maintainable,
             req.TelemetryEnabled,
             req.ExternalReferences ?? new Dictionary<string, string>(),
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            req.PurchaseDate,
+            req.PurchaseCost,
+            req.PurchaseCurrencyCode,
+            req.WarrantyExpiresOn,
+            req.SupplierPartnerCode,
+            req.SiteCode,
+            req.WorkshopCode,
+            req.StationCode,
+            req.ParentDeviceId,
+            req.RetiredOn,
+            req.Components?.Select(x => new DeviceAssetComponentDraft(x.ComponentCode, x.ComponentName, x.Quantity, x.Critical)).ToArray()), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }

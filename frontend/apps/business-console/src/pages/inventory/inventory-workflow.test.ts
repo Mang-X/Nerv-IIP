@@ -85,8 +85,8 @@ const uiStubs = {
   SectionCards: { template: '<div><slot /></div>' },
   SectionCard: { props: ['description', 'value', 'hint'], template: '<div>{{ description }} {{ value }}</div>' },
   Toolbar: { props: ['showSearch'], template: '<div><slot name="filters" /></div>' },
-  // DataTablePro stub renders rows + the cell-actions slot, exposing a design-system table marker.
-  DataTablePro: {
+  // NvDataTable stub renders rows + the cell-actions slot, exposing a design-system table marker.
+  NvDataTable: {
     props: ['rows', 'columns', 'rowKey'],
     template: `<table data-ui-table><tbody><tr v-for="(row, i) in rows" :key="i">
       <td v-for="column in columns" :key="column.key" :data-cell="column.key">
@@ -98,25 +98,25 @@ const uiStubs = {
   RowActions: { props: ['label'], template: '<div><slot /></div>' },
   DropdownMenuItem: { template: '<button v-bind="$attrs"><slot /></button>' },
   DropdownMenuSeparator: true,
-  // DialogPro (reka DialogRoot) stubs render slot content unconditionally so dialog forms are testable.
+  // NvDialog (reka DialogRoot) stubs render slot content unconditionally so dialog forms are testable.
   DialogRoot: { props: ['open'], template: '<div><slot /></div>' },
-  DialogProContent: { template: '<div><slot /></div>' },
-  DialogProHeader: { template: '<div><slot /></div>' },
-  DialogProTitle: { template: '<h2><slot /></h2>' },
-  DialogProDescription: { template: '<p><slot /></p>' },
-  ButtonPro: { template: '<button v-bind="$attrs"><slot /></button>' },
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogHeader: { template: '<div><slot /></div>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
+  NvButton: { template: '<button v-bind="$attrs"><slot /></button>' },
   Field: { template: '<div><slot /></div>' },
   FieldGroup: { template: '<div><slot /></div>' },
   FieldLabel: { template: '<label><slot /></label>' },
-  InputPro: {
+  NvInput: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
-  SelectPro: { template: '<div><slot /></div>' },
-  SelectProContent: { template: '<div><slot /></div>' },
-  SelectProItem: { props: ['value'], template: '<div><slot /></div>' },
-  SelectProTrigger: { template: '<button><slot /></button>' },
+  NvSelect: { template: '<div><slot /></div>' },
+  NvSelectContent: { template: '<div><slot /></div>' },
+  NvSelectItem: { props: ['value'], template: '<div><slot /></div>' },
+  NvSelectTrigger: { template: '<button><slot /></button>' },
   SelectValue: true,
   Spinner: true,
 }

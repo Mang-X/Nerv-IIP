@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.BusinessGateway.Web.Endpoints.Maintenance;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.ServiceAuth;
@@ -67,10 +68,13 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var maintenance = new RecordingMaintenanceFacadeClient();
+        var masterData = new RecordingMasterDataClient();
         await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -89,9 +93,121 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal("DEV-PRESS-01", item.GetProperty("deviceAssetId").GetString());
         Assert.Equal("alarm-001", item.GetProperty("sourceAlarmId").GetString());
         Assert.Equal("alarm-001", item.GetProperty("relatedAlarmId").GetString());
+        Assert.Equal("in-warranty", item.GetProperty("warrantyStatus").GetString());
+        Assert.Equal("2027-01-14", item.GetProperty("warrantyExpiresOn").GetString());
+        Assert.Equal("SUP-ACME", item.GetProperty("supplierPartnerCode").GetString());
+        Assert.Equal(new[] { "DEV-PRESS-01" }, masterData.DetailRequests.Select(x => x.Code).ToArray());
         Assert.Equal(5, document.RootElement.GetProperty("data").GetProperty("skip").GetInt32());
         Assert.Equal(10, document.RootElement.GetProperty("data").GetProperty("take").GetInt32());
         Assert.Equal(1, document.RootElement.GetProperty("data").GetProperty("total").GetInt32());
+    }
+
+    [Fact]
+    public async Task Maintenance_work_order_list_enriches_distinct_device_assets_once()
+    {
+        var maintenance = new RecordingMaintenanceFacadeClient
+        {
+            WorkOrderItems =
+            [
+                new BusinessConsoleMaintenanceWorkOrderItem("wo-maint-001", "018ff8f1-2b8a-7000-8000-000000000001", "high", "Open", null, null, DateTimeOffset.Parse("2026-06-01T08:10:00Z", CultureInfo.InvariantCulture)),
+                new BusinessConsoleMaintenanceWorkOrderItem("wo-maint-002", "018ff8f1-2b8a-7000-8000-000000000001", "medium", "Open", null, null, DateTimeOffset.Parse("2026-06-01T08:20:00Z", CultureInfo.InvariantCulture)),
+            ],
+        };
+        var masterData = new RecordingMasterDataClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=10");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(new[] { "018ff8f1-2b8a-7000-8000-000000000001" }, masterData.DetailRequests.Select(x => x.Code).ToArray());
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var items = document.RootElement.GetProperty("data").GetProperty("items");
+        Assert.Equal(2, items.GetArrayLength());
+        Assert.All(items.EnumerateArray(), item => Assert.Equal("in-warranty", item.GetProperty("warrantyStatus").GetString()));
+    }
+
+    [Fact]
+    public async Task Maintenance_work_order_warranty_enrichment_degrades_master_data_outages_to_unknown()
+    {
+        var masterData = new RecordingMasterDataClient
+        {
+            DetailFailure = new BusinessServiceProxyException(HttpStatusCode.BadGateway, "master-data-unavailable"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(new RecordingMaintenanceFacadeClient());
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=10");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "unknown",
+            document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("warrantyStatus").GetString());
+    }
+
+    public static TheoryData<Exception> UnavailableMasterDataTransportFailures =>
+        new()
+        {
+            new HttpRequestException("connection refused"),
+            new TaskCanceledException("client timeout"),
+        };
+
+    [Theory]
+    [MemberData(nameof(UnavailableMasterDataTransportFailures))]
+    public async Task Maintenance_work_order_warranty_enrichment_degrades_transport_failures_to_unknown(Exception transportFailure)
+    {
+        var masterData = new RecordingMasterDataClient
+        {
+            DetailFailure = transportFailure,
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(new RecordingMaintenanceFacadeClient());
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=10");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "unknown",
+            document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("warrantyStatus").GetString());
+    }
+
+    [Fact]
+    public void Maintenance_work_order_list_validator_bounds_downstream_fan_out()
+    {
+        var validator = new BusinessConsoleMaintenanceWorkOrderListRequestValidator();
+
+        Assert.True(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", 0, 200)).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", -1, 10)).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", 0, 201)).IsValid);
     }
 
     [Fact]
@@ -102,6 +218,8 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -576,6 +694,8 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public JsonElement LastCreateSparePartRequest { get; private set; }
 
+    public IReadOnlyCollection<BusinessConsoleMaintenanceWorkOrderItem>? WorkOrderItems { get; init; }
+
     public Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateMaintenanceWorkOrderRequest request,
@@ -605,7 +725,7 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
     {
         LastInternalToken = internalBearerToken;
         LastWorkOrderListRequest = request;
-        return Task.FromResult(new BusinessConsoleMaintenanceWorkOrderListResponse(
+        var items = WorkOrderItems ??
         [
             new BusinessConsoleMaintenanceWorkOrderItem(
                 "wo-maint-001",
@@ -615,7 +735,9 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
                 "alarm-001",
                 "alarm-001",
                 DateTimeOffset.Parse("2026-06-01T08:10:00Z", CultureInfo.InvariantCulture)),
-        ], request.Skip, request.Take, 1));
+        ];
+        return Task.FromResult(new BusinessConsoleMaintenanceWorkOrderListResponse(
+            items, request.Skip, request.Take, items.Count));
     }
 
     public Task<BusinessConsoleMaintenanceWorkOrderItem> GetWorkOrderAsync(

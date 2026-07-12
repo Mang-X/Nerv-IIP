@@ -31,41 +31,41 @@ const emit = defineEmits<{ select: [item: GridItem, index: number] }>()
 
 <template>
   <div
-    :class="cn('ds-grid', bordered && 'ds-grid-bordered', props.class)"
-    :style="{ '--ds-grid-cols': String(columns) }"
+    :class="cn('nv-m-grid', bordered && 'nv-m-grid-bordered', props.class)"
+    :style="{ '--nv-m-grid-cols': String(columns) }"
   >
     <button
       v-for="(item, i) in items"
       :key="item.key ?? i"
       type="button"
-      class="ds-grid-item"
-      :class="square && 'ds-grid-square'"
+      class="nv-m-grid-item"
+      :class="square && 'nv-m-grid-square'"
       @click="emit('select', item, i)"
     >
-      <span class="ds-grid-icon">
+      <span class="nv-m-grid-icon">
         <slot :name="`icon-${item.key}`" :item="item">
           <component :is="item.icon" v-if="item.icon" aria-hidden="true" />
         </slot>
         <span
           v-if="item.badge !== undefined && item.badge !== false"
-          class="ds-grid-badge"
+          class="nv-m-grid-badge"
           :data-dot="item.badge === true || undefined"
         >
           <template v-if="item.badge !== true">{{ item.badge }}</template>
         </span>
       </span>
-      <span v-if="item.text" class="ds-grid-text">{{ item.text }}</span>
+      <span v-if="item.text" class="nv-m-grid-text">{{ item.text }}</span>
     </button>
   </div>
 </template>
 
 <style scoped>
 @layer nv-components {
-  .ds-grid {
+  .nv-m-grid {
     display: grid;
-    grid-template-columns: repeat(var(--ds-grid-cols), minmax(0, 1fr));
+    grid-template-columns: repeat(var(--nv-m-grid-cols), minmax(0, 1fr));
   }
-  .ds-grid-bordered {
+  .nv-m-grid-bordered {
     gap: 1px;
     background-color: var(--border);
     border: 1px solid var(--border);
@@ -73,7 +73,7 @@ const emit = defineEmits<{ select: [item: GridItem, index: number] }>()
     overflow: hidden;
   }
 
-  .ds-grid-item {
+  .nv-m-grid-item {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -88,38 +88,38 @@ const emit = defineEmits<{ select: [item: GridItem, index: number] }>()
      also makes the tap target obvious. Instant press-in, eased fade-out. */
     transition: background-color 0.22s var(--nv-ease-out-quart, ease-out);
   }
-  .ds-grid:not(.ds-grid-bordered) .ds-grid-item {
+  .nv-m-grid:not(.nv-m-grid-bordered) .nv-m-grid-item {
     background-color: transparent;
   }
-  .ds-grid-item:active {
+  .nv-m-grid-item:active {
     background-color: var(--muted);
     transition-duration: 0s;
   }
-  .ds-grid-item:active .ds-grid-icon {
+  .nv-m-grid-item:active .nv-m-grid-icon {
     color: var(--nv-brand-strong);
   }
-  .ds-grid-square {
+  .nv-m-grid-square {
     aspect-ratio: 1;
   }
 
-  .ds-grid-icon {
+  .nv-m-grid-icon {
     position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     color: var(--foreground);
   }
-  .ds-grid-icon :deep(svg) {
+  .nv-m-grid-icon :deep(svg) {
     width: 1.625rem;
     height: 1.625rem;
   }
-  .ds-grid-text {
+  .nv-m-grid-text {
     font-size: 0.75rem;
     line-height: 1;
     color: var(--muted-foreground);
   }
 
-  .ds-grid-badge {
+  .nv-m-grid-badge {
     position: absolute;
     top: -0.375rem;
     right: -0.5rem;
@@ -137,7 +137,7 @@ const emit = defineEmits<{ select: [item: GridItem, index: number] }>()
     font-variant-numeric: tabular-nums;
     box-shadow: 0 0 0 2px var(--card);
   }
-  .ds-grid-badge[data-dot] {
+  .nv-m-grid-badge[data-dot] {
     top: -0.125rem;
     right: -0.125rem;
     min-width: 0.5rem;
