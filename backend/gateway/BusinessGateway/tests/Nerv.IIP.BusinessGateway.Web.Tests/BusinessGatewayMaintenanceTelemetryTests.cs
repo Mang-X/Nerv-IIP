@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.BusinessGateway.Web.Endpoints.Maintenance;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.ServiceAuth;
@@ -136,7 +137,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
-    public async Task Maintenance_work_order_warranty_enrichment_propagates_master_data_outages()
+    public async Task Maintenance_work_order_warranty_enrichment_degrades_master_data_outages_to_unknown()
     {
         var masterData = new RecordingMasterDataClient
         {
@@ -156,7 +157,21 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
 
         var response = await client.GetAsync("/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=10");
 
-        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "unknown",
+            document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("warrantyStatus").GetString());
+    }
+
+    [Fact]
+    public void Maintenance_work_order_list_validator_bounds_downstream_fan_out()
+    {
+        var validator = new BusinessConsoleMaintenanceWorkOrderListRequestValidator();
+
+        Assert.True(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", 0, 200)).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", -1, 10)).IsValid);
+        Assert.False(validator.Validate(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", 0, 201)).IsValid);
     }
 
     [Fact]

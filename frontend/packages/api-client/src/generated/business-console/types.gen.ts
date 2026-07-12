@@ -13055,6 +13055,10 @@ export type ListBusinessConsoleMaintenanceWorkOrdersData = {
 
 export type ListBusinessConsoleMaintenanceWorkOrdersErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -13063,6 +13067,8 @@ export type ListBusinessConsoleMaintenanceWorkOrdersErrors = {
      */
     403: unknown;
 };
+
+export type ListBusinessConsoleMaintenanceWorkOrdersError = ListBusinessConsoleMaintenanceWorkOrdersErrors[keyof ListBusinessConsoleMaintenanceWorkOrdersErrors];
 
 export type ListBusinessConsoleMaintenanceWorkOrdersResponses = {
     /**

@@ -222,11 +222,15 @@ internal static class MaintenanceDeviceAssetWarrantyEnricher
                 new BusinessConsoleMasterDataResourceRequest(organizationId, environmentId, "device-asset", deviceAssetId),
                 cancellationToken);
         }
-        catch (BusinessServiceProxyException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
+        catch (BusinessServiceProxyException exception) when (IsUnavailableDeviceAssetDetail(exception.StatusCode))
         {
             return null;
         }
     }
+
+    private static bool IsUnavailableDeviceAssetDetail(System.Net.HttpStatusCode statusCode) =>
+        statusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.RequestTimeout
+        || (int)statusCode >= 500;
 
     private static string WarrantyStatus(DateOnly? warrantyExpiresOn)
     {
@@ -521,6 +525,17 @@ public sealed class BusinessConsoleMaintenanceContextRequestValidator : Validato
 public sealed class BusinessConsoleMaintenanceListRequestValidator : Validator<BusinessConsoleMaintenanceListRequest>
 {
     public BusinessConsoleMaintenanceListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 200);
+    }
+}
+
+public sealed class BusinessConsoleMaintenanceWorkOrderListRequestValidator : Validator<BusinessConsoleMaintenanceWorkOrderListRequest>
+{
+    public BusinessConsoleMaintenanceWorkOrderListRequestValidator()
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
