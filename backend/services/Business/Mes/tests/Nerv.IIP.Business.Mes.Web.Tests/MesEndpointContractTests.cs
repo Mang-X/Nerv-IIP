@@ -1415,8 +1415,8 @@ public sealed class MesEndpointContractTests
             Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-001", "env-dev", "PRPT-DETAIL", "WO-001", "OP-10", 8m, 1m, false, now),
             Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-002", "env-dev", "PRPT-DETAIL", "WO-OTHER", "OP-20", 2m, 0m, false, now));
         dbContext.ProductionReportMaterialConsumptions.AddRange(
-            Domain.AggregatesModel.ProductionReportAggregate.ProductionReportMaterialConsumption.Record("org-001", "env-dev", "PRPT-DETAIL", "WO-001", "OP-10", "MAT-001", "LOT-A", "KG", 2.5m, "MIR-001"),
             Domain.AggregatesModel.ProductionReportAggregate.ProductionReportMaterialConsumption.Record("org-001", "env-dev", "PRPT-DETAIL", "WO-001", "OP-10", "MAT-001", "LOT-B", "KG", 3.5m, "MIR-002"),
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReportMaterialConsumption.Record("org-001", "env-dev", "PRPT-DETAIL", "WO-001", "OP-10", "MAT-001", "LOT-A", "KG", 2.5m, "MIR-001"),
             Domain.AggregatesModel.ProductionReportAggregate.ProductionReportMaterialConsumption.Record("org-002", "env-dev", "PRPT-DETAIL", "WO-OTHER", "OP-20", "MAT-OTHER", "LOT-OTHER", "PCS", 1m, "MIR-OTHER"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -1426,7 +1426,7 @@ public sealed class MesEndpointContractTests
 
         Assert.Equal("PRPT-DETAIL", detail.Report.ReportNo);
         Assert.Equal("WO-001", detail.Report.WorkOrderId);
-        Assert.Collection(detail.ConsumedMaterialLots.OrderBy(x => x.MaterialLotId),
+        Assert.Collection(detail.ConsumedMaterialLots,
             first => Assert.Equal(new ConsumedMaterialLotFact("MAT-001", "LOT-A", 2.5m, "KG", "MIR-001"), first),
             second => Assert.Equal(new ConsumedMaterialLotFact("MAT-001", "LOT-B", 3.5m, "KG", "MIR-002"), second));
     }
