@@ -18,6 +18,22 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayMaintenanceTelemetryTests
 {
     [Fact]
+    public void Complete_work_order_validator_limits_actual_technician_reference_length()
+    {
+        var result = new BusinessConsoleCompleteMaintenanceWorkOrderRequestValidator().Validate(
+            new BusinessConsoleCompleteMaintenanceWorkOrderRequest(
+                "org-001",
+                "env-dev",
+                "fixed",
+                "equipment-failure",
+                10,
+                [],
+                ActualTechnicianUserId: new string('x', 151)));
+
+        Assert.Contains(result.Errors, x => x.PropertyName == nameof(BusinessConsoleCompleteMaintenanceWorkOrderRequest.ActualTechnicianUserId));
+    }
+
+    [Fact]
     public async Task Workshop_data_scope_is_pushed_down_to_maintenance_telemetry_and_equipment_alarm_lists()
     {
         var dataScope = new AuthorizationDataScope([], ["WS-A"], []);

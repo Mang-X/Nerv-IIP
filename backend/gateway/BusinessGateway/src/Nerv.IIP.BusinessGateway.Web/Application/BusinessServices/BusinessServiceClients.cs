@@ -4747,7 +4747,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 request.ActualLaborMinutes,
                 request.SparePartCostAmount,
                 request.ExternalServiceCostAmount,
-                request.CostCurrencyCode),
+                request.CostCurrencyCode,
+                request.ActualTechnicianUserId),
             cancellationToken);
         return new BusinessConsoleCompleteMaintenanceWorkOrderResponse(true);
     }
@@ -4782,7 +4783,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 workOrder.ActualLaborMinutes,
                 workOrder.SparePartCostAmount,
                 workOrder.ExternalServiceCostAmount,
-                workOrder.CostCurrencyCode)).ToArray(),
+                workOrder.CostCurrencyCode,
+                ActualTechnicianUserId: workOrder.ActualTechnicianUserId)).ToArray(),
             workOrders.Skip,
             workOrders.Take,
             workOrders.Total);
@@ -5092,7 +5094,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         int? ActualLaborMinutes = null,
         decimal? SparePartCostAmount = null,
         decimal? ExternalServiceCostAmount = null,
-        string? CostCurrencyCode = null);
+        string? CostCurrencyCode = null,
+        string? ActualTechnicianUserId = null);
 
     private sealed record DownstreamMaintenancePlanListItem(
         JsonElement PlanId,
@@ -5129,7 +5132,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         int? ActualLaborMinutes = null,
         decimal? SparePartCostAmount = null,
         decimal? ExternalServiceCostAmount = null,
-        string? CostCurrencyCode = null);
+        string? CostCurrencyCode = null,
+        string? ActualTechnicianUserId = null);
 
     private sealed record DownstreamCreateMaintenancePlanResponse(JsonElement PlanId);
 

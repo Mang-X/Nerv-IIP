@@ -45,7 +45,8 @@ public sealed record BusinessConsoleCompleteMaintenanceWorkOrderRequest(
     int? ActualLaborMinutes = null,
     decimal? SparePartCostAmount = null,
     decimal? ExternalServiceCostAmount = null,
-    string? CostCurrencyCode = null);
+    string? CostCurrencyCode = null,
+    string? ActualTechnicianUserId = null);
 
 public sealed record BusinessConsoleCompleteMaintenanceWorkOrderResponse(bool Accepted);
 
@@ -114,7 +115,8 @@ public sealed record BusinessConsoleMaintenanceWorkOrderItem(
     string? CostCurrencyCode = null,
     string? WarrantyStatus = null,
     DateOnly? WarrantyExpiresOn = null,
-    string? SupplierPartnerCode = null);
+    string? SupplierPartnerCode = null,
+    string? ActualTechnicianUserId = null);
 
 public sealed record BusinessConsoleMaintenancePlanListResponse(
     IReadOnlyCollection<BusinessConsoleMaintenancePlanItem> Items,
@@ -206,7 +208,8 @@ public sealed record BusinessConsoleMaintenanceReliabilitySummaryItem(
     int ActualLaborMinutes,
     decimal SparePartCostAmount,
     decimal ExternalServiceCostAmount,
-    decimal TotalCostAmount);
+    decimal TotalCostAmount,
+    string? ActualTechnicianUserId = null);
 
 public sealed record BusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest(
     string OrganizationId,

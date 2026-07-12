@@ -581,6 +581,7 @@ public sealed class BusinessConsoleCompleteMaintenanceWorkOrderRequestValidator 
         RuleFor(x => x.SparePartCostAmount).GreaterThanOrEqualTo(0).When(x => x.SparePartCostAmount is not null);
         RuleFor(x => x.ExternalServiceCostAmount).GreaterThanOrEqualTo(0).When(x => x.ExternalServiceCostAmount is not null);
         RuleFor(x => x.CostCurrencyCode).MaximumLength(10);
+        RuleFor(x => x.ActualTechnicianUserId).MaximumLength(150);
         RuleForEach(x => x.SpareParts).ChildRules(line =>
         {
             line.RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
