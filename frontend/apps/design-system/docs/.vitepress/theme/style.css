@@ -24,6 +24,7 @@
 
 @source '../../../../../packages/ui/src';
 @source '../../../../../packages/ui-mobile/src';
+@source '../../../../../packages/scheduling/src';
 
 /* Modal-overlay scroll lock without layout shift.
    True modals (Dialog / AlertDialog / Sheet) MUST lock background scroll. reka does
