@@ -51,20 +51,20 @@ onBeforeUnmount(clearTimer)
   <!-- `defer` lets the target resolve after the tree mounts, so a scoped target
        that is an ancestor (docs phone sim) is found instead of erroring. -->
   <Teleport defer :to="overlayTarget">
-    <Transition name="ds-toast">
-      <div v-if="show" class="ds-toast-layer" :class="overlay && 'ds-toast-blocking'">
+    <Transition name="nv-m-toast">
+      <div v-if="show" class="nv-m-toast-layer" :class="overlay && 'nv-m-toast-blocking'">
         <div
-          class="ds-toast"
-          :class="type === 'text' && 'ds-toast-compact'"
+          class="nv-m-toast"
+          :class="type === 'text' && 'nv-m-toast-compact'"
           role="status"
           aria-live="polite"
         >
-          <span v-if="type !== 'text'" class="ds-toast-icon" :data-type="type">
-            <Loader2Icon v-if="type === 'loading'" class="ds-toast-spin" aria-hidden="true" />
+          <span v-if="type !== 'text'" class="nv-m-toast-icon" :data-type="type">
+            <Loader2Icon v-if="type === 'loading'" class="nv-m-toast-spin" aria-hidden="true" />
             <CheckIcon v-else-if="type === 'success'" aria-hidden="true" />
             <XIcon v-else aria-hidden="true" />
           </span>
-          <span v-if="message" class="ds-toast-msg">{{ message }}</span>
+          <span v-if="message" class="nv-m-toast-msg">{{ message }}</span>
         </div>
       </div>
     </Transition>
@@ -73,7 +73,7 @@ onBeforeUnmount(clearTimer)
 
 <style scoped>
 @layer nv-components {
-  .ds-toast-layer {
+  .nv-m-toast-layer {
     position: fixed;
     inset: 0;
     z-index: 60;
@@ -83,10 +83,10 @@ onBeforeUnmount(clearTimer)
     padding: 1rem;
     pointer-events: none;
   }
-  .ds-toast-blocking {
+  .nv-m-toast-blocking {
     pointer-events: auto;
   }
-  .ds-toast {
+  .nv-m-toast {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -101,64 +101,64 @@ onBeforeUnmount(clearTimer)
     box-shadow: 0 12px 40px -12px rgb(0 0 0 / 0.6);
   }
   /* Text-only toasts are a compact single line. */
-  .ds-toast-compact {
+  .nv-m-toast-compact {
     padding: 0.625rem 0.875rem;
     border-radius: 10px;
   }
-  .ds-toast-icon {
+  .nv-m-toast-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
   }
-  .ds-toast-icon :deep(svg) {
+  .nv-m-toast-icon :deep(svg) {
     width: 1.75rem;
     height: 1.75rem;
   }
-  .ds-toast-icon[data-type='success'] {
+  .nv-m-toast-icon[data-type='success'] {
     color: var(--nv-success);
   }
-  .ds-toast-icon[data-type='error'] {
+  .nv-m-toast-icon[data-type='error'] {
     color: var(--destructive);
   }
-  .ds-toast-msg {
+  .nv-m-toast-msg {
     font-size: 0.875rem;
     line-height: 1.4;
   }
-  .ds-toast-spin {
-    animation: ds-toast-spin 0.8s linear infinite;
+  .nv-m-toast-spin {
+    animation: nv-m-toast-spin 0.8s linear infinite;
   }
-  @keyframes ds-toast-spin {
+  @keyframes nv-m-toast-spin {
     to {
       transform: rotate(360deg);
     }
   }
 
-  .ds-toast-enter-active {
+  .nv-m-toast-enter-active {
     transition:
       opacity 0.2s var(--nv-ease-out-quart, ease-out),
       transform 0.2s var(--nv-ease-out-quart, ease-out);
   }
-  .ds-toast-leave-active {
+  .nv-m-toast-leave-active {
     transition:
       opacity 0.15s ease,
       transform 0.15s ease;
   }
-  .ds-toast-enter-from,
-  .ds-toast-leave-to {
+  .nv-m-toast-enter-from,
+  .nv-m-toast-leave-to {
     opacity: 0;
     transform: scale(0.9);
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .ds-toast-spin {
+    .nv-m-toast-spin {
       animation-duration: 1.4s;
     }
-    .ds-toast-enter-active,
-    .ds-toast-leave-active {
+    .nv-m-toast-enter-active,
+    .nv-m-toast-leave-active {
       transition: opacity 0.15s linear;
     }
-    .ds-toast-enter-from,
-    .ds-toast-leave-to {
+    .nv-m-toast-enter-from,
+    .nv-m-toast-leave-to {
       transform: none;
     }
   }

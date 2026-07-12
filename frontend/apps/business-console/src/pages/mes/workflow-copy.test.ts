@@ -224,7 +224,7 @@ const uiStubs = {
     props: ['search', 'searchPlaceholder'],
     template: '<div><slot name="filters" /><slot name="actions" /></div>',
   },
-  DataTablePro: {
+  NvDataTable: {
     props: ['rows', 'columns', 'rowKey', 'sort', 'clientSort', 'loading', 'emptyMessage'],
     template: `<div><template v-for="(row, i) in rows" :key="i">
       <slot name="cell-workOrderId" :row="row" />
@@ -238,33 +238,33 @@ const uiStubs = {
     props: ['open'],
     template: '<div><slot /></div>',
   },
-  DialogProContent: {
+  NvDialogContent: {
     template: '<div><slot /></div>',
   },
-  DialogProHeader: {
+  NvDialogHeader: {
     template: '<div><slot /></div>',
   },
-  DialogProTitle: {
+  NvDialogTitle: {
     template: '<h2><slot /></h2>',
   },
-  DialogProDescription: {
+  NvDialogDescription: {
     template: '<p><slot /></p>',
   },
-  DialogProFooter: {
+  NvDialogFooter: {
     template: '<div><slot /></div>',
   },
   RowActions: {
     props: ['label'],
     template: '<div><slot /></div>',
   },
-  StatusBadgePro: {
+  NvStatusBadge: {
     props: ['value'],
     template: '<span>{{ value }}</span>',
   },
-  ButtonPro: {
+  NvButton: {
     template: '<button v-bind="$attrs"><slot /></button>',
   },
-  CheckboxPro: {
+  NvCheckbox: {
     template: '<input type="checkbox" />',
   },
   DropdownMenuItem: {
@@ -283,22 +283,22 @@ const uiStubs = {
   FieldLabel: {
     template: '<label><slot /></label>',
   },
-  InputPro: {
+  NvInput: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
-  SelectPro: {
+  NvSelect: {
     template: '<div><slot /></div>',
   },
-  SelectProContent: {
+  NvSelectContent: {
     template: '<div><slot /></div>',
   },
-  SelectProItem: {
+  NvSelectItem: {
     props: ['value'],
     template: '<div><slot /></div>',
   },
-  SelectProTrigger: {
+  NvSelectTrigger: {
     template: '<button><slot /></button>',
   },
   SelectValue: {

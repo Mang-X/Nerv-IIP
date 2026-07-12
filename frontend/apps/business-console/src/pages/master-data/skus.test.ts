@@ -79,46 +79,46 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 // 对话框就地渲染（不 teleport），便于断言表单内容。
 const dialogStubs = {
-  DialogPro: { template: '<div><slot /></div>' },
+  NvDialog: { template: '<div><slot /></div>' },
   DialogRoot: { template: '<div><slot /></div>' },
-  DialogProTrigger: { template: '<div><slot /></div>' },
+  NvDialogTrigger: { template: '<div><slot /></div>' },
   DialogTrigger: { template: '<div><slot /></div>' },
-  DialogProContent: { template: '<div><slot /></div>' },
-  DialogProHeader: { template: '<div><slot /></div>' },
-  DialogProFooter: { template: '<div><slot /></div>' },
-  DialogProTitle: { template: '<h2><slot /></h2>' },
-  DialogProDescription: { template: '<p><slot /></p>' },
-  // 行操作里的 AlertDialogPro（reka portal/Teleport 在 jsdom 下卸载会崩）就地渲染，避免渲染崩溃。
-  AlertDialogPro: { template: '<div><slot /></div>' },
-  AlertDialogProTrigger: { template: '<div><slot /></div>' },
-  AlertDialogProContent: { template: '<div><slot /></div>' },
-  AlertDialogProHeader: { template: '<div><slot /></div>' },
-  AlertDialogProFooter: { template: '<div><slot /></div>' },
-  AlertDialogProTitle: { template: '<h2><slot /></h2>' },
-  AlertDialogProDescription: { template: '<p><slot /></p>' },
-  AlertDialogProCancel: { template: '<button type="button"><slot /></button>' },
-  AlertDialogProAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogHeader: { template: '<div><slot /></div>' },
+  NvDialogFooter: { template: '<div><slot /></div>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
+  // 行操作里的 NvAlertDialog（reka portal/Teleport 在 jsdom 下卸载会崩）就地渲染，避免渲染崩溃。
+  NvAlertDialog: { template: '<div><slot /></div>' },
+  NvAlertDialogTrigger: { template: '<div><slot /></div>' },
+  NvAlertDialogContent: { template: '<div><slot /></div>' },
+  NvAlertDialogHeader: { template: '<div><slot /></div>' },
+  NvAlertDialogFooter: { template: '<div><slot /></div>' },
+  NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
+  NvAlertDialogDescription: { template: '<p><slot /></p>' },
+  NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
+  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
   // RowActions 的 Pro 下拉就地渲染，避免 reka DropdownMenu portal 在 jsdom 卸载崩。
-  DropdownMenuProContent: { template: '<div><slot /></div>' },
-  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuContent: { template: '<div><slot /></div>' },
+  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // RowActions 下拉就地渲染，让「编辑」可点。
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
-  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvDropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue 完成"填表→提交"。
 const selectStubs = {
-  SelectPro: {
+  NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectProTrigger: { template: '<span><slot /></span>' },
-  SelectProValue: { template: '<span />' },
+  NvSelectTrigger: { template: '<span><slot /></span>' },
+  NvSelectValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
-  SelectProContent: { template: '<slot />' },
-  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  NvSelectContent: { template: '<slot />' },
+  NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
 async function openAndFillValid(wrapper: ReturnType<typeof mount>) {

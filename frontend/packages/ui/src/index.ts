@@ -19,8 +19,8 @@ export type { ColorMode, ThemeName, ThemePreset } from './composables/useTheme'
 // FE-2 custom block component library (distinct from原版 primitives above).
 export * from './components/blocks'
 
-// FE-2 Pro — copy-rebuilt premium components (restrained Vercel/Linear craft).
-export * from './components/pro'
+// NvUI PC — pointer-dense branded components for desktop product surfaces.
+export * from './components/pc'
 
 // Touch — large touch-optimized components for tablet boards / workshop kiosks.
 export * from './components/touch'

@@ -17,21 +17,21 @@ const threshold = ref(85)
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础（拖动滑块）</p>
+    <p class="nv-mdoc-label">基础（拖动滑块）</p>
     <NvMobileSlider v-model="basic" />
     <p class="mt-1 text-sm text-muted-foreground">当前值：{{ basic }}</p>
   </section>
   <section>
-    <p class="ds-mdoc-label">步进 + 数值气泡</p>
+    <p class="nv-mdoc-label">步进 + 数值气泡</p>
     <NvMobileSlider v-model="stepped" :min="0" :max="100" :step="5" show-bubble />
     <p class="mt-1 text-sm text-muted-foreground">当前值：{{ stepped }}（步长 5）</p>
   </section>
   <section>
-    <p class="ds-mdoc-label">禁用</p>
+    <p class="nv-mdoc-label">禁用</p>
     <NvMobileSlider :model-value="60" disabled />
   </section>
   <section>
-    <p class="ds-mdoc-label">设备告警阈值</p>
+    <p class="nv-mdoc-label">设备告警阈值</p>
     <div class="rounded-xl border border-border bg-card p-3">
       <div class="mb-2 flex items-center justify-between text-sm">
         <span class="font-medium text-foreground">CNC-07 主轴温度阈值</span>

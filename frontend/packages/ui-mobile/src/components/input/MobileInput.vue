@@ -28,7 +28,7 @@ const model = useVModel(props, 'modelValue', emits, {
     data-slot="mobile-input"
     :class="
       cn(
-        'ds-minput flex h-11 items-center gap-2.5 rounded-xl border border-border bg-card px-3.5',
+        'nv-m-minput flex h-11 items-center gap-2.5 rounded-xl border border-border bg-card px-3.5',
         props.class,
       )
     "
@@ -56,12 +56,12 @@ const model = useVModel(props, 'modelValue', emits, {
 
 <style scoped>
 @layer nv-components {
-  .ds-minput {
+  .nv-m-minput {
     transition:
       border-color 0.15s var(--nv-ease-out-quart, ease-out),
       box-shadow 0.15s var(--nv-ease-out-quart, ease-out);
   }
-  .ds-minput:focus-within {
+  .nv-m-minput:focus-within {
     border-color: var(--nv-brand);
     box-shadow: 0 0 0 3px color-mix(in oklch, var(--nv-brand) 20%, transparent);
   }

@@ -55,7 +55,7 @@ onMounted(() => nextTick(measure))
       :aria-selected="model === item.value"
       :class="
         cn(
-          'ds-mtab relative h-11 shrink-0 px-4 text-[15px] whitespace-nowrap transition-colors',
+          'nv-m-mtab relative h-11 shrink-0 px-4 text-[15px] whitespace-nowrap transition-colors',
           model === item.value ? 'font-medium text-foreground' : 'text-muted-foreground',
         )
       "
@@ -65,7 +65,7 @@ onMounted(() => nextTick(measure))
     </button>
     <span
       v-show="indicator.ready"
-      class="ds-mtab-bar"
+      class="nv-m-mtab-bar"
       :style="{ left: `${indicator.left}px`, width: `${indicator.width}px` }"
       aria-hidden="true"
     />
@@ -74,11 +74,11 @@ onMounted(() => nextTick(measure))
 
 <style scoped>
 @layer nv-components {
-  .ds-mtab {
+  .nv-m-mtab {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
   }
-  .ds-mtab-bar {
+  .nv-m-mtab-bar {
     position: absolute;
     bottom: 0;
     height: 2px;
@@ -89,7 +89,7 @@ onMounted(() => nextTick(measure))
       width 0.28s var(--nv-ease-out-expo);
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-mtab-bar {
+    .nv-m-mtab-bar {
       transition: none;
     }
   }

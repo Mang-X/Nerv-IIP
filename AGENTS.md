@@ -164,7 +164,7 @@ brand kit. The `Nv*` prefix removes that ambiguity — treat it as a hard rule.
    (`NvButton`, `NvDataTable`, `NvPageHeader`, `NvOeeHero`, `NvMobileBadge`).
 2. **A name WITHOUT the `Nv` prefix is off-limits in app code.** It is either a
    shadcn 原版 base primitive (`Button`, `Badge`, `Table`, `Dialog`, …) or a
-   `@deprecated` old name (`ButtonPro`, `ScreenButton`, `MobileBadge`, …). 原版
+   removed transitional name. 原版
    primitives exist only so the library can compose `Nv*` on top of them; they are
    referenced ONLY inside `@nerv-iip/ui` itself, never from an app.
 3. **Import through the stable boundary only:** the bare `@nerv-iip/ui` and

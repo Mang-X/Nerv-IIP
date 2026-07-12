@@ -21,7 +21,7 @@ const tabs = [
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <div class="mx-3 overflow-hidden rounded-xl border border-border bg-card">
       <NvTabBar v-model="tab" :items="tabs" />
     </div>

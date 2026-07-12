@@ -48,18 +48,18 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const dialogStubs = {
   DialogRoot: { template: '<div><slot /></div>' },
   DialogTrigger: { template: '<div><slot /></div>' },
-  DialogProContent: { template: '<div><slot /></div>' },
-  DialogProHeader: { template: '<div><slot /></div>' },
-  DialogProFooter: { template: '<div><slot /></div>' },
-  DialogProTitle: { template: '<h2><slot /></h2>' },
-  DialogProDescription: { template: '<p><slot /></p>' },
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogHeader: { template: '<div><slot /></div>' },
+  NvDialogFooter: { template: '<div><slot /></div>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
 }
 const sheetStubs = {
-  // SheetPro 根 = reka DialogRoot（与对话框共用 DialogRoot stub），内容/标头为真 .vue 按 Pro 名打桩。
-  SheetProContent: { template: '<div data-testid="sheet"><slot /></div>' },
-  SheetProHeader: { template: '<div><slot /></div>' },
-  SheetProTitle: { template: '<h2><slot /></h2>' },
-  SheetProDescription: { template: '<p><slot /></p>' },
+  // NvSheet 根 = reka DialogRoot（与对话框共用 DialogRoot stub），内容/标头为真 .vue 按 Pro 名打桩。
+  NvSheetContent: { template: '<div data-testid="sheet"><slot /></div>' },
+  NvSheetHeader: { template: '<div><slot /></div>' },
+  NvSheetTitle: { template: '<h2><slot /></h2>' },
+  NvSheetDescription: { template: '<p><slot /></p>' },
 }
 
 const allStubs = { ...layoutStub, ...dialogStubs, ...sheetStubs }

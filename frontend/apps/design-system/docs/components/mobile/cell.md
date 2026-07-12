@@ -15,7 +15,7 @@ const lockMaterial = ref(true)
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <div class="px-3">
       <NvCellGroup>
         <NvCell title="工单号" value="WO-2406-0413" />
@@ -28,7 +28,7 @@ const lockMaterial = ref(true)
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">分组标题</p>
+    <p class="nv-mdoc-label">分组标题</p>
     <div class="px-3">
       <NvCellGroup title="生产信息">
         <NvCell title="目标产线" value="A 线 · 精密加工" arrow />

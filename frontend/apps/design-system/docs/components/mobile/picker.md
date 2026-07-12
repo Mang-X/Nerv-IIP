@@ -26,7 +26,7 @@ const pickerLabel = computed(
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <NvCellGroup>
       <NvCell title="目标产线" :value="pickerLabel" arrow @click="pickerOpen = true" />
     </NvCellGroup>

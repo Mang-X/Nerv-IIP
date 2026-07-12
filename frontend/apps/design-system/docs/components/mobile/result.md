@@ -12,7 +12,7 @@ import { NvMobileButton, NvMobileResult } from '@nerv-iip/ui-mobile'
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">成功</p>
+    <p class="nv-mdoc-label">成功</p>
     <div class="w-full rounded-xl border border-border bg-card">
       <NvMobileResult
         status="success"
@@ -22,7 +22,7 @@ import { NvMobileButton, NvMobileResult } from '@nerv-iip/ui-mobile'
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">失败（带操作）</p>
+    <p class="nv-mdoc-label">失败（带操作）</p>
     <div class="w-full rounded-xl border border-border bg-card">
       <NvMobileResult
         status="error"

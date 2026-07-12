@@ -12,7 +12,7 @@ import { NvMobileAvatar } from '@nerv-iip/ui-mobile'
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">尺寸</p>
+    <p class="nv-mdoc-label">尺寸</p>
     <div class="flex items-center gap-3">
       <NvMobileAvatar size="sm" name="张伟" />
       <NvMobileAvatar size="md" name="李芳" />
@@ -20,14 +20,14 @@ import { NvMobileAvatar } from '@nerv-iip/ui-mobile'
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">形状</p>
+    <p class="nv-mdoc-label">形状</p>
     <div class="flex items-center gap-3">
       <NvMobileAvatar shape="circle" name="陈" />
       <NvMobileAvatar shape="square" name="备" />
     </div>
   </section>
   <section>
-    <p class="ds-mdoc-label">回退</p>
+    <p class="nv-mdoc-label">回退</p>
     <div class="flex items-center gap-3">
       <NvMobileAvatar name="赵敏" />
       <NvMobileAvatar src="https://invalid.example/none.png" name="孙明" />

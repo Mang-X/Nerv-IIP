@@ -1,6 +1,6 @@
 ---
 title: ResourceSchedulerBoard 资源甘特图
-pageClass: ds-wide
+pageClass: nv-wide
 ---
 
 <script setup>
@@ -207,10 +207,10 @@ function onDrag(p) {
         <span v-else-if="item.swatch === 'bottleneck'" style="border-radius:3px; padding:1px 5px; font-size:.55rem; font-weight:700; color:var(--destructive); background:color-mix(in srgb, var(--destructive) 15%, transparent)">瓶颈</span>
         <span v-else-if="item.swatch === 'conflict'" style="width:24px; height:10px; border-radius:3px; border:2px solid var(--destructive); background:color-mix(in srgb, var(--destructive) 15%, transparent)"></span>
         <span v-else-if="item.swatch === 'locked'" style="width:24px; height:10px; border-radius:3px; border:1px dashed color-mix(in srgb, var(--muted-foreground) 70%, transparent)"></span>
-        <span v-else-if="item.swatch === 'block-maintenance'" class="ds-hatch" style="--h: var(--sched-block-maintenance)"></span>
-        <span v-else-if="item.swatch === 'block-downtime'" class="ds-hatch" style="--h: var(--sched-block-downtime)"></span>
-        <span v-else-if="item.swatch === 'block-linechange'" class="ds-hatch" style="--h: var(--sched-block-linechange)"></span>
-        <span v-else-if="item.swatch === 'block-changeover'" class="ds-hatch" style="--h: var(--sched-block-changeover)"></span>
+        <span v-else-if="item.swatch === 'block-maintenance'" class="nv-hatch" style="--h: var(--sched-block-maintenance)"></span>
+        <span v-else-if="item.swatch === 'block-downtime'" class="nv-hatch" style="--h: var(--sched-block-downtime)"></span>
+        <span v-else-if="item.swatch === 'block-linechange'" class="nv-hatch" style="--h: var(--sched-block-linechange)"></span>
+        <span v-else-if="item.swatch === 'block-changeover'" class="nv-hatch" style="--h: var(--sched-block-changeover)"></span>
         <span v-else-if="item.swatch === 'offwork'" style="width:24px; height:12px; border-radius:3px; background:color-mix(in srgb, var(--foreground) 5%, transparent)"></span>
         <span v-else-if="item.swatch === 'now'" style="width:2px; height:16px; border-radius:99px; background:var(--brand)"></span>
       </span>
@@ -223,7 +223,7 @@ function onDrag(p) {
 </Demo>
 
 <style scoped>
-.ds-hatch {
+.nv-hatch {
   width: 24px;
   height: 12px;
   border-radius: 3px;
@@ -265,10 +265,10 @@ function onDrag(p) {
   <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:.5rem; margin-top:1rem">
     <div v-for="item in blockLegend" :key="item.label" style="display:flex; gap:.625rem; align-items:flex-start; border:1px solid var(--border); border-radius:8px; padding:.625rem .75rem">
       <span style="flex:none; display:inline-flex; align-items:center; justify-content:center; width:28px; height:18px; margin-top:.1rem">
-        <span v-if="item.swatch === 'block-maintenance'" class="ds-hatch" style="--h: var(--sched-block-maintenance)"></span>
-        <span v-else-if="item.swatch === 'block-downtime'" class="ds-hatch" style="--h: var(--sched-block-downtime)"></span>
-        <span v-else-if="item.swatch === 'block-linechange'" class="ds-hatch" style="--h: var(--sched-block-linechange)"></span>
-        <span v-else-if="item.swatch === 'block-changeover'" class="ds-hatch" style="--h: var(--sched-block-changeover)"></span>
+        <span v-if="item.swatch === 'block-maintenance'" class="nv-hatch" style="--h: var(--sched-block-maintenance)"></span>
+        <span v-else-if="item.swatch === 'block-downtime'" class="nv-hatch" style="--h: var(--sched-block-downtime)"></span>
+        <span v-else-if="item.swatch === 'block-linechange'" class="nv-hatch" style="--h: var(--sched-block-linechange)"></span>
+        <span v-else-if="item.swatch === 'block-changeover'" class="nv-hatch" style="--h: var(--sched-block-changeover)"></span>
       </span>
       <div style="font-size:.8125rem; line-height:1.35">
         <div style="font-weight:600; margin-bottom:.15rem">{{ item.label }}</div>
