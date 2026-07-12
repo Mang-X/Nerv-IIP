@@ -48,10 +48,48 @@ const rows = [
   },
 ]
 
+// 按对方报工单号 keyword 过滤时,服务端应返回对方那一行(模拟跨页定位后端返回)。
+const counterpartRows: Record<string, (typeof rows)[number][]> = {
+  // B(PRPT-000002)的冲销负向记录,平时不在本页
+  'PRPT-000900': [
+    {
+      productionReportId: 'pr-rev-b',
+      reportNo: 'PRPT-000900',
+      workOrderId: 'WO-2',
+      operationTaskId: 'WO-2-OP-10',
+      goodQuantity: -8,
+      scrapQuantity: 0,
+      reworkQuantity: 0,
+      reportedAtUtc: '2026-07-12T01:30:00Z',
+      workOrderStatus: 'started',
+      reversedReportNo: 'PRPT-000002',
+      reversalReason: '误报工',
+    },
+  ],
+  // C(PRPT-000901)冲销的原单,平时不在本页
+  'PRPT-000899': [
+    {
+      productionReportId: 'pr-orig-c',
+      reportNo: 'PRPT-000899',
+      workOrderId: 'WO-3',
+      operationTaskId: 'WO-3-OP-10',
+      goodQuantity: 5,
+      scrapQuantity: 0,
+      reworkQuantity: 0,
+      reportedAtUtc: '2026-07-12T02:30:00Z',
+      workOrderStatus: 'started',
+      reversalReportNo: 'PRPT-000901',
+    },
+  ],
+}
+
 // filters / pending 在 mock 工厂里用真实 reactive/shallowRef 创建,供测试可控与断言。
 const mesState = vi.hoisted(() => ({
   reverseProductionReport: vi.fn(
-    async (_reportNo: string, _body: { reason: string; reversedAtUtc?: string; idempotencyKey?: string }) => ({
+    async (
+      _reportNo: string,
+      _body: { reason: string; reversedAtUtc?: string; idempotencyKey?: string },
+    ) => ({
       data: { reportNo: 'PRPT-000902' },
     }),
   ),
@@ -75,7 +113,12 @@ vi.mock('@/composables/useBusinessMes', async () => {
   return {
     useMesProductionReports: () => ({
       filters: mesState.filters,
-      productionReports: computed(() => rows),
+      // 按 keyword 过滤时返回对方那一行(模拟服务端跨页返回),否则返回本页三行——让跨页定位的
+      // watch(flush:'post')→ 滚动/高亮后半条链在测试里真实触发。
+      productionReports: computed(() => {
+        const keyword = String(mesState.filters.keyword ?? '')
+        return keyword && counterpartRows[keyword] ? counterpartRows[keyword] : rows
+      }),
       productionReportsError: shallowRef(undefined),
       productionReportsPending: shallowRef(false),
       productionReportsTotal: computed(() => rows.length),
@@ -114,7 +157,9 @@ function mountReports(permissionCodes: string[]) {
   })
 
   // NvUI 组件在测试里按其底层 Pro/reka 组件名 stub(Nv* 只是导出别名,VTU 按组件 name 匹配)。
+  // attachTo document.body:页面跨页定位用 document.querySelector 找 [data-report-no] 行,游离 DOM 查不到。
   return mount(ProductionReportsPage, {
+    attachTo: document.body,
     global: {
       plugins: [pinia],
       stubs: {
@@ -146,8 +191,15 @@ function mountReports(permissionCodes: string[]) {
 beforeEach(() => {
   mesState.reverseProductionReport.mockReset()
   mesState.reverseProductionReport.mockResolvedValue({ data: { reportNo: 'PRPT-000902' } })
-  if (mesState.filters) mesState.filters.keyword = ''
+  if (mesState.filters) {
+    mesState.filters.keyword = ''
+    mesState.filters.skip = 0
+  }
   if (mesState.pending) mesState.pending.value = false
+  // jsdom 未实现 scrollIntoView,定义为可断言的 mock(跨页定位滚动)
+  Element.prototype.scrollIntoView = vi.fn()
+  // attachTo 会把上一个 wrapper 的 DOM 留在 body,清掉避免跨用例串扰
+  document.body.innerHTML = ''
 })
 
 describe('production reports page — reversal permission & cross-page interlink', () => {
@@ -197,19 +249,55 @@ describe('production reports page — reversal permission & cross-page interlink
     expect(rowEls[2].findAll('button').some((b) => b.text().includes('重新报工'))).toBe(true)
   })
 
-  it('filters the list by the counterpart report no to locate it when it is on another server page', async () => {
+  it('locates a cross-page reversal from the original: filters, resets page, scrolls and highlights the arriving row', async () => {
+    mesState.filters.skip = 30 // 处于非首页,验证定位会回到第一页
     const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
     await flushPromises()
 
-    // B 行的互链对方 PRPT-000900 不在本页;点击「查看冲销单」应按其单号过滤定位(而非静默无响应)
-    const rowEls = wrapper.findAll('[data-testid="row"]')
-    const link = rowEls[1].findAll('button').find((b) => b.text().includes('查看冲销单'))!
+    // B 行的互链对方 PRPT-000900 不在本页;点击「查看冲销单」按其单号过滤 + 回首页
+    const link = wrapper
+      .findAll('[data-testid="row"]')[1]
+      .findAll('button')
+      .find((b) => b.text().includes('查看冲销单'))!
     await link.trigger('click')
 
     expect(mesState.filters.keyword).toBe('PRPT-000900')
+    expect(mesState.filters.skip).toBe(0)
+
+    // keyword 变更后 mock 返回对方那一行 → watch → nextTick → 滚动 + 高亮
+    await flushPromises()
+    const arrivedRow = wrapper
+      .findAll('[data-testid="row"]')
+      .find((r) => r.text().includes('PRPT-000900'))!
+    expect(arrivedRow).toBeTruthy()
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
+    // 高亮:定位到的行报工单单元格带 ring 类
+    expect(arrivedRow.html()).toContain('ring-brand')
   })
 
-  it('reuses the same idempotency key when the dialog is closed (e.g. Escape) and reopened for the same report until success', async () => {
+  it('locates a cross-page original from the reversal row (reverse direction) then clears the locate filter', async () => {
+    const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
+    await flushPromises()
+
+    // C 行(冲销记录)的互链对方原单 PRPT-000899 不在本页;点击「冲销自」反向定位
+    const backLink = wrapper
+      .findAll('[data-testid="row"]')[2]
+      .findAll('button')
+      .find((b) => b.text().includes('冲销自'))!
+    await backLink.trigger('click')
+    await flushPromises()
+
+    expect(mesState.filters.keyword).toBe('PRPT-000899')
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('PRPT-000899')
+
+    // 清除筛选恢复原列表
+    const clearBtn = wrapper.findAll('button').find((b) => b.text().includes('清除筛选'))!
+    await clearBtn.trigger('click')
+    expect(mesState.filters.keyword).toBe('')
+  })
+
+  it('freezes both idempotencyKey and reversedAtUtc across close (e.g. Escape) and reopen for the same report until success', async () => {
     mesState.reverseProductionReport.mockRejectedValue(new Error('timeout'))
     const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
     await flushPromises()
@@ -225,17 +313,20 @@ describe('production reports page — reversal permission & cross-page interlink
     vm.openReverse(rows[0])
     vm.reverseForm.reasonCode = 'mis-report'
     await vm.submitReverse()
-    const key1 = mesState.reverseProductionReport.mock.calls[0]?.[1]?.idempotencyKey
+    const first = mesState.reverseProductionReport.mock.calls[0]?.[1]
 
     // 经 Escape / 组件自身 close 关闭(绕过「返回」),再对同一报工重开、重试
     vm.onReverseOpenChange(false)
     vm.openReverse(rows[0])
     vm.reverseForm.reasonCode = 'mis-report'
     await vm.submitReverse()
-    const key2 = mesState.reverseProductionReport.mock.calls[1]?.[1]?.idempotencyKey
+    const second = mesState.reverseProductionReport.mock.calls[1]?.[1]
 
-    expect(key1).toBeTruthy()
-    expect(key2).toBe(key1)
+    // key 与 reversedAtUtc 都必须跨重试冻结:否则后端 fingerprint(含 ReversedAtUtc)变 → 幂等冲突而非重放
+    expect(first?.idempotencyKey).toBeTruthy()
+    expect(first?.reversedAtUtc).toBeTruthy()
+    expect(second?.idempotencyKey).toBe(first?.idempotencyKey)
+    expect(second?.reversedAtUtc).toBe(first?.reversedAtUtc)
   })
 
   it('blocks closing the reverse dialog while the request is pending', async () => {

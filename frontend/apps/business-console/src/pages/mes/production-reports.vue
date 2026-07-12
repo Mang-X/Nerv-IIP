@@ -36,7 +36,7 @@ import {
 } from '@nerv-iip/ui'
 import { ClipboardPenIcon, RefreshCwIcon, Undo2Icon } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -157,18 +157,21 @@ function clearLocateFilter() {
   page.value = 1
   clearFocus()
 }
-// 跨页定位过滤拉取到对方记录后:滚动到它并只高亮它(原单已不在本页,双向高亮退化为定位对方)
-watch(productionReports, (rows) => {
-  const target = pendingLocateReportNo.value
-  if (!target) return
-  if (rows.some((r) => r.reportNo === target)) {
-    void nextTick(() => {
+// 跨页定位过滤拉取到对方记录后:滚动到它并只高亮它(原单已不在本页,双向高亮退化为定位对方)。
+// flush:'post' 确保在列表 DOM 用新结果重渲染之后再执行,scrollToReport 才能命中新行。
+watch(
+  productionReports,
+  (rows) => {
+    const target = pendingLocateReportNo.value
+    if (!target) return
+    if (rows.some((r) => r.reportNo === target)) {
       scrollToReport(target)
       focusedPair.value = new Set([target])
       pendingLocateReportNo.value = null
-    })
-  }
-})
+    }
+  },
+  { flush: 'post' },
+)
 
 // 冲销确认(破坏性动作,原因必填,A1 §2.5)。最终 reason = 原因标签[:备注],后端 MaximumLength(500)。
 const REVERSE_REASONS = [
@@ -184,17 +187,27 @@ const REASON_MAX_LENGTH = 500
 const reverseOpen = ref(false)
 const reverseTarget = ref<ReportRow | null>(null)
 const reverseForm = reactive({ reasonCode: '', remark: '' })
-// 幂等键标识"一次冲销意图",以报工单号为准存活:同一报工从打开→(经确认框 Escape / 组件自身 close /
-// 「返回」后)重开→重试,始终复用同一 key,命中后端 handler 幂等重放分支(真机记录里出现过服务端已提交
-// 却返回 502)。**只在冲销成功后清除该报工的 key**,不因任何关闭路径(含 Escape)重置,避免未决意图换 key。
-const reverseKeys = new Map<string, string>()
-function reverseKeyFor(reportNo: string): string {
-  let key = reverseKeys.get(reportNo)
-  if (!key) {
-    key = `reverse-${reportNo}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    reverseKeys.set(reportNo, key)
+// 冲销意图以报工单号为准存活:同一报工从打开→(经确认框 Escape / 组件自身 close /「返回」后)重开→重试,
+// 始终复用同一意图,命中后端 handler 幂等重放分支(真机记录里出现过服务端已提交却返回 502)。
+// **key 与 reversedAtUtc 必须一起冻结**:后端 fingerprint = ReportNo + Reason + ReversedAtUtc,MES endpoint
+// 对缺失 reversedAtUtc 每次补新的 UtcNow,若不冻结时间戳,重试虽同 key 但 fingerprint 变 → CodeAllocator
+// 判定为"同 key 不同 payload"抛冲突,而非进入 IsIdempotentReplay。**只在冲销成功后清除**,任何关闭路径
+// (含 Escape)都不重置。
+interface ReverseIntent {
+  idempotencyKey: string
+  reversedAtUtc: string
+}
+const reverseIntents = new Map<string, ReverseIntent>()
+function reverseIntentFor(reportNo: string): ReverseIntent {
+  let intent = reverseIntents.get(reportNo)
+  if (!intent) {
+    intent = {
+      idempotencyKey: `reverse-${reportNo}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      reversedAtUtc: new Date().toISOString(),
+    }
+    reverseIntents.set(reportNo, intent)
   }
-  return key
+  return intent
 }
 const requiresRemark = computed(() => reverseForm.reasonCode === 'other')
 const reverseReasonLabel = computed(
@@ -224,8 +237,8 @@ function openReverse(row: ReportRow) {
   reverseTarget.value = row
   reverseForm.reasonCode = ''
   reverseForm.remark = ''
-  // 确保本意图 key 存在(重开复用同一 key,不重新生成)
-  reverseKeyFor(row.reportNo)
+  // 确保本意图(key + reversedAtUtc)已冻结(重开复用,不重新生成)
+  reverseIntentFor(row.reportNo)
   reverseOpen.value = true
 }
 // 统一处理确认框开关(替代 v-model:open):请求进行中禁止关闭——Escape / 点遮罩 / 组件自身 close 都拦下,
@@ -239,14 +252,17 @@ async function submitReverse() {
   if (!row?.reportNo || !canSubmitReverse.value || reverseProductionReportPending.value) return
   const remark = reverseForm.remark.trim()
   const reason = remark ? `${reverseReasonLabel.value}：${remark}` : reverseReasonLabel.value
+  const intent = reverseIntentFor(row.reportNo)
   try {
     const response = await reverseProductionReport(row.reportNo, {
       reason,
-      // 复用本报工意图的 key(不每次重新生成),超时/失败后重试或关闭重开都命中后端幂等重放
-      idempotencyKey: reverseKeyFor(row.reportNo),
+      // 复用本报工意图冻结的 reversedAtUtc + key,超时/失败后重试或关闭重开都保持 fingerprint 稳定,
+      // 命中后端幂等重放(仅冻结 key、每次让 endpoint 补新 UtcNow 会因 fingerprint 变而冲突)
+      reversedAtUtc: intent.reversedAtUtc,
+      idempotencyKey: intent.idempotencyKey,
     })
-    // 意图已成功兑现,清除该报工的 key
-    reverseKeys.delete(row.reportNo)
+    // 意图已成功兑现,清除该报工的意图
+    reverseIntents.delete(row.reportNo)
     reverseOpen.value = false
     const reversalNo = response?.data?.reportNo
     notifySuccess(
