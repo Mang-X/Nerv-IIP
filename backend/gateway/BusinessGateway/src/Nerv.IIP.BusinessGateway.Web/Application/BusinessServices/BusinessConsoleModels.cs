@@ -3369,6 +3369,8 @@ public sealed record BusinessConsoleMesForceReleaseQualityHoldRequest(
     string? SourceService,
     DateTimeOffset? ReleasedAtUtc);
 
+// Actor is intentionally omitted: the gateway binds the downstream reversal actor to the
+// authenticated principal and ignores caller-supplied actor-like JSON properties.
 public sealed record BusinessConsoleMesReverseProductionReportRequest(
     [property: RouteParam] string ReportNo,
     [property: QueryParam] string OrganizationId,

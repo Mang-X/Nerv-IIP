@@ -542,7 +542,12 @@ public sealed class ReverseBusinessConsoleMesProductionReportEndpoint(
         BusinessConsoleMesReverseProductionReportRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        mes.ReverseProductionReportAsync(tokenProvider.BearerToken, request.ReportNo, request, cancellationToken);
+        mes.ReverseProductionReportAsync(
+            tokenProvider.BearerToken,
+            request.ReportNo,
+            request,
+            RequireAuthorizedPrincipalActor().ActorRef,
+            cancellationToken);
 }
 
 [Tags("Business Console MES")]

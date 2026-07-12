@@ -1133,7 +1133,7 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Mes_production_report_reverse_forwards_context_and_maps_response()
+    public async Task Mes_production_report_reverse_injects_principal_actor_and_ignores_spoofed_actor_fields()
     {
         var mes = new RecordingMesClient();
         await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
@@ -1148,7 +1148,14 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.PostAsJsonAsync(
             "/api/business-console/v1/mes/production-reports/PR-001/reverse?organizationId=org-001&environmentId=env-dev",
-            new { reason = "mis-report", reversedAtUtc = (DateTimeOffset?)null, idempotencyKey = "reverse-001" });
+            new
+            {
+                reason = "mis-report",
+                reversedAtUtc = (DateTimeOffset?)null,
+                idempotencyKey = "reverse-001",
+                actorRef = "spoofed-actor",
+                reversedBy = "spoofed-reverser",
+            });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", mes.LastInternalToken);
@@ -1159,6 +1166,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("env-dev", mes.LastReverseProductionReportRequest.EnvironmentId);
         Assert.Equal("mis-report", mes.LastReverseProductionReportRequest.Reason);
         Assert.Equal("reverse-001", mes.LastReverseProductionReportRequest.IdempotencyKey);
+        Assert.Equal("user-admin", mes.LastReverseProductionReportActor);
+        Assert.NotEqual("spoofed-actor", mes.LastReverseProductionReportActor);
+        Assert.NotEqual("spoofed-reverser", mes.LastReverseProductionReportActor);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var data = document.RootElement.GetProperty("data");
         Assert.Equal("PR-REV-001", data.GetProperty("productionReportId").GetString());
@@ -4802,6 +4812,50 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Equal("/api/business/v1/mes/production-reports/PR%2F001?organizationId=org-001&environmentId=env-dev", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Mes_http_client_rebuilds_production_report_reversal_body_with_injected_actor()
+    {
+        var reversedAtUtc = DateTimeOffset.Parse("2026-07-12T08:00:00Z");
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            productionReportId = "report-reversal-id",
+            reportNo = "PR/REV-001",
+            originalReportNo = "PR/001",
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        await client.ReverseProductionReportAsync(
+            "internal-token-001",
+            "PR/001",
+            new BusinessConsoleMesReverseProductionReportRequest(
+                "PR/001",
+                "org-001",
+                "env-dev",
+                "incorrect lot",
+                reversedAtUtc,
+                "reverse-001"),
+            "user-admin",
+            CancellationToken.None);
+
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("/api/business/v1/mes/production-reports/PR%2F001/reverse", request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+        var requestBody = Assert.Single(handler.RequestBodies);
+        Assert.NotNull(requestBody);
+        using var document = JsonDocument.Parse(requestBody);
+        var root = document.RootElement;
+        Assert.Equal("org-001", root.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", root.GetProperty("environmentId").GetString());
+        Assert.Equal("incorrect lot", root.GetProperty("reason").GetString());
+        Assert.Equal("user-admin", root.GetProperty("actorRef").GetString());
+        Assert.Equal(reversedAtUtc, root.GetProperty("reversedAtUtc").GetDateTimeOffset());
+        Assert.Equal("reverse-001", root.GetProperty("idempotencyKey").GetString());
+        Assert.False(root.TryGetProperty("reportNo", out _));
+        Assert.False(root.TryGetProperty("reversedBy", out _));
     }
 
     [Fact]
@@ -8928,6 +8982,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public BusinessConsoleMesReverseProductionReportRequest? LastReverseProductionReportRequest { get; private set; }
 
+    public string? LastReverseProductionReportActor { get; private set; }
+
     public int RetryFinishedGoodsReceiptInventoryPostingCallCount { get; private set; }
 
     public BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest? LastRetryFinishedGoodsReceiptInventoryPostingRequest { get; private set; }
@@ -9091,11 +9147,13 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         string internalBearerToken,
         string reportNo,
         BusinessConsoleMesReverseProductionReportRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         ReverseProductionReportCallCount++;
         LastReverseProductionReportRequest = request;
+        LastReverseProductionReportActor = actor;
         return Task.FromResult(new BusinessConsoleMesReverseProductionReportResponse("PR-REV-001", reportNo, "PR-ORIG-001"));
     }
 
