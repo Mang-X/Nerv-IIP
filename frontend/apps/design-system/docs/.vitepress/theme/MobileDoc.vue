@@ -12,32 +12,32 @@ import SceneBadge from './SceneBadge.vue'
 
 // Keep mobile overlays (NvBottomSheet, NvPicker, DatePicker, NvActionSheet, Dialog,
 // NvNumberKeyboard, Toast) inside the phone frame instead of covering the page.
-// `.ds-mdoc-screen` is given a containing block (transform) below so their
+// `.nv-mdoc-screen` is given a containing block (transform) below so their
 // `position: fixed` anchors to the phone, not the viewport.
-provide(MOBILE_OVERLAY_TARGET, '.ds-mdoc-screen')
+provide(MOBILE_OVERLAY_TARGET, '.nv-mdoc-screen')
 </script>
 
 <template>
-  <div class="ds-mdoc">
-    <div class="ds-mdoc-main vp-doc">
+  <div class="nv-mdoc">
+    <div class="nv-mdoc-main vp-doc">
       <!-- PDA pages are `layout: page`, so the Layout `#doc-before` badge doesn't
            fire here — render the scene-availability badge at the top of the prose
            column instead. Auto-detects the mobile family from the route. -->
       <SceneBadge />
       <slot />
     </div>
-    <aside class="ds-mdoc-aside">
-      <div class="ds-mdoc-sticky">
+    <aside class="nv-mdoc-aside">
+      <div class="nv-mdoc-sticky">
         <ClientOnly>
           <!-- `vp-raw` isolates the phone preview from VitePress base/vp-doc
                resets (ADR 0020 §4.2); the prose column keeps its `vp-doc`. -->
-          <div class="ds-mdoc-phone vp-raw">
-            <div class="ds-mdoc-statusbar">
+          <div class="nv-mdoc-phone vp-raw">
+            <div class="nv-mdoc-statusbar">
               <span class="font-semibold tabular-nums">9:41</span>
-              <span class="ds-mdoc-notch" aria-hidden="true" />
-              <span class="ds-mdoc-signal" aria-hidden="true" />
+              <span class="nv-mdoc-notch" aria-hidden="true" />
+              <span class="nv-mdoc-signal" aria-hidden="true" />
             </div>
-            <div class="ds-mdoc-screen">
+            <div class="nv-mdoc-screen">
               <slot name="phone" />
             </div>
           </div>
@@ -48,7 +48,7 @@ provide(MOBILE_OVERLAY_TARGET, '.ds-mdoc-screen')
 </template>
 
 <style>
-.ds-mdoc {
+.nv-mdoc {
   display: grid;
   gap: 2.5rem;
   align-items: start;
@@ -59,30 +59,30 @@ provide(MOBILE_OVERLAY_TARGET, '.ds-mdoc-screen')
 /* Two columns only when there's real room (≥1200px); below that the phone
    stacks under the docs at full width instead of cramping a narrow split. */
 @media (min-width: 1200px) {
-  .ds-mdoc {
+  .nv-mdoc {
     grid-template-columns: minmax(0, 1fr) 380px;
     gap: 3.5rem;
     padding: 2.25rem 3rem 3.5rem;
   }
 }
 @media (min-width: 1600px) {
-  .ds-mdoc {
+  .nv-mdoc {
     padding: 2.5rem 4rem 4rem;
   }
 }
-.ds-mdoc-main {
+.nv-mdoc-main {
   min-width: 0;
 }
-.ds-mdoc-sticky {
+.nv-mdoc-sticky {
   position: static;
 }
 @media (min-width: 1200px) {
-  .ds-mdoc-sticky {
+  .nv-mdoc-sticky {
     position: sticky;
     top: 5.5rem;
   }
 }
-.ds-mdoc-phone {
+.nv-mdoc-phone {
   width: 100%;
   max-width: 360px;
   margin-inline: auto;
@@ -94,7 +94,7 @@ provide(MOBILE_OVERLAY_TARGET, '.ds-mdoc-screen')
     0 1px 0 0 color-mix(in oklch, white 6%, transparent) inset,
     0 20px 50px -20px color-mix(in oklch, black 60%, transparent);
 }
-.ds-mdoc-statusbar {
+.nv-mdoc-statusbar {
   position: relative;
   display: flex;
   align-items: center;
@@ -104,7 +104,7 @@ provide(MOBILE_OVERLAY_TARGET, '.ds-mdoc-screen')
   font-size: 0.75rem;
   color: var(--foreground);
 }
-.ds-mdoc-notch {
+.nv-mdoc-notch {
   position: absolute;
   left: 50%;
   top: 0.5rem;
@@ -114,13 +114,13 @@ provide(MOBILE_OVERLAY_TARGET, '.ds-mdoc-screen')
   border-radius: 9999px;
   background: color-mix(in oklch, var(--foreground) 88%, transparent);
 }
-.ds-mdoc-signal {
+.nv-mdoc-signal {
   width: 1.1rem;
   height: 0.6rem;
   border-radius: 2px;
   background: color-mix(in oklch, var(--foreground) 70%, transparent);
 }
-.ds-mdoc-screen {
+.nv-mdoc-screen {
   height: 560px;
   overflow-y: auto;
   background: var(--background);
@@ -140,13 +140,13 @@ provide(MOBILE_OVERLAY_TARGET, '.ds-mdoc-screen')
   transform: translateZ(0);
 }
 /* tidy default rhythm for stacked demos inside the phone */
-.ds-mdoc-screen :where(section) {
+.nv-mdoc-screen :where(section) {
   padding: 1rem;
 }
-.ds-mdoc-screen :where(section) + :where(section) {
+.nv-mdoc-screen :where(section) + :where(section) {
   border-top: 1px solid var(--border);
 }
-.ds-mdoc-label {
+.nv-mdoc-label {
   margin-bottom: 0.625rem;
   font-size: 0.6875rem;
   font-weight: 600;

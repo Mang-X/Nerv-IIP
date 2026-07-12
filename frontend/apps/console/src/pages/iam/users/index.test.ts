@@ -157,7 +157,7 @@ describe('IAM users page', () => {
 
     expect(wrapper.text()).toContain('显示 1–20 / 45 条')
 
-    wrapper.findComponent({ name: 'DataTablePaginationPro' }).vm.$emit('update:page', 2)
+    wrapper.findComponent({ name: 'NvPagination' }).vm.$emit('update:page', 2)
     await flushPromises()
 
     expect(iamState.filters.pageIndex).toBe(2)

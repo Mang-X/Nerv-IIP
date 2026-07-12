@@ -74,7 +74,7 @@ function guardOutside(e: Event) {
         @pointer-down-outside="guardOutside"
         @interact-outside="guardOutside"
       >
-        <div class="ds-md-body">
+        <div class="nv-m-md-body">
           <DialogTitle :class="title ? 'text-base font-semibold text-foreground' : 'sr-only'">
             {{ title ?? '提示' }}
           </DialogTitle>
@@ -88,13 +88,13 @@ function guardOutside(e: Event) {
           <div v-if="$slots.default" class="mt-2 text-sm text-foreground"><slot /></div>
         </div>
 
-        <div class="ds-md-actions">
-          <button v-if="showCancel" type="button" class="ds-md-btn" @click="onCancel">
+        <div class="nv-m-md-actions">
+          <button v-if="showCancel" type="button" class="nv-m-md-btn" @click="onCancel">
             {{ cancelText }}
           </button>
           <button
             type="button"
-            class="ds-md-btn ds-md-confirm"
+            class="nv-m-md-btn nv-m-md-confirm"
             :data-tone="confirmTone"
             @click="onConfirm"
           >
@@ -108,15 +108,15 @@ function guardOutside(e: Event) {
 
 <style scoped>
 @layer nv-components {
-  .ds-md-body {
+  .nv-m-md-body {
     padding: 1.375rem 1.25rem 1.125rem;
     text-align: center;
   }
-  .ds-md-actions {
+  .nv-m-md-actions {
     display: flex;
     border-top: 1px solid var(--border);
   }
-  .ds-md-btn {
+  .nv-m-md-btn {
     flex: 1 1 0;
     min-width: 0;
     height: 2.875rem;
@@ -130,25 +130,25 @@ function guardOutside(e: Event) {
     touch-action: manipulation;
     transition: background-color 0.12s ease;
   }
-  .ds-md-btn:active {
+  .nv-m-md-btn:active {
     background-color: var(--muted);
   }
-  .ds-md-btn + .ds-md-btn {
+  .nv-m-md-btn + .nv-m-md-btn {
     border-left: 1px solid var(--border);
   }
-  .ds-md-confirm {
+  .nv-m-md-confirm {
     font-weight: 600;
     color: var(--nv-brand-strong);
   }
-  .ds-md-confirm[data-tone='danger'] {
+  .nv-m-md-confirm[data-tone='danger'] {
     color: var(--nv-destructive-strong);
   }
-  .ds-md-btn:focus-visible {
+  .nv-m-md-btn:focus-visible {
     box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--ring) 50%, transparent);
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .ds-md-btn {
+    .nv-m-md-btn {
       transition: none;
     }
   }

@@ -66,8 +66,8 @@ watch(loading, (v) => {
 <template>
   <div data-slot="pull-refresh" :class="cn('relative overflow-hidden', $props.class)">
     <div
-      class="ds-pr-inner h-full"
-      :class="!dragging && 'ds-pr-snap'"
+      class="nv-m-pr-inner h-full"
+      :class="!dragging && 'nv-m-pr-snap'"
       :style="{ transform: `translateY(${distance}px)` }"
       @pointerdown="onDown"
       @pointermove="onMove"
@@ -85,13 +85,13 @@ watch(loading, (v) => {
         />
         <ArrowDown
           v-else
-          class="ds-pr-arrow size-4 transition-transform"
+          class="nv-m-pr-arrow size-4 transition-transform"
           :class="status === 'release' && 'rotate-180'"
           aria-hidden="true"
         />
         {{ text }}
       </div>
-      <div ref="scroller" class="ds-pr-scroll h-full overflow-y-auto">
+      <div ref="scroller" class="nv-m-pr-scroll h-full overflow-y-auto">
         <slot />
       </div>
     </div>
@@ -100,14 +100,14 @@ watch(loading, (v) => {
 
 <style scoped>
 @layer nv-components {
-  .ds-pr-scroll {
+  .nv-m-pr-scroll {
     touch-action: pan-y;
   }
-  .ds-pr-snap {
+  .nv-m-pr-snap {
     transition: transform 0.3s var(--nv-ease-out-expo);
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-pr-snap {
+    .nv-m-pr-snap {
       transition: none;
     }
   }

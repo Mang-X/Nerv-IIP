@@ -56,12 +56,12 @@ const surfaces = [
       </p>
 
       <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <RouterLink v-for="s in surfaces" :key="s.to" :to="s.to" class="ds-hub-card group">
+        <RouterLink v-for="s in surfaces" :key="s.to" :to="s.to" class="nv-hub-card group">
           <div class="flex items-center gap-3">
-            <span class="ds-hub-icon"
+            <span class="nv-hub-icon"
               ><component :is="s.icon" class="size-5" aria-hidden="true"
             /></span>
-            <span class="ds-hub-tag">{{ s.tag }}</span>
+            <span class="nv-hub-tag">{{ s.tag }}</span>
           </div>
           <h2 class="mt-4 text-base font-semibold">{{ s.name }}</h2>
           <p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">{{ s.desc }}</p>
@@ -80,7 +80,7 @@ const surfaces = [
 
 <style scoped>
 @layer app {
-  .ds-hub-card {
+  .nv-hub-card {
     display: flex;
     flex-direction: column;
     padding: 1.25rem;
@@ -93,12 +93,12 @@ const surfaces = [
       box-shadow 0.18s var(--nv-ease-out-quart, ease-out),
       transform 0.18s var(--nv-ease-out-quart, ease-out);
   }
-  .ds-hub-card:hover {
+  .nv-hub-card:hover {
     border-color: color-mix(in oklch, var(--nv-brand) 45%, var(--border));
     box-shadow: 0 8px 28px -12px color-mix(in oklch, var(--nv-brand) 50%, black 30%);
     transform: translateY(-2px);
   }
-  .ds-hub-icon {
+  .nv-hub-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -108,7 +108,7 @@ const surfaces = [
     background-color: color-mix(in oklch, var(--nv-brand) 12%, transparent);
     color: var(--nv-brand-strong);
   }
-  .ds-hub-tag {
+  .nv-hub-tag {
     font-size: 0.6875rem;
     font-weight: 600;
     letter-spacing: 0.02em;
@@ -116,10 +116,10 @@ const surfaces = [
     text-transform: uppercase;
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-hub-card {
+    .nv-hub-card {
       transition: none;
     }
-    .ds-hub-card:hover {
+    .nv-hub-card:hover {
       transform: none;
     }
   }

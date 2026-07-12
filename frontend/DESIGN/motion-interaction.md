@@ -41,7 +41,7 @@ scoped CSS 里务必带 fallback：`var(--ease-out-expo, cubic-bezier(0.16,1,0.3
 
 | 表面                                 | 主按钮高                     | 行高                              | 说明                                                        |
 | ------------------------------------ | ---------------------------- | --------------------------------- | ----------------------------------------------------------- |
-| 桌面 Pro (`components/pro`)          | 36–40px (h-9/h-10)           | 紧凑                              | 指针精度，font-medium，sheen/微缩反馈                       |
+| 桌面 PC (`components/pc`)           | 36–40px (h-9/h-10)           | 紧凑                              | 指针精度，font-medium，sheen/微缩反馈                       |
 | 手机 (`ui-mobile`)                   | 40–48px (MobileButton md/lg) | `min-h-touch 48` / `min-h-row 56` | 原生尺度；开关用 iOS 比例 51×31；输入 44px+15px(防聚焦缩放) |
 | 平板/一体机看板 (`components/touch`) | 56–72px (TouchButton lg/xl)  | 大                                | 远距可读、戴手套可点；动作语义色                            |
 

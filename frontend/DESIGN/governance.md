@@ -42,7 +42,7 @@ to repo conventions (relative `../../../lib/utils` / `../<comp>` imports;
 执行批次为 MAN-433（库侧）/ MAN-435（分 app codemod）/ MAN-436（守护收口）。要点：
 
 - `Nv` 前缀 = 品牌定制层唯一标识；无前缀 = shadcn 原版底座（或待收口的 deprecated 旧名）。
-- PC 层（pro/blocks/layout）取素名：`NvButton`、`NvDataTable`、`NvPageHeader`（素名
+- PC 层（pc/blocks/layout）取素名：`NvButton`、`NvDataTable`、`NvPageHeader`（素名
   优先权归 PC）。screen/mobile/touch 与 PC 潜在同名者保留场景词根（`NvScreenButton`、
   `NvMobileDialog`、`NvTouchButton`），天然独有名直接 Nv（`NvScanBar`、`NvOeeHero`）。
 - 新组件命名必须走 ADR 0020 §1.2 的 R1–R5 判定流程；先定场景归属（表面/视距/输入方式
@@ -50,7 +50,7 @@ to repo conventions (relative `../../../lib/utils` / `../<comp>` imports;
 - shadcn 原版（`components/ui/`）零改动零重命名——本文件既有红线不变，且由 contract
   test 断言"原版目录不出现 `Nv`/`--nv-` 字样"机器守护。
 - 迁移期（MAN-433 合入后）旧名是 `@deprecated` 别名：**新代码禁止使用旧名**
-  （`ButtonPro`、`--sb-*`、`.ds-*`/`.sb-*` 类）。
+  （`NvButton`、`--nv-scr-*`、`.nv-*`/`.nv-scr-*` 类）。
 - CSS 类名前缀与 token 命名空间对齐：PC `nv-*`、screen `nv-scr-*`、mobile `nv-m-*`、
   touch `nv-t-*`；Nv 件 `data-slot` 值以 `nv-` 开头。
 
@@ -155,7 +155,7 @@ any token change is merged. If you need to update a guarded value, update the te
 intentionally and record the decision here.
 
 ADR 0020 落地批（MAN-433）将把守护面扩展到：八层层序声明、库内零 unlayered（白名单
-外）、`--nv-scr-*` 全表与 `--sb-*` 别名期形态、关键 var 引用链、原版目录纯净
+外）、`--nv-scr-*` 全表与 `--nv-scr-*` 别名期形态、关键 var 引用链、原版目录纯净
 （无 `Nv`/`--nv-` 字样）、Nv 件 `data-slot` 命名空间、跨场景 token 引用污染、旧名零
 新增。清单见 ADR 0020 §4.4。
 
@@ -187,7 +187,7 @@ This system is internal (no semver). Breaking changes to `@nerv-iip/ui` exports 
 - [ ] Destructive actions use `AlertDialog`
 - [ ] New shadcn components exported from `@nerv-iip/ui`
 - [ ] 新组件名过 ADR 0020 §1.2 判定流程（Nv 前缀 + 场景词根判定），无旧名
-      （`*Pro`、裸场景名、`--sb-*`、`.ds-*`/`.sb-*`）新增
+      （`*Pro`、裸场景名、`--nv-scr-*`、`.nv-*`/`.nv-scr-*`）新增
 - [ ] 新增/改动的手写样式在正确的 cascade layer 内（SFC → `nv-components`；赢
       utilities 的库级装饰 → `nv-overrides`；app 自定义 → `app`），无白名单外 unlayered
 - [ ] DESIGN/ docs updated if a new pattern or component was introduced

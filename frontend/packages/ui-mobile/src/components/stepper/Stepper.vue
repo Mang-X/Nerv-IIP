@@ -45,14 +45,14 @@ function onBlur(e: Event) {
     data-slot="stepper"
     :class="
       cn(
-        'ds-stepper inline-flex h-8 items-stretch overflow-hidden rounded-lg border border-border bg-card',
+        'nv-m-stepper inline-flex h-8 items-stretch overflow-hidden rounded-lg border border-border bg-card',
         props.class,
       )
     "
   >
     <button
       type="button"
-      class="ds-stepper-btn grid w-8 place-items-center text-foreground disabled:opacity-30"
+      class="nv-m-stepper-btn grid w-8 place-items-center text-foreground disabled:opacity-30"
       :disabled="!canDec"
       aria-label="减少"
       @click="set(modelValue - step)"
@@ -69,7 +69,7 @@ function onBlur(e: Event) {
     />
     <button
       type="button"
-      class="ds-stepper-btn grid w-8 place-items-center text-foreground disabled:opacity-30"
+      class="nv-m-stepper-btn grid w-8 place-items-center text-foreground disabled:opacity-30"
       :disabled="!canInc"
       aria-label="增加"
       @click="set(modelValue + step)"
@@ -81,25 +81,25 @@ function onBlur(e: Event) {
 
 <style scoped>
 @layer nv-components {
-  .ds-stepper {
+  .nv-m-stepper {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
   }
-  .ds-stepper-btn {
+  .nv-m-stepper-btn {
     transition: background-color 0.16s ease;
   }
-  .ds-stepper-btn :deep(svg) {
+  .nv-m-stepper-btn :deep(svg) {
     transition: transform 0.18s var(--nv-ease-out-quart);
   }
-  .ds-stepper-btn:active:not(:disabled) {
+  .nv-m-stepper-btn:active:not(:disabled) {
     background: var(--muted);
   }
   /* WinUI3-style press: the glyph shrinks while held, then springs back. */
-  .ds-stepper-btn:active:not(:disabled) :deep(svg) {
+  .nv-m-stepper-btn:active:not(:disabled) :deep(svg) {
     transform: scale(0.8);
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-stepper-btn :deep(svg) {
+    .nv-m-stepper-btn :deep(svg) {
       transition: none;
     }
   }

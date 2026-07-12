@@ -48,19 +48,19 @@ function toggleAppearance() {
 
     <template #nav-bar-content-before>
       <ClientOnly>
-        <div class="ds-doc-search-slot">
+        <div class="nv-doc-search-slot">
           <Button
             variant="outline"
             size="lg"
-            class="ds-doc-search h-9 text-muted-foreground md:w-56 md:justify-between"
+            class="nv-doc-search h-9 text-muted-foreground md:w-56 md:justify-between"
             aria-label="搜索文档"
             @click="openSearch"
           >
             <span class="flex items-center gap-1.5">
               <Search class="size-4" />
-              <span class="ds-doc-search-text hidden md:inline">搜索文档…</span>
+              <span class="nv-doc-search-text hidden md:inline">搜索文档…</span>
             </span>
-            <kbd class="ds-doc-kbd hidden md:inline-flex">{{ isMac ? '⌘' : 'Ctrl' }} K</kbd>
+            <kbd class="nv-doc-kbd hidden md:inline-flex">{{ isMac ? '⌘' : 'Ctrl' }} K</kbd>
           </Button>
         </div>
       </ClientOnly>
@@ -68,11 +68,11 @@ function toggleAppearance() {
 
     <template #nav-bar-content-after>
       <ClientOnly>
-        <div class="ds-doc-controls">
+        <div class="nv-doc-controls">
           <Button
             variant="ghost"
             size="icon-sm"
-            class="ds-doc-appearance"
+            class="nv-doc-appearance"
             :aria-label="isDark ? '切换到亮色主题' : '切换到暗色主题'"
             :title="isDark ? '切换到亮色主题' : '切换到暗色主题'"
             @click="toggleAppearance"
@@ -80,7 +80,7 @@ function toggleAppearance() {
             <Moon v-if="isDark" class="size-4" />
             <Sun v-else class="size-4" />
           </Button>
-          <NvThemePicker class="ds-doc-accent" />
+          <NvThemePicker class="nv-doc-accent" />
         </div>
       </ClientOnly>
     </template>
@@ -91,19 +91,19 @@ function toggleAppearance() {
 /* The search trigger sits with the right-hand control group (title left, tools
    right — a proper header), not stretched across the bar. A small gap separates
    it from the nav menu that follows. */
-.ds-doc-search-slot {
+.nv-doc-search-slot {
   display: flex;
   align-items: center;
 }
 @media (min-width: 768px) {
-  .ds-doc-search-slot {
+  .nv-doc-search-slot {
     margin-inline-end: 0.75rem;
   }
 }
-.ds-doc-search {
+.nv-doc-search {
   font-weight: 400;
 }
-.ds-doc-kbd {
+.nv-doc-kbd {
   align-items: center;
   height: 1.25rem;
   padding: 0 0.375rem;
@@ -117,13 +117,13 @@ function toggleAppearance() {
 }
 
 /* Our nav controls, vertically centered next to the social links. */
-.ds-doc-controls {
+.nv-doc-controls {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
   margin-inline-start: 0.25rem;
 }
-.ds-doc-accent {
+.nv-doc-accent {
   display: inline-flex;
   align-items: center;
 }

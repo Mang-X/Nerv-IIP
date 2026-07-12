@@ -119,27 +119,27 @@ const routerLinkStub = {
 
 // 对话框就地渲染（不 teleport），便于断言/填写表单内容。
 const dialogStubs = {
-  DialogPro: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
+  NvDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
   DialogRoot: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
-  DialogProContent: { template: '<div><slot /></div>' },
-  DialogProHeader: { template: '<div><slot /></div>' },
-  DialogProFooter: { template: '<div><slot /></div>' },
-  DialogProTitle: { template: '<h2><slot /></h2>' },
-  DialogProDescription: { template: '<p><slot /></p>' },
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogHeader: { template: '<div><slot /></div>' },
+  NvDialogFooter: { template: '<div><slot /></div>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
 }
 
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue（归属改挂下拉）。
 const formSelectStubs = {
-  SelectPro: {
+  NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectProTrigger: { template: '<span><slot /></span>' },
-  SelectProValue: { template: '<span />' },
+  NvSelectTrigger: { template: '<span><slot /></span>' },
+  NvSelectValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
-  SelectProContent: { template: '<slot />' },
-  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  NvSelectContent: { template: '<slot />' },
+  NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
 // 找到树里某节点的「选中」按钮（按文本）。

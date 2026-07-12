@@ -45,7 +45,7 @@ function cancel() {
         @focus="focused = true"
         @keydown.enter="emit('search', model)"
       />
-      <Transition name="ds-sb-clear">
+      <Transition name="nv-m-sb-clear">
         <button
           v-if="model"
           type="button"
@@ -57,7 +57,7 @@ function cancel() {
         </button>
       </Transition>
     </div>
-    <div v-if="cancelable" class="ds-sb-cancel" :class="expanded && 'is-open'">
+    <div v-if="cancelable" class="nv-m-sb-cancel" :class="expanded && 'is-open'">
       <button
         type="button"
         class="px-1 text-[15px] whitespace-nowrap text-brand active:opacity-60"
@@ -72,7 +72,7 @@ function cancel() {
 <style scoped>
 @layer nv-components {
   /* Cancel slides in by animating its track width; the flex field shrinks with it. */
-  .ds-sb-cancel {
+  .nv-m-sb-cancel {
     max-width: 0;
     opacity: 0;
     overflow: hidden;
@@ -80,32 +80,32 @@ function cancel() {
       max-width 0.28s var(--nv-ease-out-expo),
       opacity 0.2s ease;
   }
-  .ds-sb-cancel.is-open {
+  .nv-m-sb-cancel.is-open {
     max-width: 4rem;
     opacity: 1;
   }
-  .ds-sb-cancel > button {
+  .nv-m-sb-cancel > button {
     padding-left: 0.5rem;
   }
 
-  .ds-sb-clear-enter-active,
-  .ds-sb-clear-leave-active {
+  .nv-m-sb-clear-enter-active,
+  .nv-m-sb-clear-leave-active {
     transition:
       opacity 0.15s ease,
       transform 0.15s var(--nv-ease-out-quart, ease-out);
   }
-  .ds-sb-clear-enter-from,
-  .ds-sb-clear-leave-to {
+  .nv-m-sb-clear-enter-from,
+  .nv-m-sb-clear-leave-to {
     opacity: 0;
     transform: scale(0.6);
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .ds-sb-cancel {
+    .nv-m-sb-cancel {
       transition: opacity 0.15s linear;
     }
-    .ds-sb-clear-enter-active,
-    .ds-sb-clear-leave-active {
+    .nv-m-sb-clear-enter-active,
+    .nv-m-sb-clear-leave-active {
       transition: opacity 0.12s linear;
     }
   }

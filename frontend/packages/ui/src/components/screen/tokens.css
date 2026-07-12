@@ -6,7 +6,6 @@
  * and gradient borders, not from colored fills or big glows.
  *
  * Prefixed `--nv-scr-*` so they never clash with the shared `--nv-*` tokens.
- * Old `--sb-*` names kept as one-cycle var-chain aliases (ADR 0020 §5 S1).
  * Motion reference names chain to the shared Nv curves (values live once in
  * theme.css) instead of copying cubic-bezier literals.
  */
@@ -65,37 +64,6 @@
     --nv-scr-ease: var(--nv-ease-out-quart);
     --nv-scr-ease-emphasized: var(--nv-ease-out-expo);
 
-    /* ── One-cycle aliases (ADR 0020 §5 S1) — old --sb-* → --nv-scr-*. ── */
-    --sb-bg: var(--nv-scr-bg);
-    --sb-bg-accent: var(--nv-scr-bg-accent);
-    --sb-panel-a: var(--nv-scr-panel-a);
-    --sb-panel-b: var(--nv-scr-panel-b);
-    --sb-line: var(--nv-scr-line);
-    --sb-line-2: var(--nv-scr-line-2);
-    --sb-divider: var(--nv-scr-divider);
-    --sb-cyan: var(--nv-scr-cyan);
-    --sb-cyan-dim: var(--nv-scr-cyan-dim);
-    --sb-accent-from: var(--nv-scr-accent-from);
-    --sb-accent-to: var(--nv-scr-accent-to);
-    --sb-accent-fill: var(--nv-scr-accent-fill);
-    --sb-accent-edge: var(--nv-scr-accent-edge);
-    --sb-indigo: var(--nv-scr-indigo);
-    --sb-green: var(--nv-scr-green);
-    --sb-amber: var(--nv-scr-amber);
-    --sb-red: var(--nv-scr-red);
-    --sb-text: var(--nv-scr-text);
-    --sb-text-2: var(--nv-scr-text-2);
-    --sb-muted: var(--nv-scr-muted);
-    --sb-faint: var(--nv-scr-faint);
-    --sb-highlight: var(--nv-scr-highlight);
-    --sb-edge-gradient: var(--nv-scr-edge-gradient);
-    --sb-value-glow: var(--nv-scr-value-glow);
-    --sb-edge-glow: var(--nv-scr-edge-glow);
-    --sb-glow: var(--nv-scr-glow);
-    --sb-sheen: var(--nv-scr-sheen);
-    --sb-radius: var(--nv-scr-radius);
-    --sb-ease: var(--nv-scr-ease);
-    --sb-ease-emphasized: var(--nv-scr-ease-emphasized);
   }
 }
 

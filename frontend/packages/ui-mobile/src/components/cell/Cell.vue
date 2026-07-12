@@ -29,7 +29,7 @@ const slots = useSlots()
     :tabindex="arrow ? 0 : undefined"
     :class="
       cn(
-        'ds-cell relative flex min-h-touch items-center gap-3 bg-card px-4 py-2.5 text-left',
+        'nv-m-cell relative flex min-h-touch items-center gap-3 bg-card px-4 py-2.5 text-left',
         arrow && 'active:bg-accent',
         $props.class,
       )
@@ -58,7 +58,7 @@ const slots = useSlots()
 @layer nv-components {
   /* Full-bleed hairline separator (consistent with ListRow / VirtualList / the
    rest of the system); suppressed on the last row of a group. */
-  .ds-cell::after {
+  .nv-m-cell::after {
     content: '';
     position: absolute;
     right: 0;
@@ -68,7 +68,7 @@ const slots = useSlots()
     background: var(--border);
     pointer-events: none;
   }
-  .ds-cell:last-child::after {
+  .nv-m-cell:last-child::after {
     display: none;
   }
 }

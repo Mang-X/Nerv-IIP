@@ -16,7 +16,7 @@ const priority = ref('normal')
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <NvMobileRadioGroup v-model="inspect">
       <NvMobileRadioItem value="std">标准全检</NvMobileRadioItem>
       <NvMobileRadioItem value="sample">抽样检验</NvMobileRadioItem>
@@ -24,7 +24,7 @@ const priority = ref('normal')
     </NvMobileRadioGroup>
   </section>
   <section>
-    <p class="ds-mdoc-label">含禁用项</p>
+    <p class="nv-mdoc-label">含禁用项</p>
     <NvMobileRadioGroup v-model="priority">
       <NvMobileRadioItem value="low">低优先级</NvMobileRadioItem>
       <NvMobileRadioItem value="normal">普通</NvMobileRadioItem>

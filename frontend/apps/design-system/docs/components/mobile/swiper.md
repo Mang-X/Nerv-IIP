@@ -26,7 +26,7 @@ const current = ref(0)
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法 · 自动播放</p>
+    <p class="nv-mdoc-label">基础用法 · 自动播放</p>
     <NvSwiper :autoplay="3000" loop class="aspect-[16/9]">
       <div
         v-for="p in panels"
@@ -40,7 +40,7 @@ const current = ref(0)
     </NvSwiper>
   </section>
   <section>
-    <p class="ds-mdoc-label">数据驱动 · 工单卡片（可交互，指示器内置底部）</p>
+    <p class="nv-mdoc-label">数据驱动 · 工单卡片（可交互，指示器内置底部）</p>
     <NvSwiper v-model:index="current" :items="orders" :frame="false">
       <template #default="{ item }">
         <div class="w-full shrink-0 px-1 pb-7">

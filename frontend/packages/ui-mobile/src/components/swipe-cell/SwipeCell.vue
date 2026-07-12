@@ -89,7 +89,7 @@ onMounted(() => {
 <template>
   <div
     data-slot="swipe-cell"
-    :class="cn('ds-swipe relative overflow-hidden bg-card', $props.class)"
+    :class="cn('nv-m-swipe relative overflow-hidden bg-card', $props.class)"
   >
     <!-- right actions (revealed) — opacity tracks the open fraction so the colour
          is fully gone at rest-closed (nothing sits behind the content's
@@ -97,8 +97,8 @@ onMounted(() => {
          with the slide on open/close, never a visible frame of red after shut. -->
     <div
       ref="actionsEl"
-      class="ds-swipe-actions absolute inset-y-0 right-0 flex"
-      :class="!dragging && 'ds-swipe-actions-snap'"
+      class="nv-m-swipe-actions absolute inset-y-0 right-0 flex"
+      :class="!dragging && 'nv-m-swipe-actions-snap'"
       :style="{ opacity: actionsOpacity }"
     >
       <button
@@ -122,8 +122,8 @@ onMounted(() => {
     </div>
     <!-- swipeable content -->
     <div
-      class="ds-swipe-content relative z-10 bg-card"
-      :class="!dragging && 'ds-swipe-snap'"
+      class="nv-m-swipe-content relative z-10 bg-card"
+      :class="!dragging && 'nv-m-swipe-snap'"
       :style="{ transform: `translateX(${offset}px)` }"
       @pointerdown="onDown"
       @pointermove="onMove"
@@ -141,21 +141,21 @@ onMounted(() => {
    handles both the closed cover and the revealed actions. (Rounding the cell
    itself added a second, slightly different arc — the 1px crescent between the
    two radii is where the action colour leaked at the corners.) */
-  .ds-swipe-content {
+  .nv-m-swipe-content {
     touch-action: pan-y;
   }
-  .ds-swipe-snap {
+  .nv-m-swipe-snap {
     transition: transform 0.26s var(--nv-ease-out-expo);
   }
   /* During a drag, opacity tracks the offset live (no transition). On release the
    snap class fades it with the SAME duration + easing as the content slide, so
    the colour and the position stay perfectly in step. */
-  .ds-swipe-actions-snap {
+  .nv-m-swipe-actions-snap {
     transition: opacity 0.26s var(--nv-ease-out-expo);
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-swipe-snap,
-    .ds-swipe-actions-snap {
+    .nv-m-swipe-snap,
+    .nv-m-swipe-actions-snap {
       transition: none;
     }
   }

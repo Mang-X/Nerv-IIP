@@ -1,6 +1,6 @@
 ---
 title: GanttChart 工单甘特图
-pageClass: ds-wide
+pageClass: nv-wide
 ---
 
 <script setup>

@@ -29,7 +29,7 @@ function onRefresh() {
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <div class="w-full overflow-hidden rounded-xl border border-border">
       <NvPullRefresh v-model="refreshing" class="h-56" @refresh="onRefresh">
         <NvCell v-for="(item, i) in refreshList" :key="`${item}-${i}`" :title="item" />

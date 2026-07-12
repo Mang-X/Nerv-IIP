@@ -13,10 +13,10 @@ defineProps<{ wide?: boolean }>()
 <template>
   <ClientOnly>
     <!-- `vp-raw` isolates the screen demo from VitePress base/vp-doc resets
-         (ADR 0020 §4.2) — replaces the removed `.vp-doc .sb-tbl` counter-rules. -->
-    <div class="ds-sd vp-raw">
-      <div class="ds-sd-grid" />
-      <div class="ds-sd-body" :class="{ wide }">
+         (ADR 0020 §4.2) — replaces the removed `.vp-doc .nv-scr-tbl` counter-rules. -->
+    <div class="nv-sd vp-raw">
+      <div class="nv-sd-grid" />
+      <div class="nv-sd-body" :class="{ wide }">
         <slot />
       </div>
     </div>
@@ -24,7 +24,7 @@ defineProps<{ wide?: boolean }>()
 </template>
 
 <style>
-.ds-sd {
+.nv-sd {
   position: relative;
   margin: 18px 0;
   border-radius: 14px;
@@ -42,7 +42,7 @@ defineProps<{ wide?: boolean }>()
   color: var(--nv-scr-text, #fff);
   font-variant-numeric: tabular-nums;
 }
-.ds-sd-grid {
+.nv-sd-grid {
   position: absolute;
   inset: 0;
   background-image:
@@ -54,18 +54,18 @@ defineProps<{ wide?: boolean }>()
   opacity: 0.45;
   pointer-events: none;
 }
-.ds-sd-body {
+.nv-sd-body {
   position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 20px;
 }
-.ds-sd-body.wide {
+.nv-sd-body.wide {
   display: block;
 }
 /* Demo blocks live inside the docs article column — let wide modules breathe. */
-.ds-sd-body.wide > * {
+.nv-sd-body.wide > * {
   width: 100%;
 }
 </style>

@@ -16,7 +16,7 @@ const sheetOpen = ref(false)
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础用法</p>
+    <p class="nv-mdoc-label">基础用法</p>
     <NvMobileButton variant="primary" size="md" block @click="sheetOpen = true">
       打开底部抽屉
     </NvMobileButton>

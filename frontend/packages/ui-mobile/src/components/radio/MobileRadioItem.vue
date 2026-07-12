@@ -20,24 +20,24 @@ const forwarded = useForwardProps(reactiveOmit(props, 'class'))
     v-bind="forwarded"
     :class="
       cn(
-        'ds-mradio relative flex min-h-touch w-full items-center justify-between gap-3 px-4 text-left text-[15px] outline-none select-none active:bg-accent data-[state=checked]:font-medium data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
+        'nv-m-mradio relative flex min-h-touch w-full items-center justify-between gap-3 px-4 text-left text-[15px] outline-none select-none active:bg-accent data-[state=checked]:font-medium data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
         props.class,
       )
     "
   >
     <span><slot /></span>
     <RadioGroupIndicator>
-      <Check class="ds-mradio-tick size-5 text-brand" aria-hidden="true" />
+      <Check class="nv-m-mradio-tick size-5 text-brand" aria-hidden="true" />
     </RadioGroupIndicator>
   </RadioGroupItem>
 </template>
 
 <style scoped>
 @layer nv-components {
-  .ds-mradio-tick {
-    animation: ds-mradio-pop 0.2s var(--nv-ease-out-quart);
+  .nv-m-mradio-tick {
+    animation: nv-m-mradio-pop 0.2s var(--nv-ease-out-quart);
   }
-  @keyframes ds-mradio-pop {
+  @keyframes nv-m-mradio-pop {
     from {
       opacity: 0;
       transform: scale(0.4);
@@ -48,11 +48,11 @@ const forwarded = useForwardProps(reactiveOmit(props, 'class'))
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-mradio-tick {
+    .nv-m-mradio-tick {
       animation: none;
     }
   }
-  .ds-mradio::after {
+  .nv-m-mradio::after {
     content: '';
     position: absolute;
     right: 0;
@@ -62,7 +62,7 @@ const forwarded = useForwardProps(reactiveOmit(props, 'class'))
     background: var(--border);
     pointer-events: none;
   }
-  .ds-mradio:last-child::after {
+  .nv-m-mradio:last-child::after {
     display: none;
   }
 }

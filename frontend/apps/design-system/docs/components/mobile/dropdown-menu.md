@@ -43,7 +43,7 @@ const rows = [
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">筛选栏</p>
+    <p class="nv-mdoc-label">筛选栏</p>
     <div class="overflow-hidden rounded-xl border border-border">
       <NvMobileDropdownMenu>
         <NvMobileDropdownMenuItem v-model="status" title="状态" :options="statusOptions" />
