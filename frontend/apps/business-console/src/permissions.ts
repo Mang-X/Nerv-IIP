@@ -25,6 +25,7 @@ export const BUSINESS_PERMISSION_CODES = {
   mesDispatchRead: 'business.mes.dispatch.read',
   mesOperationsRead: 'business.mes.operations.read',
   mesReportingRead: 'business.mes.reporting.read',
+  mesReportingWrite: 'business.mes.reporting.write',
   mesQualityRead: 'business.mes.quality.read',
   mesReceiptsRead: 'business.mes.receipts.read',
   mesDowntimeRead: 'business.mes.downtime.read',

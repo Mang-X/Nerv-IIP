@@ -27,6 +27,7 @@ import {
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   recordBusinessConsoleMesProductionReportMutationOptions,
+  reverseBusinessConsoleMesProductionReportMutationOptions,
   runBusinessConsoleMesScheduleMutationOptions,
 } from '@nerv-iip/api-client'
 import {
@@ -259,6 +260,12 @@ vi.mock('@nerv-iip/api-client', () => ({
     })),
   })),
   resumeBusinessConsoleMesOperationTaskMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  reverseBusinessConsoleMesProductionReportMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
@@ -777,6 +784,25 @@ describe('business MES composables', () => {
 
     expect(createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions).toHaveBeenCalled()
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(2)
+  })
+
+  it('reverses a production report by reportNo and invalidates dependent MES lists', async () => {
+    const { reverseProductionReport } = useMesProductionReports()
+
+    await reverseProductionReport('PR-2001', { reason: '误报工', idempotencyKey: 'reverse-1' })
+
+    expect(reverseBusinessConsoleMesProductionReportMutationOptions).toHaveBeenCalled()
+    expect(
+      vi.mocked(reverseBusinessConsoleMesProductionReportMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      path: { reportNo: 'PR-2001' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: { reason: '误报工', idempotencyKey: 'reverse-1' },
+    })
+    // 冲销回退工单累计并新增负向记录:本域 7 键(报工列表/工单详情/工单列表/概览/在制/工序任务/完工入库),
+    // 不失效库存(冲销不发布库存过账事件)。
+    expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(7)
   })
 
   it('runs schedule mutations through the generated option', async () => {
