@@ -85,6 +85,8 @@ const props = withDefaults(
     stickyHeader?: boolean
     /** Constrain body height (enables vertical scroll + sticky header). */
     maxBodyHeight?: string
+    /** Per-row class hook — de-emphasize / tint rows by state (e.g. resolved items). */
+    rowClass?: string | ((row: T) => string | undefined)
     class?: HTMLAttributes['class']
   }>(),
   {
@@ -680,7 +682,7 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
             <TableRow
               v-for="row in pagedRows"
               :key="keyOf(row)"
-              class="nv-dt-row"
+              :class="cn('nv-dt-row', typeof rowClass === 'function' ? rowClass(row) : rowClass)"
               :data-state="selectable && selectedSet.has(keyOf(row)) ? 'selected' : undefined"
               @click="emit('row-click', row)"
             >
