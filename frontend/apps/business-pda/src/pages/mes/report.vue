@@ -15,6 +15,8 @@ import {
   NvBottomSheet,
   NvListRow,
   NvMobileResult,
+  NvMobileButton,
+  NvMobileInput,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref, watch } from 'vue'
@@ -64,6 +66,8 @@ const telemetryCandidateId = ref<string | null>(null)
 const telemetryWorkOrderId = ref('')
 const telemetryOperationTaskId = ref('')
 const telemetryDismissReason = ref('')
+function resetTelemetryAction() { telemetryWorkOrderId.value = ''; telemetryOperationTaskId.value = ''; telemetryDismissReason.value = '' }
+function toggleTelemetryCandidate(candidateId?: string) { resetTelemetryAction(); telemetryCandidateId.value = telemetryCandidateId.value === candidateId ? null : (candidateId ?? null) }
 
 async function promoteTelemetryCandidate(candidate: { candidateId?: string; workOrderId?: string | null; operationTaskId?: string | null }) {
   if (!candidate.candidateId) return
@@ -72,7 +76,9 @@ async function promoteTelemetryCandidate(candidate: { candidateId?: string; work
   if (!workOrderId || !operationTaskId) return
   await telemetryQueue.promote(candidate.candidateId, workOrderId, operationTaskId)
   telemetryCandidateId.value = null
+  resetTelemetryAction()
 }
+async function dismissTelemetryCandidate(candidateId?: string) { if (!candidateId || !telemetryDismissReason.value.trim()) return; await telemetryQueue.dismiss(candidateId, telemetryDismissReason.value.trim()); telemetryCandidateId.value = null; resetTelemetryAction() }
 
 // --- 流程上下文（productionReportFlow 驱动当前步/进度）---
 const ctx = reactive<ReportCtx>({
@@ -310,14 +316,14 @@ function onScanWorkOrder(value: string) {
       <section v-if="telemetryQueue.candidates.value.length" class="space-y-3 rounded-lg border border-warning/40 bg-warning/5 p-3">
         <div class="flex items-center justify-between"><h2 class="font-semibold">遥测待确认</h2><span class="text-xs text-muted-foreground">{{ telemetryQueue.total.value }} 条</span></div>
         <div v-for="candidate in telemetryQueue.candidates.value" :key="candidate.candidateId" class="rounded-lg border border-border bg-card p-3">
-          <button type="button" class="w-full text-left" @click="telemetryCandidateId = telemetryCandidateId === candidate.candidateId ? null : (candidate.candidateId ?? null)">
+          <NvMobileButton variant="text" block class="h-auto justify-start p-0 text-left" @click="toggleTelemetryCandidate(candidate.candidateId)">
             <span class="block font-medium">{{ candidate.deviceAssetId }} · {{ candidate.goodQuantity }} 件</span><span class="block text-xs text-muted-foreground">{{ candidate.suspensionReason ?? candidate.status }}</span>
-          </button>
+          </NvMobileButton>
           <div v-if="telemetryCandidateId === candidate.candidateId" class="mt-3 space-y-2">
-            <input v-model="telemetryWorkOrderId" :placeholder="candidate.workOrderId ?? '真实工单号'" class="min-h-touch w-full rounded-lg border border-border bg-background px-3" />
-            <input v-model="telemetryOperationTaskId" :placeholder="candidate.operationTaskId ?? '真实工序任务号'" class="min-h-touch w-full rounded-lg border border-border bg-background px-3" />
-            <input v-model="telemetryDismissReason" placeholder="忽略原因（忽略时必填）" class="min-h-touch w-full rounded-lg border border-border bg-background px-3" />
-            <div class="grid grid-cols-2 gap-2"><button type="button" class="min-h-touch rounded-lg bg-primary text-primary-foreground" @click="promoteTelemetryCandidate(candidate)">确认转正</button><button type="button" :disabled="!telemetryDismissReason.trim()" class="min-h-touch rounded-lg border border-border disabled:opacity-50" @click="telemetryQueue.dismiss(candidate.candidateId!, telemetryDismissReason.trim()).then(() => telemetryCandidateId = null)">忽略</button></div>
+            <NvMobileInput v-model="telemetryWorkOrderId" :placeholder="candidate.workOrderId ?? '真实工单号'" />
+            <NvMobileInput v-model="telemetryOperationTaskId" :placeholder="candidate.operationTaskId ?? '真实工序任务号'" />
+            <NvMobileInput v-model="telemetryDismissReason" placeholder="忽略原因（忽略时必填）" />
+            <div class="grid grid-cols-2 gap-2"><NvMobileButton variant="primary" @click="promoteTelemetryCandidate(candidate)">确认转正</NvMobileButton><NvMobileButton variant="outline" :disabled="!telemetryDismissReason.trim()" @click="dismissTelemetryCandidate(candidate.candidateId)">忽略</NvMobileButton></div>
           </div>
         </div>
       </section>

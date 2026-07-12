@@ -28,10 +28,13 @@ public sealed class PromoteTelemetryProductionReportCandidateCommandHandler(Appl
             cancellationToken) ?? throw new KnownException("Telemetry production report candidate was not found.");
         if (candidate.Status == TelemetryProductionReportCandidate.ConfirmedStatus && candidate.ProductionReportId is not null)
         {
-            var existing = await dbContext.ProductionReports.SingleAsync(x => x.Id.ToString() == candidate.ProductionReportId, cancellationToken);
+            var productionReportId = new ProductionReportId(Guid.Parse(candidate.ProductionReportId));
+            var existing = await dbContext.ProductionReports.SingleAsync(x => x.Id == productionReportId, cancellationToken);
             return new ProductionReportCommandResult(existing.Id, existing.ReportNo);
         }
 
+        // RecordProductionReportCommand owns its transaction. If candidate confirmation is interrupted,
+        // replay returns the same report through the stable telemetry idempotency key before closing the candidate.
         var result = await sender.Send(new RecordProductionReportCommand(
             request.OrganizationId, request.EnvironmentId, request.WorkOrderId, request.OperationTaskId,
             candidate.GoodQuantity, 0m, false, candidate.BucketEndUtc,

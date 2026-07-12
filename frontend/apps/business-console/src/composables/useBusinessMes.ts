@@ -1148,7 +1148,7 @@ export function useMesTelemetryProductionReportCandidates() {
   const queryCache = useQueryCache()
   const candidatesQuery = useQuery(() => withBusinessContextEnabled(
     listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions({ query: {
-      organizationId: filters.organizationId, environmentId: filters.environmentId, status: filters.status || undefined,
+      organizationId: filters.organizationId, environmentId: filters.environmentId, status: filters.status === 'all' ? undefined : filters.status || undefined,
       workCenterId: filters.workCenterId || undefined, deviceAssetId: filters.deviceAssetId || undefined,
       fromUtc: filters.fromUtc, toUtc: filters.toUtc, skip: filters.skip, take: filters.take,
     } }), filters))

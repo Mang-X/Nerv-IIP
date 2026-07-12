@@ -955,7 +955,7 @@ public sealed class PromoteBusinessConsoleMesTelemetryCandidateEndpoint(IBusines
     protected override string OrganizationId(BusinessConsoleMesTelemetryCandidatePromoteRequest request) => request.OrganizationId;
     protected override string EnvironmentId(BusinessConsoleMesTelemetryCandidatePromoteRequest request) => request.EnvironmentId;
     protected override Task<BusinessConsoleRecordProductionReportResponse> ForwardAsync(BusinessConsoleMesTelemetryCandidatePromoteRequest request, string bearerToken, CancellationToken cancellationToken) =>
-        mes.PromoteTelemetryCandidateAsync(tokenProvider.BearerToken, request.CandidateId, request, User.Identity?.Name ?? User.FindFirst("sub")?.Value ?? "authenticated-user", cancellationToken);
+        mes.PromoteTelemetryCandidateAsync(tokenProvider.BearerToken, request.CandidateId, request, RequireAuthorizedPrincipalActor().ActorRef, cancellationToken);
 }
 
 [Tags("Business Console MES")]
@@ -967,7 +967,7 @@ public sealed class DismissBusinessConsoleMesTelemetryCandidateEndpoint(IBusines
     protected override string OrganizationId(BusinessConsoleMesTelemetryCandidateDismissRequest request) => request.OrganizationId;
     protected override string EnvironmentId(BusinessConsoleMesTelemetryCandidateDismissRequest request) => request.EnvironmentId;
     protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(BusinessConsoleMesTelemetryCandidateDismissRequest request, string bearerToken, CancellationToken cancellationToken) =>
-        mes.DismissTelemetryCandidateAsync(tokenProvider.BearerToken, request.CandidateId, request, User.Identity?.Name ?? User.FindFirst("sub")?.Value ?? "authenticated-user", cancellationToken);
+        mes.DismissTelemetryCandidateAsync(tokenProvider.BearerToken, request.CandidateId, request, RequireAuthorizedPrincipalActor().ActorRef, cancellationToken);
 }
 
 [Tags("Business Console MES")]

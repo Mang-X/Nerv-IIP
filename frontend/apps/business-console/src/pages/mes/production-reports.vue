@@ -4,7 +4,7 @@ import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { useMesProductionReports, useMesTelemetryProductionReportCandidates } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { NvButton, NvDataTable, NvPageHeader } from '@nerv-iip/ui'
+import { NvButton, NvDataTable, NvInput, NvPageHeader, NvSelect, NvSelectContent, NvSelectItem, NvSelectTrigger, NvSelectValue } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
@@ -30,6 +30,8 @@ const candidateWorkOrderId = ref('')
 const candidateOperationTaskId = ref('')
 const dismissalReason = ref('')
 const selectedCandidateId = ref<string | null>(null)
+function resetCandidateAction() { candidateWorkOrderId.value = ''; candidateOperationTaskId.value = ''; dismissalReason.value = '' }
+function toggleCandidate(candidateId?: string) { resetCandidateAction(); selectedCandidateId.value = selectedCandidateId.value === candidateId ? null : (candidateId ?? null) }
 
 const quickViewWorkOrderId = ref<string | null>(null)
 
@@ -74,11 +76,13 @@ async function promoteCandidate(candidate: { candidateId?: string; workOrderId?:
   if (!workOrderId || !operationTaskId) return
   await candidateQueue.promote(candidate.candidateId, workOrderId, operationTaskId)
   selectedCandidateId.value = null
+  resetCandidateAction()
 }
 async function dismissCandidate(candidateId?: string) {
   if (!candidateId || !dismissalReason.value.trim()) return
   await candidateQueue.dismiss(candidateId, dismissalReason.value.trim())
   selectedCandidateId.value = null
+  resetCandidateAction()
 }
 </script>
 
@@ -153,9 +157,7 @@ async function dismissCandidate(candidateId?: string) {
           <p class="text-sm text-muted-foreground">来自设备计数的真实草稿与挂起记录，共 {{ candidateQueue.total.value }} 条。</p>
         </div>
         <div class="flex gap-2">
-          <select v-model="candidateQueue.filters.status" class="rounded-md border border-border bg-card px-3 py-2 text-sm">
-            <option value="pending-confirmation">待确认</option><option value="draft">草稿</option><option value="">全部</option>
-          </select>
+          <NvSelect v-model="candidateQueue.filters.status"><NvSelectTrigger class="w-32"><NvSelectValue /></NvSelectTrigger><NvSelectContent><NvSelectItem value="pending-confirmation">待确认</NvSelectItem><NvSelectItem value="draft">草稿</NvSelectItem><NvSelectItem value="all">全部</NvSelectItem></NvSelectContent></NvSelect>
           <NvButton variant="outline" size="sm" @click="candidateQueue.refresh">刷新队列</NvButton>
         </div>
       </div>
@@ -164,12 +166,12 @@ async function dismissCandidate(candidateId?: string) {
         <article v-for="candidate in candidateQueue.candidates.value" :key="candidate.candidateId" class="rounded-lg border border-border bg-card p-4">
           <div class="flex flex-wrap justify-between gap-3">
             <div><p class="font-medium">{{ candidate.deviceAssetId }} · {{ candidate.tagKey }}</p><p class="text-sm text-muted-foreground">{{ candidate.goodQuantity }} 件 · {{ formatDateTime(candidate.bucketEndUtc) }} · {{ candidate.suspensionReason ?? candidate.status }}</p></div>
-            <NvButton size="sm" variant="outline" @click="selectedCandidateId = selectedCandidateId === candidate.candidateId ? null : (candidate.candidateId ?? null)">处理</NvButton>
+            <NvButton size="sm" variant="outline" @click="toggleCandidate(candidate.candidateId)">处理</NvButton>
           </div>
           <div v-if="selectedCandidateId === candidate.candidateId" class="mt-4 grid gap-3 md:grid-cols-2">
-            <label class="text-sm">工单<input v-model="candidateWorkOrderId" :placeholder="candidate.workOrderId ?? '输入真实工单号'" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2" /></label>
-            <label class="text-sm">工序任务<input v-model="candidateOperationTaskId" :placeholder="candidate.operationTaskId ?? '输入真实工序任务号'" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2" /></label>
-            <label class="text-sm md:col-span-2">忽略原因<input v-model="dismissalReason" placeholder="忽略时必填" class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2" /></label>
+            <label class="text-sm">工单<NvInput v-model="candidateWorkOrderId" :placeholder="candidate.workOrderId ?? '输入真实工单号'" class="mt-1" /></label>
+            <label class="text-sm">工序任务<NvInput v-model="candidateOperationTaskId" :placeholder="candidate.operationTaskId ?? '输入真实工序任务号'" class="mt-1" /></label>
+            <label class="text-sm md:col-span-2">忽略原因<NvInput v-model="dismissalReason" placeholder="忽略时必填" class="mt-1" /></label>
             <div class="flex gap-2 md:col-span-2"><NvButton size="sm" :disabled="candidateQueue.actionPending.value" @click="promoteCandidate(candidate)">确认并转正</NvButton><NvButton size="sm" variant="outline" :disabled="candidateQueue.actionPending.value || !dismissalReason.trim()" @click="dismissCandidate(candidate.candidateId)">忽略</NvButton></div>
           </div>
         </article>
