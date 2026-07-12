@@ -61,7 +61,7 @@ describe('@nerv-iip/ui foundation primitive exports', () => {
     )
     const themeCss = readFileSync(resolve(process.cwd(), 'src/styles/theme.css'), 'utf8')
 
-    // ADR 0020 §3 Appendix C — overlay classes renamed `.nv-*` → `.nv-*`.
+    // ADR 0020 §3 Appendix C — overlay classes use the canonical `.nv-*` namespace.
     expect(selectContent).toContain('nv-overlay-content nv-select-content')
     expect(selectContent).toContain('nv-select-content')
     expect(selectContent).toContain(':data-align-trigger="position === \'item-aligned\'"')

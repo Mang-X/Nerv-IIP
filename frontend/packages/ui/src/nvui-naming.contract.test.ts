@@ -13,6 +13,8 @@ import * as ui from './index'
 const srcDir = dirname(fileURLToPath(import.meta.url))
 const read = (p: string) => readFileSync(resolve(srcDir, p), 'utf8')
 const exported = ui as Record<string, unknown>
+const transitionalPcIdentifier = /(?:^|[\s"'`.])ds-/m
+const transitionalScreenIdentifier = /(?:^|[\s"'`.])sb-/m
 
 // --- Frozen Appendix A (ui): 179 Nv names (incl. renamed derived types) + 174 old.
 const NV_ALL = [
@@ -234,6 +236,11 @@ for (const src of barrels) {
 }
 
 describe('NvUI Appendix A full-mapping freeze (@nerv-iip/ui / #787)', () => {
+  it('recognizes transitional selector definitions as forbidden identifiers', () => {
+    expect(transitionalPcIdentifier.test('.ds-card { color: red; }')).toBe(true)
+    expect(transitionalScreenIdentifier.test('.sb-card { color: red; }')).toBe(true)
+  })
+
   it('barrels export exactly the frozen Nv canonical set (Appendix A)', () => {
     expect([...liveNv].sort()).toEqual([...NV_ALL].sort())
   })
@@ -306,9 +313,9 @@ describe('NvUI Appendix A full-mapping freeze (@nerv-iip/ui / #787)', () => {
         violations.push(`${normalized}: transitional component filename`)
       if (new RegExp("data-slot=['\"][^'\"]*-" + 'pro').test(source))
         violations.push(`${normalized}: transitional slot`)
-      if (new RegExp('(?:^|[\\s"\'`])' + 'ds-').test(source))
+      if (transitionalPcIdentifier.test(source))
         violations.push(`${normalized}: transitional PC identifier`)
-      if (new RegExp('(?:^|[\\s"\'`])' + 'sb-').test(source))
+      if (transitionalScreenIdentifier.test(source))
         violations.push(`${normalized}: transitional screen identifier`)
       if (source.includes('--' + 'sb-')) violations.push(`${normalized}: transitional screen token`)
     }
