@@ -1,7 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
+import { useAuthStore } from '@/stores/auth'
 import InspectionsPage from './inspections.vue'
 import WorkOrdersPage from './work-orders.vue'
 
@@ -63,12 +65,13 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     }),
     refresh: vi.fn(),
     workers: computed(() => [
+      { userId: 'user-admin', displayName: 'admin', employeeNo: 'A000', status: 'active' },
       { userId: 'user-1', displayName: '张工', employeeNo: 'E001', status: 'active' },
       { userId: 'user-2', displayName: '李工', employeeNo: 'E002', status: 'active' },
     ]),
     workersError: shallowRef(),
     workersPending: shallowRef(false),
-    workersTotal: computed(() => 2),
+    workersTotal: computed(() => 3),
   }),
   useBusinessMasterDataResources: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
@@ -86,6 +89,12 @@ const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
 }
 
+// 页面用 useAuthStore 拿当前用户默认「点检人 / 开单人」——需要真 pinia + 登录 principal。
+let pinia: Pinia
+function mountOptions() {
+  return { attachTo: document.body, global: { stubs, plugins: [pinia] } }
+}
+
 beforeEach(() => {
   document.body.innerHTML = ''
   state.createWorkOrder.mockClear()
@@ -93,11 +102,16 @@ beforeEach(() => {
   state.recordInspection.mockClear()
   state.query = { deviceAssetId: 'DEV-PRESS-01', sourceAlarmId: 'ALARM-9001' }
   state.inspections = []
+  pinia = createPinia()
+  setActivePinia(pinia)
+  useAuthStore().$patch({
+    principal: { principalType: 'user', principalId: 'user-admin', loginName: 'admin' },
+  })
 })
 
 describe('maintenance work orders page', () => {
   it('prefills maintenance work order creation from equipment alarm context', async () => {
-    mount(WorkOrdersPage, { attachTo: document.body, global: { stubs } })
+    mount(WorkOrdersPage, mountOptions())
     await flushPromises()
 
     expect(document.body.textContent).toContain('新建维护工单')
@@ -106,7 +120,7 @@ describe('maintenance work orders page', () => {
   })
 
   it('offers a technician selector and estimated labor on the create sheet', async () => {
-    mount(WorkOrdersPage, { attachTo: document.body, global: { stubs } })
+    mount(WorkOrdersPage, mountOptions())
     await flushPromises()
 
     // 指派技师 + 预估工时进入建单表单（技师是可靠性按技师聚合的前提）。
@@ -117,7 +131,7 @@ describe('maintenance work orders page', () => {
   // 回归：number 输入框经 v-model 可能回传 number；预估工时校验若对 number 调用
   // .trim() 会抛异常，令 submitCreate 静默失败、不发请求（真机走查发现）。
   it('submits create with a numeric estimated-labor value (no silent .trim() crash)', async () => {
-    mount(WorkOrdersPage, { attachTo: document.body, global: { stubs } })
+    mount(WorkOrdersPage, mountOptions())
     await flushPromises()
 
     function setInput(selector: string, value: number | string) {
@@ -126,7 +140,7 @@ describe('maintenance work orders page', () => {
       el.dispatchEvent(new Event('input', { bubbles: true }))
     }
     setInput('#mwo-device', 'DEV-SMT-01')
-    setInput('#mwo-opened-by', '巡检员-张工')
+    // 开单人不再自由输入：默认当前登录用户（admin），无需填写。
     // 直接以 number 赋值，复现 number 型 v-model 回传。
     setInput('#mwo-est-labor', 45)
     await flushPromises()
@@ -141,6 +155,8 @@ describe('maintenance work orders page', () => {
     const body = state.createWorkOrder.mock.calls[0][0]
     expect(body.deviceAssetId).toBe('DEV-SMT-01')
     expect(body.estimatedLaborMinutes).toBe(45)
+    // 开单人默认解析为当前用户显示名（验证「默认当前用户」）。
+    expect(body.openedBy).toBe('admin')
   })
 })
 
@@ -174,7 +190,7 @@ describe('maintenance inspections page', () => {
         ],
       },
     ]
-    const wrapper = mount(InspectionsPage, { attachTo: document.body, global: { stubs } })
+    const wrapper = mount(InspectionsPage, mountOptions())
     await flushPromises()
 
     // 列表上可见超差标记（1 项超差）。
@@ -204,8 +220,28 @@ describe('maintenance inspections page', () => {
         measurements: [],
       },
     ]
-    const wrapper = mount(InspectionsPage, { attachTo: document.body, global: { stubs } })
+    const wrapper = mount(InspectionsPage, mountOptions())
     await flushPromises()
     expect(wrapper.find('[data-testid^="measurements-"]').exists()).toBe(false)
+  })
+
+  it('defaults the inspector to the current user and makes characteristic a select (not free text)', async () => {
+    mount(InspectionsPage, mountOptions())
+    await flushPromises()
+
+    const openBtn = [...document.body.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('记录点检'),
+    )!
+    openBtn.click()
+    await flushPromises()
+
+    // 点检人默认当前登录用户（admin），且是选择器按钮而非自由输入框。
+    const inspector = document.body.querySelector('#insp-inspector')!
+    expect(inspector.tagName).toBe('BUTTON')
+    expect(inspector.textContent).toContain('admin')
+
+    // 测量特性是下拉选择（button 触发），不再是自由输入。
+    const characteristic = document.body.querySelector('[id^="m-char-"]')!
+    expect(characteristic.tagName).toBe('BUTTON')
   })
 })

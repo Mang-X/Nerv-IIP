@@ -38,6 +38,7 @@ export {
   inspectionResultLabels,
 } from './labels/equipmentLabels'
 export {
+  COMMON_INSPECTION_CHARACTERISTICS,
   createMeasurementDraft,
   hasMeasurementInput,
   isMeasurementRowValid,

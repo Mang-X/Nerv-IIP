@@ -31,6 +31,28 @@ export interface ParsedNumber {
   value: number | null
 }
 
+/**
+ * 常用点检测量特性（下拉选择的基础项，PDA 与 Console 共用，避免两端漂移）。
+ * 与历史特性合并去重后作为「特性」下拉的候选——让点检人从已知项里选，不用凭空猜。
+ */
+export const COMMON_INSPECTION_CHARACTERISTICS: readonly string[] = [
+  '轴承温度',
+  '绕组温度',
+  '油温',
+  '振动速度',
+  '振动位移',
+  '电流',
+  '电压',
+  '转速',
+  '压力',
+  '油压',
+  '液位',
+  '绝缘电阻',
+  '噪声',
+  '泄漏量',
+  '流量',
+]
+
 /** 空白行工厂：新增一行时用。 */
 export function createMeasurementDraft(): MeasurementDraftRow {
   return {
@@ -62,10 +84,10 @@ export function parseRequiredNumber(value: string | number | null | undefined): 
 export function hasMeasurementInput(row: MeasurementDraftRow): boolean {
   return Boolean(
     String(row.characteristicCode ?? '').trim() ||
-      String(row.measuredValue ?? '').trim() ||
-      String(row.uomCode ?? '').trim() ||
-      String(row.lowerSpecLimit ?? '').trim() ||
-      String(row.upperSpecLimit ?? '').trim(),
+    String(row.measuredValue ?? '').trim() ||
+    String(row.uomCode ?? '').trim() ||
+    String(row.lowerSpecLimit ?? '').trim() ||
+    String(row.upperSpecLimit ?? '').trim(),
   )
 }
 

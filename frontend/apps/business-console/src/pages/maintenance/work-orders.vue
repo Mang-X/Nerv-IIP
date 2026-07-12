@@ -11,6 +11,7 @@ import {
   useBusinessMasterDataResources,
 } from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
+import { useAuthStore } from '@/stores/auth'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -43,6 +44,7 @@ import {
   toast,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
+import { storeToRefs } from 'pinia'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -75,6 +77,26 @@ const route = useRoute()
 const { workers, workersPending } = useBusinessWorkers()
 // 设备台账（设备编号联想建议，读自 master-data device-asset 资源）。
 const { resources: deviceResources } = useBusinessMasterDataResources('device-asset')
+// 当前登录用户（开单人默认当前用户，可改选他人，不自由输入）。
+const auth = useAuthStore()
+const { principal } = storeToRefs(auth)
+const currentUserId = computed(() => principal.value?.principalId ?? '')
+const workerOptions = computed(() =>
+  workers.value
+    .map((w) => ({
+      value: w.userId ?? '',
+      label: w.displayName ?? w.userId ?? '',
+      hint: w.employeeNo ?? undefined,
+    }))
+    .filter((o) => o.value.length > 0),
+)
+function personLabel(userId: string) {
+  return (
+    workers.value.find((w) => w.userId === userId)?.displayName ??
+    principal.value?.loginName ??
+    userId
+  )
+}
 
 const priorityOptions = [
   { label: '高', value: 'high' },
@@ -129,7 +151,7 @@ const createOpen = shallowRef(false)
 const createForm = reactive({
   deviceAssetId: '',
   priority: 'medium',
-  openedBy: '',
+  openedByUserId: '',
   sourceAlarmId: '',
   assignedTechnicianUserId: UNASSIGNED,
   estimatedLaborMinutes: '',
@@ -246,7 +268,7 @@ function round2(value: number) {
 function openCreate(prefill: Partial<typeof createForm> = {}) {
   createForm.deviceAssetId = prefill.deviceAssetId ?? ''
   createForm.priority = 'medium'
-  createForm.openedBy = prefill.openedBy ?? ''
+  createForm.openedByUserId = currentUserId.value
   createForm.sourceAlarmId = prefill.sourceAlarmId ?? ''
   createForm.assignedTechnicianUserId = UNASSIGNED
   createForm.estimatedLaborMinutes = ''
@@ -254,8 +276,8 @@ function openCreate(prefill: Partial<typeof createForm> = {}) {
   createOpen.value = true
 }
 async function submitCreate() {
-  if (!createForm.deviceAssetId.trim() || !createForm.openedBy.trim()) {
-    createError.value = '请填写设备与开单人。'
+  if (!createForm.deviceAssetId.trim() || !createForm.openedByUserId) {
+    createError.value = '请填写设备并选择开单人。'
     return
   }
   const estimatedLaborMinutes = optionalNonNegativeInt(createForm.estimatedLaborMinutes)
@@ -268,7 +290,7 @@ async function submitCreate() {
     environmentId: filters.environmentId,
     deviceAssetId: createForm.deviceAssetId.trim(),
     priority: createForm.priority,
-    openedBy: createForm.openedBy.trim(),
+    openedBy: personLabel(createForm.openedByUserId),
     sourceAlarmId: createForm.sourceAlarmId.trim() || undefined,
     assignedTechnicianUserId:
       createForm.assignedTechnicianUserId === UNASSIGNED
@@ -510,11 +532,14 @@ watch(
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-opened-by">开单人</NvFieldLabel>
-              <NvInput
+              <NvSearchSelect
                 id="mwo-opened-by"
-                v-model="createForm.openedBy"
-                autocomplete="off"
-                placeholder="如 巡检员-张工"
+                v-model="createForm.openedByUserId"
+                :options="workerOptions"
+                :loading="workersPending"
+                aria-label="开单人"
+                placeholder="选择开单人"
+                search-placeholder="搜索姓名 / 工号…"
               />
             </NvField>
             <NvField>

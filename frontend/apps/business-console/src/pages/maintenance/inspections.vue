@@ -6,9 +6,12 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenanceInspections } from '@/composables/useBusinessMaintenance'
+import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
+import { useAuthStore } from '@/stores/auth'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
+  COMMON_INSPECTION_CHARACTERISTICS,
   createMeasurementDraft,
   measurementOutOfTolerance,
   measurementRowsValid,
@@ -17,7 +20,6 @@ import {
 } from '@nerv-iip/business-core'
 import {
   NvButton,
-  NvCombobox,
   NvDataTable,
   NvField,
   NvFieldError,
@@ -25,6 +27,7 @@ import {
   NvFieldLabel,
   NvInput,
   NvPageHeader,
+  NvSearchSelect,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -47,6 +50,7 @@ import {
   RefreshCwIcon,
   Trash2Icon,
 } from 'lucide-vue-next'
+import { storeToRefs } from 'pinia'
 import { computed, reactive, shallowRef } from 'vue'
 
 definePage({
@@ -70,6 +74,28 @@ const {
 } = useMaintenanceInspections()
 const { page, pageSize } = usePagedList(filters)
 
+// 人员目录 + 当前登录用户（点检人默认当前用户，可改选他人，不自由输入）。
+const { workers } = useBusinessWorkers()
+const auth = useAuthStore()
+const { principal } = storeToRefs(auth)
+const currentUserId = computed(() => principal.value?.principalId ?? '')
+const workerOptions = computed(() =>
+  workers.value
+    .map((w) => ({
+      value: w.userId ?? '',
+      label: w.displayName ?? w.userId ?? '',
+      hint: w.employeeNo ?? undefined,
+    }))
+    .filter((o) => o.value.length > 0),
+)
+function personLabel(userId: string) {
+  return (
+    workers.value.find((w) => w.userId === userId)?.displayName ??
+    principal.value?.loginName ??
+    userId
+  )
+}
+
 const resultOptions = [
   { label: '通过', value: 'passed' },
   { label: '异常', value: 'failed' },
@@ -89,7 +115,7 @@ const recordOpen = shallowRef(false)
 const recordForm = reactive({
   planId: '',
   workOrderId: '',
-  inspector: '',
+  inspectorUserId: '',
   result: 'passed',
   inspectedAtUtc: '',
 })
@@ -102,18 +128,21 @@ const detailTarget = shallowRef<InspectionRow>()
 
 const measurementsValid = computed(() => measurementRowsValid(measurementRows))
 
-// 测量特性联想建议：从已加载点检记录里去重历史特性（也可自由录入新特性）。
-const characteristicSuggestions = computed(() => {
+// 测量特性下拉候选：常用特性 + 已加载点检记录里的历史特性，去重。让点检人从已知项里选，不用猜。
+const characteristicOptions = computed(() => {
   const seen = new Set<string>()
-  const out: { value: string }[] = []
-  for (const inspection of inspections.value) {
-    for (const measurement of inspection.measurements ?? []) {
-      const code = (measurement.characteristicCode ?? '').trim()
-      if (code && !seen.has(code)) {
-        seen.add(code)
-        out.push({ value: code })
-      }
+  const out: { value: string; label: string }[] = []
+  const add = (code: string) => {
+    const c = code.trim()
+    if (c && !seen.has(c)) {
+      seen.add(c)
+      out.push({ value: c, label: c })
     }
+  }
+  for (const code of COMMON_INSPECTION_CHARACTERISTICS) add(code)
+  for (const inspection of inspections.value) {
+    for (const measurement of inspection.measurements ?? [])
+      add(measurement.characteristicCode ?? '')
   }
   return out
 })
@@ -180,7 +209,7 @@ function toIsoDateTime(value: string) {
 function openRecord() {
   recordForm.planId = ''
   recordForm.workOrderId = ''
-  recordForm.inspector = ''
+  recordForm.inspectorUserId = currentUserId.value
   recordForm.result = 'passed'
   recordForm.inspectedAtUtc = nowLocal()
   measurementRows.splice(0, measurementRows.length, createMeasurementRow())
@@ -208,8 +237,8 @@ async function submitRecord() {
     recordError.value = '请至少关联保养计划或维修工单。'
     return
   }
-  if (!recordForm.inspector.trim()) {
-    recordError.value = '请填写点检人。'
+  if (!recordForm.inspectorUserId) {
+    recordError.value = '请选择点检人。'
     return
   }
   if (!measurementsValid.value) {
@@ -223,7 +252,7 @@ async function submitRecord() {
     environmentId: filters.environmentId,
     planId: recordForm.planId.trim() || undefined,
     workOrderId: recordForm.workOrderId.trim() || undefined,
-    inspector: recordForm.inspector.trim(),
+    inspector: personLabel(recordForm.inspectorUserId),
     result: recordForm.result,
     inspectedAtUtc: toIsoDateTime(recordForm.inspectedAtUtc),
     // 只送有效行：空行被过滤，无测量值时不带该字段。
@@ -347,11 +376,13 @@ function formatError(error: unknown) {
             </NvField>
             <NvField>
               <NvFieldLabel for="insp-inspector">点检人</NvFieldLabel>
-              <NvInput
+              <NvSearchSelect
                 id="insp-inspector"
-                v-model="recordForm.inspector"
-                autocomplete="off"
-                placeholder="如 设备保全班"
+                v-model="recordForm.inspectorUserId"
+                :options="workerOptions"
+                aria-label="点检人"
+                placeholder="选择点检人"
+                search-placeholder="搜索姓名 / 工号…"
               />
             </NvField>
             <NvField>
@@ -399,11 +430,13 @@ function formatError(error: unknown) {
               <div class="grid gap-2 sm:grid-cols-3">
                 <NvField>
                   <NvFieldLabel :for="`m-char-${row.id}`">特性</NvFieldLabel>
-                  <NvCombobox
+                  <NvSearchSelect
                     :id="`m-char-${row.id}`"
                     v-model="row.characteristicCode"
-                    :suggestions="characteristicSuggestions"
-                    placeholder="如 轴承温度"
+                    :options="characteristicOptions"
+                    aria-label="测量特性"
+                    placeholder="选择特性"
+                    search-placeholder="搜索特性…"
                   />
                 </NvField>
                 <NvField>

@@ -11,6 +11,7 @@ import {
   useBusinessMasterDataResources,
 } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { COMMON_INSPECTION_CHARACTERISTICS } from '@nerv-iip/business-core'
 import {
   NvButton,
   NvCombobox,
@@ -21,6 +22,7 @@ import {
   NvInput,
   NvLineChart,
   NvPageHeader,
+  NvSearchSelect,
   NvSectionCard,
   NvSectionCards,
 } from '@nerv-iip/ui'
@@ -55,10 +57,11 @@ const deviceSuggestions = computed(() =>
     .map((r) => ({ value: (r.code ?? '').trim(), label: r.displayName ?? r.code ?? '' }))
     .filter((s) => s.value.length > 0),
 )
-// 常用测量特性建议（也可自由录入设备特有特性）。
-const characteristicSuggestions = ['轴承温度', '振动', '电流', '油压', '转速', '绝缘电阻'].map(
-  (value) => ({ value }),
-)
+// 测量特性下拉候选（常用特性，从已知项里选）。
+const characteristicOptions = COMMON_INSPECTION_CHARACTERISTICS.map((value) => ({
+  value,
+  label: value,
+}))
 
 // 设备/窗口是唯一事实源（reliability filters）；同步到趋势与汇总子查询。
 watch(
@@ -313,11 +316,13 @@ function refreshAll() {
           </div>
           <NvField class="w-full sm:w-64">
             <NvFieldLabel for="rel-characteristic">测量特性</NvFieldLabel>
-            <NvCombobox
+            <NvSearchSelect
               id="rel-characteristic"
               v-model="trend.filters.characteristicCode"
-              :suggestions="characteristicSuggestions"
-              placeholder="搜索或输入特性，如 轴承温度"
+              :options="characteristicOptions"
+              aria-label="测量特性"
+              placeholder="选择特性"
+              search-placeholder="搜索特性…"
             />
           </NvField>
         </div>
