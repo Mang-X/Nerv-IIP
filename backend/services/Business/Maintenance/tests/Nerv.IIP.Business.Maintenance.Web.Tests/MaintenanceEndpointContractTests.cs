@@ -1058,7 +1058,7 @@ public sealed class MaintenanceEndpointContractTests
 
         Assert.Equal(4, response.Items.Count);
         Assert.DoesNotContain(response.Items, x => x.CostCurrencyCode is null);
-        var item = Assert.Single(response.Items, x => x.AssignedTechnicianUserId == "worker-001" && x.CostCurrencyCode == "CNY");
+        var item = Assert.Single(response.Items, x => x.ActualTechnicianUserId == "worker-001" && x.CostCurrencyCode == "CNY");
         Assert.Equal("DEV-CNC-01", item.DeviceAssetId);
         Assert.Equal("worker-001", item.AssignedTechnicianUserId);
         Assert.Equal(1, item.WorkOrderCount);
@@ -1067,9 +1067,10 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(10m, item.SparePartCostAmount);
         Assert.Equal(5m, item.ExternalServiceCostAmount);
         Assert.Equal(15m, item.TotalCostAmount);
-        Assert.Single(response.Items, x => x.AssignedTechnicianUserId == "worker-002" && x.CostCurrencyCode == "CNY");
-        Assert.Single(response.Items, x => x.AssignedTechnicianUserId == "worker-001" && x.CostCurrencyCode == "USD");
+        Assert.Single(response.Items, x => x.ActualTechnicianUserId == "worker-002" && x.CostCurrencyCode == "CNY");
+        Assert.Single(response.Items, x => x.ActualTechnicianUserId == "worker-001" && x.CostCurrencyCode == "USD");
         var actualTechnician = Assert.Single(response.Items, x => x.ActualTechnicianUserId == "worker-actual" && x.CostCurrencyCode == "CNY");
+        Assert.Equal("worker-001", actualTechnician.AssignedTechnicianUserId);
         Assert.Equal(75, actualTechnician.ActualLaborMinutes);
     }
 

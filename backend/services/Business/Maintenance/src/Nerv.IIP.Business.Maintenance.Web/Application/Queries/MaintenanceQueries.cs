@@ -497,17 +497,21 @@ public sealed class QueryMaintenanceReliabilitySummaryQueryHandler(ApplicationDb
 
         var items = workOrders
             .GroupBy(x => new { x.DeviceAssetId, TechnicianUserId = x.ActualTechnicianUserId ?? x.AssignedTechnicianUserId, x.CostCurrencyCode })
-            .Select(group => new MaintenanceReliabilitySummaryItem(
-                group.Key.DeviceAssetId,
-                group.Key.TechnicianUserId,
-                group.Key.TechnicianUserId,
-                group.Key.CostCurrencyCode,
-                group.Count(),
-                group.Sum(x => x.EstimatedLaborMinutes ?? 0),
-                group.Sum(x => x.ActualLaborMinutes ?? 0),
-                group.Sum(x => x.SparePartCostAmount ?? 0m),
-                group.Sum(x => x.ExternalServiceCostAmount ?? 0m),
-                group.Sum(x => (x.SparePartCostAmount ?? 0m) + (x.ExternalServiceCostAmount ?? 0m))))
+            .Select(group =>
+            {
+                var assignedTechnicians = group.Select(x => x.AssignedTechnicianUserId).Distinct().ToArray();
+                return new MaintenanceReliabilitySummaryItem(
+                    group.Key.DeviceAssetId,
+                    assignedTechnicians.Length == 1 ? assignedTechnicians[0] : null,
+                    group.Key.TechnicianUserId,
+                    group.Key.CostCurrencyCode,
+                    group.Count(),
+                    group.Sum(x => x.EstimatedLaborMinutes ?? 0),
+                    group.Sum(x => x.ActualLaborMinutes ?? 0),
+                    group.Sum(x => x.SparePartCostAmount ?? 0m),
+                    group.Sum(x => x.ExternalServiceCostAmount ?? 0m),
+                    group.Sum(x => (x.SparePartCostAmount ?? 0m) + (x.ExternalServiceCostAmount ?? 0m)));
+            })
             .OrderBy(x => x.DeviceAssetId)
             .ThenBy(x => x.ActualTechnicianUserId)
             .ThenBy(x => x.CostCurrencyCode)

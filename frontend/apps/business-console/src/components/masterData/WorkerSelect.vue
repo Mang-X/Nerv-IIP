@@ -8,7 +8,7 @@ import {
   NvSelectTrigger,
   NvSelectValue,
 } from '@nerv-iip/ui'
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 
 /**
  * 可复用「工人选择器」。选项来自工人目录（IAM 用户），显示姓名（工号 · 部门），
@@ -47,12 +47,6 @@ const options = computed(() =>
     }),
 )
 
-// 选中项已不在结果集时清空，避免显示空白选中态。
-watch(options, (list) => {
-  if (model.value && !list.some((option) => option.value === model.value)) {
-    model.value = ''
-  }
-})
 </script>
 
 <template>
