@@ -256,21 +256,23 @@ const finalReasonLength = computed(() => {
 const remarkMaxLength = computed(() =>
   Math.max(0, REASON_MAX_LENGTH - reverseReasonLabel.value.length - 1),
 )
+const reverseProductionReportDetailMatchesTarget = computed(
+  () =>
+    !!reverseTarget.value?.reportNo &&
+    reverseProductionReportDetail.value?.report?.reportNo === reverseTarget.value.reportNo,
+)
 const canSubmitReverse = computed(() => {
   if (!reverseTarget.value?.reportNo) return false
   if (!reverseForm.reasonCode) return false
   if (requiresRemark.value && !reverseForm.remark.trim()) return false
   if (finalReasonLength.value > REASON_MAX_LENGTH) return false
   if (reverseProductionReportDetailPending.value || reverseProductionReportDetailError.value) return false
-  if (reverseProductionReportDetail.value?.report?.reportNo !== reverseTarget.value.reportNo)
-    return false
+  if (!reverseProductionReportDetailMatchesTarget.value) return false
   return true
 })
 const reverseConsumedMaterialLots = computed(() => {
-  const detail = reverseProductionReportDetail.value
-  const targetReportNo = reverseTarget.value?.reportNo
-  if (!detail || !targetReportNo || detail.report?.reportNo !== targetReportNo) return []
-  return detail.consumedMaterialLots ?? []
+  if (!reverseProductionReportDetailMatchesTarget.value) return []
+  return reverseProductionReportDetail.value?.consumedMaterialLots ?? []
 })
 
 function composeReason(reasonCode: string, remark: string): string {
@@ -626,18 +628,18 @@ async function dismissCandidate(candidateId?: string) {
           </dl>
           <div class="space-y-2 border-t pt-3">
             <h3 class="text-sm font-medium">物料批次消耗</h3>
-            <p v-if="reverseProductionReportDetailPending" class="text-xs text-muted-foreground">
-              正在加载物料消耗明细…
-            </p>
             <p
-              v-else-if="reverseProductionReportDetailError"
+              v-if="reverseProductionReportDetailError"
               class="text-xs text-destructive"
               role="alert"
             >
               物料消耗明细加载失败，请稍后重试。为避免不完整冲销，当前无法确认。
             </p>
             <p
-              v-else-if="reverseProductionReportDetail?.report?.reportNo !== reverseTarget.reportNo"
+              v-else-if="
+                reverseProductionReportDetailPending ||
+                !reverseProductionReportDetailMatchesTarget
+              "
               class="text-xs text-muted-foreground"
             >
               正在加载物料消耗明细…
