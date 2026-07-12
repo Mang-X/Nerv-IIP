@@ -583,7 +583,7 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
-    public void Schedule_requires_declared_skill_and_tooling_codes_on_selected_resource()
+    public void Schedule_requires_declared_skill_codes_on_selected_resource_but_reserves_tooling_separately()
     {
         var problem = CreateSingleOperationProblem();
         var operation = problem.Orders.Single().Operations.Single() with
@@ -612,9 +612,37 @@ public class FiniteCapacitySchedulerTests
 
         var plan = scheduler.Schedule(problem, "plan-skill-tooling-001", GeneratedAtUtc);
 
-        Assert.Contains(plan.UnscheduledOperations, x =>
-            x.OperationId == "WO-SNAPSHOT-001-OP10"
-            && x.ReasonCode == ScheduleConflictReasonCodeContract.NoEligibleResource);
+        Assert.Empty(plan.UnscheduledOperations);
+        Assert.Single(plan.Assignments);
+    }
+
+    [Fact]
+    public void Schedule_reports_explicit_tooling_conflict_when_two_resources_compete_for_one_tool()
+    {
+        var template = CreateSingleOperationProblem();
+        var firstOrder = template.Orders.Single();
+        var firstOperation = firstOrder.Operations.Single() with { DurationMinutes = 60, RequiredToolingIds = ["TOOL-00001"] };
+        var secondOperation = firstOperation with { OperationId = "WO-SNAPSHOT-002-OP10" };
+        var problem = template with
+        {
+            HorizonEndUtc = template.HorizonStartUtc.AddMinutes(60),
+            Orders =
+            [
+                firstOrder with { Operations = [firstOperation] },
+                firstOrder with { OrderId = "WO-SNAPSHOT-002", Operations = [secondOperation] }
+            ],
+            Resources =
+            [
+                template.Resources.Single(),
+                template.Resources.Single() with { ResourceId = "DEV-SNAPSHOT-02", SortKey = "02" }
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-tooling-conflict-001", GeneratedAtUtc);
+
+        Assert.Single(plan.Assignments);
+        Assert.Contains(plan.UnscheduledOperations, x => x.OrderId == "WO-SNAPSHOT-002" && x.ReasonCode == ScheduleConflictReasonCodeContract.Tooling);
+        Assert.Contains(plan.Conflicts, x => x.OrderId == "WO-SNAPSHOT-002" && x.ReasonCode == ScheduleConflictReasonCodeContract.Tooling && x.Severity == ScheduleConflictSeverityContract.Error);
     }
 
     [Fact]

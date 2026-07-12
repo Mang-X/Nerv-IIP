@@ -340,7 +340,8 @@ public enum ScheduleConflictReasonCodeContract
     NoEligibleResource = 6,
     OutsideHorizon = 7,
     InvalidLockedAssignment = 8,
-    PredecessorUnscheduled = 9
+    PredecessorUnscheduled = 9,
+    Tooling = 10
 }
 
 public enum ScheduleConflictSeverityContract

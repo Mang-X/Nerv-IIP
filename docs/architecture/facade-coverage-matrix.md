@@ -96,7 +96,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | IndustrialTelemetry | 24 | 21 | 1 | 2 |
 | Inventory | 12 | 5 | 2 | 5 |
 | Maintenance | 20 | 15 | 5 | 0 |
-| MasterData | 41 | 38 | 0 | 3 |
+| MasterData | 46 | 38 | 4 | 4 |
 | Mes | 50 | 47 | 3 | 0 |
 | ProductEngineering | 38 | 38 | 0 | 0 |
 | Quality | 31 | 16 | 15 | 0 |

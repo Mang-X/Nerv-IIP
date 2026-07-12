@@ -53,6 +53,7 @@ public static class StandardCodeRules
         SimpleResource("shift", "Shift", "SH", 2),
         SimpleResource("work-center", "Work center", "WC", 4),
         SimpleResource("device-asset", "Device asset", "EQ", 5),
+        SimpleResource("tooling-asset", "Tooling asset", "TOOL", 5, separator: "-"),
         BusinessPartner(),
         SimpleResource("department", "Department", "DEPT", 4, separator: "-"),
         SimpleResource("team", "Team", "TEAM", 4, separator: "-"),

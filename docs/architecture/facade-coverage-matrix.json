@@ -1877,6 +1877,46 @@
     {
       "service": "MasterData",
       "method": "POST",
+      "route": "/api/business/v1/master-data/tooling-assets",
+      "operationId": "registerBusinessMasterDataToolingAsset",
+      "classification": "deferred",
+      "followUp": "BusinessGateway and Business Console tooling maintenance follow the dedicated MasterData tooling menu phase after #718."
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/tooling-assets/status",
+      "operationId": "changeBusinessMasterDataToolingStatus",
+      "classification": "deferred",
+      "followUp": "BusinessGateway and Business Console tooling lifecycle maintenance follow the dedicated MasterData tooling menu phase after #718."
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/tooling-assets/usage",
+      "operationId": "recordBusinessMasterDataToolingUsage",
+      "classification": "deferred",
+      "followUp": "Equipment counter integration and Business Console tooling usage maintenance follow the dedicated MasterData tooling menu phase after #718."
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/changeover-matrix/import",
+      "operationId": "importBusinessMasterDataChangeoverMatrix",
+      "classification": "deferred",
+      "followUp": "BusinessGateway and Business Console matrix import follow the dedicated MasterData tooling menu phase after #718."
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
+      "route": "/api/business/v1/master-data/scheduling-tooling-facts/resolve",
+      "operationId": "resolveBusinessMasterDataSchedulingToolingFacts",
+      "classification": "internal",
+      "rationale": "Internal Scheduling assembly contract; authoritative changeover and tooling facts are consumed service-to-service and are not a user-facing facade."
+    },
+    {
+      "service": "MasterData",
+      "method": "POST",
       "route": "/api/business/v1/master-data/partners",
       "operationId": "createBusinessMasterDataPartner",
       "classification": "exposed",

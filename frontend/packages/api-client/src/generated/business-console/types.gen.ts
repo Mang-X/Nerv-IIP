@@ -1040,7 +1040,7 @@ export type NervIipContractsSchedulingScheduleConflictContract = {
     message?: string;
 };
 
-export type NervIipContractsSchedulingScheduleConflictReasonCodeContract = 'dueDate' | 'capacity' | 'calendar' | 'material' | 'quality' | 'equipment' | 'noEligibleResource' | 'outsideHorizon' | 'invalidLockedAssignment' | 'predecessorUnscheduled';
+export type NervIipContractsSchedulingScheduleConflictReasonCodeContract = 'dueDate' | 'capacity' | 'calendar' | 'material' | 'quality' | 'equipment' | 'noEligibleResource' | 'outsideHorizon' | 'invalidLockedAssignment' | 'predecessorUnscheduled' | 'tooling';
 
 export type NervIipContractsSchedulingScheduleConflictSeverityContract = 'info' | 'warning' | 'error';
 

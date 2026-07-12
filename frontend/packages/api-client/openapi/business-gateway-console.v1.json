@@ -26099,7 +26099,8 @@
           "noEligibleResource",
           "outsideHorizon",
           "invalidLockedAssignment",
-          "predecessorUnscheduled"
+          "predecessorUnscheduled",
+          "tooling"
         ]
       },
       "NervIIPContractsSchedulingScheduleConflictSeverityContract": {

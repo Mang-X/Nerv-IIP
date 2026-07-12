@@ -76,6 +76,10 @@ public sealed class SchedulingProblemProducer(
                 x => (IReadOnlyCollection<string>)x.Select(y => y.OperationCode).ToArray(),
                 StringComparer.Ordinal);
         var resources = BuildResources(workCenters.Values, devicesByWorkCenter, operationCapabilitiesByWorkCenter);
+        var orderedOrders = request.Orders.OrderBy(x => x.DueUtc).ThenBy(x => x.Priority).ThenBy(x => x.OrderId, StringComparer.Ordinal).ToArray();
+        var transitions = BuildTransitions(orderedOrders, routingsByVersion);
+        var toolingFacts = await masterData.ResolveToolingFactsAsync(request.OrganizationId, request.EnvironmentId, transitions, cancellationToken);
+        var toolingFactsByOperation = toolingFacts.ToDictionary(x => x.OperationId, StringComparer.Ordinal);
 
         return new SchedulingProblemContract(
             ContractVersion: 1,
@@ -84,11 +88,8 @@ public sealed class SchedulingProblemProducer(
             EnvironmentId: request.EnvironmentId,
             HorizonStartUtc: request.HorizonStartUtc,
             HorizonEndUtc: request.HorizonEndUtc,
-            Orders: request.Orders
-                .OrderBy(x => x.DueUtc)
-                .ThenBy(x => x.Priority)
-                .ThenBy(x => x.OrderId, StringComparer.Ordinal)
-                .Select(order => ToOrder(order, routingsByVersion[order.RoutingVersionId], resources))
+            Orders: orderedOrders
+                .Select(order => ToOrder(order, routingsByVersion[order.RoutingVersionId], resources, toolingFactsByOperation))
                 .ToArray(),
             Resources: resources.Values
                 .OrderBy(x => x.SortKey, StringComparer.Ordinal)
@@ -106,7 +107,8 @@ public sealed class SchedulingProblemProducer(
     private static SchedulingOrderContract ToOrder(
         SchedulingProblemSourceOrder order,
         SchedulingProblemRoutingSnapshot routing,
-        IReadOnlyDictionary<string, SchedulingResourceContract> resources)
+        IReadOnlyDictionary<string, SchedulingResourceContract> resources,
+        IReadOnlyDictionary<string, SchedulingProblemToolingFactSnapshot> toolingFacts)
     {
         var constraints = (order.OperationConstraints ?? [])
             .GroupBy(x => x.OperationCode, StringComparer.Ordinal)
@@ -122,6 +124,7 @@ public sealed class SchedulingProblemProducer(
                 .Order(StringComparer.Ordinal)
                 .ToArray();
             var constraint = constraints.GetValueOrDefault(operation.OperationCode);
+            var toolingFact = toolingFacts.GetValueOrDefault(operationId);
             operations.Add(new SchedulingOperationContract(
                 OperationId: operationId,
                 OperationSequence: operation.Sequence,
@@ -138,9 +141,9 @@ public sealed class SchedulingProblemProducer(
                 MaterialReadyUtc: null,
                 QualityBlockReason: operation.RequiresQualityInspection ? "quality.inspectionRequired" : null,
                 SourceReference: $"product-engineering:routing:{routing.RoutingCode}:{routing.Revision}:{operation.OperationCode}",
-                SetupMinutes: operation.SetupMinutes,
+                SetupMinutes: toolingFact?.SetupMinutes ?? 0,
                 RequiredSkillCodes: NormalizeCodes(constraint?.RequiredSkillCodes),
-                RequiredToolingIds: NormalizeCodes(constraint?.RequiredToolingIds)));
+                RequiredToolingIds: NormalizeCodes(toolingFact?.RequiredToolingCodes)));
             previousOperationIds.Clear();
             previousOperationIds.Add(operationId);
         }
@@ -153,6 +156,25 @@ public sealed class SchedulingProblemProducer(
             order.Priority,
             order.IsRush,
             operations);
+    }
+
+    private static IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> BuildTransitions(
+        IReadOnlyCollection<SchedulingProblemSourceOrder> orders,
+        IReadOnlyDictionary<string, SchedulingProblemRoutingSnapshot> routings)
+    {
+        var previousSkuByWorkCenter = new Dictionary<string, string>(StringComparer.Ordinal);
+        var transitions = new List<SchedulingProblemToolingTransitionSnapshot>();
+        foreach (var order in orders)
+        {
+            foreach (var operation in routings[order.RoutingVersionId].Operations.OrderBy(x => x.Sequence))
+            {
+                var operationId = $"{order.OrderId}-{operation.Sequence}-{operation.OperationCode}";
+                var fromSku = previousSkuByWorkCenter.GetValueOrDefault(operation.WorkCenterCode) ?? order.SkuCode;
+                transitions.Add(new SchedulingProblemToolingTransitionSnapshot(operationId, operation.WorkCenterCode, fromSku, null, order.SkuCode));
+                previousSkuByWorkCenter[operation.WorkCenterCode] = order.SkuCode;
+            }
+        }
+        return transitions;
     }
 
     private async Task<Dictionary<string, SchedulingProblemWorkCenterSnapshot>> LoadWorkCentersAsync(
@@ -283,6 +305,12 @@ public interface ISchedulingProblemMasterDataClient
         string environmentId,
         string workCenterCode,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>> ResolveToolingFactsAsync(
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> transitions,
+        CancellationToken cancellationToken);
 }
 
 public sealed record SchedulingProblemRoutingSnapshot(
@@ -317,6 +345,8 @@ public sealed record SchedulingProblemShiftWindowSnapshot(
     string ReasonCode);
 
 public sealed record SchedulingProblemDeviceAssetSnapshot(string ResourceId, string WorkCenterCode);
+public sealed record SchedulingProblemToolingTransitionSnapshot(string OperationId, string WorkCenterCode, string FromSkuCode, string? FromProductFamilyCode, string ToSkuCode);
+public sealed record SchedulingProblemToolingFactSnapshot(string OperationId, int SetupMinutes, IReadOnlyCollection<string> RequiredToolingCodes);
 
 public sealed class HttpSchedulingProblemProductEngineeringClient(
     HttpClient httpClient,
@@ -468,6 +498,19 @@ public sealed class HttpSchedulingProblemMasterDataClient(
             .ToArray();
     }
 
+    public async Task<IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>> ResolveToolingFactsAsync(
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> transitions,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<ResolveSchedulingToolingFactsResponse>(
+            "/api/business/v1/master-data/scheduling-tooling-facts/resolve",
+            cancellationToken,
+            new ResolveSchedulingToolingFactsRequest(organizationId, environmentId, transitions));
+        return response.Facts;
+    }
+
     private Task<IReadOnlyCollection<MasterDataResourceDetailResponse>> GetShiftDetailsAsync(
         string organizationId,
         string environmentId,
@@ -533,6 +576,21 @@ public sealed class HttpSchedulingProblemMasterDataClient(
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
         }
 
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(SchedulingJson.Options, cancellationToken);
+        return envelope?.Data ?? throw new InvalidOperationException("MasterData returned an empty response envelope.");
+    }
+
+    private async Task<T> SendAsync<T>(string requestUri, CancellationToken cancellationToken, object body)
+        where T : class
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
+        {
+            Content = JsonContent.Create(body, options: SchedulingJson.Options)
+        };
+        var bearerToken = internalTokenProvider?.BearerToken;
+        if (!string.IsNullOrWhiteSpace(bearerToken)) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
         using var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(SchedulingJson.Options, cancellationToken);
@@ -644,6 +702,8 @@ public sealed class HttpSchedulingProblemMasterDataClient(
     private sealed record WorkCalendarWorkingTimeResponse(DayOfWeek DayOfWeek);
     private sealed record WorkCalendarHolidayResponse(DateOnly Date, string Name);
     private sealed record WorkCalendarExceptionResponse(DateOnly Date, bool IsWorkingDay, TimeOnly? StartsAt, TimeOnly? EndsAt, string? Reason);
+    private sealed record ResolveSchedulingToolingFactsRequest(string OrganizationId, string EnvironmentId, IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> Transitions);
+    private sealed record ResolveSchedulingToolingFactsResponse(IReadOnlyCollection<SchedulingProblemToolingFactSnapshot> Facts);
 }
 
 internal sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);

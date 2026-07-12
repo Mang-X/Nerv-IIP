@@ -741,7 +741,7 @@ file sealed class SchedulerState
                     continue;
                 }
 
-                var blockingEnd = BlockingEnd(resource, resourceQualityBlocks, occupiedStart, end);
+                var blockingEnd = BlockingEnd(resource, item.Operation, resourceQualityBlocks, occupiedStart, end);
                 if (blockingEnd is null)
                 {
                     return (candidate, end);
@@ -814,14 +814,11 @@ file sealed class SchedulerState
             yield return skillCode;
         }
 
-        foreach (var toolingId in operation.RequiredToolingIds ?? [])
-        {
-            yield return toolingId;
-        }
     }
 
     private DateTimeOffset? BlockingEnd(
         SchedulingResourceContract resource,
+        SchedulingOperationContract operation,
         IReadOnlyCollection<SchedulingQualityBlockContract> resourceQualityBlocks,
         DateTimeOffset startUtc,
         DateTimeOffset endUtc)
@@ -845,6 +842,9 @@ file sealed class SchedulerState
         {
             return unavailabilityEnd;
         }
+
+        var toolingEnd = ToolingBlockEnd(operation, startUtc, endUtc);
+        if (toolingEnd.HasValue) return toolingEnd;
 
         var capacity = Math.Max(1, resource.CapacityUnits);
         return CapacityBlockEnd(resource, startUtc, endUtc, capacity);
@@ -983,6 +983,11 @@ file sealed class SchedulerState
             return ScheduleConflictReasonCodeContract.OutsideHorizon;
         }
 
+        if ((item.Operation.RequiredToolingIds?.Count ?? 0) > 0 && !candidates.Any(resource => HasToolingSlot(resource, item.Operation, earliestStart)))
+        {
+            return ScheduleConflictReasonCodeContract.Tooling;
+        }
+
         if (candidates.Any(resource => HasSlotIgnoringCapacity(resource, item, earliestStart, durationMinutes)))
         {
             return ScheduleConflictReasonCodeContract.Capacity;
@@ -994,6 +999,34 @@ file sealed class SchedulerState
         }
 
         return ScheduleConflictReasonCodeContract.OutsideHorizon;
+    }
+
+    private DateTimeOffset? ToolingBlockEnd(SchedulingOperationContract operation, DateTimeOffset startUtc, DateTimeOffset endUtc)
+    {
+        var required = (operation.RequiredToolingIds ?? []).ToHashSet(StringComparer.Ordinal);
+        if (required.Count == 0) return null;
+        return assignments.Where(x => Overlaps(startUtc, endUtc, x.StartUtc, x.EndUtc))
+            .Where(x => operationByKey.TryGetValue(OperationKey.From(x), out var assignedOperation)
+                && (assignedOperation.RequiredToolingIds ?? []).Any(required.Contains))
+            .Select(x => (DateTimeOffset?)x.EndUtc).Min();
+    }
+
+    private bool HasToolingSlot(SchedulingResourceContract resource, SchedulingOperationContract operation, DateTimeOffset earliestStart)
+    {
+        if (!calendars.TryGetValue(resource.CalendarId, out var calendar)) return false;
+        var duration = TimeSpan.FromMinutes(operation.DurationMinutes);
+        foreach (var shift in calendar.ShiftWindows.Where(x => x.EndUtc > earliestStart && x.StartUtc < problem.HorizonEndUtc))
+        {
+            var candidate = Max(earliestStart, shift.StartUtc, problem.HorizonStartUtc);
+            var latestEnd = Min(shift.EndUtc, problem.HorizonEndUtc);
+            while (candidate + duration <= latestEnd)
+            {
+                var block = ToolingBlockEnd(operation, candidate, candidate + duration);
+                if (!block.HasValue) return true;
+                candidate = block.Value;
+            }
+        }
+        return false;
     }
 
     private bool HasCalendarFit(
@@ -1171,6 +1204,7 @@ file sealed class SchedulerState
             ScheduleConflictReasonCodeContract.Capacity => "No feasible slot exists because finite capacity is saturated inside the scheduling horizon.",
             ScheduleConflictReasonCodeContract.Calendar => "No feasible slot exists because no shift calendar window can fit the operation duration.",
             ScheduleConflictReasonCodeContract.Equipment => "No feasible slot exists because eligible resources are unavailable inside the scheduling horizon.",
+            ScheduleConflictReasonCodeContract.Tooling => "No feasible slot exists because required tooling is occupied by a competing work order.",
             _ => "No feasible capacity slot exists inside the scheduling horizon."
         };
     }
