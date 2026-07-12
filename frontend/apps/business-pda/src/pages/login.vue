@@ -37,7 +37,9 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="pt-safe pb-safe px-safe flex min-h-dvh flex-col justify-center bg-background px-6">
+  <div
+    class="pt-safe pb-safe flex min-h-dvh flex-col justify-center bg-background pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))]"
+  >
     <div class="mb-8 text-center">
       <h1 class="text-2xl font-semibold text-foreground">Nerv-IIP 手持作业台</h1>
       <p class="mt-1 text-sm text-muted-foreground">请登录以开始作业</p>
