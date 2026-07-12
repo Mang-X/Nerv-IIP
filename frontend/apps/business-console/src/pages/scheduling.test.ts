@@ -95,12 +95,12 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const sheetStubs = {
-  SheetPro: { template: '<div><slot /></div>' },
+  NvSheet: { template: '<div><slot /></div>' },
   DialogRoot: { template: '<div><slot /></div>' },
-  SheetProContent: { template: '<aside><slot /></aside>' },
-  SheetProHeader: { template: '<div><slot /></div>' },
-  SheetProTitle: { template: '<h2><slot /></h2>' },
-  SheetProDescription: { template: '<p><slot /></p>' },
+  NvSheetContent: { template: '<aside><slot /></aside>' },
+  NvSheetHeader: { template: '<div><slot /></div>' },
+  NvSheetTitle: { template: '<h2><slot /></h2>' },
+  NvSheetDescription: { template: '<p><slot /></p>' },
 }
 
 beforeEach(() => {
@@ -128,7 +128,7 @@ describe('APS scheduling workbench page', () => {
     const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
-    const table = wrapper.findComponent({ name: 'DataTablePro' })
+    const table = wrapper.findComponent({ name: 'NvDataTable' })
     expect(table.props('pagination')).toBe(false)
     expect(table.props('manual')).not.toBe(true)
     expect(wrapper.text()).toContain('工序数')

@@ -12,17 +12,17 @@ import { NvMobileDivider } from '@nerv-iip/ui-mobile'
 <template #phone>
 
   <section>
-    <p class="ds-mdoc-label">基础分割</p>
+    <p class="nv-mdoc-label">基础分割</p>
     <div class="text-[15px] text-foreground">工单 WO-20406</div>
     <NvMobileDivider />
     <div class="text-sm text-muted-foreground">注塑车间 · A2 产线</div>
   </section>
   <section>
-    <p class="ds-mdoc-label">带文字</p>
+    <p class="nv-mdoc-label">带文字</p>
     <NvMobileDivider>今日已完成</NvMobileDivider>
   </section>
   <section>
-    <p class="ds-mdoc-label">垂直分割</p>
+    <p class="nv-mdoc-label">垂直分割</p>
     <div class="flex items-center text-sm text-muted-foreground">
       <span>计划 320</span>
       <NvMobileDivider direction="vertical" class="mx-3" />

@@ -11621,6 +11621,318 @@
         ]
       }
     },
+    "/api/business-console/v1/mes/telemetry-production-report-candidates": {
+      "get": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleMesTelemetryProductionReportCandidates",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "workCenterId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "deviceAssetId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "fromUtc",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            }
+          },
+          {
+            "name": "toUtc",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0,
+              "nullable": false
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50,
+              "nullable": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesTelemetryCandidateListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/mes/telemetry-production-report-candidates/{candidateId}": {
+      "get": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleMesTelemetryProductionReportCandidate",
+        "parameters": [
+          {
+            "name": "candidateId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesTelemetryCandidateRow"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/mes/telemetry-production-report-candidates/{candidateId}/promote": {
+      "post": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "promoteBusinessConsoleMesTelemetryProductionReportCandidate",
+        "parameters": [
+          {
+            "name": "candidateId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleMesTelemetryCandidatePromoteRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidatePromoteRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordProductionReportResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/mes/telemetry-production-report-candidates/{candidateId}/dismiss": {
+      "post": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "dismissBusinessConsoleMesTelemetryProductionReportCandidate",
+        "parameters": [
+          {
+            "name": "candidateId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "BusinessConsoleMesTelemetryCandidateDismissRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateDismissRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/mes/defects": {
       "post": {
         "tags": [
@@ -25787,7 +26099,8 @@
           "noEligibleResource",
           "outsideHorizon",
           "invalidLockedAssignment",
-          "predecessorUnscheduled"
+          "predecessorUnscheduled",
+          "tooling"
         ]
       },
       "NervIIPContractsSchedulingScheduleConflictSeverityContract": {
@@ -26100,6 +26413,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "toolingAvailable": {
+            "type": "boolean"
           }
         }
       },
@@ -32998,6 +33314,197 @@
           }
         }
       },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesTelemetryCandidateListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateRow"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateRow": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "candidateId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "reportingMode": {
+            "type": "string"
+          },
+          "deviceAssetId": {
+            "type": "string"
+          },
+          "tagKey": {
+            "type": "string"
+          },
+          "goodQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "bucketStartUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "bucketEndUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workCenterId": {
+            "type": "string",
+            "nullable": true
+          },
+          "workOrderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "operationTaskId": {
+            "type": "string",
+            "nullable": true
+          },
+          "suspensionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceIdempotencyKey": {
+            "type": "string"
+          },
+          "resolutionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "resolvedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "resolvedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "productionReportId": {
+            "type": "string",
+            "nullable": true
+          },
+          "transitions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateTransition"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateTransition": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "fromStatus": {
+            "type": "string"
+          },
+          "toStatus": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "occurredAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateListRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesTelemetryCandidateRow": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateRow"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateDetailRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidatePromoteRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workOrderId": {
+            "type": "string"
+          },
+          "operationTaskId": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateDismissRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -33978,6 +34485,42 @@
             "type": "string",
             "nullable": true
           },
+          "purchaseDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "purchaseCost": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "purchaseCurrencyCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "warrantyExpiresOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "supplierPartnerCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "stationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "parentDeviceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "retiredOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
           "creditLimit": {
             "type": "number",
             "format": "decimal",
@@ -34681,6 +35224,10 @@
             "type": "string",
             "nullable": true
           },
+          "workshopCode": {
+            "type": "string",
+            "nullable": true
+          },
           "capacityMinutesPerDay": {
             "type": "integer",
             "format": "int32",
@@ -34721,6 +35268,53 @@
           "serialNo": {
             "type": "string",
             "nullable": true
+          },
+          "purchaseDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "purchaseCost": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "purchaseCurrencyCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "warrantyExpiresOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "supplierPartnerCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "stationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "parentDeviceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "retiredOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "retired": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "components": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent"
+            }
           },
           "minimumCapacity": {
             "type": "number",
@@ -34842,6 +35436,25 @@
           "creditCurrencyCode": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "componentCode": {
+            "type": "string"
+          },
+          "componentName": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "critical": {
+            "type": "boolean"
           }
         }
       },
@@ -35111,6 +35724,49 @@
           "serialNo": {
             "type": "string",
             "nullable": true
+          },
+          "purchaseDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "purchaseCost": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "purchaseCurrencyCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "warrantyExpiresOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "supplierPartnerCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "stationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "parentDeviceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "retiredOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "components": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent"
+            }
           },
           "minimumCapacity": {
             "type": "number",
@@ -35890,6 +36546,70 @@
             "maxLength": 150,
             "minLength": 0,
             "nullable": true
+          },
+          "purchaseDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "purchaseCost": {
+            "type": "number",
+            "format": "decimal",
+            "minimum": 0.0,
+            "nullable": true
+          },
+          "purchaseCurrencyCode": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 0,
+            "nullable": true
+          },
+          "warrantyExpiresOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "supplierPartnerCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "siteCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "workshopCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "stationCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "parentDeviceId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "retiredOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "components": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent"
+            }
           }
         }
       },
@@ -37047,6 +37767,12 @@
             "maxLength": 10,
             "minLength": 0,
             "nullable": true
+          },
+          "actualTechnicianUserId": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -37165,6 +37891,23 @@
             "nullable": true
           },
           "costCurrencyCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "warrantyStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "warrantyExpiresOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "supplierPartnerCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "actualTechnicianUserId": {
             "type": "string",
             "nullable": true
           }
@@ -38066,6 +38809,10 @@
           "totalCostAmount": {
             "type": "number",
             "format": "decimal"
+          },
+          "actualTechnicianUserId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

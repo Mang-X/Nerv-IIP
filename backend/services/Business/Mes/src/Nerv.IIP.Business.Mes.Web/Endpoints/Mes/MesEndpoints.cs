@@ -2,6 +2,7 @@ using FastEndpoints;
 using FluentValidation;
 using MediatR;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
@@ -106,6 +107,14 @@ public sealed record ListProductionReportsRequest(
     string? WorkCenterId = null,
     string? ShiftId = null,
     string? DeviceAssetId = null);
+
+public sealed record ListTelemetryProductionReportCandidatesRequest(string OrganizationId, string EnvironmentId, string? Status = null,
+    string? WorkCenterId = null, string? DeviceAssetId = null, DateTimeOffset? FromUtc = null, DateTimeOffset? ToUtc = null, int Skip = 0, int Take = 50);
+public sealed record GetTelemetryProductionReportCandidateRequest(string OrganizationId, string EnvironmentId, [property: RouteParam] TelemetryProductionReportCandidateId CandidateId);
+public sealed record PromoteTelemetryProductionReportCandidateRequest(string OrganizationId, string EnvironmentId,
+    [property: RouteParam] TelemetryProductionReportCandidateId CandidateId, string WorkOrderId, string OperationTaskId, string Actor, DateTimeOffset? ConfirmedAtUtc);
+public sealed record DismissTelemetryProductionReportCandidateRequest(string OrganizationId, string EnvironmentId,
+    [property: RouteParam] TelemetryProductionReportCandidateId CandidateId, string Reason, string Actor, DateTimeOffset? DismissedAtUtc);
 
 public sealed record CreateFinishedGoodsReceiptRequestRequest(
     string OrganizationId,
@@ -990,6 +999,47 @@ public sealed class ReverseProductionReportEndpoint(ISender sender, TimeProvider
     }
 }
 
+public sealed class ListTelemetryProductionReportCandidatesEndpoint(ISender sender)
+    : MesEndpoint<ListTelemetryProductionReportCandidatesRequest, TelemetryProductionReportCandidateListResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ListTelemetryProductionReportCandidatesEndpoint>());
+    public override async Task HandleAsync(ListTelemetryProductionReportCandidatesRequest req, CancellationToken ct) =>
+        await Send.OkAsync(await sender.Send(new ListTelemetryProductionReportCandidatesQuery(req.OrganizationId, req.EnvironmentId, req.Status,
+            req.WorkCenterId, req.DeviceAssetId, req.FromUtc, req.ToUtc, req.Skip, req.Take), ct), ct);
+}
+
+public sealed class GetTelemetryProductionReportCandidateEndpoint(ISender sender)
+    : MesEndpoint<GetTelemetryProductionReportCandidateRequest, TelemetryProductionReportCandidateFact>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetTelemetryProductionReportCandidateEndpoint>());
+    public override async Task HandleAsync(GetTelemetryProductionReportCandidateRequest req, CancellationToken ct) =>
+        await Send.OkAsync(await sender.Send(new GetTelemetryProductionReportCandidateQuery(req.OrganizationId, req.EnvironmentId, req.CandidateId), ct), ct);
+}
+
+public sealed class PromoteTelemetryProductionReportCandidateEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<PromoteTelemetryProductionReportCandidateRequest, RecordProductionReportResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<PromoteTelemetryProductionReportCandidateEndpoint>());
+    public override async Task HandleAsync(PromoteTelemetryProductionReportCandidateRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new PromoteTelemetryProductionReportCandidateCommand(req.OrganizationId, req.EnvironmentId, req.CandidateId,
+            req.WorkOrderId, req.OperationTaskId, req.Actor, req.ConfirmedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(new(result.Id, result.ReportNo), ct);
+    }
+}
+
+public sealed class DismissTelemetryProductionReportCandidateEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<DismissTelemetryProductionReportCandidateRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<DismissTelemetryProductionReportCandidateEndpoint>());
+    public override async Task HandleAsync(DismissTelemetryProductionReportCandidateRequest req, CancellationToken ct)
+    {
+        await sender.Send(new DismissTelemetryProductionReportCandidateCommand(req.OrganizationId, req.EnvironmentId, req.CandidateId,
+            req.Reason, req.Actor, req.DismissedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(new MesAcceptedResponse("dismissed", req.CandidateId.ToString(), req.DismissedAtUtc ?? timeProvider.GetUtcNow()), ct);
+    }
+}
+
 public sealed class RecordDefectEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<RecordDefectRequest, MesAcceptedResponse>
 {
@@ -1307,6 +1357,10 @@ public static class MesEndpointContracts
         new(typeof(RecordProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingWrite, "recordBusinessMesProductionReport"),
         new(typeof(ListProductionReportsEndpoint), "GET", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingRead, "listBusinessMesProductionReports"),
         new(typeof(ReverseProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports/{reportNo}/reverse", MesPermissionCodes.ReportingWrite, "reverseBusinessMesProductionReport"),
+        new(typeof(ListTelemetryProductionReportCandidatesEndpoint), "GET", "/api/business/v1/mes/telemetry-production-report-candidates", MesPermissionCodes.ReportingRead, "listBusinessMesTelemetryProductionReportCandidates"),
+        new(typeof(GetTelemetryProductionReportCandidateEndpoint), "GET", "/api/business/v1/mes/telemetry-production-report-candidates/{candidateId}", MesPermissionCodes.ReportingRead, "getBusinessMesTelemetryProductionReportCandidate"),
+        new(typeof(PromoteTelemetryProductionReportCandidateEndpoint), "POST", "/api/business/v1/mes/telemetry-production-report-candidates/{candidateId}/promote", MesPermissionCodes.ReportingWrite, "promoteBusinessMesTelemetryProductionReportCandidate"),
+        new(typeof(DismissTelemetryProductionReportCandidateEndpoint), "POST", "/api/business/v1/mes/telemetry-production-report-candidates/{candidateId}/dismiss", MesPermissionCodes.ReportingWrite, "dismissBusinessMesTelemetryProductionReportCandidate"),
         new(typeof(RecordDefectEndpoint), "POST", "/api/business/v1/mes/defects", MesPermissionCodes.QualityWrite, "recordBusinessMesDefect"),
         new(typeof(ListRelatedQualityItemsEndpoint), "GET", "/api/business/v1/mes/related-quality-items", MesPermissionCodes.QualityRead, "listBusinessMesRelatedQualityItems"),
         new(typeof(CreateFinishedGoodsReceiptRequestEndpoint), "POST", "/api/business/v1/mes/finished-goods-receipt-requests", MesPermissionCodes.ReceiptsManage, "createBusinessMesFinishedGoodsReceiptRequest"),

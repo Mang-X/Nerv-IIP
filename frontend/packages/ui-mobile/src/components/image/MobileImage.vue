@@ -52,13 +52,13 @@ const boxStyle = computed(() =>
 <template>
   <div
     data-slot="mobile-image"
-    :class="cn('ds-mimg relative block overflow-hidden bg-muted', radiusClass, $props.class)"
+    :class="cn('nv-m-mimg relative block overflow-hidden bg-muted', radiusClass, $props.class)"
     :style="boxStyle"
   >
     <!-- shimmer placeholder while loading -->
     <div
       v-show="status === 'loading'"
-      class="ds-mimg-skeleton absolute inset-0"
+      class="nv-m-mimg-skeleton absolute inset-0"
       aria-hidden="true"
     />
     <!-- broken-image fallback -->
@@ -88,7 +88,7 @@ const boxStyle = computed(() =>
 
 <style scoped>
 @layer nv-components {
-  .ds-mimg-skeleton {
+  .nv-m-mimg-skeleton {
     background: linear-gradient(
       100deg,
       transparent 30%,
@@ -96,9 +96,9 @@ const boxStyle = computed(() =>
       transparent 70%
     );
     background-size: 220% 100%;
-    animation: ds-mimg-shimmer 1.4s var(--nv-ease-out-expo) infinite;
+    animation: nv-m-mimg-shimmer 1.4s var(--nv-ease-out-expo) infinite;
   }
-  @keyframes ds-mimg-shimmer {
+  @keyframes nv-m-mimg-shimmer {
     from {
       background-position: 180% 0;
     }
@@ -107,7 +107,7 @@ const boxStyle = computed(() =>
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-mimg-skeleton {
+    .nv-m-mimg-skeleton {
       animation: none;
     }
   }

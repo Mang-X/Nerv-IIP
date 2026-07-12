@@ -96,27 +96,27 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const dialogStubs = {
-  DialogPro: { template: '<div><slot /></div>' },
+  NvDialog: { template: '<div><slot /></div>' },
   DialogRoot: { template: '<div><slot /></div>' },
-  DialogProTrigger: { template: '<div><slot /></div>' },
+  NvDialogTrigger: { template: '<div><slot /></div>' },
   DialogTrigger: { template: '<div><slot /></div>' },
-  DialogProContent: { template: '<div><slot /></div>' },
-  DialogProHeader: { template: '<div><slot /></div>' },
-  DialogProFooter: { template: '<div><slot /></div>' },
-  DialogProTitle: { template: '<h2><slot /></h2>' },
-  DialogProDescription: { template: '<p><slot /></p>' },
+  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogHeader: { template: '<div><slot /></div>' },
+  NvDialogFooter: { template: '<div><slot /></div>' },
+  NvDialogTitle: { template: '<h2><slot /></h2>' },
+  NvDialogDescription: { template: '<p><slot /></p>' },
 }
 const formSelectStubs = {
-  SelectPro: {
+  NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectProTrigger: { template: '<span><slot /></span>' },
-  SelectProValue: { template: '<span />' },
+  NvSelectTrigger: { template: '<span><slot /></span>' },
+  NvSelectValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
-  SelectProContent: { template: '<slot />' },
-  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  NvSelectContent: { template: '<slot />' },
+  NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
   WorkerSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],

@@ -24,6 +24,7 @@
 
 @source '../../../../../packages/ui/src';
 @source '../../../../../packages/ui-mobile/src';
+@source '../../../../../packages/scheduling/src';
 
 /* Modal-overlay scroll lock without layout shift.
    True modals (Dialog / AlertDialog / Sheet) MUST lock background scroll. reka does
@@ -249,17 +250,17 @@
  * Wide component pages. VitePress caps the article column at 688px
  * (.VPDoc.has-aside .content-container), which crams wide components like
  * DataTable (many columns) and Descriptions (multi-column grids). A page opts
- * into a roomier column with frontmatter `pageClass: ds-wide`. !important +
+ * into a roomier column with frontmatter `pageClass: nv-wide`. !important +
  * the widened parent `.content` beat VitePress's own higher-specificity caps.
  * ------------------------------------------------------------------------- */
-.ds-wide .content {
+.nv-wide .content {
   max-width: 1100px !important;
 }
-.ds-wide .content-container {
+.nv-wide .content-container {
   max-width: 1080px !important;
 }
 
-/* NOTE (ADR 0020 §4.2): the former `.vp-doc :is(.sb-tbl, .sb-at-tbl)` table
+/* NOTE (ADR 0020 §4.2): the former `.vp-doc :is(.nv-scr-tbl, .nv-scr-at-tbl)` table
    counter-rules — which stripped VitePress's `.vp-doc table` borders/zebra off
    NvScreenTable / NvAlarmTable — are REMOVED. Screen demos now render inside the
    `vp-raw` root of `<ScreenDemo>`, and `postcssIsolateStyles` (config.mts) keeps

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NvBadge, messagePro, NvNotifierHost, NvStatusBadge, NvThemeToggle } from '@nerv-iip/ui'
+import { NvBadge, nvMessage, NvNotifierHost, NvStatusBadge, NvThemeToggle } from '@nerv-iip/ui'
 import type {
   ActionItem,
   MobileTabItem,
@@ -105,7 +105,7 @@ const gridItems: GridItem[] = [
   { key: 'alert', icon: BellIcon, text: '告警', badge: 3 },
 ]
 function onGrid(item: GridItem) {
-  messagePro.info(`打开「${item.text}」`)
+  nvMessage.info(`打开「${item.text}」`)
 }
 
 // NvFab 悬浮按钮
@@ -115,7 +115,7 @@ const fabActions: FabAction[] = [
   { key: 'repair', icon: WrenchIcon, text: '设备报修' },
 ]
 function onFabSelect(action: FabAction) {
-  messagePro.success(`已触发：${action.text}`)
+  nvMessage.success(`已触发：${action.text}`)
 }
 
 // Toast 居中提示
@@ -167,7 +167,7 @@ const actions: ActionItem[] = [
   { label: '报告异常', value: 'fault', danger: true },
 ]
 function onAction(value: string) {
-  messagePro.info(`操作：${value}`)
+  nvMessage.info(`操作：${value}`)
 }
 
 const swipeActions: SwipeAction[] = [
@@ -180,7 +180,7 @@ const swipeRows = [
   { code: 'WO-2406-0426', product: '液压阀体 V3' },
 ]
 function onSwipe(value: string) {
-  messagePro.info(`侧滑操作：${value}`)
+  nvMessage.info(`侧滑操作：${value}`)
 }
 
 const pickerOpen = ref(false)
@@ -212,7 +212,7 @@ function onRefresh() {
   window.setTimeout(() => {
     refreshList.value.unshift(`新到工单 · WO-2406-05${10 + refreshSeq++}`)
     refreshing.value = false
-    messagePro.success('已刷新')
+    nvMessage.success('已刷新')
   }, 1200)
 }
 
@@ -238,26 +238,26 @@ const bigList = Array.from({ length: 2000 }, (_, i) => ({
 
 function onScan(value: string) {
   scans.value.unshift(value)
-  messagePro.success(`已扫码 ${value}`)
+  nvMessage.success(`已扫码 ${value}`)
 }
 function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
   const map = {
-    success: () => messagePro.success('报工成功'),
-    info: () => messagePro.info('已同步网关'),
-    warning: () => messagePro.warning('库存接近下限'),
-    error: () => messagePro.error('网络中断'),
+    success: () => nvMessage.success('报工成功'),
+    info: () => nvMessage.info('已同步网关'),
+    warning: () => nvMessage.warning('库存接近下限'),
+    error: () => nvMessage.error('网络中断'),
   }
   map[kind]()
 }
 </script>
 
 <template>
-  <div class="ds-phone-wrap">
-    <div class="ds-phone ds-m">
+  <div class="nv-phone-wrap">
+    <div class="nv-phone nv-m">
       <!-- 状态栏（仅大屏预览显示；真机由系统绘制） -->
-      <div class="ds-statusbar">
+      <div class="nv-statusbar">
         <span class="font-semibold tabular-nums">{{ clock }}</span>
-        <span class="ds-island" aria-hidden="true" />
+        <span class="nv-island" aria-hidden="true" />
         <span class="flex items-center gap-1.5">
           <SignalHighIcon class="size-4" aria-hidden="true" />
           <WifiIcon class="size-4" aria-hidden="true" />
@@ -265,7 +265,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
         </span>
       </div>
 
-      <NvAppShellMobile class="ds-m h-auto min-h-0 flex-1">
+      <NvAppShellMobile class="nv-m h-auto min-h-0 flex-1">
         <template #header>
           <NvNavBar title="移动控件">
             <template #right><NvThemeToggle /></template>
@@ -275,7 +275,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
         <div class="space-y-7 py-4">
           <!-- 按钮 -->
           <section>
-            <p class="ds-m-eyebrow">按钮 NvMobileButton</p>
+            <p class="nv-m-eyebrow">按钮 NvMobileButton</p>
             <div class="space-y-3 px-3">
               <div class="flex flex-wrap items-center gap-2">
                 <NvMobileButton variant="primary">主操作</NvMobileButton>
@@ -295,7 +295,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 单元格 -->
           <section>
-            <p class="ds-m-eyebrow">单元格 NvCell</p>
+            <p class="nv-m-eyebrow">单元格 NvCell</p>
             <div class="px-3">
               <NvCellGroup>
                 <NvCell title="工单号" value="WO-2406-0413" />
@@ -304,7 +304,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
                   title="工艺路线"
                   note="3 道工序"
                   arrow
-                  @click="messagePro.info('查看工艺')"
+                  @click="nvMessage.info('查看工艺')"
                 />
                 <NvCell title="加急插单">
                   <template #value><NvMobileSwitch v-model="lockMaterial" /></template>
@@ -315,7 +315,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 表单 -->
           <section>
-            <p class="ds-m-eyebrow">表单控件</p>
+            <p class="nv-m-eyebrow">表单控件</p>
             <div class="space-y-4 px-3">
               <NvMobileInput v-model="search" placeholder="搜索工单 / 物料">
                 <template #leading><ScanLineIcon aria-hidden="true" /></template>
@@ -339,7 +339,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 标签与状态 -->
           <section>
-            <p class="ds-m-eyebrow">标签与状态</p>
+            <p class="nv-m-eyebrow">标签与状态</p>
             <div class="flex flex-wrap gap-2 px-3">
               <NvBadge variant="brand">品牌</NvBadge>
               <NvBadge variant="success">已完成</NvBadge>
@@ -351,7 +351,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 通知条 -->
           <section>
-            <p class="ds-m-eyebrow">通知条 NvNoticeBar</p>
+            <p class="nv-m-eyebrow">通知条 NvNoticeBar</p>
             <div class="space-y-2">
               <NvNoticeBar tone="info">今日计划已重排，受影响工单 6 张</NvNoticeBar>
               <NvNoticeBar tone="warning">B 线物料不足：液压阀体 V3 缺口 452 件</NvNoticeBar>
@@ -361,24 +361,24 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 列表行 -->
           <section>
-            <p class="ds-m-eyebrow">列表行 NvListRow</p>
+            <p class="nv-m-eyebrow">列表行 NvListRow</p>
             <div class="overflow-hidden border-y border-border">
               <NvListRow
                 title="齿轮箱端盖"
                 subtitle="WO-2406-0421 · 320 件"
-                @select="messagePro.info('打开工单')"
+                @select="nvMessage.info('打开工单')"
               />
               <NvListRow
                 title="液压阀体 V3"
                 subtitle="WO-2406-0426 · 640 件"
-                @select="messagePro.info('打开工单')"
+                @select="nvMessage.info('打开工单')"
               />
             </div>
           </section>
 
           <!-- 标签栏 -->
           <section>
-            <p class="ds-m-eyebrow">标签栏 NvTabBar</p>
+            <p class="nv-m-eyebrow">标签栏 NvTabBar</p>
             <div class="mx-3 overflow-hidden rounded-xl border border-border bg-card">
               <NvTabBar v-model="tabDemo" :items="demoTabs" />
             </div>
@@ -387,7 +387,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 反馈 -->
           <section>
-            <p class="ds-m-eyebrow">反馈 Message / 抽屉</p>
+            <p class="nv-m-eyebrow">反馈 Message / 抽屉</p>
             <div class="space-y-3 px-3">
               <div class="flex flex-wrap gap-2">
                 <NvMobileButton variant="default" size="sm" @click="fireMessage('success')"
@@ -423,7 +423,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 宫格 -->
           <section>
-            <p class="ds-m-eyebrow">宫格 NvMobileGrid</p>
+            <p class="nv-m-eyebrow">宫格 NvMobileGrid</p>
             <div class="mx-3 overflow-hidden rounded-xl border border-border bg-card">
               <NvMobileGrid :items="gridItems" :columns="4" @select="onGrid" />
             </div>
@@ -431,7 +431,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 悬浮按钮 -->
           <section>
-            <p class="ds-m-eyebrow">悬浮按钮 NvFab</p>
+            <p class="nv-m-eyebrow">悬浮按钮 NvFab</p>
             <div
               class="relative mx-3 h-64 overflow-hidden rounded-xl border border-border bg-background"
             >
@@ -447,7 +447,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 居中提示 -->
           <section>
-            <p class="ds-m-eyebrow">居中提示 NvMobileToast</p>
+            <p class="nv-m-eyebrow">居中提示 NvMobileToast</p>
             <div class="grid grid-cols-2 gap-2 px-3">
               <NvMobileButton variant="default" size="md" @click="fireToast('text', '已复制单号')"
                 >文字</NvMobileButton
@@ -466,7 +466,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 结果页 -->
           <section>
-            <p class="ds-m-eyebrow">结果页 NvMobileResult</p>
+            <p class="nv-m-eyebrow">结果页 NvMobileResult</p>
             <div class="mx-3 rounded-xl border border-border bg-card">
               <NvMobileResult
                 status="success"
@@ -478,7 +478,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 扫码 -->
           <section>
-            <p class="ds-m-eyebrow">扫码 NvScanBar</p>
+            <p class="nv-m-eyebrow">扫码 NvScanBar</p>
             <div class="space-y-3 px-3">
               <NvScanBar :active="scanActive" placeholder="对准条码 / 二维码" @scan="onScan" />
               <NvCellGroup>
@@ -489,20 +489,20 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 搜索栏 -->
           <section>
-            <p class="ds-m-eyebrow">搜索栏 NvSearchBar</p>
+            <p class="nv-m-eyebrow">搜索栏 NvSearchBar</p>
             <NvSearchBar v-model="searchKw" cancelable placeholder="搜索工单 / 物料 / 设备" />
           </section>
 
           <!-- 顶部标签 -->
           <section>
-            <p class="ds-m-eyebrow">顶部标签 NvMobileTabs</p>
+            <p class="nv-m-eyebrow">顶部标签 NvMobileTabs</p>
             <NvMobileTabs v-model="topTab" :items="topTabs" />
             <p class="mt-3 px-4 text-sm text-muted-foreground">当前分类：{{ topTab }}</p>
           </section>
 
           <!-- 步骤条 -->
           <section>
-            <p class="ds-m-eyebrow">步骤条 NvMobileSteps</p>
+            <p class="nv-m-eyebrow">步骤条 NvMobileSteps</p>
             <div class="px-3">
               <NvMobileSteps :steps="procSteps" :current="1" />
             </div>
@@ -510,7 +510,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 复选框 -->
           <section>
-            <p class="ds-m-eyebrow">复选框 NvMobileCheckbox</p>
+            <p class="nv-m-eyebrow">复选框 NvMobileCheckbox</p>
             <div class="px-4">
               <NvMobileCheckbox v-model="checkA">首检合格后转批量</NvMobileCheckbox>
               <NvMobileCheckbox v-model="checkB">完工自动生成入库单</NvMobileCheckbox>
@@ -519,7 +519,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 角标 -->
           <section>
-            <p class="ds-m-eyebrow">角标 NvMobileBadge</p>
+            <p class="nv-m-eyebrow">角标 NvMobileBadge</p>
             <div class="flex items-center gap-7 px-5">
               <NvMobileBadge :count="5">
                 <BellIcon class="size-6 text-foreground" aria-hidden="true" />
@@ -535,7 +535,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 动作面板 -->
           <section>
-            <p class="ds-m-eyebrow">动作面板 NvActionSheet</p>
+            <p class="nv-m-eyebrow">动作面板 NvActionSheet</p>
             <div class="px-3">
               <NvMobileButton variant="default" size="md" block @click="actionOpen = true">
                 打开动作面板
@@ -545,7 +545,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 折叠面板 -->
           <section>
-            <p class="ds-m-eyebrow">折叠面板 NvMobileCollapse</p>
+            <p class="nv-m-eyebrow">折叠面板 NvMobileCollapse</p>
             <div
               class="mx-3 divide-y divide-border overflow-hidden rounded-xl border border-border"
             >
@@ -563,7 +563,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 侧滑操作 -->
           <section>
-            <p class="ds-m-eyebrow">侧滑操作 NvSwipeCell</p>
+            <p class="nv-m-eyebrow">侧滑操作 NvSwipeCell</p>
             <div class="mx-3 overflow-hidden rounded-xl border border-border">
               <NvSwipeCell
                 v-for="row in swipeRows"
@@ -585,7 +585,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 滚轮选择 -->
           <section>
-            <p class="ds-m-eyebrow">滚轮选择 NvPicker</p>
+            <p class="nv-m-eyebrow">滚轮选择 NvPicker</p>
             <div class="px-3">
               <NvCellGroup>
                 <NvCell title="目标产线" :value="pickerLabel" arrow @click="pickerOpen = true" />
@@ -596,7 +596,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 下拉刷新 -->
           <section>
-            <p class="ds-m-eyebrow">下拉刷新 NvPullRefresh</p>
+            <p class="nv-m-eyebrow">下拉刷新 NvPullRefresh</p>
             <div class="mx-3 overflow-hidden rounded-xl border border-border">
               <NvPullRefresh v-model="refreshing" class="h-56" @refresh="onRefresh">
                 <NvCell v-for="(item, i) in refreshList" :key="`${item}-${i}`" :title="item" />
@@ -609,7 +609,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 加载更多 -->
           <section>
-            <p class="ds-m-eyebrow">加载更多 NvInfiniteList</p>
+            <p class="nv-m-eyebrow">加载更多 NvInfiniteList</p>
             <div class="mx-3 overflow-hidden rounded-xl border border-border">
               <NvInfiniteList
                 v-model="infLoading"
@@ -629,7 +629,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 虚拟滚动 -->
           <section>
-            <p class="ds-m-eyebrow">虚拟滚动 NvVirtualList</p>
+            <p class="nv-m-eyebrow">虚拟滚动 NvVirtualList</p>
             <p class="mb-2 px-4 text-xs text-muted-foreground">2000 条数据，仅渲染可视区行。</p>
             <div class="mx-3 overflow-hidden rounded-xl border border-border">
               <NvVirtualList :items="bigList" :item-height="56" class="h-64">
@@ -645,7 +645,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
           <!-- 空状态 -->
           <section>
-            <p class="ds-m-eyebrow">空状态 NvMobileEmpty</p>
+            <p class="nv-m-eyebrow">空状态 NvMobileEmpty</p>
             <div class="mx-3 rounded-xl border border-border bg-card">
               <NvMobileEmpty description="暂无待处理工单">
                 <NvMobileButton variant="primary" size="sm">去接单</NvMobileButton>
@@ -655,7 +655,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
         </div>
       </NvAppShellMobile>
 
-      <div class="ds-home-indicator" aria-hidden="true" />
+      <div class="nv-home-indicator" aria-hidden="true" />
     </div>
   </div>
 
@@ -716,7 +716,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
     title="下发到产线？"
     description="工单 WO-2406-0413 将下发至 A 线排队，物料即时锁定。"
     confirm-text="下发"
-    @confirm="messagePro.success('已下发到 A 线')"
+    @confirm="nvMessage.success('已下发到 A 线')"
   />
   <NvMobileDialog
     v-model:open="dangerOpen"
@@ -724,7 +724,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
     description="作废后不可恢复，已领用物料需手动退库。"
     confirm-text="作废"
     confirm-tone="danger"
-    @confirm="messagePro.error('工单已作废')"
+    @confirm="nvMessage.error('工单已作废')"
   />
 
   <NvMobileToast v-model:show="toastShow" :type="toastType" :message="toastMsg" />
@@ -735,7 +735,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
 
 <style scoped>
 @layer app {
-  .ds-m-eyebrow {
+  .nv-m-eyebrow {
     position: relative;
     margin: 0 0 0.75rem 1rem;
     padding-left: 0.625rem;
@@ -743,7 +743,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
     font-weight: 600;
     color: var(--muted-foreground);
   }
-  .ds-m-eyebrow::before {
+  .nv-m-eyebrow::before {
     content: '';
     position: absolute;
     left: 0;
@@ -758,12 +758,12 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
    Real phone (<sm): full-bleed app, OS draws the status bar.
    Larger screens: a centered device bezel with a mock status bar so the kit
    reads as a native app preview. */
-  .ds-phone-wrap {
+  .nv-phone-wrap {
     display: flex;
     justify-content: center;
     min-height: 100dvh;
   }
-  .ds-phone {
+  .nv-phone {
     position: relative;
     display: flex;
     flex-direction: column;
@@ -773,15 +773,15 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
     color: var(--foreground);
     overflow: hidden;
   }
-  .ds-statusbar {
+  .nv-statusbar {
     display: none;
   }
-  .ds-home-indicator {
+  .nv-home-indicator {
     display: none;
   }
 
   @media (min-width: 640px) {
-    .ds-phone-wrap {
+    .nv-phone-wrap {
       align-items: center;
       padding: 2rem 1rem;
       background:
@@ -792,7 +792,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
         ),
         var(--muted);
     }
-    .ds-phone {
+    .nv-phone {
       width: 390px;
       height: 844px;
       border-radius: 3.25rem;
@@ -801,7 +801,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
         0 1px 0 1px color-mix(in oklch, var(--foreground) 70%, black) inset,
         0 40px 90px -30px rgb(0 0 0 / 0.55);
     }
-    .ds-statusbar {
+    .nv-statusbar {
       position: relative;
       z-index: 30;
       display: flex;
@@ -812,7 +812,7 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
       font-size: 0.875rem;
       color: var(--foreground);
     }
-    .ds-island {
+    .nv-island {
       position: absolute;
       left: 50%;
       top: 8px;
@@ -822,12 +822,12 @@ function fireMessage(kind: 'success' | 'info' | 'warning' | 'error') {
       border-radius: 9999px;
       background: color-mix(in oklch, var(--foreground) 92%, black);
     }
-    .ds-home-indicator {
+    .nv-home-indicator {
       display: block;
       height: 22px;
       flex-shrink: 0;
     }
-    .ds-home-indicator::after {
+    .nv-home-indicator::after {
       content: '';
       display: block;
       width: 134px;

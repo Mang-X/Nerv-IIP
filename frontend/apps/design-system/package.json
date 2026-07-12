@@ -10,6 +10,8 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@nerv-iip/api-client": "workspace:*",
+    "@nerv-iip/scheduling": "workspace:*",
     "@nerv-iip/ui": "workspace:*",
     "@nerv-iip/ui-mobile": "workspace:*",
     "lucide-vue-next": "1.0.0",

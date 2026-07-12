@@ -3,7 +3,7 @@ title: NvCommand 命令面板
 ---
 
 <script setup>
-import { NvCommand, NvButton, messagePro } from '@nerv-iip/ui'
+import { NvCommand, NvButton, nvMessage } from '@nerv-iip/ui'
 import {
   ActivityIcon,
   GaugeIcon,
@@ -34,7 +34,7 @@ const cmdGroups = [
   },
 ]
 function onCommandSelect(item) {
-  messagePro.success(`执行：${item.label}`)
+  nvMessage.success(`执行：${item.label}`)
 }
 </script>
 
@@ -54,7 +54,7 @@ function onCommandSelect(item) {
 
 ```vue
 <script setup>
-import { NvCommand, NvButton, messagePro } from '@nerv-iip/ui'
+import { NvCommand, NvButton, nvMessage } from '@nerv-iip/ui'
 import { GaugeIcon, LayersIcon, PlusIcon } from 'lucide-vue-next'
 import { ref } from 'vue'
 
@@ -81,7 +81,7 @@ const cmdGroups = [
   },
 ]
 function onCommandSelect(item) {
-  messagePro.success(`执行：${item.label}`)
+  nvMessage.success(`执行：${item.label}`)
 }
 </script>
 

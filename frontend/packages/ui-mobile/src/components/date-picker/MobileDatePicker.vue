@@ -74,7 +74,7 @@ watch(open, (isOpen) => {
 
 <template>
   <BottomSheet :open="open" @update:open="open = $event">
-    <div class="ds-mdp">
+    <div class="nv-m-mdp">
       <div class="flex items-center justify-between pb-1">
         <MobileButton variant="text" size="md" class="text-muted-foreground" @click="open = false"
           >取消</MobileButton
@@ -82,28 +82,28 @@ watch(open, (isOpen) => {
         <span class="text-[15px] font-medium">{{ title }}</span>
         <MobileButton variant="text" size="md" @click="confirm">确定</MobileButton>
       </div>
-      <div class="ds-mdp-wheel">
-        <div class="ds-mdp-band" aria-hidden="true" />
+      <div class="nv-m-mdp-wheel">
+        <div class="nv-m-mdp-band" aria-hidden="true" />
         <div class="flex h-full">
           <div
             v-for="col in cols"
             :key="col.key"
             :ref="(el) => setScroller(col.key, el)"
-            class="ds-mdp-scroll"
+            class="nv-m-mdp-scroll"
             @scroll="onScroll(col.key, col.items)"
           >
-            <div class="ds-mdp-pad" />
+            <div class="nv-m-mdp-pad" />
             <div
               v-for="it in col.items"
               :key="it"
               :class="[
-                'ds-mdp-item',
+                'nv-m-mdp-item',
                 draft[col.key] === it ? 'font-medium text-foreground' : 'text-muted-foreground',
               ]"
             >
               {{ it }}{{ col.unit }}
             </div>
-            <div class="ds-mdp-pad" />
+            <div class="nv-m-mdp-pad" />
           </div>
         </div>
       </div>
@@ -113,11 +113,11 @@ watch(open, (isOpen) => {
 
 <style scoped>
 @layer nv-components {
-  .ds-mdp-wheel {
+  .nv-m-mdp-wheel {
     position: relative;
     height: 200px;
   }
-  .ds-mdp-band {
+  .nv-m-mdp-band {
     position: absolute;
     top: 80px;
     right: 0;
@@ -127,20 +127,20 @@ watch(open, (isOpen) => {
     border-bottom: 1px solid var(--border);
     pointer-events: none;
   }
-  .ds-mdp-scroll {
+  .nv-m-mdp-scroll {
     height: 100%;
     flex: 1;
     overflow-y: auto;
     scroll-snap-type: y mandatory;
     scrollbar-width: none;
   }
-  .ds-mdp-scroll::-webkit-scrollbar {
+  .nv-m-mdp-scroll::-webkit-scrollbar {
     display: none;
   }
-  .ds-mdp-pad {
+  .nv-m-mdp-pad {
     height: 80px;
   }
-  .ds-mdp-item {
+  .nv-m-mdp-item {
     display: flex;
     height: 40px;
     align-items: center;

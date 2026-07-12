@@ -3029,7 +3029,8 @@ public sealed class BusinessGatewayProxyTests
                 "fixed",
                 "planned-maintenance",
                 30,
-                [new BusinessConsoleMaintenanceSparePartInput("SPARE-001", 1, "EA")]),
+                [new BusinessConsoleMaintenanceSparePartInput("SPARE-001", 1, "EA")],
+                ActualTechnicianUserId: "worker-actual"),
             CancellationToken.None);
         await client.CreatePlanAsync(
             "internal-token-001",
@@ -3100,6 +3101,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.All(handler.Requests, sent => Assert.Equal("internal-token-001", sent.Headers.Authorization?.Parameter));
         AssertRequest(handler.Requests[0], HttpMethod.Post, "/api/business/v1/maintenance/work-orders");
         AssertRequest(handler.Requests[1], HttpMethod.Post, "/api/business/v1/maintenance/work-orders/wo-maint-001/complete");
+        Assert.Contains("\"actualTechnicianUserId\":\"worker-actual\"", handler.RequestBodies[1]);
         AssertRequest(handler.Requests[2], HttpMethod.Post, "/api/business/v1/maintenance/plans");
         AssertRequest(handler.Requests[3], HttpMethod.Post, "/api/business/v1/maintenance/plans/generate-due");
         AssertRequest(handler.Requests[4], HttpMethod.Get, "/api/business/v1/maintenance/assets/DEV-PRESS-01/reliability?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-30T16%3A00%3A00.0000000%2B00%3A00");
@@ -5634,6 +5636,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessConsoleMasterDataResourceRequest? LastDetailRequest { get; private set; }
 
+    public List<BusinessConsoleMasterDataResourceRequest> DetailRequests { get; } = [];
+
     public BusinessConsoleUpdateMasterDataResourceRequest? LastUpdateRequest { get; private set; }
 
     public BusinessConsoleSetMasterDataResourceEnabledRequest? LastSetEnabledRequest { get; private set; }
@@ -5692,6 +5696,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessServiceProxyException? Failure { get; init; }
 
+    public Exception? DetailFailure { get; init; }
+
     public Task<BusinessConsoleResourceListResponse> ListResourcesAsync(
         string internalBearerToken,
         BusinessConsoleListResourcesRequest request,
@@ -5726,6 +5732,12 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     {
         LastInternalToken = internalBearerToken;
         LastDetailRequest = request;
+        DetailRequests.Add(request);
+        if (DetailFailure is not null)
+        {
+            throw DetailFailure;
+        }
+
         return Task.FromResult(ResourceDetail(request.ResourceType, request.Code, request.CodeSet, true));
     }
 
@@ -6108,8 +6120,25 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         string code,
         string? codeSet,
         bool active,
-        string? displayName = null) =>
-        new(
+        string? displayName = null)
+    {
+        if (string.Equals(resourceType, "device-asset", StringComparison.OrdinalIgnoreCase))
+        {
+            return new BusinessConsoleMasterDataResourceDetail(
+                resourceType,
+                code,
+                displayName ?? code,
+                active,
+                "v1",
+                "org-001",
+                "env-dev",
+                displayName ?? code,
+                WarrantyExpiresOn: new DateOnly(2027, 1, 14),
+                SupplierPartnerCode: "SUP-ACME",
+                Status: active ? "active" : "disabled");
+        }
+
+        return new(
             resourceType,
             code,
             displayName ?? code,
@@ -6120,6 +6149,7 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             displayName ?? code,
             CodeSet: codeSet,
             Status: active ? "active" : "disabled");
+    }
 }
 
 internal sealed class RecordingInventoryClient : IBusinessInventoryClient
@@ -9092,6 +9122,32 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleMesProductionReportListResponse([], 0));
     }
+
+    public Task<BusinessConsoleMesTelemetryCandidateListResponse> ListTelemetryCandidatesAsync(
+        string internalBearerToken,
+        BusinessConsoleMesTelemetryCandidateListRequest request,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
+    public Task<BusinessConsoleMesTelemetryCandidateRow> GetTelemetryCandidateAsync(
+        string internalBearerToken,
+        string candidateId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
+    public Task<BusinessConsoleRecordProductionReportResponse> PromoteTelemetryCandidateAsync(
+        string internalBearerToken,
+        string candidateId,
+        BusinessConsoleMesTelemetryCandidatePromoteRequest request,
+        string actor,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
+    public Task<BusinessConsoleAcceptedResponse> DismissTelemetryCandidateAsync(
+        string internalBearerToken,
+        string candidateId,
+        BusinessConsoleMesTelemetryCandidateDismissRequest request,
+        string actor,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
 
     public Task<BusinessConsoleMesScheduleResult> RunScheduleAsync(
         string internalBearerToken,

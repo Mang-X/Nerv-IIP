@@ -38,7 +38,7 @@ const dismissing = ref(false)
  * While dragging we force `transition: none` so the sheet tracks the finger 1:1
  * — without it the `duration-300` utility (there for reka's enter/exit) leaves
  * `transition-property: all` active and the transform would lag ~300ms. On
- * release the inline transition is dropped and `.ds-sheet-snap` takes over.
+ * release the inline transition is dropped and `.nv-m-sheet-snap` takes over.
  */
 const sheetStyle = computed(() => {
   if (!dragging.value && !dragY.value) return undefined
@@ -138,7 +138,7 @@ watch(
             !dismissing &&
               'data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom',
             // snap / dismiss transition — disabled while the finger is down so it tracks live
-            !dragging && 'ds-sheet-snap',
+            !dragging && 'nv-m-sheet-snap',
             $props.class,
           )
         "
@@ -146,7 +146,7 @@ watch(
       >
         <!-- top grab bar: handle + title — pull down to dismiss -->
         <div
-          class="ds-sheet-grab shrink-0 cursor-grab pt-3 pb-1 select-none active:cursor-grabbing"
+          class="nv-m-sheet-grab shrink-0 cursor-grab pt-3 pb-1 select-none active:cursor-grabbing"
           @pointerdown="onGrabDown"
           @pointermove="onGrabMove"
           @pointerup="onGrabUp"
@@ -173,15 +173,15 @@ watch(
 
 <style scoped>
 @layer nv-components {
-  .ds-sheet-grab {
+  .nv-m-sheet-grab {
     /* claim vertical gestures for the drag instead of letting them scroll the page */
     touch-action: none;
   }
-  .ds-sheet-snap {
+  .nv-m-sheet-snap {
     transition: transform 0.32s var(--nv-ease-out-expo);
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-sheet-snap {
+    .nv-m-sheet-snap {
       transition: none;
     }
   }

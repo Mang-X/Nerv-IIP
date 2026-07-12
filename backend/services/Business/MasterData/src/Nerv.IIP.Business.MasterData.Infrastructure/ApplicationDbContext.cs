@@ -13,6 +13,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
@@ -47,6 +48,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<WorkCenter> WorkCenters => Set<WorkCenter>();
     public DbSet<WorkCalendar> WorkCalendars => Set<WorkCalendar>();
     public DbSet<DeviceAsset> DeviceAssets => Set<DeviceAsset>();
+    public DbSet<ToolingAsset> ToolingAssets => Set<ToolingAsset>();
+    public DbSet<ChangeoverMatrixEntry> ChangeoverMatrixEntries => Set<ChangeoverMatrixEntry>();
     public DbSet<CodeRule> CodeRules => Set<CodeRule>();
     public DbSet<CodeRuleVersion> CodeRuleVersions => Set<CodeRuleVersion>();
     public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();

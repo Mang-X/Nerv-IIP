@@ -13,10 +13,10 @@ describe('@nerv-iip/ui FE-2 block library exports', () => {
 
   it('exports the data + status blocks from the stable boundary (Nv names)', () => {
     // The superseded blocks DataTable/DataTablePagination/StatusBadge were deleted at
-    // the #789 closeout; the pro-layer NvDataTable/NvDataTablePagination/NvStatusBadge
+    // the #789 closeout; the pro-layer NvDataTable/NvPagination/NvStatusBadge
     // are the canonical exports. `resolveStatus` (a helper, not a component) stays.
     expect(ui.NvDataTable).toBeDefined()
-    expect(ui.NvDataTablePagination).toBeDefined()
+    expect(ui.NvPagination).toBeDefined()
     expect(ui.NvStatusBadge).toBeDefined()
     expect(ui.NvRowActions).toBeDefined()
     expect(ui.resolveStatus).toBeTypeOf('function')

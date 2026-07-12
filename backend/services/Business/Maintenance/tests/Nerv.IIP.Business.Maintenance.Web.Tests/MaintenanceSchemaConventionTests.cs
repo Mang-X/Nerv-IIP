@@ -166,6 +166,8 @@ public sealed class MaintenanceSchemaConventionTests
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.SourceReferenceId), "source_reference_id", true);
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.DiagnosticDescription), "diagnostic_description", true);
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.AssignedTechnicianUserId), "assigned_technician_user_id", true);
+        AssertColumn(workOrder, nameof(MaintenanceWorkOrder.ActualTechnicianUserId), "actual_technician_user_id", true);
+        Assert.Equal(150, workOrder.FindProperty(nameof(MaintenanceWorkOrder.ActualTechnicianUserId))?.GetMaxLength());
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.EstimatedLaborMinutes), "estimated_labor_minutes", true);
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.ActualLaborMinutes), "actual_labor_minutes", true);
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.SparePartCostAmount), "spare_part_cost_amount", true);

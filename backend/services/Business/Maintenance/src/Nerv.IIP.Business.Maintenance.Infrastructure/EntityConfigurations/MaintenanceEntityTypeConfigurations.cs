@@ -23,6 +23,7 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.FailureModeCode).HasColumnName("failure_mode_code").HasMaxLength(100).HasComment("Structured failure mode code captured from alarm or inspection context.");
         builder.Property(x => x.FailureCauseCode).HasColumnName("failure_cause_code").HasMaxLength(100).HasComment("Structured failure cause code captured from alarm or inspection context.");
         builder.Property(x => x.AssignedTechnicianUserId).HasColumnName("assigned_technician_user_id").HasMaxLength(150).HasComment("Assigned technician user reference owned outside Maintenance.");
+        builder.Property(x => x.ActualTechnicianUserId).HasColumnName("actual_technician_user_id").HasMaxLength(150).HasComment("Actual primary technician user reference recorded at completion and owned outside Maintenance.");
         builder.Property(x => x.EstimatedLaborMinutes).HasColumnName("estimated_labor_minutes").HasComment("Estimated technician labor minutes.");
         builder.Property(x => x.OpenedBy).HasColumnName("opened_by").IsRequired().HasMaxLength(150).HasComment("Actor or source that opened the work order.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Maintenance work order lifecycle status.");

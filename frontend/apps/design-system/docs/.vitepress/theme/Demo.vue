@@ -24,25 +24,25 @@ defineProps<{
   <ClientOnly>
     <!-- `vp-raw` isolates this subtree from VitePress's base/vp-doc resets
          (ADR 0020 §4.2, via postcssIsolateStyles in config.mts). -->
-    <div class="ds-demo vp-raw" :class="{ 'ds-demo-popout-box': popout }">
-      <div v-if="title" class="ds-demo-title">
+    <div class="nv-demo vp-raw" :class="{ 'nv-demo-popout-box': popout }">
+      <div v-if="title" class="nv-demo-title">
         {{ title }}
       </div>
       <div
-        class="ds-demo-preview"
+        class="nv-demo-preview"
         :class="{
-          'ds-demo-center': center,
-          'ds-demo-mobile': mobile,
-          'ds-demo-popout': popout,
-          'ds-demo-block': block,
+          'nv-demo-center': center,
+          'nv-demo-mobile': mobile,
+          'nv-demo-popout': popout,
+          'nv-demo-block': block,
         }"
       >
-        <div v-if="mobile" class="ds-demo-phone"><slot /></div>
+        <div v-if="mobile" class="nv-demo-phone"><slot /></div>
         <slot v-else />
       </div>
     </div>
     <template #fallback>
-      <div class="ds-demo vp-raw ds-demo-loading">预览加载中…</div>
+      <div class="nv-demo vp-raw nv-demo-loading">预览加载中…</div>
     </template>
   </ClientOnly>
 </template>
@@ -51,8 +51,8 @@ defineProps<{
 /* Demo bleed from VitePress's `.vp-doc` prose typography (heading margins, list
    markers, brand-blue links, table borders) is now neutralised at the source by
    `postcssIsolateStyles` + the `vp-raw` class on the demo root (ADR 0020 §4.2) —
-   the old `.vp-doc .ds-demo …` counter-rules are no longer needed and were removed. */
-.ds-demo {
+   the old `.vp-doc .nv-demo …` counter-rules are no longer needed and were removed. */
+.nv-demo {
   margin: 1.25rem 0;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -62,7 +62,7 @@ defineProps<{
   background: var(--background);
   overflow: hidden;
 }
-.ds-demo-title {
+.nv-demo-title {
   border-bottom: 1px solid var(--border);
   background: var(--card);
   padding: 0.625rem 0.875rem;
@@ -71,7 +71,7 @@ defineProps<{
   font-weight: 600;
   line-height: 1.25rem;
 }
-.ds-demo-preview {
+.nv-demo-preview {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -80,26 +80,26 @@ defineProps<{
 }
 /* `block` — full-width column for wide components (NvDataTable, NvDescriptions) so
    they fill the preview instead of shrinking to content in the flex row. */
-.ds-demo-block {
+.nv-demo-block {
   display: block;
 }
-.ds-demo-block > * + * {
+.nv-demo-block > * + * {
   margin-top: 0.875rem;
 }
-.ds-demo-center {
+.nv-demo-center {
   justify-content: center;
 }
 /* let a panel that opens below the demo (NavigationMenu mega-menu) ESCAPE the
    box and float OVER the content below (like a real dropdown) — drop the clip so
    it isn't cut off; it overlays via z-index, so no reserved gap is needed. The
    control is pinned top-left. */
-.ds-demo-popout-box {
+.nv-demo-popout-box {
   overflow: visible;
 }
-.ds-demo-popout {
+.nv-demo-popout {
   align-items: flex-start;
 }
-.ds-demo-mobile {
+.nv-demo-mobile {
   justify-content: center;
   background: repeating-linear-gradient(
     45deg,
@@ -107,7 +107,7 @@ defineProps<{
     transparent 1px 10px
   );
 }
-.ds-demo-phone {
+.nv-demo-phone {
   width: 100%;
   max-width: 390px;
   /* generous inner padding so atomic decorations (badge bubbles, focus rings,
@@ -119,7 +119,7 @@ defineProps<{
   background: var(--background);
 }
 
-.ds-demo-loading {
+.nv-demo-loading {
   padding: 1.75rem 1.5rem;
   color: var(--muted-foreground);
   font-size: 0.875rem;

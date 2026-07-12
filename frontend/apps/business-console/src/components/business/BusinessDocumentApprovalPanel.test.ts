@@ -88,21 +88,21 @@ vi.mock('vue-router', async (importOriginal) => {
 })
 
 const uiStubs = {
-  ButtonPro: { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
-  FieldPro: { template: '<div><slot /></div>' },
-  FieldProLabel: { template: '<label><slot /></label>' },
-  SelectPro: {
+  NvButton: { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
+  NvField: { template: '<div><slot /></div>' },
+  NvFieldLabel: { template: '<label><slot /></label>' },
+  NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectProContent: { template: '<slot />' },
-  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
-  SelectProTrigger: { template: '<span><slot /></span>' },
-  SelectProValue: true,
+  NvSelectContent: { template: '<slot />' },
+  NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  NvSelectTrigger: { template: '<span><slot /></span>' },
+  NvSelectValue: true,
   SelectValue: true,
   Spinner: true,
-  StatusBadgePro: { props: ['value'], template: '<span>{{ value }}</span>' },
+  NvStatusBadge: { props: ['value'], template: '<span>{{ value }}</span>' },
 }
 
 function findButton(wrapper: ReturnType<typeof mount>, text: string) {

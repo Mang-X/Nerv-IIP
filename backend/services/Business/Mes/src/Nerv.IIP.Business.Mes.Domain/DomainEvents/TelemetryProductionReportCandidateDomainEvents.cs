@@ -1,0 +1,6 @@
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+
+namespace Nerv.IIP.Business.Mes.Domain.DomainEvents;
+
+public sealed record TelemetryProductionReportCandidateConfirmedDomainEvent(TelemetryProductionReportCandidate Candidate) : IDomainEvent;
+public sealed record TelemetryProductionReportCandidateDismissedDomainEvent(TelemetryProductionReportCandidate Candidate) : IDomainEvent;

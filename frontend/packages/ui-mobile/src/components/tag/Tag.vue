@@ -51,7 +51,7 @@ const sizeClass: Record<Size, string> = {
     <button
       v-if="closable"
       type="button"
-      class="ds-tag-close -mr-0.5 inline-flex items-center justify-center rounded-full outline-none"
+      class="nv-m-tag-close -mr-0.5 inline-flex items-center justify-center rounded-full outline-none"
       aria-label="移除标签"
       @click.stop="emit('close')"
     >
@@ -62,17 +62,17 @@ const sizeClass: Record<Size, string> = {
 
 <style scoped>
 @layer nv-components {
-  .ds-tag-close {
+  .nv-m-tag-close {
     -webkit-tap-highlight-color: transparent;
     opacity: 0.7;
     transition: opacity 0.15s var(--nv-ease-out-quart, ease-out);
   }
-  .ds-tag-close:hover,
-  .ds-tag-close:active {
+  .nv-m-tag-close:hover,
+  .nv-m-tag-close:active {
     opacity: 1;
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-tag-close {
+    .nv-m-tag-close {
       transition: none;
     }
   }

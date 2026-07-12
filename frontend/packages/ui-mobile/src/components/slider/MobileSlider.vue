@@ -76,7 +76,7 @@ function nudge(delta: number) {
     data-slot="slider"
     :class="
       cn(
-        'ds-slider relative flex h-11 items-center select-none',
+        'nv-m-slider relative flex h-11 items-center select-none',
         disabled && 'opacity-40',
         props.class,
       )
@@ -97,7 +97,7 @@ function nudge(delta: number) {
       />
       <!-- thumb (44px hit area centered on the value position) -->
       <div
-        class="ds-slider-thumb absolute top-1/2 grid size-11 -translate-x-1/2 -translate-y-1/2 place-items-center"
+        class="nv-m-slider-thumb absolute top-1/2 grid size-11 -translate-x-1/2 -translate-y-1/2 place-items-center"
         :style="{ left: `${ratio * 100}%` }"
         role="slider"
         tabindex="0"
@@ -114,10 +114,10 @@ function nudge(delta: number) {
              smaller dark circle sitting directly inside it (no ring/gap). The
              inner disc is small at rest, grows on hover, shrinks while pressed. -->
         <span
-          class="ds-slider-ring grid size-5 place-items-center rounded-full bg-brand shadow-[0_1px_5px_rgb(0_0_0/0.35)]"
+          class="nv-m-slider-ring grid size-5 place-items-center rounded-full bg-brand shadow-[0_1px_5px_rgb(0_0_0/0.35)]"
         >
           <span
-            class="ds-slider-dot block size-3.5 rounded-full bg-background"
+            class="nv-m-slider-dot block size-3.5 rounded-full bg-background"
             :class="dragging && 'is-active'"
           />
         </span>
@@ -134,37 +134,37 @@ function nudge(delta: number) {
 
 <style scoped>
 @layer nv-components {
-  .ds-slider {
+  .nv-m-slider {
     -webkit-tap-highlight-color: transparent;
   }
-  .ds-slider-thumb {
+  .nv-m-slider-thumb {
     touch-action: none;
   }
   /* The outer ring is fixed; the focus outline lives here so it frames the whole
    thumb. */
-  .ds-slider-thumb:focus-visible .ds-slider-ring {
+  .nv-m-slider-thumb:focus-visible .nv-m-slider-ring {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
   /* WinUI3-style inner dot: visible at rest, grows a touch on hover, then shrinks
    below rest the instant the pointer goes down. The pressed rule is qualified
-   with `.ds-slider-thumb` so it OUT-SPECIFIES the hover rule (0,4,0 / 0,3,0) —
+   with `.nv-m-slider-thumb` so it OUT-SPECIFIES the hover rule (0,4,0 / 0,3,0) —
    otherwise hover (still active while pressing) would keep it big. */
-  .ds-slider-dot {
+  .nv-m-slider-dot {
     transform: scale(0.92);
     transition: transform 0.16s var(--nv-ease-out-quart);
   }
-  .ds-slider-thumb:hover .ds-slider-dot,
-  .ds-slider-thumb:focus-visible .ds-slider-dot {
+  .nv-m-slider-thumb:hover .nv-m-slider-dot,
+  .nv-m-slider-thumb:focus-visible .nv-m-slider-dot {
     transform: scale(1);
   }
-  .ds-slider-thumb .ds-slider-dot.is-active,
-  .ds-slider-thumb:hover .ds-slider-dot.is-active,
-  .ds-slider-thumb:focus-visible .ds-slider-dot.is-active {
+  .nv-m-slider-thumb .nv-m-slider-dot.is-active,
+  .nv-m-slider-thumb:hover .nv-m-slider-dot.is-active,
+  .nv-m-slider-thumb:focus-visible .nv-m-slider-dot.is-active {
     transform: scale(0.7);
   }
   @media (prefers-reduced-motion: reduce) {
-    .ds-slider-dot {
+    .nv-m-slider-dot {
       transition: none;
     }
   }

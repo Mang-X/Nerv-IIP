@@ -63,11 +63,11 @@ vi.mock('@/composables/usePagedList', () => ({
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const selectStubs = {
-  SelectPro: { props: ['modelValue'], emits: ['update:modelValue'], template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>' },
-  SelectProTrigger: { template: '<span><slot /></span>' },
+  NvSelect: { props: ['modelValue'], emits: ['update:modelValue'], template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>' },
+  NvSelectTrigger: { template: '<span><slot /></span>' },
   SelectValue: { template: '<span />' },
-  SelectProContent: { template: '<slot />' },
-  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  NvSelectContent: { template: '<slot />' },
+  NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 const rowActionStubs = {
   RowActions: { template: '<div data-testid="row-actions"><slot /></div>' },

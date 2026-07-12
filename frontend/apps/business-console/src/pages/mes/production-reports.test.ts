@@ -126,6 +126,24 @@ vi.mock('@/composables/useBusinessMes', async () => {
       reverseProductionReport: mesState.reverseProductionReport,
       reverseProductionReportPending: mesState.pending,
     }),
+    // main 上并行合入的遥测报工候选队列(同页):这些冲销相关用例不驱动它,给个空队列桩即可。
+    useMesTelemetryProductionReportCandidates: () => ({
+      filters: reactive({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        status: 'pending-confirmation',
+        skip: 0,
+        take: 100,
+      }),
+      candidates: computed(() => []),
+      total: computed(() => 0),
+      pending: shallowRef(false),
+      error: shallowRef(undefined),
+      refresh: vi.fn(),
+      promote: vi.fn(async () => undefined),
+      dismiss: vi.fn(async () => undefined),
+      actionPending: computed(() => false),
+    }),
   }
 })
 
@@ -163,25 +181,34 @@ function mountReports(permissionCodes: string[]) {
     global: {
       plugins: [pinia],
       stubs: {
+        // NvUI 组件按其底层组件名 stub。#787 已把 pro/ 重命名为 pc/ 且组件文件 XxxPro.vue → NvXxx.vue,
+        // 故 __name 现在就是 Nv* 名;Tooltip 的 Root/Trigger/Provider 仍是 reka 名(TooltipRoot 等)。
         BusinessLayout: { template: '<main><slot /></main>' },
         WorkOrderQuickView: true,
         PageHeader: { template: '<header><slot name="actions" /></header>' },
-        DataTablePro: tableStub,
-        ButtonPro: {
+        NvDataTable: tableStub,
+        NvButton: {
           props: ['disabled'],
           template: '<button :disabled="disabled"><slot /></button>',
         },
-        StatusBadgePro: {
+        NvStatusBadge: {
           props: ['label'],
           template: '<span data-testid="badge">{{ label }}</span>',
         },
         TooltipProvider: { template: '<div><slot /></div>' },
         TooltipRoot: { template: '<div><slot /></div>' },
         TooltipTrigger: { template: '<div><slot /></div>' },
-        TooltipProContent: { template: '<div><slot /></div>' },
+        NvTooltipContent: { template: '<div><slot /></div>' },
         // 冲销确认框内容不渲染(否则 reka Dialog 内层需 DialogRoot context);key 复用/关闭路径测试
         // 直接驱动 setup 方法(openReverse/submitReverse/onReverseOpenChange),不依赖弹窗 DOM。
-        AlertDialogPro: { props: ['open'], template: '<div />' },
+        NvAlertDialog: { props: ['open'], template: '<div />' },
+        // main 合入的候选队列 section 在主模板直接用 Select/Input,需 stub 避免缺 context 破坏整页渲染
+        NvSelect: { template: '<div><slot /></div>' },
+        NvSelectTrigger: { template: '<div><slot /></div>' },
+        NvSelectContent: { template: '<div><slot /></div>' },
+        NvSelectItem: { template: '<div><slot /></div>' },
+        SelectValue: { template: '<span />' },
+        NvInput: { template: '<input />' },
         Spinner: true,
       },
     },
