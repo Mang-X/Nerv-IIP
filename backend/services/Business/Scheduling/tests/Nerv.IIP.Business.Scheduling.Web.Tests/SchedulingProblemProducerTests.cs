@@ -48,6 +48,11 @@ public sealed class SchedulingProblemProducerTests
             DeviceAssets:
             [
                 new SchedulingProblemDeviceAssetSnapshot("DEV-MIX-01", "WC-MIX-01")
+            ],
+            ToolingFacts:
+            [
+                new SchedulingProblemToolingFactSnapshot("WO-REAL-001-10-mixing", 25, ["fixture.mixer"]),
+                new SchedulingProblemToolingFactSnapshot("WO-REAL-002-10-mixing", 25, ["fixture.mixer"])
             ]);
         var producer = new SchedulingProblemProducer(productEngineering, masterData);
         var request = new AssembleSchedulingProblemRequest(
@@ -72,7 +77,7 @@ public sealed class SchedulingProblemProducerTests
                         new SchedulingProblemOperationConstraint(
                             OperationCode: "mixing",
                             RequiredSkillCodes: ["skill.operator"],
-                            RequiredToolingIds: ["fixture.mixer"])
+                            RequiredToolingIds: ["caller-inline-tooling-must-be-ignored"])
                     ]),
                 new SchedulingProblemSourceOrder(
                     OrderId: "WO-REAL-002",
@@ -97,19 +102,15 @@ public sealed class SchedulingProblemProducerTests
         Assert.Equal("CAL-DAY", calendar.CalendarId);
         Assert.Contains(calendar.ShiftWindows, x => x.StartUtc == HorizonStart && x.EndUtc == HorizonEnd && x.ReasonCode == "day-shift");
         var constrainedOperation = problem.Orders.Single(x => x.OrderId == "WO-REAL-001").Operations.Single();
-        Assert.Equal(15, constrainedOperation.SetupMinutes);
+        Assert.Equal(25, constrainedOperation.SetupMinutes);
         Assert.Equal(["skill.operator"], constrainedOperation.RequiredSkillCodes);
         Assert.Equal(["fixture.mixer"], constrainedOperation.RequiredToolingIds);
 
         var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-real-producer-001", HorizonStart);
 
-        Assert.Contains(plan.UnscheduledOperations, x =>
-            x.OrderId == "WO-REAL-001" &&
-            x.OperationId == "WO-REAL-001-10-mixing" &&
-            x.ReasonCode == ScheduleConflictReasonCodeContract.NoEligibleResource);
-        var scheduled = Assert.Single(plan.Assignments, x => x.OrderId == "WO-REAL-002");
-        Assert.Equal("DEV-MIX-01", scheduled.ResourceId);
-        Assert.Equal(HorizonStart, scheduled.StartUtc);
+        Assert.Empty(plan.UnscheduledOperations);
+        Assert.Equal(2, plan.Assignments.Count);
+        Assert.All(plan.Assignments, scheduled => Assert.Equal("DEV-MIX-01", scheduled.ResourceId));
     }
 
     [Fact]
@@ -292,6 +293,31 @@ public sealed class SchedulingProblemProducerTests
         Assert.Equal(HorizonEnd, window.EndUtc);
     }
 
+    [Fact]
+    public async Task Master_data_client_reads_authoritative_tooling_facts_over_internal_http_contract()
+    {
+        HttpRequestMessage? captured = null;
+        var httpClient = new HttpClient(new StubHttpMessageHandler(request =>
+        {
+            captured = request;
+            return JsonResponse("""
+                { "data": { "facts": [
+                  { "operationId": "WO-2-10-mixing", "setupMinutes": 35, "requiredToolingCodes": ["TOOL-00001"], "toolingAvailable": true }
+                ] }, "success": true, "message": "", "code": 0 }
+                """);
+        })) { BaseAddress = new Uri("http://master-data") };
+        var client = new HttpSchedulingProblemMasterDataClient(httpClient);
+
+        var facts = await client.ResolveToolingFactsAsync("org-001", "env-dev",
+            [new SchedulingProblemToolingTransitionSnapshot("WO-2-10-mixing", "WC-01", "SKU-A", null, "SKU-B")], CancellationToken.None);
+
+        Assert.Equal(HttpMethod.Post, captured!.Method);
+        Assert.Equal("/api/business/v1/master-data/scheduling-tooling-facts/resolve", captured.RequestUri!.AbsolutePath);
+        var fact = Assert.Single(facts);
+        Assert.Equal(35, fact.SetupMinutes);
+        Assert.Equal(["TOOL-00001"], fact.RequiredToolingCodes);
+    }
+
     private static AssembleSchedulingProblemRequest RequestFor(params SchedulingProblemSourceOrder[] orders)
     {
         return new AssembleSchedulingProblemRequest(
@@ -338,7 +364,8 @@ public sealed class SchedulingProblemProducerTests
     private sealed class StubSchedulingProblemMasterDataClient(
         IReadOnlyCollection<SchedulingProblemWorkCenterSnapshot> WorkCenters,
         IReadOnlyCollection<SchedulingProblemCalendarSnapshot> Calendars,
-        IReadOnlyCollection<SchedulingProblemDeviceAssetSnapshot> DeviceAssets)
+        IReadOnlyCollection<SchedulingProblemDeviceAssetSnapshot> DeviceAssets,
+        IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>? ToolingFacts = null)
         : ISchedulingProblemMasterDataClient
     {
         public Task<SchedulingProblemWorkCenterSnapshot> GetWorkCenterAsync(
@@ -370,6 +397,12 @@ public sealed class SchedulingProblemProducerTests
             return Task.FromResult<IReadOnlyCollection<SchedulingProblemDeviceAssetSnapshot>>(
                 DeviceAssets.Where(x => x.WorkCenterCode == workCenterCode).ToArray());
         }
+
+        public Task<IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>> ResolveToolingFactsAsync(
+            string organizationId,
+            string environmentId,
+            IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> transitions,
+            CancellationToken cancellationToken) => Task.FromResult(ToolingFacts ?? (IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>)[]);
     }
 
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler

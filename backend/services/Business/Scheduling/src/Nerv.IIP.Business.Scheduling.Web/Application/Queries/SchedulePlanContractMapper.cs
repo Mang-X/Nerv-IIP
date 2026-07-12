@@ -235,6 +235,7 @@ public static class SchedulePlanContractMapper
             ScheduleConflictReasonCode.NoEligibleResource => ScheduleConflictReasonCodeContract.NoEligibleResource,
             ScheduleConflictReasonCode.OutsideHorizon => ScheduleConflictReasonCodeContract.OutsideHorizon,
             ScheduleConflictReasonCode.PredecessorUnscheduled => ScheduleConflictReasonCodeContract.PredecessorUnscheduled,
+            ScheduleConflictReasonCode.Tooling => ScheduleConflictReasonCodeContract.Tooling,
             ScheduleConflictReasonCode.InvalidLockedAssignment => ScheduleConflictReasonCodeContract.InvalidLockedAssignment,
             _ => throw new ArgumentOutOfRangeException(nameof(reasonCode), reasonCode, "Unsupported schedule conflict reason code.")
         };
@@ -275,6 +276,7 @@ public static class SchedulePlanContractMapper
             ScheduleConflictReasonCodeContract.OutsideHorizon => ScheduleConflictReasonCode.OutsideHorizon,
             ScheduleConflictReasonCodeContract.PredecessorUnscheduled => ScheduleConflictReasonCode.PredecessorUnscheduled,
             ScheduleConflictReasonCodeContract.InvalidLockedAssignment => ScheduleConflictReasonCode.InvalidLockedAssignment,
+            ScheduleConflictReasonCodeContract.Tooling => ScheduleConflictReasonCode.Tooling,
             _ => throw new ArgumentOutOfRangeException(nameof(reasonCode), reasonCode, "Unsupported schedule conflict reason code.")
         };
     }
