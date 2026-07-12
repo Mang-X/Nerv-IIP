@@ -1,21 +1,26 @@
 import {
+  acknowledgeBusinessConsoleEquipmentAlarmMutationOptions,
   getBusinessConsoleEquipmentAvailabilityQueryOptions,
   getBusinessConsoleEquipmentDeviceQueryOptions,
   getBusinessConsoleEquipmentOverviewQueryOptions,
   listBusinessConsoleEquipmentAlarmsQueryOptions,
+  shelveBusinessConsoleEquipmentAlarmMutationOptions,
+  unshelveBusinessConsoleEquipmentAlarmMutationOptions,
   type BusinessConsoleEquipmentAlarmListEnvelope,
   type BusinessConsoleEquipmentDeviceDetailEnvelope,
   type BusinessConsoleEquipmentDeviceDetailResponse,
   type BusinessConsoleEquipmentOverviewEnvelope,
   type BusinessConsoleEquipmentOverviewResponse,
+  type BusinessConsoleTelemetryAlarmEventItem,
   type EquipmentRuntimeAlarmSummary,
   type EquipmentRuntimeAvailabilityEnvelope,
   type EquipmentRuntimeAvailabilityWindow,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { useQuery } from '@pinia/colada'
+import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 import { useBusinessMasterDataResources } from './useBusinessMasterData'
+import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 
 const DEFAULT_DEVICE_ASSET_IDS = ''
 
@@ -224,7 +229,7 @@ export function useBusinessEquipmentOverview() {
   const businessContext = useBusinessContextStore()
   const filters = defaultOverviewFilters()
   const { effectiveDeviceAssetIds, deviceResourcesPending } = useEffectiveDeviceAssetIds(filters)
-  const overviewEnabled = computed(() => effectiveDeviceAssetIds.value.length > 0)
+  const overviewEnabled = computed(() => hasBusinessContext(businessContext) && effectiveDeviceAssetIds.value.length > 0)
   const overviewQuery = useQuery(() => ({
     ...getBusinessConsoleEquipmentOverviewQueryOptions({
       query: {
@@ -255,7 +260,7 @@ export function useBusinessEquipmentOverview() {
 export function useBusinessEquipmentAvailability() {
   const businessContext = useBusinessContextStore()
   const filters = defaultAvailabilityFilters()
-  const availabilityEnabled = computed(() => normalizeDeviceAssetIds(filters.deviceAssetIds).length > 0)
+  const availabilityEnabled = computed(() => hasBusinessContext(businessContext) && normalizeDeviceAssetIds(filters.deviceAssetIds).length > 0)
   const availabilityQuery = useQuery(() => ({
     ...getBusinessConsoleEquipmentAvailabilityQueryOptions({
       query: toAvailabilityQuery(businessContext, filters),
@@ -285,7 +290,7 @@ export function useBusinessEquipmentAvailability() {
 export function useBusinessEquipmentDevice(deviceAssetId?: string) {
   const businessContext = useBusinessContextStore()
   const filters = defaultDeviceFilters(deviceAssetId)
-  const deviceEnabled = computed(() => filters.deviceAssetId.trim().length > 0)
+  const deviceEnabled = computed(() => hasBusinessContext(businessContext) && filters.deviceAssetId.trim().length > 0)
   const deviceQuery = useQuery(() => ({
     ...getBusinessConsoleEquipmentDeviceQueryOptions({
       path: { deviceAssetId: filters.deviceAssetId },
@@ -313,20 +318,67 @@ export function useBusinessEquipmentDevice(deviceAssetId?: string) {
 
 export function useBusinessEquipmentAlarms() {
   const businessContext = useBusinessContextStore()
-  const alarmsQuery = useQuery(() =>
-    listBusinessConsoleEquipmentAlarmsQueryOptions({
+  const alarmsQuery = useQuery(() => ({
+    ...listBusinessConsoleEquipmentAlarmsQueryOptions({
       query: toContextQuery(businessContext),
     }),
-  )
+    enabled: hasBusinessContext(businessContext),
+  }))
+  const acknowledgeMutation = useMutation({
+    ...acknowledgeBusinessConsoleEquipmentAlarmMutationOptions(),
+  })
+  const shelveMutation = useMutation({
+    ...shelveBusinessConsoleEquipmentAlarmMutationOptions(),
+  })
+  const unshelveMutation = useMutation({
+    ...unshelveBusinessConsoleEquipmentAlarmMutationOptions(),
+  })
+
+  async function acknowledgeAlarm(alarmEventId: string, acknowledgedBy: string) {
+    return acknowledgeMutation.mutateAsync({
+      path: { alarmEventId },
+      body: {
+        ...toContextQuery(businessContext),
+        acknowledgedAtUtc: new Date().toISOString(),
+        acknowledgedBy,
+      },
+    })
+  }
+
+  async function shelveAlarm(alarmEventId: string, shelvedBy: string, durationMinutes = 30, reason?: string) {
+    return shelveMutation.mutateAsync({
+      path: { alarmEventId },
+      body: {
+        ...toContextQuery(businessContext),
+        durationMinutes,
+        reason,
+        shelvedAtUtc: new Date().toISOString(),
+        shelvedBy,
+      },
+    })
+  }
+
+  async function unshelveAlarm(alarmEventId: string) {
+    return unshelveMutation.mutateAsync({
+      path: { alarmEventId },
+      body: {
+        ...toContextQuery(businessContext),
+        unshelvedAtUtc: new Date().toISOString(),
+      },
+    })
+  }
 
   return {
-    alarms: computed<EquipmentRuntimeAlarmSummary[]>(() =>
-      listItems<EquipmentRuntimeAlarmSummary, BusinessConsoleEquipmentAlarmListEnvelope>(
+    acknowledgeAlarm,
+    alarms: computed<BusinessConsoleTelemetryAlarmEventItem[]>(() =>
+      listItems<BusinessConsoleTelemetryAlarmEventItem, BusinessConsoleEquipmentAlarmListEnvelope>(
         alarmsQuery.data.value,
       ),
     ),
     alarmsError: alarmsQuery.error,
     alarmsPending: alarmsQuery.isLoading,
-    refreshAlarms: alarmsQuery.refetch,
+    refreshAlarms: () => refetchWithBusinessContext(businessContext, alarmsQuery),
+    shelveAlarm,
+    unshelveAlarm,
   }
 }

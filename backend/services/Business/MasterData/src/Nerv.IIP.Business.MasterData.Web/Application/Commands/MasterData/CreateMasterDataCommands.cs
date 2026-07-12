@@ -51,6 +51,8 @@ public sealed record CreateSkuCommand(
     int? PlannedDeliveryTimeDays = null,
     int? InHouseProductionTimeDays = null,
     int? GoodsReceiptProcessingTimeDays = null,
+    int? ShelfLifeDays = null,
+    int? NearExpiryThresholdDays = null,
     string? AbcClass = null,
     string? LifecycleStatus = "active",
     bool PurchasingEnabled = true,
@@ -161,7 +163,9 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
             request.LifecycleStatus,
             request.PurchasingEnabled,
             request.ManufacturingEnabled,
-            request.SalesEnabled);
+            request.SalesEnabled,
+            request.ShelfLifeDays,
+            request.NearExpiryThresholdDays);
         await _repository.AddAsync(sku, cancellationToken);
         return new MasterDataResourceResult("sku", sku.Code, sku.Name);
     }
@@ -243,6 +247,8 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
             request.PlannedDeliveryTimeDays,
             request.InHouseProductionTimeDays,
             request.GoodsReceiptProcessingTimeDays,
+            request.ShelfLifeDays,
+            request.NearExpiryThresholdDays,
             request.AbcClass,
             request.LifecycleStatus,
             request.PurchasingEnabled,
@@ -939,13 +945,27 @@ public sealed record RegisterDeviceAssetCommand(
     bool Maintainable,
     bool TelemetryEnabled,
     IReadOnlyDictionary<string, string> ExternalReferences,
-    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
+    string? IdempotencyKey = null,
+    DateOnly? PurchaseDate = null,
+    decimal? PurchaseCost = null,
+    string? PurchaseCurrencyCode = null,
+    DateOnly? WarrantyExpiresOn = null,
+    string? SupplierPartnerCode = null,
+    string? SiteCode = null,
+    string? WorkshopCode = null,
+    string? StationCode = null,
+    string? ParentDeviceId = null,
+    DateOnly? RetiredOn = null,
+    IReadOnlyCollection<DeviceAssetComponentDraft>? Components = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<RegisterDeviceAssetCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(RegisterDeviceAssetCommand request, CancellationToken cancellationToken)
     {
+        var purchaseCurrencyCode = DeviceAssetCommandValidator.NormalizeCurrencyCode(request.PurchaseCurrencyCode);
+        DeviceAssetCommandValidator.EnsureValidComponents(request.Components);
+
         var allocation = await MasterDataCodeGenerator.AllocateAsync(
             codingService,
             "device-asset",
@@ -966,7 +986,18 @@ public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository rep
                 request.Criticality,
                 request.Maintainable,
                 request.TelemetryEnabled,
-                request.ExternalReferences.Select(x => $"{x.Key}:{x.Value}")),
+                request.ExternalReferences.Select(x => $"{x.Key}:{x.Value}"),
+                request.PurchaseDate,
+                request.PurchaseCost,
+                purchaseCurrencyCode,
+                request.WarrantyExpiresOn,
+                request.SupplierPartnerCode,
+                request.SiteCode,
+                request.WorkshopCode,
+                request.StationCode,
+                request.ParentDeviceId,
+                request.RetiredOn,
+                request.Components?.Select(x => $"{x.ComponentCode}:{x.Quantity}:{x.Critical}") ?? []),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -995,9 +1026,60 @@ public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository rep
             request.Criticality,
             request.Maintainable,
             request.TelemetryEnabled,
-            request.ExternalReferences);
+            request.ExternalReferences)
+            .WithLedger(
+                request.PurchaseDate,
+                request.PurchaseCost,
+                purchaseCurrencyCode,
+                request.WarrantyExpiresOn,
+                request.SupplierPartnerCode ?? string.Empty,
+                request.SiteCode ?? string.Empty,
+                request.WorkshopCode ?? string.Empty,
+                request.LineCode,
+                request.StationCode ?? string.Empty,
+                request.ParentDeviceId,
+                request.RetiredOn)
+            .ReplaceComponents(request.Components ?? []);
         await repository.AddAsync(asset, cancellationToken);
         return new MasterDataResourceResult("device-asset", asset.Code, asset.Model);
+    }
+}
+
+internal static class DeviceAssetCommandValidator
+{
+    public static string NormalizeCurrencyCode(string? value)
+    {
+        var code = value?.Trim();
+        if (string.IsNullOrEmpty(code))
+        {
+            return string.Empty;
+        }
+
+        if (code.Length != 3 || code.Any(x => !char.IsAsciiLetter(x)))
+        {
+            throw new KnownException("Device asset purchase currency code must be a 3-letter ISO 4217 code.");
+        }
+
+        return code.ToUpperInvariant();
+    }
+
+    public static string NormalizeCurrencyCode(string? value, string fallback)
+    {
+        return value is null ? fallback : NormalizeCurrencyCode(value);
+    }
+
+    public static void EnsureValidComponents(IReadOnlyCollection<DeviceAssetComponentDraft>? components)
+    {
+        if (components is null)
+        {
+            return;
+        }
+
+        var invalid = components.FirstOrDefault(x => x.Quantity <= 0m);
+        if (invalid is not null)
+        {
+            throw new KnownException($"Device asset component '{invalid.ComponentCode}' quantity must be greater than zero.");
+        }
     }
 }
 

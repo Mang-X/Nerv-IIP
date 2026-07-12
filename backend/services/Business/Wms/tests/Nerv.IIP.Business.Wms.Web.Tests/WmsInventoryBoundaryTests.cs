@@ -530,6 +530,34 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
+    public async Task Picking_task_releases_fefo_allocations_when_wms_rejects_split_pick()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-FEFO-SPLIT-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", null, null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventory = new FakeWmsInventoryReservationClient("res-fefo-a", "res-fefo-b")
+        {
+            SplitFefoAllocation = true,
+        };
+
+        await Assert.ThrowsAsync<KnownException>(() => new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-FEFO-SPLIT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None));
+
+        Assert.Empty(dbContext.WarehouseTasks.Local);
+        Assert.Equal(["res-fefo-a", "res-fefo-b"], inventory.ReleaseRequests.Select(x => x.ReservationId).ToArray());
+        Assert.Equal([2m, 2m], inventory.ReleaseRequests.Select(x => x.Quantity).ToArray());
+    }
+
+    [Fact]
     public async Task Picking_task_does_not_reserve_inventory_when_outbound_is_closed()
     {
         await using var dbContext = CreateContext();
@@ -654,6 +682,7 @@ public sealed class WmsInventoryBoundaryTests
         {
             Assert.Equal("COUNT-FREEZE-001", request.CountTaskCode);
             Assert.Equal("LOC-A-01", request.LocationCode);
+            Assert.StartsWith("wms-count-freeze:", request.IdempotencyKey, StringComparison.Ordinal);
         });
         Assert.Collection(inventory.CountAdjustmentRequests, request =>
         {
@@ -763,6 +792,74 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
+    public async Task Recording_progress_on_an_open_picking_task_renews_its_inventory_reservation()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-RENEW-001",
+            "sales-order",
+            "SO-RENEW-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        var pickingTask = outbound.CreatePickingTask(
+            "TASK-RENEW-001",
+            "LINE-001",
+            "LOC-A-01",
+            "PACK-01",
+            5m,
+            "reservation-renew-001");
+        dbContext.OutboundOrders.Add(outbound);
+        dbContext.WarehouseTasks.Add(pickingTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventoryClient = new FakeWmsInventoryReservationClient("reservation-renew-001");
+
+        await new RecordWarehouseTaskProgressCommandHandler(dbContext, inventoryClient).Handle(
+            new RecordWarehouseTaskProgressCommand(pickingTask.Id, 1m),
+            CancellationToken.None);
+
+        var renewal = Assert.Single(inventoryClient.RenewalRequests);
+        Assert.Equal("reservation-renew-001", renewal.ReservationId);
+    }
+
+    [Fact]
+    public async Task Recording_picking_progress_keeps_the_local_progress_when_inventory_renewal_is_temporarily_unavailable()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-RENEW-UNAVAILABLE-001",
+            "sales-order",
+            "SO-RENEW-UNAVAILABLE-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        var pickingTask = outbound.CreatePickingTask(
+            "TASK-RENEW-UNAVAILABLE-001",
+            "LINE-001",
+            "LOC-A-01",
+            "PACK-01",
+            5m,
+            "reservation-renew-unavailable-001");
+        dbContext.OutboundOrders.Add(outbound);
+        dbContext.WarehouseTasks.Add(pickingTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventoryClient = new FakeWmsInventoryReservationClient("reservation-renew-unavailable-001")
+        {
+            RenewalException = new HttpRequestException("Inventory is temporarily unavailable."),
+        };
+
+        await new RecordWarehouseTaskProgressCommandHandler(dbContext, inventoryClient).Handle(
+            new RecordWarehouseTaskProgressCommand(pickingTask.Id, 1m),
+            CancellationToken.None);
+
+        Assert.Equal(1m, pickingTask.ExecutedQuantity);
+        Assert.Equal(WarehouseTaskStatus.Open, pickingTask.Status);
+        Assert.Single(inventoryClient.RenewalRequests);
+    }
+
+    [Fact]
     public async Task Complete_wcs_task_logs_warning_when_completion_payload_has_no_executed_quantity()
     {
         await using var dbContext = CreateContext();
@@ -807,12 +904,16 @@ public sealed class WmsInventoryBoundaryTests
     private sealed class FakeWmsInventoryReservationClient(params string[] reservationIds) : IWmsInventoryReservationClient
     {
         public List<WmsInventoryReservationRequest> Requests { get; } = [];
+        public List<WmsInventoryFefoReservationRequest> FefoRequests { get; } = [];
         public List<WmsInventoryReservationReleaseRequest> ReleaseRequests { get; } = [];
+        public List<WmsInventoryReservationRenewalRequest> RenewalRequests { get; } = [];
         public List<WmsInventoryCountTaskRequest> CountTaskRequests { get; } = [];
         public List<WmsInventoryCountAdjustmentRequest> CountAdjustmentRequests { get; } = [];
         public List<string> ReservationResults { get; } = [];
+        public bool SplitFefoAllocation { get; init; }
         public string CountTaskId { get; init; } = Guid.CreateVersion7().ToString();
         public string InventoryMovementId { get; init; } = Guid.CreateVersion7().ToString();
+        public Exception? RenewalException { get; init; }
 
         public Task<WmsInventoryReservationResult> ReserveAsync(
             WmsInventoryReservationRequest request,
@@ -824,12 +925,47 @@ public sealed class WmsInventoryBoundaryTests
             return Task.FromResult(new WmsInventoryReservationResult(reservationId, request.Quantity, 0m));
         }
 
+        public Task<WmsInventoryFefoReservationResult> ReserveFefoAsync(
+            WmsInventoryFefoReservationRequest request,
+            CancellationToken cancellationToken)
+        {
+            FefoRequests.Add(request);
+            var reservationId = reservationIds[Math.Min(FefoRequests.Count - 1, reservationIds.Length - 1)];
+            ReservationResults.Add(reservationId);
+            if (SplitFefoAllocation)
+            {
+                return Task.FromResult(new WmsInventoryFefoReservationResult(
+                    [
+                        new WmsInventoryFefoReservationAllocation(reservationIds[0], request.LocationCode ?? "LOC-A-01", "LOT-FEFO-A", null, null, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(10), request.Quantity / 2m, 0m),
+                        new WmsInventoryFefoReservationAllocation(reservationIds[1], request.LocationCode ?? "LOC-A-01", "LOT-FEFO-B", null, null, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(20), request.Quantity / 2m, 0m)
+                    ],
+                    request.Quantity));
+            }
+
+            return Task.FromResult(new WmsInventoryFefoReservationResult(
+                [new WmsInventoryFefoReservationAllocation(reservationId, request.LocationCode ?? "LOC-A-01", "LOT-FEFO", null, null, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30), request.Quantity, 0m)],
+                request.Quantity));
+        }
+
         public Task<WmsInventoryReservationReleaseResult> ReleaseAsync(
             WmsInventoryReservationReleaseRequest request,
             CancellationToken cancellationToken)
         {
             ReleaseRequests.Add(request);
             return Task.FromResult(new WmsInventoryReservationReleaseResult(request.ReservationId, 0m, request.Quantity));
+        }
+
+        public Task<WmsInventoryReservationRenewalResult> RenewAsync(
+            WmsInventoryReservationRenewalRequest request,
+            CancellationToken cancellationToken)
+        {
+            RenewalRequests.Add(request);
+            if (RenewalException is not null)
+            {
+                throw RenewalException;
+            }
+
+            return Task.FromResult(new WmsInventoryReservationRenewalResult(request.ReservationId, DateTime.UtcNow.AddHours(2)));
         }
 
         public Task<WmsInventoryCountTaskResult> CreateCountTaskAsync(

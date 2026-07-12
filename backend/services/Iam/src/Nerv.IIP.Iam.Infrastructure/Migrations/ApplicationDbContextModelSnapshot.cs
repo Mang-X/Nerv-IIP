@@ -279,6 +279,42 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate.MembershipDataScope", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasComment("Membership data scope identifier.");
+
+                    b.Property<string>("MembershipId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Owning membership identifier.");
+
+                    b.Property<string>("ScopeCode")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasComment("MasterData code for the data scope.");
+
+                    b.Property<string>("ScopeType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasComment("Data scope type: site, workshop or production-line.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MembershipId", "ScopeType", "ScopeCode")
+                        .IsUnique();
+
+                    b.ToTable("membership_data_scopes", "iam", t =>
+                        {
+                            t.HasComment("IAM data scope bindings owned by user memberships.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate.MembershipRole", b =>
                 {
                     b.Property<string>("Id")
@@ -426,6 +462,42 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                     b.ToTable("roles", "iam", t =>
                         {
                             t.HasComment("IAM roles that group permission codes for assignment.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate.RoleDataScope", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasComment("Role data scope identifier.");
+
+                    b.Property<string>("RoleId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Owning role identifier.");
+
+                    b.Property<string>("ScopeCode")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasComment("MasterData code for the data scope.");
+
+                    b.Property<string>("ScopeType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasComment("Data scope type: site, workshop or production-line.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RoleId", "ScopeType", "ScopeCode")
+                        .IsUnique();
+
+                    b.ToTable("role_data_scopes", "iam", t =>
+                        {
+                            t.HasComment("IAM data scope bindings owned by roles.");
                         });
                 });
 
@@ -589,6 +661,10 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                         .HasColumnType("character varying(64)")
                         .HasComment("User identifier.");
 
+                    b.Property<DateTimeOffset?>("AccountExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("Optional UTC time after which the account can no longer authenticate.");
+
                     b.Property<bool>("Deleted")
                         .HasColumnType("boolean")
                         .HasComment("Soft delete flag.");
@@ -625,6 +701,18 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                         .HasColumnType("character varying(128)")
                         .HasComment("Unique login name used for authentication.");
 
+                    b.Property<bool>("PasswordChangeRequired")
+                        .HasColumnType("boolean")
+                        .HasComment("Whether the user must change password after login before normal use.");
+
+                    b.Property<DateTimeOffset?>("PasswordChangedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("UTC time when the current password hash was set.");
+
+                    b.Property<DateTimeOffset?>("PasswordExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("Optional UTC time after which login must force password change.");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(512)
@@ -648,6 +736,8 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AccountExpiresAtUtc");
+
                     b.HasIndex("Email")
                         .IsUnique();
 
@@ -657,6 +747,38 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                     b.ToTable("users", "iam", t =>
                         {
                             t.HasComment("IAM users that authenticate and receive scoped permissions.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate.UserPasswordHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Password history row identifier.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("UTC time when this historical password hash was superseded.");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasComment("Historical password hash retained for password history policy checks.");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("User identifier that owns this historical password hash.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "CreatedAtUtc");
+
+                    b.ToTable("user_password_history", "iam", t =>
+                        {
+                            t.HasComment("Historical IAM user password hashes used to prevent recent password reuse.");
                         });
                 });
 
@@ -771,11 +893,29 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate.MembershipDataScope", b =>
+                {
+                    b.HasOne("Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate.Membership", null)
+                        .WithMany("DataScopes")
+                        .HasForeignKey("MembershipId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate.MembershipRole", b =>
                 {
                     b.HasOne("Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate.Membership", null)
                         .WithMany("Roles")
                         .HasForeignKey("MembershipId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate.RoleDataScope", b =>
+                {
+                    b.HasOne("Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate.Role", null)
+                        .WithMany("DataScopes")
+                        .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -789,6 +929,15 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate.UserPasswordHistory", b =>
+                {
+                    b.HasOne("Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate.User", null)
+                        .WithMany("PasswordHistory")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.ConnectorHostCredentialAggregate.ConnectorHostCredential", b =>
                 {
                     b.Navigation("Capabilities");
@@ -796,12 +945,21 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
 
             modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate.Membership", b =>
                 {
+                    b.Navigation("DataScopes");
+
                     b.Navigation("Roles");
                 });
 
             modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate.Role", b =>
                 {
+                    b.Navigation("DataScopes");
+
                     b.Navigation("Permissions");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate.User", b =>
+                {
+                    b.Navigation("PasswordHistory");
                 });
 #pragma warning restore 612, 618
         }

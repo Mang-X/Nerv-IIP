@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.QualityReasonAggregate;
 
 namespace Nerv.IIP.Business.Quality.Infrastructure.Repositories;
@@ -76,6 +77,57 @@ public sealed class InspectionRecordRepository(ApplicationDbContext context)
                 && x.SkuCode == normalizedSkuCode
                 && x.SourceDocumentId == normalizedSourceDocumentId,
             cancellationToken);
+    }
+}
+
+public interface IInspectionTaskRepository : IRepository<InspectionTask, InspectionTaskId>
+{
+    new Task<InspectionTask?> GetAsync(
+        InspectionTaskId id,
+        CancellationToken cancellationToken = default);
+
+    Task<InspectionTask?> FindOpenBySourceAsync(
+        string organizationId,
+        string environmentId,
+        string sourceType,
+        string sourceService,
+        string sourceDocumentId,
+        string skuCode,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class InspectionTaskRepository(ApplicationDbContext context)
+    : RepositoryBase<InspectionTask, InspectionTaskId, ApplicationDbContext>(context), IInspectionTaskRepository
+{
+    public new Task<InspectionTask?> GetAsync(InspectionTaskId id, CancellationToken cancellationToken = default)
+    {
+        return DbContext.InspectionTasks.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+    }
+
+    public Task<InspectionTask?> FindOpenBySourceAsync(
+        string organizationId,
+        string environmentId,
+        string sourceType,
+        string sourceService,
+        string sourceDocumentId,
+        string skuCode,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedSourceType = sourceType.Trim().ToLowerInvariant();
+        var normalizedSourceService = sourceService.Trim().ToLowerInvariant();
+        var normalizedDocumentId = sourceDocumentId.Trim();
+        var normalizedSkuCode = skuCode.Trim();
+        return DbContext.InspectionTasks
+            .Where(
+            x => x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.SourceType == normalizedSourceType &&
+                x.SourceService == normalizedSourceService &&
+                x.SourceDocumentId == normalizedDocumentId &&
+                x.SkuCode == normalizedSkuCode &&
+                x.Status != InspectionTaskStatuses.Completed)
+            .OrderBy(x => x.CreatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 }
 

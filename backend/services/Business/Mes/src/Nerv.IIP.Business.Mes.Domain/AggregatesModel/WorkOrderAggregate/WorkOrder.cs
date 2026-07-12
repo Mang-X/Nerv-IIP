@@ -10,7 +10,9 @@ public sealed record RoutingStepSnapshot(
     int OperationSequence,
     string WorkCenterId,
     IReadOnlyCollection<string> AlternativeWorkCenterIds,
-    TimeSpan Duration);
+    TimeSpan Duration,
+    bool RequiresQualityInspection = false,
+    string? OperationCode = null);
 
 public sealed class SourcePlanReference
 {
@@ -93,6 +95,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public decimal CompletedQuantity { get; private set; }
     public decimal ScrapQuantity { get; private set; }
+    public int CostReportCount { get; private set; }
+    public int MaterialMovementCount { get; private set; }
     public decimal OverReceiptTolerancePercent { get; private set; }
     public DateTimeOffset? ClosedAtUtc { get; private set; }
     public string? HoldReason { get; private set; }
@@ -152,7 +156,12 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
                 step.WorkCenterId,
                 step.AlternativeWorkCenterIds,
                 earliestStartUtc,
-                step.Duration))
+                step.Duration,
+                SkuId,
+                UomCode,
+                Quantity,
+                step.RequiresQualityInspection,
+                step.OperationCode))
             .ToList();
         Status = ReleasedStatus;
         AddDomainEvent(new WorkOrderReleasedDomainEvent(this, tasks));
@@ -179,6 +188,17 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             !string.Equals(ProductionVersionId, normalizedProductionVersionId, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Work order is already bound to a different production version.");
+        }
+
+        ProductionVersionId = normalizedProductionVersionId;
+    }
+
+    public void RebindProductionVersionForEngineeringChange(string productionVersionId)
+    {
+        var normalizedProductionVersionId = DomainGuard.Required(productionVersionId, nameof(productionVersionId));
+        if (Status is not CreatedStatus and not ReleasedStatus)
+        {
+            throw new InvalidOperationException("Only not-started work orders can be rebound after an engineering change.");
         }
 
         ProductionVersionId = normalizedProductionVersionId;
@@ -220,20 +240,48 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         Status = HoldStatus;
     }
 
-    public void Cancel(string reason)
+    public void ResolveEngineeringChangeHold(string statusBeforeHold)
+    {
+        var normalizedStatus = DomainGuard.Required(statusBeforeHold, nameof(statusBeforeHold));
+        if (Status != HoldStatus)
+        {
+            return;
+        }
+
+        if (normalizedStatus is not CreatedStatus and not ReleasedStatus and not StartedStatus)
+        {
+            throw new InvalidOperationException($"Cannot restore work order from engineering change hold to status '{normalizedStatus}'.");
+        }
+
+        Status = normalizedStatus;
+        HoldReason = null;
+    }
+
+    public bool Cancel(string reason, DateTimeOffset cancelledAtUtc, IReadOnlyCollection<string>? materialIssueRequestNos = null)
     {
         if (Status is CompletedStatus or ClosedStatus)
         {
             throw new InvalidOperationException("Completed work orders must be closed, not cancelled.");
         }
 
-        if (Status is CancelledStatus or ScrappedStatus)
+        if (Status == ScrappedStatus)
         {
-            throw new InvalidOperationException("Cancelled or scrapped work orders cannot be cancelled again.");
+            throw new InvalidOperationException("Scrapped work orders cannot be cancelled.");
+        }
+
+        if (Status == CancelledStatus)
+        {
+            return false;
         }
 
         CancelReason = DomainGuard.Required(reason, nameof(reason));
         Status = CancelledStatus;
+        AddDomainEvent(new WorkOrderCancelledDomainEvent(
+            this,
+            cancelledAtUtc,
+            CancelReason,
+            (materialIssueRequestNos ?? []).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()));
+        return true;
     }
 
     public void RecordProductionProgress(decimal goodQuantity, decimal scrapQuantity, DateTimeOffset reportedAtUtc)
@@ -264,6 +312,46 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         if (!wasCompleted && Status == CompletedStatus)
         {
             AddDomainEvent(new WorkOrderCompletedDomainEvent(this, reportedAtUtc));
+        }
+    }
+
+    public void RegisterCostReport(int materialMovementCount)
+    {
+        if (materialMovementCount < 0) throw new ArgumentOutOfRangeException(nameof(materialMovementCount));
+        CostReportCount++;
+        MaterialMovementCount += materialMovementCount;
+    }
+
+    public void ReverseProductionProgress(decimal goodQuantity, decimal scrapQuantity, DateTimeOffset reversedAtUtc)
+    {
+        _ = reversedAtUtc;
+        DomainGuard.NonNegative(goodQuantity, nameof(goodQuantity));
+        DomainGuard.NonNegative(scrapQuantity, nameof(scrapQuantity));
+        if (goodQuantity + scrapQuantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(goodQuantity), "At least one progress quantity must be positive.");
+        }
+
+        if (Status == ClosedStatus)
+        {
+            throw new InvalidOperationException("已关闭工单不允许冲销报工。");
+        }
+
+        if (Status is CancelledStatus or ScrappedStatus)
+        {
+            throw new InvalidOperationException("Work order is not executable.");
+        }
+
+        if (CompletedQuantity < goodQuantity || ScrapQuantity < scrapQuantity)
+        {
+            throw new InvalidOperationException("Production report reversal would make work order progress negative.");
+        }
+
+        CompletedQuantity -= goodQuantity;
+        ScrapQuantity -= scrapQuantity;
+        if (Status == CompletedStatus && CompletedQuantity + ScrapQuantity < Quantity)
+        {
+            Status = StartedStatus;
         }
     }
 

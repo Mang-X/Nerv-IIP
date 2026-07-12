@@ -1,1 +1,1 @@
-export { default as PopconfirmPro } from './PopconfirmPro.vue'
+export { default as NvPopconfirm } from './PopconfirmPro.vue'

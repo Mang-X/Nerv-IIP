@@ -13,6 +13,11 @@ public partial record LabelPrintItemId : IGuidStronglyTypedId;
 
 public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
 {
+    private const string Pending = "pending";
+    private const string SentToPrinter = "sent-to-printer";
+    private const string Printed = "printed";
+    private const string Failed = "failed";
+
     private LabelPrintBatch()
     {
     }
@@ -40,9 +45,8 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         RequestedQuantity = requestedQuantity <= 0
             ? throw new ArgumentOutOfRangeException(nameof(requestedQuantity), "Requested quantity must be positive.")
             : requestedQuantity;
-        Status = "completed";
+        Status = Pending;
         CreatedAtUtc = DateTimeOffset.UtcNow;
-        CompletedAtUtc = CreatedAtUtc;
 
         var labelValues = LabelValueInputs.Parse(labelValuesJson);
         for (var sequence = 1; sequence <= requestedQuantity; sequence++)
@@ -58,7 +62,6 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         }
 
         this.AddDomainEvent(new LabelPrintBatchCreatedDomainEvent(this));
-        this.AddDomainEvent(new LabelPrintBatchCompletedDomainEvent(this));
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -71,6 +74,9 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
     public string LabelValuesJson { get; private set; } = string.Empty;
     public int RequestedQuantity { get; private set; }
     public string Status { get; private set; } = string.Empty;
+    public string? PrinterId { get; private set; }
+    public string? PrintJobId { get; private set; }
+    public string? FailureReason { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset? CompletedAtUtc { get; private set; }
     public List<LabelPrintItem> Items { get; private set; } = [];
@@ -110,10 +116,86 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
             throw new InvalidOperationException("Print batch idempotency key conflicts with a different payload.");
         }
     }
+
+    public void RecordSentToPrinter(string printerId, string printJobId)
+    {
+        if (Status is not (Pending or Failed or Printed))
+        {
+            throw new InvalidOperationException($"Print batch in status '{Status}' cannot be sent to a printer.");
+        }
+
+        PrinterId = BarcodeLabelText.Required(printerId, nameof(printerId));
+        PrintJobId = BarcodeLabelText.Required(printJobId, nameof(printJobId));
+        FailureReason = null;
+        CompletedAtUtc = null;
+        Status = SentToPrinter;
+    }
+
+    public void RecordPrinted()
+    {
+        if (Status != SentToPrinter)
+        {
+            throw new InvalidOperationException($"Print batch in status '{Status}' cannot be marked printed.");
+        }
+
+        foreach (var item in Items)
+        {
+            item.MarkPrinted();
+        }
+
+        Status = Printed;
+        CompletedAtUtc = DateTimeOffset.UtcNow;
+        this.AddDomainEvent(new LabelPrintBatchCompletedDomainEvent(this));
+    }
+
+    public void RecordPrintFailed(string failureReason)
+    {
+        if (Status is not (Pending or SentToPrinter))
+        {
+            throw new InvalidOperationException($"Print batch in status '{Status}' cannot be marked failed.");
+        }
+
+        FailureReason = BarcodeLabelText.Required(failureReason, nameof(failureReason));
+        Status = Failed;
+        CompletedAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    public void ReprintItem(int sequenceNo)
+    {
+        FindItem(sequenceNo).MarkReprinted();
+    }
+
+    public void VoidItem(int sequenceNo, string voidReason)
+    {
+        FindItem(sequenceNo).Void(voidReason);
+    }
+
+    public void ConsumeItem(string labelValue)
+    {
+        var item = Items.SingleOrDefault(x => x.LabelValue == BarcodeLabelText.Required(labelValue, nameof(labelValue)));
+        item?.Consume();
+    }
+
+    public void ConsumeItem(LabelPrintItemId itemId)
+    {
+        Items.SingleOrDefault(x => x.Id == itemId)?.Consume();
+    }
+
+    private LabelPrintItem FindItem(int sequenceNo)
+    {
+        return Items.SingleOrDefault(x => x.SequenceNo == sequenceNo)
+            ?? throw new InvalidOperationException($"Print item not found, SequenceNo = {sequenceNo}.");
+    }
 }
 
 public sealed class LabelPrintItem : Entity<LabelPrintItemId>
 {
+    private const string Created = "created";
+    private const string Printed = "printed";
+    private const string Reprinted = "reprinted";
+    private const string Voided = "voided";
+    private const string Consumed = "consumed";
+
     private LabelPrintItem()
     {
     }
@@ -128,6 +210,7 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
         LotNo = BarcodeLabelText.Optional(lotNo);
         SerialNumber = BarcodeLabelText.Optional(serialNumber);
         EpcUri = BarcodeLabelText.Optional(epcUri);
+        Status = Created;
         CreatedAtUtc = DateTimeOffset.UtcNow;
     }
 
@@ -139,6 +222,10 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
     public string? LotNo { get; private set; }
     public string? SerialNumber { get; private set; }
     public string? EpcUri { get; private set; }
+    public string Status { get; private set; } = string.Empty;
+    public string? VoidReason { get; private set; }
+    public DateTimeOffset? VoidedAtUtc { get; private set; }
+    public DateTimeOffset? ConsumedAtUtc { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
     internal static LabelPrintItem Create(int sequenceNo, string labelValue, string? fileId)
@@ -149,6 +236,74 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
     internal static LabelPrintItem CreateSerialized(int sequenceNo, Gs1BarcodeValue value, string? fileId)
     {
         return new LabelPrintItem(sequenceNo, value.ToAiString(), fileId, value.Gtin, value.LotNo, value.SerialNumber, value.EpcUri);
+    }
+
+    internal void MarkPrinted()
+    {
+        if (Status == Voided)
+        {
+            return;
+        }
+
+        if (Status != Created)
+        {
+            return;
+        }
+
+        Status = Printed;
+    }
+
+    internal void MarkReprinted()
+    {
+        if (Status == Voided)
+        {
+            throw new InvalidOperationException("Voided labels cannot be reprinted.");
+        }
+
+        if (Status == Consumed)
+        {
+            throw new InvalidOperationException("Consumed labels cannot be reprinted.");
+        }
+
+        if (Status is not (Printed or Reprinted))
+        {
+            throw new InvalidOperationException($"Label in status '{Status}' cannot be reprinted.");
+        }
+
+        Status = Reprinted;
+    }
+
+    internal void Void(string voidReason)
+    {
+        if (Status == Consumed)
+        {
+            throw new InvalidOperationException("Consumed labels cannot be voided.");
+        }
+
+        if (Status == Voided)
+        {
+            return;
+        }
+
+        VoidReason = BarcodeLabelText.Required(voidReason, nameof(voidReason));
+        VoidedAtUtc = DateTimeOffset.UtcNow;
+        Status = Voided;
+    }
+
+    internal void Consume()
+    {
+        if (Status == Voided)
+        {
+            throw new InvalidOperationException("Voided labels cannot be consumed.");
+        }
+
+        if (Status is not (Printed or Reprinted))
+        {
+            return;
+        }
+
+        Status = Consumed;
+        ConsumedAtUtc = DateTimeOffset.UtcNow;
     }
 }
 

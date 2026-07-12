@@ -1,10 +1,10 @@
 ---
-title: CapsuleBar 胶囊进度
+title: NvCapsuleBar 胶囊进度
 ---
 
 <script setup>
 import { ref } from 'vue'
-import { CapsuleBar, ScreenPanel } from '@nerv-iip/ui'
+import { NvCapsuleBar, NvScreenPanel } from '@nerv-iip/ui'
 
 const lines = ref([
   { label: '焊接线 A', value: 93, tone: 'cyan' },
@@ -21,12 +21,12 @@ const oee = ref([
 ])
 </script>
 
-# CapsuleBar 胶囊进度
+# NvCapsuleBar 胶囊进度
 
-横向胶囊进度条:每行是标题、圆角轨道与一段按色调辉光的渐变填充,百分比读在右端。填充从钳制在 0–100 的值生长。`tone` 承载语义(青/靛/绿/琥珀/红),但数值始终并列显示。基于独立的 `--sb-*` 工业蓝令牌。
+横向胶囊进度条:每行是标题、圆角轨道与一段按色调辉光的渐变填充,百分比读在右端。填充从钳制在 0–100 的值生长。`tone` 承载语义(青/靛/绿/琥珀/红),但数值始终并列显示。基于独立的 `--nv-scr-*` 工业蓝令牌。
 
 ::: tip 容器
-`CapsuleBar` 是「裸内容」组件,本身不带边框背景,通常放进 [`ScreenPanel`](./screen-panel) 容器里使用。
+`NvCapsuleBar` 是「裸内容」组件,本身不带边框背景,通常放进 [`NvScreenPanel`](./screen-panel) 容器里使用。
 :::
 
 ## 基础用法
@@ -34,9 +34,9 @@ const oee = ref([
 `items` 是行数组,每行 `{ label, value, tone? }`。`tone` 缺省为 `cyan`。
 
 <ScreenDemo>
-  <ScreenPanel title="各产线稼动率" style="width: 360px">
-    <CapsuleBar :items="lines" />
-  </ScreenPanel>
+  <NvScreenPanel title="各产线稼动率" style="width: 360px">
+    <NvCapsuleBar :items="lines" />
+  </NvScreenPanel>
 </ScreenDemo>
 
 ```vue
@@ -49,9 +49,9 @@ const lines = [
 ]
 </script>
 
-<ScreenPanel title="各产线稼动率">
-  <CapsuleBar :items="lines" />
-</ScreenPanel>
+<NvScreenPanel title="各产线稼动率">
+  <NvCapsuleBar :items="lines" />
+</NvScreenPanel>
 ```
 
 ## 色调表意
@@ -59,9 +59,9 @@ const lines = [
 用色调区分 OEE 分项:绿色良性、红色警示(不良率)。
 
 <ScreenDemo>
-  <ScreenPanel title="OEE 分解" style="width: 360px">
-    <CapsuleBar :items="oee" />
-  </ScreenPanel>
+  <NvScreenPanel title="OEE 分解" style="width: 360px">
+    <NvCapsuleBar :items="oee" />
+  </NvScreenPanel>
 </ScreenDemo>
 
 ```vue
@@ -74,20 +74,20 @@ const oee = [
 ]
 </script>
 
-<CapsuleBar :items="oee" />
+<NvCapsuleBar :items="oee" />
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `items` | 行数组,见下表 | `CapsuleItem[]` | 内置 4 行产线示例 |
-| `suffix` | 追加到每个数值后 | `string` | `'%'` |
+| 属性     | 说明             | 类型            | 默认              |
+| -------- | ---------------- | --------------- | ----------------- |
+| `items`  | 行数组,见下表    | `CapsuleItem[]` | 内置 4 行产线示例 |
+| `suffix` | 追加到每个数值后 | `string`        | `'%'`             |
 
 `CapsuleItem` 结构:
 
-| 字段 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `label` | 行标题 | `string` | — |
-| `value` | 填充值,0–100 | `number` | — |
-| `tone` | 条色调 | `'cyan' \| 'indigo' \| 'green' \| 'amber' \| 'red'` | `'cyan'` |
+| 字段    | 说明         | 类型                                                | 默认     |
+| ------- | ------------ | --------------------------------------------------- | -------- |
+| `label` | 行标题       | `string`                                            | —        |
+| `value` | 填充值,0–100 | `number`                                            | —        |
+| `tone`  | 条色调       | `'cyan' \| 'indigo' \| 'green' \| 'amber' \| 'red'` | `'cyan'` |

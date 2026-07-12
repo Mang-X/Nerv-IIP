@@ -168,4 +168,5 @@ public sealed record ApprovalCompletedPayload(
     string ActorRef,
     string? OnBehalfOfActorType,
     string? OnBehalfOfActorRef,
-    ApprovalDocumentReferencePayload DocumentReference);
+    ApprovalDocumentReferencePayload DocumentReference,
+    string? InitiatorRef = null);

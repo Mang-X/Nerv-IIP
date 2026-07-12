@@ -4,7 +4,9 @@ public class Worker(
     ILogger<Worker> logger,
     IConfiguration configuration,
     Application.ConnectorReportingLoop reportingLoop,
-    Application.ConnectorOperationLoop operationLoop) : BackgroundService
+    Application.ConnectorOperationLoop operationLoop,
+    IndustrialTelemetryCollectorRunner telemetryCollectorRunner,
+    IReadOnlyList<Connectors.Abstractions.IIndustrialTelemetryCollectionConnector> telemetryCollectors) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -14,6 +16,7 @@ public class Worker(
         {
             try
             {
+                await telemetryCollectorRunner.RunCollectionCycleAsync(telemetryCollectors, stoppingToken);
                 await reportingLoop.RunCycleAsync(stoppingToken);
                 await operationLoop.RunCycleAsync(stoppingToken);
                 logger.LogInformation("Connector Host cycle completed at {time}", DateTimeOffset.UtcNow);

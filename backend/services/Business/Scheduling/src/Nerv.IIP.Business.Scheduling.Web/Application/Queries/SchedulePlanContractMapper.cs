@@ -22,7 +22,8 @@ public static class SchedulePlanContractMapper
                 x.StartUtc,
                 x.EndUtc,
                 x.IsLocked,
-                x.ExplanationCode))
+                x.ExplanationCode,
+                x.StandardOperationCode))
             .ToArray();
         var conflicts = plan.Conflicts
             .OrderBy(x => x.ConflictPublicId, StringComparer.Ordinal)
@@ -190,7 +191,8 @@ public static class SchedulePlanContractMapper
                     x.StartUtc,
                     x.EndUtc,
                     x.IsLocked,
-                    x.ExplanationCode))
+                    x.ExplanationCode,
+                    x.StandardOperationCode))
                 .ToArray(),
             plan.ResourceLoads
                 .Select(x => new GeneratedScheduleResourceLoadSnapshot(

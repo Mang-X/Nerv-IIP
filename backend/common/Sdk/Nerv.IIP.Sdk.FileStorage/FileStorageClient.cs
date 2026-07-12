@@ -12,6 +12,8 @@ public interface IFileStorageClient
     Task<FileMetadataResponse> GetFileMetadataAsync(string fileId, CancellationToken cancellationToken = default);
 
     Task<DownloadGrantResponse> CreateDownloadGrantAsync(string fileId, CreateDownloadGrantRequest request, CancellationToken cancellationToken = default);
+
+    Task<FileStorageUsageResponse> GetUsageAsync(FileStorageUsageRequest request, CancellationToken cancellationToken = default);
 }
 
 public sealed class HttpFileStorageClient(HttpClient httpClient) : IFileStorageClient
@@ -47,5 +49,20 @@ public sealed class HttpFileStorageClient(HttpClient httpClient) : IFileStorageC
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<DownloadGrantResponse>(cancellationToken: cancellationToken)
             ?? throw new InvalidOperationException("FileStorage returned an empty download grant response.");
+    }
+
+    public async Task<FileStorageUsageResponse> GetUsageAsync(FileStorageUsageRequest request, CancellationToken cancellationToken = default)
+    {
+        var path = "/api/files/v1/usage" +
+            $"?organizationId={Uri.EscapeDataString(request.OrganizationId)}" +
+            $"&environmentId={Uri.EscapeDataString(request.EnvironmentId)}";
+
+        if (!string.IsNullOrWhiteSpace(request.FilePurpose))
+        {
+            path += $"&filePurpose={Uri.EscapeDataString(request.FilePurpose)}";
+        }
+
+        return await httpClient.GetFromJsonAsync<FileStorageUsageResponse>(path, cancellationToken)
+            ?? throw new InvalidOperationException("FileStorage returned an empty usage response.");
     }
 }

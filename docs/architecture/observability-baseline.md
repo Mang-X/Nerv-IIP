@@ -42,6 +42,19 @@ Observability 不拥有：
 5. CLI 校验优先使用 `aspire otel logs`、VictoriaLogs LogsQL query 和 `aspire otel traces`，不要只看资源状态判断 telemetry 是否进入后端。
 6. 平台服务、Gateway 和业务服务的 Web host 统一通过 `Nerv.IIP.Observability` 的 `AddNervIipObservability` / `UseNervIipCorrelation` 接入日志、trace、metric 和 correlation；服务项目不直接引用 `Serilog.AspNetCore`、`Serilog.Enrichers.ClientInfo` 或 `Serilog.Sinks.OpenTelemetry`，Serilog provider、ClientInfo enrichment、Console JSON、local file 和 OTLP logs sink 由共享库集中维护。
 
+## 指标阈值告警闭环
+
+ADR 0018 冻结了首版 Observability 阈值告警路径：在引入 VictoriaMetrics metrics backend 和 vmalert 之前，平台使用轻量阈值扫描器把首批运维告警提交到 Notification。扫描器当前随 Notification 进程运行，但规则命名、事件类型和配置仍属于 Observability，Notification 只负责投递、去重、静默窗口和 resolved 通知。
+
+首批规则族为：
+
+1. 服务 `/health` 失败。
+2. CAP/DLQ actionable backlog。
+3. Connector Host 心跳超期，事实来源为 AppHub internal instance query。
+4. PostgreSQL connection usage 与 database-size watermarks。
+
+规则配置入口为 `Observability:Alerts`。部署产物必须至少携带一套单机私有化 baseline 规则，并通过 `RecipientRefs`、`DedupeWindow`、`SilentWindow`、`AppHubBaseUrl` 和 PostgreSQL watermark 参数按现场环境调整。告警触发时提交 `observability.AlertFiring` task intent；恢复时提交 `observability.AlertResolved` message intent。
+
 ## 计划表族
 
 后续真正建表前，必须把本节扩展为和 AppHub/Ops 同粒度的 schema catalog。

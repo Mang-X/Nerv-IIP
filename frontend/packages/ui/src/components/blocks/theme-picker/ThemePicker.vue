@@ -18,7 +18,10 @@ const entries = Object.entries(presets) as [string, { primary: string; foregroun
 </script>
 
 <template>
-  <DropdownMenu>
+  <!-- non-modal: this accent picker is a popover; it must not lock body scroll /
+       set body pointer-events:none (reka's modal default). Uses原版 DropdownMenu,
+       so pass modal at the call site rather than editing the primitive. -->
+  <DropdownMenu :modal="false">
     <DropdownMenuTrigger as-child>
       <Button
         type="button"

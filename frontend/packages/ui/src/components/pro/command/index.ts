@@ -1,1 +1,1 @@
-export { default as CommandPro, type CommandGroup, type CommandItem } from './CommandPro.vue'
+export { default as NvCommand, type CommandGroup, type CommandItem } from './CommandPro.vue'

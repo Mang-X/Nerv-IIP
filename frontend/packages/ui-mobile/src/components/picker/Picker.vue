@@ -79,39 +79,41 @@ watch(open, (isOpen) => {
 </template>
 
 <style scoped>
-.ds-picker-wheel {
-  position: relative;
-  height: 200px;
-}
-.ds-picker-band {
-  position: absolute;
-  top: 80px;
-  right: 0;
-  left: 0;
-  height: 40px;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  pointer-events: none;
-}
-.ds-picker-scroll {
-  height: 100%;
-  overflow-y: auto;
-  scroll-snap-type: y mandatory;
-  scrollbar-width: none;
-}
-.ds-picker-scroll::-webkit-scrollbar {
-  display: none;
-}
-.ds-picker-pad {
-  height: 80px;
-}
-.ds-picker-item {
-  display: flex;
-  height: 40px;
-  align-items: center;
-  justify-content: center;
-  scroll-snap-align: center;
-  font-size: 1rem;
-  transition: color 0.15s ease;
+@layer nv-components {
+  .ds-picker-wheel {
+    position: relative;
+    height: 200px;
+  }
+  .ds-picker-band {
+    position: absolute;
+    top: 80px;
+    right: 0;
+    left: 0;
+    height: 40px;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    pointer-events: none;
+  }
+  .ds-picker-scroll {
+    height: 100%;
+    overflow-y: auto;
+    scroll-snap-type: y mandatory;
+    scrollbar-width: none;
+  }
+  .ds-picker-scroll::-webkit-scrollbar {
+    display: none;
+  }
+  .ds-picker-pad {
+    height: 80px;
+  }
+  .ds-picker-item {
+    display: flex;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    scroll-snap-align: center;
+    font-size: 1rem;
+    transition: color 0.15s ease;
+  }
 }
 </style>

@@ -1,9 +1,16 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlChannelBindingAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlCommandAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
+using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Sdk.Ops;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 
@@ -14,7 +21,11 @@ public sealed record CreateTelemetryTagCommand(
     string TagKey,
     string ValueType,
     string UnitCode,
-    string SamplingPolicy) : ICommand<TelemetryTagId>;
+    string SamplingPolicy,
+    bool IsWritable = false,
+    decimal? ControlMinValue = null,
+    decimal? ControlMaxValue = null,
+    IReadOnlyCollection<string>? ControlAllowedValues = null) : ICommand<TelemetryTagId>;
 
 public sealed class CreateTelemetryTagCommandValidator : AbstractValidator<CreateTelemetryTagCommand>
 {
@@ -26,7 +37,28 @@ public sealed class CreateTelemetryTagCommandValidator : AbstractValidator<Creat
         RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
         RuleFor(x => x.ValueType).NotEmpty().MaximumLength(50);
         RuleFor(x => x.UnitCode).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.SamplingPolicy).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SamplingPolicy)
+            .NotEmpty()
+            .MaximumLength(100)
+            .Must(BeValidSamplingPolicy)
+            .WithMessage("SamplingPolicy is invalid.");
+        RuleFor(x => x.ControlMinValue)
+            .LessThanOrEqualTo(x => x.ControlMaxValue)
+            .When(x => x.ControlMinValue.HasValue && x.ControlMaxValue.HasValue);
+        RuleForEach(x => x.ControlAllowedValues).MaximumLength(100);
+    }
+
+    private static bool BeValidSamplingPolicy(string samplingPolicy)
+    {
+        try
+        {
+            _ = TelemetrySamplingPolicy.Parse(samplingPolicy);
+            return true;
+        }
+        catch (KnownException)
+        {
+            return false;
+        }
     }
 }
 
@@ -45,12 +77,326 @@ public sealed class CreateTelemetryTagCommandHandler(ApplicationDbContext dbCont
         if (existing is not null)
         {
             existing.UpdateDefinition(request.ValueType, request.UnitCode, request.SamplingPolicy);
+            existing.ConfigureControl(request.IsWritable, request.ControlMinValue, request.ControlMaxValue, request.ControlAllowedValues ?? []);
             return existing.Id;
         }
 
         var tag = TelemetryTag.Create(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, request.TagKey, request.ValueType, request.UnitCode, request.SamplingPolicy);
+        tag.ConfigureControl(request.IsWritable, request.ControlMinValue, request.ControlMaxValue, request.ControlAllowedValues ?? []);
         dbContext.TelemetryTags.Add(tag);
         return tag.Id;
+    }
+}
+
+public interface IDeviceControlOpsClient
+{
+    Task<OperationTaskResponse> CreateDeviceControlTaskAsync(CreateOperationTaskRequest request, CancellationToken cancellationToken);
+
+    Task<OperationTaskResponse> GetDeviceControlTaskAsync(string operationTaskId, CancellationToken cancellationToken);
+}
+
+public sealed class DeviceControlOpsClient(IOpsClient opsClient) : IDeviceControlOpsClient
+{
+    public Task<OperationTaskResponse> CreateDeviceControlTaskAsync(CreateOperationTaskRequest request, CancellationToken cancellationToken)
+    {
+        return opsClient.CreateOperationTaskAsync(request, cancellationToken);
+    }
+
+    public Task<OperationTaskResponse> GetDeviceControlTaskAsync(string operationTaskId, CancellationToken cancellationToken)
+    {
+        return opsClient.GetOperationTaskAsync(operationTaskId, cancellationToken);
+    }
+}
+
+public sealed record CreateDeviceControlCommandCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string CommandType,
+    string? TagKey,
+    string? Value,
+    IReadOnlyDictionary<string, string>? Parameters,
+    string RequestedBy,
+    string Reason,
+    string IdempotencyKey,
+    string CorrelationId) : ICommand<OperationTaskResponse>;
+
+internal static class DeviceControlCommandValidation
+{
+    public static bool IsSupportedCommandType(string commandType)
+    {
+        return IsSingleTagCommand(commandType) || IsParameterSetCommand(commandType);
+    }
+
+    public static bool IsSingleTagCommand(string commandType)
+    {
+        if (string.IsNullOrWhiteSpace(commandType))
+        {
+            return false;
+        }
+
+        var normalized = commandType.Trim().ToLowerInvariant();
+        return normalized is "write-tag" or "start-stop";
+    }
+
+    public static bool IsParameterSetCommand(string commandType)
+    {
+        if (string.IsNullOrWhiteSpace(commandType))
+        {
+            return false;
+        }
+
+        return string.Equals(commandType.Trim(), "parameter-set", StringComparison.OrdinalIgnoreCase);
+    }
+}
+
+public sealed class CreateDeviceControlCommandCommandValidator : AbstractValidator<CreateDeviceControlCommandCommand>
+{
+    public CreateDeviceControlCommandCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.CommandType)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(DeviceControlCommandValidation.IsSupportedCommandType)
+            .WithMessage("Device control command type must be write-tag, start-stop or parameter-set.");
+        When(x => DeviceControlCommandValidation.IsSingleTagCommand(x.CommandType), () =>
+        {
+            RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
+            RuleFor(x => x.Value).NotEmpty().MaximumLength(256);
+        });
+        When(x => DeviceControlCommandValidation.IsParameterSetCommand(x.CommandType), () =>
+        {
+            RuleFor(x => x.Parameters).NotEmpty();
+            RuleForEach(x => x.Parameters!.Keys).NotEmpty().MaximumLength(150);
+            RuleForEach(x => x.Parameters!.Values).NotEmpty().MaximumLength(256);
+        });
+        RuleFor(x => x.RequestedBy).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.CorrelationId).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class CreateDeviceControlCommandCommandHandler(
+    ApplicationDbContext dbContext,
+    IDeviceControlOpsClient opsClient)
+    : ICommandHandler<CreateDeviceControlCommandCommand, OperationTaskResponse>
+{
+    public async Task<OperationTaskResponse> Handle(CreateDeviceControlCommandCommand request, CancellationToken cancellationToken)
+    {
+        var commandType = IndustrialTelemetryText.RequiredLower(request.CommandType, nameof(request.CommandType));
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["commandType"] = commandType,
+            ["deviceAssetId"] = request.DeviceAssetId.Trim()
+        };
+
+        string? ledgerTagKey = null;
+        string? ledgerValue = null;
+        string? ledgerParametersJson = null;
+
+        switch (commandType)
+        {
+            case "write-tag":
+            case "start-stop":
+                var tagKey = IndustrialTelemetryText.RequiredLower(request.TagKey ?? string.Empty, nameof(request.TagKey));
+                var value = IndustrialTelemetryText.Required(request.Value ?? string.Empty, nameof(request.Value));
+                await ValidateWritableTagAsync(request, tagKey, value, cancellationToken);
+                parameters["tagKey"] = tagKey;
+                parameters["value"] = value;
+                ledgerTagKey = tagKey;
+                ledgerValue = value;
+                break;
+            case "parameter-set":
+                var parameterSet = await AddParameterSetAsync(request, parameters, cancellationToken);
+                ledgerParametersJson = JsonSerializer.Serialize(parameterSet);
+                break;
+            default:
+                throw new KnownException($"Unsupported device control command type: {request.CommandType}");
+        }
+
+        // Resolve the connector host + instance from the device's explicit control channel binding only
+        // after the tag/value has been validated, so out-of-range writes are rejected before this lookup.
+        var (connectorHostId, instanceKey) = await ResolveControlChannelAsync(request, cancellationToken);
+        parameters["connectorHostId"] = connectorHostId;
+
+        var taskRequest = new CreateOperationTaskRequest(
+            request.OrganizationId,
+            request.EnvironmentId,
+            instanceKey,
+            "device.control.command",
+            request.IdempotencyKey,
+            request.RequestedBy,
+            request.Reason,
+            request.CorrelationId,
+            parameters);
+        var response = await opsClient.CreateDeviceControlTaskAsync(taskRequest, cancellationToken);
+        await RecordCommandLedgerAsync(request, response, connectorHostId, instanceKey, commandType, ledgerTagKey, ledgerValue, ledgerParametersJson, cancellationToken);
+        return response;
+    }
+
+    // Resolves the connector host + instance that own the device's control channel from the explicit
+    // DeviceControlChannelBinding. Operators never supply these infrastructure identifiers; dispatch is
+    // blocked when the device has no active binding.
+    private async Task<(string ConnectorHostId, string InstanceKey)> ResolveControlChannelAsync(
+        CreateDeviceControlCommandCommand request,
+        CancellationToken cancellationToken)
+    {
+        var binding = await dbContext.DeviceControlChannelBindings.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId,
+            cancellationToken)
+            ?? throw new KnownException($"Device control channel binding was not configured for device: {request.DeviceAssetId}. Configure a control channel binding before dispatching commands.");
+        if (!binding.IsActive)
+        {
+            throw new KnownException($"Device control channel binding is disabled for device: {request.DeviceAssetId}.");
+        }
+
+        return (binding.ConnectorHostId, binding.InstanceKey);
+    }
+
+    private async Task RecordCommandLedgerAsync(
+        CreateDeviceControlCommandCommand request,
+        OperationTaskResponse response,
+        string connectorHostId,
+        string instanceKey,
+        string commandType,
+        string? tagKey,
+        string? value,
+        string? parametersJson,
+        CancellationToken cancellationToken)
+    {
+        // Ops task creation is idempotent on the idempotency key: repeat dispatches resolve to the
+        // same operation task id, so anchor the ledger on that id to keep the command history clean.
+        var alreadyRecorded = await dbContext.DeviceControlCommands
+            .AnyAsync(x => x.OperationTaskId == response.OperationTaskId, cancellationToken);
+        if (alreadyRecorded)
+        {
+            return;
+        }
+
+        dbContext.DeviceControlCommands.Add(DeviceControlCommand.Record(
+            response.OperationTaskId,
+            request.OrganizationId,
+            request.EnvironmentId,
+            connectorHostId,
+            instanceKey,
+            request.DeviceAssetId,
+            commandType,
+            tagKey,
+            value,
+            parametersJson,
+            request.RequestedBy,
+            request.Reason,
+            request.IdempotencyKey,
+            request.CorrelationId,
+            response.Status,
+            response.Approval?.Status,
+            response.RequestedAtUtc));
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>> AddParameterSetAsync(
+        CreateDeviceControlCommandCommand request,
+        IDictionary<string, string> parameters,
+        CancellationToken cancellationToken)
+    {
+        if (request.Parameters is null || request.Parameters.Count == 0)
+        {
+            throw new KnownException("Parameter-set device control command requires parameters.");
+        }
+
+        var parameterSet = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var item in request.Parameters.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var tagKey = IndustrialTelemetryText.RequiredLower(item.Key, nameof(request.Parameters));
+            var value = IndustrialTelemetryText.Required(item.Value, nameof(request.Parameters));
+            await ValidateWritableTagAsync(request, tagKey, value, cancellationToken);
+            parameters[$"parameter.{tagKey}"] = value;
+            parameterSet[tagKey] = value;
+        }
+
+        return parameterSet;
+    }
+
+    private async Task ValidateWritableTagAsync(
+        CreateDeviceControlCommandCommand request,
+        string tagKey,
+        string value,
+        CancellationToken cancellationToken)
+    {
+        var tag = await dbContext.TelemetryTags.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId
+                && x.TagKey == tagKey,
+            cancellationToken)
+            ?? throw new KnownException($"Telemetry tag was not found for device control: {tagKey}");
+        if (!tag.IsWritable)
+        {
+            throw new KnownException($"Telemetry tag is not writable: {tagKey}");
+        }
+
+        var allowedValues = tag.ControlAllowedValues;
+        if (allowedValues.Count > 0 && !allowedValues.Contains(value, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new KnownException($"Device control value is not allowed for tag {tagKey}.");
+        }
+
+        if (string.Equals(tag.ValueType, "number", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!decimal.TryParse(value, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var numericValue))
+            {
+                throw new KnownException($"Device control value must be numeric for tag {tagKey}.");
+            }
+
+            if (tag.ControlMinValue.HasValue && numericValue < tag.ControlMinValue.Value)
+            {
+                throw new KnownException($"Device control value is below the allowed minimum for tag {tagKey}.");
+            }
+
+            if (tag.ControlMaxValue.HasValue && numericValue > tag.ControlMaxValue.Value)
+            {
+                throw new KnownException($"Device control value is above the allowed maximum for tag {tagKey}.");
+            }
+        }
+    }
+
+}
+
+// Advances a device control command ledger row to a terminal Ops outcome. Sent by the Ops
+// OperationTaskCompleted/Failed consumers so the history read-face reflects the real result
+// instead of the dispatch-time snapshot. Idempotent: unknown or already-terminal commands no-op.
+public sealed record AdvanceDeviceControlCommandStatusCommand(
+    string OperationTaskId,
+    string TerminalStatus,
+    DateTimeOffset FinishedAtUtc,
+    string? FailureCode,
+    string? DeviceReceiptCode = null,
+    string? DeviceReceiptMessage = null) : ICommand<bool>;
+
+public sealed class AdvanceDeviceControlCommandStatusCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<AdvanceDeviceControlCommandStatusCommand, bool>
+{
+    public async Task<bool> Handle(AdvanceDeviceControlCommandStatusCommand request, CancellationToken cancellationToken)
+    {
+        var command = await dbContext.DeviceControlCommands
+            .SingleOrDefaultAsync(x => x.OperationTaskId == request.OperationTaskId, cancellationToken);
+        if (command is null || command.IsTerminal)
+        {
+            return false;
+        }
+
+        command.ApplyOpsOutcome(
+            request.TerminalStatus,
+            request.FinishedAtUtc,
+            request.FailureCode,
+            request.DeviceReceiptCode,
+            request.DeviceReceiptMessage);
+        return true;
     }
 }
 
@@ -163,6 +509,8 @@ public sealed record RecordTelemetrySampleCommand(
     string SourceSequence,
     string? SourceSystem = null,
     string? SourceConnector = null,
+    decimal? FirstValue = null,
+    decimal? LastValue = null,
     string? DeviceState = null,
     DateTimeOffset? StateOccurredAtUtc = null) : ICommand<RecordTelemetrySampleResult>;
 
@@ -199,6 +547,8 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         var normalizedSourceSequence = IndustrialTelemetryText.Required(request.SourceSequence, nameof(request.SourceSequence));
         var normalizedSourceSystem = IndustrialTelemetryText.Optional(request.SourceSystem);
         var normalizedSourceConnector = IndustrialTelemetryText.Optional(request.SourceConnector);
+        var productionCountMode = await ValidateSamplingPolicyAsync(request, normalizedTagKey, cancellationToken);
+        await RecordRawSampleAsync(request, normalizedTagKey, normalizedSourceSequence, normalizedSourceSystem, normalizedSourceConnector, cancellationToken);
         var existingSummary = await dbContext.TelemetrySummaries.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
@@ -236,8 +586,157 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
 
         dbContext.TelemetrySummaries.Add(incoming);
         await EvaluateAlarmRulesAsync(request, normalizedTagKey, cancellationToken);
+        await RaiseProductionCountDeltaIfApplicableAsync(request, normalizedTagKey, incoming, productionCountMode, cancellationToken);
 
         return new RecordTelemetrySampleResult(incoming.Id, stateId);
+    }
+
+    private async Task<string?> ValidateSamplingPolicyAsync(
+        RecordTelemetrySampleCommand request,
+        string normalizedTagKey,
+        CancellationToken cancellationToken)
+    {
+        var tag = await dbContext.TelemetryTags
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId
+                && x.TagKey == normalizedTagKey)
+            .Select(x => new { x.SamplingPolicy, x.ValueType })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (tag is null)
+        {
+            return null;
+        }
+
+        var bucketSeconds = TelemetrySamplingPolicy.Parse(tag.SamplingPolicy).BucketSeconds;
+        var actualSeconds = (int)(request.BucketEndUtc - request.BucketStartUtc).TotalSeconds;
+        if (actualSeconds != bucketSeconds)
+        {
+            throw new KnownException($"Telemetry bucket duration does not match sampling policy '{tag.SamplingPolicy}'.");
+        }
+
+        return ResolveProductionCountMode(tag.ValueType);
+    }
+
+    private async Task RaiseProductionCountDeltaIfApplicableAsync(
+        RecordTelemetrySampleCommand request,
+        string normalizedTagKey,
+        TelemetrySummary incoming,
+        string? productionCountMode,
+        CancellationToken cancellationToken)
+    {
+        if (productionCountMode is null)
+        {
+            return;
+        }
+
+        var hasNewerRawSample = await dbContext.TelemetryRawSamples.AnyAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.DeviceAssetId == request.DeviceAssetId &&
+                x.TagKey == normalizedTagKey &&
+                x.BucketEndUtc > request.BucketEndUtc,
+            cancellationToken) || dbContext.TelemetryRawSamples.Local.Any(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.DeviceAssetId == request.DeviceAssetId &&
+                    x.TagKey == normalizedTagKey &&
+                    x.BucketEndUtc > request.BucketEndUtc);
+        if (hasNewerRawSample)
+        {
+            return;
+        }
+
+        var previous = await dbContext.TelemetryRawSamples
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.TagKey == normalizedTagKey)
+            .Where(x => x.BucketEndUtc <= request.BucketStartUtc)
+            .OrderByDescending(x => x.BucketEndUtc)
+            .ThenByDescending(x => x.SourceSequence)
+            .Select(x => new { x.LastValue })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (previous is null)
+        {
+            return;
+        }
+
+        var currentValue = request.LastValue ?? request.AverageValue;
+        var delta = currentValue - previous.LastValue;
+        if (delta <= 0m)
+        {
+            return;
+        }
+
+        var hasActiveAlarm = await dbContext.AlarmEvents.AnyAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.DeviceAssetId == request.DeviceAssetId &&
+                x.Status != "cleared",
+            cancellationToken) || dbContext.AlarmEvents.Local.Any(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.DeviceAssetId == request.DeviceAssetId &&
+                    x.Status != "cleared");
+        incoming.RaiseProductionCountDeltaEvent(delta, productionCountMode, hasActiveAlarm);
+    }
+
+    private static string? ResolveProductionCountMode(string valueType)
+    {
+        return valueType.Trim().ToLowerInvariant() switch
+        {
+            "production-count-posted" => "posted",
+            "production-count-draft" => "draft",
+            _ => null,
+        };
+    }
+
+    private async Task<TelemetryRawSampleId> RecordRawSampleAsync(
+        RecordTelemetrySampleCommand request,
+        string normalizedTagKey,
+        string normalizedSourceSequence,
+        string? normalizedSourceSystem,
+        string? normalizedSourceConnector,
+        CancellationToken cancellationToken)
+    {
+        var incoming = TelemetryRawSample.Record(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            normalizedTagKey,
+            request.BucketStartUtc,
+            request.BucketEndUtc,
+            request.SampleCount,
+            request.MinValue,
+            request.MaxValue,
+            request.AverageValue,
+            request.FirstValue ?? request.AverageValue,
+            request.LastValue ?? request.AverageValue,
+            normalizedSourceSequence,
+            normalizedSourceSystem,
+            normalizedSourceConnector);
+        var existing = await dbContext.TelemetryRawSamples.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.SourceSystem == normalizedSourceSystem
+                && x.SourceConnector == normalizedSourceConnector
+                && x.DeviceAssetId == request.DeviceAssetId
+                && x.TagKey == normalizedTagKey
+                && x.SourceSequence == normalizedSourceSequence,
+            cancellationToken);
+        if (existing is not null)
+        {
+            if (!existing.HasSamePayload(incoming))
+            {
+                throw new KnownException("Telemetry raw sample source sequence has conflicting payload.");
+            }
+
+            return existing.Id;
+        }
+
+        dbContext.TelemetryRawSamples.Add(incoming);
+        return incoming.Id;
     }
 
     private async Task<DeviceStateSnapshotId> RecordDeviceStateAsync(RecordTelemetrySampleCommand request, CancellationToken cancellationToken)
@@ -261,7 +760,8 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             request.StateOccurredAtUtc ?? request.BucketEndUtc,
             normalizedSourceSequence,
             normalizedSourceSystem,
-            normalizedSourceConnector);
+            normalizedSourceConnector,
+            raiseChangedEvent: false);
         if (existingState is not null)
         {
             if (!existingState.HasSamePayload(incoming))
@@ -272,9 +772,44 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             return existingState.Id;
         }
 
+        var latestState = await dbContext.DeviceStateSnapshots
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId)
+            .OrderByDescending(x => x.OccurredAtUnixTimeMilliseconds)
+            .ThenByDescending(x => x.RecordedAtUnixTimeMilliseconds)
+            .ThenByDescending(x => x.SourceSequence)
+            .Select(x => new LatestDeviceStateSnapshot(x.State, x.OccurredAtUnixTimeMilliseconds))
+            .FirstOrDefaultAsync(cancellationToken);
+        if (ShouldPublishDeviceStateChanged(incoming, latestState))
+        {
+            incoming.RaiseStateChangedEvent();
+        }
+
         dbContext.DeviceStateSnapshots.Add(incoming);
         return incoming.Id;
     }
+
+    private static bool ShouldPublishDeviceStateChanged(
+        DeviceStateSnapshot incoming,
+        LatestDeviceStateSnapshot? latestState)
+    {
+        if (latestState is null)
+        {
+            return true;
+        }
+
+        if (incoming.OccurredAtUnixTimeMilliseconds < latestState.OccurredAtUnixTimeMilliseconds)
+        {
+            return false;
+        }
+
+        return incoming.State != latestState.State;
+    }
+
+    private sealed record LatestDeviceStateSnapshot(
+        string State,
+        long OccurredAtUnixTimeMilliseconds);
 
     private async Task EvaluateAlarmRulesAsync(
         RecordTelemetrySampleCommand request,
@@ -305,14 +840,14 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             .Where(x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
                 && x.DeviceAssetId == request.DeviceAssetId
-                && x.Status == "raised")
+                && x.Status != "cleared")
             .ToListAsync(cancellationToken);
         var activeAlarms = activePersistedAlarms
             .Concat(dbContext.AlarmEvents.Local
                 .Where(x => x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId
                     && x.DeviceAssetId == request.DeviceAssetId
-                    && x.Status == "raised"))
+                    && x.Status != "cleared"))
             .DistinctBy(x => x.Id)
             .Where(alarm => ruleCodes.Any(ruleCode => IsAlarmForRule(alarm, ruleCode)))
             .ToArray();
@@ -547,13 +1082,13 @@ public sealed class IndustrialTelemetryIdempotentIngestionBehavior<TRequest, TRe
 
     private static bool IsIdempotentIngestionCommand(TRequest request)
     {
-        return request is RecordTelemetrySampleCommand or RaiseAlarmCommand;
+        return request is RecordTelemetrySampleCommand or RaiseAlarmCommand or CreateDeviceControlCommandCommand;
     }
 
     private static bool IsIdempotentIngestionUniqueConflict(DbUpdateException exception, ApplicationDbContext context)
     {
         // Keep detection entity-scoped so provider-specific index names do not leak into the application layer.
-        return exception.Entries.Any(entry => entry.Entity is TelemetrySummary or DeviceStateSnapshot or AlarmEvent) &&
+        return exception.Entries.Any(entry => entry.Entity is TelemetryRawSample or TelemetrySummary or DeviceStateSnapshot or AlarmEvent or DeviceControlCommand) &&
             EnumerateExceptions(exception).Any(inner =>
                 IsPostgreSqlUniqueConflict(inner) ||
                 IsSqliteUniqueConflict(context, inner) ||
@@ -677,24 +1212,46 @@ public sealed class RaiseAlarmCommandHandler(ApplicationDbContext dbContext)
                 && x.EnvironmentId == request.EnvironmentId
                 && x.DeviceAssetId == request.DeviceAssetId
                 && x.AlarmCode == request.AlarmCode
-                && x.ExternalAlarmId == request.ExternalAlarmId,
+                && x.ExternalAlarmId == request.ExternalAlarmId
+                && x.Status != "cleared",
             cancellationToken);
         if (existing is not null)
         {
-            try
-            {
-                existing.EnsureCompatibleDuplicate(incoming);
-            }
-            catch (InvalidOperationException ex)
-            {
-                throw new KnownException(ex.Message);
-            }
+            return EnsureCompatibleDuplicate(existing, incoming);
+        }
 
-            return existing.Id;
+        if (!string.IsNullOrWhiteSpace(incoming.TagKey))
+        {
+            existing = await dbContext.AlarmEvents.SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.DeviceAssetId == request.DeviceAssetId
+                    && x.TagKey == incoming.TagKey
+                    && x.ExternalAlarmId == request.ExternalAlarmId
+                    && x.Status != "cleared",
+                cancellationToken);
+            if (existing is not null)
+            {
+                return EnsureCompatibleDuplicate(existing, incoming);
+            }
         }
 
         dbContext.AlarmEvents.Add(incoming);
         return incoming.Id;
+    }
+
+    private static AlarmEventId EnsureCompatibleDuplicate(AlarmEvent existing, AlarmEvent incoming)
+    {
+        try
+        {
+            existing.EnsureCompatibleDuplicate(incoming);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
+
+        return existing.Id;
     }
 }
 
@@ -749,5 +1306,204 @@ public sealed class ClearAlarmCommandHandler(ApplicationDbContext dbContext)
         }
 
         return alarm.Id;
+    }
+}
+
+public sealed record AcknowledgeAlarmCommand(
+    AlarmEventId AlarmEventId,
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset AcknowledgedAtUtc,
+    string AcknowledgedBy) : ICommand<AlarmEventId>;
+
+public sealed class AcknowledgeAlarmCommandValidator : AbstractValidator<AcknowledgeAlarmCommand>
+{
+    public AcknowledgeAlarmCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AcknowledgedBy).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class AcknowledgeAlarmCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<AcknowledgeAlarmCommand, AlarmEventId>
+{
+    public async Task<AlarmEventId> Handle(AcknowledgeAlarmCommand request, CancellationToken cancellationToken)
+    {
+        var alarm = await LoadAlarmAsync(dbContext, request.AlarmEventId, request.OrganizationId, request.EnvironmentId, cancellationToken);
+        try
+        {
+            alarm.Acknowledge(request.AcknowledgedAtUtc, request.AcknowledgedBy);
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
+
+        return alarm.Id;
+    }
+
+    internal static async Task<AlarmEvent> LoadAlarmAsync(
+        ApplicationDbContext dbContext,
+        AlarmEventId alarmEventId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.AlarmEvents.SingleOrDefaultAsync(
+            x => x.Id == alarmEventId
+                && x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId,
+            cancellationToken)
+            ?? throw new KnownException($"Alarm event was not found: {alarmEventId.Id:D}");
+    }
+}
+
+public sealed record ShelveAlarmCommand(
+    AlarmEventId AlarmEventId,
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset ShelvedAtUtc,
+    int DurationMinutes,
+    string ShelvedBy,
+    string? Reason) : ICommand<AlarmEventId>;
+
+public sealed class ShelveAlarmCommandValidator : AbstractValidator<ShelveAlarmCommand>
+{
+    public ShelveAlarmCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DurationMinutes).InclusiveBetween(1, 24 * 60);
+        RuleFor(x => x.ShelvedBy).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Reason).MaximumLength(300);
+    }
+}
+
+public sealed class ShelveAlarmCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<ShelveAlarmCommand, AlarmEventId>
+{
+    public async Task<AlarmEventId> Handle(ShelveAlarmCommand request, CancellationToken cancellationToken)
+    {
+        var alarm = await AcknowledgeAlarmCommandHandler.LoadAlarmAsync(dbContext, request.AlarmEventId, request.OrganizationId, request.EnvironmentId, cancellationToken);
+        try
+        {
+            alarm.Shelve(
+                request.ShelvedAtUtc,
+                request.ShelvedAtUtc.AddMinutes(request.DurationMinutes),
+                request.ShelvedBy,
+                request.Reason);
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
+
+        return alarm.Id;
+    }
+}
+
+public sealed record UnshelveAlarmCommand(
+    AlarmEventId AlarmEventId,
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset UnshelvedAtUtc) : ICommand<AlarmEventId>;
+
+public sealed class UnshelveAlarmCommandValidator : AbstractValidator<UnshelveAlarmCommand>
+{
+    public UnshelveAlarmCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class UnshelveAlarmCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<UnshelveAlarmCommand, AlarmEventId>
+{
+    public async Task<AlarmEventId> Handle(UnshelveAlarmCommand request, CancellationToken cancellationToken)
+    {
+        var alarm = await AcknowledgeAlarmCommandHandler.LoadAlarmAsync(dbContext, request.AlarmEventId, request.OrganizationId, request.EnvironmentId, cancellationToken);
+        alarm.Unshelve(request.UnshelvedAtUtc);
+        return alarm.Id;
+    }
+}
+
+public sealed record RunAlarmEscalationsCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset AsOfUtc,
+    int UnacknowledgedTimeoutMinutes,
+    IReadOnlyCollection<string> SeverityLevels,
+    IReadOnlyCollection<string> RecipientRefs,
+    int MaxAlarms = 500) : ICommand<RunAlarmEscalationsResult>;
+
+public sealed record RunAlarmEscalationsResult(int EscalatedCount, IReadOnlyCollection<AlarmEventId> AlarmEventIds);
+
+public sealed class RunAlarmEscalationsCommandValidator : AbstractValidator<RunAlarmEscalationsCommand>
+{
+    public RunAlarmEscalationsCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.UnacknowledgedTimeoutMinutes).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.RecipientRefs).NotEmpty();
+        RuleForEach(x => x.RecipientRefs).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.MaxAlarms).InclusiveBetween(1, 5000);
+    }
+}
+
+public sealed class RunAlarmEscalationsCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<RunAlarmEscalationsCommand, RunAlarmEscalationsResult>
+{
+    public async Task<RunAlarmEscalationsResult> Handle(RunAlarmEscalationsCommand request, CancellationToken cancellationToken)
+    {
+        var alarms = await dbContext.AlarmEvents
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.Status != "cleared")
+            .OrderBy(x => x.RaisedAtUtc)
+            .Take(request.MaxAlarms)
+            .ToArrayAsync(cancellationToken);
+        var escalated = new List<AlarmEventId>();
+        var timeout = TimeSpan.FromMinutes(request.UnacknowledgedTimeoutMinutes);
+        var severityLevels = Normalize(request.SeverityLevels);
+        var recipientRefs = Normalize(request.RecipientRefs);
+        foreach (var alarm in alarms)
+        {
+            alarm.ExpireShelving(request.AsOfUtc);
+            if (!alarm.ShouldEscalateAt(request.AsOfUtc, timeout, severityLevels))
+            {
+                continue;
+            }
+
+            var reason = severityLevels.Any(level =>
+                string.Equals(level, alarm.Severity, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(level, alarm.Priority, StringComparison.OrdinalIgnoreCase))
+                ? "severity"
+                : "unacknowledged-timeout";
+            alarm.Escalate(request.AsOfUtc, reason, recipientRefs);
+            escalated.Add(alarm.Id);
+        }
+
+        return new RunAlarmEscalationsResult(escalated.Count, escalated);
+    }
+
+    private static IReadOnlyCollection<string> Normalize(IReadOnlyCollection<string> values)
+    {
+        return values
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 }

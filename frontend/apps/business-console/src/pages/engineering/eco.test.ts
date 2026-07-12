@@ -6,6 +6,7 @@ import EcoPage from './eco.vue'
 
 const stub = vi.hoisted(() => ({
   releaseChange: vi.fn().mockResolvedValue({ data: {} }),
+  previewImpact: vi.fn(),
   fetchChangeDetail: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
@@ -21,6 +22,7 @@ const changeRow = {
 }
 
 const filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev', status: undefined as string | undefined, skip: 0, take: 10 })
+const impactPreview = shallowRef()
 
 vi.mock('@/composables/useProductEngineering', () => ({
   useEngineeringChanges: () => ({
@@ -33,6 +35,13 @@ vi.mock('@/composables/useProductEngineering', () => ({
     releaseChange: stub.releaseChange,
     releasePending: shallowRef(false),
     releaseError: shallowRef(undefined),
+    previewImpact: stub.previewImpact,
+    previewPending: shallowRef(false),
+    previewError: shallowRef(undefined),
+    impactPreview,
+    clearImpactPreview: () => {
+      impactPreview.value = undefined
+    },
     fetchChangeDetail: stub.fetchChangeDetail,
   }),
 }))
@@ -77,8 +86,19 @@ const formSelectStubs = {
   SelectProContent: { template: '<slot />' },
   SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
+const routerLinkStubs = {
+  RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
+}
 
-const allStubs = { ...layoutStub, ...dialogStubs, ...sheetStubs, ...datePickerStub, ...formSelectStubs }
+const approvalPanelStub = {
+  BusinessDocumentApprovalPanel: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: '<section data-testid="approval-panel"><button type="button" @click="$emit(\'update:modelValue\', \'APR-9\')">关联审批链</button><span>{{ modelValue }}</span></section>',
+  },
+}
+
+const allStubs = { ...layoutStub, ...dialogStubs, ...sheetStubs, ...datePickerStub, ...formSelectStubs, ...routerLinkStubs, ...approvalPanelStub }
 
 function findButton(wrapper: ReturnType<typeof mount>, text: string) {
   return wrapper.findAll('button').find((b) => b.text().trim() === text)
@@ -86,6 +106,48 @@ function findButton(wrapper: ReturnType<typeof mount>, text: string) {
 
 beforeEach(() => {
   stub.releaseChange.mockClear()
+  stub.previewImpact.mockReset()
+  stub.previewImpact.mockImplementation(async () => {
+    impactPreview.value = {
+      effectiveDate: '2026-03-01',
+      nodes: [
+        {
+          nodeType: 'manufacturing-bom',
+          versionId: 'MBOM-1:B',
+          displayName: 'MBOM MBOM-1 / B',
+          impactLevel: 'derived',
+          skuCode: 'SKU-FG',
+          consoleRoute: '/engineering/mbom?bomCode=MBOM-1&revision=B',
+        },
+        {
+          nodeType: 'mrp-candidate',
+          versionId: 'mrp:pv-1',
+          displayName: 'MRP 候选',
+          impactLevel: 'candidate',
+          skuCode: 'SKU-FG',
+          consoleRoute: null,
+        },
+        {
+          nodeType: 'aps-plan-candidate',
+          versionId: 'aps:pv-1',
+          displayName: '已发布计划候选',
+          impactLevel: 'candidate',
+          skuCode: 'SKU-FG',
+          consoleRoute: '/scheduling',
+        },
+      ],
+      risks: [
+        {
+          code: 'downstream-execution-impact',
+          severity: 'warning',
+          message: '变更会影响 MRP、MES、APS 和在制执行候选。',
+          relatedVersionId: 'MBOM-1:B',
+        },
+      ],
+    }
+    return impactPreview.value
+  })
+  impactPreview.value = undefined
   stub.fetchChangeDetail.mockReset()
   stub.fetchChangeDetail.mockResolvedValue(undefined)
   stub.toastSuccess.mockClear()
@@ -120,7 +182,7 @@ describe('engineering eco page', () => {
     await flushPromises()
 
     await wrapper.find('#eco-reason').setValue('工艺优化')
-    await wrapper.find('#eco-approval').setValue('APR-9')
+    await findButton(wrapper, '关联审批链')!.trigger('click')
     await wrapper.findAll('input[type="date"]')[0]!.setValue('2026-03-01')
     // 受影响版本：第一个 select 是对象种类
     await wrapper.findAll('select')[0]!.setValue('Routing')
@@ -140,6 +202,36 @@ describe('engineering eco page', () => {
     expect(affected[0]!.versionKind).toBe('Routing')
     expect(affected[0]!.versionId).toBe('ROUTING-VER-1')
     expect(stub.toastSuccess).toHaveBeenCalled()
+  })
+
+  it('发布前可预览工程变更影响链且不触发发布', async () => {
+    const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
+    await flushPromises()
+
+    await findButton(wrapper, '发布变更')!.trigger('click')
+    await flushPromises()
+
+    await wrapper.findAll('input[type="date"]')[0]!.setValue('2026-03-01')
+    await wrapper.findAll('select')[0]!.setValue('EngineeringBom')
+    await wrapper.find('#eco-vid-0').setValue('EBOM-FG:A')
+    await flushPromises()
+
+    await findButton(wrapper, '预览影响')!.trigger('click')
+    await flushPromises()
+
+    expect(stub.previewImpact).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      effectiveDate: '2026-03-01',
+      affectedVersions: [{ versionKind: 'EngineeringBom', versionId: 'EBOM-FG:A' }],
+    }))
+    expect(stub.releaseChange).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('MBOM MBOM-1 / B')
+    expect(wrapper.text()).toContain('MRP 候选')
+    expect(wrapper.text()).toContain('APS 排程')
+    expect(wrapper.text()).toContain('暂无入口')
+    expect(wrapper.find('[data-router-link]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('变更会影响 MRP、MES、APS 和在制执行候选')
   })
 
   it('校验拦截：变更信息未填点发布出现汇总提示且不发请求', async () => {

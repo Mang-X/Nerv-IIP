@@ -25,6 +25,8 @@ public sealed class SkuEntityTypeConfiguration : IEntityTypeConfiguration<Sku>
         builder.Property(x => x.BatchTrackingPolicy).HasColumnName("batch_tracking_policy").IsRequired().HasMaxLength(100).HasComment("Policy that states whether lot, heat, date code or expiry tracking is required.");
         builder.Property(x => x.SerialTrackingPolicy).HasColumnName("serial_tracking_policy").IsRequired().HasMaxLength(100).HasComment("Policy that states whether serial number tracking is required.");
         builder.Property(x => x.ShelfLifePolicyCode).HasColumnName("shelf_life_policy_code").IsRequired().HasMaxLength(100).HasComment("Shelf life policy code used by Inventory and Quality.");
+        builder.Property(x => x.ShelfLifeDays).HasColumnName("shelf_life_days").HasComment("Optional SKU default shelf life in calendar days used to derive batch expiry dates.");
+        builder.Property(x => x.NearExpiryThresholdDays).HasColumnName("near_expiry_threshold_days").HasComment("Optional SKU near-expiry threshold in calendar days used by Inventory expiry alerts.");
         builder.Property(x => x.StorageConditionCode).HasColumnName("storage_condition_code").IsRequired().HasMaxLength(100).HasComment("Storage condition code such as ambient, cold or hazardous.");
         builder.Property(x => x.DefaultBarcodeRuleCode).HasColumnName("default_barcode_rule_code").IsRequired().HasMaxLength(100).HasComment("Default barcode rule code consumed by BarcodeLabel.");
         builder.Property(x => x.QualityRequired).HasColumnName("quality_required").IsRequired().HasComment("Flag that indicates Quality must inspect or release this SKU before unrestricted use.");

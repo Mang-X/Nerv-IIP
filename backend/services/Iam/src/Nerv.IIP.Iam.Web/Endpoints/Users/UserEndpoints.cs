@@ -2,8 +2,11 @@ using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Iam.Web.Application;
+using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.Commands.Users;
+using Nerv.IIP.Iam.Web.Application.DataScopes;
 using Nerv.IIP.Iam.Web.Application.Queries.Users;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 using Nerv.IIP.Iam.Web.Application.Users;
 using Nerv.IIP.Iam.Web.Endpoints;
 using Nerv.IIP.ServiceAuth;
@@ -11,8 +14,8 @@ using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Iam.Web.Endpoints.Users;
 
-public sealed record CreateUserRequest(string LoginName, string Email, string Password);
-public sealed record UpdateUserRequest(string LoginName, string Email, bool Enabled);
+public sealed record CreateUserRequest(string LoginName, string Email, string Password, DateTimeOffset? AccountExpiresAtUtc);
+public sealed record UpdateUserRequest(string LoginName, string Email, bool Enabled, DateTimeOffset? AccountExpiresAtUtc);
 public sealed record ResetUserPasswordRequest(string NewPassword);
 public sealed record ListUsersRequest(
     int? PageIndex,
@@ -104,7 +107,7 @@ public sealed class CreateUserEndpoint(IIamPermissionAuthorizer authorizer, IMed
 
         var req = await HttpContext.Request.ReadFromJsonAsync<CreateUserRequest>(ct)
             ?? throw new BadHttpRequestException("Request body is required.");
-        var response = await mediator.Send(new CreateUserCommand(req.LoginName, req.Email, req.Password), ct);
+        var response = await mediator.Send(new CreateUserCommand(req.LoginName, req.Email, req.Password, req.AccountExpiresAtUtc), ct);
         await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCodes.Status201Created, response, ct);
     }
 }
@@ -124,8 +127,26 @@ public sealed class PatchUserEndpoint(IIamPermissionAuthorizer authorizer, IMedi
         var req = await HttpContext.Request.ReadFromJsonAsync<UpdateUserRequest>(ct)
             ?? throw new BadHttpRequestException("Request body is required.");
         var userId = Route<string>("userId") ?? string.Empty;
-        var response = await mediator.Send(new UpdateUserCommand(userId, req.LoginName, req.Email, req.Enabled), ct);
+        var response = await mediator.Send(new UpdateUserCommand(userId, req.LoginName, req.Email, req.Enabled, req.AccountExpiresAtUtc), ct);
         await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
+[HttpPost("/api/iam/v1/users/{userId}/enable")]
+[AllowAnonymous]
+public sealed class EnableUserEndpoint(IIamPermissionAuthorizer authorizer, IMediator mediator)
+    : EndpointWithoutRequest
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.users.manage", ct))
+        {
+            return;
+        }
+
+        var userId = Route<string>("userId") ?? string.Empty;
+        await mediator.Send(new EnableUserCommand(userId), ct);
+        HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
     }
 }
 
@@ -164,5 +185,35 @@ public sealed class ResetUserPasswordEndpoint(IIamPermissionAuthorizer authorize
         var userId = Route<string>("userId") ?? string.Empty;
         await mediator.Send(new ResetUserPasswordCommand(userId, SensitivePassword.From(req.NewPassword)), ct);
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
+    }
+}
+
+[HttpPatch("/api/iam/v1/users/{userId}/membership-data-scopes")]
+[AllowAnonymous]
+public sealed class PatchUserMembershipDataScopesEndpoint(
+    IIamPermissionAuthorizer authorizer,
+    IIamAuthService auth,
+    IMediator mediator) : EndpointWithoutRequest<ResponseData<DataScopeListResponse>>
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.users.manage", ct))
+        {
+            return;
+        }
+
+        var req = await HttpContext.Request.ReadFromJsonAsync<PatchMembershipDataScopesRequest>(ct)
+            ?? throw new BadHttpRequestException("Request body is required.");
+        var principal = await auth.GetCurrentPrincipalAsync(HttpContext, ct);
+        var userId = Route<string>("userId") ?? string.Empty;
+        var response = await mediator.Send(
+            new PatchMembershipDataScopesCommand(
+                userId,
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.DataScopes,
+                IamSecurityAuditEndpointContext.Create(HttpContext, principal)),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
     }
 }

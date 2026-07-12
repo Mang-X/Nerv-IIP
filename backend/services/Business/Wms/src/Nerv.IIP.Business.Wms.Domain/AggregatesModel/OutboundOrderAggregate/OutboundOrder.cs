@@ -97,14 +97,18 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         string fromLocationCode,
         string toLocationCode,
         decimal quantity,
-        string? inventoryReservationId = null)
+        string? inventoryReservationId = null,
+        string? reservedLocationCode = null,
+        string? reservedLotNo = null,
+        string? reservedSerialNo = null)
     {
         EnsureOpen();
         var line = FindLine(lineNo);
         EnsurePickingQuantity(line, quantity);
 
-        line.MarkPickLocation(fromLocationCode);
-        line.MarkInventoryReserved(inventoryReservationId);
+        var taskFromLocationCode = reservedLocationCode ?? fromLocationCode;
+        line.MarkPickLocation(taskFromLocationCode);
+        line.MarkInventoryReserved(inventoryReservationId, taskFromLocationCode, reservedLotNo, reservedSerialNo);
         return WarehouseTask.CreatePicking(
             OrganizationId,
             EnvironmentId,
@@ -114,7 +118,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             line.SkuCode,
             line.UomCode,
             SiteCode,
-            fromLocationCode,
+            taskFromLocationCode,
             toLocationCode,
             quantity);
     }
@@ -377,7 +381,7 @@ public sealed class OutboundOrderLine : Entity<OutboundOrderLineId>
         return new OutboundOrderLine(draft);
     }
 
-    public void MarkInventoryReserved(string? inventoryReservationId)
+    public void MarkInventoryReserved(string? inventoryReservationId, string? locationCode = null, string? lotNo = null, string? serialNo = null)
     {
         if (string.IsNullOrWhiteSpace(inventoryReservationId))
         {
@@ -391,6 +395,20 @@ public sealed class OutboundOrderLine : Entity<OutboundOrderLineId>
         }
 
         InventoryReservationId = normalizedReservationId;
+        if (!string.IsNullOrWhiteSpace(locationCode))
+        {
+            PickLocationCode = WmsText.Required(locationCode, nameof(locationCode));
+        }
+
+        if (!string.IsNullOrWhiteSpace(lotNo))
+        {
+            LotNo = WmsText.Optional(lotNo);
+        }
+
+        if (!string.IsNullOrWhiteSpace(serialNo))
+        {
+            SerialNo = WmsText.Optional(serialNo);
+        }
     }
 
     public void MarkPickLocation(string pickLocationCode)

@@ -205,6 +205,11 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
                         .HasColumnName("document_type")
                         .HasComment("Engineering document type such as CAD drawing or process sheet.");
 
+                    b.Property<DateOnly?>("EffectiveDate")
+                        .HasColumnType("date")
+                        .HasColumnName("effective_date")
+                        .HasComment("Factory business date from which the SOP/work instruction version is effective.");
+
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -232,6 +237,12 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
                         .HasColumnName("item_code")
                         .HasComment("Optional engineering item code this document revision describes.");
 
+                    b.Property<string>("OperationCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_code")
+                        .HasComment("Optional StandardOperation code when this document is a SOP/work instruction.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -251,6 +262,31 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
                         .HasColumnName("revision")
                         .HasComment("Document revision.");
 
+                    b.Property<string>("RoutingCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("routing_code")
+                        .HasComment("Optional routing code narrowing SOP dispatch to a routing operation.");
+
+                    b.Property<string>("RoutingRevision")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("routing_revision")
+                        .HasComment("Optional routing revision narrowing SOP dispatch to a routing operation.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("status")
+                        .HasComment("Engineering document lifecycle status: Published or Archived for SOP dispatch.");
+
+                    b.Property<string>("WorkCenterCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_center_code")
+                        .HasComment("Optional work center code narrowing SOP dispatch for an operation.");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "DocumentNumber", "Revision")
@@ -261,9 +297,12 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "ItemCode", "DocumentType");
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DocumentType", "OperationCode", "WorkCenterCode", "Status", "EffectiveDate")
+                        .HasDatabaseName("IX_engineering_documents_organization_id_environment_id_docum~1");
+
                     b.ToTable("engineering_documents", "product_engineering", t =>
                         {
-                            t.HasComment("ProductEngineering engineering document references to File Storage files such as CAD drawings and design packages.");
+                            t.HasComment("ProductEngineering engineering document and SOP references to File Storage files such as CAD drawings, process sheets, and work instructions.");
                         });
                 });
 

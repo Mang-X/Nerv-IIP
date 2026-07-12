@@ -1,8 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
+using System.Text.Json;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
-using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.OeeProductionFactAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 
@@ -12,7 +15,19 @@ public sealed record PagedListResponse<T>(IReadOnlyCollection<T> Items, int Tota
 
 public sealed record ListTelemetryTagsQuery(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, int Skip = 0, int Take = 100) : IQuery<PagedListResponse<TelemetryTagListItem>>;
 
-public sealed record TelemetryTagListItem(TelemetryTagId TelemetryTagId, string OrganizationId, string EnvironmentId, string DeviceAssetId, string TagKey, string ValueType, string UnitCode, string SamplingPolicy);
+public sealed record TelemetryTagListItem(
+    TelemetryTagId TelemetryTagId,
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string TagKey,
+    string ValueType,
+    string UnitCode,
+    string SamplingPolicy,
+    bool IsWritable,
+    decimal? ControlMinValue,
+    decimal? ControlMaxValue,
+    IReadOnlyCollection<string> ControlAllowedValues);
 
 public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListTelemetryTagsQuery, PagedListResponse<TelemetryTagListItem>>
@@ -25,14 +40,89 @@ public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
             .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId);
         var total = await query.CountAsync(cancellationToken);
-        var items = await query
+        // Project the raw allowed-values JSON column (ControlAllowedValues is a computed property that is
+        // not translatable in LINQ) and deserialize after materialization.
+        var projected = await query
             .OrderBy(x => x.DeviceAssetId)
             .ThenBy(x => x.TagKey)
-            .Select(x => new TelemetryTagListItem(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.ValueType, x.UnitCode, x.SamplingPolicy))
+            .Select(x => new TelemetryTagProjection(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.ValueType, x.UnitCode, x.SamplingPolicy, x.IsWritable, x.ControlMinValue, x.ControlMaxValue, x.ControlAllowedValuesJson))
             .Skip(request.Skip)
             .Take(request.Take)
             .ToArrayAsync(cancellationToken);
+        var items = projected
+            .Select(x => new TelemetryTagListItem(
+                x.TelemetryTagId,
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.DeviceAssetId,
+                x.TagKey,
+                x.ValueType,
+                x.UnitCode,
+                x.SamplingPolicy,
+                x.IsWritable,
+                x.ControlMinValue,
+                x.ControlMaxValue,
+                DeserializeAllowedValues(x.ControlAllowedValuesJson)))
+            .ToArray();
         return new PagedListResponse<TelemetryTagListItem>(items, total);
+    }
+
+    private static IReadOnlyCollection<string> DeserializeAllowedValues(string controlAllowedValuesJson)
+    {
+        if (string.IsNullOrWhiteSpace(controlAllowedValuesJson))
+        {
+            return [];
+        }
+
+        return JsonSerializer.Deserialize<IReadOnlyCollection<string>>(controlAllowedValuesJson) ?? [];
+    }
+
+    private sealed record TelemetryTagProjection(
+        TelemetryTagId TelemetryTagId,
+        string OrganizationId,
+        string EnvironmentId,
+        string DeviceAssetId,
+        string TagKey,
+        string ValueType,
+        string UnitCode,
+        string SamplingPolicy,
+        bool IsWritable,
+        decimal? ControlMinValue,
+        decimal? ControlMaxValue,
+        string ControlAllowedValuesJson);
+}
+
+// Latest instantaneous tag value for the device-control write form. Sources the newest raw sample's
+// LastValue (the last instantaneous reading in the bucket), not the bucket average, so operators see a
+// real "current value" rather than an aggregate. HasSample is false when no raw sample exists yet.
+public sealed record GetTelemetryTagCurrentValueQuery(string OrganizationId, string EnvironmentId, string DeviceAssetId, string TagKey)
+    : IQuery<TelemetryTagCurrentValueResponse>;
+
+public sealed record TelemetryTagCurrentValueResponse(
+    string DeviceAssetId,
+    string TagKey,
+    bool HasSample,
+    decimal? Value,
+    DateTimeOffset? OccurredAtUtc);
+
+public sealed class GetTelemetryTagCurrentValueQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetTelemetryTagCurrentValueQuery, TelemetryTagCurrentValueResponse>
+{
+    public async Task<TelemetryTagCurrentValueResponse> Handle(GetTelemetryTagCurrentValueQuery request, CancellationToken cancellationToken)
+    {
+        var normalizedTagKey = request.TagKey.Trim().ToLowerInvariant();
+        var latest = await dbContext.TelemetryRawSamples
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId
+                && x.TagKey == normalizedTagKey)
+            .OrderByDescending(x => x.BucketEndUnixTimeMilliseconds)
+            .Select(x => new { x.LastValue, x.BucketEndUtc })
+            .FirstOrDefaultAsync(cancellationToken);
+        return latest is null
+            ? new TelemetryTagCurrentValueResponse(request.DeviceAssetId, normalizedTagKey, false, null, null)
+            : new TelemetryTagCurrentValueResponse(request.DeviceAssetId, normalizedTagKey, true, latest.LastValue, latest.BucketEndUtc);
     }
 }
 
@@ -99,29 +189,110 @@ public sealed class ListAlarmRulesQueryHandler(ApplicationDbContext dbContext)
     }
 }
 
-public sealed record ListAlarmEventsQuery(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, string? Status, int Skip = 0, int Take = 100) : IQuery<PagedListResponse<AlarmEventListItem>>;
+public sealed record ListAlarmEventsQuery(
+    string? OrganizationId,
+    string? EnvironmentId,
+    string? DeviceAssetId,
+    string? Status,
+    int Skip = 0,
+    int Take = 100,
+    string? DeviceAssetIds = null) : IQuery<PagedListResponse<AlarmEventListItem>>;
 
-public sealed record AlarmEventListItem(AlarmEventId AlarmEventId, string OrganizationId, string EnvironmentId, string DeviceAssetId, string AlarmCode, string Severity, string Priority, string? TagKey, decimal? ObservedValue, decimal? ThresholdValue, string? UnitCode, string Status, DateTimeOffset RaisedAtUtc, DateTimeOffset? ClearedAtUtc, string ExternalAlarmId);
+public sealed record AlarmEventListItem(
+    AlarmEventId AlarmEventId,
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string AlarmCode,
+    string Severity,
+    string Priority,
+    string? TagKey,
+    decimal? ObservedValue,
+    decimal? ThresholdValue,
+    string? UnitCode,
+    string Status,
+    DateTimeOffset RaisedAtUtc,
+    DateTimeOffset? ClearedAtUtc,
+    string ExternalAlarmId,
+    DateTimeOffset? AcknowledgedAtUtc,
+    string? AcknowledgedBy,
+    DateTimeOffset? ShelvedAtUtc,
+    DateTimeOffset? ShelvedUntilUtc,
+    string? ShelvedBy,
+    string? ShelveReason,
+    DateTimeOffset? EscalatedAtUtc,
+    string? EscalationReason,
+    IReadOnlyCollection<string> EscalationRecipientRefs);
 
 public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListAlarmEventsQuery, PagedListResponse<AlarmEventListItem>>
 {
     public async Task<PagedListResponse<AlarmEventListItem>> Handle(ListAlarmEventsQuery request, CancellationToken cancellationToken)
     {
+        var status = NormalizeStatus(request.Status);
+        var deviceAssetIds = SplitCsv(request.DeviceAssetIds);
         var query = dbContext.AlarmEvents
             .AsNoTracking()
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
             .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
-            .Where(x => request.Status == null || x.Status == request.Status);
+            .Where(x => deviceAssetIds.Count == 0 || deviceAssetIds.Contains(x.DeviceAssetId));
+        query = status switch
+        {
+            null => query,
+            "active" => query.Where(x => x.Status != "cleared"),
+            _ => query.Where(x => x.Status == status),
+        };
         var total = await query.CountAsync(cancellationToken);
-        var items = await query
+        var alarmEvents = await query
             .OrderByDescending(x => x.RaisedAtUtc)
-            .Select(x => new AlarmEventListItem(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.AlarmCode, x.Severity, x.Priority, x.TagKey, x.ObservedValue, x.ThresholdValue, x.UnitCode, x.Status, x.RaisedAtUtc, x.ClearedAtUtc, x.ExternalAlarmId))
             .Skip(request.Skip)
             .Take(request.Take)
             .ToArrayAsync(cancellationToken);
+        var items = alarmEvents
+            .Select(x => new AlarmEventListItem(
+                x.Id,
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.DeviceAssetId,
+                x.AlarmCode,
+                x.Severity,
+                x.Priority,
+                x.TagKey,
+                x.ObservedValue,
+                x.ThresholdValue,
+                x.UnitCode,
+                x.Status,
+                x.RaisedAtUtc,
+                x.ClearedAtUtc,
+                x.ExternalAlarmId,
+                x.AcknowledgedAtUtc,
+                x.AcknowledgedBy,
+                x.ShelvedAtUtc,
+                x.ShelvedUntilUtc,
+                x.ShelvedBy,
+                x.ShelveReason,
+                x.EscalatedAtUtc,
+                x.EscalationReason,
+                x.EscalationRecipientRefs))
+            .ToArray();
         return new PagedListResponse<AlarmEventListItem>(items, total);
+    }
+
+    private static string? NormalizeStatus(string? status)
+    {
+        var normalized = status?.Trim().ToLowerInvariant();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static IReadOnlyCollection<string> SplitCsv(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? []
+            : value
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
     }
 }
 
@@ -144,18 +315,28 @@ public sealed class QueryDeviceStateTimelineQueryHandler(ApplicationDbContext db
             .Select(x => new DeviceTimelineItem("state", x.DeviceAssetId, null, x.State, x.OccurredAtUtc))
             .Take(100)
             .ToArrayAsync(cancellationToken);
-        var summaries = await dbContext.TelemetrySummaries
+        var rawSamples = await dbContext.TelemetryRawSamples
             .Where(x => x.DeviceAssetId == request.DeviceAssetId)
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
             .Where(x => request.FromUtc == null || x.BucketEndUtc >= request.FromUtc)
             .Where(x => request.ToUtc == null || x.BucketStartUtc <= request.ToUtc)
             .OrderByDescending(x => x.BucketEndUtc)
-            .Select(x => new DeviceTimelineItem("summary", x.DeviceAssetId, x.TagKey, x.AverageValue.ToString(), x.BucketEndUtc))
+            .Select(x => new DeviceTimelineItem("sample", x.DeviceAssetId, x.TagKey, x.AverageValue.ToString(CultureInfo.InvariantCulture), x.BucketEndUtc))
+            .Take(100)
+            .ToArrayAsync(cancellationToken);
+        var rollups = await dbContext.TelemetryRollups
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => request.FromUtc == null || x.WindowEndUtc >= request.FromUtc)
+            .Where(x => request.ToUtc == null || x.WindowStartUtc <= request.ToUtc)
+            .OrderByDescending(x => x.WindowEndUtc)
+            .Select(x => new DeviceTimelineItem(x.Grain == TelemetryRollupGrain.Hourly ? "hourly" : "daily", x.DeviceAssetId, x.TagKey, x.AverageValue.ToString(CultureInfo.InvariantCulture), x.WindowEndUtc))
             .Take(100)
             .ToArrayAsync(cancellationToken);
 
-        return states.Concat(summaries)
+        return states.Concat(rawSamples).Concat(rollups)
             .OrderByDescending(x => x.OccurredAtUtc)
             .Take(100)
             .ToArray();
@@ -176,17 +357,60 @@ public sealed record OeeResponse(
     DateTimeOffset WindowStartUtc,
     DateTimeOffset WindowEndUtc,
     int StateSampleCount,
-    decimal AvailabilityRate,
+    decimal? AvailabilityRate,
     decimal LoadingRate,
-    decimal PerformanceRate,
-    decimal QualityRate,
-    decimal OeeRate,
-    bool PerformanceRateEstimated,
-    bool QualityRateEstimated);
+    int ProductionFactCount,
+    decimal? GoodQuantity,
+    decimal? ScrapQuantity,
+    decimal? ReworkQuantity,
+    string? OutputUomCode,
+    decimal? TheoreticalRatePerHour,
+    decimal? ExpectedOutputQuantity,
+    decimal? PerformanceRate,
+    decimal? QualityRate,
+    decimal? OeeRate,
+    bool IsDegraded,
+    IReadOnlyCollection<string> DegradedReasons);
+
+public sealed record QueryRuntimeHoursQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc) : IQuery<RuntimeHoursResponse>;
+
+public sealed record RuntimeHoursDailyItem(
+    string BusinessDate,
+    decimal RuntimeHours,
+    decimal LoadingHours,
+    int StateSampleCount);
+
+public sealed record RuntimeHoursResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    int StateSampleCount,
+    decimal TotalRuntimeHours,
+    decimal TotalLoadingHours,
+    bool HasRuntimeSamples,
+    IReadOnlyCollection<RuntimeHoursDailyItem> Daily);
 
 public sealed class QueryOeeQueryValidator : AbstractValidator<QueryOeeQuery>
 {
     public QueryOeeQueryValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
+    }
+}
+
+public sealed class QueryRuntimeHoursQueryValidator : AbstractValidator<QueryRuntimeHoursQuery>
+{
+    public QueryRuntimeHoursQueryValidator()
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
@@ -224,10 +448,17 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             : [carryInState, .. inWindowStates];
 
         var runtimeRates = CalculateRuntimeRates(states, request.WindowStartUtc, request.WindowEndUtc);
-        var performanceRate = states.Length > 0 ? 1m : 0m;
-        var qualityRate = states.Length > 0 ? 1m : 0m;
-        var oeeRate = runtimeRates.AvailabilityRate * performanceRate * qualityRate;
+        var productionFacts = await dbContext.OeeProductionFacts
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.ReportedAtUtc >= request.WindowStartUtc)
+            .Where(x => x.ReportedAtUtc < request.WindowEndUtc)
+            .ToArrayAsync(cancellationToken);
+        var factors = CalculateProductionFactors(productionFacts, runtimeRates.ProductiveRuntimeHours, states.Length > 0);
 
+        decimal? availabilityRate = states.Length > 0 ? Math.Round(runtimeRates.AvailabilityRate, 6) : null;
         return new OeeResponse(
             request.OrganizationId,
             request.EnvironmentId,
@@ -235,20 +466,108 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             request.WindowStartUtc,
             request.WindowEndUtc,
             states.Length,
-            Math.Round(runtimeRates.AvailabilityRate, 6),
+            availabilityRate,
             Math.Round(runtimeRates.LoadingRate, 6),
+            productionFacts.Length,
+            RoundNullable(factors.GoodQuantity),
+            RoundNullable(factors.ScrapQuantity),
+            RoundNullable(factors.ReworkQuantity),
+            factors.OutputUomCode,
+            RoundNullable(factors.TheoreticalRatePerHour),
+            RoundNullable(factors.ExpectedOutputQuantity),
+            RoundNullable(factors.PerformanceRate),
+            RoundNullable(factors.QualityRate),
+            availabilityRate is not null && factors.PerformanceRate is not null && factors.QualityRate is not null
+                ? Math.Round(availabilityRate.Value * factors.PerformanceRate.Value * factors.QualityRate.Value, 6)
+                : null,
+            factors.DegradedReasons.Count > 0,
+            factors.DegradedReasons);
+    }
+
+    private static OeeProductionFactors CalculateProductionFactors(
+        IReadOnlyCollection<OeeProductionFact> productionFacts,
+        decimal productiveRuntimeHours,
+        bool hasStateSamples)
+    {
+        var degradedReasons = new List<string>();
+        if (!hasStateSamples)
+        {
+            degradedReasons.Add("runtime-state-facts-missing");
+        }
+
+        if (productionFacts.Count == 0)
+        {
+            degradedReasons.Add("production-facts-missing");
+            return new OeeProductionFactors(null, null, null, null, null, null, null, null, degradedReasons);
+        }
+
+        var goodQuantity = productionFacts.Sum(x => x.GoodQuantity);
+        var scrapQuantity = productionFacts.Sum(x => x.ScrapQuantity);
+        var reworkQuantity = productionFacts.Sum(x => x.ReworkQuantity);
+        var totalOutputQuantity = goodQuantity + scrapQuantity + reworkQuantity;
+        var uomCodes = productionFacts.Select(x => x.UomCode).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var outputUomCode = uomCodes.Length == 1 ? uomCodes[0] : null;
+        if (outputUomCode is null)
+        {
+            degradedReasons.Add("production-uom-ambiguous");
+        }
+
+        decimal? qualityRate = outputUomCode is not null && totalOutputQuantity > 0m
+            ? decimal.Divide(goodQuantity, totalOutputQuantity)
+            : null;
+        if (qualityRate is null)
+        {
+            degradedReasons.Add("production-output-missing");
+        }
+
+        var theoryRates = productionFacts
+            .Select(x => x.TheoreticalRatePerHour)
+            .Where(x => x is > 0m)
+            .Select(x => x!.Value)
+            .Distinct()
+            .ToArray();
+        decimal? theoreticalRatePerHour = theoryRates.Length == 1 && productionFacts.All(x => x.TheoreticalRatePerHour is > 0m)
+            ? theoryRates[0]
+            : null;
+        if (theoreticalRatePerHour is null)
+        {
+            degradedReasons.Add("theoretical-rate-missing-or-ambiguous");
+        }
+
+        decimal? expectedOutputQuantity = null;
+        decimal? performanceRate = null;
+        if (productiveRuntimeHours <= 0m)
+        {
+            degradedReasons.Add("productive-runtime-missing");
+        }
+        else if (theoreticalRatePerHour is not null && totalOutputQuantity > 0m && outputUomCode is not null)
+        {
+            expectedOutputQuantity = productiveRuntimeHours * theoreticalRatePerHour.Value;
+            if (expectedOutputQuantity > 0m)
+            {
+                performanceRate = decimal.Divide(totalOutputQuantity, expectedOutputQuantity.Value);
+            }
+        }
+
+        return new OeeProductionFactors(
+            goodQuantity,
+            scrapQuantity,
+            reworkQuantity,
+            outputUomCode,
+            theoreticalRatePerHour,
+            expectedOutputQuantity,
             performanceRate,
             qualityRate,
-            Math.Round(oeeRate, 6),
-            true,
-            true);
+            degradedReasons);
     }
+
+    private static decimal? RoundNullable(decimal? value) => value is null ? null : Math.Round(value.Value, 6);
 
     private static OeeRuntimeRates CalculateRuntimeRates(IReadOnlyList<OeeStatePoint> states, DateTimeOffset windowStartUtc, DateTimeOffset windowEndUtc)
     {
         if (states.Count == 0)
         {
-            return new OeeRuntimeRates(0m, 0m);
+            return new OeeRuntimeRates(0m, 0m, 0m);
         }
 
         var totalTicks = windowEndUtc.UtcTicks - windowStartUtc.UtcTicks;
@@ -278,12 +597,12 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
 
         if (loadingTicks <= 0)
         {
-            return new OeeRuntimeRates(0m, 0m);
+            return new OeeRuntimeRates(0m, 0m, 0m);
         }
 
         var availabilityRate = decimal.Divide(productiveRuntimeTicks, loadingTicks);
         var loadingRate = totalTicks <= 0 ? 0m : decimal.Divide(loadingTicks, totalTicks);
-        return new OeeRuntimeRates(availabilityRate, loadingRate);
+        return new OeeRuntimeRates(availabilityRate, loadingRate, decimal.Divide(productiveRuntimeTicks, TimeSpan.TicksPerHour));
     }
 
     private static bool IsProductiveRuntimeState(string state)
@@ -296,9 +615,201 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
         return EquipmentRuntimeDeviceStates.IsPlannedDownState(state);
     }
 
-    private sealed record OeeRuntimeRates(decimal AvailabilityRate, decimal LoadingRate);
+    private sealed record OeeRuntimeRates(decimal AvailabilityRate, decimal LoadingRate, decimal ProductiveRuntimeHours);
+
+    private sealed record OeeProductionFactors(
+        decimal? GoodQuantity,
+        decimal? ScrapQuantity,
+        decimal? ReworkQuantity,
+        string? OutputUomCode,
+        decimal? TheoreticalRatePerHour,
+        decimal? ExpectedOutputQuantity,
+        decimal? PerformanceRate,
+        decimal? QualityRate,
+        IReadOnlyCollection<string> DegradedReasons);
 
     private sealed record OeeStatePoint(DateTimeOffset OccurredAtUtc, string State);
+}
+
+public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<QueryRuntimeHoursQuery, RuntimeHoursResponse>
+{
+    private static readonly TimeSpan QueryChunkSize = TimeSpan.FromDays(366);
+
+    public async Task<RuntimeHoursResponse> Handle(QueryRuntimeHoursQuery request, CancellationToken cancellationToken)
+    {
+        var windowStartUtc = request.WindowStartUtc.ToUniversalTime();
+        var windowEndUtc = request.WindowEndUtc.ToUniversalTime();
+        var stateSampleCount = await CountStateSamplesAsync(request, windowStartUtc, windowEndUtc, cancellationToken);
+        var buckets = new Dictionary<string, RuntimeHoursBucket>(StringComparer.Ordinal);
+        for (var chunkStartUtc = windowStartUtc; chunkStartUtc < windowEndUtc;)
+        {
+            var chunkEndUtc = GetNextChunkEndUtc(chunkStartUtc, windowEndUtc);
+            if (chunkEndUtc > windowEndUtc)
+            {
+                chunkEndUtc = windowEndUtc;
+            }
+
+            MergeBuckets(buckets, await QueryChunkBucketsAsync(request, chunkStartUtc, chunkEndUtc, cancellationToken));
+            chunkStartUtc = chunkEndUtc;
+        }
+
+        var orderedBuckets = buckets.Values
+            .OrderBy(x => x.BusinessDate, StringComparer.Ordinal)
+            .ToArray();
+        return new RuntimeHoursResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            windowStartUtc,
+            windowEndUtc,
+            stateSampleCount,
+            Math.Round(orderedBuckets.Sum(x => x.RuntimeHours), 6),
+            Math.Round(orderedBuckets.Sum(x => x.LoadingHours), 6),
+            stateSampleCount > 0,
+            orderedBuckets
+                .Select(x => new RuntimeHoursDailyItem(
+                    x.BusinessDate,
+                    Math.Round(x.RuntimeHours, 6),
+                    Math.Round(x.LoadingHours, 6),
+                    x.StateSampleCount))
+                .ToArray());
+    }
+
+    private static DateTimeOffset GetNextChunkEndUtc(DateTimeOffset chunkStartUtc, DateTimeOffset windowEndUtc)
+    {
+        var chunkEndUtc = new DateTimeOffset(chunkStartUtc.UtcDateTime.Date.Add(QueryChunkSize), TimeSpan.Zero);
+        return chunkEndUtc < windowEndUtc ? chunkEndUtc : windowEndUtc;
+    }
+
+    private async Task<int> CountStateSamplesAsync(
+        QueryRuntimeHoursQuery request,
+        DateTimeOffset windowStartUtc,
+        DateTimeOffset windowEndUtc,
+        CancellationToken cancellationToken)
+    {
+        var hasCarryInState = await dbContext.DeviceStateSnapshots
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.OccurredAtUtc < windowStartUtc)
+            .AnyAsync(cancellationToken);
+        var inWindowStateCount = await dbContext.DeviceStateSnapshots
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.OccurredAtUtc >= windowStartUtc)
+            .Where(x => x.OccurredAtUtc < windowEndUtc)
+            .CountAsync(cancellationToken);
+
+        return inWindowStateCount + (hasCarryInState ? 1 : 0);
+    }
+
+    private async Task<IReadOnlyCollection<RuntimeHoursBucket>> QueryChunkBucketsAsync(
+        QueryRuntimeHoursQuery request,
+        DateTimeOffset chunkStartUtc,
+        DateTimeOffset chunkEndUtc,
+        CancellationToken cancellationToken)
+    {
+        var carryInState = await dbContext.DeviceStateSnapshots
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.OccurredAtUtc < chunkStartUtc)
+            .OrderByDescending(x => x.OccurredAtUtc)
+            .ThenByDescending(x => x.RecordedAtUtc)
+            .ThenByDescending(x => x.SourceSequence)
+            .Select(x => new RuntimeHoursStatePoint(chunkStartUtc, x.State))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var inWindowStates = await dbContext.DeviceStateSnapshots
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.OccurredAtUtc >= chunkStartUtc)
+            .Where(x => x.OccurredAtUtc < chunkEndUtc)
+            .OrderBy(x => x.OccurredAtUtc)
+            .ThenBy(x => x.RecordedAtUtc)
+            .ThenBy(x => x.SourceSequence)
+            .Select(x => new RuntimeHoursStatePoint(x.OccurredAtUtc, x.State))
+            .ToArrayAsync(cancellationToken);
+
+        var states = carryInState is null
+            ? inWindowStates
+            : [carryInState, .. inWindowStates];
+        return CalculateDailyRuntimeHours(states, chunkStartUtc, chunkEndUtc);
+    }
+
+    private static void MergeBuckets(Dictionary<string, RuntimeHoursBucket> target, IReadOnlyCollection<RuntimeHoursBucket> source)
+    {
+        foreach (var bucket in source)
+        {
+            target[bucket.BusinessDate] = target.TryGetValue(bucket.BusinessDate, out var existing)
+                ? existing with
+                {
+                    RuntimeHours = existing.RuntimeHours + bucket.RuntimeHours,
+                    LoadingHours = existing.LoadingHours + bucket.LoadingHours,
+                    StateSampleCount = existing.StateSampleCount + bucket.StateSampleCount,
+                }
+                : bucket;
+        }
+    }
+
+    private static IReadOnlyCollection<RuntimeHoursBucket> CalculateDailyRuntimeHours(
+        IReadOnlyList<RuntimeHoursStatePoint> states,
+        DateTimeOffset windowStartUtc,
+        DateTimeOffset windowEndUtc)
+    {
+        if (states.Count == 0)
+        {
+            return [];
+        }
+
+        var buckets = new Dictionary<string, RuntimeHoursBucket>(StringComparer.Ordinal);
+        for (var i = 0; i < states.Count; i++)
+        {
+            var segmentStart = states[i].OccurredAtUtc < windowStartUtc ? windowStartUtc : states[i].OccurredAtUtc;
+            var segmentEnd = i + 1 < states.Count ? states[i + 1].OccurredAtUtc : windowEndUtc;
+            if (segmentEnd > windowEndUtc)
+            {
+                segmentEnd = windowEndUtc;
+            }
+
+            if (segmentEnd <= segmentStart || EquipmentRuntimeDeviceStates.IsPlannedDownState(states[i].State))
+            {
+                continue;
+            }
+
+            var isProductive = EquipmentRuntimeDeviceStates.IsProductiveRuntime(states[i].State);
+            var cursor = segmentStart.ToUniversalTime();
+            var end = segmentEnd.ToUniversalTime();
+            while (cursor < end)
+            {
+                var nextDayUtc = new DateTimeOffset(cursor.UtcDateTime.Date.AddDays(1), TimeSpan.Zero);
+                var sliceEnd = nextDayUtc < end ? nextDayUtc : end;
+                var businessDate = DateOnly.FromDateTime(cursor.UtcDateTime).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                if (!buckets.TryGetValue(businessDate, out var bucket))
+                {
+                    bucket = new RuntimeHoursBucket(businessDate, 0m, 0m, 0);
+                }
+
+                var hours = (decimal)(sliceEnd - cursor).TotalHours;
+                buckets[businessDate] = bucket with
+                {
+                    RuntimeHours = bucket.RuntimeHours + (isProductive ? hours : 0m),
+                    LoadingHours = bucket.LoadingHours + hours,
+                    StateSampleCount = bucket.StateSampleCount + 1,
+                };
+                cursor = sliceEnd;
+            }
+        }
+
+        return buckets.Values.ToArray();
+    }
+
+    private sealed record RuntimeHoursStatePoint(DateTimeOffset OccurredAtUtc, string State);
+
+    private sealed record RuntimeHoursBucket(string BusinessDate, decimal RuntimeHours, decimal LoadingHours, int StateSampleCount);
 }
 
 public sealed record GetRuntimeCurrentStateQuery(

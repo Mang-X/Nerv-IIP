@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import type { FieldProVariants } from '.'
+import type { NvFieldVariants } from '.'
 import { cn } from '../../../lib/utils'
-import { fieldProVariants } from '.'
+import { nvFieldVariants } from '.'
 
 const props = withDefaults(
   defineProps<{
     class?: HTMLAttributes['class']
-    orientation?: FieldProVariants['orientation']
+    orientation?: NvFieldVariants['orientation']
   }>(),
   {
     orientation: 'vertical',
@@ -20,7 +20,7 @@ const props = withDefaults(
     role="group"
     data-slot="field-pro"
     :data-orientation="orientation"
-    :class="cn(fieldProVariants({ orientation }), props.class)"
+    :class="cn(nvFieldVariants({ orientation }), props.class)"
   >
     <slot />
   </div>

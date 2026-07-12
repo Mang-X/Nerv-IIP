@@ -24,9 +24,11 @@ public sealed class EquipmentToMaintenanceAcceptanceTests
             new EndpointSurface("BusinessIndustrialTelemetry", "POST", "/api/business/v1/iiot/alarms", "raiseBusinessIiotAlarm"),
             new EndpointSurface("BusinessIndustrialTelemetry", "GET", "/api/business/v1/iiot/alarms", "listBusinessIiotAlarms"),
             new EndpointSurface("BusinessIndustrialTelemetry", "GET", "/api/business/v1/iiot/devices/{deviceAssetId}/timeline", "queryBusinessIiotDeviceTimeline"),
+            new EndpointSurface("BusinessIndustrialTelemetry", "GET", "/api/business/v1/iiot/runtime-hours", "queryBusinessIiotRuntimeHours"),
             new EndpointSurface("BusinessMaintenance", "POST", "/api/business/v1/maintenance/work-orders", "createMaintenanceWorkOrder"),
             new EndpointSurface("BusinessMaintenance", "GET", "/api/business/v1/maintenance/work-orders", "listMaintenanceWorkOrders"),
             new EndpointSurface("BusinessMaintenance", "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/complete", "completeMaintenanceWorkOrder"),
+            new EndpointSurface("BusinessMaintenance", "POST", "/api/business/v1/maintenance/plans/generate-due", "generateDueMaintenanceWorkOrders"),
             new EndpointSurface("BusinessMes", "POST", "/api/business/v1/mes/schedules/run", "runBusinessMesSchedule"),
             new EndpointSurface("BusinessMes", "GET", "/api/business/v1/mes/capacity-impacts", "listBusinessMesCapacityImpacts"),
         ]);

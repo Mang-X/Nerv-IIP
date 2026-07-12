@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Messaging.CAP;
 using Microsoft.EntityFrameworkCore;
@@ -160,6 +162,183 @@ public sealed class IntegrationEventReliabilityTests
     }
 
     [Fact]
+    public async Task Dead_letter_store_filters_by_event_type_and_marks_failed_or_ignored()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        var first = await store.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                "sample.consumer",
+                CreateValidEvent("event-filter-001"),
+                "manual-replay-test",
+                "Stored for replay."),
+            CancellationToken.None);
+        await store.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                "sample.consumer",
+                CreateValidEvent("event-filter-002") with { EventType = "sample.OtherEvent" },
+                "manual-replay-test",
+                "Stored for replay."),
+            CancellationToken.None);
+
+        var filtered = await store.ListAsync(
+            new IntegrationEventDeadLetterQuery(
+                ConsumerName: "sample.consumer",
+                Status: IntegrationEventDeadLetterStatus.Pending,
+                EventType: "sample.Event",
+                Skip: 0,
+                Take: 10),
+            CancellationToken.None);
+        await store.MarkFailedAsync(
+            first.Id,
+            "replay-handler-failed",
+            "The downstream handler still rejects the event.",
+            DateTimeOffset.Parse("2026-07-03T00:00:00Z"),
+            CancellationToken.None);
+        await store.MarkIgnoredAsync(
+            first.Id,
+            "Operator confirmed this stale event should not be replayed.",
+            DateTimeOffset.Parse("2026-07-03T01:00:00Z"),
+            CancellationToken.None);
+
+        Assert.Equal(first.Id, Assert.Single(filtered).Id);
+        var ignored = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Ignored, CancellationToken.None));
+        Assert.Equal(first.Id, ignored.Id);
+        Assert.Equal("ignored", ignored.FailureCode);
+        Assert.Contains("stale event", ignored.FailureMessage);
+        Assert.NotNull(ignored.ReplayedAtUtc);
+    }
+
+    [Fact]
+    public async Task Dead_letter_replay_executor_marks_success_replayed_and_failed_attempt_failed()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        var success = await store.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                "sample.consumer",
+                CreateValidEvent("event-replay-001"),
+                "manual-replay-test",
+                "Stored for replay."),
+            CancellationToken.None);
+        var failure = await store.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                "sample.consumer",
+                CreateValidEvent("event-replay-002"),
+                "manual-replay-test",
+                "Stored for replay."),
+            CancellationToken.None);
+        var handler = new SampleReplayHandler(exceptionEventId: "event-replay-002");
+        var executor = new IntegrationEventDeadLetterReplayExecutor(
+            store,
+            [handler],
+            new StaticTimeProvider(DateTimeOffset.Parse("2026-07-03T02:00:00Z")));
+
+        var successResult = await executor.ReplayAsync(success.Id, CancellationToken.None);
+        var failureResult = await executor.ReplayAsync(failure.Id, CancellationToken.None);
+
+        Assert.True(successResult.Succeeded);
+        Assert.False(failureResult.Succeeded);
+        Assert.Equal(["event-replay-001", "event-replay-002"], handler.ReplayedEventIds);
+        Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Replayed, CancellationToken.None));
+        var failed = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Failed, CancellationToken.None));
+        Assert.Equal(failure.Id, failed.Id);
+        Assert.Equal("replay-handler-failed", failed.FailureCode);
+    }
+
+    [Fact]
+    public async Task Dead_letter_replay_executor_marks_failed_when_handler_resolution_throws()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        var message = await store.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                "sample.consumer",
+                CreateValidEvent("event-replay-resolution-001"),
+                "manual-replay-test",
+                "Stored for replay."),
+            CancellationToken.None);
+        var executor = new IntegrationEventDeadLetterReplayExecutor(
+            store,
+            [new ThrowingCanReplayHandler()],
+            new StaticTimeProvider(DateTimeOffset.Parse("2026-05-26T00:00:00Z")));
+
+        var result = await executor.ReplayAsync(message.Id, CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Failed.ToString(), result.Status);
+        var failed = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Failed, CancellationToken.None));
+        Assert.Equal(message.Id, failed.Id);
+        Assert.Equal("replay-handler-failed", failed.FailureCode);
+    }
+
+    [Fact]
+    public async Task Cap_retry_exhausted_subscribe_failure_dead_letters_handler_exception_without_throwing_from_callback()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        var services = new ServiceCollection()
+            .AddSingleton<IIntegrationEventDeadLetterStore>(store)
+            .AddSingleton<IntegrationEventCapFailureDeadLetterer>()
+            .BuildServiceProvider();
+        var capMessage = new DotNetCore.CAP.Messages.Message(
+            new Dictionary<string, string?>
+            {
+                [DotNetCore.CAP.Messages.Headers.Group] = "sample.consumer",
+                [DotNetCore.CAP.Messages.Headers.MessageName] = "sample.Event",
+                [DotNetCore.CAP.Messages.Headers.Exception] = "KnownException-->Business rule failed."
+            },
+            CreateValidEvent("event-handler-failed-001"));
+
+        var failure = new DotNetCore.CAP.Messages.FailedInfo
+        {
+            ServiceProvider = services,
+            MessageType = DotNetCore.CAP.Messages.MessageType.Subscribe,
+            Message = capMessage
+        };
+
+        var exception = await Record.ExceptionAsync(() =>
+            new IntegrationEventCapFailureDeadLetterer(store).HandleAsync(failure, CancellationToken.None));
+
+        Assert.Null(exception);
+        var deadLetter = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        Assert.Equal("event-handler-failed-001", deadLetter.EventId);
+        Assert.Equal("handler-retry-exhausted", deadLetter.FailureCode);
+        Assert.Contains("Business rule failed", deadLetter.FailureMessage);
+    }
+
+    [Fact]
+    public async Task Cap_retry_exhausted_subscribe_failure_dead_letters_raw_json_value_after_cap_persistence()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        var services = new ServiceCollection()
+            .AddSingleton<IIntegrationEventDeadLetterStore>(store)
+            .AddSingleton<IntegrationEventCapFailureDeadLetterer>()
+            .BuildServiceProvider();
+        var sourceEvent = CreateValidEvent("event-handler-failed-json-001");
+        var capMessage = new DotNetCore.CAP.Messages.Message(
+            new Dictionary<string, string?>
+            {
+                [DotNetCore.CAP.Messages.Headers.Group] = "sample.consumer",
+                [DotNetCore.CAP.Messages.Headers.MessageName] = typeof(SampleIntegrationEvent).FullName,
+                [DotNetCore.CAP.Messages.Headers.Exception] = "KnownException-->Business rule failed."
+            },
+            JsonSerializer.Serialize(sourceEvent, sourceEvent.GetType()));
+
+        var failure = new DotNetCore.CAP.Messages.FailedInfo
+        {
+            ServiceProvider = services,
+            MessageType = DotNetCore.CAP.Messages.MessageType.Subscribe,
+            Message = capMessage
+        };
+
+        var exception = await Record.ExceptionAsync(() =>
+            new IntegrationEventCapFailureDeadLetterer(store).HandleAsync(failure, CancellationToken.None));
+
+        Assert.Null(exception);
+        var deadLetter = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        Assert.Equal("event-handler-failed-json-001", deadLetter.EventId);
+        Assert.Equal("handler-retry-exhausted", deadLetter.FailureCode);
+        Assert.Equal("value", JsonSerializer.Deserialize<SampleIntegrationEvent>(deadLetter.EventJson)?.Payload.Value);
+    }
+
+    [Fact]
     public async Task Persistent_dead_letter_store_marks_pending_message_as_replayed_with_relational_mapping()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -200,6 +379,66 @@ public sealed class IntegrationEventReliabilityTests
         Assert.Equal("event-004", replayed.EventId);
         Assert.NotNull(replayed.ReplayedAtUtc);
         Assert.Empty(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Persistent_dead_letter_store_returns_metrics_by_status_and_event_type()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<TestDeadLetterDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var dbContext = new TestDeadLetterDbContext(options);
+        await dbContext.Database.EnsureCreatedAsync();
+        var store = new PersistentIntegrationEventDeadLetterStore<TestDeadLetterDbContext>(dbContext);
+        var pending = await store.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                "sample.consumer",
+                CreateValidEvent("event-metrics-001"),
+                "manual-test",
+                "Stored for metrics."),
+            CancellationToken.None);
+        var failed = await store.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                "sample.consumer",
+                CreateValidEvent("event-metrics-002"),
+                "manual-test",
+                "Stored for metrics."),
+            CancellationToken.None);
+        var ignored = await store.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                "sample.consumer",
+                CreateValidEvent("event-metrics-003"),
+                "manual-test",
+                "Stored for metrics."),
+            CancellationToken.None);
+        var replayed = await store.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                "sample.consumer",
+                CreateValidEvent("event-metrics-004") with { EventType = "sample.OtherEvent" },
+                "manual-test",
+                "Stored for metrics."),
+            CancellationToken.None);
+
+        await store.MarkFailedAsync(failed.Id, "replay-handler-failed", "Replay failed.", DateTimeOffset.UtcNow, CancellationToken.None);
+        await store.MarkIgnoredAsync(ignored.Id, "Stale event.", DateTimeOffset.UtcNow, CancellationToken.None);
+        await store.MarkReplayedAsync(replayed.Id, DateTimeOffset.UtcNow, CancellationToken.None);
+
+        var metrics = await store.GetMetricsAsync(CancellationToken.None);
+
+        Assert.Equal(1, metrics.PendingCount);
+        Assert.Equal(1, metrics.FailedCount);
+        Assert.Equal(1, metrics.IgnoredCount);
+        Assert.Equal(1, metrics.ReplayedCount);
+        var sampleMetrics = Assert.Single(metrics.EventTypes, x => x.EventType == pending.EventType);
+        Assert.Equal(1, sampleMetrics.PendingCount);
+        Assert.Equal(1, sampleMetrics.FailedCount);
+        Assert.Equal(1, sampleMetrics.IgnoredCount);
+        Assert.Equal(0, sampleMetrics.ReplayedCount);
+        var otherMetrics = Assert.Single(metrics.EventTypes, x => x.EventType == replayed.EventType);
+        Assert.Equal(0, otherMetrics.PendingCount);
+        Assert.Equal(1, otherMetrics.ReplayedCount);
     }
 
     [Fact]
@@ -458,5 +697,40 @@ public sealed class IntegrationEventReliabilityTests
         {
             return new SampleProcessedIntegrationEvent(record);
         }
+    }
+
+    private sealed class SampleReplayHandler(string? exceptionEventId = null) : IIntegrationEventDeadLetterReplayHandler
+    {
+        public List<string> ReplayedEventIds { get; } = [];
+
+        public bool CanReplay(IntegrationEventDeadLetterMessage message) => message.EventClrType.Contains(nameof(SampleIntegrationEvent), StringComparison.Ordinal);
+
+        public Task ReplayAsync(IntegrationEventDeadLetterMessage message, CancellationToken cancellationToken)
+        {
+            var integrationEvent = JsonSerializer.Deserialize<SampleIntegrationEvent>(message.EventJson)
+                ?? throw new InvalidOperationException("Could not deserialize sample event.");
+            ReplayedEventIds.Add(integrationEvent.EventId);
+            if (integrationEvent.EventId == exceptionEventId)
+            {
+                throw new InvalidOperationException("The downstream handler still rejects the event.");
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingCanReplayHandler : IIntegrationEventDeadLetterReplayHandler
+    {
+        public bool CanReplay(IntegrationEventDeadLetterMessage message) => throw new InvalidOperationException("Handler registry is ambiguous.");
+
+        public Task ReplayAsync(IntegrationEventDeadLetterMessage message, CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException("Replay should not be called when handler matching fails.");
+        }
+    }
+
+    private sealed class StaticTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }

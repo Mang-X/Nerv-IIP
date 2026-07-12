@@ -1,33 +1,41 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsWarehouseTaskItem } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
+import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsPickingTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProClose,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  FieldPro,
-  FieldProError,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  StatusBadgePro,
-  Toolbar,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogClose,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvField,
+  NvFieldError,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvStatusBadge,
+  NvToolbar,
   toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '拣货任务', requiredPermissions: ['business.wms.shipments.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '拣货任务',
+    requiredPermissions: ['business.wms.shipments.read'],
+  },
+})
 
 const {
   filters,
@@ -40,9 +48,22 @@ const {
   createPickingPending,
   createPickingError,
 } = useWmsPickingTasks()
+const route = useRoute()
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.locationCode, () => filters.keyword],
 })
+
+watch(
+  () => route.query,
+  (query) => {
+    const location = firstQuery(query.locationCode)
+    const sku = firstQuery(query.skuCode)
+
+    if (location) filters.locationCode = location
+    if (sku) filters.keyword = sku
+  },
+  { immediate: true },
+)
 
 // 拣货任务挂在出库单下（领料齐套 → 出库拣货扣减）。创建需绑定出库单与单行任务。
 const createOpen = shallowRef(false)
@@ -67,8 +88,13 @@ function openCreate() {
   createOpen.value = true
 }
 async function submitCreate() {
-  if (!createForm.outboundOrderId.trim() || !createForm.taskNo.trim() || !createForm.lineNo.trim()
-    || !createForm.fromLocationCode.trim() || !createForm.toLocationCode.trim()) {
+  if (
+    !createForm.outboundOrderId.trim() ||
+    !createForm.taskNo.trim() ||
+    !createForm.lineNo.trim() ||
+    !createForm.fromLocationCode.trim() ||
+    !createForm.toLocationCode.trim()
+  ) {
     createError.value = '请填写出库单、任务号、行号与起讫库位。'
     return
   }
@@ -91,16 +117,33 @@ async function submitCreate() {
   }
 }
 
-const errorMessage = computed(() => formatError(pickingTasksError.value ?? createPickingError.value))
+const errorMessage = computed(() =>
+  formatError(pickingTasksError.value ?? createPickingError.value),
+)
 
 type PickingRow = BusinessConsoleWmsWarehouseTaskItem
-const columns: DataTableProColumn<PickingRow>[] = [
-  { key: 'taskNo', header: '任务号', cellClass: 'font-medium', accessor: (r) => r.taskNo ?? r.warehouseTaskId ?? '无' },
+const columns: NvDataTableColumn<PickingRow>[] = [
+  {
+    key: 'taskNo',
+    header: '任务号',
+    cellClass: 'font-medium',
+    accessor: (r) => r.taskNo ?? r.warehouseTaskId ?? '无',
+  },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'sourceOrderNo', header: '来源单据', accessor: (r) => r.sourceOrderNo ?? '—' },
   { key: 'skuCode', header: '物料', accessor: (r) => r.skuCode ?? '—' },
-  { key: 'location', header: '起讫库位', accessor: (r) => `${r.fromLocationCode ?? '—'} → ${r.toLocationCode ?? '—'}` },
-  { key: 'quantity', header: '数量', align: 'end', accessor: (r) => formatQuantity(r.executedQuantity ?? r.plannedQuantity) },
+  { key: 'inventoryContext', header: '库存上下文', width: 'w-72' },
+  {
+    key: 'location',
+    header: '起讫库位',
+    accessor: (r) => `${r.fromLocationCode ?? '—'} → ${r.toLocationCode ?? '—'}`,
+  },
+  {
+    key: 'quantity',
+    header: '数量',
+    align: 'end',
+    accessor: (r) => formatQuantity(r.executedQuantity ?? r.plannedQuantity),
+  },
   { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
 ]
 
@@ -118,34 +161,63 @@ function formatDateTime(value?: string | null) {
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
+function firstQuery(value: unknown) {
+  if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
+  return typeof value === 'string' ? value : ''
+}
 </script>
 
 <template>
   <BusinessLayout>
-    <PageHeader title="拣货任务" :breadcrumbs="[{ label: '仓储作业' }]" :count="`${pickingTasksTotal} 个拣货任务`">
+    <NvPageHeader
+      title="拣货任务"
+      :breadcrumbs="[{ label: '仓储作业' }]"
+      :count="`${pickingTasksTotal} 个拣货任务`"
+    >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="pickingTasksPending" @click="refreshPickingTasks">
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="pickingTasksPending"
+          @click="refreshPickingTasks"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" @click="openCreate">
+        </NvButton>
+        <NvButton size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建拣货任务
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <Toolbar :show-search="false">
+    <NvToolbar :show-search="false">
       <template #filters>
-        <InputPro v-model="filters.keyword" class="h-9 w-40" placeholder="任务号/物料" aria-label="关键字" />
-        <InputPro v-model="filters.locationCode" class="h-9 w-28" placeholder="库位" aria-label="库位" />
-        <InputPro v-model="filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="拣货任务状态" />
+        <NvInput
+          v-model="filters.keyword"
+          class="h-9 w-40"
+          placeholder="任务号/物料"
+          aria-label="关键字"
+        />
+        <NvInput
+          v-model="filters.locationCode"
+          class="h-9 w-28"
+          placeholder="库位"
+          aria-label="库位"
+        />
+        <NvInput
+          v-model="filters.status"
+          class="h-9 w-28"
+          placeholder="状态（可选）"
+          aria-label="拣货任务状态"
+        />
       </template>
-    </Toolbar>
+    </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -160,54 +232,88 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="暂无拣货任务。领料齐套或出库拣货时由系统派生，或在此手工登记。"
     >
-      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
-    </DataTablePro>
+      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-inventoryContext="{ row }">
+        <WmsInventoryContextPanel
+          compact
+          :sku-code="row.skuCode"
+          :uom-code="row.uomCode"
+          :site-code="row.siteCode"
+          :location-code="row.fromLocationCode"
+          gap-message="后端缺口：拣货任务列表暂未返回逐行可用量、批次/序列号、冻结与预留明细；可带当前任务上下文到 Inventory 查看。"
+        />
+      </template>
+    </NvDataTable>
 
-
-    <DialogPro v-model:open="createOpen">
-      <DialogProContent>
-        <DialogProHeader>
-          <DialogProTitle>新建拣货任务</DialogProTitle>
-          <DialogProDescription>从拣货库位拣出出库单所需库存，完成出库拣货扣减。</DialogProDescription>
-        </DialogProHeader>
+    <NvDialog v-model:open="createOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>新建拣货任务</NvDialogTitle>
+          <NvDialogDescription
+            >从拣货库位拣出出库单所需库存，完成出库拣货扣减。</NvDialogDescription
+          >
+        </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
-          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-            <FieldPro class="sm:col-span-2">
-              <FieldProLabel for="wms-picking-outbound">出库单</FieldProLabel>
-              <InputPro id="wms-picking-outbound" v-model="createForm.outboundOrderId" autocomplete="off" placeholder="出库单标识" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="wms-picking-no">任务号</FieldProLabel>
-              <InputPro id="wms-picking-no" v-model="createForm.taskNo" autocomplete="off" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="wms-picking-line">行号</FieldProLabel>
-              <InputPro id="wms-picking-line" v-model="createForm.lineNo" autocomplete="off" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="wms-picking-from">拣货库位</FieldProLabel>
-              <InputPro id="wms-picking-from" v-model="createForm.fromLocationCode" autocomplete="off" placeholder="货架库位" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="wms-picking-to">目标库位</FieldProLabel>
-              <InputPro id="wms-picking-to" v-model="createForm.toLocationCode" autocomplete="off" placeholder="集货/暂存库位" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="wms-picking-qty">拣货数量</FieldProLabel>
-              <InputPro id="wms-picking-qty" v-model="createForm.quantity" type="number" min="0" step="any" autocomplete="off" placeholder="可选" />
-            </FieldPro>
-          </FieldProGroup>
+          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+            <NvField class="sm:col-span-2">
+              <NvFieldLabel for="wms-picking-outbound">出库单</NvFieldLabel>
+              <NvInput
+                id="wms-picking-outbound"
+                v-model="createForm.outboundOrderId"
+                autocomplete="off"
+                placeholder="出库单标识"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="wms-picking-no">任务号</NvFieldLabel>
+              <NvInput id="wms-picking-no" v-model="createForm.taskNo" autocomplete="off" />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="wms-picking-line">行号</NvFieldLabel>
+              <NvInput id="wms-picking-line" v-model="createForm.lineNo" autocomplete="off" />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="wms-picking-from">拣货库位</NvFieldLabel>
+              <NvInput
+                id="wms-picking-from"
+                v-model="createForm.fromLocationCode"
+                autocomplete="off"
+                placeholder="货架库位"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="wms-picking-to">目标库位</NvFieldLabel>
+              <NvInput
+                id="wms-picking-to"
+                v-model="createForm.toLocationCode"
+                autocomplete="off"
+                placeholder="集货/暂存库位"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="wms-picking-qty">拣货数量</NvFieldLabel>
+              <NvInput
+                id="wms-picking-qty"
+                v-model="createForm.quantity"
+                type="number"
+                min="0"
+                step="any"
+                autocomplete="off"
+                placeholder="可选"
+              />
+            </NvField>
+          </NvFieldGroup>
 
-          <FieldProError v-if="createError" :errors="[createError]" />
+          <NvFieldError v-if="createError" :errors="[createError]" />
 
-          <DialogProFooter>
-            <DialogProClose as-child>
-              <ButtonPro type="button" variant="outline">取消</ButtonPro>
-            </DialogProClose>
-            <ButtonPro type="submit" :disabled="createPickingPending">创建拣货任务</ButtonPro>
-          </DialogProFooter>
+          <NvDialogFooter>
+            <NvDialogClose as-child>
+              <NvButton type="button" variant="outline">取消</NvButton>
+            </NvDialogClose>
+            <NvButton type="submit" :disabled="createPickingPending">创建拣货任务</NvButton>
+          </NvDialogFooter>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>

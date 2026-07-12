@@ -215,6 +215,46 @@ public sealed class OperationTaskFailedNotificationConsumerTests
     }
 
     [Fact]
+    public async Task Handle_approval_rejected_notifies_initiator_once_on_redelivery()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+        var integrationEvent = CreateBusinessApprovalRejectedEvent();
+
+        await HandleBusinessApprovalRejectedAsync(factory, integrationEvent);
+        await HandleBusinessApprovalRejectedAsync(factory, integrationEvent);
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents.Include(x => x.Messages).SingleAsync();
+        Assert.Equal("businessApproval.ApprovalRejected", intent.SourceEventType);
+        Assert.Equal("user:requester-001", Assert.Single(intent.Messages).RecipientRef);
+    }
+
+    [Fact]
+    public async Task Approval_rejection_consumer_ignores_other_completion_types_without_dead_letter()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+        await HandleBusinessApprovalRejectedAsync(factory, CreateBusinessApprovalCompletedEvent(ApprovalIntegrationEventTypes.ApprovalApproved, ApprovalResults.Approved));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        Assert.Empty(await dbContext.NotificationIntents.ToListAsync());
+        Assert.Empty(await deadLetters.ListAsync(ApprovalRejectedIntegrationEventHandlerForNotification.ConsumerName, null, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Approval_rejection_consumer_tolerates_legacy_event_without_initiator()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+        await HandleBusinessApprovalRejectedAsync(factory, CreateBusinessApprovalCompletedEvent(ApprovalIntegrationEventTypes.ApprovalRejected, ApprovalResults.Rejected, initiatorRef: null));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(await dbContext.NotificationIntents.ToListAsync());
+    }
+
+    [Fact]
     public async Task Handle_approval_action_recorded_creates_task_for_new_assignee()
     {
         using var factory = new NotificationConsumerWebApplicationFactory();
@@ -350,6 +390,42 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         Assert.Equal(1, await dbContext.NotificationMessages.CountAsync());
         Assert.Equal(1, await dbContext.NotificationTasks.CountAsync());
         Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Handle_schedule_plan_invalidated_creates_planner_reschedule_task_once()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Scheduling:InvalidationNotification:RecipientRefs:0"] = "role:scheduler",
+        });
+        var integrationEvent = CreateSchedulePlanInvalidatedEvent(
+            "event-schedule-invalidated",
+            "scheduling-invalidated:plan-001:maintenance-event-001");
+
+        await HandleSchedulePlanInvalidatedAsync(factory, integrationEvent);
+        await HandleSchedulePlanInvalidatedAsync(factory, integrationEvent);
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+        var processed = await dbContext.ProcessedIntegrationEvents.SingleAsync();
+
+        Assert.Equal("business-scheduling", intent.SourceService);
+        Assert.Equal(SchedulingIntegrationEventTypes.SchedulePlanInvalidated, intent.SourceEventType);
+        Assert.Equal("event-schedule-invalidated", intent.SourceEventId);
+        Assert.Equal(NotificationIntentTypes.Task, intent.IntentType);
+        Assert.Equal(NotificationContractConstants.SeverityWarning, intent.Severity);
+        Assert.Equal("schedule-plan", intent.ResourceType);
+        Assert.Equal("plan-001", intent.ResourceId);
+        Assert.Equal("role:scheduler", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Single(intent.Tasks);
+        Assert.Contains("equipmentUnavailable", intent.Summary, StringComparison.Ordinal);
+        Assert.Equal(SchedulePlanInvalidatedIntegrationEventHandlerForNotification.ConsumerName, processed.ConsumerName);
+        Assert.Equal("scheduling-invalidated:plan-001:maintenance-event-001", processed.IdempotencyKey);
     }
 
     [Fact]
@@ -544,6 +620,41 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
     }
 
+    private static async Task HandleBusinessApprovalRejectedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        ApprovalCompletedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<ApprovalCompletedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<ApprovalRejectedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static ApprovalCompletedIntegrationEvent CreateBusinessApprovalRejectedEvent() =>
+        CreateBusinessApprovalCompletedEvent(ApprovalIntegrationEventTypes.ApprovalRejected, ApprovalResults.Rejected, "user:requester-001");
+
+    private static ApprovalCompletedIntegrationEvent CreateBusinessApprovalCompletedEvent(string eventType, string result, string? initiatorRef = "user:requester-001") => new(
+        "event-business-approval-rejected",
+        eventType,
+        ApprovalIntegrationEventVersions.V1,
+        DateTimeOffset.Parse("2026-07-11T00:00:00Z"),
+        ApprovalIntegrationEventSources.BusinessApproval,
+        "chain-001",
+        "decision-001",
+        "org-001",
+        "env-dev",
+        "user:approver-001",
+        "approval-rejected:chain-001",
+        new ApprovalCompletedPayload(
+            "chain-001",
+            result,
+            "user",
+            "approver-001",
+            null,
+            null,
+            new ApprovalDocumentReferencePayload("business-erp", "purchase-order", "PO-001", null),
+            initiatorRef));
+
     private static async Task HandleApprovalStepResolvedAsync(
         NotificationConsumerWebApplicationFactory factory,
         ApprovalStepResolvedIntegrationEvent integrationEvent)
@@ -571,6 +682,16 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         using var scope = factory.Services.CreateScope();
         IIntegrationEventHandler<ScheduleConflictDetectedIntegrationEvent> handler =
             ActivatorUtilities.CreateInstance<ScheduleConflictDetectedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static async Task HandleSchedulePlanInvalidatedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        SchedulePlanInvalidatedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<SchedulePlanInvalidatedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<SchedulePlanInvalidatedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
     }
 
@@ -829,6 +950,46 @@ public sealed class OperationTaskFailedNotificationConsumerTests
                 WorkOrderId: workOrderId!,
                 OperationId: "op-001",
                 ResourceId: "res-001"));
+    }
+
+    private static SchedulePlanInvalidatedIntegrationEvent CreateSchedulePlanInvalidatedEvent(
+        string eventId,
+        string idempotencyKey)
+    {
+        return new SchedulePlanInvalidatedIntegrationEvent(
+            EventId: eventId,
+            EventType: SchedulingIntegrationEventTypes.SchedulePlanInvalidated,
+            EventVersion: SchedulingIntegrationEventVersions.V1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-06-21T09:05:00Z"),
+            SourceService: SchedulingIntegrationEventSources.BusinessScheduling,
+            CorrelationId: $"corr-{eventId}",
+            CausationId: "maintenance-event-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "system:business-scheduling",
+            IdempotencyKey: idempotencyKey,
+            Payload: new SchedulePlanInvalidatedPayload(
+                PlanId: "plan-001",
+                ProblemId: "problem-001",
+                ContractVersion: 1,
+                AlgorithmVersion: "aps-lite-v1",
+                ProblemFingerprint: "fingerprint-001",
+                PlanStatus: "generated",
+                ReasonCode: "equipmentUnavailable",
+                SourceEventType: "maintenance.AssetUnavailable",
+                SourceEventId: "maintenance-event-001",
+                AffectedResourceIds: ["DEV-OIL-01"],
+                AffectedOperations:
+                [
+                    new SchedulePlanAffectedOperationPayload(
+                        WorkOrderId: "WO-APS-001",
+                        OperationId: "OP-10",
+                        OperationSequence: 10,
+                        ResourceId: "DEV-OIL-01",
+                        WorkCenterId: "WC-OIL",
+                        StartUtc: DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
+                        EndUtc: DateTimeOffset.Parse("2026-06-01T13:30:00Z"))
+                ]));
     }
 
     private sealed class NotificationConsumerWebApplicationFactory(IReadOnlyDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>

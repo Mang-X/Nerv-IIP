@@ -1,3 +1,10 @@
+/* Global cascade-layer order (ADR 0020 §4.1) — MUST be the first statement so the
+   whole app agrees on precedence: reset/theme < tokens < base < components <
+   nv-components < utilities < nv-overrides < app. Host (app) styles stay sovereign;
+   library component styles can't be clobbered by accident, and can be intentionally
+   overridden from `@layer app`. */
+@layer theme, nv-tokens, base, components, nv-components, utilities, nv-overrides, app;
+
 @import 'tailwindcss';
 
 @source '../../../../packages/ui/src';
@@ -10,11 +17,16 @@
 
 /* Design System v2 tokens — single source of truth in @nerv-iip/ui */
 @import '../../../../packages/ui/src/styles/theme.css';
+/* Host-override decorations (overlay glass, sidebar premium) — imported into
+   nv-overrides so they win over Tailwind utilities without `!important`. */
+@import '../../../../packages/ui/src/styles/overrides.css' layer(nv-overrides);
 
-/*
- * 当前选中的左侧菜单项：用主题色（`--primary`，随主题切换；中性主题即中性）淡染高亮。
- * 用 `--primary` 而非 `--brand`，这样选「中性」菜单也回中性、选彩色菜单跟着变；不加额外竖条/标记。
- */
-[data-slot='sidebar-menu-item'] a[data-active='true'] {
-  background-color: color-mix(in oklab, var(--primary) 16%, transparent);
+@layer app {
+  /*
+   * 当前选中的左侧菜单项：用主题色（`--primary`，随主题切换；中性主题即中性）淡染高亮。
+   * 用 `--primary` 而非 `--nv-brand`，这样选「中性」菜单也回中性、选彩色菜单跟着变；不加额外竖条/标记。
+   */
+  [data-slot='sidebar-menu-item'] a[data-active='true'] {
+    background-color: color-mix(in oklab, var(--primary) 16%, transparent);
+  }
 }

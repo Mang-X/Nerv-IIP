@@ -12,7 +12,12 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive } from 'vue'
-import { bindBusinessContext, hasBusinessContext, type BusinessContextFields } from './businessContextBinding'
+import {
+  bindBusinessContext,
+  hasBusinessContext,
+  refetchWithBusinessContext,
+  type BusinessContextFields,
+} from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
@@ -100,7 +105,7 @@ export function useQualityInspectionPlans(initialFilters: Partial<QualityListFil
     inspectionPlansError: plansQuery.error,
     inspectionPlansPending: plansQuery.isLoading,
     inspectionPlansTotal: computed(() => listTotal(plansQuery.data.value)),
-    refreshInspectionPlans: plansQuery.refetch,
+    refreshInspectionPlans: () => refetchWithBusinessContext(filters, plansQuery),
   }
 }
 
@@ -152,7 +157,7 @@ export function useQualityNcrs(initialFilters: Partial<QualityListFilters> = {})
     ncrsError: ncrsQuery.error,
     ncrsPending: ncrsQuery.isLoading,
     ncrsTotal: computed(() => listTotal(ncrsQuery.data.value)),
-    refreshNcrs: ncrsQuery.refetch,
+    refreshNcrs: () => refetchWithBusinessContext(filters, ncrsQuery),
     submitDisposition: (ncrId: string, body: BusinessConsoleNcrDispositionRequest) =>
       submitDispositionMutation.mutateAsync({
         path: {

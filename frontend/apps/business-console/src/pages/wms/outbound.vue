@@ -1,41 +1,48 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsOutboundOrderItem } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
+import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsOutboundOrders } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  CheckboxPro,
-  DataTablePro,
-  DialogPro,
-  DialogProClose,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  FieldPro,
-  FieldProError,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  SectionCard,
-  SectionCards,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
-  StatusBadgePro,
-  Toolbar,
+  NvButton,
+  NvCheckbox,
+  NvDataTable,
+  NvDialog,
+  NvDialogClose,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvField,
+  NvFieldError,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvSectionCard,
+  NvSectionCards,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
+  NvStatusBadge,
+  NvToolbar,
   toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '出库发货', requiredPermissions: ['business.wms.shipments.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '出库发货',
+    requiredPermissions: ['business.wms.shipments.read'],
+  },
+})
 
 const {
   filters,
@@ -53,7 +60,11 @@ const {
 } = useWmsOutboundOrders()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
-const errorMessage = computed(() => formatError(outboundOrdersError.value ?? completeOutboundError.value ?? createOutboundError.value))
+const errorMessage = computed(() =>
+  formatError(
+    outboundOrdersError.value ?? completeOutboundError.value ?? createOutboundError.value,
+  ),
+)
 
 // 后端 WMS OutboundOrderLine 要求 uomCode/正数 requestedQuantity/pickLocationCode/qualityStatus/ownerType 均非空。
 const QUALITY_OPTIONS = [
@@ -78,7 +89,15 @@ interface OutboundLine {
   ownerType: string
 }
 function emptyLine(): OutboundLine {
-  return { skuCode: '', uomCode: '', requestedQuantity: '', pickLocationCode: '', lotNo: '', qualityStatus: 'available', ownerType: 'owned' }
+  return {
+    skuCode: '',
+    uomCode: '',
+    requestedQuantity: '',
+    pickLocationCode: '',
+    lotNo: '',
+    qualityStatus: 'available',
+    ownerType: 'owned',
+  }
 }
 const createOpen = shallowRef(false)
 const createError = shallowRef('')
@@ -107,8 +126,12 @@ function removeLine(index: number) {
   if (createForm.lines.length === 0) createForm.lines.push(emptyLine())
 }
 async function submitCreate() {
-  if (!createForm.outboundOrderNo.trim() || !createForm.sourceDocumentType.trim()
-    || !createForm.sourceDocumentId.trim() || !createForm.siteCode.trim()) {
+  if (
+    !createForm.outboundOrderNo.trim() ||
+    !createForm.sourceDocumentType.trim() ||
+    !createForm.sourceDocumentId.trim() ||
+    !createForm.siteCode.trim()
+  ) {
     createError.value = '请填写出库单号、来源类型、来源单据与工厂。'
     return
   }
@@ -191,8 +214,13 @@ const openCount = computed(
 )
 
 type OutboundRow = BusinessConsoleWmsOutboundOrderItem
-const columns: DataTableProColumn<OutboundRow>[] = [
-  { key: 'outboundOrderNo', header: '出库单号', cellClass: 'font-medium', accessor: (r) => r.outboundOrderNo ?? '无' },
+const columns: NvDataTableColumn<OutboundRow>[] = [
+  {
+    key: 'outboundOrderNo',
+    header: '出库单号',
+    cellClass: 'font-medium',
+    accessor: (r) => r.outboundOrderNo ?? '无',
+  },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-28' },
@@ -213,33 +241,53 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="出库发货" :breadcrumbs="[{ label: '仓储作业' }]" :count="`${outboundOrders.length} 张出库单`">
+    <NvPageHeader
+      title="出库发货"
+      :breadcrumbs="[{ label: '仓储作业' }]"
+      :count="`${outboundOrders.length} 张出库单`"
+    >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="outboundOrdersPending" @click="refreshOutboundOrders">
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="outboundOrdersPending"
+          @click="refreshOutboundOrders"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" @click="openCreate">
+        </NvButton>
+        <NvButton size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建出库单
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <SectionCards :columns="2">
-      <SectionCard description="出库单" :value="outboundOrdersTotal" hint="后端返回总数" />
-      <SectionCard description="本页未完成" :value="openCount" hint="待拣货/复核/发运" />
-    </SectionCards>
+    <NvSectionCards :columns="2">
+      <NvSectionCard description="出库单" :value="outboundOrdersTotal" hint="后端返回总数" />
+      <NvSectionCard description="本页未完成" :value="openCount" hint="待拣货/复核/发运" />
+    </NvSectionCards>
 
-    <Toolbar :show-search="false">
+    <WmsInventoryContextPanel
+      title="出库库存上下文"
+      gap-message="后端缺口：出库单列表暂未返回 SKU、批次/序列号、预留、冻结或来源单据字段；本页不空跳、不伪造库存余额。请从拣货任务行进入 Inventory 查看具体库存上下文。"
+    />
+
+    <NvToolbar :show-search="false">
       <template #filters>
-        <InputPro v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="出库单状态" />
+        <NvInput
+          v-model="filters.status"
+          class="h-9 w-32"
+          placeholder="状态（可选）"
+          aria-label="出库单状态"
+        />
       </template>
-    </Toolbar>
+    </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -254,9 +302,9 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="暂无出库单。发货作业产生出库单后会出现在这里。"
     >
-      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-actions="{ row }">
-        <ButtonPro
+        <NvButton
           size="sm"
           type="button"
           variant="outline"
@@ -265,109 +313,173 @@ function formatError(error: unknown) {
           @click="openReview(row)"
         >
           完成复核
-        </ButtonPro>
+        </NvButton>
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
-
-    <DialogPro v-model:open="reviewOpen">
-      <DialogProContent>
-        <DialogProHeader>
-          <DialogProTitle>出库复核</DialogProTitle>
-          <DialogProDescription>
+    <NvDialog v-model:open="reviewOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>出库复核</NvDialogTitle>
+          <NvDialogDescription>
             对出库单 {{ pendingOrder?.outboundOrderNo ?? '' }} 进行发货前复核。
-          </DialogProDescription>
-        </DialogProHeader>
+          </NvDialogDescription>
+        </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitReview">
-          <FieldProGroup>
-            <FieldPro>
-              <FieldProLabel for="wms-pack-review-no">复核单号</FieldProLabel>
-              <InputPro id="wms-pack-review-no" v-model="form.packReviewNo" :aria-invalid="Boolean(formError)" autocomplete="off" />
-              <FieldProError v-if="formError" :errors="[formError]" />
-            </FieldPro>
-            <FieldPro orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
-              <FieldProLabel for="wms-pack-passed">复核通过</FieldProLabel>
-              <CheckboxPro id="wms-pack-passed" v-model:checked="form.passed" />
-            </FieldPro>
-          </FieldProGroup>
-          <DialogProFooter>
-            <DialogProClose as-child>
-              <ButtonPro type="button" variant="outline">取消</ButtonPro>
-            </DialogProClose>
-            <ButtonPro type="submit" :disabled="completeOutboundPending">提交复核</ButtonPro>
-          </DialogProFooter>
+          <NvFieldGroup>
+            <NvField>
+              <NvFieldLabel for="wms-pack-review-no">复核单号</NvFieldLabel>
+              <NvInput
+                id="wms-pack-review-no"
+                v-model="form.packReviewNo"
+                :aria-invalid="Boolean(formError)"
+                autocomplete="off"
+              />
+              <NvFieldError v-if="formError" :errors="[formError]" />
+            </NvField>
+            <NvField
+              orientation="horizontal"
+              class="items-center justify-between rounded-lg border p-3"
+            >
+              <NvFieldLabel for="wms-pack-passed">复核通过</NvFieldLabel>
+              <NvCheckbox id="wms-pack-passed" v-model:checked="form.passed" />
+            </NvField>
+          </NvFieldGroup>
+          <NvDialogFooter>
+            <NvDialogClose as-child>
+              <NvButton type="button" variant="outline">取消</NvButton>
+            </NvDialogClose>
+            <NvButton type="submit" :disabled="completeOutboundPending">提交复核</NvButton>
+          </NvDialogFooter>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
 
-    <DialogPro v-model:open="createOpen">
-      <DialogProContent class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl">
-        <DialogProHeader>
-          <DialogProTitle>新建出库单</DialogProTitle>
-          <DialogProDescription>登记出库发货单的来源与明细，提交后进入拣货/复核流程。</DialogProDescription>
-        </DialogProHeader>
+    <NvDialog v-model:open="createOpen">
+      <NvDialogContent class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl">
+        <NvDialogHeader>
+          <NvDialogTitle>新建出库单</NvDialogTitle>
+          <NvDialogDescription
+            >登记出库发货单的来源与明细，提交后进入拣货/复核流程。</NvDialogDescription
+          >
+        </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
-          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-            <FieldPro>
-              <FieldProLabel for="wms-out-no">出库单号</FieldProLabel>
-              <InputPro id="wms-out-no" v-model="createForm.outboundOrderNo" autocomplete="off" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="wms-out-site">工厂</FieldProLabel>
-              <InputPro id="wms-out-site" v-model="createForm.siteCode" autocomplete="off" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="wms-out-srctype">来源类型</FieldProLabel>
-              <InputPro id="wms-out-srctype" v-model="createForm.sourceDocumentType" autocomplete="off" placeholder="如 销售发货" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="wms-out-srcid">来源单据</FieldProLabel>
-              <InputPro id="wms-out-srcid" v-model="createForm.sourceDocumentId" autocomplete="off" />
-            </FieldPro>
-          </FieldProGroup>
+          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+            <NvField>
+              <NvFieldLabel for="wms-out-no">出库单号</NvFieldLabel>
+              <NvInput id="wms-out-no" v-model="createForm.outboundOrderNo" autocomplete="off" />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="wms-out-site">工厂</NvFieldLabel>
+              <NvInput id="wms-out-site" v-model="createForm.siteCode" autocomplete="off" />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="wms-out-srctype">来源类型</NvFieldLabel>
+              <NvInput
+                id="wms-out-srctype"
+                v-model="createForm.sourceDocumentType"
+                autocomplete="off"
+                placeholder="如 销售发货"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="wms-out-srcid">来源单据</NvFieldLabel>
+              <NvInput
+                id="wms-out-srcid"
+                v-model="createForm.sourceDocumentId"
+                autocomplete="off"
+              />
+            </NvField>
+          </NvFieldGroup>
 
           <div class="grid gap-2">
             <div class="flex items-center justify-between">
               <span class="text-sm font-medium">发货明细</span>
-              <ButtonPro type="button" size="sm" variant="outline" @click="addLine">
+              <NvButton type="button" size="sm" variant="outline" @click="addLine">
                 <PlusIcon aria-hidden="true" />
                 添加行
-              </ButtonPro>
+              </NvButton>
             </div>
-            <div v-for="(line, index) in createForm.lines" :key="index" class="flex flex-wrap items-end gap-2 rounded-md border p-2">
-              <InputPro v-model="line.skuCode" class="h-9 w-28" placeholder="物料*" :aria-label="`第 ${index + 1} 行物料`" />
-              <InputPro v-model="line.uomCode" class="h-9 w-16" placeholder="单位*" :aria-label="`第 ${index + 1} 行单位`" />
-              <InputPro v-model="line.requestedQuantity" class="h-9 w-24" type="number" min="0" step="any" placeholder="需求数量*" :aria-label="`第 ${index + 1} 行需求数量`" />
-              <InputPro v-model="line.pickLocationCode" class="h-9 w-24" placeholder="拣货库位*" :aria-label="`第 ${index + 1} 行拣货库位`" />
-              <InputPro v-model="line.lotNo" class="h-9 w-24" placeholder="批次" :aria-label="`第 ${index + 1} 行批次`" />
-              <SelectPro v-model="line.qualityStatus">
-                <SelectProTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行质量状态`"><SelectProValue /></SelectProTrigger>
-                <SelectProContent>
-                  <SelectProItem v-for="o in QUALITY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                </SelectProContent>
-              </SelectPro>
-              <SelectPro v-model="line.ownerType">
-                <SelectProTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行货主类型`"><SelectProValue /></SelectProTrigger>
-                <SelectProContent>
-                  <SelectProItem v-for="o in OWNER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
-                </SelectProContent>
-              </SelectPro>
-              <ButtonPro type="button" size="icon-sm" variant="ghost" :aria-label="`删除第 ${index + 1} 行`" @click="removeLine(index)">
+            <div
+              v-for="(line, index) in createForm.lines"
+              :key="index"
+              class="flex flex-wrap items-end gap-2 rounded-md border p-2"
+            >
+              <NvInput
+                v-model="line.skuCode"
+                class="h-9 w-28"
+                placeholder="物料*"
+                :aria-label="`第 ${index + 1} 行物料`"
+              />
+              <NvInput
+                v-model="line.uomCode"
+                class="h-9 w-16"
+                placeholder="单位*"
+                :aria-label="`第 ${index + 1} 行单位`"
+              />
+              <NvInput
+                v-model="line.requestedQuantity"
+                class="h-9 w-24"
+                type="number"
+                min="0"
+                step="any"
+                placeholder="需求数量*"
+                :aria-label="`第 ${index + 1} 行需求数量`"
+              />
+              <NvInput
+                v-model="line.pickLocationCode"
+                class="h-9 w-24"
+                placeholder="拣货库位*"
+                :aria-label="`第 ${index + 1} 行拣货库位`"
+              />
+              <NvInput
+                v-model="line.lotNo"
+                class="h-9 w-24"
+                placeholder="批次"
+                :aria-label="`第 ${index + 1} 行批次`"
+              />
+              <NvSelect v-model="line.qualityStatus">
+                <NvSelectTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行质量状态`"
+                  ><NvSelectValue
+                /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem v-for="o in QUALITY_OPTIONS" :key="o.value" :value="o.value">{{
+                    o.label
+                  }}</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+              <NvSelect v-model="line.ownerType">
+                <NvSelectTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行货主类型`"
+                  ><NvSelectValue
+                /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem v-for="o in OWNER_OPTIONS" :key="o.value" :value="o.value">{{
+                    o.label
+                  }}</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+              <NvButton
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                :aria-label="`删除第 ${index + 1} 行`"
+                @click="removeLine(index)"
+              >
                 <Trash2Icon class="size-4" aria-hidden="true" />
-              </ButtonPro>
+              </NvButton>
             </div>
           </div>
 
-          <FieldProError v-if="createError" :errors="[createError]" />
+          <NvFieldError v-if="createError" :errors="[createError]" />
 
-          <DialogProFooter>
-            <DialogProClose as-child>
-              <ButtonPro type="button" variant="outline">取消</ButtonPro>
-            </DialogProClose>
-            <ButtonPro type="submit" :disabled="createOutboundPending">创建出库单</ButtonPro>
-          </DialogProFooter>
+          <NvDialogFooter>
+            <NvDialogClose as-child>
+              <NvButton type="button" variant="outline">取消</NvButton>
+            </NvDialogClose>
+            <NvButton type="submit" :disabled="createOutboundPending">创建出库单</NvButton>
+          </NvDialogFooter>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>

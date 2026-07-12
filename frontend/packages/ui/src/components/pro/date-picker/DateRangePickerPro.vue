@@ -66,7 +66,7 @@ watch(open, (isOpen) => {
 const monthLabel = computed(() => `${cursor.value.y} 年 ${cursor.value.m + 1} 月`)
 
 /** The live [lo, hi] span: the committed range, or the anchor→hover preview. */
-const span = computed<{ lo: string | null, hi: string | null }>(() => {
+const span = computed<{ lo: string | null; hi: string | null }>(() => {
   if (anchor.value) {
     const other = hover.value ?? anchor.value
     return anchor.value <= other ? { lo: anchor.value, hi: other } : { lo: other, hi: anchor.value }
@@ -115,7 +115,7 @@ function pick(key: string) {
 }
 
 const label = computed(() =>
-  start.value && end.value ? `${start.value} ~ ${end.value}` : (props.placeholder),
+  start.value && end.value ? `${start.value} ~ ${end.value}` : props.placeholder,
 )
 </script>
 
@@ -178,8 +178,8 @@ const label = computed(() =>
               cell.isEnd && 'rounded-r-md bg-accent',
               cell.outside && !cell.inRange ? 'text-muted-foreground/40' : 'text-foreground',
               !cell.inRange && !cell.isStart && !cell.isEnd && !cell.single && 'hover:bg-accent',
-              (cell.isStart || cell.isEnd || cell.single)
-                && 'rounded-md bg-brand text-brand-foreground hover:bg-brand',
+              (cell.isStart || cell.isEnd || cell.single) &&
+                'rounded-md bg-brand text-brand-foreground hover:bg-brand',
               cell.today && !cell.isStart && !cell.isEnd && !cell.single && 'ring-1 ring-brand/40',
             )
           "
@@ -194,7 +194,9 @@ const label = computed(() =>
 </template>
 
 <style scoped>
-.ds-dp-cell {
-  -webkit-tap-highlight-color: transparent;
+@layer nv-components {
+  .ds-dp-cell {
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 </style>

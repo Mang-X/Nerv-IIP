@@ -64,6 +64,7 @@ public class RegisterApplicationCommandHandler(IServiceProvider services)
             instance = new ApplicationInstance(
                 context.OrganizationId,
                 context.EnvironmentId,
+                context.ConnectorHostId,
                 registration.ApplicationKey,
                 registration.Version,
                 registration.NodeKey,
@@ -78,6 +79,7 @@ public class RegisterApplicationCommandHandler(IServiceProvider services)
             instance.UpdateRegistration(
                 context.OrganizationId,
                 context.EnvironmentId,
+                context.ConnectorHostId,
                 registration.ApplicationKey,
                 registration.Version,
                 registration.NodeKey,

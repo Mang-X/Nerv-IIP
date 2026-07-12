@@ -2,72 +2,72 @@
 import type {
   CommandGroup,
   CommandItem,
-  DataTableProColumn,
+  NvDataTableColumn,
   DescriptionItem,
   TimelineItem,
 } from '@nerv-iip/ui'
 import {
-  AreaChartPro,
-  BadgePro,
-  BarChartPro,
-  ButtonPro,
-  CardPro,
-  CheckboxPro,
-  CommandPro,
-  DataTablePaginationPro,
-  DataTablePro,
-  DataTableToolbarPro,
-  DatePickerPro,
-  DescriptionsPro,
-  DialogPro,
-  DialogProClose,
-  DialogProContent,
-  DialogProDescription,
-  DialogProFooter,
-  DialogProHeader,
-  DialogProTitle,
-  DialogProTrigger,
-  DonutChartPro,
-  InputPro,
+  NvAreaChart,
+  NvBadge,
+  NvBarChart,
+  NvButton,
+  NvCard,
+  NvCheckbox,
+  NvCommand,
+  NvDataTablePagination,
+  NvDataTable,
+  NvDataTableToolbar,
+  NvDatePicker,
+  NvDescriptions,
+  NvDialog,
+  NvDialogClose,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDialogTrigger,
+  NvDonutChart,
+  NvInput,
   Label,
-  RadioGroupPro,
-  RadioGroupProItem,
-  SwitchPro,
-  LineChartPro,
-  Loader,
+  NvRadioGroup,
+  NvRadioGroupItem,
+  NvSwitch,
+  NvLineChart,
+  NvLoader,
   messagePro,
-  MetricCardPro,
+  NvMetricCard,
   notificationPro,
-  NotifierHost,
-  PopconfirmPro,
+  NvNotifierHost,
+  NvPopconfirm,
   Progress,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Separator,
   Skeleton,
-  StatusBadgePro,
-  StatusDot,
+  NvStatusBadge,
+  NvStatusDot,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-  TabsPro,
-  TabsProContent,
-  TabsProList,
-  TabsProTrigger,
-  ThemePicker,
-  ThemeToggle,
-  TimePickerPro,
-  TimelinePro,
-  TooltipPro,
-  TooltipProContent,
-  TooltipProProvider,
-  TooltipProTrigger,
+  NvTabs,
+  NvTabsContent,
+  NvTabsList,
+  NvTabsTrigger,
+  NvThemePicker,
+  NvThemeToggle,
+  NvTimePicker,
+  NvTimeline,
+  NvTooltip,
+  NvTooltipContent,
+  NvTooltipProvider,
+  NvTooltipTrigger,
   useThemeAccent,
 } from '@nerv-iip/ui'
 import {
@@ -126,9 +126,9 @@ const tokenGroups = [
     desc: '状态只走语义令牌，去饱和处理，专业不刺眼。',
     items: [
       { name: '--primary', cls: 'bg-primary', role: '主操作' },
-      { name: '--brand', cls: 'bg-brand', role: '动态强调' },
-      { name: '--success', cls: 'bg-success', role: '健康 / 启用' },
-      { name: '--warning', cls: 'bg-warning', role: '预警' },
+      { name: '--nv-brand', cls: 'bg-brand', role: '动态强调' },
+      { name: '--nv-success', cls: 'bg-success', role: '健康 / 启用' },
+      { name: '--nv-warning', cls: 'bg-warning', role: '预警' },
       { name: '--destructive', cls: 'bg-destructive', role: '危险 / 错误' },
       { name: '--ring', cls: 'bg-ring', role: '聚焦环' },
     ],
@@ -388,7 +388,7 @@ const workOrders = [
   },
 ]
 
-// ---- DataTablePro (toolbar · filter · column settings · paginate) ----
+// ---- NvDataTable (toolbar · filter · column settings · paginate) ----
 interface WoRow {
   code: string
   product: string
@@ -424,7 +424,7 @@ const tableAll: WoRow[] = Array.from({ length: 48 }, (_, i) => ({
   qty: WO_QTYS[(i * 5) % WO_QTYS.length],
   status: WO_STATUS[(i * 2) % WO_STATUS.length],
 }))
-const tableColumns: DataTableProColumn<WoRow>[] = [
+const tableColumns: NvDataTableColumn<WoRow>[] = [
   {
     key: 'code',
     header: '工单号',
@@ -467,7 +467,7 @@ function onTableRefresh() {
   messagePro.success('已刷新工单列表')
 }
 
-// ---- 独立操作栏 Toolbar 演示 ----
+// ---- 独立操作栏 NvToolbar 演示 ----
 const tbSearch = ref('')
 const tbTab = ref('running')
 const tbDensity = ref<'comfortable' | 'compact'>('comfortable')
@@ -588,7 +588,7 @@ const progress = computed(
 </script>
 
 <template>
-  <TooltipProProvider :delay-duration="200">
+  <NvTooltipProvider :delay-duration="200">
     <div class="ds min-h-screen bg-background text-foreground">
       <!-- 顶栏由文档站导航提供（原页面 header 已移除，命令面板触发改由 ⌘K 等） -->
 
@@ -597,7 +597,7 @@ const progress = computed(
         <div class="ds-hero-glow" aria-hidden="true" />
         <div class="relative mx-auto max-w-6xl px-6 py-20">
           <p class="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <StatusDot tone="info" pulse /> 工业智能平台 · 控制平面组件库
+            <NvStatusDot tone="info" pulse /> 工业智能平台 · 控制平面组件库
           </p>
           <h1 class="mt-5 max-w-2xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
             克制、精确、可信赖的工厂界面语言
@@ -607,11 +607,11 @@ const progress = computed(
             色动态品牌色运行时可切换。组件、图表、反馈与基础参数自成一套完整系统。
           </p>
           <div class="mt-8 flex flex-wrap items-center gap-3">
-            <ButtonPro as="a" href="#components" variant="brand">
+            <NvButton as="a" href="#components" variant="brand">
               浏览组件
               <template #trailing><ArrowRightIcon class="size-4" aria-hidden="true" /></template>
-            </ButtonPro>
-            <ButtonPro as="a" href="#foundations" variant="outline">设计基础</ButtonPro>
+            </NvButton>
+            <NvButton as="a" href="#foundations" variant="outline">设计基础</NvButton>
           </div>
           <dl
             class="mt-12 grid max-w-2xl grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-4"
@@ -663,7 +663,7 @@ const progress = computed(
                 <h3 class="text-sm font-semibold">动态品牌色板</h3>
                 <p class="mt-1 text-sm text-muted-foreground">
                   点击任意色号，整页
-                  <code class="font-mono text-xs">--brand</code> 即时切换并持久化。
+                  <code class="font-mono text-xs">--nv-brand</code> 即时切换并持久化。
                 </p>
               </div>
               <span class="text-xs text-muted-foreground">12 色 · OKLCH 同明度</span>
@@ -770,7 +770,7 @@ const progress = computed(
           <div class="ds-eyebrow">
             <div class="flex flex-wrap items-center gap-2">
               <h2 class="text-xl font-semibold tracking-tight">组件</h2>
-              <BadgePro variant="brand">Pro</BadgePro>
+              <NvBadge variant="brand">Pro</NvBadge>
             </div>
             <p class="mt-1.5 text-sm text-muted-foreground">
               复制重建于 shadcn 之上：分层表面、品牌聚焦、内建加载与状态反馈。
@@ -780,59 +780,59 @@ const progress = computed(
           <!-- 按钮 -->
           <div class="mt-6 space-y-5 rounded-xl border border-border bg-card p-6 shadow-xs">
             <div class="flex flex-wrap items-center gap-3">
-              <ButtonPro variant="brand">主操作</ButtonPro>
-              <ButtonPro variant="default">默认</ButtonPro>
-              <ButtonPro variant="secondary">次要</ButtonPro>
-              <ButtonPro variant="outline">描边</ButtonPro>
-              <ButtonPro variant="ghost">幽灵</ButtonPro>
-              <ButtonPro variant="destructive">危险</ButtonPro>
-              <ButtonPro variant="link">链接</ButtonPro>
+              <NvButton variant="brand">主操作</NvButton>
+              <NvButton variant="default">默认</NvButton>
+              <NvButton variant="secondary">次要</NvButton>
+              <NvButton variant="outline">描边</NvButton>
+              <NvButton variant="ghost">幽灵</NvButton>
+              <NvButton variant="destructive">危险</NvButton>
+              <NvButton variant="link">链接</NvButton>
             </div>
             <Separator />
             <div class="flex flex-wrap items-center gap-3">
-              <ButtonPro size="sm">小号</ButtonPro>
-              <ButtonPro>默认</ButtonPro>
-              <ButtonPro size="lg">大号</ButtonPro>
-              <ButtonPro size="icon" aria-label="新建"><PlusIcon aria-hidden="true" /></ButtonPro>
-              <ButtonPro disabled>禁用</ButtonPro>
-              <ButtonPro
+              <NvButton size="sm">小号</NvButton>
+              <NvButton>默认</NvButton>
+              <NvButton size="lg">大号</NvButton>
+              <NvButton size="icon" aria-label="新建"><PlusIcon aria-hidden="true" /></NvButton>
+              <NvButton disabled>禁用</NvButton>
+              <NvButton
                 variant="brand"
                 :loading="proLoading"
                 class="min-w-28"
                 @click="runProAction"
               >
                 {{ proLoading ? '派发中' : '确认派工' }}
-              </ButtonPro>
+              </NvButton>
             </div>
           </div>
 
           <!-- 徽章 + 状态 + 表单 -->
           <div class="mt-4 grid gap-4 lg:grid-cols-2">
-            <CardPro class="p-6">
+            <NvCard class="p-6">
               <h3 class="text-sm font-semibold">徽章与状态</h3>
               <div class="mt-4 flex flex-wrap gap-2">
-                <BadgePro variant="brand">品牌</BadgePro>
-                <BadgePro variant="success">已完成</BadgePro>
-                <BadgePro variant="warning">待处理</BadgePro>
-                <BadgePro variant="danger">阻塞</BadgePro>
-                <BadgePro variant="solid">主要</BadgePro>
-                <BadgePro>中性</BadgePro>
+                <NvBadge variant="brand">品牌</NvBadge>
+                <NvBadge variant="success">已完成</NvBadge>
+                <NvBadge variant="warning">待处理</NvBadge>
+                <NvBadge variant="danger">阻塞</NvBadge>
+                <NvBadge variant="solid">主要</NvBadge>
+                <NvBadge>中性</NvBadge>
               </div>
               <div class="mt-4 flex flex-wrap gap-2">
-                <StatusBadgePro value="running" pulse />
-                <StatusBadgePro value="ready" />
-                <StatusBadgePro value="completed" />
-                <StatusBadgePro value="pending" />
-                <StatusBadgePro value="blocked" />
+                <NvStatusBadge value="running" pulse />
+                <NvStatusBadge value="ready" />
+                <NvStatusBadge value="completed" />
+                <NvStatusBadge value="pending" />
+                <NvStatusBadge value="blocked" />
               </div>
-            </CardPro>
+            </NvCard>
 
-            <CardPro class="p-6">
+            <NvCard class="p-6">
               <h3 class="text-sm font-semibold">表单控件</h3>
               <div class="mt-4 grid gap-4">
                 <div class="grid gap-2">
                   <Label for="ds-search">搜索</Label>
-                  <InputPro id="ds-search" v-model="searchValue" placeholder="搜索工单号 / 产品">
+                  <NvInput id="ds-search" v-model="searchValue" placeholder="搜索工单号 / 产品">
                     <template #leading><SearchIcon aria-hidden="true" /></template>
                     <template #trailing>
                       <kbd
@@ -840,60 +840,60 @@ const progress = computed(
                         >⌘K</kbd
                       >
                     </template>
-                  </InputPro>
+                  </NvInput>
                 </div>
                 <div class="grid gap-2">
                   <Label for="ds-line">目标产线</Label>
-                  <SelectPro v-model="lineValue">
-                    <SelectProTrigger id="ds-line"
-                      ><SelectProValue placeholder="选择产线"
-                    /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem value="line-a">A 线 · 精密加工</SelectProItem>
-                      <SelectProItem value="line-b">B 线 · 锻压</SelectProItem>
-                      <SelectProItem value="line-c">C 线 · 总装</SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
+                  <NvSelect v-model="lineValue">
+                    <NvSelectTrigger id="ds-line"
+                      ><NvSelectValue placeholder="选择产线"
+                    /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem value="line-a">A 线 · 精密加工</NvSelectItem>
+                      <NvSelectItem value="line-b">B 线 · 锻压</NvSelectItem>
+                      <NvSelectItem value="line-c">C 线 · 总装</NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
                 </div>
                 <div class="grid gap-2">
                   <Label>计划开工日期</Label>
-                  <DatePickerPro v-model="planDate" placeholder="选择日期" />
+                  <NvDatePicker v-model="planDate" placeholder="选择日期" />
                 </div>
                 <div class="grid gap-2">
                   <Label>计划开工时间</Label>
-                  <TimePickerPro v-model="planTime" :minute-step="5" placeholder="选择时间" />
+                  <NvTimePicker v-model="planTime" :minute-step="5" placeholder="选择时间" />
                 </div>
                 <label class="flex items-center gap-2.5 text-sm">
-                  <CheckboxPro v-model="agreed" />
+                  <NvCheckbox v-model="agreed" />
                   派发后立即锁定物料并生成领料单
                 </label>
                 <div class="flex items-center justify-between">
                   <span class="text-sm">加急插单</span>
-                  <SwitchPro v-model="switchOn" />
+                  <NvSwitch v-model="switchOn" />
                 </div>
                 <div class="grid gap-2">
                   <span class="text-sm font-medium">质检策略</span>
-                  <RadioGroupPro v-model="radioValue">
-                    <RadioGroupProItem value="std">标准全检</RadioGroupProItem>
-                    <RadioGroupProItem value="sample">抽样检验</RadioGroupProItem>
-                    <RadioGroupProItem value="exempt">免检放行</RadioGroupProItem>
-                  </RadioGroupPro>
+                  <NvRadioGroup v-model="radioValue">
+                    <NvRadioGroupItem value="std">标准全检</NvRadioGroupItem>
+                    <NvRadioGroupItem value="sample">抽样检验</NvRadioGroupItem>
+                    <NvRadioGroupItem value="exempt">免检放行</NvRadioGroupItem>
+                  </NvRadioGroup>
                 </div>
               </div>
-            </CardPro>
+            </NvCard>
           </div>
 
           <!-- 标签页 + 加载态 -->
           <div class="mt-4 grid gap-4 lg:grid-cols-2">
-            <CardPro class="p-6">
+            <NvCard class="p-6">
               <h3 class="mb-4 text-sm font-semibold">标签页</h3>
-              <TabsPro default-value="overview">
-                <TabsProList>
-                  <TabsProTrigger value="overview">概览</TabsProTrigger>
-                  <TabsProTrigger value="quality">质量</TabsProTrigger>
-                  <TabsProTrigger value="maint">维护</TabsProTrigger>
-                </TabsProList>
-                <TabsProContent value="overview" class="pt-4">
+              <NvTabs default-value="overview">
+                <NvTabsList>
+                  <NvTabsTrigger value="overview">概览</NvTabsTrigger>
+                  <NvTabsTrigger value="quality">质量</NvTabsTrigger>
+                  <NvTabsTrigger value="maint">维护</NvTabsTrigger>
+                </NvTabsList>
+                <NvTabsContent value="overview" class="pt-4">
                   <p class="text-sm text-muted-foreground">当班共 12 条产线运行，2 条待料。</p>
                   <div class="mt-4 space-y-2">
                     <div class="flex items-center justify-between text-sm">
@@ -902,17 +902,17 @@ const progress = computed(
                     </div>
                     <Progress :model-value="68" />
                   </div>
-                </TabsProContent>
-                <TabsProContent value="quality" class="pt-4">
+                </NvTabsContent>
+                <NvTabsContent value="quality" class="pt-4">
                   <p class="text-sm text-muted-foreground">在线判定良率 99.2%，无重大不合格。</p>
-                </TabsProContent>
-                <TabsProContent value="maint" class="pt-4">
+                </NvTabsContent>
+                <NvTabsContent value="maint" class="pt-4">
                   <p class="text-sm text-muted-foreground">CNC-07 计划保养窗口：今晚 22:00。</p>
-                </TabsProContent>
-              </TabsPro>
-            </CardPro>
+                </NvTabsContent>
+              </NvTabs>
+            </NvCard>
 
-            <CardPro class="p-6">
+            <NvCard class="p-6">
               <h3 class="text-sm font-semibold">加载态</h3>
               <p class="mt-1 text-sm text-muted-foreground">
                 四种克制形态，品牌着色，减弱动效下降级为静态。
@@ -923,7 +923,7 @@ const progress = computed(
                   :key="l.v"
                   class="flex flex-col items-center gap-2"
                 >
-                  <Loader :variant="l.v" size="lg" />
+                  <NvLoader :variant="l.v" size="lg" />
                   <span class="font-mono text-xs text-muted-foreground">{{ l.name }}</span>
                 </div>
               </div>
@@ -934,79 +934,77 @@ const progress = computed(
                   <Skeleton class="h-3 w-3/5" />
                 </div>
               </div>
-            </CardPro>
+            </NvCard>
           </div>
 
           <!-- 反馈：Message / Notification / Tooltip / ⌘K -->
           <div class="mt-4 grid gap-4 lg:grid-cols-2">
-            <CardPro class="p-6">
+            <NvCard class="p-6">
               <h3 class="text-sm font-semibold">轻提示 Message</h3>
               <p class="mt-1 text-sm text-muted-foreground">
                 顶部居中、单行、短暂自动消失。超长文本省略，hover 看全文。对标传统组件库的 message。
               </p>
               <div class="mt-4 flex flex-wrap gap-2">
-                <ButtonPro size="sm" variant="outline" @click="fireMessage('success')"
-                  >成功</ButtonPro
+                <NvButton size="sm" variant="outline" @click="fireMessage('success')"
+                  >成功</NvButton
                 >
-                <ButtonPro size="sm" variant="outline" @click="fireMessage('info')">信息</ButtonPro>
-                <ButtonPro size="sm" variant="outline" @click="fireMessage('warning')"
-                  >预警</ButtonPro
+                <NvButton size="sm" variant="outline" @click="fireMessage('info')">信息</NvButton>
+                <NvButton size="sm" variant="outline" @click="fireMessage('warning')"
+                  >预警</NvButton
                 >
-                <ButtonPro size="sm" variant="outline" @click="fireMessage('error')"
-                  >错误</ButtonPro
-                >
-                <ButtonPro size="sm" variant="outline" @click="fireLongMessage">长文本</ButtonPro>
-                <ButtonPro size="sm" variant="brand" @click="fireBurst">连发 3 条</ButtonPro>
+                <NvButton size="sm" variant="outline" @click="fireMessage('error')">错误</NvButton>
+                <NvButton size="sm" variant="outline" @click="fireLongMessage">长文本</NvButton>
+                <NvButton size="sm" variant="brand" @click="fireBurst">连发 3 条</NvButton>
               </div>
-            </CardPro>
+            </NvCard>
 
-            <CardPro class="p-6">
+            <NvCard class="p-6">
               <h3 class="text-sm font-semibold">通知 Notification</h3>
               <p class="mt-1 text-sm text-muted-foreground">
                 右上角卡片，含标题、描述与关闭。对标 notification。
               </p>
               <div class="mt-4 flex flex-wrap gap-2">
-                <ButtonPro size="sm" variant="outline" @click="fireNotification('success')"
-                  >成功</ButtonPro
+                <NvButton size="sm" variant="outline" @click="fireNotification('success')"
+                  >成功</NvButton
                 >
-                <ButtonPro size="sm" variant="outline" @click="fireNotification('info')"
-                  >信息</ButtonPro
+                <NvButton size="sm" variant="outline" @click="fireNotification('info')"
+                  >信息</NvButton
                 >
-                <ButtonPro size="sm" variant="outline" @click="fireNotification('warning')"
-                  >预警</ButtonPro
+                <NvButton size="sm" variant="outline" @click="fireNotification('warning')"
+                  >预警</NvButton
                 >
-                <ButtonPro size="sm" variant="outline" @click="fireNotification('error')"
-                  >错误</ButtonPro
+                <NvButton size="sm" variant="outline" @click="fireNotification('error')"
+                  >错误</NvButton
                 >
               </div>
               <div class="mt-4 flex items-center gap-3">
-                <TooltipPro>
-                  <TooltipProTrigger as-child>
-                    <ButtonPro variant="ghost" size="sm">
+                <NvTooltip>
+                  <NvTooltipTrigger as-child>
+                    <NvButton variant="ghost" size="sm">
                       <template #leading><ActivityIcon aria-hidden="true" /></template>
                       悬停提示
-                    </ButtonPro>
-                  </TooltipProTrigger>
-                  <TooltipProContent>实时采集自 MES 网关</TooltipProContent>
-                </TooltipPro>
-                <ButtonPro variant="ghost" size="sm" @click="cmdOpen = true">
+                    </NvButton>
+                  </NvTooltipTrigger>
+                  <NvTooltipContent>实时采集自 MES 网关</NvTooltipContent>
+                </NvTooltip>
+                <NvButton variant="ghost" size="sm" @click="cmdOpen = true">
                   <template #leading><SearchIcon aria-hidden="true" /></template>
                   命令面板 ⌘K
-                </ButtonPro>
-                <DialogPro v-model:open="dialogOpen">
-                  <DialogProTrigger as-child>
-                    <ButtonPro variant="ghost" size="sm">
+                </NvButton>
+                <NvDialog v-model:open="dialogOpen">
+                  <NvDialogTrigger as-child>
+                    <NvButton variant="ghost" size="sm">
                       <template #leading><GaugeIcon aria-hidden="true" /></template>
                       打开对话框
-                    </ButtonPro>
-                  </DialogProTrigger>
-                  <DialogProContent>
-                    <DialogProHeader>
-                      <DialogProTitle>确认派发工单</DialogProTitle>
-                      <DialogProDescription>
+                    </NvButton>
+                  </NvDialogTrigger>
+                  <NvDialogContent>
+                    <NvDialogHeader>
+                      <NvDialogTitle>确认派发工单</NvDialogTitle>
+                      <NvDialogDescription>
                         WO-2406-0431 将派发到 A 线，锁定物料并生成领料单。
-                      </DialogProDescription>
-                    </DialogProHeader>
+                      </NvDialogDescription>
+                    </NvDialogHeader>
                     <div class="rounded-lg border border-border bg-muted/40 p-4 text-sm">
                       <div class="flex justify-between">
                         <span class="text-muted-foreground">数量</span
@@ -1017,16 +1015,16 @@ const progress = computed(
                         ><span class="tabular-nums">14.5 h</span>
                       </div>
                     </div>
-                    <DialogProFooter>
-                      <DialogProClose as-child
-                        ><ButtonPro variant="ghost">取消</ButtonPro></DialogProClose
+                    <NvDialogFooter>
+                      <NvDialogClose as-child
+                        ><NvButton variant="ghost">取消</NvButton></NvDialogClose
                       >
-                      <ButtonPro variant="brand" @click="dialogOpen = false">确认派发</ButtonPro>
-                    </DialogProFooter>
-                  </DialogProContent>
-                </DialogPro>
+                      <NvButton variant="brand" @click="dialogOpen = false">确认派发</NvButton>
+                    </NvDialogFooter>
+                  </NvDialogContent>
+                </NvDialog>
               </div>
-            </CardPro>
+            </NvCard>
           </div>
         </section>
 
@@ -1040,21 +1038,21 @@ const progress = computed(
           </div>
 
           <div class="mt-6 grid gap-4 lg:grid-cols-2">
-            <CardPro class="p-6">
+            <NvCard class="p-6">
               <div class="flex items-center justify-between">
                 <div>
                   <h3 class="text-sm font-semibold">当班累计产出</h3>
                   <p class="mt-0.5 text-xs text-muted-foreground">面积图 · 每 2 小时采样</p>
                 </div>
-                <StatusBadgePro value="running" pulse />
+                <NvStatusBadge value="running" pulse />
               </div>
-              <AreaChartPro class="mt-4" :data="outputSeries" :height="220" value-suffix=" 件" />
-            </CardPro>
+              <NvAreaChart class="mt-4" :data="outputSeries" :height="220" value-suffix=" 件" />
+            </NvCard>
 
-            <CardPro class="p-6">
+            <NvCard class="p-6">
               <h3 class="text-sm font-semibold">计划 vs 实际产量</h3>
               <p class="mt-0.5 text-xs text-muted-foreground">多系列折线 · 本周</p>
-              <LineChartPro
+              <NvLineChart
                 class="mt-4"
                 :data="planActual"
                 x-key="day"
@@ -1062,35 +1060,35 @@ const progress = computed(
                 :height="220"
                 value-suffix=" 件"
               />
-            </CardPro>
+            </NvCard>
 
-            <CardPro class="p-6">
+            <NvCard class="p-6">
               <h3 class="text-sm font-semibold">各工作中心产出</h3>
               <p class="mt-0.5 text-xs text-muted-foreground">分组柱状 · 良品 / 废品</p>
-              <BarChartPro
+              <NvBarChart
                 class="mt-4"
                 :data="outputByCenter"
                 x-key="center"
                 :series="outputByCenterSeries"
                 :height="220"
               />
-            </CardPro>
+            </NvCard>
 
-            <CardPro class="p-6">
+            <NvCard class="p-6">
               <h3 class="text-sm font-semibold">工单状态构成</h3>
               <p class="mt-0.5 mb-4 text-xs text-muted-foreground">环形占比 · 实时</p>
-              <DonutChartPro
+              <NvDonutChart
                 :data="statusMix"
                 :height="180"
                 central-label="118"
                 central-sub-label="工单"
               />
-            </CardPro>
+            </NvCard>
           </div>
 
           <!-- 指标卡 -->
           <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <MetricCardPro
+            <NvMetricCard
               v-for="(m, i) in proMetrics"
               :key="m.label"
               v-reveal="i"
@@ -1131,21 +1129,21 @@ const progress = computed(
                       </span>
                     </div>
                   </TableCell>
-                  <TableCell><StatusBadgePro :value="wo.status" /></TableCell>
+                  <TableCell><NvStatusBadge :value="wo.status" /></TableCell>
                 </TableRow>
               </TableBody>
             </Table>
           </div>
 
-          <!-- DataTablePro：完整数据表（工具栏 + 字段筛选 + 列设置 + 密度 + 行选择 + 页码分页） -->
+          <!-- NvDataTable：完整数据表（工具栏 + 字段筛选 + 列设置 + 密度 + 行选择 + 页码分页） -->
           <div class="mt-8 mb-3">
-            <h3 class="text-sm font-semibold">数据表格 DataTablePro</h3>
+            <h3 class="text-sm font-semibold">数据表格 NvDataTable</h3>
             <p class="mt-1 text-xs text-muted-foreground">
               工具栏 + 快捷筛选标签 + 字段筛选 + 列显隐 + 密度 + 行选择 + 可点击页码 —— 客户端处理
               {{ tableAll.length }} 条工单。
             </p>
           </div>
-          <DataTablePro
+          <NvDataTable
             :columns="tableColumns"
             :rows="tableAll"
             row-key="code"
@@ -1161,38 +1159,38 @@ const progress = computed(
             @refresh="onTableRefresh"
           >
             <template #cell-status="{ value }">
-              <StatusBadgePro :value="String(value)" :pulse="value === 'running'" />
+              <NvStatusBadge :value="String(value)" :pulse="value === 'running'" />
             </template>
             <template #bulk-actions>
-              <ButtonPro variant="outline" size="sm">导出所选</ButtonPro>
-              <PopconfirmPro
+              <NvButton variant="outline" size="sm">导出所选</NvButton>
+              <NvPopconfirm
                 :title="`确认作废选中的 ${tableSelected.length} 张工单？`"
                 description="作废后不可恢复，已领用物料需手动退库。"
                 confirm-text="作废"
                 @confirm="messagePro.error('已作废所选工单')"
               >
-                <ButtonPro variant="outline" size="sm">作废</ButtonPro>
-              </PopconfirmPro>
-              <ButtonPro variant="brand" size="sm">下发排产</ButtonPro>
+                <NvButton variant="outline" size="sm">作废</NvButton>
+              </NvPopconfirm>
+              <NvButton variant="brand" size="sm">下发排产</NvButton>
             </template>
             <template #actions>
-              <ButtonPro variant="brand" size="sm">
+              <NvButton variant="brand" size="sm">
                 <template #leading><PlusIcon /></template>
                 新建工单
-              </ButtonPro>
+              </NvButton>
             </template>
-          </DataTablePro>
+          </NvDataTable>
 
-          <!-- 操作栏 Toolbar（独立）-->
+          <!-- 操作栏 NvToolbar（独立）-->
           <div class="mt-8 mb-3">
-            <h3 class="text-sm font-semibold">操作栏 Toolbar</h3>
+            <h3 class="text-sm font-semibold">操作栏 NvToolbar</h3>
             <p class="mt-1 text-xs text-muted-foreground">
               可独立使用：标题 +
               实时计数、快捷筛选分段、搜索、字段筛选槽、密度、刷新、更多菜单（导出 /
               打印）与主操作。
             </p>
           </div>
-          <DataTableToolbarPro
+          <NvDataTableToolbar
             v-model:search="tbSearch"
             v-model:tab="tbTab"
             v-model:density="tbDensity"
@@ -1209,18 +1207,18 @@ const progress = computed(
             @print="messagePro.info('已发送到打印机')"
           >
             <template #filters>
-              <ButtonPro variant="outline" size="sm">
+              <NvButton variant="outline" size="sm">
                 <template #leading><ListFilterIcon /></template>
                 筛选
-              </ButtonPro>
+              </NvButton>
             </template>
             <template #actions>
-              <ButtonPro variant="brand" size="sm">
+              <NvButton variant="brand" size="sm">
                 <template #leading><PlusIcon /></template>
                 新建工单
-              </ButtonPro>
+              </NvButton>
             </template>
-          </DataTableToolbarPro>
+          </NvDataTableToolbar>
 
           <!-- 分页 Pagination（独立）-->
           <div class="mt-8 mb-3">
@@ -1235,7 +1233,7 @@ const progress = computed(
               <p class="mb-2.5 text-xs text-muted-foreground">
                 多页（528 条 · 53 页，含省略号 + 跳页）
               </p>
-              <DataTablePaginationPro
+              <NvDataTablePagination
                 :page="pgManyPage"
                 :page-size="pgManySize"
                 :total-items="528"
@@ -1246,7 +1244,7 @@ const progress = computed(
             </div>
             <div class="rounded-xl border bg-card px-3 py-3 shadow-sm sm:px-4">
               <p class="mb-2.5 text-xs text-muted-foreground">少页（36 条 · 4 页，无省略号）</p>
-              <DataTablePaginationPro
+              <NvDataTablePagination
                 :page="pgFewPage"
                 :page-size="pgFewSize"
                 :total-items="36"
@@ -1268,47 +1266,47 @@ const progress = computed(
           </div>
 
           <div class="mt-6 grid gap-4 lg:grid-cols-3">
-            <CardPro class="p-6 lg:col-span-2">
+            <NvCard class="p-6 lg:col-span-2">
               <h3 class="text-sm font-semibold">工单详情 · Descriptions</h3>
               <p class="mt-0.5 mb-4 text-xs text-muted-foreground">键值详情列表 · 3 列网格</p>
-              <DescriptionsPro :items="woDescItems" :columns="3">
+              <NvDescriptions :items="woDescItems" :columns="3">
                 <template #code="{ item }">
                   <span class="font-mono text-xs">{{ item.value }}</span>
                 </template>
                 <template #status="{ item }">
-                  <StatusBadgePro :value="String(item.value)" :pulse="item.value === 'running'" />
+                  <NvStatusBadge :value="String(item.value)" :pulse="item.value === 'running'" />
                 </template>
-              </DescriptionsPro>
-            </CardPro>
+              </NvDescriptions>
+            </NvCard>
 
-            <CardPro class="p-6">
+            <NvCard class="p-6">
               <h3 class="text-sm font-semibold">工序日志 · Timeline</h3>
               <p class="mt-0.5 mb-4 text-xs text-muted-foreground">工序流转 · 进行中脉冲</p>
-              <TimelinePro :items="woTimeline" pending pending-text="精加工中…" />
-            </CardPro>
+              <NvTimeline :items="woTimeline" pending pending-text="精加工中…" />
+            </NvCard>
           </div>
 
           <!-- 带边框变体 -->
           <div class="mt-4">
             <h3 class="mb-3 text-sm font-semibold">描述列表 · 带边框记录</h3>
-            <DescriptionsPro :items="woDescItems" :columns="3" bordered>
+            <NvDescriptions :items="woDescItems" :columns="3" bordered>
               <template #code="{ item }">
                 <span class="font-mono text-xs">{{ item.value }}</span>
               </template>
               <template #status="{ item }">
-                <StatusBadgePro :value="String(item.value)" :pulse="item.value === 'running'" />
+                <NvStatusBadge :value="String(item.value)" :pulse="item.value === 'running'" />
               </template>
-            </DescriptionsPro>
+            </NvDescriptions>
           </div>
 
-          <!-- 标题超长省略 + TooltipPro -->
+          <!-- 标题超长省略 + NvTooltip -->
           <div class="mt-4">
             <h3 class="mb-1 text-sm font-semibold">描述列表 · 标题超长省略</h3>
             <p class="mb-3 text-xs text-muted-foreground">
               <code class="font-mono">ellipsis</code> + <code class="font-mono">label-width</code>
-              ：标题单行截断，悬停弹 TooltipPro 看全文（内容由你用插槽自定）。
+              ：标题单行截断，悬停弹 NvTooltip 看全文（内容由你用插槽自定）。
             </p>
-            <DescriptionsPro
+            <NvDescriptions
               :items="descClampItems"
               :columns="2"
               bordered
@@ -1320,25 +1318,25 @@ const progress = computed(
           <!-- 气泡确认 Popconfirm -->
           <div class="mt-4">
             <h3 class="mb-3 text-sm font-semibold">气泡确认 · Popconfirm</h3>
-            <CardPro class="flex flex-wrap items-center gap-3 p-5">
-              <PopconfirmPro
+            <NvCard class="flex flex-wrap items-center gap-3 p-5">
+              <NvPopconfirm
                 title="确认删除该工单？"
                 description="删除后不可恢复。"
                 confirm-text="删除"
                 @confirm="messagePro.error('工单已删除')"
               >
-                <ButtonPro variant="outline" size="sm">删除工单</ButtonPro>
-              </PopconfirmPro>
-              <PopconfirmPro
+                <NvButton variant="outline" size="sm">删除工单</NvButton>
+              </NvPopconfirm>
+              <NvPopconfirm
                 title="确认下发到产线？"
                 confirm-text="下发"
                 confirm-tone="brand"
                 @confirm="messagePro.success('已下发排产')"
               >
-                <ButtonPro variant="brand" size="sm">下发排产</ButtonPro>
-              </PopconfirmPro>
+                <NvButton variant="brand" size="sm">下发排产</NvButton>
+              </NvPopconfirm>
               <span class="text-xs text-muted-foreground">行内危险操作 / 主操作二次确认</span>
-            </CardPro>
+            </NvCard>
           </div>
         </section>
 
@@ -1351,7 +1349,7 @@ const progress = computed(
             </p>
           </div>
           <div class="mt-6 grid gap-4 sm:grid-cols-3">
-            <CardPro
+            <NvCard
               v-for="(curve, i) in [
                 { name: 'ease-out-quart', cls: 'ease-out-quart', use: '微交互 · 悬停聚焦' },
                 { name: 'ease-out-expo', cls: 'ease-out-expo', use: '入场揭示 · 覆盖层' },
@@ -1372,7 +1370,7 @@ const progress = computed(
                 />
               </div>
               <p class="mt-3 text-sm text-muted-foreground">{{ curve.use }}</p>
-            </CardPro>
+            </NvCard>
           </div>
           <p class="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
             <LayersIcon class="size-4" aria-hidden="true" />
@@ -1395,10 +1393,10 @@ const progress = computed(
         </div>
       </footer>
 
-      <CommandPro v-model:open="cmdOpen" :groups="cmdGroups" @select="onCommandSelect" />
-      <NotifierHost />
+      <NvCommand v-model:open="cmdOpen" :groups="cmdGroups" @select="onCommandSelect" />
+      <NvNotifierHost />
     </div>
-  </TooltipProProvider>
+  </NvTooltipProvider>
 </template>
 
 <style scoped>
@@ -1408,12 +1406,12 @@ const progress = computed(
   background:
     radial-gradient(
       60% 70% at 15% 0%,
-      color-mix(in oklch, var(--brand) 14%, transparent),
+      color-mix(in oklch, var(--nv-brand) 14%, transparent),
       transparent 70%
     ),
     radial-gradient(
       50% 60% at 100% 10%,
-      color-mix(in oklch, var(--brand) 9%, transparent),
+      color-mix(in oklch, var(--nv-brand) 9%, transparent),
       transparent 65%
     );
   pointer-events: none;
@@ -1431,7 +1429,7 @@ const progress = computed(
   bottom: 0.25rem;
   width: 2px;
   border-radius: 9999px;
-  background: var(--brand);
+  background: var(--nv-brand);
 }
 
 .reveal-init {
@@ -1443,23 +1441,23 @@ const progress = computed(
   opacity: 1;
   transform: none;
   transition:
-    opacity 0.55s var(--ease-out-expo),
-    transform 0.55s var(--ease-out-expo);
+    opacity 0.55s var(--nv-ease-out-expo),
+    transform 0.55s var(--nv-ease-out-expo);
   transition-delay: var(--reveal-delay, 0ms);
 }
 
 .ds-motion-bar {
   transform: translateX(0);
-  transition: transform 1.1s var(--ease-out-quart);
+  transition: transform 1.1s var(--nv-ease-out-quart);
 }
 .ds-motion-card:hover .ds-motion-bar {
   transform: translateX(200%);
 }
 .ds-motion-card:hover .ds-motion-bar.ease-out-expo {
-  transition-timing-function: var(--ease-out-expo);
+  transition-timing-function: var(--nv-ease-out-expo);
 }
 .ds-motion-card:hover .ds-motion-bar.ease-in-out-quart {
-  transition-timing-function: var(--ease-in-out-quart);
+  transition-timing-function: var(--nv-ease-in-out-quart);
 }
 
 @media (prefers-reduced-motion: reduce) {

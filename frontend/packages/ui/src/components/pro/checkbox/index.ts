@@ -1,1 +1,1 @@
-export { default as CheckboxPro } from './CheckboxPro.vue'
+export { default as NvCheckbox } from './CheckboxPro.vue'

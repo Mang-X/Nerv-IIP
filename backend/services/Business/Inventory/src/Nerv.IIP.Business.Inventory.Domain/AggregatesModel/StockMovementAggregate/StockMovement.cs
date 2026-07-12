@@ -40,7 +40,9 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
         string ownerType,
         string? ownerId,
         decimal quantity,
-        decimal? unitCost)
+        decimal? unitCost,
+        DateOnly? productionDate,
+        DateOnly? expiryDate)
     {
         OrganizationId = InventoryText.Required(organizationId);
         EnvironmentId = InventoryText.Required(environmentId);
@@ -58,6 +60,8 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
         QualityStatus = StockQualityStatus.Normalize(qualityStatus);
         OwnerType = StockOwnerType.Normalize(ownerType);
         OwnerId = InventoryText.Optional(ownerId);
+        ProductionDate = productionDate;
+        ExpiryDate = expiryDate;
         Quantity = NonZero(quantity, nameof(quantity));
         UnitCost = unitCost is null ? null : NonNegative(unitCost.Value, nameof(unitCost));
         MovementAmount = UnitCost * Quantity;
@@ -81,6 +85,8 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
     public string QualityStatus { get; private set; } = string.Empty;
     public string OwnerType { get; private set; } = string.Empty;
     public string? OwnerId { get; private set; }
+    public DateOnly? ProductionDate { get; private set; }
+    public DateOnly? ExpiryDate { get; private set; }
     public decimal Quantity { get; private set; }
     public decimal? UnitCost { get; private set; }
     public decimal? MovementAmount { get; private set; }
@@ -104,7 +110,9 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
         string ownerType,
         string? ownerId,
         decimal quantity,
-        decimal? unitCost = null)
+        decimal? unitCost = null,
+        DateOnly? ProductionDate = null,
+        DateOnly? ExpiryDate = null)
     {
         return new StockMovement(
             organizationId,
@@ -124,7 +132,9 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
             ownerType,
             ownerId,
             quantity,
-            unitCost);
+            unitCost,
+            ProductionDate,
+            ExpiryDate);
     }
 
     public void ApplyValuation(decimal unitCost)
@@ -156,6 +166,8 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
             && QualityStatus == other.QualityStatus
             && OwnerType == other.OwnerType
             && OwnerId == other.OwnerId
+            && ProductionDate == other.ProductionDate
+            && ExpiryDate == other.ExpiryDate
             && Quantity == other.Quantity
             && UnitCost == other.UnitCost;
     }

@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import RetryableListError from '@/components/RetryableListError.vue'
 import { useWmsPutaway } from '@/composables/useBusinessWms'
 import { warehouseTaskStatusLabel } from '@nerv-iip/business-core'
-import { AppShellMobile, ListRow, ScanBar } from '@nerv-iip/ui-mobile'
+import { NvAppShellMobile, NvListRow, NvScanBar } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 
 definePage({
@@ -12,7 +13,7 @@ definePage({
 })
 
 // 只读任务清单：上架无逐任务 complete 端点，写闭环经父单收货入库过账。
-const { filters, tasks, pending, error } = useWmsPutaway()
+const { filters, tasks, pending, error, refresh } = useWmsPutaway()
 
 // 空态仅在「无任务且无加载/错误」时出现，避免与错误/加载态打架。
 const showEmpty = computed(() => !pending.value && !error.value && tasks.value.length === 0)
@@ -51,7 +52,7 @@ function rowSubtitle(task: {
 </script>
 
 <template>
-  <AppShellMobile>
+  <NvAppShellMobile>
     <template #header>
       <div class="px-4 py-3">
         <h1 class="text-lg font-semibold text-foreground">上架</h1>
@@ -59,12 +60,12 @@ function rowSubtitle(task: {
     </template>
 
     <div class="space-y-4 p-4">
-      <ScanBar
-        placeholder="扫描库位"
-        @scan="onScan"
-      />
+      <NvScanBar placeholder="扫描库位" @scan="onScan" />
 
-      <div v-if="hasFilter" class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2 text-sm">
+      <div
+        v-if="hasFilter"
+        class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2 text-sm"
+      >
         <span class="truncate text-muted-foreground">库位 {{ filters.locationCode }}</span>
         <button
           type="button"
@@ -76,17 +77,16 @@ function rowSubtitle(task: {
         </button>
       </div>
 
-      <p class="text-xs text-muted-foreground">
-        上架完成经收货入库过账
-      </p>
+      <p class="text-xs text-muted-foreground">上架完成经收货入库过账</p>
 
-      <p
+      <RetryableListError
         v-if="error"
-        data-testid="error-banner"
-        class="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-      >
-        任务加载失败，请下拉重试或检查网络。
-      </p>
+        :error="error"
+        :pending="pending"
+        fallback="任务加载失败，请下拉重试或检查网络。"
+        test-id="error-banner"
+        @retry="() => refresh()"
+      />
 
       <div
         v-if="showEmpty"
@@ -96,7 +96,7 @@ function rowSubtitle(task: {
       </div>
 
       <div v-else-if="tasks.length > 0" class="overflow-hidden rounded-lg border border-border">
-        <ListRow
+        <NvListRow
           v-for="task in tasks"
           :key="task.warehouseTaskId"
           :interactive="false"
@@ -105,5 +105,5 @@ function rowSubtitle(task: {
         />
       </div>
     </div>
-  </AppShellMobile>
+  </NvAppShellMobile>
 </template>

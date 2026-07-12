@@ -115,7 +115,8 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
                 operation.WorkCenterId,
                 [],
                 operation.StartUtc,
-                operation.EndUtc - operation.StartUtc);
+                operation.EndUtc - operation.StartUtc,
+                operationCode: operation.StandardOperationCode);
             dbContext.OperationTasks.Add(task);
         }
 
@@ -134,12 +135,87 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
             operation.ResourceId,
             operation.StartUtc,
             operation.EndUtc,
-            integrationEvent.OccurredAtUtc);
+            integrationEvent.OccurredAtUtc,
+            operation.StandardOperationCode);
         return null;
     }
 }
 
 public static class SchedulePlanReleasedIntegrationEventTopic
 {
-    public const string TopicName = "Nerv.IIP.Contracts.Scheduling.SchedulePlanReleasedIntegrationEvent";
+    public const string TopicName = "SchedulePlanReleasedIntegrationEvent";
+}
+
+[IntegrationEventConsumer(SchedulePlanInvalidatedIntegrationEventTopic.TopicName, ConsumerName)]
+public sealed class SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalidated(
+    ApplicationDbContext dbContext,
+    IIntegrationEventDeadLetterStore deadLetterStore)
+    : IIntegrationEventHandler<SchedulePlanInvalidatedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "business-mes.schedule-plan-invalidated";
+
+    private readonly IntegrationEventConsumerGuard<SchedulePlanInvalidatedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            SchedulingIntegrationEventTypes.SchedulePlanInvalidated,
+            SchedulingIntegrationEventVersions.V1));
+
+    public async Task HandleAsync(
+        SchedulePlanInvalidatedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
+
+    [CapSubscribe(SchedulePlanInvalidatedIntegrationEventTopic.TopicName, Group = ConsumerName)]
+    public Task HandleCapAsync(
+        SchedulePlanInvalidatedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(
+        SchedulePlanInvalidatedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(integrationEvent);
+        if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        {
+            return;
+        }
+
+        var operationIds = integrationEvent.Payload.AffectedOperations
+            .Select(x => x.OperationId)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (operationIds.Length == 0)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        var tasks = await dbContext.OperationTasks
+            .Where(x =>
+                x.OrganizationId == integrationEvent.OrganizationId &&
+                x.EnvironmentId == integrationEvent.EnvironmentId &&
+                operationIds.Contains(x.OperationTaskIdValue))
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var task in tasks)
+        {
+            task.MarkScheduleInvalidated();
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+}
+
+public static class SchedulePlanInvalidatedIntegrationEventTopic
+{
+    public const string TopicName = "SchedulePlanInvalidatedIntegrationEvent";
 }

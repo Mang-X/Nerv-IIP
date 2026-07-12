@@ -26,7 +26,22 @@ public sealed class AlarmEventEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.ClearedAtUtc).HasColumnName("cleared_at_utc").HasComment("UTC time when the alarm was cleared.");
         builder.Property(x => x.ClearedBy).HasMaxLength(150).HasColumnName("cleared_by").HasComment("Actor or system that cleared the alarm.");
         builder.Property(x => x.ClearReason).HasMaxLength(300).HasColumnName("clear_reason").HasComment("Reason recorded when the alarm was cleared.");
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.AlarmCode, x.ExternalAlarmId }).IsUnique();
+        builder.Property(x => x.AcknowledgedAtUtc).HasColumnName("acknowledged_at_utc").HasComment("UTC time when an operator acknowledged the active alarm.");
+        builder.Property(x => x.AcknowledgedBy).HasMaxLength(150).HasColumnName("acknowledged_by").HasComment("Actor that acknowledged the active alarm.");
+        builder.Property(x => x.ShelvedAtUtc).HasColumnName("shelved_at_utc").HasComment("UTC time when the alarm was temporarily shelved.");
+        builder.Property(x => x.ShelvedUntilUtc).HasColumnName("shelved_until_utc").HasComment("UTC expiry time for temporary alarm shelving.");
+        builder.Property(x => x.ShelvedBy).HasMaxLength(150).HasColumnName("shelved_by").HasComment("Actor that shelved the alarm.");
+        builder.Property(x => x.ShelveReason).HasMaxLength(300).HasColumnName("shelve_reason").HasComment("Reason recorded when the alarm was shelved.");
+        builder.Property(x => x.EscalatedAtUtc).HasColumnName("escalated_at_utc").HasComment("UTC time when the alarm was escalated.");
+        builder.Property(x => x.EscalationReason).HasMaxLength(100).HasColumnName("escalation_reason").HasComment("Reason code that triggered alarm escalation.");
+        builder.Property(x => x.EscalationRecipientRefsText).HasMaxLength(1000).HasColumnName("escalation_recipient_refs").HasComment("Semicolon-separated Notification recipient refs used for alarm escalation.");
+        builder.Ignore(x => x.EscalationRecipientRefs);
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.AlarmCode, x.ExternalAlarmId })
+            .IsUnique()
+            .HasFilter("status <> 'cleared'");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.ExternalAlarmId })
+            .IsUnique()
+            .HasFilter("status <> 'cleared' AND tag_key IS NOT NULL");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.RaisedAtUtc });
     }
 }

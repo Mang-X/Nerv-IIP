@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ButtonPro } from '@nerv-iip/ui'
+import { Button } from '@nerv-iip/ui'
 import { LockIcon, UnlockIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { conflictReasonLabel } from '../../model/labels'
@@ -81,7 +81,7 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
       </p>
 
       <!-- 锁定/解锁:锁定后不可拖拽,这里提供解锁交互 -->
-      <ButtonPro
+      <Button
         v-if="!isOrder"
         size="sm"
         :variant="task.locked ? 'secondary' : 'outline'"
@@ -90,7 +90,7 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
       >
         <component :is="task.locked ? UnlockIcon : LockIcon" class="size-3.5" aria-hidden="true" />
         {{ task.locked ? '解锁(允许拖拽)' : '锁定此工序' }}
-      </ButtonPro>
+      </Button>
 
       <!-- 冲突横幅 -->
       <div

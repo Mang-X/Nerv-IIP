@@ -5,6 +5,8 @@ namespace Nerv.IIP.Contracts.Inventory;
 public static class InventoryIntegrationEventTypes
 {
     public const string InventoryMovementRequested = "inventory.InventoryMovementRequested";
+    public const string InventoryReservationReleaseRequested = "inventory.InventoryReservationReleaseRequested";
+    public const string StockReservationExpired = "inventory.StockReservationExpired";
     public const string StockMovementPosted = "inventory.StockMovementPosted";
     public const string StockMovementPostingFailed = "inventory.StockMovementPostingFailed";
     public const string StockCountVarianceConfirmed = "inventory.StockCountVarianceConfirmed";
@@ -86,7 +88,59 @@ public sealed record InventoryMovementRequestedPayload(
     DateTimeOffset RequestedAtUtc,
     string? InventoryReservationId = null,
     decimal? UnitCost = null,
-    string? TargetQualityStatus = null);
+    string? TargetQualityStatus = null,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null,
+    int? ShelfLifeDays = null);
+
+public sealed record InventoryReservationReleaseRequestedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    InventoryReservationReleaseRequestedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record InventoryReservationReleaseRequestedPayload(
+    string ReservationSourceService,
+    string SourceDocumentId,
+    IReadOnlyCollection<string> SourceDocumentLineIds,
+    string Reason,
+    DateTimeOffset RequestedAtUtc);
+
+public sealed record InventoryReservationExpiredIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    InventoryReservationExpiredPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record InventoryReservationExpiredPayload(
+    string ReservationId,
+    string ReservationSourceService,
+    string SourceDocumentId,
+    string? SourceDocumentLineId,
+    decimal ReleasedQuantity,
+    DateTimeOffset ExpiresAtUtc);
 
 public sealed record StockMovementPostedIntegrationEvent(
     string EventId,
@@ -124,7 +178,9 @@ public sealed record StockMovementPostedPayload(
     decimal Quantity,
     DateTimeOffset PostedAtUtc,
     decimal? UnitCost,
-    decimal? MovementAmount);
+    decimal? MovementAmount,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);
 
 public sealed record StockMovementPostingFailedIntegrationEvent(
     string EventId,
@@ -161,7 +217,9 @@ public sealed record StockMovementPostingFailedPayload(
     decimal Quantity,
     string FailureCode,
     string FailureMessage,
-    DateTimeOffset FailedAtUtc);
+    DateTimeOffset FailedAtUtc,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);
 
 public sealed record StockCountVarianceConfirmedIntegrationEvent(
     string EventId,
@@ -223,4 +281,6 @@ public sealed record StockAvailabilityChangedPayload(
     long LedgerVersion,
     DateTimeOffset ChangedAtUtc,
     decimal MovingAverageUnitCost,
-    decimal InventoryValue);
+    decimal InventoryValue,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);

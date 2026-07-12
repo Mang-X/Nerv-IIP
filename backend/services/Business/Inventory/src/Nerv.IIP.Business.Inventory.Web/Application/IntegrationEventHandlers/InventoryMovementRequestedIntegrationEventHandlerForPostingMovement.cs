@@ -33,7 +33,7 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Inventory.InventoryMovementRequestedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(InventoryMovementRequestedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(InventoryMovementRequestedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -70,7 +70,10 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
                     payload.OwnerId,
                     payload.Quantity,
                     payload.UnitCost,
-                    ReservationId: ParseReservationId(payload.InventoryReservationId)),
+                    ReservationId: ParseReservationId(payload.InventoryReservationId),
+                    ProductionDate: payload.ProductionDate,
+                    ExpiryDate: payload.ExpiryDate,
+                    ShelfLifeDays: payload.ShelfLifeDays),
                 cancellationToken);
         }
         catch (InventoryPostingRejectedException ex)
@@ -128,7 +131,9 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
                 payload.SerialNo,
                 payload.OwnerType,
                 payload.OwnerId,
-                Math.Abs(payload.Quantity)),
+                Math.Abs(payload.Quantity),
+                payload.ProductionDate,
+                payload.ExpiryDate),
             cancellationToken);
     }
 
@@ -176,7 +181,9 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
                 payload.Quantity,
                 failureCode,
                 failureMessage,
-                failedAtUtc));
+                failedAtUtc,
+                payload.ProductionDate,
+                payload.ExpiryDate));
         return integrationEventPublisher.PublishAsync(failedEvent, cancellationToken);
     }
 

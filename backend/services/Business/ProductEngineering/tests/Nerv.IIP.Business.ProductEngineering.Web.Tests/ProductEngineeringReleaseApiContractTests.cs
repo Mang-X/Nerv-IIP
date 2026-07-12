@@ -6,8 +6,12 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using NetCorePal.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DistributedTransactions;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringDocumentAggregate;
@@ -16,14 +20,18 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingB
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperationAggregate;
+using Nerv.IIP.Business.ProductEngineering.Domain.DomainEvents;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Auth;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Queries;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.Scheduling;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductionVersions;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.StandardOperations;
+using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Primitives;
 
@@ -36,8 +44,10 @@ public sealed class ProductEngineeringReleaseApiContractTests
     {
         var contracts = ProductEngineeringEndpointContracts.All;
 
-        Assert.Equal(22, contracts.Count);
+        Assert.Equal(28, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/documents" && x.PermissionCode == EngineeringPermissionCodes.DocumentsManage);
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/sops/publish" && x.PermissionCode == EngineeringPermissionCodes.DocumentsManage);
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/sops/current" && x.PermissionCode == EngineeringPermissionCodes.DocumentsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/documents" && x.PermissionCode == EngineeringPermissionCodes.DocumentsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/documents/{documentNumber}/{revision}" && x.PermissionCode == EngineeringPermissionCodes.DocumentsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/items" && x.PermissionCode == EngineeringPermissionCodes.ItemsManage);
@@ -47,10 +57,14 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/manufacturing-boms/release" && x.PermissionCode == EngineeringPermissionCodes.BomsManage);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/routings/release" && x.PermissionCode == EngineeringPermissionCodes.RoutingsManage);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/engineering-changes/release" && x.PermissionCode == EngineeringPermissionCodes.ChangesManage);
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/engineering-changes/cancel-scheduled" && x.PermissionCode == EngineeringPermissionCodes.ChangesManage);
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/engineering-changes/reschedule" && x.PermissionCode == EngineeringPermissionCodes.ChangesManage);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/engineering-boms" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/engineering-boms/{bomCode}/{revision}" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/engineering-boms/explosion" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/engineering-boms/where-used" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/boms/diff" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/engineering-changes/impact-preview" && x.PermissionCode == EngineeringPermissionCodes.ChangesRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/manufacturing-boms" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/manufacturing-boms/{bomCode}/{revision}" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/manufacturing-boms/explosion" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
@@ -94,6 +108,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
     [Theory]
     [InlineData(typeof(RegisterEngineeringDocumentEndpoint))]
+    [InlineData(typeof(PublishSopDocumentEndpoint))]
+    [InlineData(typeof(GetCurrentSopDocumentsEndpoint))]
     [InlineData(typeof(ListEngineeringDocumentsEndpoint))]
     [InlineData(typeof(GetEngineeringDocumentEndpoint))]
     [InlineData(typeof(CreateEngineeringItemRevisionEndpoint))]
@@ -103,6 +119,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
     [InlineData(typeof(GetEngineeringBomEndpoint))]
     [InlineData(typeof(GetEngineeringBomExplosionEndpoint))]
     [InlineData(typeof(GetEngineeringBomWhereUsedEndpoint))]
+    [InlineData(typeof(GetBomDiffEndpoint))]
+    [InlineData(typeof(GetEngineeringChangeImpactPreviewEndpoint))]
     [InlineData(typeof(ReleaseManufacturingBomEndpoint))]
     [InlineData(typeof(GetManufacturingBomEndpoint))]
     [InlineData(typeof(GetManufacturingBomExplosionEndpoint))]
@@ -110,6 +128,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
     [InlineData(typeof(ReleaseRoutingEndpoint))]
     [InlineData(typeof(GetRoutingEndpoint))]
     [InlineData(typeof(ReleaseEngineeringChangeEndpoint))]
+    [InlineData(typeof(CancelScheduledEngineeringChangeEndpoint))]
+    [InlineData(typeof(RescheduleEngineeringChangeEndpoint))]
     [InlineData(typeof(ListEngineeringChangesEndpoint))]
     [InlineData(typeof(GetEngineeringChangeEndpoint))]
     [InlineData(typeof(ListEngineeringBomsEndpoint))]
@@ -352,6 +372,140 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Equal("MBOM-1000", detail.BomCode);
         Assert.Equal("SKU-RM-1000", Assert.Single(detail.MaterialLines).SkuCode);
         Assert.Equal("mix-temperature", Assert.Single(detail.RecipeLines).ParameterCode);
+    }
+
+    [Fact]
+    public async Task Bom_diff_returns_structured_added_removed_replaced_and_field_changes()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var source = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-DIFF", "A", "SKU-FG-1000")
+            .AddLine("SKU-RM-KEEP", 2m, "EA", scrapRate: 0.01m, yieldRate: 0.98m)
+            .AddLine("SKU-RM-REPLACE-OLD", 1m, "EA", alternateGroup: "main")
+            .AddLine("SKU-RM-REMOVE", 1m, "EA");
+        source.Release(new DateOnly(2026, 1, 1));
+        var target = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-DIFF", "B", "SKU-FG-1000")
+            .AddLine("SKU-RM-KEEP", 2.5m, "KG", scrapRate: 0.03m, yieldRate: 0.95m)
+            .AddLine("SKU-RM-REPLACE-NEW", 1m, "EA", alternateGroup: "main")
+            .AddLine("SKU-RM-ADD", 4m, "EA");
+        target.Release(new DateOnly(2026, 4, 1));
+        dbContext.EngineeringBoms.AddRange(source, target);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetBomDiffQueryHandler(dbContext).Handle(
+            new GetBomDiffQuery("org-001", "env-dev", "EngineeringBom", "EBOM-DIFF", "A", "EBOM-DIFF", "B"),
+            CancellationToken.None);
+
+        Assert.Equal("EngineeringBom", response.BomKind);
+        Assert.Contains(response.Lines, line => line.ChangeType == "added" && line.NewItemCode == "SKU-RM-ADD");
+        Assert.Contains(response.Lines, line => line.ChangeType == "removed" && line.OldItemCode == "SKU-RM-REMOVE");
+        Assert.Contains(response.Lines, line =>
+            line.ChangeType == "replaced" &&
+            line.OldItemCode == "SKU-RM-REPLACE-OLD" &&
+            line.NewItemCode == "SKU-RM-REPLACE-NEW");
+        var changed = Assert.Single(response.Lines, line => line.ChangeType == "changed");
+        Assert.Equal("SKU-RM-KEEP", changed.OldItemCode);
+        Assert.Equal("SKU-RM-KEEP", changed.NewItemCode);
+        Assert.Contains(changed.FieldChanges, change => change.FieldName == "quantity" && change.OldValue == "2" && change.NewValue == "2.5");
+        Assert.Contains(changed.FieldChanges, change => change.FieldName == "unitOfMeasureCode" && change.OldValue == "EA" && change.NewValue == "KG");
+        Assert.Contains(changed.FieldChanges, change => change.FieldName == "scrapRate" && change.OldValue == "0.01" && change.NewValue == "0.03");
+        Assert.Contains(changed.FieldChanges, change => change.FieldName == "yieldRate" && change.OldValue == "0.98" && change.NewValue == "0.95");
+    }
+
+    [Fact]
+    public async Task Engineering_change_impact_preview_expands_affected_versions_to_downstream_candidates()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-IMPACT", "A", "SKU-FG-3000")
+            .AddLine("SKU-RM-3000", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 1, 1));
+        var mbom = ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-IMPACT", "A", "SKU-FG-3000")
+            .AddMaterialLine("SKU-RM-3000", 1m, "EA", 0m);
+        mbom.ReleaseFromEngineeringBom("EBOM-IMPACT:A", EngineeringVersionStatus.Published, new DateOnly(2026, 1, 1));
+        var routing = Routing.CreateDraft("org-001", "env-dev", "ROUTE-IMPACT", "A", "SKU-FG-3000")
+            .AddOperation(10, "WC-FINAL", "assembly", "Assembly", 30);
+        routing.Release(new DateOnly(2026, 1, 1));
+        var productionVersion = ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-3000",
+            "MBOM-IMPACT:A",
+            "ROUTE-IMPACT:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            10,
+            true,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        dbContext.EngineeringBoms.Add(ebom);
+        dbContext.ManufacturingBoms.Add(mbom);
+        dbContext.Routings.Add(routing);
+        dbContext.ProductionVersions.Add(productionVersion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetEngineeringChangeImpactPreviewQueryHandler(dbContext).Handle(
+            new GetEngineeringChangeImpactPreviewQuery(
+                "org-001",
+                "env-dev",
+                new DateOnly(2026, 6, 1),
+                [new EngineeringChangeImpactAffectedVersionInput("engineering-bom", "EBOM-IMPACT:A")]),
+            CancellationToken.None);
+
+        var productionVersionId = productionVersion.Id.Id.ToString("D");
+        Assert.Contains(response.Nodes, node => node.NodeType == "engineering-bom" && node.VersionId == "EBOM-IMPACT:A" && node.ImpactLevel == "direct");
+        Assert.Contains(response.Nodes, node => node.NodeType == "manufacturing-bom" && node.VersionId == "MBOM-IMPACT:A" && node.ImpactLevel == "derived");
+        Assert.Contains(response.Nodes, node => node.NodeType == "routing" && node.VersionId == "ROUTE-IMPACT:A" && node.ImpactLevel == "derived");
+        Assert.Contains(response.Nodes, node => node.NodeType == "production-version" && node.VersionId == productionVersionId && node.ImpactLevel == "downstream");
+        Assert.Contains(response.Nodes, node => node.NodeType == "mrp-candidate" && node.RelatedVersionId == productionVersionId);
+        Assert.Contains(response.Nodes, node => node.NodeType == "mes-work-order-candidate" && node.RelatedVersionId == productionVersionId);
+        Assert.Contains(response.Nodes, node => node.NodeType == "aps-plan-candidate" && node.RelatedVersionId == productionVersionId && node.ConsoleRoute == "/scheduling");
+        Assert.Contains(response.Risks, risk => risk.Code == "downstream-execution-impact" && risk.Severity == "warning");
+    }
+
+    [Fact]
+    public async Task Engineering_change_impact_preview_normalizes_production_version_guid_before_adding_candidates()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var productionVersion = ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-4000",
+            "MBOM-PV:A",
+            "ROUTE-PV:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            10,
+            true,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        dbContext.ProductionVersions.Add(productionVersion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var productionVersionId = productionVersion.Id.Id.ToString("D");
+        var response = await new GetEngineeringChangeImpactPreviewQueryHandler(dbContext).Handle(
+            new GetEngineeringChangeImpactPreviewQuery(
+                "org-001",
+                "env-dev",
+                new DateOnly(2026, 6, 1),
+                [new EngineeringChangeImpactAffectedVersionInput("production-version", productionVersion.Id.Id.ToString("B").ToUpperInvariant())]),
+            CancellationToken.None);
+
+        var productionVersionNodes = response.Nodes
+            .Where(node => node.NodeType == "production-version")
+            .ToArray();
+        var node = Assert.Single(productionVersionNodes);
+        Assert.Equal(productionVersionId, node.VersionId);
+        Assert.Equal("direct", node.ImpactLevel);
+        Assert.Contains(response.Nodes, candidate => candidate.NodeType == "mrp-candidate" && candidate.RelatedVersionId == productionVersionId);
     }
 
     [Fact]
@@ -1458,6 +1612,265 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
+    public async Task Future_release_engineering_change_schedules_without_archiving_or_raising_release_event()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-FUTURE", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        ebom.ClearDomainEvents();
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var approvalVerifier = new RecordingApprovalVerifier();
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            approvalVerifier,
+            businessDateProvider: new FixedBusinessDateProvider(new DateOnly(2026, 6, 1)));
+
+        await handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-FUTURE",
+                "Future EBOM switch",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 3),
+                [new AffectedVersionCommand("engineering-bom", "EBOM-FUTURE:A")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var change = Assert.Single(dbContext.EngineeringChanges);
+        Assert.Equal(EngineeringVersionStatus.Scheduled, change.Status);
+        Assert.Equal(new DateOnly(2026, 6, 3), change.EffectiveDate);
+        Assert.Empty(change.GetDomainEvents());
+        Assert.Equal(EngineeringVersionStatus.Published, ebom.Status);
+        Assert.Equal("ECO-FUTURE", approvalVerifier.Calls.Single().ChangeNumber);
+    }
+
+    [Fact]
+    public async Task Scheduled_engineering_change_promotes_due_release_and_archives_affected_versions()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-DUE", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new RecordingApprovalVerifier(),
+            businessDateProvider: new FixedBusinessDateProvider(new DateOnly(2026, 6, 1)));
+        await handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-DUE",
+                "Due EBOM switch",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 3),
+                [new AffectedVersionCommand("engineering-bom", "EBOM-DUE:A")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var promoted = await new PromoteScheduledEngineeringChangeCommandHandler(
+                dbContext,
+                new EngineeringBomRepository(dbContext),
+                new ManufacturingBomRepository(dbContext),
+                new RoutingRepository(dbContext),
+                new ProductionVersionRepository(dbContext))
+            .Handle(new PromoteScheduledEngineeringChangeCommand("org-001", "env-dev", "ECO-DUE", new DateOnly(2026, 6, 3)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.True(promoted);
+        Assert.Equal(EngineeringVersionStatus.Archived, ebom.Status);
+        Assert.Equal(EngineeringVersionStatus.Published, Assert.Single(dbContext.EngineeringChanges).Status);
+    }
+
+    [Fact]
+    public async Task Scheduled_release_scanner_dispatches_due_changes_through_sender()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var dueChange = EngineeringChange.Open("org-001", "env-dev", "ECO-SCAN-DUE", "Due scan")
+            .Affect("engineering-bom", "EBOM-SCAN:A")
+            .Approve(Guid.NewGuid().ToString("D"));
+        dueChange.Schedule(new DateOnly(2026, 6, 3));
+        var futureChange = EngineeringChange.Open("org-001", "env-dev", "ECO-SCAN-FUTURE", "Future scan")
+            .Affect("engineering-bom", "EBOM-SCAN:B")
+            .Approve(Guid.NewGuid().ToString("D"));
+        futureChange.Schedule(new DateOnly(2026, 6, 4));
+        dbContext.EngineeringChanges.AddRange(dueChange, futureChange);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var sender = new RecordingPromotionSender();
+
+        var promoted = await new EngineeringChangeScheduledReleaseService(
+                dbContext,
+                CreateScopeFactoryWithSender(sender),
+                NullLogger<EngineeringChangeScheduledReleaseService>.Instance)
+            .PromoteDueReleasesAsync(new DateOnly(2026, 6, 3), CancellationToken.None);
+
+        Assert.Equal(1, promoted);
+        Assert.Equal(
+            new PromoteScheduledEngineeringChangeCommand("org-001", "env-dev", "ECO-SCAN-DUE", new DateOnly(2026, 6, 3)),
+            Assert.Single(sender.Commands));
+    }
+
+    [Fact]
+    public async Task Scheduled_release_scanner_dispatches_through_unit_of_work_pipeline_to_publish_release_domain_event()
+    {
+        await using var provider = CreateInMemoryProviderWithUnitOfWork();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-DISPATCHED", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        ebom.ClearDomainEvents();
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await ScheduleEngineeringChangeAsync(dbContext, "ECO-DISPATCHED", "EBOM-DISPATCHED:A", new DateOnly(2026, 6, 3));
+
+        var promoted = await scope.ServiceProvider.GetRequiredService<EngineeringChangeScheduledReleaseService>()
+            .PromoteDueReleasesAsync(new DateOnly(2026, 6, 3), CancellationToken.None);
+
+        var releasedEvent = Assert.Single(scope.ServiceProvider.GetRequiredService<EngineeringChangeReleasedDomainEventRecorder>().Events);
+        var integrationEvent = Assert.IsType<EngineeringChangeReleasedIntegrationEvent>(
+            Assert.Single(scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>().Published));
+        Assert.Equal(1, promoted);
+        Assert.Equal("ECO-DISPATCHED", releasedEvent.Change.ChangeNumber);
+        Assert.Equal("ECO-DISPATCHED", integrationEvent.Payload.ChangeNumber);
+    }
+
+    [Fact]
+    public async Task Promote_scheduled_engineering_change_command_declares_per_change_business_date_lock_key()
+    {
+        var command = new PromoteScheduledEngineeringChangeCommand(
+            "ORG 001",
+            "ENV/DEV",
+            "ECO-LOCK/001",
+            new DateOnly(2026, 6, 3));
+        var commandLock = new PromoteScheduledEngineeringChangeCommandLock();
+
+        var settings = await commandLock.GetLockKeysAsync(command, CancellationToken.None);
+
+        Assert.Equal(
+            "business-product-engineering:eco-scheduled-release:org%20001:env%2Fdev:eco-lock%2F001:20260603",
+            settings.LockKey);
+    }
+
+    [Fact]
+    public async Task Cancel_scheduled_engineering_change_leaves_affected_versions_visible_to_downstream()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-CANCEL", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await ScheduleEngineeringChangeAsync(dbContext, "ECO-CANCEL", "EBOM-CANCEL:A", new DateOnly(2026, 6, 3));
+
+        await new CancelScheduledEngineeringChangeCommandHandler(dbContext).Handle(
+            new CancelScheduledEngineeringChangeCommand("org-001", "env-dev", "ECO-CANCEL", "operator cancelled"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var promoted = await new EngineeringChangeScheduledReleaseService(
+                dbContext,
+                CreateScopeFactoryWithSender(new RecordingPromotionSender(false)),
+                NullLogger<EngineeringChangeScheduledReleaseService>.Instance)
+            .PromoteDueReleasesAsync(new DateOnly(2026, 6, 3), CancellationToken.None);
+
+        Assert.Equal(0, promoted);
+        Assert.Equal(EngineeringVersionStatus.Published, ebom.Status);
+        Assert.Equal(EngineeringVersionStatus.Cancelled, Assert.Single(dbContext.EngineeringChanges).Status);
+    }
+
+    [Fact]
+    public async Task Reschedule_engineering_change_uses_new_effective_date_for_promotion()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-RESCHEDULE", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await ScheduleEngineeringChangeAsync(dbContext, "ECO-RESCHEDULE", "EBOM-RESCHEDULE:A", new DateOnly(2026, 6, 3));
+
+        await new RescheduleEngineeringChangeCommandHandler(dbContext).Handle(
+            new RescheduleEngineeringChangeCommand("org-001", "env-dev", "ECO-RESCHEDULE", new DateOnly(2026, 6, 10), "supplier delay"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var earlyPromoted = await new EngineeringChangeScheduledReleaseService(
+                dbContext,
+                CreateScopeFactoryWithSender(new RecordingPromotionSender(false)),
+                NullLogger<EngineeringChangeScheduledReleaseService>.Instance)
+            .PromoteDueReleasesAsync(new DateOnly(2026, 6, 3), CancellationToken.None);
+        var duePromoted = await new PromoteScheduledEngineeringChangeCommandHandler(
+                dbContext,
+                new EngineeringBomRepository(dbContext),
+                new ManufacturingBomRepository(dbContext),
+                new RoutingRepository(dbContext),
+                new ProductionVersionRepository(dbContext))
+            .Handle(new PromoteScheduledEngineeringChangeCommand("org-001", "env-dev", "ECO-RESCHEDULE", new DateOnly(2026, 6, 10)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(0, earlyPromoted);
+        Assert.True(duePromoted);
+        Assert.Equal(EngineeringVersionStatus.Archived, ebom.Status);
+        Assert.Equal(new DateOnly(2026, 6, 10), Assert.Single(dbContext.EngineeringChanges).EffectiveDate);
+    }
+
+    [Fact]
+    public async Task Scheduled_release_promotion_isolates_failed_changes_for_next_retry()
+    {
+        await using var provider = CreateInMemoryProviderWithUnitOfWork();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var validBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-VALID", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        validBom.Release(new DateOnly(2026, 6, 1));
+        var draftBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-DRAFT-RETRY", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        var validChange = EngineeringChange.Open("org-001", "env-dev", "ECO-VALID", "Due valid change")
+            .Affect("engineering-bom", "EBOM-VALID:A")
+            .Approve(Guid.NewGuid().ToString("D"));
+        validChange.Schedule(new DateOnly(2026, 6, 3));
+        var retryChange = EngineeringChange.Open("org-001", "env-dev", "ECO-RETRY", "Due invalid change")
+            .Affect("engineering-bom", "EBOM-DRAFT-RETRY:A")
+            .Approve(Guid.NewGuid().ToString("D"));
+        retryChange.Schedule(new DateOnly(2026, 6, 3));
+        dbContext.AddRange(validBom, draftBom, validChange, retryChange);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var promoted = await scope.ServiceProvider.GetRequiredService<EngineeringChangeScheduledReleaseService>()
+            .PromoteDueReleasesAsync(new DateOnly(2026, 6, 3), CancellationToken.None);
+
+        dbContext.ChangeTracker.Clear();
+        var persistedValidBom = await dbContext.EngineeringBoms.SingleAsync(x => x.BomCode == "EBOM-VALID", CancellationToken.None);
+        var persistedValidChange = await dbContext.EngineeringChanges.SingleAsync(x => x.ChangeNumber == "ECO-VALID", CancellationToken.None);
+        var persistedRetryChange = await dbContext.EngineeringChanges.SingleAsync(x => x.ChangeNumber == "ECO-RETRY", CancellationToken.None);
+        Assert.Equal(1, promoted);
+        Assert.Equal(EngineeringVersionStatus.Archived, persistedValidBom.Status);
+        Assert.Equal(EngineeringVersionStatus.Published, persistedValidChange.Status);
+        Assert.Equal(EngineeringVersionStatus.Scheduled, persistedRetryChange.Status);
+    }
+
+    [Fact]
     public async Task Release_engineering_change_records_supersede_successor_version()
     {
         await using var provider = CreateInMemoryProvider();
@@ -1975,13 +2388,292 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Single(dbContext.EngineeringDocuments);
     }
 
+    [Fact]
+    public async Task Publish_sop_document_records_operation_scope_file_reference_and_effective_version()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new PublishSopDocumentCommandHandler(new EngineeringDocumentRepository(dbContext), new ProductEngineeringCodingService());
+
+        var result = await handler.Handle(
+            new PublishSopDocumentCommand(
+                "org-001",
+                "env-dev",
+                null,
+                "A",
+                "STD-MIX",
+                "WC-MIX-01",
+                "ROUTE-1000",
+                "A",
+                new DateOnly(2026, 7, 1),
+                "file-sop-v1",
+                "mixing-work-instruction-v1.pdf",
+                "application/pdf",
+                "sop-publish-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetCurrentSopDocumentsQueryHandler(dbContext).Handle(
+            new GetCurrentSopDocumentsQuery("org-001", "env-dev", "STD-MIX", "WC-MIX-01", "ROUTE-1000", "A", new DateOnly(2026, 7, 2)),
+            CancellationToken.None);
+
+        var sop = Assert.Single(response.Items);
+        Assert.Equal(result.Id, sop.DocumentNumber);
+        Assert.Equal("A", sop.Revision);
+        Assert.Equal("STD-MIX", sop.OperationCode);
+        Assert.Equal("WC-MIX-01", sop.WorkCenterCode);
+        Assert.Equal("ROUTE-1000", sop.RoutingCode);
+        Assert.Equal("file-sop-v1", sop.FileId);
+        Assert.Equal("Published", sop.Status);
+    }
+
+    [Fact]
+    public async Task Current_sop_query_returns_new_effective_scope_version_instead_of_old_version()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX",
+            "A",
+            "STD-MIX",
+            "WC-MIX-01",
+            null,
+            null,
+            new DateOnly(2026, 7, 1),
+            "file-old",
+            "mixing-v1.pdf",
+            "application/pdf"));
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX",
+            "B",
+            "STD-MIX",
+            "WC-MIX-01",
+            null,
+            null,
+            new DateOnly(2026, 7, 5),
+            "file-new",
+            "mixing-v2.pdf",
+            "application/pdf"));
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX-NEW-NUMBER",
+            "A",
+            "STD-MIX",
+            "WC-MIX-01",
+            null,
+            null,
+            new DateOnly(2026, 7, 6),
+            "file-new-number",
+            "mixing-v3.pdf",
+            "application/pdf"));
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX-ROUTE",
+            "A",
+            "STD-MIX",
+            "WC-MIX-01",
+            "ROUTE-1000",
+            null,
+            new DateOnly(2026, 7, 7),
+            "file-route",
+            "mixing-route.pdf",
+            "application/pdf"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetCurrentSopDocumentsQueryHandler(dbContext).Handle(
+            new GetCurrentSopDocumentsQuery("org-001", "env-dev", "STD-MIX", "WC-MIX-01", null, null, new DateOnly(2026, 7, 7)),
+            CancellationToken.None);
+
+        var sop = Assert.Single(response.Items);
+        Assert.Equal("SOP-MIX-NEW-NUMBER", sop.DocumentNumber);
+        Assert.Equal("A", sop.Revision);
+        Assert.Equal("file-new-number", sop.FileId);
+    }
+
+    [Fact]
+    public async Task Current_sop_query_prefers_work_center_scope_over_global_operation_scope()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX-GLOBAL",
+            "A",
+            "STD-MIX",
+            null,
+            null,
+            null,
+            new DateOnly(2026, 7, 6),
+            "file-global-newer",
+            "mixing-global.pdf",
+            "application/pdf"));
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX-WC",
+            "A",
+            "STD-MIX",
+            "WC-MIX-01",
+            null,
+            null,
+            new DateOnly(2026, 7, 1),
+            "file-work-center",
+            "mixing-work-center.pdf",
+            "application/pdf"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetCurrentSopDocumentsQueryHandler(dbContext).Handle(
+            new GetCurrentSopDocumentsQuery("org-001", "env-dev", "STD-MIX", "WC-MIX-01", null, null, new DateOnly(2026, 7, 7)),
+            CancellationToken.None);
+
+        var sop = Assert.Single(response.Items);
+        Assert.Equal("SOP-MIX-WC", sop.DocumentNumber);
+        Assert.Equal("file-work-center", sop.FileId);
+    }
+
+    [Fact]
+    public async Task Release_engineering_change_archives_sop_document_so_current_query_hides_old_version()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX",
+            "A",
+            "STD-MIX",
+            "WC-MIX-01",
+            null,
+            null,
+            new DateOnly(2026, 7, 1),
+            "file-old",
+            "mixing-v1.pdf",
+            "application/pdf"));
+        dbContext.EngineeringDocuments.Add(EngineeringDocument.PublishSop(
+            "org-001",
+            "env-dev",
+            "SOP-MIX",
+            "B",
+            "STD-MIX",
+            "WC-MIX-01",
+            null,
+            null,
+            new DateOnly(2026, 7, 5),
+            "file-new",
+            "mixing-v2.pdf",
+            "application/pdf"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new RecordingApprovalVerifier(),
+            businessDateProvider: new FixedBusinessDateProvider(new DateOnly(2026, 7, 5)),
+            engineeringDocumentRepository: new EngineeringDocumentRepository(dbContext));
+
+        await handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-SOP-MIX",
+                "Publish new work instruction",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 7, 5),
+                [new AffectedVersionCommand("engineering-document", "SOP-MIX:A", "SOP-MIX:B")]),
+            CancellationToken.None);
+
+        var response = await new GetCurrentSopDocumentsQueryHandler(dbContext).Handle(
+            new GetCurrentSopDocumentsQuery("org-001", "env-dev", "STD-MIX", "WC-MIX-01", null, null, new DateOnly(2026, 7, 5)),
+            CancellationToken.None);
+
+        var sop = Assert.Single(response.Items);
+        Assert.Equal("B", sop.Revision);
+        Assert.Equal("file-new", sop.FileId);
+        Assert.Equal("Archived", dbContext.EngineeringDocuments.Single(x => x.Revision == "A").Status.ToString());
+    }
+
     private static ServiceProvider CreateInMemoryProvider()
     {
+        var databaseName = $"product-engineering-release-contract-{Guid.NewGuid():N}";
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseInMemoryDatabase($"product-engineering-release-contract-{Guid.NewGuid():N}"));
+            options.UseInMemoryDatabase(databaseName));
         return services.BuildServiceProvider();
+    }
+
+    private static ServiceProvider CreateInMemoryProviderWithUnitOfWork()
+    {
+        var databaseName = $"product-engineering-release-contract-uow-{Guid.NewGuid():N}";
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<EngineeringChangeReleasedDomainEventRecorder>();
+        services.AddSingleton<INotificationHandler<EngineeringChangeReleasedDomainEvent>>(serviceProvider =>
+            serviceProvider.GetRequiredService<EngineeringChangeReleasedDomainEventRecorder>());
+        services.AddSingleton<RecordingIntegrationEventPublisher>();
+        services.AddSingleton<IIntegrationEventPublisher>(serviceProvider =>
+            serviceProvider.GetRequiredService<RecordingIntegrationEventPublisher>());
+        services.AddScoped<IProductEngineeringIntegrationEventContextAccessor, StubProductEngineeringIntegrationEventContextAccessor>();
+        services.AddScoped<EngineeringChangeReleasedIntegrationEventConverter>();
+        services.AddScoped<EngineeringChangeScheduledReleaseService>();
+        services.AddScoped<IEngineeringBomRepository, EngineeringBomRepository>();
+        services.AddScoped<IManufacturingBomRepository, ManufacturingBomRepository>();
+        services.AddScoped<IRoutingRepository, RoutingRepository>();
+        services.AddScoped<IProductionVersionRepository, ProductionVersionRepository>();
+        services.AddMediatR(configuration => configuration
+            .RegisterServicesFromAssembly(typeof(Program).Assembly)
+            .RegisterServicesFromAssembly(typeof(ProductEngineeringReleaseApiContractTests).Assembly)
+            .AddUnitOfWorkBehaviors());
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options
+                .UseInMemoryDatabase(databaseName)
+                .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+        services.AddUnitOfWork<ApplicationDbContext>();
+        return services.BuildServiceProvider();
+    }
+
+    private static IServiceScopeFactory CreateScopeFactoryWithSender(ISender sender)
+    {
+        return new ServiceCollection()
+            .AddSingleton(sender)
+            .BuildServiceProvider()
+            .GetRequiredService<IServiceScopeFactory>();
+    }
+
+    private static async Task ScheduleEngineeringChangeAsync(ApplicationDbContext dbContext, string changeNumber, string versionId, DateOnly effectiveDate)
+    {
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new RecordingApprovalVerifier(),
+            businessDateProvider: new FixedBusinessDateProvider(effectiveDate.AddDays(-1)));
+        await handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                changeNumber,
+                "Schedule engineering change",
+                Guid.NewGuid().ToString("D"),
+                effectiveDate,
+                [new AffectedVersionCommand("engineering-bom", versionId)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
     }
 
     private static bool IsValidationFailureFor(FluentValidation.Results.ValidationFailure failure, string propertyName)
@@ -2062,6 +2754,88 @@ public sealed class ProductEngineeringReleaseApiContractTests
             }
 
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FixedBusinessDateProvider(DateOnly businessDate) : IProductEngineeringBusinessDateProvider
+    {
+        public DateOnly GetBusinessDate() => businessDate;
+    }
+
+    private sealed class EngineeringChangeReleasedDomainEventRecorder
+        : INotificationHandler<EngineeringChangeReleasedDomainEvent>
+    {
+        public List<EngineeringChangeReleasedDomainEvent> Events { get; } = [];
+
+        public Task Handle(EngineeringChangeReleasedDomainEvent notification, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            Events.Add(notification);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        public List<object> Published { get; } = [];
+
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(
+            TIntegrationEvent integrationEvent,
+            CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            Published.Add(integrationEvent!);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class StubProductEngineeringIntegrationEventContextAccessor
+        : IProductEngineeringIntegrationEventContextAccessor
+    {
+        public ProductEngineeringIntegrationEventContext GetContext()
+        {
+            return new ProductEngineeringIntegrationEventContext("corr-001", "cause-001", "system:test");
+        }
+    }
+
+    private sealed class RecordingPromotionSender(bool result = true) : ISender
+    {
+        public List<PromoteScheduledEngineeringChangeCommand> Commands { get; } = [];
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            Commands.Add(Assert.IsType<PromoteScheduledEngineeringChangeCommand>(request));
+            return Task.FromResult((TResponse)(object)result);
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Only request/response commands are supported.");
+        }
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Only typed commands are supported.");
+        }
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Streams are not supported.");
+        }
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Streams are not supported.");
         }
     }
 

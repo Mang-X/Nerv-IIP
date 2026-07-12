@@ -1,1 +1,1 @@
-export { default as FormSectionPro } from './FormSectionPro.vue'
+export { default as NvFormSection } from './FormSectionPro.vue'

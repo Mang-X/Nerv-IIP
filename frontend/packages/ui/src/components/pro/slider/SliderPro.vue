@@ -50,22 +50,24 @@ const thumbCount = computed(() => {
 </template>
 
 <style scoped>
-.ds-slider-thumb {
-  /* Grab-grow on hover/press — a calm decelerate, no bounce (motion philosophy).
-     The range itself tracks the pointer 1:1 (no transition) so dragging is exact. */
-  transition:
-    transform 0.16s var(--ease-out-quart, ease-out),
-    box-shadow 0.18s var(--ease-out-quart, ease-out);
-}
-.ds-slider-thumb:hover {
-  transform: scale(1.08);
-}
-.ds-slider-thumb:active {
-  transform: scale(1.18);
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
   .ds-slider-thumb {
-    transition: none;
+    /* Grab-grow on hover/press — a calm decelerate, no bounce (motion philosophy).
+     The range itself tracks the pointer 1:1 (no transition) so dragging is exact. */
+    transition:
+      transform 0.16s var(--nv-ease-out-quart, ease-out),
+      box-shadow 0.18s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-slider-thumb:hover {
+    transform: scale(1.08);
+  }
+  .ds-slider-thumb:active {
+    transform: scale(1.18);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-slider-thumb {
+      transition: none;
+    }
   }
 }
 </style>

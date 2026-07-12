@@ -14,7 +14,7 @@ defineProps<{
   center?: boolean
   mobile?: boolean
   popout?: boolean
-  /** Full-width column layout so wide components (DataTable, Descriptions) fill
+  /** Full-width column layout so wide components (NvDataTable, NvDescriptions) fill
    *  the preview instead of shrinking to content inside the default flex row. */
   block?: boolean
 }>()
@@ -22,45 +22,41 @@ defineProps<{
 
 <template>
   <ClientOnly>
-    <div class="ds-demo" :class="{ 'ds-demo-popout-box': popout }">
+    <!-- `vp-raw` isolates this subtree from VitePress's base/vp-doc resets
+         (ADR 0020 §4.2, via postcssIsolateStyles in config.mts). -->
+    <div class="ds-demo vp-raw" :class="{ 'ds-demo-popout-box': popout }">
       <div v-if="title" class="ds-demo-title">
         {{ title }}
       </div>
-      <div class="ds-demo-preview" :class="{ 'ds-demo-center': center, 'ds-demo-mobile': mobile, 'ds-demo-popout': popout, 'ds-demo-block': block }">
+      <div
+        class="ds-demo-preview"
+        :class="{
+          'ds-demo-center': center,
+          'ds-demo-mobile': mobile,
+          'ds-demo-popout': popout,
+          'ds-demo-block': block,
+        }"
+      >
         <div v-if="mobile" class="ds-demo-phone"><slot /></div>
         <slot v-else />
       </div>
     </div>
     <template #fallback>
-      <div class="ds-demo ds-demo-loading">预览加载中…</div>
+      <div class="ds-demo vp-raw ds-demo-loading">预览加载中…</div>
     </template>
   </ClientOnly>
 </template>
 
 <style>
-/* The demo lives inside VitePress's `.vp-doc`, whose prose typography would
-   inject article margins/borders/sizes onto any heading/paragraph/list in the
-   demo (e.g. `.vp-doc h3 { margin-top: 32px }`). Neutralise that bleed so demo
-   content is governed only by its own utilities — like Tailwind's `not-prose`.
-   High specificity (.vp-doc .ds-demo …) to beat VitePress's `.vp-doc h3` etc. */
-.vp-doc .ds-demo :is(h1, h2, h3, h4, h5, h6, p, ul, ol, li) {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  list-style: none;
-}
-/* Links inside a demo are component links (breadcrumb, nav, …), not prose links —
-   strip VitePress's brand-blue + underline so the component's own styling shows. */
-.vp-doc .ds-demo a {
-  color: inherit;
-  font-weight: inherit;
-  text-decoration: none;
-}
+/* Demo bleed from VitePress's `.vp-doc` prose typography (heading margins, list
+   markers, brand-blue links, table borders) is now neutralised at the source by
+   `postcssIsolateStyles` + the `vp-raw` class on the demo root (ADR 0020 §4.2) —
+   the old `.vp-doc .ds-demo …` counter-rules are no longer needed and were removed. */
 .ds-demo {
   margin: 1.25rem 0;
   border: 1px solid var(--border);
   border-radius: 12px;
-  /* page-surface background so surface components (Card, Descriptions, …) sit on
+  /* page-surface background so surface components (Card, NvDescriptions, …) sit on
      the same base they do in the app and pop with their ring/shadow, instead of
      blending into a same-coloured --card panel. */
   background: var(--background);
@@ -82,7 +78,7 @@ defineProps<{
   gap: 0.75rem;
   padding: 1.75rem 1.5rem;
 }
-/* `block` — full-width column for wide components (DataTable, Descriptions) so
+/* `block` — full-width column for wide components (NvDataTable, NvDescriptions) so
    they fill the preview instead of shrinking to content in the flex row. */
 .ds-demo-block {
   display: block;
@@ -105,12 +101,11 @@ defineProps<{
 }
 .ds-demo-mobile {
   justify-content: center;
-  background:
-    repeating-linear-gradient(
-      45deg,
-      color-mix(in oklch, var(--muted) 50%, transparent) 0 1px,
-      transparent 1px 10px
-    );
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in oklch, var(--muted) 50%, transparent) 0 1px,
+    transparent 1px 10px
+  );
 }
 .ds-demo-phone {
   width: 100%;

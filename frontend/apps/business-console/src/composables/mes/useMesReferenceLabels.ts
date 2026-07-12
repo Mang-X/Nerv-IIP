@@ -32,6 +32,7 @@ const statusLabels: Record<MesStatusValue, string> = {
   scrapAccepted: '报废已受理',
   scrapped: '已报废',
   requested: '已请求',
+  scheduleInvalidated: '排程已失效',
   started: '已开工',
   warning: '预警',
 }
@@ -66,6 +67,7 @@ export const mesProductionPlanStatusOptions = mesWorkOrderStatusOptions
 
 export const mesOperationTaskStatusOptions = statusOptions([
   'queued',
+  'scheduleInvalidated',
   'inProgress',
   'paused',
   'completed',

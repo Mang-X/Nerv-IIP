@@ -213,7 +213,8 @@ internal static class ApprovalIntegrationEventConverterHelpers
                 decision.ActorRef,
                 decision.OnBehalfOfActorType,
                 decision.OnBehalfOfActorRef,
-                ToPayload(chain.DocumentReference)));
+                ToPayload(chain.DocumentReference),
+                chain.StartedBy));
     }
 }
 

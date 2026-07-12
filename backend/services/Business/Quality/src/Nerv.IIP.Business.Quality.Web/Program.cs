@@ -12,9 +12,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Quality.Web.Application.Approvals;
 using Nerv.IIP.Business.Quality.Web.Application.Commands;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Quality.Web.Application.InspectionRecords;
+using Nerv.IIP.Business.Quality.Web.Application.Scheduling;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Endpoints.QualityReasons;
@@ -116,6 +118,15 @@ try
     builder.Services.AddScoped<IInspectionSourceDocumentVerifier, ErpPurchaseReceiptInspectionSourceDocumentVerifier>();
     builder.Services.AddScoped<IQualityIntegrationEventContextAccessor, HttpQualityIntegrationEventContextAccessor>();
     builder.Services.AddScoped<INonconformanceReportCodeGenerator, NonconformanceReportCodeGenerator>();
+    builder.Services.AddOptions<CapaAutomationOptions>()
+        .Bind(builder.Configuration.GetSection("Quality:CapaAutomation"))
+        .ValidateOnStart();
+    builder.Services.Configure<CapaCloseApprovalOptions>(builder.Configuration.GetSection("Quality:CapaCloseApproval"));
+    builder.Services.AddSingleton<IValidateOptions<CapaAutomationOptions>, CapaAutomationOptionsValidator>();
+    builder.Services.AddScoped<ICorrectiveActionCodeGenerator, CorrectiveActionCodeGenerator>();
+    builder.Services.AddScoped<ICapaAutomationService, CapaAutomationService>();
+    builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddHostedService<InspectionTaskOverdueScheduler>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)

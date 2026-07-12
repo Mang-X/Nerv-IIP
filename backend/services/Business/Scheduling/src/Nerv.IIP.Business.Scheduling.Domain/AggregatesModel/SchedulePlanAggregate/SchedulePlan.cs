@@ -14,6 +14,7 @@ public static class SchedulingPlanInvalidationReasons
 {
     public const string EquipmentUnavailable = "equipmentUnavailable";
     public const string EquipmentRestored = "equipmentRestored";
+    public const string DeviceStateChanged = "deviceStateChanged";
     public const string MaterialReadinessChanged = "materialReadinessChanged";
     public const string QualityBlocked = "qualityBlocked";
     public const string QualityReleased = "qualityReleased";
@@ -87,7 +88,8 @@ public sealed record GeneratedScheduleAssignmentSnapshot(
     DateTimeOffset StartUtc,
     DateTimeOffset EndUtc,
     bool IsLocked,
-    string ExplanationCode);
+    string ExplanationCode,
+    string? StandardOperationCode = null);
 
 public sealed record GeneratedScheduleResourceLoadSnapshot(
     string ResourceId,
@@ -111,6 +113,57 @@ public sealed record GeneratedUnscheduledOperationSnapshot(
     string OperationId,
     ScheduleConflictReasonCode ReasonCode,
     string Message);
+
+public sealed record SchedulePlanInvalidatedSnapshot(
+    string PlanId,
+    string ProblemId,
+    int ContractVersion,
+    string AlgorithmVersion,
+    string ProblemFingerprint,
+    SchedulePlanLifecycleStatus Status,
+    IReadOnlyCollection<SchedulePlanInvalidatedOperationSnapshot> AffectedOperations)
+{
+    public static SchedulePlanInvalidatedSnapshot FromPlan(
+        SchedulePlan plan,
+        IReadOnlyCollection<SchedulePlanAssignment> affectedOperations)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(affectedOperations);
+
+        return new SchedulePlanInvalidatedSnapshot(
+            plan.PlanId,
+            plan.ProblemId,
+            plan.ContractVersion,
+            plan.AlgorithmVersion,
+            plan.ProblemFingerprint,
+            plan.Status,
+            affectedOperations
+                .OrderBy(x => x.StartUtc)
+                .ThenBy(x => x.WorkOrderId, StringComparer.Ordinal)
+                .ThenBy(x => x.OperationSequence)
+                .ThenBy(x => x.OperationId, StringComparer.Ordinal)
+                .Select(x => new SchedulePlanInvalidatedOperationSnapshot(
+                    x.WorkOrderId,
+                    x.OperationId,
+                    x.OperationSequence,
+                    x.ResourceId,
+                    x.WorkCenterId,
+                    x.StartUtc,
+                    x.EndUtc,
+                    x.StandardOperationCode))
+                .ToArray());
+    }
+}
+
+public sealed record SchedulePlanInvalidatedOperationSnapshot(
+    string WorkOrderId,
+    string OperationId,
+    int OperationSequence,
+    string ResourceId,
+    string WorkCenterId,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    string? StandardOperationCode = null);
 
 public sealed class ScheduleProblemSnapshot : Entity<ScheduleProblemSnapshotId>
 {
@@ -146,6 +199,11 @@ public sealed class ScheduleProblemSnapshot : Entity<ScheduleProblemSnapshotId>
     public DateTimeOffset HorizonStartUtc { get; private set; }
     public DateTimeOffset HorizonEndUtc { get; private set; }
     public DateTimeOffset CapturedAtUtc { get; private set; }
+
+    private static string? Optional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
 
     private static string Required(string value, string? parameterName = null)
     {
@@ -421,9 +479,10 @@ public sealed class SchedulePlanInvalidation : Entity<SchedulePlanInvalidationId
         string? affectedOperationId,
         string? affectedSkuCode,
         DateTimeOffset occurredAtUtc,
-        DateTimeOffset recordedAtUtc)
+        DateTimeOffset recordedAtUtc,
+        SchedulePlanInvalidatedSnapshot? planSnapshot = null)
     {
-        return new SchedulePlanInvalidation(
+        var invalidation = new SchedulePlanInvalidation(
             organizationId,
             environmentId,
             planId,
@@ -437,6 +496,12 @@ public sealed class SchedulePlanInvalidation : Entity<SchedulePlanInvalidationId
             affectedSkuCode,
             occurredAtUtc,
             recordedAtUtc);
+        if (planSnapshot is not null)
+        {
+            invalidation.AddDomainEvent(new SchedulePlanInvalidatedDomainEvent(invalidation, planSnapshot));
+        }
+
+        return invalidation;
     }
 
     private static string? Optional(string? value)
@@ -473,6 +538,7 @@ public sealed class SchedulePlanAssignment : Entity<SchedulePlanAssignmentId>
         EndUtc = contract.EndUtc;
         IsLocked = contract.IsLocked;
         ExplanationCode = Required(contract.ExplanationCode, nameof(contract.ExplanationCode));
+        StandardOperationCode = Optional(contract.StandardOperationCode);
     }
 
     public SchedulePlanId SchedulePlanId { get; private set; } = null!;
@@ -482,6 +548,7 @@ public sealed class SchedulePlanAssignment : Entity<SchedulePlanAssignmentId>
     public int OperationSequence { get; private set; }
     public string ResourceId { get; private set; } = string.Empty;
     public string WorkCenterId { get; private set; } = string.Empty;
+    public string? StandardOperationCode { get; private set; }
     public DateTimeOffset StartUtc { get; private set; }
     public DateTimeOffset EndUtc { get; private set; }
     public bool IsLocked { get; private set; }
@@ -490,6 +557,11 @@ public sealed class SchedulePlanAssignment : Entity<SchedulePlanAssignmentId>
     public static SchedulePlanAssignment FromPlanSnapshot(GeneratedScheduleAssignmentSnapshot contract)
     {
         return new SchedulePlanAssignment(contract);
+    }
+
+    private static string? Optional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static string Required(string value, string? parameterName = null)

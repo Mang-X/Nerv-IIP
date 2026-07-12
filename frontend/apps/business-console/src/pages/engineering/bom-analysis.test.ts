@@ -11,9 +11,15 @@ const routerReplace = vi.fn(async (location: { query?: Record<string, unknown> }
 
 const api = vi.hoisted(() => ({
   getBusinessConsoleEngineeringBomExplosion: vi.fn(),
+  getBusinessConsoleEngineeringBomExplosionQueryOptions: vi.fn(),
+  getBusinessConsoleEngineeringBomDiff: vi.fn(),
+  getBusinessConsoleEngineeringBomDiffQueryOptions: vi.fn(),
   getBusinessConsoleEngineeringManufacturingBomExplosion: vi.fn(),
+  getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions: vi.fn(),
   getBusinessConsoleEngineeringBomWhereUsed: vi.fn(),
+  getBusinessConsoleEngineeringBomWhereUsedQueryOptions: vi.fn(),
   getBusinessConsoleEngineeringManufacturingBomWhereUsed: vi.fn(),
+  getBusinessConsoleEngineeringManufacturingBomWhereUsedQueryOptions: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -28,9 +34,22 @@ vi.mock('@/stores/businessContext', () => ({
 vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
   getBusinessConsoleEngineeringBomExplosion: api.getBusinessConsoleEngineeringBomExplosion,
-  getBusinessConsoleEngineeringManufacturingBomExplosion: api.getBusinessConsoleEngineeringManufacturingBomExplosion,
+  getBusinessConsoleEngineeringBomExplosionQueryOptions:
+    api.getBusinessConsoleEngineeringBomExplosionQueryOptions,
+  getBusinessConsoleEngineeringBomDiff: api.getBusinessConsoleEngineeringBomDiff,
+  getBusinessConsoleEngineeringBomDiffQueryOptions:
+    api.getBusinessConsoleEngineeringBomDiffQueryOptions,
+  getBusinessConsoleEngineeringManufacturingBomExplosion:
+    api.getBusinessConsoleEngineeringManufacturingBomExplosion,
+  getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions:
+    api.getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions,
   getBusinessConsoleEngineeringBomWhereUsed: api.getBusinessConsoleEngineeringBomWhereUsed,
-  getBusinessConsoleEngineeringManufacturingBomWhereUsed: api.getBusinessConsoleEngineeringManufacturingBomWhereUsed,
+  getBusinessConsoleEngineeringBomWhereUsedQueryOptions:
+    api.getBusinessConsoleEngineeringBomWhereUsedQueryOptions,
+  getBusinessConsoleEngineeringManufacturingBomWhereUsed:
+    api.getBusinessConsoleEngineeringManufacturingBomWhereUsed,
+  getBusinessConsoleEngineeringManufacturingBomWhereUsedQueryOptions:
+    api.getBusinessConsoleEngineeringManufacturingBomWhereUsedQueryOptions,
 }))
 
 vi.mock('@nerv-iip/ui', () => {
@@ -38,43 +57,56 @@ vi.mock('@nerv-iip/ui', () => {
   const modelInput = {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    template:
+      '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   }
   return {
-    ButtonPro: { template: '<button><slot /></button>' },
-    DataTablePro: defineComponent({
+    NvButton: { template: '<button><slot /></button>' },
+    NvDataTable: defineComponent({
       props: ['columns', 'rows', 'emptyMessage'],
       setup(props, { slots }) {
-        return () => h('div', { 'data-testid': 'table' }, [
-          ...(props.rows?.length
-            ? props.rows.flatMap((row: Record<string, unknown>) =>
-                props.columns.map((column: { key: string }) =>
-                  h('div', { class: `cell-${column.key}` }, slots[`cell-${column.key}`]?.({ row }) ?? String(row[column.key] ?? '')),
-                ),
-              )
-            : [h('p', props.emptyMessage)]),
-        ])
+        return () =>
+          h('div', { 'data-testid': 'table' }, [
+            ...(props.rows?.length
+              ? props.rows.flatMap((row: Record<string, unknown>) =>
+                  props.columns.map((column: { key: string }) =>
+                    h(
+                      'div',
+                      { class: `cell-${column.key}` },
+                      slots[`cell-${column.key}`]?.({ row }) ?? String(row[column.key] ?? ''),
+                    ),
+                  ),
+                )
+              : [h('p', props.emptyMessage)]),
+          ])
       },
     }),
-    DatePickerPro: modelInput,
-    FieldPro: passthrough(),
-    FieldProLabel: passthrough('label'),
-    InputPro: modelInput,
-    PageHeader: { props: ['title', 'description'], template: '<header><h1>{{ title }}</h1><p>{{ description }}</p></header>' },
-    SectionCard: { props: ['description', 'value', 'hint'], template: '<section>{{ description }} {{ value }} {{ hint }}</section>' },
-    SectionCards: passthrough('section'),
-    SelectPro: {
+    NvDatePicker: modelInput,
+    NvField: passthrough(),
+    NvFieldLabel: passthrough('label'),
+    NvInput: modelInput,
+    NvPageHeader: {
+      props: ['title', 'description'],
+      template: '<header><h1>{{ title }}</h1><p>{{ description }}</p></header>',
+    },
+    NvSectionCard: {
+      props: ['description', 'value', 'hint'],
+      template: '<section>{{ description }} {{ value }} {{ hint }}</section>',
+    },
+    NvSectionCards: passthrough('section'),
+    NvSelect: {
       props: ['modelValue'],
       emits: ['update:modelValue'],
-      template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+      template:
+        '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
     },
-    SelectProContent: { template: '<slot />' },
-    SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
-    SelectProTrigger: { template: '<slot />' },
-    SelectProValue: { template: '<span />' },
+    NvSelectContent: { template: '<slot />' },
+    NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+    NvSelectTrigger: { template: '<slot />' },
+    NvSelectValue: { template: '<span />' },
     Spinner: passthrough('span'),
-    StatusBadgePro: { props: ['label'], template: '<span>{{ label }}</span>' },
-    Toolbar: passthrough('div'),
+    NvStatusBadge: { props: ['label'], template: '<span>{{ label }}</span>' },
+    NvToolbar: passthrough('div'),
   }
 })
 
@@ -84,9 +116,31 @@ beforeEach(() => {
   routeState.query = {}
   routerReplace.mockClear()
   api.getBusinessConsoleEngineeringBomExplosion.mockReset()
+  api.getBusinessConsoleEngineeringBomExplosionQueryOptions.mockImplementation((options) => ({
+    query: async () => (await api.getBusinessConsoleEngineeringBomExplosion(options)).data,
+  }))
+  api.getBusinessConsoleEngineeringBomDiff.mockReset()
+  api.getBusinessConsoleEngineeringBomDiffQueryOptions.mockImplementation((options) => ({
+    query: async () => (await api.getBusinessConsoleEngineeringBomDiff(options)).data,
+  }))
   api.getBusinessConsoleEngineeringManufacturingBomExplosion.mockReset()
+  api.getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions.mockImplementation(
+    (options) => ({
+      query: async () =>
+        (await api.getBusinessConsoleEngineeringManufacturingBomExplosion(options)).data,
+    }),
+  )
   api.getBusinessConsoleEngineeringBomWhereUsed.mockReset()
+  api.getBusinessConsoleEngineeringBomWhereUsedQueryOptions.mockImplementation((options) => ({
+    query: async () => (await api.getBusinessConsoleEngineeringBomWhereUsed(options)).data,
+  }))
   api.getBusinessConsoleEngineeringManufacturingBomWhereUsed.mockReset()
+  api.getBusinessConsoleEngineeringManufacturingBomWhereUsedQueryOptions.mockImplementation(
+    (options) => ({
+      query: async () =>
+        (await api.getBusinessConsoleEngineeringManufacturingBomWhereUsed(options)).data,
+    }),
+  )
 })
 
 describe('engineering bom analysis page', () => {
@@ -114,7 +168,14 @@ describe('engineering bom analysis page', () => {
               },
             ],
           },
-          diagnostics: [{ severity: 'warning', itemCode: 'PCB-200', message: '缺少下级有效版本', path: 'FG-100/PCB-200' }],
+          diagnostics: [
+            {
+              severity: 'warning',
+              itemCode: 'PCB-200',
+              message: '缺少下级有效版本',
+              path: 'FG-100/PCB-200',
+            },
+          ],
         },
       },
     })
@@ -125,9 +186,15 @@ describe('engineering bom analysis page', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(api.getBusinessConsoleEngineeringBomExplosion).toHaveBeenCalledWith(expect.objectContaining({
-      query: expect.objectContaining({ itemCode: 'FG-100', organizationId: 'org-001', environmentId: 'env-dev' }),
-    }))
+    expect(api.getBusinessConsoleEngineeringBomExplosion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({
+          itemCode: 'FG-100',
+          organizationId: 'org-001',
+          environmentId: 'env-dev',
+        }),
+      }),
+    )
     expect(wrapper.text()).toContain('FG-100')
     expect(wrapper.text()).toContain('PCB-200')
     expect(wrapper.text()).toContain('虚拟件')
@@ -167,16 +234,21 @@ describe('engineering bom analysis page', () => {
 
     const wrapper = mount(BomAnalysisPage, { global: { stubs: layoutStub } })
     await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text().trim() === '爆炸')!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().trim() === '爆炸')!
+      .trigger('click')
     await wrapper.find('select').setValue('manufacturing')
     await wrapper.find('#bom-root').setValue('SKU-FG')
     await wrapper.find('#bom-lot').setValue('5')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(api.getBusinessConsoleEngineeringManufacturingBomExplosion).toHaveBeenCalledWith(expect.objectContaining({
-      query: expect.objectContaining({ skuCode: 'SKU-FG', lotSize: 5 }),
-    }))
+    expect(api.getBusinessConsoleEngineeringManufacturingBomExplosion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({ skuCode: 'SKU-FG', lotSize: 5 }),
+      }),
+    )
     expect(wrapper.text()).toContain('RM-ALT')
     expect(wrapper.text()).toContain('R1,R2')
   })
@@ -205,17 +277,108 @@ describe('engineering bom analysis page', () => {
 
     const wrapper = mount(BomAnalysisPage, { global: { stubs: layoutStub } })
     await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text().trim() === '反查')!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().trim() === '反查')!
+      .trigger('click')
     await wrapper.find('#bom-component').setValue('RM-1')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(api.getBusinessConsoleEngineeringBomWhereUsed).toHaveBeenCalledWith(expect.objectContaining({
-      query: expect.objectContaining({ componentCode: 'RM-1' }),
-    }))
+    expect(api.getBusinessConsoleEngineeringBomWhereUsed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({ componentCode: 'RM-1' }),
+      }),
+    )
     expect(api.getBusinessConsoleEngineeringBomExplosion).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('FG-100')
     expect(wrapper.text()).toContain('EBOM-FG / A')
     expect(wrapper.text()).toContain('倒冲')
+  })
+
+  it('对比视图展示新增、删除、替换和数量单位损耗得率变化', async () => {
+    api.getBusinessConsoleEngineeringBomDiff.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          bomKind: 'engineering',
+          fromVersionId: 'EBOM-FG:A',
+          toVersionId: 'EBOM-FG:B',
+          rootItemCode: 'FG-100',
+          lines: [
+            {
+              changeType: 'added',
+              newItemCode: 'RM-NEW',
+              newQuantity: 1,
+              newUnitOfMeasureCode: 'PCS',
+            },
+            {
+              changeType: 'removed',
+              oldItemCode: 'RM-OLD',
+              oldQuantity: 2,
+              oldUnitOfMeasureCode: 'PCS',
+            },
+            {
+              changeType: 'replaced',
+              oldItemCode: 'RM-A',
+              newItemCode: 'RM-B',
+              oldQuantity: 1,
+              newQuantity: 1,
+            },
+            {
+              changeType: 'changed',
+              oldItemCode: 'RM-1',
+              newItemCode: 'RM-1',
+              oldQuantity: 1,
+              newQuantity: 1.5,
+              oldUnitOfMeasureCode: 'PCS',
+              newUnitOfMeasureCode: 'KG',
+              oldScrapRate: 0.02,
+              newScrapRate: 0.05,
+              oldYieldRate: 0.98,
+              newYieldRate: 0.95,
+              fieldChanges: [
+                { fieldName: 'quantity', oldValue: '1', newValue: '1.5' },
+                { fieldName: 'unitOfMeasureCode', oldValue: 'PCS', newValue: 'KG' },
+                { fieldName: 'scrapRate', oldValue: '0.02', newValue: '0.05' },
+                { fieldName: 'yieldRate', oldValue: '0.98', newValue: '0.95' },
+              ],
+            },
+          ],
+        },
+      },
+    })
+
+    const wrapper = mount(BomAnalysisPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().trim() === '对比')!
+      .trigger('click')
+    await wrapper.find('#bom-from-code').setValue('EBOM-FG')
+    await wrapper.find('#bom-from-revision').setValue('A')
+    await wrapper.find('#bom-to-code').setValue('EBOM-FG')
+    await wrapper.find('#bom-to-revision').setValue('B')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(api.getBusinessConsoleEngineeringBomDiff).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({
+          bomKind: 'engineering',
+          fromBomCode: 'EBOM-FG',
+          fromRevision: 'A',
+          toBomCode: 'EBOM-FG',
+          toRevision: 'B',
+        }),
+      }),
+    )
+    expect(wrapper.text()).toContain('新增')
+    expect(wrapper.text()).toContain('删除')
+    expect(wrapper.text()).toContain('替换')
+    expect(wrapper.text()).toContain('数量: 1 -> 1.5')
+    expect(wrapper.text()).toContain('单位: PCS -> KG')
+    expect(wrapper.text()).toContain('损耗')
+    expect(wrapper.text()).toContain('得率')
   })
 })

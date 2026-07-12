@@ -118,7 +118,8 @@ internal static class OpsContractMapper
                 x.AttemptNo,
                 Math.Max(0, (int)(x.LeasedUntilUtc - x.LeasedAtUtc).TotalSeconds),
                 x.MaxAttempts,
-                x.AbandonReason))
+                x.AbandonReason,
+                x.Output))
             .ToList();
 
         var auditSummaries = detail.AuditRecords.Select(ToContract).ToList();

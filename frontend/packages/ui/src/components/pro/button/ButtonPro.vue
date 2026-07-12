@@ -77,58 +77,60 @@ const isSolid = computed(() => {
 </template>
 
 <style scoped>
-.ds-btn {
-  /* press feedback: a crisp 1px nudge, no layout shift */
-  will-change: transform;
-}
-.ds-btn:active:not(:disabled) {
-  transform: translateY(0.5px) scale(0.992);
-}
-
-/* Solid fills get a hairline top highlight + a defined contact shadow.
-   Not the banned "1px border + soft 16px+ shadow" combo — no border, shadow ≤8px. */
-.ds-btn-solid {
-  box-shadow:
-    inset 0 1px 0 0 color-mix(in oklch, white 16%, transparent),
-    0 1px 2px 0 color-mix(in oklch, black 28%, transparent);
-}
-.ds-btn-solid:hover:not(:disabled) {
-  box-shadow:
-    inset 0 1px 0 0 color-mix(in oklch, white 22%, transparent),
-    0 2px 6px -1px color-mix(in oklch, black 32%, transparent);
-}
-
-/* A faint sheen that wipes across solid fills on hover. */
-.ds-btn-sheen {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  overflow: hidden;
-  pointer-events: none;
-  opacity: 0;
-  background: linear-gradient(
-    100deg,
-    transparent 30%,
-    color-mix(in oklch, white 18%, transparent) 50%,
-    transparent 70%
-  );
-  background-size: 220% 100%;
-  background-position: 120% 0;
-  transition:
-    opacity 0.2s ease,
-    background-position 0.6s var(--ease-out-expo, ease-out);
-}
-.ds-btn-solid:hover .ds-btn-sheen {
-  opacity: 1;
-  background-position: -40% 0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ds-btn:active:not(:disabled) {
-    transform: none;
+@layer nv-components {
+  .ds-btn {
+    /* press feedback: a crisp 1px nudge, no layout shift */
+    will-change: transform;
   }
+  .ds-btn:active:not(:disabled) {
+    transform: translateY(0.5px) scale(0.992);
+  }
+
+  /* Solid fills get a hairline top highlight + a defined contact shadow.
+   Not the banned "1px border + soft 16px+ shadow" combo — no border, shadow ≤8px. */
+  .ds-btn-solid {
+    box-shadow:
+      inset 0 1px 0 0 color-mix(in oklch, white 16%, transparent),
+      0 1px 2px 0 color-mix(in oklch, black 28%, transparent);
+  }
+  .ds-btn-solid:hover:not(:disabled) {
+    box-shadow:
+      inset 0 1px 0 0 color-mix(in oklch, white 22%, transparent),
+      0 2px 6px -1px color-mix(in oklch, black 32%, transparent);
+  }
+
+  /* A faint sheen that wipes across solid fills on hover. */
   .ds-btn-sheen {
-    display: none;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: 0;
+    background: linear-gradient(
+      100deg,
+      transparent 30%,
+      color-mix(in oklch, white 18%, transparent) 50%,
+      transparent 70%
+    );
+    background-size: 220% 100%;
+    background-position: 120% 0;
+    transition:
+      opacity 0.2s ease,
+      background-position 0.6s var(--nv-ease-out-expo, ease-out);
+  }
+  .ds-btn-solid:hover .ds-btn-sheen {
+    opacity: 1;
+    background-position: -40% 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ds-btn:active:not(:disabled) {
+      transform: none;
+    }
+    .ds-btn-sheen {
+      display: none;
+    }
   }
 }
 </style>

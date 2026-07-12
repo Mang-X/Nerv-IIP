@@ -45,6 +45,9 @@ export type NervIipContractsOpsOperationAttemptSummary = {
     leaseDurationSeconds?: number;
     maxAttempts?: number;
     abandonReason?: string | null;
+    output?: {
+        [key: string]: string;
+    } | null;
 };
 
 export type NervIipContractsOpsAuditRecordSummary = {
@@ -122,6 +125,106 @@ export type NervIipContractsNotificationNotificationTaskResponse = {
     createdAtUtc?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationDeadLetterListResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationDeadLetterListResponse = {
+    items?: Array<NervIipContractsNotificationNotificationDeadLetterResponse>;
+};
+
+export type NervIipContractsNotificationNotificationDeadLetterResponse = {
+    id?: string;
+    consumerName?: string;
+    eventId?: string | null;
+    eventType?: string | null;
+    eventVersion?: number | null;
+    sourceService?: string | null;
+    idempotencyKey?: string | null;
+    failureCode?: string;
+    failureMessage?: string;
+    status?: string;
+    deadLetteredAtUtc?: string;
+    replayedAtUtc?: string | null;
+};
+
+export type NervIipPlatformGatewayWebEndpointsNotificationsConsoleNotificationDeadLetterListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterMetricsResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationDeadLetterMetricsResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationDeadLetterMetricsResponse = {
+    actionableCount?: number;
+    pendingCount?: number;
+    failedCount?: number;
+    ignoredCount?: number;
+    replayedCount?: number;
+    eventTypes?: Array<NervIipContractsNotificationNotificationDeadLetterEventTypeMetricsResponse>;
+};
+
+export type NervIipContractsNotificationNotificationDeadLetterEventTypeMetricsResponse = {
+    eventType?: string;
+    actionableCount?: number;
+    pendingCount?: number;
+    failedCount?: number;
+    ignoredCount?: number;
+    replayedCount?: number;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterDetailResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationDeadLetterDetailResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationDeadLetterDetailResponse = {
+    id?: string;
+    consumerName?: string;
+    eventId?: string | null;
+    eventType?: string | null;
+    eventVersion?: number | null;
+    sourceService?: string | null;
+    idempotencyKey?: string | null;
+    eventClrType?: string;
+    eventJson?: string;
+    failureCode?: string;
+    failureMessage?: string;
+    status?: string;
+    deadLetteredAtUtc?: string;
+    replayedAtUtc?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterReplayResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationDeadLetterReplayResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationDeadLetterReplayResponse = {
+    id?: string;
+    succeeded?: boolean;
+    status?: string;
+    message?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterBatchReplayResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationDeadLetterBatchReplayResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationDeadLetterBatchReplayResponse = {
+    items?: Array<NervIipContractsNotificationNotificationDeadLetterReplayResponse>;
+};
+
+export type NervIipContractsNotificationReplayNotificationDeadLetterBatchRequest = {
+    consumerName?: string | null;
+    eventType?: string | null;
+    status?: string | null;
+    take?: number | null;
+};
+
+export type NervIipContractsNotificationIgnoreNotificationDeadLetterRequest = {
+    reason?: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfNotificationIntentResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsNotificationNotificationIntentResponse | null;
 };
@@ -161,6 +264,63 @@ export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfMarkNotifi
 
 export type NervIipContractsNotificationMarkNotificationMessagesReadRequest = {
     messageIds?: Array<string>;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationPreferenceResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationPreferenceResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationPreferenceResponse = {
+    recipientRef?: string;
+    notificationType?: string;
+    channel?: string;
+    enabled?: boolean;
+    updatedAtUtc?: string;
+};
+
+export type NervIipContractsNotificationUpsertNotificationPreferenceRequest = {
+    recipientRef?: string;
+    notificationType?: string;
+    channel?: string;
+    enabled?: boolean;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationSubscriptionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationSubscriptionResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationSubscriptionResponse = {
+    recipientRef?: string;
+    notificationType?: string;
+    channel?: string;
+    enabled?: boolean;
+    updatedAtUtc?: string;
+};
+
+export type NervIipContractsNotificationUpsertNotificationSubscriptionRequest = {
+    recipientRef?: string;
+    notificationType?: string;
+    channel?: string;
+    enabled?: boolean;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationRecipientChannelBindingResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationRecipientChannelBindingResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationRecipientChannelBindingResponse = {
+    recipientRef?: string;
+    channel?: string;
+    recipientAddress?: string;
+    enabled?: boolean;
+    updatedAtUtc?: string;
+};
+
+export type NervIipContractsNotificationUpsertNotificationRecipientChannelBindingRequest = {
+    recipientRef?: string;
+    channel?: string;
+    recipientAddress?: string;
+    enabled?: boolean;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfConsoleLogQueryResponse = NetCorePalExtensionsDtoResponseData & {
@@ -282,6 +442,10 @@ export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamUserResponse =
     loginName?: string;
     email?: string;
     enabled?: boolean;
+    accountExpiresAtUtc?: string | null;
+    passwordChangeRequired?: boolean;
+    passwordExpiresAtUtc?: string | null;
+    lockoutUntilUtc?: string | null;
 };
 
 export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamListRequest = {
@@ -296,12 +460,14 @@ export type NervIipPlatformGatewayWebApplicationIamAdminConsoleCreateIamUserRequ
     loginName?: string;
     email?: string;
     password?: string;
+    accountExpiresAtUtc?: string | null;
 };
 
 export type NervIipPlatformGatewayWebApplicationIamAdminConsoleUpdateIamUserRequest = {
     loginName?: string;
     email?: string;
     enabled?: boolean;
+    accountExpiresAtUtc?: string | null;
 };
 
 export type NervIipPlatformGatewayWebApplicationIamAdminConsoleResetIamUserPasswordRequest = {
@@ -455,6 +621,22 @@ export type NervIipPlatformGatewayWebEndpointsFilesConsoleListFilesRequest = {
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfFileStorageUsageResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsFileStorageFileStorageUsageResponse | null;
+};
+
+export type NervIipContractsFileStorageFileStorageUsageResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    filePurpose?: string | null;
+    usedBytes?: number;
+    quotaBytes?: number | null;
+};
+
+export type NervIipPlatformGatewayWebEndpointsFilesConsoleFileStorageUsageRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfDownloadGrantResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsFileStorageDownloadGrantResponse | null;
 };
@@ -479,6 +661,7 @@ export type NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse = {
     refreshToken?: string;
     sessionId?: string;
     expiresAtUtc?: string;
+    passwordChangeRequired?: boolean;
     principal?: NervIipPlatformGatewayWebApplicationAuthConsolePrincipalResponse;
 };
 
@@ -625,6 +808,180 @@ export type ListConsoleNotificationTasksResponses = {
 
 export type ListConsoleNotificationTasksResponse = ListConsoleNotificationTasksResponses[keyof ListConsoleNotificationTasksResponses];
 
+export type ListConsoleNotificationDeadLettersData = {
+    body?: never;
+    path?: never;
+    query?: {
+        consumerName?: string | null;
+        eventType?: string | null;
+        status?: string | null;
+        skip?: number | null;
+        take?: number | null;
+    };
+    url: '/api/console/v1/notifications/dlq';
+};
+
+export type ListConsoleNotificationDeadLettersErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListConsoleNotificationDeadLettersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterListResponse;
+};
+
+export type ListConsoleNotificationDeadLettersResponse = ListConsoleNotificationDeadLettersResponses[keyof ListConsoleNotificationDeadLettersResponses];
+
+export type GetConsoleNotificationDeadLetterMetricsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/notifications/dlq/metrics';
+};
+
+export type GetConsoleNotificationDeadLetterMetricsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetConsoleNotificationDeadLetterMetricsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterMetricsResponse;
+};
+
+export type GetConsoleNotificationDeadLetterMetricsResponse = GetConsoleNotificationDeadLetterMetricsResponses[keyof GetConsoleNotificationDeadLetterMetricsResponses];
+
+export type GetConsoleNotificationDeadLetterData = {
+    body?: never;
+    path: {
+        deadLetterId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/notifications/dlq/{deadLetterId}';
+};
+
+export type GetConsoleNotificationDeadLetterErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetConsoleNotificationDeadLetterResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterDetailResponse;
+};
+
+export type GetConsoleNotificationDeadLetterResponse = GetConsoleNotificationDeadLetterResponses[keyof GetConsoleNotificationDeadLetterResponses];
+
+export type ReplayConsoleNotificationDeadLetterData = {
+    body?: never;
+    path: {
+        deadLetterId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/notifications/dlq/{deadLetterId}/replay';
+};
+
+export type ReplayConsoleNotificationDeadLetterErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReplayConsoleNotificationDeadLetterResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterReplayResponse;
+};
+
+export type ReplayConsoleNotificationDeadLetterResponse = ReplayConsoleNotificationDeadLetterResponses[keyof ReplayConsoleNotificationDeadLetterResponses];
+
+export type ReplayConsoleNotificationDeadLettersData = {
+    body: NervIipContractsNotificationReplayNotificationDeadLetterBatchRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/notifications/dlq/replay-batch';
+};
+
+export type ReplayConsoleNotificationDeadLettersErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReplayConsoleNotificationDeadLettersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterBatchReplayResponse;
+};
+
+export type ReplayConsoleNotificationDeadLettersResponse = ReplayConsoleNotificationDeadLettersResponses[keyof ReplayConsoleNotificationDeadLettersResponses];
+
+export type IgnoreConsoleNotificationDeadLetterData = {
+    body: NervIipContractsNotificationIgnoreNotificationDeadLetterRequest;
+    path: {
+        deadLetterId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/notifications/dlq/{deadLetterId}/ignore';
+};
+
+export type IgnoreConsoleNotificationDeadLetterErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type IgnoreConsoleNotificationDeadLetterResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterDetailResponse;
+};
+
+export type IgnoreConsoleNotificationDeadLetterResponse = IgnoreConsoleNotificationDeadLetterResponses[keyof IgnoreConsoleNotificationDeadLetterResponses];
+
 export type SubmitConsoleNotificationIntentData = {
     body: NervIipContractsNotificationSubmitNotificationIntentRequest;
     path?: never;
@@ -707,6 +1064,87 @@ export type MarkConsoleNotificationMessagesReadResponses = {
 };
 
 export type MarkConsoleNotificationMessagesReadResponse = MarkConsoleNotificationMessagesReadResponses[keyof MarkConsoleNotificationMessagesReadResponses];
+
+export type UpsertConsoleNotificationPreferenceData = {
+    body: NervIipContractsNotificationUpsertNotificationPreferenceRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/notifications/delivery/preferences';
+};
+
+export type UpsertConsoleNotificationPreferenceErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type UpsertConsoleNotificationPreferenceResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationPreferenceResponse;
+};
+
+export type UpsertConsoleNotificationPreferenceResponse = UpsertConsoleNotificationPreferenceResponses[keyof UpsertConsoleNotificationPreferenceResponses];
+
+export type UpsertConsoleNotificationSubscriptionData = {
+    body: NervIipContractsNotificationUpsertNotificationSubscriptionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/notifications/delivery/subscriptions';
+};
+
+export type UpsertConsoleNotificationSubscriptionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type UpsertConsoleNotificationSubscriptionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationSubscriptionResponse;
+};
+
+export type UpsertConsoleNotificationSubscriptionResponse = UpsertConsoleNotificationSubscriptionResponses[keyof UpsertConsoleNotificationSubscriptionResponses];
+
+export type UpsertConsoleNotificationRecipientChannelBindingData = {
+    body: NervIipContractsNotificationUpsertNotificationRecipientChannelBindingRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/notifications/delivery/recipient-channel-bindings';
+};
+
+export type UpsertConsoleNotificationRecipientChannelBindingErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type UpsertConsoleNotificationRecipientChannelBindingResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationRecipientChannelBindingResponse;
+};
+
+export type UpsertConsoleNotificationRecipientChannelBindingResponse = UpsertConsoleNotificationRecipientChannelBindingResponses[keyof UpsertConsoleNotificationRecipientChannelBindingResponses];
 
 export type QueryConsoleLogsData = {
     body: NervIipPlatformGatewayWebApplicationLogsConsoleLogQueryRequest;
@@ -921,6 +1359,35 @@ export type DisableConsoleIamUserResponses = {
 };
 
 export type DisableConsoleIamUserResponse = DisableConsoleIamUserResponses[keyof DisableConsoleIamUserResponses];
+
+export type EnableConsoleIamUserData = {
+    body?: never;
+    path: {
+        userId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/iam/users/{userId}/enable';
+};
+
+export type EnableConsoleIamUserErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type EnableConsoleIamUserResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type EnableConsoleIamUserResponse = EnableConsoleIamUserResponses[keyof EnableConsoleIamUserResponses];
 
 export type ResetConsoleIamUserPasswordData = {
     body: NervIipPlatformGatewayWebApplicationIamAdminConsoleResetIamUserPasswordRequest;
@@ -1255,6 +1722,35 @@ export type ListConsoleFilesResponses = {
 };
 
 export type ListConsoleFilesResponse = ListConsoleFilesResponses[keyof ListConsoleFilesResponses];
+
+export type GetConsoleFileStorageUsageData = {
+    body?: never;
+    path?: never;
+    query?: {
+        filePurpose?: string | null;
+    };
+    url: '/api/console/v1/files/usage';
+};
+
+export type GetConsoleFileStorageUsageErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetConsoleFileStorageUsageResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfFileStorageUsageResponse;
+};
+
+export type GetConsoleFileStorageUsageResponse = GetConsoleFileStorageUsageResponses[keyof GetConsoleFileStorageUsageResponses];
 
 export type GetConsoleFileMetadataData = {
     body?: never;

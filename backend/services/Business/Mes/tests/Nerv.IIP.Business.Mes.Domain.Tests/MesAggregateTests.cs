@@ -374,6 +374,31 @@ public sealed class MesAggregateTests
     }
 
     [Fact]
+    public void MaterialIssueRequest_cancel_of_received_material_without_lot_is_a_business_rule_violation()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-002",
+            "WO-002",
+            "OP-10",
+            "MAT-001",
+            "PCS",
+            5m,
+            DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
+        // A line-side receipt may be confirmed without a material lot.
+        request.ConfirmLineSideReceipt(DateTimeOffset.Parse("2026-05-23T08:30:00Z"), 5m);
+        request.ClearDomainEvents();
+
+        // Received material without a lot cannot be returned to warehouse stock (#557); cancelling
+        // must raise a business-rule violation that WorkOrderCancellationOrchestrator maps to a
+        // KnownException rather than silently succeeding.
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => request.CancelForWorkOrderCancellation(DateTimeOffset.Parse("2026-05-23T09:00:00Z")));
+        Assert.Contains("received material lot", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void DefectRecord_tracks_ncr_request_and_disposition()
     {
         var defect = DefectRecord.Create(
@@ -450,6 +475,127 @@ public sealed class MesAggregateTests
         Assert.Equal("QIR-REJECTED", context.InspectionRecordId);
         Assert.Equal("rejected", context.Result);
         Assert.Equal(rejectedAt, context.RecordedAtUtc);
+    }
+
+    [Fact]
+    public void QualityHoldContext_records_hold_and_release_audit_without_losing_original_hold_source()
+    {
+        var rejectedAt = DateTimeOffset.Parse("2026-07-05T09:00:00Z");
+        var releasedAt = rejectedAt.AddMinutes(30);
+        var context = QualityHoldContext.Capture(
+            "org-001",
+            "env-dev",
+            "WO-QUALITY",
+            "OP-10",
+            "business-mes",
+            "OP-10",
+            "QIR-REJECTED",
+            "QIP-001",
+            "rejected",
+            "quality.InspectionRejected",
+            "surface defect",
+            rejectedAt,
+            "quality");
+
+        context.ApplyInspectionResult(
+            "QIR-CONDITIONAL",
+            "QIP-001",
+            "conditional-release",
+            "quality.InspectionConditionalReleased",
+            "released for OP-10 only",
+            releasedAt,
+            "quality");
+
+        Assert.False(context.Active);
+        Assert.Equal("QIR-REJECTED", context.HeldInspectionRecordId);
+        Assert.Equal("surface defect", context.HoldReason);
+        Assert.Equal(rejectedAt, context.HeldAtUtc);
+        Assert.Equal("quality", context.HeldBy);
+        Assert.Equal("QIR-CONDITIONAL", context.ReleaseInspectionRecordId);
+        Assert.Equal("released for OP-10 only", context.ReleaseReason);
+        Assert.Equal(releasedAt, context.ReleasedAtUtc);
+        Assert.Equal("quality", context.ReleasedBy);
+        Assert.Equal("quality.InspectionConditionalReleased", context.ReleaseSource);
+    }
+
+    [Fact]
+    public void QualityHoldContext_clears_previous_release_audit_when_reopened_by_later_rejection()
+    {
+        var rejectedAt = DateTimeOffset.Parse("2026-07-05T09:00:00Z");
+        var releasedAt = rejectedAt.AddMinutes(30);
+        var reopenedAt = rejectedAt.AddMinutes(45);
+        var context = QualityHoldContext.Capture(
+            "org-001",
+            "env-dev",
+            "WO-QUALITY",
+            "OP-10",
+            "business-mes",
+            "OP-10",
+            "QIR-REJECTED-1",
+            "QIP-001",
+            "rejected",
+            "quality.InspectionRejected",
+            "surface defect",
+            rejectedAt,
+            "quality");
+
+        context.ApplyInspectionResult(
+            "QIR-CONDITIONAL",
+            "QIP-001",
+            "conditional-release",
+            "quality.InspectionConditionalReleased",
+            "released for OP-10 only",
+            releasedAt,
+            "quality");
+        context.ApplyInspectionResult(
+            "QIR-REJECTED-2",
+            "QIP-001",
+            "rejected",
+            "quality.InspectionRejected",
+            "recheck failed",
+            reopenedAt,
+            "quality");
+
+        Assert.True(context.Active);
+        Assert.Equal("QIR-REJECTED-2", context.HeldInspectionRecordId);
+        Assert.Equal("recheck failed", context.HoldReason);
+        Assert.Equal(reopenedAt, context.HeldAtUtc);
+        Assert.Null(context.ReleaseInspectionRecordId);
+        Assert.Null(context.ReleaseReason);
+        Assert.Null(context.ReleasedAtUtc);
+        Assert.Null(context.ReleasedBy);
+        Assert.Null(context.ReleaseSource);
+    }
+
+    [Fact]
+    public void QualityHoldContext_force_release_is_idempotent_and_requires_existing_active_hold()
+    {
+        var rejectedAt = DateTimeOffset.Parse("2026-07-05T09:00:00Z");
+        var firstReleaseAt = rejectedAt.AddMinutes(10);
+        var secondReleaseAt = rejectedAt.AddMinutes(20);
+        var context = QualityHoldContext.Capture(
+            "org-001",
+            "env-dev",
+            "WO-QUALITY",
+            null,
+            "business-mes",
+            "WO-QUALITY",
+            "QIR-REJECTED",
+            "QIP-001",
+            "rejected",
+            "quality.InspectionRejected",
+            "surface defect",
+            rejectedAt,
+            "quality");
+
+        context.ForceRelease("approved after QA recheck", "supervisor-001", firstReleaseAt);
+        context.ForceRelease("second release should not overwrite audit", "supervisor-002", secondReleaseAt);
+
+        Assert.False(context.Active);
+        Assert.Equal("manual-force-release", context.ReleaseSource);
+        Assert.Equal("approved after QA recheck", context.ReleaseReason);
+        Assert.Equal("supervisor-001", context.ReleasedBy);
+        Assert.Equal(firstReleaseAt, context.ReleasedAtUtc);
     }
 
     [Theory]

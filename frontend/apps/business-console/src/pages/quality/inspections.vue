@@ -4,40 +4,46 @@ import type {
   BusinessConsoleInspectionCharacteristicResult,
   BusinessConsoleQualityItem,
 } from '@nerv-iip/api-client'
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useQualityInspectionPlans } from '@/composables/useBusinessQuality'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  DialogPro,
-  DialogProContent,
-  DialogProDescription,
-  DialogProHeader,
-  DialogProTitle,
-  DropdownMenuProItem,
-  FieldPro,
-  FieldProDescription,
-  FieldProGroup,
-  FieldProLabel,
-  InputPro,
-  PageHeader,
-  RowActions,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  NvButton,
+  NvDataTable,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogHeader,
+  NvDialogTitle,
+  NvDropdownMenuItem,
+  NvField,
+  NvFieldDescription,
+  NvFieldGroup,
+  NvFieldLabel,
+  NvInput,
+  NvPageHeader,
+  NvRowActions,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
   Spinner,
-  StatusBadgePro,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { ClipboardCheckIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '检验任务与记录', requiredPermissions: ['business.quality.inspection-records.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '检验任务与记录',
+    requiredPermissions: ['business.quality.inspection-records.read'],
+  },
+})
 
 const route = useRoute()
 const initialInspectionPlanKeyword = firstQuery(route.query.inspectionPlanId)
@@ -51,8 +57,12 @@ const {
   inspectionPlansPending,
   inspectionPlansTotal,
   refreshInspectionPlans,
-} = useQualityInspectionPlans(initialInspectionPlanKeyword ? { keyword: initialInspectionPlanKeyword } : {})
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status, () => filters.keyword] })
+} = useQualityInspectionPlans(
+  initialInspectionPlanKeyword ? { keyword: initialInspectionPlanKeyword } : {},
+)
+const { page, pageSize } = usePagedList(filters, {
+  resetOn: [() => filters.status, () => filters.keyword],
+})
 
 const recordSuccess = shallowRef('')
 const recordSheetOpen = shallowRef(false)
@@ -79,17 +89,34 @@ const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
 const targetInspectionPlanId = computed(() => firstQuery(route.query.inspectionPlanId))
 const targetInspectionPlan = computed(() =>
   targetInspectionPlanId.value
-    ? inspectionPlans.value.find((plan) => plan.id === targetInspectionPlanId.value || plan.code === targetInspectionPlanId.value)
+    ? inspectionPlans.value.find(
+        (plan) =>
+          plan.id === targetInspectionPlanId.value || plan.code === targetInspectionPlanId.value,
+      )
     : undefined,
 )
-const targetInspectionPlanMissing = computed(() =>
-  !!targetInspectionPlanId.value && !inspectionPlansPending.value && !targetInspectionPlan.value,
+const targetInspectionPlanMissing = computed(
+  () =>
+    !!targetInspectionPlanId.value && !inspectionPlansPending.value && !targetInspectionPlan.value,
 )
-const shouldCreateRecordFromLocatedPlan = computed(() => firstQuery(route.query.action).toLowerCase() === 'create')
+const scanAuditRoute = computed(() => ({
+  path: '/barcode/scans',
+  query: {
+    sourceWorkflow: 'quality.inspection',
+    sourceDocumentId: recordForm.sourceDocumentId || targetInspectionPlanId.value || undefined,
+    scannedValue: recordForm.serialNo || recordForm.batchNo || undefined,
+  },
+}))
+const shouldCreateRecordFromLocatedPlan = computed(
+  () => firstQuery(route.query.action).toLowerCase() === 'create',
+)
 watch(
   () => route.query,
   (query) => {
-    const source = firstQuery(query.sourceDocumentId) || firstQuery(query.workOrderId) || firstQuery(query.operationTaskId)
+    const source =
+      firstQuery(query.sourceDocumentId) ||
+      firstQuery(query.workOrderId) ||
+      firstQuery(query.operationTaskId)
     const batch = firstQuery(query.batchNo) || firstQuery(query.materialLotId)
     const serial = firstQuery(query.serialNo)
     if (source) recordForm.sourceDocumentId = source
@@ -108,27 +135,41 @@ watch(
   },
   { immediate: true },
 )
-watch(targetInspectionPlanId, (id) => {
-  if (id) {
-    filters.status = undefined
-    filters.keyword = id
-  }
-  else {
-    filters.keyword = undefined
-  }
-  recordCreatedFromLocatedPlanId.value = ''
-}, { immediate: true })
-watch([targetInspectionPlan, shouldCreateRecordFromLocatedPlan], ([plan, shouldCreate]) => {
-  if (!plan || !shouldCreate || recordCreatedFromLocatedPlanId.value === targetInspectionPlanId.value) return
-  recordCreatedFromLocatedPlanId.value = targetInspectionPlanId.value
-  useInspectionPlan(plan)
-}, { immediate: true })
+watch(
+  targetInspectionPlanId,
+  (id) => {
+    if (id) {
+      filters.status = undefined
+      filters.keyword = id
+    } else {
+      filters.keyword = undefined
+    }
+    recordCreatedFromLocatedPlanId.value = ''
+  },
+  { immediate: true },
+)
+watch(
+  [targetInspectionPlan, shouldCreateRecordFromLocatedPlan],
+  ([plan, shouldCreate]) => {
+    if (
+      !plan ||
+      !shouldCreate ||
+      recordCreatedFromLocatedPlanId.value === targetInspectionPlanId.value
+    )
+      return
+    recordCreatedFromLocatedPlanId.value = targetInspectionPlanId.value
+    useInspectionPlan(plan)
+  },
+  { immediate: true },
+)
 
 const listErrorMessage = computed(() => formatError(inspectionPlansError.value))
 const createErrorMessage = computed(() => formatError(createInspectionRecordError.value))
 const inspectedQuantity = computed(() => toOptionalNumber(recordForm.inspectedQuantity))
 const requiresDispositionReason = computed(() =>
-  recordForm.resultLines.some((line) => line.result === 'failed' || line.result === 'conditional-release'),
+  recordForm.resultLines.some(
+    (line) => line.result === 'failed' || line.result === 'conditional-release',
+  ),
 )
 const validResultLines = computed(() =>
   recordForm.resultLines.filter(
@@ -154,7 +195,7 @@ const canCreateRecord = computed(
 )
 
 type PlanRow = BusinessConsoleQualityItem
-const columns: DataTableProColumn<PlanRow>[] = [
+const columns: NvDataTableColumn<PlanRow>[] = [
   { key: 'code', header: '方案', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'summary', header: '摘要', accessor: (r) => qualityItemSummary(r) },
@@ -162,7 +203,14 @@ const columns: DataTableProColumn<PlanRow>[] = [
 ]
 
 function emptyLine() {
-  return { characteristicCode: '', result: 'passed', observedValue: '', unitCode: '', defectReason: '', defectQuantity: '' }
+  return {
+    characteristicCode: '',
+    result: 'passed',
+    observedValue: '',
+    unitCode: '',
+    defectReason: '',
+    defectQuantity: '',
+  }
 }
 function useInspectionPlan(plan: BusinessConsoleQualityItem) {
   recordForm.inspectionPlanId = plan.id ?? ''
@@ -217,20 +265,34 @@ function optionalText(value: string) {
   return trimmed ? trimmed : undefined
 }
 function splitCsv(value: string) {
-  const values = value.split(',').map((item) => item.trim()).filter(Boolean)
+  const values = value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
   return values.length ? values : undefined
 }
 function toOptionalNumber(value: string) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
 }
-function hasRequiredDefectContext(line: { result: string, defectReason: string, defectQuantity: string }) {
+function hasRequiredDefectContext(line: {
+  result: string
+  defectReason: string
+  defectQuantity: string
+}) {
   if (line.result === 'passed') return true
   if (!isNonEmpty(line.defectReason)) return false
   return line.result !== 'conditional-release' || (toOptionalNumber(line.defectQuantity) ?? 0) > 0
 }
 function qualityItemSummary(item: BusinessConsoleQualityItem) {
-  const values = [item.category, item.skuCode, item.partnerId, item.workCenterId, item.deviceAssetId, item.documentType].filter(isPresent)
+  const values = [
+    item.category,
+    item.skuCode,
+    item.partnerId,
+    item.workCenterId,
+    item.deviceAssetId,
+    item.documentType,
+  ].filter(isPresent)
   return values.length ? values.join(' / ') : '无'
 }
 function firstQuery(value: unknown) {
@@ -250,34 +312,56 @@ function isPresent(value: string | undefined | null): value is string {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="检验任务与记录" :breadcrumbs="[{ label: '质量' }]" :count="`${inspectionPlansTotal} 个检验方案`">
+    <NvPageHeader
+      title="检验任务与记录"
+      :breadcrumbs="[{ label: '质量' }]"
+      :count="`${inspectionPlansTotal} 个检验方案`"
+    >
       <template #actions>
-        <ButtonPro v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
-          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`">返回工单 {{ contextWorkOrderId }}</RouterLink>
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" @click="recordSheetOpen = true">
+        <NvButton v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`"
+            >返回工单 {{ contextWorkOrderId }}</RouterLink
+          >
+        </NvButton>
+        <NvButton size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="scanAuditRoute">扫码记录</RouterLink>
+        </NvButton>
+        <NvButton size="sm" type="button" @click="recordSheetOpen = true">
           <ClipboardCheckIcon aria-hidden="true" />
           创建检验记录
-        </ButtonPro>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="inspectionPlansPending" @click="refreshInspectionPlans">
+        </NvButton>
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="inspectionPlansPending"
+          @click="refreshInspectionPlans"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <Toolbar :show-search="false">
+    <NvToolbar :show-search="false">
       <template #filters>
-        <InputPro v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="检验状态" />
+        <NvInput
+          v-model="filters.status"
+          class="h-9 w-32"
+          placeholder="状态（可选）"
+          aria-label="检验状态"
+        />
       </template>
-    </Toolbar>
+    </NvToolbar>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
+    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
+      {{ listErrorMessage }}
+    </p>
     <p v-else-if="targetInspectionPlanMissing" class="text-sm text-warning" role="status">
       未找到检验方案 {{ targetInspectionPlanId }}。请确认该方案是否已归档或无权访问。
     </p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -295,91 +379,101 @@ function isPresent(value: string | undefined | null): value is string {
       <template #cell-code="{ row }">
         <span class="font-medium">{{ row.code ?? '无' }}</span>
       </template>
-      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-actions="{ row }">
-        <RowActions :label="`检验方案操作 ${row.code ?? ''}`">
-          <DropdownMenuProItem @click="useInspectionPlan(row)">
+        <NvRowActions :label="`检验方案操作 ${row.code ?? ''}`">
+          <NvDropdownMenuItem @click="useInspectionPlan(row)">
             <ClipboardCheckIcon aria-hidden="true" />
             创建检验记录
-          </DropdownMenuProItem>
-        </RowActions>
+          </NvDropdownMenuItem>
+        </NvRowActions>
       </template>
-    </DataTablePro>
+    </NvDataTable>
 
-
-    <DialogPro v-model:open="recordSheetOpen">
-      <DialogProContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
-        <DialogProHeader>
-          <DialogProTitle>创建检验记录</DialogProTitle>
-          <DialogProDescription>检验记录尽量从方案、工单、收货或质量任务带出信息，减少手输来源字段。</DialogProDescription>
-        </DialogProHeader>
+    <NvDialog v-model:open="recordSheetOpen">
+      <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+        <NvDialogHeader>
+          <NvDialogTitle>创建检验记录</NvDialogTitle>
+          <NvDialogDescription
+            >检验记录尽量从方案、工单、收货或质量任务带出信息，减少手输来源字段。</NvDialogDescription
+          >
+        </NvDialogHeader>
         <form class="grid content-start gap-4" @submit.prevent="submitInspectionRecord">
-          <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
+          <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">
+            {{ createErrorMessage }}
+          </p>
           <p v-if="recordSuccess" class="text-sm text-success" role="status">{{ recordSuccess }}</p>
 
-          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-            <FieldPro>
-              <FieldProLabel for="record-plan">检验方案 ID</FieldProLabel>
-              <InputPro id="record-plan" v-model="recordForm.inspectionPlanId" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel>来源类型</FieldProLabel>
-              <SelectPro v-model="recordForm.sourceType">
-                <SelectProTrigger aria-label="来源类型"><SelectProValue /></SelectProTrigger>
-                <SelectProContent>
-                  <SelectProItem value="operation">工序</SelectProItem>
-                  <SelectProItem value="receiving">收货</SelectProItem>
-                  <SelectProItem value="final">终检</SelectProItem>
-                  <SelectProItem value="maintenance">维修</SelectProItem>
-                  <SelectProItem value="customer-return">客户退货</SelectProItem>
-                </SelectProContent>
-              </SelectPro>
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel>来源服务</FieldProLabel>
-              <SelectPro v-model="recordForm.sourceService">
-                <SelectProTrigger aria-label="来源服务"><SelectProValue /></SelectProTrigger>
-                <SelectProContent>
-                  <SelectProItem value="mes-operation">MES 工序</SelectProItem>
-                  <SelectProItem value="inventory">库存</SelectProItem>
-                  <SelectProItem value="wms">WMS</SelectProItem>
-                  <SelectProItem value="mes">MES</SelectProItem>
-                  <SelectProItem value="erp">ERP</SelectProItem>
-                  <SelectProItem value="maintenance">维修</SelectProItem>
-                  <SelectProItem value="purchase-receipt">采购收货</SelectProItem>
-                  <SelectProItem value="customer-return">客户退货</SelectProItem>
-                </SelectProContent>
-              </SelectPro>
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="record-source-document">来源单据</FieldProLabel>
-              <InputPro id="record-source-document" v-model="recordForm.sourceDocumentId" required />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="record-sku">SKU</FieldProLabel>
-              <InputPro id="record-sku" v-model="recordForm.skuCode" required />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="record-quantity">检验数量</FieldProLabel>
-              <InputPro id="record-quantity" v-model="recordForm.inspectedQuantity" inputmode="decimal" min="0.000001" required type="number" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="record-batch">批次</FieldProLabel>
-              <InputPro id="record-batch" v-model="recordForm.batchNo" />
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="record-serial">序列号</FieldProLabel>
-              <InputPro id="record-serial" v-model="recordForm.serialNo" />
-            </FieldPro>
-          </FieldProGroup>
+          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+            <NvField>
+              <NvFieldLabel for="record-plan">检验方案 ID</NvFieldLabel>
+              <NvInput id="record-plan" v-model="recordForm.inspectionPlanId" />
+            </NvField>
+            <NvField>
+              <NvFieldLabel>来源类型</NvFieldLabel>
+              <NvSelect v-model="recordForm.sourceType">
+                <NvSelectTrigger aria-label="来源类型"><NvSelectValue /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem value="operation">工序</NvSelectItem>
+                  <NvSelectItem value="receiving">收货</NvSelectItem>
+                  <NvSelectItem value="final">终检</NvSelectItem>
+                  <NvSelectItem value="maintenance">维修</NvSelectItem>
+                  <NvSelectItem value="customer-return">客户退货</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+            </NvField>
+            <NvField>
+              <NvFieldLabel>来源服务</NvFieldLabel>
+              <NvSelect v-model="recordForm.sourceService">
+                <NvSelectTrigger aria-label="来源服务"><NvSelectValue /></NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem value="mes-operation">MES 工序</NvSelectItem>
+                  <NvSelectItem value="inventory">库存</NvSelectItem>
+                  <NvSelectItem value="wms">WMS</NvSelectItem>
+                  <NvSelectItem value="mes">MES</NvSelectItem>
+                  <NvSelectItem value="erp">ERP</NvSelectItem>
+                  <NvSelectItem value="maintenance">维修</NvSelectItem>
+                  <NvSelectItem value="purchase-receipt">采购收货</NvSelectItem>
+                  <NvSelectItem value="customer-return">客户退货</NvSelectItem>
+                </NvSelectContent>
+              </NvSelect>
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="record-source-document">来源单据</NvFieldLabel>
+              <NvInput id="record-source-document" v-model="recordForm.sourceDocumentId" required />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="record-sku">SKU</NvFieldLabel>
+              <NvInput id="record-sku" v-model="recordForm.skuCode" required />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="record-quantity">检验数量</NvFieldLabel>
+              <NvInput
+                id="record-quantity"
+                v-model="recordForm.inspectedQuantity"
+                inputmode="decimal"
+                min="0.000001"
+                required
+                type="number"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="record-batch">批次</NvFieldLabel>
+              <NvInput id="record-batch" v-model="recordForm.batchNo" />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="record-serial">序列号</NvFieldLabel>
+              <NvInput id="record-serial" v-model="recordForm.serialNo" />
+            </NvField>
+          </NvFieldGroup>
 
           <div class="grid gap-2">
             <div class="flex items-center justify-between">
               <h3 class="text-sm font-semibold text-foreground">检验特性</h3>
-              <ButtonPro size="sm" variant="outline" type="button" @click="addCharacteristicRow">
+              <NvButton size="sm" variant="outline" type="button" @click="addCharacteristicRow">
                 <PlusIcon aria-hidden="true" />
                 添加行
-              </ButtonPro>
+              </NvButton>
             </div>
             <div class="grid gap-2">
               <div
@@ -387,68 +481,96 @@ function isPresent(value: string | undefined | null): value is string {
                 :key="index"
                 class="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_140px_1fr_110px_auto]"
               >
-                <FieldPro>
-                  <FieldProLabel :for="`characteristic-code-${index}`">特性编码</FieldProLabel>
-                  <InputPro :id="`characteristic-code-${index}`" v-model="line.characteristicCode" required />
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel>结果</FieldProLabel>
-                  <SelectPro v-model="line.result">
-                    <SelectProTrigger :aria-label="`第 ${index + 1} 个特性结果`"><SelectProValue /></SelectProTrigger>
-                    <SelectProContent>
-                      <SelectProItem value="passed">合格</SelectProItem>
-                      <SelectProItem value="failed">不合格</SelectProItem>
-                      <SelectProItem value="conditional-release">让步放行</SelectProItem>
-                    </SelectProContent>
-                  </SelectPro>
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel :for="`observed-value-${index}`">实测值</FieldProLabel>
-                  <InputPro :id="`observed-value-${index}`" v-model="line.observedValue" required />
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel :for="`unit-code-${index}`">单位</FieldProLabel>
-                  <InputPro :id="`unit-code-${index}`" v-model="line.unitCode" />
-                </FieldPro>
-                <FieldPro class="md:col-span-2">
-                  <FieldProLabel :for="`defect-reason-${index}`">缺陷原因</FieldProLabel>
-                  <InputPro :id="`defect-reason-${index}`" v-model="line.defectReason" />
-                </FieldPro>
-                <FieldPro>
-                  <FieldProLabel :for="`defect-quantity-${index}`">缺陷数量</FieldProLabel>
-                  <InputPro :id="`defect-quantity-${index}`" v-model="line.defectQuantity" inputmode="decimal" type="number" />
-                </FieldPro>
+                <NvField>
+                  <NvFieldLabel :for="`characteristic-code-${index}`">特性编码</NvFieldLabel>
+                  <NvInput
+                    :id="`characteristic-code-${index}`"
+                    v-model="line.characteristicCode"
+                    required
+                  />
+                </NvField>
+                <NvField>
+                  <NvFieldLabel>结果</NvFieldLabel>
+                  <NvSelect v-model="line.result">
+                    <NvSelectTrigger :aria-label="`第 ${index + 1} 个特性结果`"
+                      ><NvSelectValue
+                    /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem value="passed">合格</NvSelectItem>
+                      <NvSelectItem value="failed">不合格</NvSelectItem>
+                      <NvSelectItem value="conditional-release">让步放行</NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+                <NvField>
+                  <NvFieldLabel :for="`observed-value-${index}`">实测值</NvFieldLabel>
+                  <NvInput :id="`observed-value-${index}`" v-model="line.observedValue" required />
+                </NvField>
+                <NvField>
+                  <NvFieldLabel :for="`unit-code-${index}`">单位</NvFieldLabel>
+                  <NvInput :id="`unit-code-${index}`" v-model="line.unitCode" />
+                </NvField>
+                <NvField class="md:col-span-2">
+                  <NvFieldLabel :for="`defect-reason-${index}`">缺陷原因</NvFieldLabel>
+                  <NvInput :id="`defect-reason-${index}`" v-model="line.defectReason" />
+                </NvField>
+                <NvField>
+                  <NvFieldLabel :for="`defect-quantity-${index}`">缺陷数量</NvFieldLabel>
+                  <NvInput
+                    :id="`defect-quantity-${index}`"
+                    v-model="line.defectQuantity"
+                    inputmode="decimal"
+                    type="number"
+                  />
+                </NvField>
                 <div class="flex items-end justify-end">
-                  <ButtonPro size="icon-sm" variant="ghost" type="button" @click="removeCharacteristicRow(index)">
+                  <NvButton
+                    size="icon-sm"
+                    variant="ghost"
+                    type="button"
+                    @click="removeCharacteristicRow(index)"
+                  >
                     <Trash2Icon />
                     <span class="sr-only">移除检验特性</span>
-                  </ButtonPro>
+                  </NvButton>
                 </div>
               </div>
             </div>
           </div>
 
-          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
-            <FieldPro>
-              <FieldProLabel for="record-disposition">处置原因{{ requiresDispositionReason ? ' *' : '' }}</FieldProLabel>
-              <InputPro id="record-disposition" v-model="recordForm.dispositionReason" :required="requiresDispositionReason" />
-              <FieldProDescription v-if="requiresDispositionReason">当任一特性不合格或让步放行时必填。</FieldProDescription>
-            </FieldPro>
-            <FieldPro>
-              <FieldProLabel for="record-files">附件文件 ID</FieldProLabel>
-              <InputPro id="record-files" v-model="recordForm.dispositionAttachmentFileIds" placeholder="file-1, file-2" />
-            </FieldPro>
-          </FieldProGroup>
+          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+            <NvField>
+              <NvFieldLabel for="record-disposition"
+                >处置原因{{ requiresDispositionReason ? ' *' : '' }}</NvFieldLabel
+              >
+              <NvInput
+                id="record-disposition"
+                v-model="recordForm.dispositionReason"
+                :required="requiresDispositionReason"
+              />
+              <NvFieldDescription v-if="requiresDispositionReason"
+                >当任一特性不合格或让步放行时必填。</NvFieldDescription
+              >
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="record-files">附件文件 ID</NvFieldLabel>
+              <NvInput
+                id="record-files"
+                v-model="recordForm.dispositionAttachmentFileIds"
+                placeholder="file-1, file-2"
+              />
+            </NvField>
+          </NvFieldGroup>
 
           <div class="flex justify-end">
-            <ButtonPro type="submit" :disabled="createInspectionRecordPending || !canCreateRecord">
+            <NvButton type="submit" :disabled="createInspectionRecordPending || !canCreateRecord">
               <Spinner v-if="createInspectionRecordPending" aria-hidden="true" />
               <ClipboardCheckIcon v-else aria-hidden="true" />
               提交记录
-            </ButtonPro>
+            </NvButton>
           </div>
         </form>
-      </DialogProContent>
-    </DialogPro>
+      </NvDialogContent>
+    </NvDialog>
   </BusinessLayout>
 </template>

@@ -224,24 +224,24 @@ import { FilePreview } from '@nerv-iip/ui/file-preview'
 
 ## 支持格式
 
-| 类型 | 渲染器 |
-| --- | --- |
-| PDF | `@embedpdf/core` headless 插件组合，自研统一工具栏 |
-| DOCX / XLSX / PPTX | `@silurus/ooxml` |
-| PNG / JPG / WEBP / SVG / GIF / AVIF / BMP | 自研图片预览 |
+| 类型                                      | 渲染器                                             |
+| ----------------------------------------- | -------------------------------------------------- |
+| PDF                                       | `@embedpdf/core` headless 插件组合，自研统一工具栏 |
+| DOCX / XLSX / PPTX                        | `@silurus/ooxml`                                   |
+| PNG / JPG / WEBP / SVG / GIF / AVIF / BMP | 自研图片预览                                       |
 
 ## 接口边界
 
-| 属性 / 事件 | 说明 |
-| --- | --- |
-| `src` | 浏览器可访问的文件地址或 data URL |
-| `fileName` | 用于类型推断、标题和可访问标签 |
-| `contentType` | 优先参与类型推断 |
-| `sizeBytes` | 展示紧凑文件大小 |
-| `height` | 预览容器高度，默认 `520` |
-| `loading / error` | 由上层控制的异步状态 |
-| `ready(kind)` | 当前预览器可用时触发 |
-| `error(message)` | 子预览器渲染失败时触发 |
+| 属性 / 事件       | 说明                                                   |
+| ----------------- | ------------------------------------------------------ |
+| `src`             | 浏览器可访问的文件地址或 data URL                      |
+| `fileName`        | 用于类型推断、标题和可访问标签                         |
+| `contentType`     | 优先参与类型推断                                       |
+| `sizeBytes`       | 展示紧凑文件大小                                       |
+| `height`          | 预览容器高度，默认 `520`                               |
+| `loading / error` | 由上层控制的异步状态                                   |
+| `ready(kind)`     | 当前预览器可用时触发                                   |
+| `error(message)`  | 子预览器渲染失败时触发                                 |
 | `openSource(src)` | 用户点击打开源文件时触发；组件不直接调用下载或业务接口 |
 
 `src` 为空时组件显示独立空状态，不把缺少来源误判为不支持格式。图片预览会在原生 `load` 后触发 `ready`，在原生 `error` 后进入统一错误状态；PDF 预览使用 EmbedPDF 的 document / viewport / scroll / render / zoom 插件，文档加载完成后触发 `ready`，加载失败后进入统一错误状态；Office 预览在对应 OOXML viewer 完成 `load` 后触发 `ready`。

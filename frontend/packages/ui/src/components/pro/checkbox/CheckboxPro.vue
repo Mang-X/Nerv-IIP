@@ -21,7 +21,7 @@ const forwarded = useForwardPropsEmits(reactiveOmit(props, 'class'), emits)
     v-bind="forwarded"
     :class="
       cn(
-        'ds-check peer relative flex size-[18px] shrink-0 items-center justify-center rounded-[5px] border border-input bg-card outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-brand/30 focus-visible:border-brand data-[state=checked]:border-brand data-[state=checked]:bg-brand data-[state=checked]:text-brand-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30',
+        'ds-check peer relative flex size-[18px] shrink-0 items-center justify-center rounded-[5px] border border-input bg-card outline-none focus-visible:ring-[3px] focus-visible:ring-brand/30 focus-visible:border-brand data-[state=checked]:border-brand data-[state=checked]:bg-brand data-[state=checked]:text-brand-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30',
         props.class,
       )
     "
@@ -33,34 +33,40 @@ const forwarded = useForwardPropsEmits(reactiveOmit(props, 'class'), emits)
 </template>
 
 <style scoped>
-.ds-check {
-  transition:
-    background-color 0.15s var(--ease-out-quart, ease-out),
-    border-color 0.15s var(--ease-out-quart, ease-out),
-    box-shadow 0.15s var(--ease-out-quart, ease-out),
-    transform 0.18s var(--ease-out-quart, ease-out);
-}
-/* Press: the box depresses while held, then decelerates back — unified with
+@layer nv-components {
+  /* Comprehensive transition (bg/border/ring/press-scale). Do NOT add the Tailwind
+     `transition-colors` utility to the root — it outranks this layered rule and
+     resets `transition-property` to colors only, so the press-scale below fires
+     instantly (no motion). */
+  .ds-check {
+    transition:
+      background-color 0.15s var(--nv-ease-out-quart, ease-out),
+      border-color 0.15s var(--nv-ease-out-quart, ease-out),
+      box-shadow 0.15s var(--nv-ease-out-quart, ease-out),
+      transform 0.18s var(--nv-ease-out-quart, ease-out);
+  }
+  /* Press: the box depresses while held, then decelerates back — unified with
    Switch/Radio. No bounce (per our motion philosophy). */
-.ds-check:active:not([data-disabled]) {
-  transform: scale(0.88);
-}
-.ds-check-ind {
-  animation: ds-check-in 0.18s var(--ease-out-quart, ease-out);
-}
-@keyframes ds-check-in {
-  from {
-    opacity: 0;
-    transform: scale(0.6);
+  .ds-check:active:not([data-disabled]) {
+    transform: scale(0.88);
   }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
   .ds-check-ind {
-    animation: none;
+    animation: ds-check-in 0.18s var(--nv-ease-out-quart, ease-out);
+  }
+  @keyframes ds-check-in {
+    from {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-check-ind {
+      animation: none;
+    }
   }
 }
 </style>

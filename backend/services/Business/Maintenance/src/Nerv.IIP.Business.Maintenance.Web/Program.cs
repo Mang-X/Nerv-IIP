@@ -63,6 +63,7 @@ try
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
+    builder.Services.Configure<MaintenanceCompletionOptions>(builder.Configuration.GetSection("Maintenance:Completion"));
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, MaintenanceIntegrationEventDeadLetterStore>();
     builder.Services.AddScoped<OpenWorkOrderWhenAlarmRaisedHandler>();
     builder.Services.AddScoped<MarkWorkOrderAlarmClearedHandler>();

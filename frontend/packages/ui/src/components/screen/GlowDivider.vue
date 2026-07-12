@@ -15,69 +15,71 @@ withDefaults(
 </script>
 
 <template>
-  <div class="sb-gd" :class="{ flow }">
-    <span class="sb-gd-dot" />
+  <div class="nv-scr-gd" :class="{ flow }">
+    <span class="nv-scr-gd-dot" />
   </div>
 </template>
 
 <style scoped>
-.sb-gd {
-  position: relative;
-  height: 1px;
-  width: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--sb-line-2) 25%,
-    var(--sb-cyan) 50%,
-    var(--sb-line-2) 75%,
-    transparent
-  );
-}
-/* center glow dot */
-.sb-gd-dot {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  background: var(--sb-cyan);
-  box-shadow: var(--sb-glow);
-}
-/* travelling sheen */
-.sb-gd.flow::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  height: 100%;
-  width: 22%;
-  background: linear-gradient(90deg, transparent, var(--sb-cyan), transparent);
-  opacity: 0.7;
-  animation: sb-gd-slide 3.4s ease-in-out infinite;
-}
-@keyframes sb-gd-slide {
-  0% {
-    transform: translateX(-30%);
-    opacity: 0;
+@layer nv-components {
+  .nv-scr-gd {
+    position: relative;
+    height: 1px;
+    width: 100%;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--nv-scr-line-2) 25%,
+      var(--nv-scr-cyan) 50%,
+      var(--nv-scr-line-2) 75%,
+      transparent
+    );
   }
-  20% {
+  /* center glow dot */
+  .nv-scr-gd-dot {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--nv-scr-cyan);
+    box-shadow: var(--nv-scr-glow);
+  }
+  /* travelling sheen */
+  .nv-scr-gd.flow::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 22%;
+    background: linear-gradient(90deg, transparent, var(--nv-scr-cyan), transparent);
     opacity: 0.7;
+    animation: nv-scr-gd-slide 3.4s ease-in-out infinite;
   }
-  80% {
-    opacity: 0.7;
+  @keyframes nv-scr-gd-slide {
+    0% {
+      transform: translateX(-30%);
+      opacity: 0;
+    }
+    20% {
+      opacity: 0.7;
+    }
+    80% {
+      opacity: 0.7;
+    }
+    100% {
+      transform: translateX(480%);
+      opacity: 0;
+    }
   }
-  100% {
-    transform: translateX(480%);
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .sb-gd.flow::after {
-    animation: none;
-    display: none;
+  @media (prefers-reduced-motion: reduce) {
+    .nv-scr-gd.flow::after {
+      animation: none;
+      display: none;
+    }
   }
 }
 </style>

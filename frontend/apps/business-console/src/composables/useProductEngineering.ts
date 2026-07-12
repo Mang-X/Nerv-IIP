@@ -15,16 +15,17 @@ import {
   archiveBusinessConsoleEngineeringProductionVersionMutationOptions,
   createBusinessConsoleEngineeringItemRevisionMutationOptions,
   createBusinessConsoleEngineeringProductionVersionMutationOptions,
-  getBusinessConsoleEngineeringBom,
-  getBusinessConsoleEngineeringBomExplosion,
-  getBusinessConsoleEngineeringBomWhereUsed,
-  getBusinessConsoleEngineeringChange,
-  getBusinessConsoleEngineeringDocument,
-  getBusinessConsoleEngineeringItem,
-  getBusinessConsoleEngineeringManufacturingBom,
-  getBusinessConsoleEngineeringManufacturingBomExplosion,
-  getBusinessConsoleEngineeringManufacturingBomWhereUsed,
-  getBusinessConsoleEngineeringRouting,
+  getBusinessConsoleEngineeringBomDiffQueryOptions,
+  getBusinessConsoleEngineeringBomExplosionQueryOptions,
+  getBusinessConsoleEngineeringBomQueryOptions,
+  getBusinessConsoleEngineeringBomWhereUsedQueryOptions,
+  getBusinessConsoleEngineeringChangeQueryOptions,
+  getBusinessConsoleEngineeringDocumentQueryOptions,
+  getBusinessConsoleEngineeringItemQueryOptions,
+  getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions,
+  getBusinessConsoleEngineeringManufacturingBomQueryOptions,
+  getBusinessConsoleEngineeringManufacturingBomWhereUsedQueryOptions,
+  getBusinessConsoleEngineeringRoutingQueryOptions,
   listBusinessConsoleEngineeringBomsQueryOptions,
   listBusinessConsoleEngineeringChangesQueryOptions,
   listBusinessConsoleEngineeringDocumentsQueryOptions,
@@ -37,31 +38,26 @@ import {
   updateBusinessConsoleEngineeringStandardOperationMutationOptions,
   archiveBusinessConsoleEngineeringStandardOperationMutationOptions,
   registerBusinessConsoleEngineeringDocumentMutationOptions,
+  previewBusinessConsoleEngineeringChangeImpactMutationOptions,
   releaseBusinessConsoleEngineeringBomMutationOptions,
   releaseBusinessConsoleEngineeringChangeMutationOptions,
   releaseBusinessConsoleEngineeringManufacturingBomMutationOptions,
   releaseBusinessConsoleEngineeringRoutingMutationOptions,
-  resolveBusinessConsoleEngineeringProductionVersion,
+  resolveBusinessConsoleEngineeringProductionVersionQueryOptions,
   updateBusinessConsoleEngineeringProductionVersionMutationOptions,
-  type BusinessConsoleBomExplosionEnvelope,
   type BusinessConsoleBomExplosionResponse,
-  type BusinessConsoleBomWhereUsedEnvelope,
+  type BusinessConsoleBomDiffResponse,
   type BusinessConsoleBomWhereUsedResponse,
   type BusinessConsoleCreateEngineeringItemRevisionRequest,
   type BusinessConsoleCreateProductionVersionRequest,
-  type BusinessConsoleEngineeringBomDetailEnvelope,
   type BusinessConsoleEngineeringBomItem,
   type BusinessConsoleEngineeringBomListEnvelope,
-  type BusinessConsoleEngineeringChangeDetailEnvelope,
   type BusinessConsoleEngineeringChangeItem,
   type BusinessConsoleEngineeringChangeListEnvelope,
-  type BusinessConsoleEngineeringDocumentDetailEnvelope,
   type BusinessConsoleEngineeringDocumentItem,
   type BusinessConsoleEngineeringDocumentListEnvelope,
-  type BusinessConsoleEngineeringItemDetailEnvelope,
   type BusinessConsoleEngineeringItemRevisionItem,
   type BusinessConsoleEngineeringItemListEnvelope,
-  type BusinessConsoleManufacturingBomDetailEnvelope,
   type BusinessConsoleManufacturingBomItem,
   type BusinessConsoleManufacturingBomListEnvelope,
   type BusinessConsoleProductionVersionItem,
@@ -73,11 +69,11 @@ import {
   type BusinessConsoleRegisterEngineeringDocumentRequest,
   type BusinessConsoleReleaseEngineeringBomRequest,
   type BusinessConsoleReleaseEngineeringChangeRequest,
+  type BusinessConsoleEngineeringChangeImpactPreviewRequest,
+  type BusinessConsoleEngineeringChangeImpactPreviewResponse,
   type BusinessConsoleReleaseManufacturingBomRequest,
   type BusinessConsoleReleaseRoutingRequest,
-  type BusinessConsoleResolveProductionVersionEnvelope,
   type BusinessConsoleResolveProductionVersionResponse,
-  type BusinessConsoleRoutingDetailEnvelope,
   type BusinessConsoleRoutingItem,
   type BusinessConsoleRoutingListEnvelope,
   type BusinessConsoleUpdateProductionVersionRequest,
@@ -85,6 +81,7 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseMutationOptions, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, ref, shallowRef } from 'vue'
+import { bindBusinessContext, refetchWithBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 /** MBOM / 工艺路线选择器只取后端真枚举 `Published`（不是 `Released`）。 */
@@ -171,6 +168,14 @@ export interface BomWhereUsedInput {
   effectiveDate: string
 }
 
+export interface BomDiffInput {
+  bomKind: 'engineering' | 'manufacturing'
+  fromBomCode: string
+  fromRevision: string
+  toBomCode: string
+  toRevision: string
+}
+
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
   return value === undefined || value === '' ? {} : { [key]: value }
 }
@@ -185,11 +190,14 @@ function unwrapTotal(envelope: { success?: boolean, data?: { total?: number } | 
   return envelope.data?.total ?? 0
 }
 
-/** 解包 get-by-id 单体响应（SDK fn 返回 `{ data: envelope }`，envelope 是 `{ success, data }`）。 */
-function unwrapDetail<T>(res: { data?: { success?: boolean, data?: T | null } } | undefined): T | undefined {
-  const envelope = res?.data
+/** 解包 get-by-id 单体响应（query option 返回 `{ success, data }` envelope）。 */
+function unwrapDetail<T>(envelope: { success?: boolean, data?: T | null } | undefined): T | undefined {
   if (!envelope?.success) return undefined
   return envelope.data ?? undefined
+}
+
+async function runQueryOption<T>(options: { query: (context: never) => Promise<T> }): Promise<T> {
+  return options.query({} as never)
 }
 
 function isBusinessQuery(id: string) {
@@ -206,6 +214,7 @@ function ignoreBackgroundError(_error: unknown) {}
 export function useBomAnalysis() {
   const context = useBusinessContextStore()
   const explosion = shallowRef<BusinessConsoleBomExplosionResponse>()
+  const diff = shallowRef<BusinessConsoleBomDiffResponse>()
   const whereUsed = shallowRef<BusinessConsoleBomWhereUsedResponse>()
   const pending = ref(false)
   const error = ref<unknown>()
@@ -234,73 +243,97 @@ export function useBomAnalysis() {
 
   return {
     explosion,
+    diff,
     whereUsed,
     pending,
     error,
+    loadBomDiff: (input: BomDiffInput) =>
+      run(async () => {
+        const envelope = await runQueryOption(
+          getBusinessConsoleEngineeringBomDiffQueryOptions({
+            query: {
+              ...commonQuery(),
+              bomKind: input.bomKind,
+              fromBomCode: input.fromBomCode,
+              fromRevision: input.fromRevision,
+              toBomCode: input.toBomCode,
+              toRevision: input.toRevision,
+            },
+          }),
+        )
+        diff.value = unwrapDetail<BusinessConsoleBomDiffResponse>(envelope)
+        explosion.value = undefined
+        whereUsed.value = undefined
+        return diff.value
+      }),
     loadEngineeringExplosion: (input: BomExplosionInput) =>
       run(async () => {
-        const res = await getBusinessConsoleEngineeringBomExplosion({
-          query: {
-            ...commonQuery(),
-            itemCode: input.code,
-            effectiveDate: input.effectiveDate,
-            ...optionalQuery('lotSize', input.lotSize),
-            ...optionalQuery('bomCode', input.bomCode),
-            ...optionalQuery('revision', input.revision),
-          },
-        })
-        explosion.value = unwrapDetail<BusinessConsoleBomExplosionResponse>(
-          res as { data?: BusinessConsoleBomExplosionEnvelope },
+        const envelope = await runQueryOption(
+          getBusinessConsoleEngineeringBomExplosionQueryOptions({
+            query: {
+              ...commonQuery(),
+              itemCode: input.code,
+              effectiveDate: input.effectiveDate,
+              ...optionalQuery('lotSize', input.lotSize),
+              ...optionalQuery('bomCode', input.bomCode),
+              ...optionalQuery('revision', input.revision),
+            },
+          }),
         )
+        explosion.value = unwrapDetail<BusinessConsoleBomExplosionResponse>(envelope)
+        diff.value = undefined
         whereUsed.value = undefined
         return explosion.value
       }),
     loadManufacturingExplosion: (input: BomExplosionInput) =>
       run(async () => {
-        const res = await getBusinessConsoleEngineeringManufacturingBomExplosion({
-          query: {
-            ...commonQuery(),
-            skuCode: input.code,
-            effectiveDate: input.effectiveDate,
-            ...optionalQuery('lotSize', input.lotSize),
-            ...optionalQuery('bomCode', input.bomCode),
-            ...optionalQuery('revision', input.revision),
-          },
-        })
-        explosion.value = unwrapDetail<BusinessConsoleBomExplosionResponse>(
-          res as { data?: BusinessConsoleBomExplosionEnvelope },
+        const envelope = await runQueryOption(
+          getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions({
+            query: {
+              ...commonQuery(),
+              skuCode: input.code,
+              effectiveDate: input.effectiveDate,
+              ...optionalQuery('lotSize', input.lotSize),
+              ...optionalQuery('bomCode', input.bomCode),
+              ...optionalQuery('revision', input.revision),
+            },
+          }),
         )
+        explosion.value = unwrapDetail<BusinessConsoleBomExplosionResponse>(envelope)
+        diff.value = undefined
         whereUsed.value = undefined
         return explosion.value
       }),
     loadEngineeringWhereUsed: (input: BomWhereUsedInput) =>
       run(async () => {
-        const res = await getBusinessConsoleEngineeringBomWhereUsed({
-          query: {
-            ...commonQuery(),
-            componentCode: input.componentCode,
-            effectiveDate: input.effectiveDate,
-          },
-        })
-        whereUsed.value = unwrapDetail<BusinessConsoleBomWhereUsedResponse>(
-          res as { data?: BusinessConsoleBomWhereUsedEnvelope },
+        const envelope = await runQueryOption(
+          getBusinessConsoleEngineeringBomWhereUsedQueryOptions({
+            query: {
+              ...commonQuery(),
+              componentCode: input.componentCode,
+              effectiveDate: input.effectiveDate,
+            },
+          }),
         )
+        whereUsed.value = unwrapDetail<BusinessConsoleBomWhereUsedResponse>(envelope)
         explosion.value = undefined
+        diff.value = undefined
         return whereUsed.value
       }),
     loadManufacturingWhereUsed: (input: BomWhereUsedInput) =>
       run(async () => {
-        const res = await getBusinessConsoleEngineeringManufacturingBomWhereUsed({
-          query: {
-            ...commonQuery(),
-            componentCode: input.componentCode,
-            effectiveDate: input.effectiveDate,
-          },
-        })
-        whereUsed.value = unwrapDetail<BusinessConsoleBomWhereUsedResponse>(
-          res as { data?: BusinessConsoleBomWhereUsedEnvelope },
+        const envelope = await runQueryOption(
+          getBusinessConsoleEngineeringManufacturingBomWhereUsedQueryOptions({
+            query: {
+              ...commonQuery(),
+              componentCode: input.componentCode,
+              effectiveDate: input.effectiveDate,
+            },
+          }),
         )
+        whereUsed.value = unwrapDetail<BusinessConsoleBomWhereUsedResponse>(envelope)
         explosion.value = undefined
+        diff.value = undefined
         return whereUsed.value
       }),
   }
@@ -313,17 +346,17 @@ export function useBomAnalysis() {
 export function useEngineeringProductionVersions() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<ProductionVersionListFilters>({
+  const filters = bindBusinessContext(reactive<ProductionVersionListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     skuCode: undefined,
     status: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringProductionVersionsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringProductionVersionsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -332,7 +365,7 @@ export function useEngineeringProductionVersions() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -364,7 +397,7 @@ export function useEngineeringProductionVersions() {
     productionVersionsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleProductionVersionListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     createProductionVersion: (body: BusinessConsoleCreateProductionVersionRequest) =>
       createMutation.mutateAsync({ body }),
@@ -395,7 +428,7 @@ export function useEngineeringProductionVersions() {
 
 /**
  * 生产版本 resolve（给定 SKU + 生效日 + 批量 → 命中哪个版本）。
- * 为「按需触发」语义（点解析才发请求），直接用 sdk fn 命令式调用，不挂常驻 query。
+ * 为「按需触发」语义（点解析才发请求），执行 stable query option，不直接绕 generated SDK。
  */
 export function useProductionVersionResolve() {
   const context = useBusinessContextStore()
@@ -406,17 +439,18 @@ export function useProductionVersionResolve() {
   async function resolve(input: ProductionVersionResolveInput) {
     pending.value = true
     try {
-      const res = await resolveBusinessConsoleEngineeringProductionVersion({
-        query: {
-          organizationId: context.organizationId,
-          environmentId: context.environmentId,
-          skuCode: input.skuCode,
-          effectiveDate: input.effectiveDate,
-          lotSize: input.lotSize,
-        },
-      })
-      const envelope = (res as { data?: BusinessConsoleResolveProductionVersionEnvelope }).data
-      resolved.value = envelope?.success ? envelope.data ?? undefined : undefined
+      const envelope = await runQueryOption(
+        resolveBusinessConsoleEngineeringProductionVersionQueryOptions({
+          query: {
+            organizationId: context.organizationId,
+            environmentId: context.environmentId,
+            skuCode: input.skuCode,
+            effectiveDate: input.effectiveDate,
+            lotSize: input.lotSize,
+          },
+        }),
+      )
+      resolved.value = unwrapDetail<BusinessConsoleResolveProductionVersionResponse>(envelope)
       resolvedOnce.value = true
       return resolved.value
     }
@@ -444,14 +478,14 @@ export function useProductionVersionResolve() {
  */
 export function usePublishedMboms() {
   const context = useBusinessContextStore()
-  const filters = reactive({
+  const filters = bindBusinessContext(reactive({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     skuCode: undefined as string | undefined,
-  })
+  }))
 
   const query = useQuery(() =>
-    listBusinessConsoleEngineeringManufacturingBomsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringManufacturingBomsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -460,7 +494,7 @@ export function usePublishedMboms() {
         skip: 0,
         take: DEFAULT_TAKE,
       },
-    }),
+    }), filters),
   )
 
   return {
@@ -470,7 +504,7 @@ export function usePublishedMboms() {
     ),
     mbomsError: query.error,
     mbomsPending: query.isLoading,
-    refreshMboms: query.refetch,
+    refreshMboms: () => refetchWithBusinessContext(filters, query),
   }
 }
 
@@ -479,14 +513,14 @@ export function usePublishedMboms() {
  */
 export function usePublishedRoutings() {
   const context = useBusinessContextStore()
-  const filters = reactive({
+  const filters = bindBusinessContext(reactive({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     skuCode: undefined as string | undefined,
-  })
+  }))
 
   const query = useQuery(() =>
-    listBusinessConsoleEngineeringRoutingsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringRoutingsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -495,7 +529,7 @@ export function usePublishedRoutings() {
         skip: 0,
         take: DEFAULT_TAKE,
       },
-    }),
+    }), filters),
   )
 
   return {
@@ -505,7 +539,7 @@ export function usePublishedRoutings() {
     ),
     routingsError: query.error,
     routingsPending: query.isLoading,
-    refreshRoutings: query.refetch,
+    refreshRoutings: () => refetchWithBusinessContext(filters, query),
   }
 }
 
@@ -517,17 +551,17 @@ export function usePublishedRoutings() {
 export function useEngineeringEboms() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<EngineeringBomListFilters>({
+  const filters = bindBusinessContext(reactive<EngineeringBomListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     parentItemCode: undefined,
     status: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringBomsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringBomsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -536,7 +570,7 @@ export function useEngineeringEboms() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -560,7 +594,7 @@ export function useEngineeringEboms() {
     ebomsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleEngineeringBomListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     releaseEbom: (body: BusinessConsoleReleaseEngineeringBomRequest) =>
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -569,13 +603,13 @@ export function useEngineeringEboms() {
 
     // 按需取某版本明细（含组件行），用于「查看」。失败抛错由调用方处理。
     fetchEbomDetail: async (bomCode: string, revision: string) => {
-      const res = await getBusinessConsoleEngineeringBom({
-        path: { bomCode, revision },
-        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-      })
-      return unwrapDetail<BusinessConsoleEngineeringBomItem>(
-        res as { data?: BusinessConsoleEngineeringBomDetailEnvelope },
+      const envelope = await runQueryOption(
+        getBusinessConsoleEngineeringBomQueryOptions({
+          path: { bomCode, revision },
+          query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        }),
       )
+      return unwrapDetail<BusinessConsoleEngineeringBomItem>(envelope)
     },
   }
 }
@@ -586,14 +620,14 @@ export function useEngineeringEboms() {
  */
 export function usePublishedEboms() {
   const context = useBusinessContextStore()
-  const filters = reactive({
+  const filters = bindBusinessContext(reactive({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     parentItemCode: undefined as string | undefined,
-  })
+  }))
 
   const query = useQuery(() =>
-    listBusinessConsoleEngineeringBomsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringBomsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -602,7 +636,7 @@ export function usePublishedEboms() {
         skip: 0,
         take: DEFAULT_TAKE,
       },
-    }),
+    }), filters),
   )
 
   return {
@@ -612,7 +646,7 @@ export function usePublishedEboms() {
     ),
     ebomsError: query.error,
     ebomsPending: query.isLoading,
-    refreshEboms: query.refetch,
+    refreshEboms: () => refetchWithBusinessContext(filters, query),
   }
 }
 
@@ -624,17 +658,17 @@ export function usePublishedEboms() {
 export function useEngineeringMboms() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<ManufacturingBomListFilters>({
+  const filters = bindBusinessContext(reactive<ManufacturingBomListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     skuCode: undefined,
     status: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringManufacturingBomsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringManufacturingBomsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -643,7 +677,7 @@ export function useEngineeringMboms() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -667,7 +701,7 @@ export function useEngineeringMboms() {
     mbomsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleManufacturingBomListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     releaseMbom: (body: BusinessConsoleReleaseManufacturingBomRequest) =>
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -676,13 +710,13 @@ export function useEngineeringMboms() {
 
     // 按需取某版本明细（含物料行 + 配方行），用于「查看」。失败抛错由调用方处理。
     fetchMbomDetail: async (bomCode: string, revision: string) => {
-      const res = await getBusinessConsoleEngineeringManufacturingBom({
-        path: { bomCode, revision },
-        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-      })
-      return unwrapDetail<BusinessConsoleManufacturingBomItem>(
-        res as { data?: BusinessConsoleManufacturingBomDetailEnvelope },
+      const envelope = await runQueryOption(
+        getBusinessConsoleEngineeringManufacturingBomQueryOptions({
+          path: { bomCode, revision },
+          query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        }),
       )
+      return unwrapDetail<BusinessConsoleManufacturingBomItem>(envelope)
     },
   }
 }
@@ -694,17 +728,17 @@ export function useEngineeringMboms() {
 export function useEngineeringRoutings() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<RoutingListFilters>({
+  const filters = bindBusinessContext(reactive<RoutingListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     skuCode: undefined,
     status: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringRoutingsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringRoutingsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -713,7 +747,7 @@ export function useEngineeringRoutings() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -737,7 +771,7 @@ export function useEngineeringRoutings() {
     routingsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleRoutingListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     releaseRouting: (body: BusinessConsoleReleaseRoutingRequest) =>
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -746,13 +780,13 @@ export function useEngineeringRoutings() {
 
     // 按需取某版本明细（含工序行），用于「查看」。失败抛错由调用方处理。
     fetchRoutingDetail: async (routingCode: string, revision: string) => {
-      const res = await getBusinessConsoleEngineeringRouting({
-        path: { routingCode, revision },
-        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-      })
-      return unwrapDetail<BusinessConsoleRoutingItem>(
-        res as { data?: BusinessConsoleRoutingDetailEnvelope },
+      const envelope = await runQueryOption(
+        getBusinessConsoleEngineeringRoutingQueryOptions({
+          path: { routingCode, revision },
+          query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        }),
       )
+      return unwrapDetail<BusinessConsoleRoutingItem>(envelope)
     },
   }
 }
@@ -768,17 +802,17 @@ export function useEngineeringRoutings() {
 export function useEngineeringItems() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<EngineeringItemListFilters>({
+  const filters = bindBusinessContext(reactive<EngineeringItemListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     itemCode: undefined,
     status: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringItemsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringItemsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -787,7 +821,7 @@ export function useEngineeringItems() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -811,7 +845,7 @@ export function useEngineeringItems() {
     itemsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleEngineeringItemListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     createItemRevision: (body: BusinessConsoleCreateEngineeringItemRevisionRequest) =>
       (createRevisionMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -820,13 +854,13 @@ export function useEngineeringItems() {
 
     // 按需取某物料修订明细，用于「查看」。失败抛错由调用方处理。
     fetchItemDetail: async (itemCode: string, revision: string) => {
-      const res = await getBusinessConsoleEngineeringItem({
-        path: { itemCode, revision },
-        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-      })
-      return unwrapDetail<BusinessConsoleEngineeringItemRevisionItem>(
-        res as { data?: BusinessConsoleEngineeringItemDetailEnvelope },
+      const envelope = await runQueryOption(
+        getBusinessConsoleEngineeringItemQueryOptions({
+          path: { itemCode, revision },
+          query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        }),
       )
+      return unwrapDetail<BusinessConsoleEngineeringItemRevisionItem>(envelope)
     },
   }
 }
@@ -840,17 +874,17 @@ export function useEngineeringItems() {
 export function useEngineeringDocuments() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<EngineeringDocumentListFilters>({
+  const filters = bindBusinessContext(reactive<EngineeringDocumentListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     itemCode: undefined,
     documentType: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringDocumentsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringDocumentsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -859,7 +893,7 @@ export function useEngineeringDocuments() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -883,7 +917,7 @@ export function useEngineeringDocuments() {
     documentsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleEngineeringDocumentListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     registerDocument: (body: BusinessConsoleRegisterEngineeringDocumentRequest) =>
       (registerMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -892,13 +926,13 @@ export function useEngineeringDocuments() {
 
     // 按需取某文档修订明细，用于「查看」。失败抛错由调用方处理。
     fetchDocumentDetail: async (documentNumber: string, revision: string) => {
-      const res = await getBusinessConsoleEngineeringDocument({
-        path: { documentNumber, revision },
-        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-      })
-      return unwrapDetail<BusinessConsoleEngineeringDocumentItem>(
-        res as { data?: BusinessConsoleEngineeringDocumentDetailEnvelope },
+      const envelope = await runQueryOption(
+        getBusinessConsoleEngineeringDocumentQueryOptions({
+          path: { documentNumber, revision },
+          query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        }),
       )
+      return unwrapDetail<BusinessConsoleEngineeringDocumentItem>(envelope)
     },
   }
 }
@@ -913,16 +947,16 @@ export function useEngineeringDocuments() {
 export function useEngineeringChanges() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<EngineeringChangeListFilters>({
+  const filters = bindBusinessContext(reactive<EngineeringChangeListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     status: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringChangesQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringChangesQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -930,7 +964,7 @@ export function useEngineeringChanges() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -943,6 +977,10 @@ export function useEngineeringChanges() {
     ...releaseBusinessConsoleEngineeringChangeMutationOptions(),
     onSuccess: invalidateList,
   } as unknown as UseMutationOptions)
+  const previewMutation = useMutation({
+    ...previewBusinessConsoleEngineeringChangeImpactMutationOptions(),
+  } as unknown as UseMutationOptions)
+  const impactPreview = shallowRef<BusinessConsoleEngineeringChangeImpactPreviewResponse>()
 
   return {
     filters,
@@ -954,22 +992,36 @@ export function useEngineeringChanges() {
     changesTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleEngineeringChangeListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     releaseChange: (body: BusinessConsoleReleaseEngineeringChangeRequest) =>
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
     releasePending: releaseMutation.isLoading,
     releaseError: releaseMutation.error,
 
+    previewImpact: async (body: BusinessConsoleEngineeringChangeImpactPreviewRequest) => {
+      const envelope = await (previewMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body })
+      impactPreview.value = unwrapDetail<BusinessConsoleEngineeringChangeImpactPreviewResponse>(
+        envelope as { success?: boolean, data?: BusinessConsoleEngineeringChangeImpactPreviewResponse | null } | undefined,
+      )
+      return impactPreview.value
+    },
+    previewPending: previewMutation.isLoading,
+    previewError: previewMutation.error,
+    impactPreview,
+    clearImpactPreview: () => {
+      impactPreview.value = undefined
+    },
+
     // 按需取某变更明细（含受影响版本），用于「查看」。失败抛错由调用方处理。
     fetchChangeDetail: async (changeNumber: string) => {
-      const res = await getBusinessConsoleEngineeringChange({
-        path: { changeNumber },
-        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-      })
-      return unwrapDetail<BusinessConsoleEngineeringChangeItem>(
-        res as { data?: BusinessConsoleEngineeringChangeDetailEnvelope },
+      const envelope = await runQueryOption(
+        getBusinessConsoleEngineeringChangeQueryOptions({
+          path: { changeNumber },
+          query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        }),
       )
+      return unwrapDetail<BusinessConsoleEngineeringChangeItem>(envelope)
     },
   }
 }
@@ -996,17 +1048,17 @@ export interface StandardOperationListFilters {
 export function useStandardOperations() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<StandardOperationListFilters>({
+  const filters = bindBusinessContext(reactive<StandardOperationListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     enabled: undefined,
     search: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringStandardOperationsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringStandardOperationsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -1015,7 +1067,7 @@ export function useStandardOperations() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -1047,7 +1099,7 @@ export function useStandardOperations() {
     standardOperationsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleStandardOperationListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     // 创建 body 含 org/env + 用户自定义 operationCode（页面提供）。
     createStandardOperation: (body: BusinessConsoleCreateStandardOperationRequest) =>

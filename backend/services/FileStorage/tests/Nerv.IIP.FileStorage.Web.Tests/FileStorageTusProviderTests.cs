@@ -302,12 +302,12 @@ public sealed class FileStorageTusProviderTests
             await using var factory = CreateFactoryWithTusProvider(rootPath, scanningEnabled: true);
             var client = CreateInternalServiceClient(factory);
             var uploadedBytes = Encoding.UTF8.GetBytes("hello");
-            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: uploadedBytes.Length);
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: uploadedBytes.Length, request: CreateTextAttachmentRequest());
             await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, uploadedBytes);
 
             var completeResponse = await client.PostAsJsonAsync(
                 $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
-                new CompleteUploadSessionRequest("org-001", "prod", "application-package", null, uploadedBytes.Length));
+                new CompleteUploadSessionRequest("org-001", "prod", "attachment", null, uploadedBytes.Length));
             completeResponse.EnsureSuccessStatusCode();
 
             var grantResponse = await client.PostAsJsonAsync(
@@ -338,12 +338,12 @@ public sealed class FileStorageTusProviderTests
             await using var factory = CreateFactoryWithTusProvider(rootPath);
             var client = CreateInternalServiceClient(factory);
             var uploadedBytes = Encoding.UTF8.GetBytes("hello");
-            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: uploadedBytes.Length);
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: uploadedBytes.Length, request: CreateTextAttachmentRequest());
             await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, uploadedBytes);
 
             var completeResponse = await client.PostAsJsonAsync(
                 $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
-                new CompleteUploadSessionRequest("org-001", "prod", "application-package", null, uploadedBytes.Length));
+                new CompleteUploadSessionRequest("org-001", "prod", "attachment", null, uploadedBytes.Length));
             completeResponse.EnsureSuccessStatusCode();
 
             var grantResponse = await client.PostAsJsonAsync(
@@ -429,12 +429,12 @@ public sealed class FileStorageTusProviderTests
             await using var factory = CreateFactoryWithTusProvider(rootPath);
             var client = CreateInternalServiceClient(factory);
             var uploadedBytes = Encoding.UTF8.GetBytes("hello");
-            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: uploadedBytes.Length);
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: uploadedBytes.Length, request: CreateTextAttachmentRequest());
             await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, uploadedBytes);
 
             var completeResponse = await client.PostAsJsonAsync(
                 $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
-                new CompleteUploadSessionRequest("org-001", "prod", "application-package", null, uploadedBytes.Length));
+                new CompleteUploadSessionRequest("org-001", "prod", "attachment", null, uploadedBytes.Length));
             completeResponse.EnsureSuccessStatusCode();
             foreach (var path in Directory.EnumerateFiles(rootPath))
             {
@@ -547,11 +547,27 @@ public sealed class FileStorageTusProviderTests
             "sha256:test");
     }
 
-    private static async Task<CreateUploadSessionResponse> CreateTusUploadSessionAsync(HttpClient client, long expectedSizeBytes = 4096)
+    private static CreateUploadSessionRequest CreateTextAttachmentRequest()
+    {
+        return new CreateUploadSessionRequest(
+            "org-001",
+            "prod",
+            new OwnerReference("AppHub", "DiagnosticAttachment", "app-42"),
+            "attachment",
+            "note.txt",
+            "text/plain",
+            4096,
+            null);
+    }
+
+    private static async Task<CreateUploadSessionResponse> CreateTusUploadSessionAsync(
+        HttpClient client,
+        long expectedSizeBytes = 4096,
+        CreateUploadSessionRequest? request = null)
     {
         var response = await client.PostAsJsonAsync(
             "/api/files/v1/upload-sessions",
-            CreateUploadRequest() with { ExpectedSizeBytes = expectedSizeBytes, Checksum = null });
+            (request ?? CreateUploadRequest()) with { ExpectedSizeBytes = expectedSizeBytes, Checksum = null });
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<CreateUploadSessionResponse>())!;
     }

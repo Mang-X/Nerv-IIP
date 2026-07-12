@@ -12,7 +12,12 @@ public sealed record UserFact(
     int PermissionVersion,
     int FailedLoginCount = 0,
     DateTimeOffset? LastFailedLoginAtUtc = null,
-    DateTimeOffset? LockoutUntilUtc = null);
+    DateTimeOffset? LockoutUntilUtc = null,
+    DateTimeOffset? AccountExpiresAtUtc = null,
+    DateTimeOffset? PasswordChangedAtUtc = null,
+    DateTimeOffset? PasswordExpiresAtUtc = null,
+    bool PasswordChangeRequired = false,
+    IReadOnlyList<string>? PasswordHistoryHashes = null);
 public sealed record RoleFact(string RoleId, string RoleName, IReadOnlySet<string> PermissionCodes);
 public sealed record MembershipFact(string UserId, string OrganizationId, string EnvironmentId, IReadOnlySet<string> RoleIds);
 public sealed record UserSessionFact(
@@ -109,6 +114,9 @@ public static class NervIipSeedPermissions
         "business.engineering.changes.manage",
         "business.planning.demands.read",
         "business.planning.demands.manage",
+        "business.planning.mps.read",
+        "business.planning.mps.manage",
+        "business.planning.mps.release",
         "business.planning.mrp.read",
         "business.planning.mrp.run",
         "business.planning.suggestions.manage",
@@ -135,6 +143,9 @@ public static class NervIipSeedPermissions
         "business.iiot.alarm-rules.manage",
         "business.iiot.telemetry.read",
         "business.iiot.telemetry.write",
+        "business.iiot.device-control.write",
+        "business.iiot.device-control.manage",
+        "business.iiot.device-control.read",
         "business.iiot.alarms.read",
         "business.iiot.alarms.write",
         "business.maintenance.work-orders.read",
@@ -142,8 +153,11 @@ public static class NervIipSeedPermissions
         "business.maintenance.plans.read",
         "business.maintenance.plans.manage",
         "notifications.intents.submit",
+        "notifications.dlq.read",
+        "notifications.dlq.manage",
         "notifications.messages.read",
         "notifications.messages.mark-read",
-        "notifications.tasks.read"
+        "notifications.tasks.read",
+        "notifications.delivery.manage"
     ];
 }

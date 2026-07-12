@@ -1,3 +1,4 @@
+import { RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
@@ -43,6 +44,16 @@ const inspections = ref<Array<Record<string, unknown>>>([
     inspector: 'op-1',
     result: 'pass',
     inspectedAtUtc: '2026-06-10T08:00:00Z',
+    measurements: [
+      {
+        characteristicCode: 'bearing-temperature',
+        measuredValue: 65,
+        uomCode: 'C',
+        lowerSpecLimit: 0,
+        upperSpecLimit: 70,
+        isWithinSpec: true,
+      },
+    ],
   },
 ])
 const inspectionsPending = ref(false)
@@ -197,6 +208,50 @@ describe('PDA equipment inspect page', () => {
     expect(body).not.toHaveProperty('inspectedAtUtc')
   })
 
+  it('submits entered measurement values with the inspection record', async () => {
+    const wrapper = mount(InspectPage)
+    await wrapper.findAll('[data-testid="plan-option"]')[0].trigger('click')
+    await wrapper.get('[data-testid="result-pass"]').trigger('click')
+    await wrapper.get('[data-testid="measurement-characteristic"]').setValue('bearing-temperature')
+    await wrapper.get('[data-testid="measurement-value"]').setValue('65')
+    await wrapper.get('[data-testid="measurement-uom"]').setValue('C')
+    await wrapper.get('[data-testid="measurement-lower"]').setValue('0')
+    await wrapper.get('[data-testid="measurement-upper"]').setValue('70')
+
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(recordInspection).toHaveBeenCalledTimes(1)
+    expect(recordInspection.mock.calls[0][0]).toEqual({
+      planId: 'p1111111-1111-1111-1111-111111111111',
+      result: 'pass',
+      measurements: [
+        {
+          characteristicCode: 'bearing-temperature',
+          measuredValue: 65,
+          uomCode: 'C',
+          lowerSpecLimit: 0,
+          upperSpecLimit: 70,
+        },
+      ],
+    })
+  })
+
+  it('does not submit a partial measurement row without a measured value', async () => {
+    const wrapper = mount(InspectPage)
+    await wrapper.findAll('[data-testid="plan-option"]')[0].trigger('click')
+    await wrapper.get('[data-testid="result-pass"]').trigger('click')
+    await wrapper.get('[data-testid="measurement-characteristic"]').setValue('bearing-temperature')
+    await wrapper.get('[data-testid="measurement-uom"]').setValue('C')
+
+    const submit = wrapper.get('[data-testid="submit"]')
+    expect(submit.attributes('disabled')).toBeDefined()
+    await submit.trigger('click')
+    await flushPromises()
+
+    expect(recordInspection).not.toHaveBeenCalled()
+  })
+
   it('disables submit while recordPending (double-submit guard)', async () => {
     recordPending.value = true
     const wrapper = mount(InspectPage)
@@ -235,5 +290,24 @@ describe('PDA equipment inspect page', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+  })
+
+  // P1-2：点检端点无服务端幂等键。超时/离线后结果不确定 → 不给"重试"，改引导核实。
+  it('超时（结果不确定）时不给危险重试，改引导核实且绝不自动重提', async () => {
+    recordInspection.mockRejectedValueOnce(new RequestTimeoutError())
+    const wrapper = mount(InspectPage)
+    await wrapper.findAll('[data-testid="plan-option"]')[0].trigger('click')
+    await wrapper.get('[data-testid="result-pass"]').trigger('click')
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('网络超时，请检查连接后重试')
+    expect(wrapper.text()).toContain('请勿重复提交')
+    expect(wrapper.find('[data-testid="retry"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="verify-list"]').trigger('click')
+    expect(refreshInspections).toHaveBeenCalled()
+    // 关键：核实动作不会重提 → recordInspection 仍只调用一次。
+    expect(recordInspection).toHaveBeenCalledTimes(1)
   })
 })

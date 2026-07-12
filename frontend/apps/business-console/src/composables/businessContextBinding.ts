@@ -34,3 +34,10 @@ export function withBusinessContextEnabled<TOptions extends object>(
     enabled: hasBusinessContext(filters),
   }
 }
+
+export function refetchWithBusinessContext<TResult>(
+  filters: BusinessContextFields,
+  query: { refetch: () => Promise<TResult> },
+): Promise<TResult | undefined> {
+  return hasBusinessContext(filters) ? query.refetch() : Promise.resolve(undefined)
+}

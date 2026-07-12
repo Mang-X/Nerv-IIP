@@ -1,7 +1,12 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
+using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
+using Nerv.IIP.Business.Quality.Web.Application.Approvals;
 using Nerv.IIP.Contracts.Quality;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
 
@@ -93,34 +98,98 @@ public sealed record VerifyCorrectiveActionEffectivenessCommand(
     CorrectiveActionId CorrectiveActionId,
     string VerifiedByUserId,
     string Result,
-    DateTimeOffset VerifiedAtUtc) : ICommand;
+    DateTimeOffset VerifiedAtUtc,
+    InspectionRecordId? EffectivenessInspectionRecordId = null) : ICommand;
 
 public sealed class VerifyCorrectiveActionEffectivenessCommandHandler(
     ICorrectiveActionRepository repository,
-    INonconformanceReportRepository nonconformanceReportRepository)
+    INonconformanceReportRepository nonconformanceReportRepository,
+    ApplicationDbContext dbContext)
     : ICommandHandler<VerifyCorrectiveActionEffectivenessCommand>
 {
     public async Task Handle(VerifyCorrectiveActionEffectivenessCommand request, CancellationToken cancellationToken)
     {
         var capa = await repository.GetWithActionsAsync(request.CorrectiveActionId, cancellationToken)
             ?? throw new KnownException($"CAPA '{request.CorrectiveActionId}' was not found.");
-        capa.VerifyEffectiveness(request.VerifiedByUserId, request.Result, request.VerifiedAtUtc);
+        var (inspectionRecordId, inspectionResult) = await ResolveEffectivenessInspectionAsync(capa, request, cancellationToken);
+        capa.VerifyEffectiveness(
+            request.VerifiedByUserId,
+            request.Result,
+            request.VerifiedAtUtc,
+            inspectionRecordId,
+            inspectionResult);
         await CorrectiveActionNcrRedrive.CloseRecordedScrapNcrAsync(capa, nonconformanceReportRepository, cancellationToken);
+    }
+
+    private async Task<(InspectionRecordId InspectionRecordId, string Result)> ResolveEffectivenessInspectionAsync(
+        CorrectiveAction capa,
+        VerifyCorrectiveActionEffectivenessCommand request,
+        CancellationToken cancellationToken)
+    {
+        var inspectionRecordId = request.EffectivenessInspectionRecordId;
+        if (inspectionRecordId is null)
+        {
+            throw new KnownException("CAPA effectiveness verification requires a passed verification inspection.");
+        }
+
+        var inspection = await dbContext.InspectionRecords
+            .SingleOrDefaultAsync(x => x.Id == inspectionRecordId, cancellationToken)
+            ?? throw new KnownException($"CAPA effectiveness verification inspection '{inspectionRecordId}' was not found.");
+        if (!string.Equals(inspection.OrganizationId, capa.OrganizationId, StringComparison.Ordinal)
+            || !string.Equals(inspection.EnvironmentId, capa.EnvironmentId, StringComparison.Ordinal))
+        {
+            throw new KnownException("CAPA effectiveness verification inspection scope does not match the CAPA.");
+        }
+
+        if (!string.Equals(inspection.Result, "passed", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new KnownException("CAPA effectiveness verification inspection must be passed.");
+        }
+
+        return (inspectionRecordId, inspection.Result);
     }
 }
 
-public sealed record CloseCorrectiveActionCommand(CorrectiveActionId CorrectiveActionId, string ClosedByUserId) : ICommand;
+public sealed class CapaCloseApprovalOptions
+{
+    public bool Required { get; set; }
+}
+
+public sealed record CloseCorrectiveActionCommand(
+    CorrectiveActionId CorrectiveActionId,
+    string ClosedByUserId,
+    string? CloseApprovalChainId = null) : ICommand;
 
 public sealed class CloseCorrectiveActionCommandHandler(
     ICorrectiveActionRepository repository,
-    INonconformanceReportRepository nonconformanceReportRepository)
+    INonconformanceReportRepository nonconformanceReportRepository,
+    IApprovalChainStatusClient approvalChainStatusClient,
+    IOptions<CapaCloseApprovalOptions> closeApprovalOptions)
     : ICommandHandler<CloseCorrectiveActionCommand>
 {
     public async Task Handle(CloseCorrectiveActionCommand request, CancellationToken cancellationToken)
     {
         var capa = await repository.GetWithActionsAsync(request.CorrectiveActionId, cancellationToken)
             ?? throw new KnownException($"CAPA '{request.CorrectiveActionId}' was not found.");
-        capa.Close(request.ClosedByUserId);
+        if (closeApprovalOptions.Value.Required)
+        {
+            if (string.IsNullOrWhiteSpace(request.CloseApprovalChainId))
+            {
+                throw new KnownException("CAPA close requires an approved closure approval chain.");
+            }
+
+            if (!await approvalChainStatusClient.IsApprovedForCapaClosureAsync(
+                    request.CloseApprovalChainId,
+                    capa.OrganizationId,
+                    capa.EnvironmentId,
+                    capa.CapaCode,
+                    cancellationToken))
+            {
+                throw new KnownException("CAPA closure approval chain is not approved.");
+            }
+        }
+
+        capa.Close(request.ClosedByUserId, request.CloseApprovalChainId);
         await CorrectiveActionNcrRedrive.CloseRecordedScrapNcrAsync(capa, nonconformanceReportRepository, cancellationToken);
     }
 }

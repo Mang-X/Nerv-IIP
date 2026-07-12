@@ -1,2 +1,2 @@
-export { default as DescriptionsPro } from './DescriptionsPro.vue'
+export { default as NvDescriptions } from './DescriptionsPro.vue'
 export type { DescriptionItem } from './types'

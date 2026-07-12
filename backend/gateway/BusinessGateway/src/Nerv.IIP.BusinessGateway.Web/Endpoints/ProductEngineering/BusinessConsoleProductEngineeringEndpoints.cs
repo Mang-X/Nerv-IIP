@@ -30,6 +30,50 @@ public sealed class RegisterBusinessConsoleEngineeringDocumentEndpoint(
 }
 
 [Tags("Business Console Product Engineering")]
+[HttpPost("/api/business-console/v1/engineering/sops/publish")]
+[BusinessGatewayOperationId("publishBusinessConsoleEngineeringSopDocument")]
+public sealed class PublishBusinessConsoleEngineeringSopDocumentEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsolePublishSopDocumentRequest, BusinessConsoleEngineeringEntityResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringDocumentsManage)
+{
+    protected override string OrganizationId(BusinessConsolePublishSopDocumentRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsolePublishSopDocumentRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleEngineeringEntityResponse> ForwardAsync(
+        BusinessConsolePublishSopDocumentRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.PublishSopDocumentAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/sops/current")]
+[BusinessGatewayOperationId("getBusinessConsoleCurrentEngineeringSopDocuments")]
+public sealed class GetBusinessConsoleCurrentEngineeringSopDocumentsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCurrentSopDocumentsRequest, BusinessConsoleCurrentSopDocumentsResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringDocumentsRead)
+{
+    protected override string OrganizationId(BusinessConsoleCurrentSopDocumentsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCurrentSopDocumentsRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleCurrentSopDocumentsResponse> ForwardAsync(
+        BusinessConsoleCurrentSopDocumentsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.GetCurrentSopDocumentsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
 [HttpGet("/api/business-console/v1/engineering/documents")]
 [BusinessGatewayOperationId("listBusinessConsoleEngineeringDocuments")]
 public sealed class ListBusinessConsoleEngineeringDocumentsEndpoint(
@@ -285,6 +329,32 @@ public sealed class GetBusinessConsoleEngineeringBomWhereUsedEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         engineering.GetEngineeringBomWhereUsedAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/boms/diff")]
+[BusinessGatewayOperationId("getBusinessConsoleEngineeringBomDiff")]
+public sealed class GetBusinessConsoleEngineeringBomDiffEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleBomDiffRequest, BusinessConsoleBomDiffResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringBomsRead)
+{
+    protected override string OrganizationId(BusinessConsoleBomDiffRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleBomDiffRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleBomDiffRequest request) => request.BomKind;
+
+    protected override string? ResourceId(BusinessConsoleBomDiffRequest request) => $"{request.FromBomCode}:{request.FromRevision}->{request.ToBomCode}:{request.ToRevision}";
+
+    protected override Task<BusinessConsoleBomDiffResponse> ForwardAsync(
+        BusinessConsoleBomDiffRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.GetBomDiffAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console Product Engineering")]
@@ -655,6 +725,84 @@ public sealed class ReleaseBusinessConsoleEngineeringChangeEndpoint(
 }
 
 [Tags("Business Console Product Engineering")]
+[HttpPost("/api/business-console/v1/engineering/engineering-changes/cancel-scheduled")]
+[BusinessGatewayOperationId("cancelScheduledBusinessConsoleEngineeringChange")]
+public sealed class CancelScheduledBusinessConsoleEngineeringChangeEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCancelScheduledEngineeringChangeRequest, BusinessConsoleEngineeringEntityResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringChangesManage)
+{
+    protected override string OrganizationId(BusinessConsoleCancelScheduledEngineeringChangeRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCancelScheduledEngineeringChangeRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleCancelScheduledEngineeringChangeRequest request) => "engineering-change";
+
+    protected override string? ResourceId(BusinessConsoleCancelScheduledEngineeringChangeRequest request) => request.ChangeNumber;
+
+    protected override Task<BusinessConsoleEngineeringEntityResponse> ForwardAsync(
+        BusinessConsoleCancelScheduledEngineeringChangeRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.CancelScheduledEngineeringChangeAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
+[HttpPost("/api/business-console/v1/engineering/engineering-changes/reschedule")]
+[BusinessGatewayOperationId("rescheduleBusinessConsoleEngineeringChange")]
+public sealed class RescheduleBusinessConsoleEngineeringChangeEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleRescheduleEngineeringChangeRequest, BusinessConsoleEngineeringEntityResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringChangesManage)
+{
+    protected override string OrganizationId(BusinessConsoleRescheduleEngineeringChangeRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleRescheduleEngineeringChangeRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleRescheduleEngineeringChangeRequest request) => "engineering-change";
+
+    protected override string? ResourceId(BusinessConsoleRescheduleEngineeringChangeRequest request) => request.ChangeNumber;
+
+    protected override Task<BusinessConsoleEngineeringEntityResponse> ForwardAsync(
+        BusinessConsoleRescheduleEngineeringChangeRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.RescheduleEngineeringChangeAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
+[HttpPost("/api/business-console/v1/engineering/engineering-changes/impact-preview")]
+[BusinessGatewayOperationId("previewBusinessConsoleEngineeringChangeImpact")]
+public sealed class PreviewBusinessConsoleEngineeringChangeImpactEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleEngineeringChangeImpactPreviewRequest, BusinessConsoleEngineeringChangeImpactPreviewResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringChangesRead)
+{
+    protected override string OrganizationId(BusinessConsoleEngineeringChangeImpactPreviewRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleEngineeringChangeImpactPreviewRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleEngineeringChangeImpactPreviewRequest request) => "engineering-change-impact";
+
+    protected override string? ResourceId(BusinessConsoleEngineeringChangeImpactPreviewRequest request) => string.Join(",", request.AffectedVersions.Select(x => x.VersionId));
+
+    protected override Task<BusinessConsoleEngineeringChangeImpactPreviewResponse> ForwardAsync(
+        BusinessConsoleEngineeringChangeImpactPreviewRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.PreviewEngineeringChangeImpactAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
 [HttpGet("/api/business-console/v1/engineering/engineering-changes")]
 [BusinessGatewayOperationId("listBusinessConsoleEngineeringChanges")]
 public sealed class ListBusinessConsoleEngineeringChangesEndpoint(
@@ -909,6 +1057,20 @@ public sealed class BusinessConsoleBomWhereUsedRequestValidator : Validator<Busi
     }
 }
 
+public sealed class BusinessConsoleBomDiffRequestValidator : Validator<BusinessConsoleBomDiffRequest>
+{
+    public BusinessConsoleBomDiffRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.BomKind).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.FromBomCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.FromRevision).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.ToBomCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ToRevision).NotEmpty().MaximumLength(50);
+    }
+}
+
 public sealed class BusinessConsoleReleaseManufacturingBomRequestValidator : Validator<BusinessConsoleReleaseManufacturingBomRequest>
 {
     public BusinessConsoleReleaseManufacturingBomRequestValidator()
@@ -986,6 +1148,43 @@ public sealed class BusinessConsoleReleaseEngineeringChangeRequestValidator : Va
             version.RuleFor(x => x.VersionKind).NotEmpty().MaximumLength(100);
             version.RuleFor(x => x.VersionId).NotEmpty().MaximumLength(150);
             version.RuleFor(x => x.SupersededByVersionId).MaximumLength(150);
+        });
+    }
+}
+
+public sealed class BusinessConsoleCancelScheduledEngineeringChangeRequestValidator : Validator<BusinessConsoleCancelScheduledEngineeringChangeRequest>
+{
+    public BusinessConsoleCancelScheduledEngineeringChangeRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ChangeNumber).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
+public sealed class BusinessConsoleRescheduleEngineeringChangeRequestValidator : Validator<BusinessConsoleRescheduleEngineeringChangeRequest>
+{
+    public BusinessConsoleRescheduleEngineeringChangeRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ChangeNumber).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
+public sealed class BusinessConsoleEngineeringChangeImpactPreviewRequestValidator : Validator<BusinessConsoleEngineeringChangeImpactPreviewRequest>
+{
+    public BusinessConsoleEngineeringChangeImpactPreviewRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AffectedVersions).NotEmpty();
+        RuleForEach(x => x.AffectedVersions).ChildRules(version =>
+        {
+            version.RuleFor(x => x.VersionKind).NotEmpty().MaximumLength(100);
+            version.RuleFor(x => x.VersionId).NotEmpty().MaximumLength(150);
         });
     }
 }

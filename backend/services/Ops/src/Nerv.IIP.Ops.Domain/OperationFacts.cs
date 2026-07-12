@@ -1,4 +1,5 @@
 using Nerv.IIP.Contracts.ConnectorProtocol;
+using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 
 namespace Nerv.IIP.Ops.Domain;
 
@@ -121,7 +122,8 @@ public sealed record OperationAttemptFact(
     DateTimeOffset LeasedUntilUtc,
     int AttemptNo,
     int MaxAttempts,
-    string? AbandonReason)
+    string? AbandonReason,
+    IReadOnlyDictionary<string, string> Output)
 {
     public string? FailureCode => Failure?.Code;
 }
@@ -205,6 +207,90 @@ public sealed record OperationTemplateFact(
     bool Enabled,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset UpdatedAtUtc);
+
+public sealed record BuiltInOperationTemplateDefinition(
+    string OperationTemplateId,
+    string OperationCode,
+    string DisplayName,
+    string ParameterSchemaJson,
+    string RiskLevel,
+    int DefaultMaxAttempts,
+    int DefaultLeaseDurationSeconds,
+    bool RequiresApproval,
+    bool Enabled)
+{
+    public OperationTemplateSnapshot ToSnapshot()
+    {
+        return new OperationTemplateSnapshot(
+            OperationCode,
+            Enabled,
+            DefaultMaxAttempts,
+            DefaultLeaseDurationSeconds,
+            RequiresApproval);
+    }
+
+    public OperationTemplateFact ToFact()
+    {
+        return new OperationTemplateFact(
+            OperationTemplateId,
+            OperationCode,
+            DisplayName,
+            ParameterSchemaJson,
+            RiskLevel,
+            DefaultMaxAttempts,
+            DefaultLeaseDurationSeconds,
+            RequiresApproval,
+            Enabled,
+            BuiltInOperationTemplateCatalog.MetadataTimestampUtc,
+            BuiltInOperationTemplateCatalog.MetadataTimestampUtc);
+    }
+}
+
+public static class BuiltInOperationTemplateCatalog
+{
+    public static readonly DateTimeOffset MetadataTimestampUtc = DateTimeOffset.Parse("2026-05-21T00:00:00Z");
+
+    public static readonly IReadOnlyList<BuiltInOperationTemplateDefinition> Definitions =
+    [
+        new(
+            "opt-lifecycle-restart",
+            "lifecycle.restart",
+            "Lifecycle restart",
+            "{}",
+            "low",
+            DefaultMaxAttempts: 3,
+            DefaultLeaseDurationSeconds: 300,
+            RequiresApproval: false,
+            Enabled: true),
+        new(
+            "opt-device-control-command",
+            "device.control.command",
+            "Device control command",
+            "{}",
+            "critical",
+            DefaultMaxAttempts: 1,
+            DefaultLeaseDurationSeconds: 300,
+            RequiresApproval: true,
+            Enabled: true),
+        new(
+            "opt-config-reload",
+            "config.reload",
+            "Configuration reload",
+            "{}",
+            "medium",
+            DefaultMaxAttempts: 3,
+            DefaultLeaseDurationSeconds: 300,
+            RequiresApproval: false,
+            Enabled: true)
+    ];
+
+    public static BuiltInOperationTemplateDefinition? Find(string operationCode)
+    {
+        return string.IsNullOrWhiteSpace(operationCode)
+            ? null
+            : Definitions.FirstOrDefault(x => string.Equals(x.OperationCode, operationCode.Trim(), StringComparison.Ordinal));
+    }
+}
 
 public sealed record OperationTemplateListResult(IReadOnlyList<OperationTemplateFact> Items);
 

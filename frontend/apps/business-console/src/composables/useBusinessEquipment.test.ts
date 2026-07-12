@@ -3,10 +3,13 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
+  acknowledgeBusinessConsoleEquipmentAlarmMutationOptions,
   getBusinessConsoleEquipmentAvailabilityQueryOptions,
   getBusinessConsoleEquipmentDeviceQueryOptions,
   getBusinessConsoleEquipmentOverviewQueryOptions,
   listBusinessConsoleEquipmentAlarmsQueryOptions,
+  shelveBusinessConsoleEquipmentAlarmMutationOptions,
+  unshelveBusinessConsoleEquipmentAlarmMutationOptions,
 } from '@nerv-iip/api-client'
 import {
   describeEquipmentReason,
@@ -19,11 +22,13 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 
 const coladaState = vi.hoisted(() => ({
+  mutations: [] as Array<ReturnType<typeof vi.fn>>,
   queryDataById: new Map<string, unknown>(),
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  acknowledgeBusinessConsoleEquipmentAlarmMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   getBusinessConsoleEquipmentAvailabilityQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleEquipmentAvailability' }],
     query: vi.fn(),
@@ -40,6 +45,8 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleEquipmentAlarms' }],
     query: vi.fn(),
   })),
+  shelveBusinessConsoleEquipmentAlarmMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
+  unshelveBusinessConsoleEquipmentAlarmMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   // --- pulled in transitively via useBusinessMasterData (设备列表) ---
   addBusinessConsoleTeamMemberMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   assignBusinessConsolePersonnelSkillMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
@@ -74,6 +81,13 @@ vi.mock('@nerv-iip/api-client', () => ({
 }))
 
 vi.mock('@pinia/colada', () => ({
+  useMutation: vi.fn(() => {
+    const mutateAsync = vi.fn().mockResolvedValue({ success: true, data: { alarmEventId: 'alarm-1' } })
+    coladaState.mutations.push(mutateAsync)
+    return {
+      mutateAsync,
+    }
+  }),
   useQuery: vi.fn((optionsFactory) => {
     const options = optionsFactory()
     const key = Array.isArray(options.key) ? options.key[0] : undefined
@@ -92,7 +106,9 @@ vi.mock('@pinia/colada', () => ({
 describe('business equipment composables', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     vi.clearAllMocks()
+    coladaState.mutations.length = 0
     coladaState.queryDataById.clear()
     coladaState.queryOptionsById.clear()
   })
@@ -267,5 +283,42 @@ describe('business equipment composables', () => {
     coladaState.queryDataById.set('listBusinessConsoleEquipmentAlarms', { success: false })
     const failed = useBusinessEquipmentAlarms()
     expect(failed.alarms.value).toEqual([])
+  })
+
+  it('posts alarm lifecycle actions with current business context', async () => {
+    const active = useBusinessEquipmentAlarms()
+
+    await active.acknowledgeAlarm('alarm-1', 'operator-a')
+    await active.shelveAlarm('alarm-1', 'operator-a', 45, 'maintenance window')
+    await active.unshelveAlarm('alarm-1')
+
+    expect(acknowledgeBusinessConsoleEquipmentAlarmMutationOptions).toHaveBeenCalled()
+    expect(shelveBusinessConsoleEquipmentAlarmMutationOptions).toHaveBeenCalled()
+    expect(unshelveBusinessConsoleEquipmentAlarmMutationOptions).toHaveBeenCalled()
+    expect(coladaState.mutations[0]).toHaveBeenCalledWith({
+      path: { alarmEventId: 'alarm-1' },
+      body: expect.objectContaining({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        acknowledgedBy: 'operator-a',
+      }),
+    })
+    expect(coladaState.mutations[1]).toHaveBeenCalledWith({
+      path: { alarmEventId: 'alarm-1' },
+      body: expect.objectContaining({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        durationMinutes: 45,
+        reason: 'maintenance window',
+        shelvedBy: 'operator-a',
+      }),
+    })
+    expect(coladaState.mutations[2]).toHaveBeenCalledWith({
+      path: { alarmEventId: 'alarm-1' },
+      body: expect.objectContaining({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+      }),
+    })
   })
 })

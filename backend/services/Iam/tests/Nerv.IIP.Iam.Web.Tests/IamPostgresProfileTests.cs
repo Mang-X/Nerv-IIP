@@ -7,10 +7,13 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
+using Nerv.IIP.Iam.Web.Application.DataScopes;
 using Nerv.IIP.Iam.Web.Application.Seed;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
@@ -82,9 +85,8 @@ public sealed class IamPostgresProfileTests
 
             var login = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
             login.EnsureSuccessStatusCode();
-            var auth = await login.Content.ReadFromJsonAsync<AuthResponse>();
+            var auth = await ReadResponseDataAsync<AuthResponse>(login);
 
-            Assert.NotNull(auth);
             Assert.False(string.IsNullOrWhiteSpace(auth.AccessToken));
             Assert.False(string.IsNullOrWhiteSpace(auth.RefreshToken));
             Assert.False(string.IsNullOrWhiteSpace(auth.SessionId));
@@ -101,8 +103,8 @@ public sealed class IamPostgresProfileTests
 
             var me = await client.GetAsync("/api/iam/v1/me");
             me.EnsureSuccessStatusCode();
-            var principal = await me.Content.ReadFromJsonAsync<MeResponse>();
-            Assert.Equal("user-admin", principal!.UserId);
+            var principal = await ReadResponseDataAsync<MeResponse>(me);
+            Assert.Equal("user-admin", principal.UserId);
             Assert.Equal("admin", principal.LoginName);
             Assert.Equal("user", principal.PrincipalType);
             Assert.Equal("org-001", principal.OrganizationId);
@@ -112,8 +114,7 @@ public sealed class IamPostgresProfileTests
 
             var refresh = await client.PostAsJsonAsync("/api/iam/v1/auth/refresh", new { refreshToken = auth.RefreshToken });
             refresh.EnsureSuccessStatusCode();
-            var rotated = await refresh.Content.ReadFromJsonAsync<AuthResponse>();
-            Assert.NotNull(rotated);
+            var rotated = await ReadResponseDataAsync<AuthResponse>(refresh);
             Assert.False(string.IsNullOrWhiteSpace(rotated.AccessToken));
             Assert.False(string.IsNullOrWhiteSpace(rotated.SessionId));
             Assert.NotEqual(auth.RefreshToken, rotated.RefreshToken);
@@ -134,8 +135,7 @@ public sealed class IamPostgresProfileTests
             client.DefaultRequestHeaders.Authorization = null;
             var secondLogin = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
             secondLogin.EnsureSuccessStatusCode();
-            var secondAuth = await secondLogin.Content.ReadFromJsonAsync<AuthResponse>();
-            Assert.NotNull(secondAuth);
+            var secondAuth = await ReadResponseDataAsync<AuthResponse>(secondLogin);
 
             client.DefaultRequestHeaders.Authorization = new("Bearer", secondAuth.AccessToken);
             var adminRevoke = await client.PostAsync($"/api/iam/v1/sessions/{secondAuth.SessionId}/revoke", null);
@@ -150,8 +150,8 @@ public sealed class IamPostgresProfileTests
                 "/api/iam/v1/connectors/credentials/validate",
                 new { connectorHostId = "connector-host-001", secret = "local-connector-secret" });
             connector.EnsureSuccessStatusCode();
-            var connectorPrincipal = await connector.Content.ReadFromJsonAsync<ConnectorPrincipalResponse>();
-            Assert.Equal("connector-host", connectorPrincipal!.PrincipalType);
+            var connectorPrincipal = await ReadResponseDataAsync<ConnectorPrincipalResponse>(connector);
+            Assert.Equal("connector-host", connectorPrincipal.PrincipalType);
             Assert.Equal("connector-host-001", connectorPrincipal.ConnectorHostId);
             Assert.Equal("org-001", connectorPrincipal.OrganizationId);
             Assert.Equal("env-dev", connectorPrincipal.EnvironmentId);
@@ -440,16 +440,15 @@ public sealed class IamPostgresProfileTests
 
             var login = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName = "admin", password = "Admin123!" });
             login.EnsureSuccessStatusCode();
-            var auth = await login.Content.ReadFromJsonAsync<AuthResponse>();
-            client.DefaultRequestHeaders.Authorization = new("Bearer", auth!.AccessToken);
+            var auth = await ReadResponseDataAsync<AuthResponse>(login);
+            client.DefaultRequestHeaders.Authorization = new("Bearer", auth.AccessToken);
 
             var create = await client.PostAsJsonAsync(
                 "/api/iam/v1/users",
                 new { loginName = "operator", email = "operator@nerv-iip.local", password = "Operator123!" });
             Assert.Equal(HttpStatusCode.Created, create.StatusCode);
-            var created = await create.Content.ReadFromJsonAsync<UserResponse>();
+            var created = await ReadResponseDataAsync<UserResponse>(create);
 
-            Assert.NotNull(created);
             Assert.False(string.IsNullOrWhiteSpace(created.UserId));
             Assert.Equal("operator", created.LoginName);
             Assert.Equal("operator@nerv-iip.local", created.Email);
@@ -459,9 +458,9 @@ public sealed class IamPostgresProfileTests
                 $"/api/iam/v1/users/{created.UserId}",
                 new { loginName = "operator-updated", email = "operator.updated@nerv-iip.local", enabled = true });
             patch.EnsureSuccessStatusCode();
-            var updated = await patch.Content.ReadFromJsonAsync<UserResponse>();
+            var updated = await ReadResponseDataAsync<UserResponse>(patch);
 
-            Assert.Equal(created.UserId, updated!.UserId);
+            Assert.Equal(created.UserId, updated.UserId);
             Assert.Equal("operator-updated", updated.LoginName);
             Assert.Equal("operator.updated@nerv-iip.local", updated.Email);
             Assert.True(updated.Enabled);
@@ -472,7 +471,7 @@ public sealed class IamPostgresProfileTests
             using (var scope = factory.Services.CreateScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                var user = await db.Users.SingleAsync(x => x.Id.Id == created.UserId);
+                var user = await db.Users.SingleAsync(x => x.Id == new UserId(created.UserId));
 
                 Assert.Equal("operator-updated", user.LoginName);
                 Assert.Equal("operator.updated@nerv-iip.local", user.Email);
@@ -552,6 +551,35 @@ public sealed class IamPostgresProfileTests
                 new { permissionCodes = new[] { "iam.users.read", "ops.tasks.read" } });
             patchRole.EnsureSuccessStatusCode();
 
+            var patchAdminRoleScopes = await client.PatchAsJsonAsync(
+                "/api/iam/v1/roles/role-platform-admin/data-scopes",
+                new { dataScopes = new[] { new { scopeType = "workshop", scopeCode = "WS-PG" } } });
+            patchAdminRoleScopes.EnsureSuccessStatusCode();
+            var adminRoleScopes = await ReadResponseDataAsync<DataScopeListResponse>(patchAdminRoleScopes);
+            Assert.Equal([new DataScopeResponse("workshop", "WS-PG")], adminRoleScopes!.DataScopes);
+
+            var patchAdminMembershipScopes = await client.PatchAsJsonAsync(
+                "/api/iam/v1/users/user-admin/membership-data-scopes",
+                new
+                {
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    dataScopes = new[] { new { scopeType = "site", scopeCode = "SITE-PG" } },
+                });
+            patchAdminMembershipScopes.EnsureSuccessStatusCode();
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var effectiveScopes = await new MembershipRepository(db).ListEffectiveDataScopesAsync(
+                    new UserId("user-admin"),
+                    new OrganizationId("org-001"),
+                    new IamEnvironmentId("env-dev"),
+                    CancellationToken.None);
+                Assert.Contains(effectiveScopes, x => x.ScopeType == "site" && x.ScopeCode == "SITE-PG");
+                Assert.Contains(effectiveScopes, x => x.ScopeType == "workshop" && x.ScopeCode == "WS-PG");
+            }
+
             var createUser = await client.PostAsJsonAsync(
                 "/api/iam/v1/users",
                 new { loginName = "reset-pg-user", email = "reset-pg-user@nerv-iip.local", password = "OldPassword123!" });
@@ -594,15 +622,161 @@ public sealed class IamPostgresProfileTests
                 var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 var persistedRole = await db.Roles
                     .Include(x => x.Permissions)
-                    .SingleAsync(x => x.Id.Id == role.RoleId);
+                    .SingleAsync(x => x.Id == new RoleId(role.RoleId));
                 Assert.Equal(
                     ["iam.users.read", "ops.tasks.read"],
                     persistedRole.Permissions.Select(x => x.PermissionCode).Order().ToArray());
 
-                var resetUser = await db.Users.SingleAsync(x => x.Id.Id == user.UserId);
+                var resetUser = await db.Users.SingleAsync(x => x.Id == new UserId(user.UserId));
                 Assert.DoesNotContain("OldPassword123!", resetUser.PasswordHash, StringComparison.Ordinal);
                 Assert.DoesNotContain("NewPassword123!", resetUser.PasswordHash, StringComparison.Ordinal);
                 Assert.Equal(2, resetUser.PermissionVersion);
+            }
+        }
+        finally
+        {
+            RestoreEnvironment(environment);
+        }
+    }
+
+    [Fact]
+    public async Task Postgres_user_lifecycle_and_password_policy_use_ef_persistence()
+    {
+        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+        if (string.IsNullOrWhiteSpace(postgresConnectionString))
+        {
+            return;
+        }
+
+        var environment = PreserveEnvironment(
+            "Persistence__Provider",
+            "ConnectionStrings__IamDb",
+            "Iam__Seed__Enabled",
+            "Iam__Seed__AdminPassword",
+            "Iam__Seed__ConnectorHostSecret");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
+            Environment.SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString);
+            Environment.SetEnvironmentVariable("Iam__Seed__Enabled", "true");
+            Environment.SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!");
+            Environment.SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
+
+            await using var factory = new WebApplicationFactory<Program>();
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                await db.Database.EnsureDeletedAsync();
+
+                var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
+                await migrations.MigrateAsync();
+
+                var seed = scope.ServiceProvider.GetRequiredService<IamSeedService>();
+                await seed.SeedAsync(CancellationToken.None);
+            }
+
+            var client = factory.CreateClient();
+            var adminLogin = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/login",
+                new { loginName = "admin", password = "Admin123!" });
+            adminLogin.EnsureSuccessStatusCode();
+            var adminAuth = await ReadResponseDataAsync<AuthResponse>(adminLogin);
+            client.DefaultRequestHeaders.Authorization = new("Bearer", adminAuth.AccessToken);
+
+            var create = await client.PostAsJsonAsync(
+                "/api/iam/v1/users",
+                new
+                {
+                    loginName = "lifecycle-pg-user",
+                    email = "lifecycle-pg-user@nerv-iip.local",
+                    password = "InitialPassword123!"
+                });
+            Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+            var user = await ReadResponseDataAsync<UserResponse>(create);
+
+            var userLogin = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/login",
+                new { loginName = "lifecycle-pg-user", password = "InitialPassword123!" });
+            userLogin.EnsureSuccessStatusCode();
+            var userAuth = await ReadResponseDataAsync<LifecycleAuthResponse>(userLogin);
+            Assert.True(userAuth.PasswordChangeRequired);
+
+            client.DefaultRequestHeaders.Authorization = new("Bearer", userAuth.AccessToken);
+            var change = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/change-password",
+                new { currentPassword = "InitialPassword123!", newPassword = "ChangedPassword123!" });
+            Assert.Equal(HttpStatusCode.NoContent, change.StatusCode);
+
+            var oldBearerChange = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/change-password",
+                new { currentPassword = "ChangedPassword123!", newPassword = "AnotherPassword123!" });
+            Assert.Equal(HttpStatusCode.Unauthorized, oldBearerChange.StatusCode);
+
+            client.DefaultRequestHeaders.Authorization = new("Bearer", adminAuth.AccessToken);
+            var disableViaPatch = await client.PatchAsJsonAsync(
+                $"/api/iam/v1/users/{user.UserId}",
+                new
+                {
+                    loginName = user.LoginName,
+                    email = user.Email,
+                    enabled = false,
+                    accountExpiresAtUtc = (DateTimeOffset?)null
+                });
+            disableViaPatch.EnsureSuccessStatusCode();
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var typedUserId = new UserId(user.UserId);
+                var activeSessions = await db.UserSessions
+                    .Where(x => x.UserId == typedUserId && x.RevokedAtUtc == null)
+                    .ToListAsync();
+                Assert.Empty(activeSessions);
+            }
+
+            client.DefaultRequestHeaders.Authorization = null;
+            var disabledRefresh = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/refresh",
+                new { userAuth.RefreshToken });
+            Assert.Equal(HttpStatusCode.Unauthorized, disabledRefresh.StatusCode);
+
+            var disabledLogin = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/login",
+                new { loginName = "lifecycle-pg-user", password = "ChangedPassword123!" });
+            Assert.Equal(HttpStatusCode.Unauthorized, disabledLogin.StatusCode);
+
+            client.DefaultRequestHeaders.Authorization = new("Bearer", adminAuth.AccessToken);
+            var historyUser = await client.PostAsJsonAsync(
+                "/api/iam/v1/users",
+                new
+                {
+                    loginName = "history-pg-user",
+                    email = "history-pg-user@nerv-iip.local",
+                    password = "HistoryPassword123!"
+                });
+            Assert.Equal(HttpStatusCode.Created, historyUser.StatusCode);
+            var history = await ReadResponseDataAsync<UserResponse>(historyUser);
+
+            var reset = await client.PostAsJsonAsync(
+                $"/api/iam/v1/users/{history.UserId}/reset-password",
+                new { newPassword = "HistoryPassword234!" });
+            Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
+
+            var reuse = await client.PostAsJsonAsync(
+                $"/api/iam/v1/users/{history.UserId}/reset-password",
+                new { newPassword = "HistoryPassword123!" });
+            Assert.Equal(HttpStatusCode.BadRequest, reuse.StatusCode);
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var typedHistoryUserId = new UserId(history.UserId);
+                var historyRows = await db.Set<UserPasswordHistory>()
+                    .Where(x => x.UserId == typedHistoryUserId)
+                    .ToListAsync();
+                Assert.NotEmpty(historyRows);
             }
         }
         finally
@@ -827,9 +1001,23 @@ public sealed class IamPostgresProfileTests
     }
 
     private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
+    private sealed record LifecycleAuthResponse(
+        string AccessToken,
+        string RefreshToken,
+        string SessionId,
+        DateTimeOffset ExpiresAtUtc,
+        bool PasswordChangeRequired);
     private sealed record ClientCredentialsTokenResponse(string AccessToken, string TokenType, DateTimeOffset ExpiresAtUtc, string Scope);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
-    private sealed record UserResponse(string UserId, string LoginName, string Email, bool Enabled);
+    private sealed record UserResponse(
+        string UserId,
+        string LoginName,
+        string Email,
+        bool Enabled,
+        DateTimeOffset? AccountExpiresAtUtc = null,
+        bool PasswordChangeRequired = false,
+        DateTimeOffset? PasswordExpiresAtUtc = null,
+        DateTimeOffset? LockoutUntilUtc = null);
     private sealed record RoleResponse(string RoleId, string RoleName, IReadOnlyList<string> PermissionCodes);
     private sealed record PermissionCatalogResponse(IReadOnlyList<PermissionCatalogItemResponse> Items);
     private sealed record PermissionCatalogItemResponse(string Code, string Domain, string Description, bool Seeded);

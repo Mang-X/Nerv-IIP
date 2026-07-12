@@ -10,6 +10,9 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     public const string RequestedStatus = "Requested";
     public const string PartiallyReceivedStatus = "PartiallyReceived";
     public const string ReceivedStatus = "Received";
+    public const string CancelledStatus = "Cancelled";
+    public const string ReturnRequestedStatus = "ReturnRequested";
+    public const string ReservationExpiredStatus = "ReservationExpired";
     public const int FailureMessageMaxLength = 500;
 
     private MaterialIssueRequest()
@@ -84,6 +87,11 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
 
     public void ConfirmLineSideReceipt(DateTimeOffset receivedAtUtc, decimal? receivedQuantity = null, string? materialLotId = null)
     {
+        if (Status == ReservationExpiredStatus)
+        {
+            throw new InvalidOperationException("已失效的领料预留不能确认收料。");
+        }
+
         var quantity = receivedQuantity ?? RequestedQuantity - ReceivedQuantity;
         DomainGuard.Positive(quantity, nameof(receivedQuantity));
         if (ReceivedQuantity + quantity > RequestedQuantity)
@@ -160,6 +168,9 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
 
         if (string.IsNullOrWhiteSpace(MaterialLotId))
         {
+            // Received material without a lot cannot be returned to warehouse stock. Per #557 this is a
+            // business rule: WorkOrderCancellationOrchestrator wraps this into a KnownException so the
+            // cancel surfaces as a clear business error rather than a silent success.
             throw new InvalidOperationException("Line-side material return requires a received material lot.");
         }
 
@@ -185,6 +196,43 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
 
         AddDomainEvent(new MaterialLineSideReturnRequestedDomainEvent(this, returnedQuantity, returnedMaterialLotId, returnedAtUtc));
         AddDomainEvent(new MaterialReturnedToWarehouseDomainEvent(this, returnedQuantity, returnedMaterialLotId, returnedAtUtc));
+    }
+
+    public void CancelForWorkOrderCancellation(DateTimeOffset cancelledAtUtc, decimal consumedQuantity = 0m)
+    {
+        DomainGuard.NonNegative(consumedQuantity, nameof(consumedQuantity));
+
+        if (Status is CancelledStatus or ReturnRequestedStatus)
+        {
+            return;
+        }
+
+        if (ReceivedQuantity <= 0m)
+        {
+            Status = CancelledStatus;
+            ReceivedAtUtc = null;
+            MaterialLotId = null;
+            return;
+        }
+
+        var returnableQuantity = Math.Max(0m, ReceivedQuantity - consumedQuantity);
+        if (returnableQuantity > 0m)
+        {
+            ReturnLineSideMaterial(cancelledAtUtc, returnableQuantity, consumedQuantity);
+        }
+
+        Status = ReturnRequestedStatus;
+    }
+
+    public void MarkInventoryReservationExpired(DateTimeOffset expiredAtUtc)
+    {
+        _ = expiredAtUtc;
+        if (Status is CancelledStatus or ReturnRequestedStatus or ReservationExpiredStatus || ReceivedQuantity > 0m)
+        {
+            return;
+        }
+
+        Status = ReservationExpiredStatus;
     }
 
     private static string NormalizeFailureMessage(string failureMessage)

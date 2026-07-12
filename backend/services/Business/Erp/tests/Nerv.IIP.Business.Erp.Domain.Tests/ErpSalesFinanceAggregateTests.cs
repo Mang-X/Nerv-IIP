@@ -1,9 +1,12 @@
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountingPeriodAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CashReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CostCandidateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.OpportunityAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 
@@ -138,6 +141,36 @@ public sealed class ErpSalesFinanceAggregateTests
         var order = SalesOrder.CreateFromQuotation("SO-001", quotation);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => DeliveryOrder.Release(order, "DO-001", [new DeliveryOrderLineDraft("L1", 3m)]));
+    }
+
+    [Fact]
+    public void Sales_order_changes_and_cancellation_only_apply_to_unfulfilled_lines_and_release_open_exposure()
+    {
+        var quotation = Quotation.Create(
+            "org-001",
+            "env-dev",
+            "QT-CHANGE-001",
+            "CUST-001",
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10)),
+            [
+                new QuotationLineDraft("L1", "SKU-FG", "ea", 2m, 10m, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(20))),
+                new QuotationLineDraft("L2", "SKU-PKG", "ea", 3m, 4m, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(20))),
+            ]);
+        quotation.Approve();
+        var order = SalesOrder.CreateFromQuotation("SO-CHANGE-001", quotation);
+
+        order.ChangeLine("L1", 4m, 11m, new DateOnly(2026, 7, 1), "customer change");
+        order.CancelLine("L2", "customer removed line");
+
+        Assert.Equal(44m, order.OpenExposureAmount);
+        Assert.Equal(44m, order.TotalAmount);
+        Assert.Equal(3, order.Version);
+        Assert.Equal(2, order.ChangeHistory.Count);
+        Assert.True(order.Lines.Single(x => x.LineNo == "L2").Cancelled);
+
+        order.RegisterDelivery("L1", 1m);
+        Assert.Throws<InvalidOperationException>(() => order.ChangeLine("L1", 3m, 11m, new DateOnly(2026, 7, 2), "late change"));
+        Assert.Throws<InvalidOperationException>(() => order.Cancel("cannot cancel shipped order"));
     }
 
     [Fact]
@@ -286,5 +319,92 @@ public sealed class ErpSalesFinanceAggregateTests
         Assert.Throws<ArgumentException>(() => CostCandidate.Create("org-001", "env-dev", "COST-001", "", "MOVE-001", 10m, "CNY"));
         var candidate = CostCandidate.Create("org-001", "env-dev", "COST-001", "inventory-movement", "MOVE-001", 10m, "CNY");
         Assert.Equal("inventory-movement", candidate.SourceType);
+    }
+
+    [Fact]
+    public void Accounting_period_closes_reopens_and_tests_posting_date()
+    {
+        var period = AccountingPeriod.Open(
+            "org-001",
+            "env-dev",
+            "2026-06",
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 6, 30));
+
+        Assert.True(period.Contains(new DateOnly(2026, 6, 15)));
+
+        period.Close("u-finance", "month close reviewed");
+
+        Assert.Equal(AccountingPeriodStatus.Closed, period.Status);
+        Assert.False(period.CanPost);
+        Assert.Throws<InvalidOperationException>(() => period.Close("u-finance", "again"));
+
+        period.Reopen("u-controller", "late WMS receipt exception");
+
+        Assert.Equal(AccountingPeriodStatus.Open, period.Status);
+        Assert.Equal("u-controller", period.ReopenedBy);
+        Assert.Equal("late WMS receipt exception", period.ReopenReason);
+    }
+
+    [Fact]
+    public void Payment_execution_requires_approval_before_execution_and_records_allocations()
+    {
+        var payable = AccountPayable.Create(
+            "org-001",
+            "env-dev",
+            "AP-1001",
+            "INV-1001",
+            "SUP-001",
+            100m,
+            "CNY");
+        var execution = PaymentExecution.Approve(
+            "org-001",
+            "env-dev",
+            "PAY-1001",
+            "SUP-001",
+            40m,
+            "CNY",
+            new DateOnly(2026, 6, 20),
+            "BANK-001",
+            "u-ap");
+
+        execution.Execute([new PaymentExecutionAllocationDraft(payable.PayableNo, 40m)], "u-cashier");
+        payable.RegisterPayment(40m);
+
+        Assert.Equal(PaymentExecutionStatus.Executed, execution.Status);
+        Assert.Equal(40m, Assert.Single(execution.Allocations).Amount);
+        Assert.Equal(60m, payable.OpenAmount);
+        Assert.Throws<InvalidOperationException>(() => execution.Execute([new PaymentExecutionAllocationDraft(payable.PayableNo, 1m)], "u-cashier"));
+    }
+
+    [Fact]
+    public void Cash_receipt_records_partial_receivable_matching()
+    {
+        var receivable = AccountReceivable.Create(
+            "org-001",
+            "env-dev",
+            "AR-1001",
+            "DO-1001",
+            "CUST-001",
+            80m,
+            "CNY",
+            dueDate: new DateOnly(2026, 6, 15));
+        var receipt = CashReceipt.Register(
+            "org-001",
+            "env-dev",
+            "CR-1001",
+            "CUST-001",
+            35m,
+            "CNY",
+            new DateOnly(2026, 6, 21),
+            "BANK-001");
+
+        receipt.Match([new CashReceiptAllocationDraft(receivable.ReceivableNo, 35m)]);
+        receivable.RegisterCollection(35m);
+
+        Assert.Equal(CashReceiptStatus.Matched, receipt.Status);
+        Assert.Equal(35m, Assert.Single(receipt.Allocations).Amount);
+        Assert.Equal(45m, receivable.OpenAmount);
+        Assert.Equal("1-30", receivable.GetAgingBucket(new DateOnly(2026, 7, 1)));
     }
 }

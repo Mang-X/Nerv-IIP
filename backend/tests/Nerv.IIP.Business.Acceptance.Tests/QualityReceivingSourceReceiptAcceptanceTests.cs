@@ -108,6 +108,7 @@ public sealed class QualityReceivingSourceReceiptAcceptanceTests
         return new CreateInspectionRecordCommandHandler(
             new InspectionRecordRepository(qualityDb),
             new InspectionPlanRepository(qualityDb),
+            new InspectionTaskRepository(qualityDb),
             sourceDocumentVerifier: new ErpPurchaseReceiptInspectionSourceDocumentVerifier(
                 new DbBackedErpPurchaseReceiptFactClient(erpDb)));
     }

@@ -24,6 +24,18 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-C", "frontend/apps/design-system", "exec", "vitepress", "preview", "docs", "--port", "4174"],
       "port": 4174
+    },
+    {
+      "name": "screen",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "frontend/apps/screen", "run", "dev"],
+      "port": 5128
+    },
+    {
+      "name": "docs",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "frontend/apps/docs", "run", "dev"],
+      "port": 5181
     }
   ]
 }

@@ -7,11 +7,11 @@ describe('business context store', () => {
     setActivePinia(createPinia())
   })
 
-  it('starts with the development organization and environment context', () => {
+  it('starts without an implicit organization or environment context', () => {
     const context = useBusinessContextStore()
 
-    expect(context.organizationId).toBe('org-001')
-    expect(context.environmentId).toBe('env-dev')
+    expect(context.organizationId).toBe('')
+    expect(context.environmentId).toBe('')
     expect(context.siteCode).toBe('')
     expect(context.lineCode).toBe('')
     expect(context.workCenterCode).toBe('')

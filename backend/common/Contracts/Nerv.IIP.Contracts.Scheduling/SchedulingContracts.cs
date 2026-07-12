@@ -140,7 +140,8 @@ public sealed record ScheduleAssignmentContract(
     DateTimeOffset StartUtc,
     DateTimeOffset EndUtc,
     bool IsLocked,
-    string ExplanationCode);
+    string ExplanationCode,
+    string? StandardOperationCode = null);
 
 public sealed record ScheduleResourceLoadContract(
     string ResourceId,
@@ -189,6 +190,7 @@ public static class SchedulingIntegrationEventTypes
     public const string SchedulePlanGenerated = "scheduling.SchedulePlanGenerated";
     public const string ScheduleConflictDetected = "scheduling.ScheduleConflictDetected";
     public const string SchedulePlanReleased = "scheduling.SchedulePlanReleased";
+    public const string SchedulePlanInvalidated = "scheduling.SchedulePlanInvalidated";
 }
 
 public static class SchedulingIntegrationEventVersions
@@ -235,6 +237,23 @@ public sealed record SchedulePlanReleasedIntegrationEvent(
     object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }
 
+public sealed record SchedulePlanInvalidatedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    SchedulePlanInvalidatedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
 public sealed record ScheduleConflictDetectedIntegrationEvent(
     string EventId,
     string EventType,
@@ -261,6 +280,19 @@ public sealed record SchedulePlanLifecyclePayload(
     string PlanStatus,
     IReadOnlyCollection<SchedulePlanAffectedOperationPayload> AffectedOperations);
 
+public sealed record SchedulePlanInvalidatedPayload(
+    string PlanId,
+    string ProblemId,
+    int ContractVersion,
+    string AlgorithmVersion,
+    string ProblemFingerprint,
+    string PlanStatus,
+    string ReasonCode,
+    string SourceEventType,
+    string SourceEventId,
+    IReadOnlyCollection<string> AffectedResourceIds,
+    IReadOnlyCollection<SchedulePlanAffectedOperationPayload> AffectedOperations);
+
 public sealed record ScheduleConflictDetectedPayload(
     string PlanId,
     string ProblemId,
@@ -282,7 +314,8 @@ public sealed record SchedulePlanAffectedOperationPayload(
     string ResourceId,
     string WorkCenterId,
     DateTimeOffset StartUtc,
-    DateTimeOffset EndUtc);
+    DateTimeOffset EndUtc,
+    string? StandardOperationCode = null);
 
 public enum ScheduleSplitPolicyContract
 {

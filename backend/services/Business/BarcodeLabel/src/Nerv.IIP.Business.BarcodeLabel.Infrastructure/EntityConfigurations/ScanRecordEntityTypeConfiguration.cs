@@ -33,6 +33,7 @@ public sealed class ScanRecordEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.OwnerType).HasColumnName("owner_type").HasMaxLength(100).HasComment("Inventory owner type supplied by scan context.");
         builder.Property(x => x.OwnerId).HasColumnName("owner_id").HasMaxLength(150).HasComment("Optional inventory owner id supplied by scan context.");
         builder.Property(x => x.BusinessAction).HasColumnName("business_action").HasMaxLength(100).HasComment("Downstream business action selected for the accepted scan.");
+        builder.Property(x => x.DownstreamProcessingStatus).HasColumnName("downstream_processing_status").IsRequired().HasMaxLength(50).HasComment("Downstream processing status for the scan, such as observed, requested or not-required.");
         builder.Property(x => x.DownstreamEventId).HasColumnName("downstream_event_id").HasMaxLength(150).HasComment("Deterministic downstream event id for idempotent business action routing.");
         builder.Property(x => x.ScannedAtUtc).HasColumnName("scanned_at_utc").IsRequired().HasComment("UTC time when the scan was recorded.");
         builder.HasMany(x => x.EpcisEvents)
@@ -43,9 +44,9 @@ public sealed class ScanRecordEntityTypeConfiguration : IEntityTypeConfiguration
             .IsUnique()
             .HasDatabaseName("UX_scan_records_idempotency");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceCode, x.ScannedAtUtc });
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ScannedValue })
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ScannedValue, x.SourceWorkflow, x.SourceDocumentId })
             .IsUnique()
-            .HasDatabaseName("UX_scan_records_accepted_scanned_value")
+            .HasDatabaseName("UX_scan_records_accepted_scan_natural_key")
             .HasFilter("result = 'accepted'");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.EpcUri })
             .IsUnique()

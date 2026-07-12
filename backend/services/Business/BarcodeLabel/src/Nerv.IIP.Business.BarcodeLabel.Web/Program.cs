@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.BarcodeLabel.Web.Endpoints.BarcodeLabel;
+using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
+using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Printing;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
@@ -55,6 +57,9 @@ try
     }
 
     builder.Services.AddBarcodeLabelPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
+    builder.Services.Configure<LabelPrinterOptions>(builder.Configuration.GetSection("LabelPrinter"));
+    builder.Services.AddSingleton<ZplTcpLabelPrinter>();
+    builder.Services.AddSingleton<ILabelPrinter, ConfiguredLabelPrinter>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddHttpContextAccessor();

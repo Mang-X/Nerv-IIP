@@ -59,13 +59,13 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(shell.props('title')).toBe('Nerv-IIP 业务控制台')
     const domains = shell.props('topDomains') as Domain[]
     expect(domains.map((d) => d.id)).toEqual([
-      'workbench', 'master-data', 'engineering', 'planning', 'scheduling', 'mes', 'quality', 'inventory', 'wms', 'erp', 'equipment',
+      'workbench', 'master-data', 'engineering', 'planning', 'mes', 'quality', 'inventory', 'wms', 'erp', 'barcode', 'equipment', 'approval',
     ])
     // Current domain resolved from the route, with its domain-local side nav.
     expect(shell.props('currentDomainId')).toBe('inventory')
     const sideNav = shell.props('sideNav') as SideGroup[]
     const sideTitles = sideNav.flatMap((g) => g.items.map((i) => i.title))
-    expect(sideTitles).toEqual(['库存可用量', '库存移动', '库存盘点'])
+    expect(sideTitles).toEqual(['库存可用量', '批次与预留', '库存移动', '库存盘点'])
   })
 
   it('trims top domains and side navigation by principal permissions', () => {
@@ -87,7 +87,7 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(domains.map((d) => d.id)).toEqual(['workbench', 'inventory'])
 
     const sideNav = shell.props('sideNav') as SideGroup[]
-    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['库存可用量'])
+    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['库存可用量', '批次与预留'])
   })
 
   it('drops side navigation groups after permission trimming removes every item', () => {
@@ -124,6 +124,16 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['收货入库', '上架任务', '出库发货', '拣货任务', 'WCS 任务', '盘点执行'])
   })
 
+  it('resolves barcode routes to the 条码标签 domain', () => {
+    routeState.path = '/barcode/rules'
+    const wrapper = mountLayout()
+    const shell = wrapper.getComponent(AppShellTStub)
+
+    expect(shell.props('currentDomainId')).toBe('barcode')
+    const sideNav = shell.props('sideNav') as SideGroup[]
+    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['条码规则', '标签模板', '打印批次', '扫码记录'])
+  })
+
   it('keeps MES foundation diagnostics in a separate side group under 制造执行', () => {
     routeState.path = '/mes/foundation'
     const wrapper = mountLayout()
@@ -147,6 +157,19 @@ describe('BusinessLayout (T-shaped)', () => {
 
     const wrapper = mountLayout(pinia)
     expect(wrapper.getComponent(AppShellTStub).props('user')).toMatchObject({ name: '已登录用户' })
+  })
+
+  it('shows a business context empty state when the principal has no org or environment', () => {
+    const pinia = createPinia()
+    const auth = useAuthStore(pinia)
+    auth.$patch({
+      principal: { principalType: 'user', loginName: 'operator' },
+    })
+
+    const wrapper = mountLayout(pinia)
+
+    expect(wrapper.text()).toContain('未选择业务上下文')
+    expect(wrapper.text()).toContain('重新登录')
   })
 
   it('renders the home page as a business workbench instead of a route directory', () => {

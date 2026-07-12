@@ -31,6 +31,19 @@ public interface IGatewayAuthorizationClient
         string bearerToken,
         GatewayPermissionRequirement requirement,
         CancellationToken cancellationToken);
+
+    Task<GatewayAuthorizationResult> CheckAsync(
+        string bearerToken,
+        GatewayPermissionRequirement requirement,
+        GatewayAuthorizationContinuityMode continuityMode,
+        CancellationToken cancellationToken) =>
+        CheckAsync(bearerToken, requirement, cancellationToken);
+}
+
+public enum GatewayAuthorizationContinuityMode
+{
+    ReadCacheAllowed,
+    RealtimeRequired
 }
 
 public static class GatewayPermissions
@@ -49,9 +62,12 @@ public static class GatewayPermissions
     public const string OpsTasksRead = "ops.tasks.read";
     public const string ObservabilityLogsRead = "observability.logs.read";
     public const string NotificationIntentsSubmit = "notifications.intents.submit";
+    public const string NotificationDeadLettersManage = "notifications.dlq.manage";
+    public const string NotificationDeadLettersRead = "notifications.dlq.read";
     public const string NotificationMessagesMarkRead = "notifications.messages.mark-read";
     public const string NotificationMessagesRead = "notifications.messages.read";
     public const string NotificationTasksRead = "notifications.tasks.read";
+    public const string NotificationDeliveryManage = "notifications.delivery.manage";
 }
 
 public static class GatewayAuthorization
@@ -84,7 +100,32 @@ public static class GatewayAuthorization
             return null;
         }
 
-        var result = await client.CheckAsync(bearerToken, requirement, cancellationToken);
+        GatewayAuthorizationResult result;
+        try
+        {
+            result = await client.CheckAsync(
+                bearerToken,
+                requirement,
+                ContinuityModeFor(context.Request.Method),
+                cancellationToken);
+        }
+        catch (Exception ex) when (IsAuthorizationUnavailable(ex, cancellationToken))
+        {
+            logger.LogWarning(
+                ex,
+                "GatewayPermissionCheckUnavailable PermissionCode={PermissionCode} OrganizationId={OrganizationId} EnvironmentId={EnvironmentId} Path={Path}",
+                requirement.PermissionCode,
+                requirement.OrganizationId,
+                requirement.EnvironmentId,
+                context.Request.Path.ToString());
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                context,
+                StatusCodes.Status503ServiceUnavailable,
+                "Authorization service unavailable.",
+                cancellationToken);
+            return null;
+        }
+
         if (!result.IsAllowed)
         {
             logger.LogWarning(
@@ -144,15 +185,30 @@ public static class GatewayAuthorization
             return null;
         }
 
-        var result = await auth.CheckAsync(
-            bearerToken,
-            new GatewayPermissionRequirement(
-                permissionCode,
-                principal.OrganizationId,
-                principal.EnvironmentId,
-                null,
-                null),
-            cancellationToken);
+        GatewayAuthorizationResult result;
+        try
+        {
+            result = await auth.CheckAsync(
+                bearerToken,
+                new GatewayPermissionRequirement(
+                    permissionCode,
+                    principal.OrganizationId,
+                    principal.EnvironmentId,
+                    null,
+                    null),
+                ContinuityModeFor(context.Request.Method),
+                cancellationToken);
+        }
+        catch (Exception ex) when (IsAuthorizationUnavailable(ex, cancellationToken))
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                context,
+                StatusCodes.Status503ServiceUnavailable,
+                "Authorization service unavailable.",
+                cancellationToken);
+            return null;
+        }
+
         if (!result.IsAllowed)
         {
             await ResponseDataEndpointResults.WriteErrorAsync(
@@ -212,4 +268,14 @@ public static class GatewayAuthorization
 
         return null;
     }
+
+    private static GatewayAuthorizationContinuityMode ContinuityModeFor(string method) =>
+        HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method)
+            ? GatewayAuthorizationContinuityMode.ReadCacheAllowed
+            : GatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    private static bool IsAuthorizationUnavailable(Exception ex, CancellationToken requestCancellationToken) =>
+        ex is HttpRequestException
+            || ex is TimeoutException
+            || ex is TaskCanceledException && !requestCancellationToken.IsCancellationRequested;
 }

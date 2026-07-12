@@ -5,6 +5,9 @@ import {
   createBusinessConsoleErpAccountReceivableMutationOptions,
   createBusinessConsoleErpAccountPayableMutationOptions,
   createBusinessConsoleErpCostCandidateMutationOptions,
+  createBusinessConsoleErpPurchaseOrderMutationOptions,
+  createBusinessConsoleErpRequestForQuotationMutationOptions,
+  convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions,
   getBusinessConsoleErpFinanceSummaryQueryOptions,
   listBusinessConsoleErpCostCandidatesQueryOptions,
   listBusinessConsoleErpDeliveryOrdersQueryOptions,
@@ -12,11 +15,16 @@ import {
   listBusinessConsoleErpOpportunitiesQueryOptions,
   listBusinessConsoleErpPayablesQueryOptions,
   listBusinessConsoleErpPurchaseOrdersQueryOptions,
+  listBusinessConsoleErpPurchaseRequisitionsQueryOptions,
   listBusinessConsoleErpQuotationsQueryOptions,
   listBusinessConsoleErpReceivablesQueryOptions,
+  listBusinessConsoleErpRequestsForQuotationQueryOptions,
   listBusinessConsoleErpSalesOrdersQueryOptions,
   openBusinessConsoleErpOpportunityMutationOptions,
   postBusinessConsoleErpJournalVoucherMutationOptions,
+  receiveBusinessConsoleErpSupplierQuotationMutationOptions,
+  recordBusinessConsoleErpPurchaseReceiptMutationOptions,
+  releaseBusinessConsoleErpDeliveryOrderMutationOptions,
   type BusinessConsoleErpCostCandidateItem,
   type BusinessConsoleErpCostCandidateListEnvelope,
   type BusinessConsoleErpDeliveryOrderItem,
@@ -31,21 +39,28 @@ import {
   type BusinessConsoleErpPayableListEnvelope,
   type BusinessConsoleErpPurchaseOrderItem,
   type BusinessConsoleErpPurchaseOrderListEnvelope,
+  type BusinessConsoleErpPurchaseRequisitionItem,
+  type BusinessConsoleErpPurchaseRequisitionListEnvelope,
   type BusinessConsoleErpQuotationItem,
   type BusinessConsoleErpQuotationListEnvelope,
   type BusinessConsoleErpReceivableItem,
   type BusinessConsoleErpReceivableListEnvelope,
+  type BusinessConsoleErpRequestForQuotationItem,
+  type BusinessConsoleErpRequestForQuotationListEnvelope,
   type BusinessConsoleErpSalesOrderItem,
   type BusinessConsoleErpSalesOrderListEnvelope,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 
 const DEFAULT_TAKE = 10
 
 export interface BusinessErpListFilters {
   status?: string
+  purchaseOrderStatus?: string
+  purchaseRequisitionStatus?: string
   keyword?: string
   skip: number
   take: number
@@ -66,6 +81,10 @@ interface ErpListQuery {
   keyword?: string
   skip: number
   take: number
+}
+
+interface ConvertPurchaseRequisitionOptions {
+  rfqSupplierCodes?: string[]
 }
 
 function unwrapItems<T>(envelope: { success?: boolean, data?: { items?: T[] } | null } | undefined): T[] {
@@ -94,17 +113,18 @@ function useErpDocumentList<TItem, TEnvelope extends { success?: boolean, data?:
 ) {
   const businessContext = useBusinessContextStore()
   const filters = defaultFilters(initialFilters)
-  const query = useQuery(() =>
+  const query = useQuery(() => ({
     // 各单据 query options 仅 data 泛型不同，统一经工厂收敛，故此处收窄类型。
-    buildOptions({
+    ...(buildOptions({
       organizationId: businessContext.organizationId,
       environmentId: businessContext.environmentId,
       status: filters.status,
       keyword: filters.keyword,
       skip: filters.skip,
       take: filters.take,
-    }) as never,
-  )
+    }) as object),
+    enabled: hasBusinessContext(businessContext),
+  }) as never)
 
   return {
     filters,
@@ -114,7 +134,7 @@ function useErpDocumentList<TItem, TEnvelope extends { success?: boolean, data?:
     total: computed(() => unwrapTotal(query.data.value as TEnvelope | undefined)),
     error: query.error,
     pending: query.isLoading,
-    refresh: query.refetch,
+    refresh: () => refetchWithBusinessContext(businessContext, query),
   }
 }
 
@@ -122,21 +142,44 @@ function useErpDocumentList<TItem, TEnvelope extends { success?: boolean, data?:
 export function useBusinessErp() {
   const businessContext = useBusinessContextStore()
   const filters = defaultFilters()
-  const purchaseOrdersQuery = useQuery(() =>
-    listBusinessConsoleErpPurchaseOrdersQueryOptions({
+  const purchaseOrdersQuery = useQuery(() => ({
+    ...listBusinessConsoleErpPurchaseOrdersQueryOptions({
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
-        status: filters.status,
+        status: filters.purchaseOrderStatus,
         keyword: filters.keyword,
         skip: filters.skip,
         take: filters.take,
       },
     }),
-  )
+    enabled: hasBusinessContext(businessContext),
+  }))
+  const purchaseRequisitionsQuery = useQuery(() => ({
+    ...listBusinessConsoleErpPurchaseRequisitionsQueryOptions({
+      query: {
+        organizationId: businessContext.organizationId,
+        environmentId: businessContext.environmentId,
+        status: filters.purchaseRequisitionStatus,
+        keyword: filters.keyword,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: hasBusinessContext(businessContext),
+  }))
 
   return {
     filters,
+    purchaseRequisitions: computed<BusinessConsoleErpPurchaseRequisitionItem[]>(() =>
+      unwrapItems(purchaseRequisitionsQuery.data.value as BusinessConsoleErpPurchaseRequisitionListEnvelope | undefined),
+    ),
+    purchaseRequisitionsTotal: computed(() =>
+      unwrapTotal(purchaseRequisitionsQuery.data.value as BusinessConsoleErpPurchaseRequisitionListEnvelope | undefined),
+    ),
+    purchaseRequisitionsError: purchaseRequisitionsQuery.error,
+    purchaseRequisitionsPending: purchaseRequisitionsQuery.isLoading,
+    refreshPurchaseRequisitions: () => refetchWithBusinessContext(businessContext, purchaseRequisitionsQuery),
     purchaseOrders: computed<BusinessConsoleErpPurchaseOrderItem[]>(() =>
       unwrapItems(purchaseOrdersQuery.data.value as BusinessConsoleErpPurchaseOrderListEnvelope | undefined),
     ),
@@ -145,7 +188,177 @@ export function useBusinessErp() {
     ),
     purchaseOrdersError: purchaseOrdersQuery.error,
     purchaseOrdersPending: purchaseOrdersQuery.isLoading,
-    refreshPurchaseOrders: purchaseOrdersQuery.refetch,
+    refreshPurchaseOrders: () => refetchWithBusinessContext(businessContext, purchaseOrdersQuery),
+    refreshProcurementDocuments: () => {
+      void refetchWithBusinessContext(businessContext, purchaseRequisitionsQuery)
+      void refetchWithBusinessContext(businessContext, purchaseOrdersQuery)
+    },
+  }
+}
+
+export function useErpPurchaseRequisitions(initialFilters: Partial<BusinessErpListFilters> = {}) {
+  const list = useErpDocumentList<BusinessConsoleErpPurchaseRequisitionItem, BusinessConsoleErpPurchaseRequisitionListEnvelope>(
+    (query) => listBusinessConsoleErpPurchaseRequisitionsQueryOptions({ query }),
+    initialFilters,
+  )
+  const convertMutation = useMutation({
+    ...convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions(),
+    onSuccess() {
+      void list.refresh()
+    },
+  })
+
+  return {
+    ...list,
+    convertToPurchaseOrder: (purchaseRequisitionNos: string[], options: ConvertPurchaseRequisitionOptions = {}) =>
+      convertMutation.mutateAsync({
+        body: {
+          organizationId: list.organizationId.value,
+          environmentId: list.environmentId.value,
+          purchaseRequisitionNos,
+          rfqSupplierCodes: options.rfqSupplierCodes ?? [],
+          currencyCode: 'CNY',
+          idempotencyKey: makeIdempotencyKey(),
+        },
+      }),
+    convertToPurchaseOrderPending: convertMutation.isLoading,
+    convertToPurchaseOrderError: convertMutation.error,
+  }
+}
+
+export function useErpRequestsForQuotation(initialFilters: Partial<BusinessErpListFilters> = {}) {
+  const list = useErpDocumentList<BusinessConsoleErpRequestForQuotationItem, BusinessConsoleErpRequestForQuotationListEnvelope>(
+    (query) => listBusinessConsoleErpRequestsForQuotationQueryOptions({ query }),
+    initialFilters,
+  )
+
+  const createMutation = useMutation({
+    ...createBusinessConsoleErpRequestForQuotationMutationOptions(),
+    onSuccess() {
+      void list.refresh()
+    },
+  })
+
+  return {
+    ...list,
+    createRequestForQuotation: (payload: {
+      supplierCodes: string[]
+      rfqNo?: string
+      lines: { lineNo: string, skuCode: string, uomCode: string, quantity: number, requiredDate: string }[]
+    }) =>
+      createMutation.mutateAsync({
+        body: {
+          organizationId: list.organizationId.value,
+          environmentId: list.environmentId.value,
+          rfqNo: payload.rfqNo || null,
+          supplierCodes: payload.supplierCodes,
+          lines: payload.lines,
+          idempotencyKey: makeIdempotencyKey(),
+        },
+      }),
+    createRequestForQuotationPending: createMutation.isLoading,
+    createRequestForQuotationError: createMutation.error,
+  }
+}
+
+export function useErpSupplierQuotations(initialFilters: Partial<BusinessErpListFilters> = {}) {
+  const rfqs = useErpRequestsForQuotation(initialFilters)
+  const receiveMutation = useMutation({
+    ...receiveBusinessConsoleErpSupplierQuotationMutationOptions(),
+    onSuccess() {
+      void rfqs.refresh()
+    },
+  })
+
+  return {
+    ...rfqs,
+    receiveSupplierQuotation: (payload: {
+      rfqNo: string
+      supplierCode: string
+      quotationNo?: string
+      lines: { lineNo: string, skuCode: string, uomCode: string, quantity: number, unitPrice: number, promisedDate: string }[]
+    }) =>
+      receiveMutation.mutateAsync({
+        body: {
+          organizationId: rfqs.organizationId.value,
+          environmentId: rfqs.environmentId.value,
+          quotationNo: payload.quotationNo || null,
+          rfqNo: payload.rfqNo,
+          supplierCode: payload.supplierCode,
+          lines: payload.lines,
+          idempotencyKey: makeIdempotencyKey(),
+        },
+      }),
+    receiveSupplierQuotationPending: receiveMutation.isLoading,
+    receiveSupplierQuotationError: receiveMutation.error,
+  }
+}
+
+export function useErpPurchaseOrders(initialFilters: Partial<BusinessErpListFilters> = {}) {
+  const list = useErpDocumentList<BusinessConsoleErpPurchaseOrderItem, BusinessConsoleErpPurchaseOrderListEnvelope>(
+    (query) => listBusinessConsoleErpPurchaseOrdersQueryOptions({ query }),
+    initialFilters,
+  )
+
+  const createMutation = useMutation({
+    ...createBusinessConsoleErpPurchaseOrderMutationOptions(),
+    onSuccess() {
+      void list.refresh()
+    },
+  })
+
+  return {
+    ...list,
+    createPurchaseOrder: (payload: {
+      supplierCode: string
+      siteCode: string
+      purchaseOrderNo?: string
+      lines: { lineNo: string, skuCode: string, uomCode: string, quantity: number, unitPrice: number, promisedDate: string }[]
+    }) =>
+      createMutation.mutateAsync({
+        body: {
+          organizationId: list.organizationId.value,
+          environmentId: list.environmentId.value,
+          purchaseOrderNo: payload.purchaseOrderNo || null,
+          supplierCode: payload.supplierCode,
+          siteCode: payload.siteCode,
+          lines: payload.lines,
+          idempotencyKey: makeIdempotencyKey(),
+        },
+      }),
+    createPurchaseOrderPending: createMutation.isLoading,
+    createPurchaseOrderError: createMutation.error,
+  }
+}
+
+export function useErpPurchaseReceipts(initialFilters: Partial<BusinessErpListFilters> = {}) {
+  const purchaseOrders = useErpPurchaseOrders(initialFilters)
+  const recordMutation = useMutation({
+    ...recordBusinessConsoleErpPurchaseReceiptMutationOptions(),
+    onSuccess() {
+      void purchaseOrders.refresh()
+    },
+  })
+
+  return {
+    ...purchaseOrders,
+    recordPurchaseReceipt: (payload: {
+      purchaseOrderNo: string
+      purchaseReceiptNo?: string
+      lines: { purchaseOrderLineNo: string, receivedQuantity: number }[]
+    }) =>
+      recordMutation.mutateAsync({
+        body: {
+          organizationId: purchaseOrders.organizationId.value,
+          environmentId: purchaseOrders.environmentId.value,
+          purchaseReceiptNo: payload.purchaseReceiptNo || null,
+          purchaseOrderNo: payload.purchaseOrderNo,
+          lines: payload.lines,
+          idempotencyKey: makeIdempotencyKey(),
+        },
+      }),
+    recordPurchaseReceiptPending: recordMutation.isLoading,
+    recordPurchaseReceiptError: recordMutation.error,
   }
 }
 
@@ -153,8 +366,8 @@ export function useBusinessErp() {
 export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters> = {}) {
   const businessContext = useBusinessContextStore()
   const filters = defaultFilters(initialFilters)
-  const salesOrdersQuery = useQuery(() =>
-    listBusinessConsoleErpSalesOrdersQueryOptions({
+  const salesOrdersQuery = useQuery(() => ({
+    ...listBusinessConsoleErpSalesOrdersQueryOptions({
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
@@ -164,12 +377,13 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
         take: filters.take,
       },
     }),
-  )
+    enabled: hasBusinessContext(businessContext),
+  }))
 
   const createMutation = useMutation({
     ...createBusinessConsoleErpSalesOrderMutationOptions(),
     onSuccess() {
-      void salesOrdersQuery.refetch()
+      void refetchWithBusinessContext(businessContext, salesOrdersQuery)
     },
   })
 
@@ -183,7 +397,7 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
     ),
     salesOrdersError: salesOrdersQuery.error,
     salesOrdersPending: salesOrdersQuery.isLoading,
-    refreshSalesOrders: salesOrdersQuery.refetch,
+    refreshSalesOrders: () => refetchWithBusinessContext(businessContext, salesOrdersQuery),
     createSalesOrder: (payload: { quotationNo: string, salesOrderNo?: string }) =>
       createMutation.mutateAsync({
         body: {
@@ -287,23 +501,45 @@ export function useErpOpportunities(initialFilters: Partial<BusinessErpListFilte
 
 // 发货单：读面（由销售订单履约生成）。
 export function useErpDeliveryOrders(initialFilters: Partial<BusinessErpListFilters> = {}) {
-  return useErpDocumentList<BusinessConsoleErpDeliveryOrderItem, BusinessConsoleErpDeliveryOrderListEnvelope>(
+  const list = useErpDocumentList<BusinessConsoleErpDeliveryOrderItem, BusinessConsoleErpDeliveryOrderListEnvelope>(
     (query) => listBusinessConsoleErpDeliveryOrdersQueryOptions({ query }),
     initialFilters,
   )
+  const releaseMutation = useMutation({
+    ...releaseBusinessConsoleErpDeliveryOrderMutationOptions(),
+    onSuccess() {
+      void list.refresh()
+    },
+  })
+
+  return {
+    ...list,
+    releaseDeliveryOrder: (deliveryOrderNo: string) =>
+      releaseMutation.mutateAsync({
+        body: {
+          organizationId: list.organizationId.value,
+          environmentId: list.environmentId.value,
+          deliveryOrderNo,
+          idempotencyKey: makeIdempotencyKey(),
+        },
+      }),
+    releaseDeliveryOrderPending: releaseMutation.isLoading,
+    releaseDeliveryOrderError: releaseMutation.error,
+  }
 }
 
 // 财务汇总（语义 KPI 来源）：应收/应付未结、成本候选、已过账凭证。
 export function useErpFinanceSummary() {
   const businessContext = useBusinessContextStore()
-  const summaryQuery = useQuery(() =>
-    getBusinessConsoleErpFinanceSummaryQueryOptions({
+  const summaryQuery = useQuery(() => ({
+    ...getBusinessConsoleErpFinanceSummaryQueryOptions({
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
       },
     }),
-  )
+    enabled: hasBusinessContext(businessContext),
+  }))
 
   return {
     summary: computed<BusinessConsoleErpFinanceSummaryResponse | undefined>(() =>
@@ -311,7 +547,7 @@ export function useErpFinanceSummary() {
     ),
     summaryError: summaryQuery.error,
     summaryPending: summaryQuery.isLoading,
-    refreshSummary: summaryQuery.refetch,
+    refreshSummary: () => refetchWithBusinessContext(businessContext, summaryQuery),
   }
 }
 

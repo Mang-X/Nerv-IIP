@@ -3,11 +3,15 @@ using FastEndpoints;
 using FastEndpoints.Swagger;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.Notification.Domain.ObservabilityAlerts;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application;
+using Nerv.IIP.Notification.Web.Application.DeadLetters;
 using Nerv.IIP.Notification.Web.Application.Health;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Notification.Web.Application.IntegrationEvents;
+using Nerv.IIP.Notification.Web.Application.Notifications;
+using Nerv.IIP.Notification.Web.Application.ObservabilityAlerts;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.AspNetCore;
@@ -59,6 +63,7 @@ if (usePostgreSql)
         options.Version = builder.Configuration["Cap:Version"] ?? "v1";
         options.UseEntityFramework<ApplicationDbContext>();
         options.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
+        options.UseIntegrationEventDeadLetterOnFailedThreshold();
     });
 }
 else
@@ -67,6 +72,23 @@ else
     builder.Services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
 }
 builder.Services.AddNotificationPersistence(builder.Configuration);
+builder.Services.Configure<NotificationDeliveryOptions>(
+    builder.Configuration.GetSection("Notification:Delivery"));
+builder.Services.Configure<NotificationDeadLetterAlertOptions>(
+    builder.Configuration.GetSection(NotificationDeadLetterAlertOptions.SectionName));
+builder.Services.Configure<ObservabilityAlertOptions>(
+    builder.Configuration.GetSection(ObservabilityAlertOptions.SectionName));
+builder.Services.AddHttpClient(ServiceHealthAlertProbe.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
+builder.Services.AddScoped<INotificationDeliveryProvider, WeComDeliveryProvider>();
+builder.Services.AddScoped<INotificationDeliveryProvider, DingTalkDeliveryProvider>();
+builder.Services.AddScoped<INotificationDeliveryProvider, SmtpEmailDeliveryProvider>();
+builder.Services.AddScoped<INotificationDeliveryProvider, WebhookDeliveryProvider>();
+builder.Services.AddSingleton<NotificationChannelRateLimiter>();
+builder.Services.AddScoped<NotificationDeliveryService>();
+builder.Services.AddHostedService<NotificationDeliveryRetryWorker>();
 builder.Services.Configure<OpsNotificationRecipientOptions>(
     builder.Configuration.GetSection(OpsNotificationRecipientOptions.SectionName));
 builder.Services.AddSingleton(TimeProvider.System);
@@ -80,6 +102,18 @@ else
 {
     builder.Services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
 }
+builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
+builder.Services.AddScoped<IntegrationEventDeadLetterReplayExecutor>();
+builder.Services.AddScoped<IIntegrationEventDeadLetterReplayHandler, NotificationDeadLetterReplayHandler>();
+builder.Services.AddScoped<NotificationDeadLetterAlertMonitor>();
+builder.Services.AddHostedService<NotificationDeadLetterAlertWorker>();
+builder.Services.AddSingleton<IDatabaseWatermarkReader, PostgreSqlDatabaseWatermarkReader>();
+builder.Services.AddScoped<IObservabilityAlertProbe, ServiceHealthAlertProbe>();
+builder.Services.AddScoped<IObservabilityAlertProbe, NotificationDeadLetterBacklogAlertProbe>();
+builder.Services.AddScoped<IObservabilityAlertProbe, AppHubConnectorHeartbeatAlertProbe>();
+builder.Services.AddScoped<IObservabilityAlertProbe, PostgreSqlWatermarkAlertProbe>();
+builder.Services.AddSingleton<ObservabilityAlertMonitor>();
+builder.Services.AddHostedService<ObservabilityAlertWorker>();
 builder.Services.AddScoped<OperationTaskFailedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<OperationTaskCompletedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<OperationApprovalRequestedIntegrationEventHandlerForNotification>();
@@ -88,7 +122,17 @@ builder.Services.AddScoped<OperationApprovalRejectedIntegrationEventHandlerForNo
 builder.Services.AddScoped<ApprovalStepOverdueIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<ApprovalStepResolvedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<ApprovalActionRecordedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<ApprovalRejectedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<ScheduleConflictDetectedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<SchedulePlanInvalidatedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<WorkOrderEngineeringChangeImpactDetectedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<AlarmRaisedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<AlarmClearedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<AlarmEscalatedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<ConnectorHostUnreachableIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<ConnectorHostRestoredIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<InspectionTaskOverdueIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<SpcAlertRaisedIntegrationEventHandlerForNotification>();
 
 var app = builder.Build();
 if (usePostgreSql && autoMigrate)

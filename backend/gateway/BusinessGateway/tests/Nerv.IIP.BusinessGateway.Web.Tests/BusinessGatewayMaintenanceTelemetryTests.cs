@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
@@ -16,14 +17,63 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayMaintenanceTelemetryTests
 {
     [Fact]
-    public async Task Maintenance_work_order_list_uses_maintenance_permission_and_preserves_device_alarm_context()
+    public async Task Workshop_data_scope_is_pushed_down_to_maintenance_telemetry_and_equipment_alarm_lists()
     {
-        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var dataScope = new AuthorizationDataScope([], ["WS-A"], []);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(dataScope);
         var maintenance = new RecordingMaintenanceFacadeClient();
+        var telemetry = new RecordingTelemetryFacadeClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            Resources =
+            [
+                new BusinessConsoleResourceItem("production-line", "LINE-A", "Line A", true, "v1", WorkshopCode: "WS-A"),
+                new BusinessConsoleResourceItem("production-line", "LINE-B", "Line B", true, "v1", WorkshopCode: "WS-B"),
+                new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1", LineCode: "LINE-A", WorkshopCode: "WS-A"),
+                new BusinessConsoleResourceItem("work-center", "WC-B", "Work center B", true, "v1", LineCode: "LINE-B", WorkshopCode: "WS-B"),
+                new BusinessConsoleResourceItem("device-asset", "DEV-A-CODE", "Device A", true, "v1", LineCode: "LINE-A", WorkCenterCode: "WC-A", DeviceAssetId: "DEV-A"),
+                new BusinessConsoleResourceItem("device-asset", "DEV-B-CODE", "Device B", true, "v1", LineCode: "LINE-B", WorkCenterCode: "WC-B", DeviceAssetId: "DEV-B"),
+            ],
+        };
         await using var factory = CreateFactory(auth, services =>
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var maintenanceResponse = await client.GetAsync("/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev");
+        var telemetryResponse = await client.GetAsync("/api/business-console/v1/telemetry/alarms?organizationId=org-001&environmentId=env-dev&status=active");
+        var equipmentResponse = await client.GetAsync("/api/business-console/v1/equipment/alarms?organizationId=org-001&environmentId=env-dev&status=active");
+
+        Assert.Equal(HttpStatusCode.OK, maintenanceResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, telemetryResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, equipmentResponse.StatusCode);
+        Assert.Equal("DEV-A", maintenance.LastWorkOrderListRequest!.DeviceAssetIds);
+        Assert.Equal("DEV-A", telemetry.LastAlarmListRequest!.DeviceAssetIds);
+        Assert.Equal("DEV-A", telemetry.LastEquipmentAlarmListRequest!.DeviceAssetIds);
+        Assert.DoesNotContain("DEV-B", maintenance.LastWorkOrderListRequest.DeviceAssetIds);
+    }
+
+    [Fact]
+    public async Task Maintenance_work_order_list_uses_maintenance_permission_and_preserves_device_alarm_context()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        var masterData = new RecordingMasterDataClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -35,16 +85,78 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(BusinessGatewayPermissions.MaintenanceWorkOrdersRead, auth.LastRequirement!.PermissionCode);
         Assert.Equal("internal-test-token", maintenance.LastInternalToken);
-        Assert.Equal(new BusinessConsoleMaintenanceListRequest("org-001", "env-dev", 5, 10), maintenance.LastWorkOrderListRequest);
+        Assert.Equal(new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev", 5, 10), maintenance.LastWorkOrderListRequest);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var item = document.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.Equal("wo-maint-001", item.GetProperty("workOrderId").GetString());
         Assert.Equal("DEV-PRESS-01", item.GetProperty("deviceAssetId").GetString());
         Assert.Equal("alarm-001", item.GetProperty("sourceAlarmId").GetString());
         Assert.Equal("alarm-001", item.GetProperty("relatedAlarmId").GetString());
+        Assert.Equal("in-warranty", item.GetProperty("warrantyStatus").GetString());
+        Assert.Equal("2027-01-14", item.GetProperty("warrantyExpiresOn").GetString());
+        Assert.Equal("SUP-ACME", item.GetProperty("supplierPartnerCode").GetString());
+        Assert.Equal(new[] { "DEV-PRESS-01" }, masterData.DetailRequests.Select(x => x.Code).ToArray());
         Assert.Equal(5, document.RootElement.GetProperty("data").GetProperty("skip").GetInt32());
         Assert.Equal(10, document.RootElement.GetProperty("data").GetProperty("take").GetInt32());
         Assert.Equal(1, document.RootElement.GetProperty("data").GetProperty("total").GetInt32());
+    }
+
+    [Fact]
+    public async Task Maintenance_work_order_list_enriches_distinct_device_assets_once()
+    {
+        var maintenance = new RecordingMaintenanceFacadeClient
+        {
+            WorkOrderItems =
+            [
+                new BusinessConsoleMaintenanceWorkOrderItem("wo-maint-001", "018ff8f1-2b8a-7000-8000-000000000001", "high", "Open", null, null, DateTimeOffset.Parse("2026-06-01T08:10:00Z", CultureInfo.InvariantCulture)),
+                new BusinessConsoleMaintenanceWorkOrderItem("wo-maint-002", "018ff8f1-2b8a-7000-8000-000000000001", "medium", "Open", null, null, DateTimeOffset.Parse("2026-06-01T08:20:00Z", CultureInfo.InvariantCulture)),
+            ],
+        };
+        var masterData = new RecordingMasterDataClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=10");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(new[] { "018ff8f1-2b8a-7000-8000-000000000001" }, masterData.DetailRequests.Select(x => x.Code).ToArray());
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var items = document.RootElement.GetProperty("data").GetProperty("items");
+        Assert.Equal(2, items.GetArrayLength());
+        Assert.All(items.EnumerateArray(), item => Assert.Equal("in-warranty", item.GetProperty("warrantyStatus").GetString()));
+    }
+
+    [Fact]
+    public async Task Maintenance_work_order_warranty_enrichment_propagates_master_data_outages()
+    {
+        var masterData = new RecordingMasterDataClient
+        {
+            DetailFailure = new BusinessServiceProxyException(HttpStatusCode.BadGateway, "master-data-unavailable"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(new RecordingMaintenanceFacadeClient());
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=10");
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
     }
 
     [Fact]
@@ -55,6 +167,8 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -290,6 +404,50 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     }
 
     [Fact]
+    public async Task Maintenance_measurement_trend_and_reliability_summary_facades_forward_queries()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var trendResponse = await client.GetAsync("/api/business-console/v1/maintenance/inspection-measurements/trends?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&characteristicCode=bearing-temperature&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-30T16:00:00Z");
+        var summaryResponse = await client.GetAsync("/api/business-console/v1/maintenance/reliability/summary?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&technicianUserId=worker-001&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-30T16:00:00Z");
+
+        Assert.Equal(HttpStatusCode.OK, trendResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, summaryResponse.StatusCode);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenancePlansRead);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
+        Assert.Equal("internal-test-token", maintenance.LastInternalToken);
+        Assert.Equal(new BusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest(
+            "org-001",
+            "env-dev",
+            "DEV-PRESS-01",
+            "bearing-temperature",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-30T16:00:00Z", CultureInfo.InvariantCulture)), maintenance.LastInspectionMeasurementTrendRequest);
+        Assert.Equal(new BusinessConsoleQueryMaintenanceReliabilitySummaryRequest(
+            "org-001",
+            "env-dev",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-30T16:00:00Z", CultureInfo.InvariantCulture),
+            "DEV-PRESS-01",
+            "worker-001"), maintenance.LastReliabilitySummaryRequest);
+
+        using var trendDocument = JsonDocument.Parse(await trendResponse.Content.ReadAsStringAsync());
+        Assert.Equal(65m, trendDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("measuredValue").GetDecimal());
+        using var summaryDocument = JsonDocument.Parse(await summaryResponse.Content.ReadAsStringAsync());
+        Assert.Equal(165m, summaryDocument.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("totalCostAmount").GetDecimal());
+    }
+
+    [Fact]
     public async Task Telemetry_history_uses_iiot_permission_and_forwards_device_time_range()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -338,6 +496,54 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.IiotAlarmsRead);
         Assert.Equal(new BusinessConsoleTelemetryTagListRequest("org-001", "env-dev", "DEV-PRESS-01"), telemetry.LastTagListRequest);
         Assert.Equal(new BusinessConsoleTelemetryAlarmListRequest("org-001", "env-dev", "DEV-PRESS-01", "raised"), telemetry.LastAlarmListRequest);
+    }
+
+    [Fact]
+    public async Task Equipment_alarm_lifecycle_actions_use_alarm_write_permission_and_forward_payloads()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var telemetry = new RecordingTelemetryFacadeClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var ackResponse = await client.PostAsJsonAsync("/api/business-console/v1/equipment/alarms/alarm-001/acknowledge", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            acknowledgedAtUtc = "2026-07-06T08:05:00Z",
+            acknowledgedBy = "operator-001",
+        });
+        var shelveResponse = await client.PostAsJsonAsync("/api/business-console/v1/equipment/alarms/alarm-001/shelve", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            shelvedAtUtc = "2026-07-06T08:06:00Z",
+            durationMinutes = 30,
+            shelvedBy = "operator-001",
+            reason = "maintenance check",
+        });
+        var unshelveResponse = await client.PostAsJsonAsync("/api/business-console/v1/equipment/alarms/alarm-001/unshelve", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            unshelvedAtUtc = "2026-07-06T08:40:00Z",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, ackResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, shelveResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, unshelveResponse.StatusCode);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.IiotAlarmsWrite);
+        Assert.Equal("internal-test-token", telemetry.LastInternalToken);
+        Assert.Equal("alarm-001", telemetry.LastAlarmLifecycleId);
+        var request = Assert.IsType<BusinessConsoleUnshelveAlarmRequest>(telemetry.LastAlarmLifecycleRequest);
+        Assert.Equal("org-001", request.OrganizationId);
     }
 
     [Fact]
@@ -405,7 +611,7 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public string? LastInternalToken { get; private set; }
 
-    public BusinessConsoleMaintenanceListRequest? LastWorkOrderListRequest { get; private set; }
+    public BusinessConsoleMaintenanceWorkOrderListRequest? LastWorkOrderListRequest { get; private set; }
 
     public BusinessConsoleMaintenanceListRequest? LastInspectionListRequest { get; private set; }
 
@@ -429,9 +635,15 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public BusinessConsoleQueryMaintenanceAssetReliabilityRequest? LastReliabilityRequest { get; private set; }
 
+    public BusinessConsoleQueryMaintenanceReliabilitySummaryRequest? LastReliabilitySummaryRequest { get; private set; }
+
+    public BusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest? LastInspectionMeasurementTrendRequest { get; private set; }
+
     public JsonElement LastRecordInspectionRequest { get; private set; }
 
     public JsonElement LastCreateSparePartRequest { get; private set; }
+
+    public IReadOnlyCollection<BusinessConsoleMaintenanceWorkOrderItem>? WorkOrderItems { get; init; }
 
     public Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
         string internalBearerToken,
@@ -457,12 +669,12 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMaintenanceListRequest request,
+        BusinessConsoleMaintenanceWorkOrderListRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         LastWorkOrderListRequest = request;
-        return Task.FromResult(new BusinessConsoleMaintenanceWorkOrderListResponse(
+        var items = WorkOrderItems ??
         [
             new BusinessConsoleMaintenanceWorkOrderItem(
                 "wo-maint-001",
@@ -472,7 +684,9 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
                 "alarm-001",
                 "alarm-001",
                 DateTimeOffset.Parse("2026-06-01T08:10:00Z", CultureInfo.InvariantCulture)),
-        ], request.Skip, request.Take, 1));
+        ];
+        return Task.FromResult(new BusinessConsoleMaintenanceWorkOrderListResponse(
+            items, request.Skip, request.Take, items.Count));
     }
 
     public Task<BusinessConsoleMaintenanceWorkOrderItem> GetWorkOrderAsync(
@@ -524,6 +738,34 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
                 "passed",
                 DateTimeOffset.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture)),
         ], request.Skip, request.Take, 1));
+    }
+
+    public Task<BusinessConsoleMaintenanceInspectionMeasurementTrendResponse> QueryInspectionMeasurementTrendAsync(
+        string internalBearerToken,
+        BusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastInspectionMeasurementTrendRequest = request;
+        return Task.FromResult(new BusinessConsoleMaintenanceInspectionMeasurementTrendResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            request.CharacteristicCode,
+            request.WindowStartUtc,
+            request.WindowEndUtc,
+            [
+                new BusinessConsoleMaintenanceInspectionMeasurementTrendItem(
+                    "inspection-001",
+                    "plan-001",
+                    null,
+                    DateTimeOffset.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture),
+                    65m,
+                    "C",
+                    0m,
+                    70m,
+                    true),
+            ]));
     }
 
     public Task<BusinessConsoleMaintenanceSparePartListResponse> ListSparePartsAsync(
@@ -598,6 +840,32 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
             true));
     }
 
+    public Task<BusinessConsoleMaintenanceReliabilitySummaryResponse> QueryReliabilitySummaryAsync(
+        string internalBearerToken,
+        BusinessConsoleQueryMaintenanceReliabilitySummaryRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastReliabilitySummaryRequest = request;
+        return Task.FromResult(new BusinessConsoleMaintenanceReliabilitySummaryResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WindowStartUtc,
+            request.WindowEndUtc,
+            [
+                new BusinessConsoleMaintenanceReliabilitySummaryItem(
+                    "DEV-PRESS-01",
+                    "worker-001",
+                    "CNY",
+                    2,
+                    120,
+                    95,
+                    130m,
+                    35m,
+                    165m),
+            ]));
+    }
+
     public Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(
         string internalBearerToken,
         BusinessConsoleRecordMaintenanceInspectionRequest request,
@@ -658,6 +926,10 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
 
     public BusinessConsoleEquipmentAlarmListRequest? LastEquipmentAlarmListRequest { get; private set; }
 
+    public string? LastAlarmLifecycleId { get; private set; }
+
+    public object? LastAlarmLifecycleRequest { get; private set; }
+
     public string? LastHistoryDeviceAssetId { get; private set; }
 
     public BusinessConsoleTelemetryHistoryRequest? LastHistoryRequest { get; private set; }
@@ -673,6 +945,16 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
         [
             new BusinessConsoleTelemetryTagItem("tag-001", "org-001", "env-dev", "DEV-PRESS-01", "temperature", "decimal", "C", "1m"),
         ], 42));
+    }
+
+    public Task<BusinessConsoleTelemetryTagCurrentValueResponse> GetTagCurrentValueAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryTagCurrentValueRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryTagCurrentValueResponse(
+            request.DeviceAssetId, request.TagKey, HasSample: false, Value: null, OccurredAtUtc: null));
     }
 
     public Task<BusinessConsoleTelemetryAlarmEventListResponse> ListAlarmsAsync(
@@ -770,11 +1052,18 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
             0,
             0m,
             0m,
-            0m,
-            0m,
-            0m,
-            false,
-            false));
+            0,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            true,
+            ["production-facts-missing"]));
     }
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
@@ -813,5 +1102,122 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
         LastInternalToken = internalBearerToken;
         LastEquipmentAlarmListRequest = request;
         return Task.FromResult(new BusinessConsoleEquipmentAlarmListPageResponse([], 42));
+    }
+
+    public Task<BusinessConsoleAlarmLifecycleResponse> AcknowledgeAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleAcknowledgeAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastAlarmLifecycleId = alarmEventId;
+        LastAlarmLifecycleRequest = request;
+        return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
+    }
+
+    public Task<BusinessConsoleAlarmLifecycleResponse> ShelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleShelveAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastAlarmLifecycleId = alarmEventId;
+        LastAlarmLifecycleRequest = request;
+        return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
+    }
+
+    public Task<BusinessConsoleAlarmLifecycleResponse> UnshelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleUnshelveAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastAlarmLifecycleId = alarmEventId;
+        LastAlarmLifecycleRequest = request;
+        return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
+    }
+
+    public Task<BusinessConsoleTelemetryDeviceControlCommandResponse> CreateDeviceControlCommandAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryDeviceControlCommandRequest request,
+        string requestedBy,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryDeviceControlCommandResponse(
+            "op-task-001",
+            "pending-approval",
+            Approval: null));
+    }
+
+    public Task<BusinessConsoleTelemetryDeviceControlCommandDetail> GetDeviceControlCommandAsync(
+        string internalBearerToken,
+        string commandId,
+        BusinessConsoleTelemetryDeviceControlCommandContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryDeviceControlCommandDetail(
+            commandId,
+            commandId,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "connector-host-001",
+            "opcua-cell-01",
+            "DEV-CNC-01",
+            "write-tag",
+            "spindle.speed",
+            "80",
+            null,
+            "user-admin",
+            "speed adjustment",
+            "corr-device-control-001",
+            "idem-device-control-001",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            "approval-pending",
+            false,
+            Approval: null,
+            CurrentAttemptId: null,
+            Attempts: []));
+    }
+
+    public Task<BusinessConsoleTelemetryDeviceControlCommandListResponse> ListDeviceControlCommandsAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryDeviceControlCommandListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryDeviceControlCommandListResponse([], 0));
+    }
+
+    public Task<BusinessConsoleTelemetryDeviceControlBindingListResponse> ListDeviceControlBindingsAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryDeviceControlBindingListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryDeviceControlBindingListResponse([], 0));
+    }
+
+    public Task<BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse> CreateOrUpdateDeviceControlBindingAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse("binding-001"));
+    }
+
+    public Task<BusinessConsoleDisableTelemetryDeviceControlBindingResponse> DisableDeviceControlBindingAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleDisableTelemetryDeviceControlBindingRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleDisableTelemetryDeviceControlBindingResponse("binding-001"));
     }
 }

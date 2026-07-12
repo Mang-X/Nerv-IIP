@@ -36,7 +36,7 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
         return consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Approval.ApprovalCompletedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(ApprovalCompletedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(ApprovalCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -56,13 +56,44 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
             return;
         }
 
+        if (string.Equals(integrationEvent.Payload.DocumentReference.SourceService, "business-erp", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(integrationEvent.Payload.DocumentReference.DocumentType, "sales-order-credit-release", StringComparison.OrdinalIgnoreCase))
+        {
+            var salesOrder = await dbContext.SalesOrders.SingleOrDefaultAsync(x =>
+                x.OrganizationId == integrationEvent.OrganizationId
+                && x.EnvironmentId == integrationEvent.EnvironmentId
+                && x.SalesOrderNo == integrationEvent.Payload.DocumentReference.DocumentId,
+                cancellationToken);
+            if (salesOrder is null || !await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+            {
+                return;
+            }
+
+            if (string.Equals(integrationEvent.Payload.Result, ApprovalResults.Approved, StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    salesOrder.ReleaseCreditHold();
+                }
+                catch (InvalidOperationException exception)
+                {
+                    throw new KnownException(exception.Message, exception);
+                }
+            }
+
+            return;
+        }
+
         if (!string.Equals(integrationEvent.Payload.DocumentReference.SourceService, "business-erp", StringComparison.OrdinalIgnoreCase)
             || !string.Equals(integrationEvent.Payload.DocumentReference.DocumentType, "purchase-order", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
-        var order = await dbContext.PurchaseOrders.SingleOrDefaultAsync(x =>
+        var order = await dbContext.PurchaseOrders
+            .Include(x => x.Lines)
+            .Include(x => x.ChangeHistory)
+            .SingleOrDefaultAsync(x =>
             x.OrganizationId == integrationEvent.OrganizationId
             && x.EnvironmentId == integrationEvent.EnvironmentId
             && x.PurchaseOrderNo == integrationEvent.Payload.DocumentReference.DocumentId,
@@ -81,12 +112,26 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
         {
             if (string.Equals(integrationEvent.Payload.Result, ApprovalResults.Approved, StringComparison.OrdinalIgnoreCase))
             {
-                order.ReleaseAfterApproval(integrationEvent.Payload.ChainId);
+                if (order.Status == Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderStatus.PendingApproval)
+                {
+                    order.ReleaseAfterApproval(integrationEvent.Payload.ChainId);
+                }
+                else
+                {
+                    order.ApplyApprovedChange(integrationEvent.Payload.ChainId);
+                }
             }
             else if (string.Equals(integrationEvent.Payload.Result, ApprovalResults.Rejected, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(integrationEvent.Payload.Result, ApprovalResults.Returned, StringComparison.OrdinalIgnoreCase))
             {
-                order.CancelAfterApprovalRejected(integrationEvent.Payload.ChainId);
+                if (order.Status == Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderStatus.PendingApproval)
+                {
+                    order.ReturnToEditableAfterApprovalRejected(integrationEvent.Payload.ChainId);
+                }
+                else
+                {
+                    order.RejectChange(integrationEvent.Payload.ChainId);
+                }
             }
         }
         catch (InvalidOperationException exception)

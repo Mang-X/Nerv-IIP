@@ -920,6 +920,37 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     }
 
     [Fact]
+    public async Task Built_in_operation_type_registry_exposes_device_control_and_config_reload_without_device_execution()
+    {
+        var client = CreateInternalServiceClient(factory);
+
+        var listResponse = await client.GetAsync("/api/ops/v1/operation-templates");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        var list = await ReadResponseDataAsync<OperationTemplateListResponse>(listResponse);
+
+        Assert.Contains(list.Items, x => x.OperationCode == "device.control.command" && x.RequiresApproval);
+        Assert.Contains(list.Items, x => x.OperationCode == "config.reload");
+
+        var taskResponse = await client.PostAsJsonAsync(
+            "/api/ops/v1/operation-tasks",
+            CreateRestartRequest("idem-device-control-built-in-001", "org-device-control") with
+            {
+                OperationCode = "device.control.command",
+                Parameters = new Dictionary<string, string>
+                {
+                    ["targetDeviceId"] = "asset-001",
+                    ["command"] = "start"
+                }
+            });
+        Assert.Equal(HttpStatusCode.OK, taskResponse.StatusCode);
+        var task = await ReadResponseDataAsync<OperationTaskResponse>(taskResponse);
+        Assert.Equal("device.control.command", task.OperationCode);
+        Assert.Equal("approval-pending", task.Status);
+        Assert.NotNull(task.Approval);
+        Assert.Equal("pending", task.Approval.Status);
+    }
+
+    [Fact]
     public async Task Operation_template_duplicate_check_uses_normalized_operation_code()
     {
         var client = CreateInternalServiceClient(factory);

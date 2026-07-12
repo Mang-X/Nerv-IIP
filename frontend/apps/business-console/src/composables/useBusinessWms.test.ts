@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 
 import {
   listBusinessConsoleWmsInboundOrdersQueryOptions,
@@ -7,9 +8,13 @@ import {
   listBusinessConsoleWmsWcsTasksQueryOptions,
 } from '@nerv-iip/api-client'
 import { useWmsInboundOrders, useWmsOutboundOrders, useWmsWcsTasks } from './useBusinessWms'
+import { useBusinessContextStore } from '@/stores/businessContext'
 
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
+  queryFactoriesById: new Map<string, () => { enabled?: boolean } & Record<string, unknown>>(),
+  queryOptionsById: new Map<string, { enabled?: boolean } & Record<string, unknown>>(),
+  queryRefetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -39,12 +44,17 @@ vi.mock('@pinia/colada', () => ({
     const options = optionsFactory()
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
+    coladaState.queryFactoriesById.set(id, optionsFactory)
+    coladaState.queryOptionsById.set(id, options)
+
+    const refetch = vi.fn()
+    coladaState.queryRefetchById.set(id, refetch)
 
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
       error: shallowRef(),
       isLoading: shallowRef(false),
-      refetch: vi.fn(),
+      refetch,
     }
   }),
   useMutation: vi.fn(() => ({
@@ -56,11 +66,17 @@ vi.mock('@pinia/colada', () => ({
 
 describe('business WMS composables', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.clearAllMocks()
     coladaState.queryDataById.clear()
+    coladaState.queryFactoriesById.clear()
+    coladaState.queryOptionsById.clear()
+    coladaState.queryRefetchById.clear()
   })
 
   it('lists inbound orders with paging, filters, items, and total', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     coladaState.queryDataById.set('listBusinessConsoleWmsInboundOrders', {
       success: true,
       data: {
@@ -86,6 +102,8 @@ describe('business WMS composables', () => {
   })
 
   it('lists outbound orders with status and keyword filters', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     coladaState.queryDataById.set('listBusinessConsoleWmsOutboundOrders', {
       success: true,
       data: {
@@ -110,6 +128,8 @@ describe('business WMS composables', () => {
   })
 
   it('lists WCS tasks with status, failed, and keyword filters', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     coladaState.queryDataById.set('listBusinessConsoleWmsWcsTasks', {
       success: true,
       data: {
@@ -132,5 +152,44 @@ describe('business WMS composables', () => {
       },
     })
     expect(result.wcsTasksTotal.value).toBe(9)
+  })
+
+  it('disables inbound order queries until business context is selected', () => {
+    useWmsInboundOrders()
+
+    expect(listBusinessConsoleWmsInboundOrdersQueryOptions).toHaveBeenCalledWith({
+      query: expect.objectContaining({ organizationId: '', environmentId: '' }),
+    })
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsInboundOrders')?.enabled).toBe(false)
+  })
+
+  it('does not refetch WMS lists when business context is empty', async () => {
+    const inbound = useWmsInboundOrders()
+    const refetch = coladaState.queryRefetchById.get('listBusinessConsoleWmsInboundOrders')
+
+    await inbound.refreshInboundOrders()
+
+    expect(refetch).not.toHaveBeenCalled()
+
+    useBusinessContextStore().patchContext({ organizationId: 'org-wms', environmentId: 'env-wms' })
+    await inbound.refreshInboundOrders()
+
+    expect(refetch).toHaveBeenCalledOnce()
+  })
+
+  it('updates WMS query scope when business context changes', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-a', environmentId: 'env-a' })
+    useWmsOutboundOrders()
+
+    context.patchContext({ organizationId: 'org-b', environmentId: 'env-b' })
+    coladaState.queryFactoriesById.get('listBusinessConsoleWmsOutboundOrders')?.()
+
+    expect(listBusinessConsoleWmsOutboundOrdersQueryOptions).toHaveBeenLastCalledWith({
+      query: expect.objectContaining({
+        organizationId: 'org-b',
+        environmentId: 'env-b',
+      }),
+    })
   })
 })

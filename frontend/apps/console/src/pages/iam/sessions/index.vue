@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ConsoleIamSessionResponse } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import RevokeSessionDialog from '@/components/iam/RevokeSessionDialog.vue'
 import { useIamSessions } from '@/composables/useIamAdmin'
 import { useHasPermission } from '@/composables/usePermissions'
@@ -8,16 +8,16 @@ import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   Button,
-  DataTable,
-  DataTablePagination,
-  PageHeader,
+  NvDataTable,
+  NvDataTablePagination,
+  NvPageHeader,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  StatusBadge,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
   toast,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
@@ -70,7 +70,7 @@ const statusModel = computed({
   },
 })
 
-const columns: DataTableColumn<SessionRow>[] = [
+const columns: NvDataTableColumn<SessionRow>[] = [
   { key: 'sessionId', header: '会话 ID', cellClass: 'font-mono text-xs' },
   {
     key: 'userId',
@@ -151,7 +151,7 @@ async function confirmRevoke(sessionId: string) {
 <template>
   <DefaultLayout>
     <section class="grid gap-6">
-      <PageHeader
+      <NvPageHeader
         title="会话"
         :breadcrumbs="[{ label: '身份与访问' }]"
         :count="`${sessions.totalCount.value} 个会话`"
@@ -168,9 +168,9 @@ async function confirmRevoke(sessionId: string) {
             刷新
           </Button>
         </template>
-      </PageHeader>
+      </NvPageHeader>
 
-      <Toolbar
+      <NvToolbar
         :search="search"
         search-label="搜索会话"
         search-placeholder="搜索会话"
@@ -188,11 +188,14 @@ async function confirmRevoke(sessionId: string) {
             </SelectContent>
           </Select>
         </template>
-      </Toolbar>
+      </NvToolbar>
 
       <p v-if="pageError" class="text-sm text-destructive" role="alert">{{ pageError.message }}</p>
 
-      <DataTable
+      <NvDataTable
+        :pagination="false"
+        :searchable="false"
+        :column-settings="false"
         :columns="columns"
         :rows="sessions.sessions.value"
         row-key="sessionId"
@@ -208,7 +211,7 @@ async function confirmRevoke(sessionId: string) {
           </div>
         </template>
         <template #cell-status="{ row }">
-          <StatusBadge
+          <NvStatusBadge
             :label="row.revokedAtUtc ? '已吊销' : '活跃'"
             :tone="row.revokedAtUtc ? 'neutral' : 'success'"
           />
@@ -227,9 +230,9 @@ async function confirmRevoke(sessionId: string) {
             </Button>
           </div>
         </template>
-      </DataTable>
+      </NvDataTable>
 
-      <DataTablePagination
+      <NvDataTablePagination
         v-model:page="page"
         v-model:page-size="pageSize"
         :total-items="sessions.totalCount.value"

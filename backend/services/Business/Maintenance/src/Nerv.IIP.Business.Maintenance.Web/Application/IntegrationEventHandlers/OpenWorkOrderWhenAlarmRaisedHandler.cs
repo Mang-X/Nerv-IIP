@@ -31,7 +31,7 @@ public sealed class OpenWorkOrderWhenAlarmRaisedHandler(
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.IndustrialTelemetry.AlarmRaisedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(AlarmRaisedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(AlarmRaisedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

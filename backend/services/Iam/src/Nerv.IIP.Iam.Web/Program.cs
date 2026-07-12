@@ -2,6 +2,7 @@ using FastEndpoints;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Web.Application.Auth;
+using Nerv.IIP.Iam.Web.Application.DataScopes;
 using Nerv.IIP.Iam.Web.Application.Roles;
 using Nerv.IIP.Iam.Web.Application.Seed;
 using Nerv.IIP.Iam.Web.Application.SecurityAudit;
@@ -40,8 +41,16 @@ builder.Services
     .Validate(options => options.FailedLoginLockoutThreshold > 0, "Iam:Authentication:FailedLoginLockoutThreshold must be positive.")
     .Validate(options => options.FailedLoginLockoutMinutes > 0, "Iam:Authentication:FailedLoginLockoutMinutes must be positive.")
     .ValidateOnStart();
+builder.Services
+    .AddOptions<IamPasswordPolicyOptions>()
+    .Bind(builder.Configuration.GetSection("Iam:PasswordPolicy"))
+    .Validate(options => options.MinimumLength > 0, "Iam:PasswordPolicy:MinimumLength must be positive.")
+    .Validate(options => options.PasswordHistoryCount >= 0, "Iam:PasswordPolicy:PasswordHistoryCount cannot be negative.")
+    .Validate(options => options.PasswordExpiresDays >= 0, "Iam:PasswordPolicy:PasswordExpiresDays cannot be negative.")
+    .ValidateOnStart();
 builder.Services.AddSingleton<IMfaChallengeStore, InMemoryMfaChallengeStore>();
 builder.Services.AddScoped<IamPasswordService>();
+builder.Services.AddScoped<IamPasswordPolicy>();
 builder.Services.AddSingleton<IamTokenService>();
 if (usesPostgreSql)
 {
@@ -49,6 +58,7 @@ if (usesPostgreSql)
     builder.Services.AddScoped<IIamPermissionAuthorizer, IamPermissionAuthorizer>();
     builder.Services.AddScoped<IIamUserApplicationService, PostgreSqlIamUserApplicationService>();
     builder.Services.AddScoped<IIamRoleApplicationService, PostgreSqlIamRoleApplicationService>();
+    builder.Services.AddScoped<IIamDataScopeApplicationService, PostgreSqlIamDataScopeApplicationService>();
     builder.Services.AddScoped<IIamSessionApplicationService, PostgreSqlIamSessionApplicationService>();
     builder.Services.AddScoped<ISecurityAuditRecorder, SecurityAuditRecorder>();
     builder.Services.AddScoped<IIamSecurityAuditApplicationService, PostgreSqlIamSecurityAuditApplicationService>();
@@ -60,6 +70,7 @@ else
     builder.Services.AddScoped<IIamPermissionAuthorizer, InMemoryIamPermissionAuthorizer>();
     builder.Services.AddScoped<IIamUserApplicationService, InMemoryIamUserApplicationService>();
     builder.Services.AddScoped<IIamRoleApplicationService, InMemoryIamRoleApplicationService>();
+    builder.Services.AddScoped<IIamDataScopeApplicationService, InMemoryIamDataScopeApplicationService>();
     builder.Services.AddScoped<IIamSessionApplicationService, InMemoryIamSessionApplicationService>();
     builder.Services.AddScoped<IIamSecurityAuditApplicationService, InMemoryIamSecurityAuditApplicationService>();
 }

@@ -1,94 +1,136 @@
 /**
- * Screen surface tokens — independent from the shared PC/mobile set. A fixed,
- * near-black deep-blue control-room theme. Restraint is the whole point: glow is
- * tiny and lives only at edges and live-data points; structure reads from white
- * hairline highlights and gradient borders, not from colored fills or big glows.
- * Prefixed `--sb-*` so they never clash with the shared `--*` tokens.
+ * Screen surface tokens (ADR 0020 §3 — screen scene namespace `--nv-scr-*`).
+ * Independent from the shared PC/mobile set: a fixed, near-black deep-blue
+ * control-room theme. Restraint is the whole point: glow is tiny and lives only
+ * at edges and live-data points; structure reads from white hairline highlights
+ * and gradient borders, not from colored fills or big glows.
+ *
+ * Prefixed `--nv-scr-*` so they never clash with the shared `--nv-*` tokens.
+ * Old `--sb-*` names kept as one-cycle var-chain aliases (ADR 0020 §5 S1).
+ * Motion reference names chain to the shared Nv curves (values live once in
+ * theme.css) instead of copying cubic-bezier literals.
  */
-:root {
-  /* surfaces — near-black blue; panels barely lift off the base */
-  --sb-bg: #03050b;
-  --sb-bg-accent: #081020;
-  --sb-panel-a: rgba(22, 33, 56, 0.72);
-  --sb-panel-b: rgba(11, 17, 30, 0.66);
-  --sb-line: rgba(255, 255, 255, 0.06);
-  --sb-line-2: rgba(255, 255, 255, 0.1);
-  --sb-divider: rgba(255, 255, 255, 0.055);
+@layer nv-tokens {
+  :root {
+    /* surfaces — near-black blue; panels are translucent so the board's ambient
+       backdrop shows through (2026-07 生产走查：实心面板缺通透感，降不透明度) */
+    --nv-scr-bg: #03050b;
+    --nv-scr-bg-accent: #081020;
+    --nv-scr-panel-a: rgba(22, 34, 60, 0.5);
+    --nv-scr-panel-b: rgba(10, 16, 30, 0.38);
+    --nv-scr-line: rgba(255, 255, 255, 0.06);
+    --nv-scr-line-2: rgba(255, 255, 255, 0.1);
+    --nv-scr-divider: rgba(255, 255, 255, 0.055);
 
-  /* accent — ONE blue: the data accent (cyan) matches the action accent below */
-  --sb-cyan: #4aa6ee;
-  --sb-cyan-dim: rgba(74, 166, 238, 0.45);
-  /* unified "active fill" — every selected control (button / segmented /
-     pagination / switch) references this, so the accent lives in one place. */
-  --sb-accent-from: #4aa6ee;
-  --sb-accent-to: #2a72cc;
-  --sb-accent-fill: linear-gradient(180deg, #4aa6ee, #2a72cc);
-  --sb-accent-edge: rgba(90, 165, 240, 0.5);
-  --sb-indigo: #8b9be6;
-  --sb-green: #45d089;
-  --sb-amber: #f2c14e;
-  --sb-red: #ef5a63;
+    /* accent — ONE blue: the data accent (cyan) matches the action accent below */
+    --nv-scr-cyan: #4aa6ee;
+    --nv-scr-cyan-dim: rgba(74, 166, 238, 0.45);
+    /* unified "active fill" — every selected control (button / segmented /
+       pagination / switch) references this, so the accent lives in one place. */
+    --nv-scr-accent-from: #4aa6ee;
+    --nv-scr-accent-to: #2a72cc;
+    --nv-scr-accent-fill: linear-gradient(180deg, #4aa6ee, #2a72cc);
+    --nv-scr-accent-edge: rgba(90, 165, 240, 0.5);
+    --nv-scr-indigo: #8b9be6;
+    --nv-scr-green: #45d089;
+    --nv-scr-amber: #f2c14e;
+    --nv-scr-red: #ef5a63;
 
-  /* text — WHITE values; secondary text near-white, labels a soft blue-grey so
-     they read at a distance without the dull "muted grey" look. */
-  --sb-text: #eef2f8;
-  --sb-text-2: #d4dde8;
-  --sb-muted: #aeb9c8;
-  --sb-faint: #828c9c;
+    /* text — WHITE values; secondary tiers deliberately close to white
+       (2026-07 生产走查：大屏远距阅读，灰字太灰，整体向白收拢). */
+    --nv-scr-text: #f2f5fa;
+    --nv-scr-text-2: #e2e9f2;
+    --nv-scr-muted: #c3cdda;
+    --nv-scr-faint: #98a3b3;
 
-  /* effects — restrained: a white highlight carries structure, glow is a whisper */
-  --sb-highlight: rgba(255, 255, 255, 0.32); /* top white edge highlight */
-  /* panel edge — a VISIBLE blue-cyan hairline that brightens down the two sides;
-     white is reserved for the top highlight (--sb-highlight), not the edge body. */
-  /* left side brighter than right (light comes from the upper-left) */
-  --sb-edge-gradient: linear-gradient(
-    90deg,
-    rgba(135, 208, 255, 0.82),
-    rgba(135, 208, 255, 0.12) 16%,
-    rgba(135, 208, 255, 0.12) 84%,
-    rgba(135, 208, 255, 0.5)
-  );
-  --sb-value-glow: 0 0 12px rgba(150, 190, 235, 0.18); /* faint white-blue on big numbers */
-  --sb-edge-glow: rgba(95, 170, 230, 0.3); /* tiny corner-only glow */
-  --sb-glow: 0 0 8px rgba(95, 170, 230, 0.28); /* much weaker than a fill */
-  --sb-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 3px rgba(0, 0, 0, 0.5);
-  --sb-radius: 8px;
+    /* effects — restrained: hairlines carry structure, glow is a whisper.
+       2026-07 评审收敛：顶部高光压到只比底边亮一丝（大屏实机上原 0.32 白线存在感过强），
+       边缘渐变整体调暗 —— 面板边框整圈近暗，不再有亮边打架。 */
+    --nv-scr-highlight: rgba(255, 255, 255, 0.09); /* top white edge highlight — a whisper */
+    /* panel edge — a quiet blue hairline, marginally brighter down the two sides */
+    --nv-scr-edge-gradient: linear-gradient(
+      90deg,
+      rgba(135, 208, 255, 0.28),
+      rgba(135, 208, 255, 0.08) 16%,
+      rgba(135, 208, 255, 0.08) 84%,
+      rgba(135, 208, 255, 0.18)
+    );
+    --nv-scr-value-glow: 0 0 12px rgba(150, 190, 235, 0.18); /* faint white-blue on big numbers */
+    --nv-scr-edge-glow: rgba(95, 170, 230, 0.3); /* tiny corner-only glow */
+    --nv-scr-glow: 0 0 8px rgba(95, 170, 230, 0.28); /* much weaker than a fill */
+    --nv-scr-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 3px rgba(0, 0, 0, 0.5);
+    --nv-scr-radius: 8px;
 
-  /* motion — unified with the shared system (decelerate, no bounce). */
-  --sb-ease: cubic-bezier(0.25, 1, 0.5, 1);
-  --sb-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+    /* motion — reference the shared Nv curves (value defined once in theme.css). */
+    --nv-scr-ease: var(--nv-ease-out-quart);
+    --nv-scr-ease-emphasized: var(--nv-ease-out-expo);
+
+    /* ── One-cycle aliases (ADR 0020 §5 S1) — old --sb-* → --nv-scr-*. ── */
+    --sb-bg: var(--nv-scr-bg);
+    --sb-bg-accent: var(--nv-scr-bg-accent);
+    --sb-panel-a: var(--nv-scr-panel-a);
+    --sb-panel-b: var(--nv-scr-panel-b);
+    --sb-line: var(--nv-scr-line);
+    --sb-line-2: var(--nv-scr-line-2);
+    --sb-divider: var(--nv-scr-divider);
+    --sb-cyan: var(--nv-scr-cyan);
+    --sb-cyan-dim: var(--nv-scr-cyan-dim);
+    --sb-accent-from: var(--nv-scr-accent-from);
+    --sb-accent-to: var(--nv-scr-accent-to);
+    --sb-accent-fill: var(--nv-scr-accent-fill);
+    --sb-accent-edge: var(--nv-scr-accent-edge);
+    --sb-indigo: var(--nv-scr-indigo);
+    --sb-green: var(--nv-scr-green);
+    --sb-amber: var(--nv-scr-amber);
+    --sb-red: var(--nv-scr-red);
+    --sb-text: var(--nv-scr-text);
+    --sb-text-2: var(--nv-scr-text-2);
+    --sb-muted: var(--nv-scr-muted);
+    --sb-faint: var(--nv-scr-faint);
+    --sb-highlight: var(--nv-scr-highlight);
+    --sb-edge-gradient: var(--nv-scr-edge-gradient);
+    --sb-value-glow: var(--nv-scr-value-glow);
+    --sb-edge-glow: var(--nv-scr-edge-glow);
+    --sb-glow: var(--nv-scr-glow);
+    --sb-sheen: var(--nv-scr-sheen);
+    --sb-radius: var(--nv-scr-radius);
+    --sb-ease: var(--nv-scr-ease);
+    --sb-ease-emphasized: var(--nv-scr-ease-emphasized);
+  }
 }
 
 /* Thin custom scrollbar for screen scroll containers — hidden until hover.
-   Add `sb-scroll` to any overflow container in the screen layer. */
-.sb-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-.sb-scroll:hover,
-.sb-scroll:focus-within {
-  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
-}
-.sb-scroll::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.sb-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-.sb-scroll::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 99px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-  transition: background-color 0.2s var(--sb-ease);
-}
-.sb-scroll:hover::-webkit-scrollbar-thumb,
-.sb-scroll:focus-within::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.22);
-  background-clip: padding-box;
-}
-.sb-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.36);
-  background-clip: padding-box;
+   Add `nv-scr-scroll` to any overflow container in the screen layer. */
+@layer nv-components {
+  .nv-scr-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  .nv-scr-scroll:hover,
+  .nv-scr-scroll:focus-within {
+    scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
+  }
+  .nv-scr-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .nv-scr-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .nv-scr-scroll::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 99px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    transition: background-color 0.2s var(--nv-scr-ease);
+  }
+  .nv-scr-scroll:hover::-webkit-scrollbar-thumb,
+  .nv-scr-scroll:focus-within::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.22);
+    background-clip: padding-box;
+  }
+  .nv-scr-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.36);
+    background-clip: padding-box;
+  }
 }

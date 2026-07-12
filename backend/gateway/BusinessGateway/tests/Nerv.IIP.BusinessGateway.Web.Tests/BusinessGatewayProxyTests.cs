@@ -8,11 +8,15 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.FileStorage;
+using Nerv.IIP.Contracts.Iam;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.ServiceAuth;
@@ -444,6 +448,122 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Inventory_expiry_alerts_forwards_query_context_with_internal_service_token()
+    {
+        var inventory = new RecordingInventoryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/inventory/expiry-alerts?organizationId=org-001&environmentId=env-dev&siteCode=S1&skuCode=SKU-001&asOfDate=2026-07-08&nearExpiryThresholdDays=30&includeZeroAvailable=true");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", inventory.LastInternalToken);
+        Assert.Equal(1, inventory.ExpiryAlertsCallCount);
+        Assert.Equal("S1", inventory.LastExpiryAlertsRequest!.SiteCode);
+        Assert.Equal("SKU-001", inventory.LastExpiryAlertsRequest.SkuCode);
+        Assert.Equal(new DateOnly(2026, 7, 8), inventory.LastExpiryAlertsRequest.AsOfDate);
+        Assert.Equal(30, inventory.LastExpiryAlertsRequest.NearExpiryThresholdDays);
+        Assert.True(inventory.LastExpiryAlertsRequest.IncludeZeroAvailable);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var items = document.RootElement.GetProperty("data").GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal("SKU-001", Assert.Single(items).GetProperty("skuCode").GetString());
+    }
+
+    [Fact]
+    public async Task Inventory_movement_override_permission_is_forwarded_only_after_gateway_authorization()
+    {
+        var inventory = new RecordingInventoryClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(
+            BusinessGatewayPermissions.InventoryMovementsCreate,
+            BusinessGatewayPermissions.InventoryExpiredStockOverride);
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/inventory/movements", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            movementType = "outbound",
+            sourceService = "business-console",
+            sourceDocumentId = "OUT-EXPIRED",
+            sourceDocumentLineId = "LINE-001",
+            idempotencyKey = "idem-expired-override",
+            skuCode = "SKU-001",
+            uomCode = "EA",
+            siteCode = "S1",
+            locationCode = "L1",
+            lotNo = "LOT-001",
+            serialNo = (string?)null,
+            qualityStatus = "qualified",
+            ownerType = "company",
+            ownerId = "owner-001",
+            quantity = -1m,
+            allowExpiredStock = true,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.InventoryMovementsCreate);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.InventoryExpiredStockOverride);
+        Assert.Equal("internal-test-token", inventory.LastInternalToken);
+        Assert.Contains(BusinessGatewayPermissions.InventoryExpiredStockOverride, inventory.LastForwardedPermissions);
+    }
+
+    [Fact]
+    public async Task Inventory_movement_override_permission_is_not_forwarded_when_gateway_authorization_denies_override()
+    {
+        var inventory = new RecordingInventoryClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.InventoryMovementsCreate);
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/inventory/movements", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            movementType = "outbound",
+            sourceService = "business-console",
+            sourceDocumentId = "OUT-EXPIRED",
+            sourceDocumentLineId = "LINE-001",
+            idempotencyKey = "idem-expired-override",
+            skuCode = "SKU-001",
+            uomCode = "EA",
+            siteCode = "S1",
+            locationCode = "L1",
+            lotNo = "LOT-001",
+            serialNo = (string?)null,
+            qualityStatus = "qualified",
+            ownerType = "company",
+            ownerId = "owner-001",
+            quantity = -1m,
+            allowExpiredStock = true,
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.DoesNotContain(BusinessGatewayPermissions.InventoryExpiredStockOverride, inventory.LastForwardedPermissions);
+    }
+
+    [Fact]
     public async Task Quality_ncr_list_uses_internal_service_token_for_downstream_business_service()
     {
         var quality = new RecordingQualityClient();
@@ -500,6 +620,93 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(["file-photo-001"], quality.LastOpenNcrFromInspectionRequest.AttachmentFileIds);
         using var document = JsonDocument.Parse(await openNcr.Content.ReadAsStringAsync());
         Assert.Equal("ncr-from-inspection-001", document.RootElement.GetProperty("data").GetProperty("ncrId").GetString());
+    }
+
+    [Fact]
+    public async Task Quality_spc_analysis_facades_use_internal_service_token_for_downstream_business_service()
+    {
+        var quality = new RecordingQualityClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var chart = await client.GetAsync("/api/business-console/v1/quality/spc/control-chart?organizationId=org-001&environmentId=env-dev&skuCode=SKU-RM-1000&characteristicCode=length&workCenterId=WC-MIX-01&subgroupSize=2&take=50");
+        var capability = await client.GetAsync("/api/business-console/v1/quality/spc/process-capability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-RM-1000&characteristicCode=length&workCenterId=WC-MIX-01&take=50");
+
+        Assert.Equal(HttpStatusCode.OK, chart.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, capability.StatusCode);
+        Assert.Equal("internal-test-token", quality.LastInternalToken);
+        Assert.Equal(new BusinessConsoleQualitySpcRequest("org-001", "env-dev", "SKU-RM-1000", "length", "WC-MIX-01", 2, 50), quality.LastSpcControlChartRequest);
+        Assert.Equal(new BusinessConsoleQualityProcessCapabilityRequest("org-001", "env-dev", "SKU-RM-1000", "length", "WC-MIX-01", 50), quality.LastProcessCapabilityRequest);
+
+        using var chartDocument = JsonDocument.Parse(await chart.Content.ReadAsStringAsync());
+        Assert.Equal("trend-increasing", chartDocument.RootElement.GetProperty("data").GetProperty("ruleViolations")[0].GetProperty("rule").GetString());
+
+        using var capabilityDocument = JsonDocument.Parse(await capability.Content.ReadAsStringAsync());
+        Assert.Equal(0.67m, capabilityDocument.RootElement.GetProperty("data").GetProperty("cp").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Quality_inspection_tasks_list_and_create_record_from_task_forward_context_and_internal_service_token()
+    {
+        var quality = new RecordingQualityClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var list = await client.GetAsync("/api/business-console/v1/quality/inspection-tasks?organizationId=org-001&environmentId=env-dev&status=pending&skuCode=SKU-RM-1000&skip=1&take=50");
+        var create = await client.PostAsJsonAsync("/api/business-console/v1/quality/inspection-tasks/inspection-task-001/inspection-record", new
+        {
+            inspectionTaskId = "ignored",
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            inspectorUserId = "inspector-007",
+            resultLines = new[]
+            {
+                new { characteristicCode = "DIM-1", observedValue = "10.2", result = "pass" },
+            },
+            dispositionReason = "within tolerance",
+            dispositionAttachmentFileIds = new[] { "file-cert-001" },
+        });
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        Assert.Equal("internal-test-token", quality.LastInternalToken);
+        Assert.Equal(1, quality.InspectionTaskListCallCount);
+        Assert.Equal(
+            new BusinessConsoleQualityInspectionTaskListRequest("org-001", "env-dev", "pending", "SKU-RM-1000", 1, 50),
+            quality.LastInspectionTaskListRequest);
+        Assert.Equal("inspection-task-001", quality.LastCreateInspectionRecordFromTaskTaskId);
+        Assert.Equal("inspection-task-001", quality.LastCreateInspectionRecordFromTaskRequest!.InspectionTaskId);
+        Assert.Equal("org-001", quality.LastCreateInspectionRecordFromTaskRequest.OrganizationId);
+        Assert.Equal("env-dev", quality.LastCreateInspectionRecordFromTaskRequest.EnvironmentId);
+        Assert.Equal("inspector-007", quality.LastCreateInspectionRecordFromTaskRequest.InspectorUserId);
+        Assert.Equal("within tolerance", quality.LastCreateInspectionRecordFromTaskRequest.DispositionReason);
+        Assert.Equal(["file-cert-001"], quality.LastCreateInspectionRecordFromTaskRequest.DispositionAttachmentFileIds);
+        var resultLine = Assert.Single(quality.LastCreateInspectionRecordFromTaskRequest.ResultLines!);
+        Assert.Equal("DIM-1", resultLine.CharacteristicCode);
+        Assert.Equal("10.2", resultLine.ObservedValue);
+        Assert.Equal("pass", resultLine.Result);
+
+        using var listDocument = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        var firstItem = listDocument.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("inspection-task-001", firstItem.GetProperty("inspectionTaskId").GetString());
+        Assert.Equal("pending", firstItem.GetProperty("status").GetString());
+        Assert.Equal(1, listDocument.RootElement.GetProperty("data").GetProperty("total").GetInt32());
+        using var createDocument = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+        Assert.Equal("inspection-from-task-001", createDocument.RootElement.GetProperty("data").GetProperty("inspectionRecordId").GetString());
     }
 
     [Fact]
@@ -577,7 +784,7 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", mes.LastInternalToken);
-        Assert.Equal(new BusinessConsoleMesListRequest(
+        Assert.Equal(new BusinessConsoleMesWorkOrderListRequest(
             "org-001",
             "env-dev",
             "released",
@@ -587,6 +794,78 @@ public sealed class BusinessGatewayProxyTests
             "DEV-FILTER",
             Skip: 5,
             Take: 15), mes.LastWorkOrderListRequest);
+    }
+
+    [Fact]
+    public async Task Mes_work_order_list_pushes_iam_workshop_data_scope_to_downstream_filters()
+    {
+        var mes = new RecordingMesClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            Resources =
+            [
+                new BusinessConsoleResourceItem("production-line", "LINE-A", "Line A", true, "v1", WorkshopCode: "WS-A"),
+                new BusinessConsoleResourceItem("production-line", "LINE-B", "Line B", true, "v1", WorkshopCode: "WS-B"),
+                new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1", LineCode: "LINE-A", WorkshopCode: "WS-A"),
+                new BusinessConsoleResourceItem("work-center", "WC-B", "Work center B", true, "v1", LineCode: "LINE-B", WorkshopCode: "WS-B"),
+                new BusinessConsoleResourceItem("device-asset", "DEV-A-CODE", "Device A", true, "v1", LineCode: "LINE-A", WorkCenterCode: "WC-A", DeviceAssetId: "DEV-A"),
+                new BusinessConsoleResourceItem("device-asset", "DEV-B-CODE", "Device B", true, "v1", LineCode: "LINE-B", WorkCenterCode: "WC-B", DeviceAssetId: "DEV-B"),
+            ],
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(new AuthorizationDataScope([], ["WS-A"], [])), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.WorkCenterIds);
+        Assert.Null(mes.LastWorkOrderListRequest.DeviceAssetIds);
+        Assert.DoesNotContain("WC-B", mes.LastWorkOrderListRequest.WorkCenterIds);
+    }
+
+    [Fact]
+    public async Task Mes_work_order_scope_reads_master_data_beyond_first_page()
+    {
+        var mes = new RecordingMesClient();
+        var firstPageLines = Enumerable.Range(0, 500)
+            .Select(index => new BusinessConsoleResourceItem("production-line", $"LINE-B-{index:000}", $"Line B {index}", true, "v1", WorkshopCode: "WS-B"));
+        var masterData = new RecordingMasterDataClient
+        {
+            Resources = firstPageLines
+                .Concat(
+                [
+                    new BusinessConsoleResourceItem("production-line", "LINE-A", "Line A", true, "v1", WorkshopCode: "WS-A"),
+                    new BusinessConsoleResourceItem("work-center", "WC-A", "Work center A", true, "v1", LineCode: "LINE-A"),
+                    new BusinessConsoleResourceItem("device-asset", "DEV-A-CODE", "Device A", true, "v1", WorkCenterCode: "WC-A", DeviceAssetId: "DEV-A"),
+                ])
+                .ToArray(),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(new AuthorizationDataScope([], ["WS-A"], [])), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("WC-A", mes.LastWorkOrderListRequest!.WorkCenterIds);
+        Assert.True(masterData.ListResourcesCallCount > 3);
     }
 
     [Fact]
@@ -759,6 +1038,167 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_work_order_hold_forwards_context_and_internal_service_token()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/work-orders/WO-001/hold?organizationId=org-001&environmentId=env-dev",
+            new { reason = "line-blocked", changedAtUtc = (DateTimeOffset?)null });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.Equal(1, mes.HoldWorkOrderCallCount);
+        Assert.NotNull(mes.LastHoldWorkOrderRequest);
+        Assert.Equal("WO-001", mes.LastHoldWorkOrderRequest!.WorkOrderId);
+        Assert.Equal("org-001", mes.LastHoldWorkOrderRequest.OrganizationId);
+        Assert.Equal("env-dev", mes.LastHoldWorkOrderRequest.EnvironmentId);
+        Assert.Equal("line-blocked", mes.LastHoldWorkOrderRequest.Reason);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.True(document.RootElement.GetProperty("data").GetProperty("accepted").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Mes_work_order_cancel_forwards_context_and_internal_service_token()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/work-orders/WO-002/cancel?organizationId=org-001&environmentId=env-dev",
+            new { reason = "order-scrapped", changedAtUtc = (DateTimeOffset?)null });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.Equal(1, mes.CancelWorkOrderCallCount);
+        Assert.NotNull(mes.LastCancelWorkOrderRequest);
+        Assert.Equal("WO-002", mes.LastCancelWorkOrderRequest!.WorkOrderId);
+        Assert.Equal("org-001", mes.LastCancelWorkOrderRequest.OrganizationId);
+        Assert.Equal("env-dev", mes.LastCancelWorkOrderRequest.EnvironmentId);
+        Assert.Equal("order-scrapped", mes.LastCancelWorkOrderRequest.Reason);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.True(document.RootElement.GetProperty("data").GetProperty("accepted").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Mes_quality_hold_force_release_injects_principal_actor_and_uses_internal_service_token()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/quality-holds/QH-001/force-release?organizationId=org-001&environmentId=env-dev",
+            // A caller-supplied actor must never be trusted; the gateway overrides it with the principal.
+            new { reason = "quality-override", actor = "supervisor-1", sourceService = "BusinessMes", releasedAtUtc = (DateTimeOffset?)null });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // Facade forwards the internal service token, never the caller bearer.
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.Equal(1, mes.ForceReleaseQualityHoldCallCount);
+        Assert.NotNull(mes.LastForceReleaseQualityHoldRequest);
+        Assert.Equal("QH-001", mes.LastForceReleaseQualityHoldRequest!.SourceDocumentId);
+        Assert.Equal("org-001", mes.LastForceReleaseQualityHoldRequest.OrganizationId);
+        Assert.Equal("env-dev", mes.LastForceReleaseQualityHoldRequest.EnvironmentId);
+        Assert.Equal("quality-override", mes.LastForceReleaseQualityHoldRequest.Reason);
+        // The releaser identity is bound to the authenticated principal; the request-body actor is ignored.
+        Assert.Equal("user-admin", mes.LastForceReleaseQualityHoldActor);
+        Assert.NotEqual("supervisor-1", mes.LastForceReleaseQualityHoldActor);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.True(document.RootElement.GetProperty("data").GetProperty("accepted").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Mes_production_report_reverse_forwards_context_and_maps_response()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/production-reports/PR-001/reverse?organizationId=org-001&environmentId=env-dev",
+            new { reason = "mis-report", reversedAtUtc = (DateTimeOffset?)null, idempotencyKey = "reverse-001" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.Equal(1, mes.ReverseProductionReportCallCount);
+        Assert.NotNull(mes.LastReverseProductionReportRequest);
+        Assert.Equal("PR-001", mes.LastReverseProductionReportRequest!.ReportNo);
+        Assert.Equal("org-001", mes.LastReverseProductionReportRequest.OrganizationId);
+        Assert.Equal("env-dev", mes.LastReverseProductionReportRequest.EnvironmentId);
+        Assert.Equal("mis-report", mes.LastReverseProductionReportRequest.Reason);
+        Assert.Equal("reverse-001", mes.LastReverseProductionReportRequest.IdempotencyKey);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("PR-REV-001", data.GetProperty("productionReportId").GetString());
+        Assert.Equal("PR-001", data.GetProperty("reportNo").GetString());
+        Assert.Equal("PR-ORIG-001", data.GetProperty("originalReportNo").GetString());
+    }
+
+    [Fact]
+    public async Task Mes_finished_goods_receipt_inventory_posting_retry_forwards_context_and_maps_response()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/mes/finished-goods-receipt-requests/FGR-001/inventory-posting/retry?organizationId=org-001&environmentId=env-dev",
+            new { idempotencyKey = "retry-001" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.Equal(1, mes.RetryFinishedGoodsReceiptInventoryPostingCallCount);
+        Assert.NotNull(mes.LastRetryFinishedGoodsReceiptInventoryPostingRequest);
+        Assert.Equal("FGR-001", mes.LastRetryFinishedGoodsReceiptInventoryPostingRequest!.RequestNo);
+        Assert.Equal("org-001", mes.LastRetryFinishedGoodsReceiptInventoryPostingRequest.OrganizationId);
+        Assert.Equal("env-dev", mes.LastRetryFinishedGoodsReceiptInventoryPostingRequest.EnvironmentId);
+        Assert.Equal("retry-001", mes.LastRetryFinishedGoodsReceiptInventoryPostingRequest.IdempotencyKey);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("FG-REQ-001", data.GetProperty("finishedGoodsReceiptRequestId").GetString());
+        Assert.Equal("FGR-001", data.GetProperty("requestNo").GetString());
+    }
+
+    [Fact]
     public async Task Engineering_production_version_resolve_uses_internal_service_token_for_downstream_business_service()
     {
         var engineering = new RecordingProductEngineeringClient();
@@ -807,6 +1247,136 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("EngineeringBom", data.GetProperty("bomKind").GetString());
         Assert.Equal("SKU-FG", data.GetProperty("root").GetProperty("itemCode").GetString());
         Assert.Equal(BusinessGatewayPermissions.EngineeringBomsRead, auth.LastRequirement!.PermissionCode);
+    }
+
+    [Fact]
+    public async Task Sop_file_download_grant_facade_uses_file_storage_client()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var files = new RecordingBusinessFileStorageClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessFileStorageClient>();
+            services.AddSingleton<IBusinessFileStorageClient>(files);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/files/file-sop-v2/download-grants", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", files.LastInternalToken);
+        Assert.Equal("file-sop-v2", files.LastFileId);
+        Assert.Equal(new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"), files.LastRequest);
+        Assert.Equal(BusinessGatewayPermissions.EngineeringDocumentsRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("engineering-sop-file", auth.LastRequirement.ResourceType);
+        Assert.Equal("file-sop-v2", auth.LastRequirement.ResourceId);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("/api/business-console/v1/files/download-grants/grant-sop-v2/content", document.RootElement.GetProperty("data").GetProperty("downloadUrl").GetString());
+    }
+
+    [Fact]
+    public async Task Sop_file_download_content_facade_streams_file_storage_content_with_grant_headers()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var files = new RecordingBusinessFileStorageClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessFileStorageClient>();
+            services.AddSingleton<IBusinessFileStorageClient>(files);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/business-console/v1/files/download-grants/grant-sop-v2/content");
+        request.Headers.Add("X-Organization-Id", "org-001");
+        request.Headers.Add("X-Environment-Id", "env-dev");
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/pdf", response.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("SOP PDF bytes", await response.Content.ReadAsStringAsync());
+        Assert.Equal("internal-test-token", files.LastContentInternalToken);
+        Assert.Equal("grant-sop-v2", files.LastDownloadGrantId);
+        Assert.Equal("org-001", files.LastDownloadHeaders["X-Organization-Id"]);
+        Assert.Equal("env-dev", files.LastDownloadHeaders["X-Environment-Id"]);
+        Assert.Equal(BusinessGatewayPermissions.EngineeringDocumentsRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("engineering-sop-download-grant", auth.LastRequirement.ResourceType);
+        Assert.Equal("grant-sop-v2", auth.LastRequirement.ResourceId);
+    }
+
+    [Fact]
+    public async Task Http_file_storage_client_rewrites_internal_download_content_url_to_business_gateway_route()
+    {
+        var handler = new RecordingHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Equal("/api/files/v1/files/file-sop-v2/download-grants", request.RequestUri!.PathAndQuery);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new DownloadGrantResponse(
+                    "file-sop-v2",
+                    DateTimeOffset.Parse("2026-07-07T08:00:00Z"),
+                    new TransferInstructions(
+                        "/api/files/v1/download-grants/grant-sop-v2/content",
+                        new Dictionary<string, string>
+                        {
+                            ["X-Organization-Id"] = "org-001",
+                            ["X-Environment-Id"] = "env-dev",
+                        }))),
+            };
+        });
+        var client = new HttpBusinessFileStorageClient(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://file-storage.local"),
+        });
+
+        var response = await client.CreateSopFileDownloadGrantAsync(
+            "internal-test-token",
+            "file-sop-v2",
+            new BusinessConsoleCreateSopFileDownloadGrantRequest("org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal("/api/business-console/v1/files/download-grants/grant-sop-v2/content", response.DownloadUrl);
+        Assert.Equal("org-001", response.DownloadHeaders["X-Organization-Id"]);
+        Assert.Equal("env-dev", response.DownloadHeaders["X-Environment-Id"]);
+    }
+
+    [Fact]
+    public async Task Mes_current_operation_sops_facade_uses_product_engineering_current_sop_query()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var engineering = new RecordingProductEngineeringClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessProductEngineeringClient>();
+            services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/mes/operation-sops/current?organizationId=org-001&environmentId=env-dev&operationCode=STD-MIX&workCenterCode=WC-MIX-01&routingCode=ROUTE-1000&routingRevision=A&asOfDate=2026-07-05");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", engineering.LastInternalToken);
+        Assert.Equal(
+            new BusinessConsoleCurrentSopDocumentsRequest("org-001", "env-dev", "STD-MIX", "WC-MIX-01", "ROUTE-1000", "A", DateOnly.Parse("2026-07-05")),
+            engineering.LastCurrentSopDocumentsRequest);
+        Assert.Equal(BusinessGatewayPermissions.MesOperationsRead, auth.LastRequirement!.PermissionCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = document.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("file-sop-v2", item.GetProperty("fileId").GetString());
+        Assert.Equal("B", item.GetProperty("revision").GetString());
     }
 
     [Fact]
@@ -939,6 +1509,69 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Planning_mps_facades_use_internal_service_token_for_downstream_business_service()
+    {
+        var planning = new RecordingPlanningClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var list = await client.GetAsync("/api/business-console/v1/planning/mps?organizationId=org-001&environmentId=env-dev&skuCode=SKU-FG-1000&status=Released");
+        var create = await client.PostAsJsonAsync("/api/business-console/v1/planning/mps", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skuCode = "SKU-FG-1000",
+            uomCode = "pcs",
+            siteCode = "SITE-01",
+            bucketDate = "2026-06-15",
+            quantity = 120m,
+        });
+        var update = await client.PutAsJsonAsync("/api/business-console/v1/planning/mps/mps-001", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skuCode = "SKU-FG-1000",
+            uomCode = "pcs",
+            siteCode = "SITE-01",
+            bucketDate = "2026-06-15",
+            quantity = 132m,
+        });
+        var review = await client.PostAsJsonAsync("/api/business-console/v1/planning/mps/mps-001/review?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reviewedBy = "planner.li",
+        });
+        var release = await client.PostAsJsonAsync("/api/business-console/v1/planning/mps/mps-001/release?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            releasedBy = "planning.manager",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, update.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, review.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, release.StatusCode);
+        Assert.Equal("internal-test-token", planning.LastInternalToken);
+        Assert.Equal(new BusinessConsoleMpsListRequest("org-001", "env-dev", "SKU-FG-1000", Status: "Released"), planning.LastMpsListRequest);
+        Assert.Equal("mps-001", planning.LastUpdateMpsId);
+        Assert.Equal(132m, planning.LastUpdateMpsRequest!.Quantity);
+        Assert.Equal("mps-001", planning.LastReviewMpsId);
+        Assert.Equal("planner.li", planning.LastReviewMpsRequest!.ReviewedBy);
+        Assert.Equal("mps-001", planning.LastReleaseMpsId);
+        Assert.Equal("planning.manager", planning.LastReleaseMpsRequest!.ReleasedBy);
+    }
+
+    [Fact]
     public async Task Planning_mrp_run_list_exposes_input_degradation_sources()
     {
         var planning = new RecordingPlanningClient();
@@ -959,6 +1592,142 @@ public sealed class BusinessGatewayProxyTests
         var item = document.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.True(item.GetProperty("hasInputDegradation").GetBoolean());
         Assert.Equal("scheduled-receipts", item.GetProperty("inputDegradationSources")[0].GetString());
+    }
+
+    [Fact]
+    public async Task Planning_suggestions_expose_net_requirement_explanation()
+    {
+        var planning = new RecordingPlanningClient
+        {
+            SuggestionsResponse = new BusinessConsolePlanningSuggestionListResponse([
+                new BusinessConsolePlanningSuggestionItem(
+                    "suggestion-001",
+                    "mrp-run-001",
+                    "planned-purchase",
+                    "SKU-RM-001",
+                    "pcs",
+                    "SITE-01",
+                    4m,
+                    new DateOnly(2026, 6, 1),
+                    "Open",
+                    "component-net-requirement",
+                    new BusinessConsoleNetRequirementExplanation(
+                        10m,
+                        8m,
+                        0m,
+                        8m,
+                        0m,
+                        2m,
+                        4m,
+                        4m,
+                        0m,
+                        1m,
+                        "sales",
+                        "10 - 8 + 0 + 2 - 0 = 4",
+                        [],
+                        ["scheduled-receipts"])),
+            ]),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/planning/suggestions?organizationId=org-001&environmentId=env-dev&status=Open");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", planning.LastInternalToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var explanation = document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("netRequirementExplanation");
+        Assert.Equal(10m, explanation.GetProperty("grossDemandQuantity").GetDecimal());
+        Assert.Equal(8m, explanation.GetProperty("onHandQuantity").GetDecimal());
+        Assert.Equal(4m, explanation.GetProperty("netRequirementQuantity").GetDecimal());
+        Assert.Equal("sales", explanation.GetProperty("primarySourceType").GetString());
+        Assert.Equal("10 - 8 + 0 + 2 - 0 = 4", explanation.GetProperty("formula").GetString());
+        Assert.Equal("scheduled-receipts", explanation.GetProperty("degradationSources")[0].GetString());
+    }
+
+    [Fact]
+    public async Task Planning_forecast_facade_uses_internal_service_token_for_downstream_business_service()
+    {
+        var planning = new RecordingPlanningClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var list = await client.GetAsync("/api/business-console/v1/planning/forecasts?organizationId=org-001&environmentId=env-dev&skuCode=SKU-FG-1000&siteCode=SITE-01");
+        var create = await client.PostAsJsonAsync("/api/business-console/v1/planning/forecasts", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            forecastReference = "FC-2026-06-SKU-FG-1000",
+            skuCode = "SKU-FG-1000",
+            uomCode = "pcs",
+            siteCode = "SITE-01",
+            periodStartDate = "2026-06-01",
+            periodEndDate = "2026-06-30",
+            quantity = 10m,
+            backwardConsumptionDays = 7,
+            forwardConsumptionDays = 3,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        Assert.Equal("internal-test-token", planning.LastInternalToken);
+        Assert.Equal(new BusinessConsoleForecastInputListRequest("org-001", "env-dev", "SKU-FG-1000", "SITE-01"), planning.LastForecastListRequest);
+        Assert.Equal("FC-2026-06-SKU-FG-1000", planning.LastCreateForecastRequest!.ForecastReference);
+        Assert.Equal(7, planning.LastCreateForecastRequest.BackwardConsumptionDays);
+    }
+
+    [Fact]
+    public async Task Planning_mrp_pegging_exposes_source_type_and_gross_demand()
+    {
+        var planning = new RecordingPlanningClient
+        {
+            PeggingResponse = new BusinessConsoleMrpPeggingListResponse([
+                new BusinessConsoleMrpPeggingItem(
+                    "suggestion-001",
+                    "demand",
+                    "SO-1001",
+                    "SKU-FG-001",
+                    "SKU-RM-001",
+                    10m,
+                    null,
+                    "MBOM-001:A",
+                    null,
+                    "sales",
+                    10m),
+            ]),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/planning/mrp-runs/mrp-run-001/pegging?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", planning.LastInternalToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = document.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("sales", item.GetProperty("sourceType").GetString());
+        Assert.Equal(10m, item.GetProperty("grossDemandQuantity").GetDecimal());
     }
 
     [Fact]
@@ -1014,6 +1783,71 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Erp_procurement_purchase_requisition_list_uses_internal_service_token_for_downstream_business_service()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/erp/procurement/purchase-requisitions?organizationId=org-001&environmentId=env-dev&status=Open&keyword=PR-001&skip=2&take=15");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "Open", "PR-001", 2, 15), erp.LastPurchaseRequisitionListRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("PR-001", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("requisitionNo").GetString());
+        Assert.Equal("suggestion-001", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("suggestionId").GetString());
+        Assert.Equal(1, document.RootElement.GetProperty("data").GetProperty("total").GetInt32());
+    }
+
+    [Fact]
+    public async Task Erp_procurement_purchase_requisition_convert_uses_internal_service_token_for_downstream_business_service()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order",
+            new BusinessConsoleConvertErpPurchaseRequisitionsRequest(
+                "org-001",
+                "env-dev",
+                ["PR-001", "PR-002"],
+                PurchaseOrderNo: "PO-REQ-001",
+                RfqSupplierCodes: ["SUP-001"],
+                IdempotencyKey: "idem-convert-001"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.NotNull(erp.LastConvertPurchaseRequisitionRequest);
+        Assert.Equal("org-001", erp.LastConvertPurchaseRequisitionRequest.OrganizationId);
+        Assert.Equal("env-dev", erp.LastConvertPurchaseRequisitionRequest.EnvironmentId);
+        Assert.Equal(["PR-001", "PR-002"], erp.LastConvertPurchaseRequisitionRequest.PurchaseRequisitionNos);
+        Assert.Equal("PO-REQ-001", erp.LastConvertPurchaseRequisitionRequest.PurchaseOrderNo);
+        Assert.Equal(["SUP-001"], erp.LastConvertPurchaseRequisitionRequest.RfqSupplierCodes);
+        Assert.Equal("idem-convert-001", erp.LastConvertPurchaseRequisitionRequest.IdempotencyKey);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("PurchaseOrderCreated", data.GetProperty("status").GetString());
+        Assert.Equal("PO-REQ-001", data.GetProperty("purchaseOrderNo").GetString());
+        Assert.Equal("SUP-001", data.GetProperty("supplierCode").GetString());
+    }
+
+    [Fact]
     public async Task Erp_sales_and_finance_facades_use_domain_specific_downstream_clients()
     {
         var erp = new RecordingErpClient();
@@ -1062,6 +1896,73 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "open", "SUP-001", 2, 15), erp.LastPayableListRequest);
         Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "open", "CUST-001", 3, 16), erp.LastReceivableListRequest);
         Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "pending", "production", 4, 17), erp.LastCostCandidateListRequest);
+    }
+
+    [Fact]
+    public async Task Erp_finance_close_read_models_use_internal_service_token_and_pass_period_scope()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var trialBalance = await client.GetAsync("/api/business-console/v1/erp/finance/trial-balance?organizationId=org-001&environmentId=env-dev&periodStartDate=2026-06-01&periodEndDate=2026-06-30");
+
+        Assert.Equal(HttpStatusCode.OK, trialBalance.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal(new BusinessConsoleErpPeriodRequest("org-001", "env-dev", DateOnly.Parse("2026-06-01"), DateOnly.Parse("2026-06-30")), erp.LastFinancePeriodRequest);
+        using var trialBalanceDocument = JsonDocument.Parse(await trialBalance.Content.ReadAsStringAsync());
+        Assert.True(trialBalanceDocument.RootElement.GetProperty("data").GetProperty("isBalanced").GetBoolean());
+        Assert.Equal("1401", trialBalanceDocument.RootElement.GetProperty("data").GetProperty("lines")[0].GetProperty("accountCode").GetString());
+
+        var checklist = await client.GetAsync("/api/business-console/v1/erp/finance/month-end-checklist?organizationId=org-001&environmentId=env-dev&periodStartDate=2026-06-01&periodEndDate=2026-06-30");
+
+        Assert.Equal(HttpStatusCode.OK, checklist.StatusCode);
+        Assert.Equal(new BusinessConsoleErpPeriodRequest("org-001", "env-dev", DateOnly.Parse("2026-06-01"), DateOnly.Parse("2026-06-30")), erp.LastFinancePeriodRequest);
+        using var checklistDocument = JsonDocument.Parse(await checklist.Content.ReadAsStringAsync());
+        Assert.Equal(25m, checklistDocument.RootElement.GetProperty("data").GetProperty("grIrLocalBalance").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Erp_finance_payment_and_receipt_lifecycle_writes_use_internal_service_token()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var approvePayment = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/payment-executions",
+            new BusinessConsoleApproveErpPaymentExecutionRequest("org-001", "env-dev", "AP-001", 40m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ap-approve-001"));
+        var executePayment = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/payment-executions/PE-001/execute",
+            new BusinessConsoleExecuteErpPaymentExecutionRequest("org-001", "env-dev", "BODY-PE", "u-finance"));
+        var registerReceipt = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/cash-receipts",
+            new BusinessConsoleRegisterErpCashReceiptRequest("org-001", "env-dev", "AR-001", 35m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ar-register-001"));
+        var matchReceipt = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/finance/cash-receipts/CR-001/match",
+            new BusinessConsoleMatchErpCashReceiptRequest("org-001", "env-dev", "BODY-CR"));
+
+        Assert.Equal(HttpStatusCode.OK, approvePayment.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, executePayment.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, registerReceipt.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, matchReceipt.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal("PE-001", erp.LastExecutePaymentExecutionRequest?.PaymentExecutionNo);
+        Assert.Equal("CR-001", erp.LastMatchCashReceiptRequest?.CashReceiptNo);
     }
 
     [Fact]
@@ -1534,6 +2435,122 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Device_control_command_facade_injects_principal_requester_and_uses_internal_service_token()
+    {
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/telemetry/device-control-commands", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-CNC-01",
+            commandType = "write-tag",
+            tagKey = "spindle.speed",
+            value = "120",
+            reason = "ramp spindle to setpoint",
+            idempotencyKey = "idem-device-control-001",
+            correlationId = "corr-device-control-001",
+            // A caller-supplied requester must never be trusted; the gateway overrides it with the principal.
+            requestedBy = "user:attacker-should-be-ignored",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // Facade forwards the internal service token, never the caller bearer.
+        Assert.Equal("internal-test-token", industrialTelemetry.LastInternalToken);
+        // The requester is bound to the authenticated principal; the caller-supplied value is ignored.
+        Assert.Equal("user-admin", industrialTelemetry.LastDeviceControlRequestedBy);
+        var forwarded = industrialTelemetry.LastDeviceControlRequest!;
+        Assert.Equal("org-001", forwarded.OrganizationId);
+        Assert.Equal("env-dev", forwarded.EnvironmentId);
+        Assert.Equal("DEV-CNC-01", forwarded.DeviceAssetId);
+        Assert.Equal("write-tag", forwarded.CommandType);
+        Assert.Equal("spindle.speed", forwarded.TagKey);
+        Assert.Equal("120", forwarded.Value);
+        Assert.Equal("ramp spindle to setpoint", forwarded.Reason);
+        Assert.Equal("idem-device-control-001", forwarded.IdempotencyKey);
+        Assert.Equal("corr-device-control-001", forwarded.CorrelationId);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("op-task-001", data.GetProperty("operationTaskId").GetString());
+        Assert.Equal("pending-approval", data.GetProperty("status").GetString());
+        Assert.Equal("user-admin", data.GetProperty("approval").GetProperty("requestedBy").GetString());
+    }
+
+    [Fact]
+    public async Task Device_control_command_result_facade_proxies_by_command_id_with_internal_service_token()
+    {
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/telemetry/device-control-commands/op-task-001?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", industrialTelemetry.LastInternalToken);
+        Assert.Equal("op-task-001", industrialTelemetry.LastDeviceControlCommandId);
+        Assert.Equal(new BusinessConsoleTelemetryDeviceControlCommandContextRequest("org-001", "env-dev", "DEV-CNC-01"), industrialTelemetry.LastDeviceControlContextRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("op-task-001", data.GetProperty("commandId").GetString());
+        Assert.Equal("DEV-CNC-01", data.GetProperty("deviceAssetId").GetString());
+        Assert.Equal("write-tag", data.GetProperty("commandType").GetString());
+        Assert.Equal("completed", data.GetProperty("status").GetString());
+        Assert.True(data.GetProperty("statusFromLiveOps").GetBoolean());
+        var attempt = Assert.Single(data.GetProperty("attempts").EnumerateArray());
+        Assert.Equal("ok", attempt.GetProperty("output").GetProperty("result").GetString());
+    }
+
+    [Fact]
+    public async Task Device_control_command_history_facade_forwards_filters_with_internal_service_token()
+    {
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/telemetry/device-control-commands?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01&status=approval-pending&skip=0&take=25");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", industrialTelemetry.LastInternalToken);
+        var forwarded = industrialTelemetry.LastDeviceControlListRequest!;
+        Assert.Equal("org-001", forwarded.OrganizationId);
+        Assert.Equal("env-dev", forwarded.EnvironmentId);
+        Assert.Equal("DEV-CNC-01", forwarded.DeviceAssetId);
+        Assert.Equal("approval-pending", forwarded.Status);
+        Assert.Equal(0, forwarded.Skip);
+        Assert.Equal(25, forwarded.Take);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(1, data.GetProperty("total").GetInt32());
+        var item = Assert.Single(data.GetProperty("items").EnumerateArray());
+        Assert.Equal("op-task-001", item.GetProperty("commandId").GetString());
+        Assert.Equal("DEV-CNC-01", item.GetProperty("deviceAssetId").GetString());
+    }
+
+    [Fact]
     public async Task Equipment_overview_normalizes_device_scope_and_rejects_empty_or_excessive_scope()
     {
         var industrialTelemetry = new RecordingIndustrialTelemetryClient
@@ -1737,8 +2754,8 @@ public sealed class BusinessGatewayProxyTests
         using var oeeDocument = JsonDocument.Parse(await oeeResponse.Content.ReadAsStringAsync());
         var oee = oeeDocument.RootElement.GetProperty("data");
         Assert.Equal(0.75m, oee.GetProperty("loadingRate").GetDecimal());
-        Assert.True(oee.GetProperty("performanceRateEstimated").GetBoolean());
-        Assert.True(oee.GetProperty("qualityRateEstimated").GetBoolean());
+        Assert.Equal(0.8m, oee.GetProperty("qualityRate").GetDecimal());
+        Assert.False(oee.GetProperty("isDegraded").GetBoolean());
     }
 
     [Fact]
@@ -1850,7 +2867,7 @@ public sealed class BusinessGatewayProxyTests
         await telemetry.GetRuntimeAvailabilityAsync("internal-token-001", request, CancellationToken.None);
         await telemetry.GetDeviceRuntimeAvailabilityAsync("internal-token-001", "DEV-OIL-01", request, CancellationToken.None);
         await telemetry.GetDeviceCurrentStateAsync("internal-token-001", "DEV-OIL-01", new BusinessConsoleEquipmentContextRequest("org-001", "env-dev"), CancellationToken.None);
-        await telemetry.ListActiveAlarmsAsync("internal-token-001", new BusinessConsoleEquipmentAlarmListRequest("org-001", "env-dev", null, "raised"), CancellationToken.None);
+        await telemetry.ListActiveAlarmsAsync("internal-token-001", new BusinessConsoleEquipmentAlarmListRequest("org-001", "env-dev", null, null), CancellationToken.None);
         await telemetry.ListAlarmRulesAsync("internal-token-001", new BusinessConsoleTelemetryAlarmRuleListRequest("org-001", "env-dev", "DEV-OIL-01", true), CancellationToken.None);
         await telemetry.CreateOrUpdateAlarmRuleAsync("internal-token-001", new BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest("org-001", "env-dev", "DEV-OIL-01", "RULE-001", "TEMP_HIGH", "warning", "temperature", ">=", 95m, "celsius", true), CancellationToken.None);
         await telemetry.QueryOeeAsync("internal-token-001", new BusinessConsoleTelemetryOeeRequest("org-001", "env-dev", "DEV-OIL-01", request.WindowStartUtc, request.WindowEndUtc), CancellationToken.None);
@@ -1864,7 +2881,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("/api/business/v1/iiot/devices/DEV-OIL-01/current-state", telemetryHandler.Requests[2].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev", telemetryHandler.Requests[2].RequestUri!.Query.TrimStart('?'));
         Assert.Equal("/api/business/v1/iiot/alarms", telemetryHandler.Requests[3].RequestUri!.AbsolutePath);
-        Assert.Equal("organizationId=org-001&environmentId=env-dev&status=raised&skip=0&take=100", telemetryHandler.Requests[3].RequestUri!.Query.TrimStart('?'));
+        Assert.Equal("organizationId=org-001&environmentId=env-dev&status=active&skip=0&take=100", telemetryHandler.Requests[3].RequestUri!.Query.TrimStart('?'));
         Assert.Equal("/api/business/v1/iiot/alarm-rules", telemetryHandler.Requests[4].RequestUri!.AbsolutePath);
         Assert.Equal("organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OIL-01&isEnabled=true&skip=0&take=100", telemetryHandler.Requests[4].RequestUri!.Query.TrimStart('?'));
         Assert.Equal(HttpMethod.Post, telemetryHandler.Requests[5].Method);
@@ -1906,7 +2923,7 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListWorkOrdersAsync(
             "internal-token-001",
-            new BusinessConsoleMaintenanceListRequest("org-001", "env-dev"),
+            new BusinessConsoleMaintenanceWorkOrderListRequest("org-001", "env-dev"),
             CancellationToken.None);
 
         var item = Assert.Single(response.Items);
@@ -1938,6 +2955,58 @@ public sealed class BusinessGatewayProxyTests
                     mttrMinutes = 35m,
                     mtbfRuntimeSource = "oee",
                     mtbfRuntimeHasSamples = true,
+                },
+            }),
+            "/api/business/v1/maintenance/inspection-measurements/trends" => JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    deviceAssetId = "DEV-PRESS-01",
+                    characteristicCode = "bearing-temperature",
+                    windowStartUtc = "2026-06-01T08:00:00Z",
+                    windowEndUtc = "2026-06-30T16:00:00Z",
+                    items = new[]
+                    {
+                        new
+                        {
+                            inspectionId = "inspection-001",
+                            planId = "plan-001",
+                            workOrderId = (string?)null,
+                            inspectedAtUtc = "2026-06-01T09:00:00Z",
+                            measuredValue = 65m,
+                            uomCode = "C",
+                            lowerSpecLimit = 0m,
+                            upperSpecLimit = 70m,
+                            isWithinSpec = true,
+                        },
+                    },
+                },
+            }),
+            "/api/business/v1/maintenance/reliability/summary" => JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    windowStartUtc = "2026-06-01T08:00:00Z",
+                    windowEndUtc = "2026-06-30T16:00:00Z",
+                    items = new[]
+                    {
+                        new
+                        {
+                            deviceAssetId = "DEV-PRESS-01",
+                            assignedTechnicianUserId = "worker-001",
+                            costCurrencyCode = "CNY",
+                            workOrderCount = 2,
+                            estimatedLaborMinutes = 120,
+                            actualLaborMinutes = 95,
+                            sparePartCostAmount = 130m,
+                            externalServiceCostAmount = 35m,
+                            totalCostAmount = 165m,
+                        },
+                    },
                 },
             }),
             "/api/business/v1/maintenance/inspections" => JsonResponse(HttpStatusCode.OK, new { data = new { inspectionId = "inspection-001" } }),
@@ -1992,6 +3061,26 @@ public sealed class BusinessGatewayProxyTests
                 DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
                 DateTimeOffset.Parse("2026-06-30T16:00:00Z", CultureInfo.InvariantCulture)),
             CancellationToken.None);
+        await client.QueryInspectionMeasurementTrendAsync(
+            "internal-token-001",
+            new BusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest(
+                "org-001",
+                "env-dev",
+                "DEV-PRESS-01",
+                "bearing-temperature",
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+                DateTimeOffset.Parse("2026-06-30T16:00:00Z", CultureInfo.InvariantCulture)),
+            CancellationToken.None);
+        await client.QueryReliabilitySummaryAsync(
+            "internal-token-001",
+            new BusinessConsoleQueryMaintenanceReliabilitySummaryRequest(
+                "org-001",
+                "env-dev",
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+                DateTimeOffset.Parse("2026-06-30T16:00:00Z", CultureInfo.InvariantCulture),
+                "DEV-PRESS-01",
+                "worker-001"),
+            CancellationToken.None);
         await client.RecordInspectionAsync(
             "internal-token-001",
             new BusinessConsoleRecordMaintenanceInspectionRequest(
@@ -2014,8 +3103,10 @@ public sealed class BusinessGatewayProxyTests
         AssertRequest(handler.Requests[2], HttpMethod.Post, "/api/business/v1/maintenance/plans");
         AssertRequest(handler.Requests[3], HttpMethod.Post, "/api/business/v1/maintenance/plans/generate-due");
         AssertRequest(handler.Requests[4], HttpMethod.Get, "/api/business/v1/maintenance/assets/DEV-PRESS-01/reliability?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-30T16%3A00%3A00.0000000%2B00%3A00");
-        AssertRequest(handler.Requests[5], HttpMethod.Post, "/api/business/v1/maintenance/inspections");
-        AssertRequest(handler.Requests[6], HttpMethod.Post, "/api/business/v1/maintenance/spare-parts");
+        AssertRequest(handler.Requests[5], HttpMethod.Get, "/api/business/v1/maintenance/inspection-measurements/trends?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-PRESS-01&characteristicCode=bearing-temperature&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-30T16%3A00%3A00.0000000%2B00%3A00");
+        AssertRequest(handler.Requests[6], HttpMethod.Get, "/api/business/v1/maintenance/reliability/summary?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-30T16%3A00%3A00.0000000%2B00%3A00&deviceAssetId=DEV-PRESS-01&technicianUserId=worker-001");
+        AssertRequest(handler.Requests[7], HttpMethod.Post, "/api/business/v1/maintenance/inspections");
+        AssertRequest(handler.Requests[8], HttpMethod.Post, "/api/business/v1/maintenance/spare-parts");
     }
 
     [Fact]
@@ -2090,6 +3181,48 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(0, planning.SuggestionListCallCount);
         Assert.Equal(0, erp.PurchaseOrderListCallCount);
         Assert.Equal(0, scheduling.ListCallCount);
+    }
+
+    [Fact]
+    public async Task Accept_planning_suggestion_returns_downstream_reference_to_business_console()
+    {
+        var planning = new RecordingPlanningClient
+        {
+            AcceptedSuggestionResponse = new BusinessConsoleAcceptedResponse(
+                true,
+                "BusinessMes",
+                "WorkOrder",
+                "WO-20260701-001"),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/planning/suggestions/SUG-001/accept", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            downstreamService = "BusinessMes",
+            downstreamDocumentType = "WorkOrder",
+            downstreamDocumentId = (string?)null,
+            idempotencyKey = "accept-SUG-001"
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", planning.LastInternalToken);
+        Assert.Equal("SUG-001", planning.LastAcceptedSuggestionId);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.True(data.GetProperty("accepted").GetBoolean());
+        Assert.Equal("BusinessMes", data.GetProperty("downstreamService").GetString());
+        Assert.Equal("WorkOrder", data.GetProperty("downstreamDocumentType").GetString());
+        Assert.Equal("WO-20260701-001", data.GetProperty("downstreamDocumentId").GetString());
     }
 
     [Fact]
@@ -2689,7 +3822,9 @@ public sealed class BusinessGatewayProxyTests
             code = 0,
         }));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://inventory.local") };
-        var client = new HttpBusinessInventoryClient(httpClient);
+        var client = new HttpBusinessInventoryClient(
+            httpClient,
+            Options.Create(new BusinessGatewayInventoryForwardedPermissionOptions()));
 
         var response = await client.GetAvailabilityAsync(
             "internal-token-001",
@@ -2701,6 +3836,137 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Equal("/api/inventory/v1/availability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-HTTP&uomCode=EA&siteCode=S1&qualityStatus=available&ownerType=owned", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Inventory_expiry_alerts_http_client_builds_downstream_expiry_alerts_query()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                items = new[]
+                {
+                    new
+                    {
+                        skuCode = "SKU-EXP",
+                        uomCode = "EA",
+                        siteCode = "S1",
+                        locationCode = "L1",
+                        lotNo = "LOT-1",
+                        serialNo = (string?)null,
+                        qualityStatus = "available",
+                        ownerType = "owned",
+                        ownerId = (string?)null,
+                        productionDate = (string?)null,
+                        expiryDate = "2026-07-20",
+                        daysUntilExpiry = 12,
+                        isExpired = false,
+                        isNearExpiry = true,
+                        onHandQuantity = 10,
+                        reservedQuantity = 2,
+                        availableQuantity = 8,
+                    },
+                },
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://inventory.local") };
+        var client = new HttpBusinessInventoryClient(
+            httpClient,
+            Options.Create(new BusinessGatewayInventoryForwardedPermissionOptions()));
+
+        var response = await client.ListExpiryAlertsAsync(
+            "internal-token-001",
+            new BusinessConsoleInventoryExpiryAlertsRequest("org-001", "env-dev", "S1", "SKU-EXP", null, new DateOnly(2026, 7, 8), 30, true),
+            CancellationToken.None);
+
+        var line = Assert.Single(response.Items);
+        Assert.Equal("SKU-EXP", line.SkuCode);
+        Assert.True(line.IsNearExpiry);
+        Assert.Equal(new DateOnly(2026, 7, 20), line.ExpiryDate);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal("/api/inventory/v1/expiry-alerts?organizationId=org-001&environmentId=env-dev&siteCode=S1&skuCode=SKU-EXP&asOfDate=2026-07-08&nearExpiryThresholdDays=30&includeZeroAvailable=true", request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Inventory_http_client_signs_forwarded_permissions_for_downstream_override()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                movementId = "movement-http-001",
+                onHandQuantity = 10,
+                availableQuantity = 8,
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://inventory.local") };
+        var client = new HttpBusinessInventoryClient(
+            httpClient,
+            Options.Create(new BusinessGatewayInventoryForwardedPermissionOptions
+            {
+                Issuer = "business-gateway",
+                SigningKey = "test-signing-key",
+            }));
+
+        await client.PostMovementAsync(
+            "internal-token-001",
+            new BusinessConsolePostStockMovementRequest(
+                "org-001",
+                "env-dev",
+                "issue",
+                "business-gateway-test",
+                "doc-001",
+                null,
+                "idem-inventory-001",
+                "SKU-HTTP",
+                "EA",
+                "S1",
+                "L1",
+                "LOT-1",
+                null,
+                "qualified",
+                "own",
+                null,
+                1,
+                AllowExpiredStock: true),
+            CancellationToken.None,
+            [BusinessGatewayPermissions.InventoryExpiredStockOverride]);
+
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("/api/inventory/v1/movements", request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+        var permissions = request.Headers.GetValues(InventoryForwardedPermissionHeaders.PermissionsHeaderName).Single();
+        var issuer = request.Headers.GetValues(InventoryForwardedPermissionHeaders.IssuerHeaderName).Single();
+        var organizationId = request.Headers.GetValues(InventoryForwardedPermissionHeaders.OrganizationHeaderName).Single();
+        var environmentId = request.Headers.GetValues(InventoryForwardedPermissionHeaders.EnvironmentHeaderName).Single();
+        var requestKey = request.Headers.GetValues(InventoryForwardedPermissionHeaders.RequestKeyHeaderName).Single();
+        var issuedAt = request.Headers.GetValues(InventoryForwardedPermissionHeaders.IssuedAtHeaderName).Single();
+        var signature = request.Headers.GetValues(InventoryForwardedPermissionHeaders.SignatureHeaderName).Single();
+        Assert.Equal(BusinessGatewayPermissions.InventoryExpiredStockOverride, permissions);
+        Assert.Equal("business-gateway", issuer);
+        Assert.Equal("org-001", organizationId);
+        Assert.Equal("env-dev", environmentId);
+        Assert.Equal("idem-inventory-001", requestKey);
+        Assert.True(long.TryParse(issuedAt, out var issuedAtUnixSeconds));
+        Assert.True(InventoryForwardedPermissionHeaders.VerifySignature(
+            "test-signing-key",
+            issuer,
+            permissions,
+            organizationId,
+            environmentId,
+            requestKey,
+            issuedAtUnixSeconds,
+            signature));
     }
 
     [Fact]
@@ -2817,6 +4083,14 @@ public sealed class BusinessGatewayProxyTests
             "internal-token-001",
             new BusinessConsoleReleaseEngineeringChangeRequest("org-001", "env-dev", "ECO-001", "Initial", "approval-001", new DateOnly(2026, 6, 1), [new BusinessConsoleAffectedVersionRequest("mbom", "MBOM-001:A", "MBOM-001:B")]),
             CancellationToken.None);
+        await client.CancelScheduledEngineeringChangeAsync(
+            "internal-token-001",
+            new BusinessConsoleCancelScheduledEngineeringChangeRequest("org-001", "env-dev", "ECO-001", "Operator cancel"),
+            CancellationToken.None);
+        await client.RescheduleEngineeringChangeAsync(
+            "internal-token-001",
+            new BusinessConsoleRescheduleEngineeringChangeRequest("org-001", "env-dev", "ECO-001", new DateOnly(2026, 6, 8), "Supplier delay"),
+            CancellationToken.None);
         await client.CreateProductionVersionAsync(
             "internal-token-001",
             new BusinessConsoleCreateProductionVersionRequest("org-001", "env-dev", "SKU-001", "MBOM-001:A", "RTG-001:A", new DateOnly(2026, 6, 1), null, 1, 100, 10, true),
@@ -2857,6 +4131,8 @@ public sealed class BusinessGatewayProxyTests
             request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/engineering-changes?organizationId=org-001&environmentId=env-dev&status=Published&skip=7&take=40"),
             request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/engineering-changes/ECO-001?organizationId=org-001&environmentId=env-dev"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/engineering-changes/release"),
+            request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/engineering-changes/cancel-scheduled"),
+            request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/engineering-changes/reschedule"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/production-versions"),
             request => AssertRequest(request, HttpMethod.Put, "/api/business/v1/engineering/production-versions/pv-001"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/production-versions/pv-001/archive"));
@@ -2878,6 +4154,8 @@ public sealed class BusinessGatewayProxyTests
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("RegisterEngineeringDocumentAsync", methodNames);
+        Assert.Contains("PublishSopDocumentAsync", methodNames);
+        Assert.Contains("GetCurrentSopDocumentsAsync", methodNames);
         Assert.Contains("ListEngineeringDocumentsAsync", methodNames);
         Assert.Contains("GetEngineeringDocumentAsync", methodNames);
         Assert.Contains("CreateEngineeringItemRevisionAsync", methodNames);
@@ -2904,6 +4182,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Contains("ListEngineeringChangesAsync", methodNames);
         Assert.Contains("GetEngineeringChangeAsync", methodNames);
         Assert.Contains("ReleaseEngineeringChangeAsync", methodNames);
+        Assert.Contains("CancelScheduledEngineeringChangeAsync", methodNames);
+        Assert.Contains("RescheduleEngineeringChangeAsync", methodNames);
         Assert.Contains("CreateProductionVersionAsync", methodNames);
         Assert.Contains("UpdateProductionVersionAsync", methodNames);
         Assert.Contains("ArchiveProductionVersionAsync", methodNames);
@@ -3141,6 +4421,137 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_http_client_maps_inspection_task_list_to_console_items()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                total = 1,
+                items = new[]
+                {
+                    new
+                    {
+                        inspectionTaskId = "inspection-task-001",
+                        inspectionPlanId = "inspection-plan-001",
+                        sourceType = "receiving",
+                        sourceService = "wms",
+                        sourceDocumentId = "GRN-001",
+                        sourceDocumentLineId = "GRN-001-1",
+                        skuCode = "SKU-RM-1000",
+                        quantity = 12,
+                        uomCode = "EA",
+                        batchNo = "LOT-001",
+                        serialNo = (string?)null,
+                        status = "pending",
+                        dueAtUtc = "2026-07-09T08:00:00Z",
+                        createdAtUtc = "2026-07-07T08:00:00Z",
+                        inspectionRecordId = (string?)null,
+                    },
+                },
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var response = await client.ListInspectionTasksAsync(
+            "internal-token-001",
+            new BusinessConsoleQualityInspectionTaskListRequest("org-001", "env-dev", "pending", "SKU-RM-1000", 1, 50),
+            CancellationToken.None);
+
+        Assert.Equal(1, response.Total);
+        var item = Assert.Single(response.Items);
+        Assert.Equal("inspection-task-001", item.InspectionTaskId);
+        Assert.Equal("inspection-plan-001", item.InspectionPlanId);
+        Assert.Equal("receiving", item.SourceType);
+        Assert.Equal("wms", item.SourceService);
+        Assert.Equal("GRN-001", item.SourceDocumentId);
+        Assert.Equal("GRN-001-1", item.SourceDocumentLineId);
+        Assert.Equal("SKU-RM-1000", item.SkuCode);
+        Assert.Equal(12m, item.Quantity);
+        Assert.Equal("EA", item.UomCode);
+        Assert.Equal("LOT-001", item.BatchNo);
+        Assert.Equal("pending", item.Status);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-09T08:00:00Z", CultureInfo.InvariantCulture), item.DueAtUtc);
+        Assert.Null(item.InspectionRecordId);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal("/api/business/v1/quality/inspection-tasks?organizationId=org-001&environmentId=env-dev&status=pending&skuCode=SKU-RM-1000&skip=1&take=50", request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Quality_http_client_maps_create_inspection_record_from_task_to_downstream_request_shape()
+    {
+        string? requestBody = null;
+        var handler = new RecordingHandler(request =>
+        {
+            requestBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    inspectionRecordId = "inspection-from-task-001",
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var response = await client.CreateInspectionRecordFromTaskAsync(
+            "internal-token-001",
+            "inspection-task-001",
+            new BusinessConsoleCreateInspectionRecordFromTaskRequest(
+                "inspection-task-001",
+                "org-001",
+                "env-dev",
+                "inspector-007",
+                [
+                    new BusinessConsoleInspectionCharacteristicResult(
+                        "DIM-1",
+                        "10.2",
+                        "mm",
+                        "pass",
+                        null,
+                        null,
+                        ["file-line-001"]),
+                ],
+                "within tolerance",
+                ["file-cert-001"]),
+            CancellationToken.None);
+
+        Assert.Equal("inspection-from-task-001", response.InspectionRecordId);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("/api/business/v1/quality/inspection-tasks/inspection-task-001/inspection-record", request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+
+        Assert.NotNull(requestBody);
+        using var document = JsonDocument.Parse(requestBody);
+        var root = document.RootElement;
+        Assert.Equal("inspection-task-001", root.GetProperty("inspectionTaskId").GetString());
+        Assert.Equal("inspector-007", root.GetProperty("inspectorUserId").GetString());
+        Assert.Equal("within tolerance", root.GetProperty("dispositionReason").GetString());
+        Assert.Equal("file-cert-001", root.GetProperty("dispositionAttachmentFileIds")[0].GetString());
+        var line = root.GetProperty("resultLines")[0];
+        Assert.Equal("DIM-1", line.GetProperty("characteristicCode").GetString());
+        Assert.Equal("10.2", line.GetProperty("observedValue").GetString());
+        Assert.Equal("mm", line.GetProperty("unitCode").GetString());
+        Assert.Equal("pass", line.GetProperty("result").GetString());
+        Assert.Equal("file-line-001", line.GetProperty("attachmentFileIds")[0].GetString());
+
+        // Tenancy is derived from the loaded task aggregate downstream — org/env must NOT leak into the body.
+        Assert.False(root.TryGetProperty("organizationId", out _));
+        Assert.False(root.TryGetProperty("environmentId", out _));
+    }
+
+    [Fact]
     public async Task Quality_http_client_forwards_measurements_and_stock_release_dimensions()
     {
         string? requestBody = null;
@@ -3274,7 +4685,7 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.ListWorkOrdersAsync(
             "internal-token-001",
-            new BusinessConsoleMesListRequest(
+            new BusinessConsoleMesWorkOrderListRequest(
                 "org-001",
                 "env-dev",
                 "released",
@@ -4223,6 +5634,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessConsoleMasterDataResourceRequest? LastDetailRequest { get; private set; }
 
+    public List<BusinessConsoleMasterDataResourceRequest> DetailRequests { get; } = [];
+
     public BusinessConsoleUpdateMasterDataResourceRequest? LastUpdateRequest { get; private set; }
 
     public BusinessConsoleSetMasterDataResourceEnabledRequest? LastSetEnabledRequest { get; private set; }
@@ -4281,6 +5694,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessServiceProxyException? Failure { get; init; }
 
+    public BusinessServiceProxyException? DetailFailure { get; init; }
+
     public Task<BusinessConsoleResourceListResponse> ListResourcesAsync(
         string internalBearerToken,
         BusinessConsoleListResourcesRequest request,
@@ -4315,6 +5730,12 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     {
         LastInternalToken = internalBearerToken;
         LastDetailRequest = request;
+        DetailRequests.Add(request);
+        if (DetailFailure is not null)
+        {
+            throw DetailFailure;
+        }
+
         return Task.FromResult(ResourceDetail(request.ResourceType, request.Code, request.CodeSet, true));
     }
 
@@ -4697,8 +6118,25 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         string code,
         string? codeSet,
         bool active,
-        string? displayName = null) =>
-        new(
+        string? displayName = null)
+    {
+        if (string.Equals(resourceType, "device-asset", StringComparison.OrdinalIgnoreCase))
+        {
+            return new BusinessConsoleMasterDataResourceDetail(
+                resourceType,
+                code,
+                displayName ?? code,
+                active,
+                "v1",
+                "org-001",
+                "env-dev",
+                displayName ?? code,
+                WarrantyExpiresOn: new DateOnly(2027, 1, 14),
+                SupplierPartnerCode: "SUP-ACME",
+                Status: active ? "active" : "disabled");
+        }
+
+        return new(
             resourceType,
             code,
             displayName ?? code,
@@ -4709,6 +6147,7 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             displayName ?? code,
             CodeSet: codeSet,
             Status: active ? "active" : "disabled");
+    }
 }
 
 internal sealed class RecordingInventoryClient : IBusinessInventoryClient
@@ -4718,6 +6157,12 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
     public string? LastInternalToken { get; private set; }
 
     public BusinessConsoleInventoryAvailabilityRequest? LastAvailabilityRequest { get; private set; }
+
+    public int ExpiryAlertsCallCount { get; private set; }
+
+    public BusinessConsoleInventoryExpiryAlertsRequest? LastExpiryAlertsRequest { get; private set; }
+
+    public IReadOnlyCollection<string> LastForwardedPermissions { get; private set; } = [];
 
     public Exception? AvailabilityFailure { get; init; }
 
@@ -4752,11 +6197,47 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
             []));
     }
 
+    public Task<BusinessConsoleInventoryExpiryAlertsResponse> ListExpiryAlertsAsync(
+        string internalBearerToken,
+        BusinessConsoleInventoryExpiryAlertsRequest request,
+        CancellationToken cancellationToken)
+    {
+        ExpiryAlertsCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastExpiryAlertsRequest = request;
+        return Task.FromResult(new BusinessConsoleInventoryExpiryAlertsResponse(
+        [
+            new BusinessConsoleInventoryExpiryAlertLineResponse(
+                request.SkuCode ?? "SKU-EXP",
+                "EA",
+                request.SiteCode,
+                request.LocationCode ?? "L1",
+                "LOT-1",
+                null,
+                "available",
+                "owned",
+                null,
+                null,
+                new DateOnly(2026, 7, 20),
+                12,
+                false,
+                true,
+                10,
+                2,
+                8),
+        ]));
+    }
+
     public Task<BusinessConsolePostStockMovementResponse> PostMovementAsync(
         string internalBearerToken,
         BusinessConsolePostStockMovementRequest request,
-        CancellationToken cancellationToken) =>
-        Task.FromResult(new BusinessConsolePostStockMovementResponse("move-001", 10, 8));
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? forwardedPermissions = null)
+    {
+        LastInternalToken = internalBearerToken;
+        LastForwardedPermissions = forwardedPermissions ?? [];
+        return Task.FromResult(new BusinessConsolePostStockMovementResponse("move-001", 10, 8));
+    }
 
     public Task<BusinessConsoleCreateStockCountTaskResponse> CreateCountTaskAsync(
         string internalBearerToken,
@@ -4769,7 +6250,7 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
         string countTaskId,
         BusinessConsoleConfirmStockCountAdjustmentRequest request,
         CancellationToken cancellationToken) =>
-        Task.FromResult(new BusinessConsoleConfirmStockCountAdjustmentResponse("move-001", 1, 11));
+        Task.FromResult(new BusinessConsoleConfirmStockCountAdjustmentResponse("move-001", 1, 11, "posted", null));
 }
 
 internal sealed class RecordingQualityClient : IBusinessQualityClient
@@ -4782,9 +6263,21 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public BusinessConsoleQualityListRequest? LastInspectionRecordListRequest { get; private set; }
 
+    public BusinessConsoleQualitySpcRequest? LastSpcControlChartRequest { get; private set; }
+
+    public BusinessConsoleQualityProcessCapabilityRequest? LastProcessCapabilityRequest { get; private set; }
+
     public string? LastOpenNcrInspectionRecordId { get; private set; }
 
     public BusinessConsoleOpenNcrFromInspectionRequest? LastOpenNcrFromInspectionRequest { get; private set; }
+
+    public int InspectionTaskListCallCount { get; private set; }
+
+    public BusinessConsoleQualityInspectionTaskListRequest? LastInspectionTaskListRequest { get; private set; }
+
+    public string? LastCreateInspectionRecordFromTaskTaskId { get; private set; }
+
+    public BusinessConsoleCreateInspectionRecordFromTaskRequest? LastCreateInspectionRecordFromTaskRequest { get; private set; }
 
     public BusinessConsoleQualityReasonListRequest? LastQualityReasonListRequest { get; private set; }
 
@@ -4851,6 +6344,48 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         return Task.FromResult(new BusinessConsoleOpenNcrFromInspectionResponse("ncr-from-inspection-001"));
     }
 
+    public Task<BusinessConsoleQualityInspectionTaskListResponse> ListInspectionTasksAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityInspectionTaskListRequest request,
+        CancellationToken cancellationToken)
+    {
+        InspectionTaskListCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastInspectionTaskListRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityInspectionTaskListResponse(
+            [
+                new BusinessConsoleQualityInspectionTaskItem(
+                    "inspection-task-001",
+                    "inspection-plan-001",
+                    "receiving",
+                    "wms",
+                    "GRN-001",
+                    "GRN-001-1",
+                    "SKU-RM-1000",
+                    12m,
+                    "EA",
+                    "LOT-001",
+                    null,
+                    "pending",
+                    DateTimeOffset.Parse("2026-07-09T08:00:00Z"),
+                    DateTimeOffset.Parse("2026-07-07T08:00:00Z"),
+                    null),
+            ],
+            1));
+    }
+
+    public Task<BusinessConsoleCreateInspectionRecordResponse> CreateInspectionRecordFromTaskAsync(
+        string internalBearerToken,
+        string inspectionTaskId,
+        BusinessConsoleCreateInspectionRecordFromTaskRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateInspectionRecordFromTaskTaskId = inspectionTaskId;
+        LastCreateInspectionRecordFromTaskRequest = request;
+        return Task.FromResult(new BusinessConsoleCreateInspectionRecordResponse("inspection-from-task-001"));
+    }
+
     public Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,
@@ -4879,6 +6414,54 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
                     null),
             ],
             NcrTotal ?? 1));
+    }
+
+    public Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(
+        string internalBearerToken,
+        BusinessConsoleQualitySpcRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastSpcControlChartRequest = request;
+        return Task.FromResult(new BusinessConsoleQualitySpcControlChartResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SkuCode,
+            request.CharacteristicCode,
+            request.WorkCenterId,
+            request.SubgroupSize,
+            [
+                new BusinessConsoleQualitySpcMeasurementPoint("inspection-001", "WO-001", DateTimeOffset.Parse("2026-07-07T08:00:00Z"), 10.1m, "mm"),
+            ],
+            [
+                new BusinessConsoleQualitySpcSubgroup(1, DateTimeOffset.Parse("2026-07-07T08:00:00Z"), DateTimeOffset.Parse("2026-07-07T08:01:00Z"), 10.2m, 0.2m),
+            ],
+            new BusinessConsoleQualitySpcControlLimits(10m, 0.2m, 10.4m, 9.6m, 0.6m, 0m, false, DateTimeOffset.Parse("2026-07-07T08:02:00Z")),
+            [
+                new BusinessConsoleQualitySpcRuleViolation("trend-increasing", 1, 6, "Six consecutive subgroup means are increasing."),
+            ]));
+    }
+
+    public Task<BusinessConsoleQualityProcessCapabilityResponse> QueryProcessCapabilityAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityProcessCapabilityRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastProcessCapabilityRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityProcessCapabilityResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SkuCode,
+            request.CharacteristicCode,
+            request.WorkCenterId,
+            3,
+            10m,
+            1m,
+            8m,
+            12m,
+            0.67m,
+            0.67m));
     }
 
     public Task<BusinessConsoleQualityReasonListResponse> ListQualityReasonsAsync(
@@ -4958,6 +6541,51 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         new(reasonCode, reasonName, groupName, severity, defaultDisposition, enabled, "v1");
 }
 
+internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageClient
+{
+    public string? LastInternalToken { get; private set; }
+
+    public string? LastFileId { get; private set; }
+
+    public BusinessConsoleCreateSopFileDownloadGrantRequest? LastRequest { get; private set; }
+
+    public string? LastContentInternalToken { get; private set; }
+
+    public string? LastDownloadGrantId { get; private set; }
+
+    public IReadOnlyDictionary<string, string> LastDownloadHeaders { get; private set; } = new Dictionary<string, string>();
+
+    public Task<BusinessConsoleSopFileDownloadGrantResponse> CreateSopFileDownloadGrantAsync(
+        string internalBearerToken,
+        string fileId,
+        BusinessConsoleCreateSopFileDownloadGrantRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastFileId = fileId;
+        LastRequest = request;
+        return Task.FromResult(new BusinessConsoleSopFileDownloadGrantResponse(
+            fileId,
+            DateTimeOffset.Parse("2026-07-07T08:00:00Z"),
+            "/api/business-console/v1/files/download-grants/grant-sop-v2/content",
+            new Dictionary<string, string>()));
+    }
+
+    public Task<BusinessConsoleSopFileContentResponse> DownloadSopFileContentAsync(
+        string internalBearerToken,
+        string downloadGrantId,
+        IReadOnlyDictionary<string, string> downloadHeaders,
+        CancellationToken cancellationToken)
+    {
+        LastContentInternalToken = internalBearerToken;
+        LastDownloadGrantId = downloadGrantId;
+        LastDownloadHeaders = downloadHeaders;
+        return Task.FromResult(new BusinessConsoleSopFileContentResponse(
+            "application/pdf",
+            "SOP PDF bytes".Length,
+            "SOP PDF bytes"u8.ToArray()));
+    }
+}
 internal sealed class RecordingProductEngineeringClient : IBusinessProductEngineeringClient
 {
     public int ProductionVersionListCallCount { get; private set; }
@@ -4974,6 +6602,8 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
 
     public BusinessConsoleBomWhereUsedRequest? LastBomWhereUsedRequest { get; private set; }
 
+    public BusinessConsoleBomDiffRequest? LastBomDiffRequest { get; private set; }
+
     public BusinessConsoleListProductionVersionsRequest? LastProductionVersionListRequest { get; private set; }
 
     public BusinessConsoleReleaseManufacturingBomRequest? LastReleaseManufacturingBomRequest { get; private set; }
@@ -4984,6 +6614,12 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
 
     public BusinessConsoleArchiveStandardOperationRequest? LastArchiveStandardOperationRequest { get; private set; }
 
+    public BusinessConsoleEngineeringChangeImpactPreviewRequest? LastImpactPreviewRequest { get; private set; }
+
+    public BusinessConsolePublishSopDocumentRequest? LastPublishSopDocumentRequest { get; private set; }
+
+    public BusinessConsoleCurrentSopDocumentsRequest? LastCurrentSopDocumentsRequest { get; private set; }
+
     public Task<BusinessConsoleEngineeringEntityResponse> RegisterEngineeringDocumentAsync(
         string internalBearerToken,
         BusinessConsoleRegisterEngineeringDocumentRequest request,
@@ -4992,6 +6628,41 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         WriteCallCount++;
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.DocumentNumber ?? "DOC-001"));
+    }
+
+    public Task<BusinessConsoleEngineeringEntityResponse> PublishSopDocumentAsync(
+        string internalBearerToken,
+        BusinessConsolePublishSopDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        WriteCallCount++;
+        LastInternalToken = internalBearerToken;
+        LastPublishSopDocumentRequest = request;
+        return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.DocumentNumber ?? "SOP-001"));
+    }
+
+    public Task<BusinessConsoleCurrentSopDocumentsResponse> GetCurrentSopDocumentsAsync(
+        string internalBearerToken,
+        BusinessConsoleCurrentSopDocumentsRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCurrentSopDocumentsRequest = request;
+        return Task.FromResult(new BusinessConsoleCurrentSopDocumentsResponse(
+        [
+            new BusinessConsoleCurrentSopDocumentItem(
+                "SOP-001",
+                "B",
+                request.OperationCode,
+                request.WorkCenterCode,
+                request.RoutingCode,
+                request.RoutingRevision,
+                request.AsOfDate ?? new DateOnly(2026, 7, 1),
+                "file-sop-v2",
+                "mixing-v2.pdf",
+                "application/pdf",
+                "Published")
+        ]));
     }
 
     public Task<BusinessConsoleEngineeringDocumentListResponse> ListEngineeringDocumentsAsync(
@@ -5107,6 +6778,22 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         LastInternalToken = internalBearerToken;
         LastBomWhereUsedRequest = request;
         return Task.FromResult(new BusinessConsoleBomWhereUsedResponse(request.ComponentCode, []));
+    }
+
+    public Task<BusinessConsoleBomDiffResponse> GetBomDiffAsync(
+        string internalBearerToken,
+        BusinessConsoleBomDiffRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastBomDiffRequest = request;
+        return Task.FromResult(new BusinessConsoleBomDiffResponse(
+            request.BomKind,
+            $"{request.FromBomCode}:{request.FromRevision}",
+            $"{request.ToBomCode}:{request.ToRevision}",
+            "SKU-FG-001",
+            [],
+            new BusinessConsoleBomDiffSummary(0, 0, 0, 0)));
     }
 
     public Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
@@ -5283,6 +6970,36 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.ChangeNumber ?? "ECO-001"));
     }
 
+    public Task<BusinessConsoleEngineeringEntityResponse> CancelScheduledEngineeringChangeAsync(
+        string internalBearerToken,
+        BusinessConsoleCancelScheduledEngineeringChangeRequest request,
+        CancellationToken cancellationToken)
+    {
+        WriteCallCount++;
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.ChangeNumber));
+    }
+
+    public Task<BusinessConsoleEngineeringEntityResponse> RescheduleEngineeringChangeAsync(
+        string internalBearerToken,
+        BusinessConsoleRescheduleEngineeringChangeRequest request,
+        CancellationToken cancellationToken)
+    {
+        WriteCallCount++;
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.ChangeNumber));
+    }
+
+    public Task<BusinessConsoleEngineeringChangeImpactPreviewResponse> PreviewEngineeringChangeImpactAsync(
+        string internalBearerToken,
+        BusinessConsoleEngineeringChangeImpactPreviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastImpactPreviewRequest = request;
+        return Task.FromResult(new BusinessConsoleEngineeringChangeImpactPreviewResponse(request.EffectiveDate, [], []));
+    }
+
     public Task<BusinessConsoleEngineeringChangeListResponse> ListEngineeringChangesAsync(
         string internalBearerToken,
         BusinessConsoleListEngineeringChangesRequest request,
@@ -5390,9 +7107,143 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
 
     public BusinessConsoleRunMrpRequest? LastRunMrpRequest { get; private set; }
 
+    public BusinessConsoleMpsListRequest? LastMpsListRequest { get; private set; }
+
+    public BusinessConsoleCreateMpsBucketRequest? LastCreateMpsRequest { get; private set; }
+
+    public string? LastUpdateMpsId { get; private set; }
+
+    public BusinessConsoleUpdateMpsBucketRequest? LastUpdateMpsRequest { get; private set; }
+
+    public string? LastReviewMpsId { get; private set; }
+
+    public BusinessConsoleReviewMpsBucketRequest? LastReviewMpsRequest { get; private set; }
+
+    public string? LastReleaseMpsId { get; private set; }
+
+    public BusinessConsoleReleaseMpsBucketRequest? LastReleaseMpsRequest { get; private set; }
+
     public string? LastCancelledDemandSourceId { get; private set; }
 
+    public string? LastAcceptedSuggestionId { get; private set; }
+
     public BusinessConsolePlanningDemandCancelRequest? LastCancelDemandRequest { get; private set; }
+
+    public BusinessConsoleForecastInputListRequest? LastForecastListRequest { get; private set; }
+
+    public BusinessConsoleCreateOrUpdateForecastInputRequest? LastCreateForecastRequest { get; private set; }
+
+    public BusinessConsoleAcceptedResponse AcceptedSuggestionResponse { get; init; } =
+        new(true, "BusinessMes", "WorkOrder", "WO-001");
+
+    public BusinessConsoleMrpPeggingListResponse PeggingResponse { get; init; } =
+        new([]);
+
+    public BusinessConsolePlanningSuggestionListResponse SuggestionsResponse { get; init; } =
+        new([]);
+
+    public Task<BusinessConsoleMpsBucketListResponse> ListMpsBucketsAsync(
+        string internalBearerToken,
+        BusinessConsoleMpsListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastMpsListRequest = request;
+        return Task.FromResult(new BusinessConsoleMpsBucketListResponse([
+            new BusinessConsoleMpsBucketItem(
+                "mps-001",
+                "SKU-FG-1000",
+                "pcs",
+                "SITE-01",
+                new DateOnly(2026, 6, 15),
+                120m,
+                "Released",
+                "planner.li",
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+                "planning.manager",
+                DateTimeOffset.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture)),
+        ]));
+    }
+
+    public Task<BusinessConsoleMpsBucketItem> CreateMpsBucketAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMpsBucketRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateMpsRequest = request;
+        return Task.FromResult(new BusinessConsoleMpsBucketItem(
+            "mps-created",
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.BucketDate,
+            request.Quantity,
+            "Draft"));
+    }
+
+    public Task<BusinessConsoleMpsBucketItem> UpdateMpsBucketAsync(
+        string internalBearerToken,
+        string mpsId,
+        BusinessConsoleUpdateMpsBucketRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastUpdateMpsId = mpsId;
+        LastUpdateMpsRequest = request;
+        return Task.FromResult(new BusinessConsoleMpsBucketItem(
+            mpsId,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.BucketDate,
+            request.Quantity,
+            "Draft"));
+    }
+
+    public Task<BusinessConsoleMpsBucketItem> ReviewMpsBucketAsync(
+        string internalBearerToken,
+        string mpsId,
+        BusinessConsoleReviewMpsBucketRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastReviewMpsId = mpsId;
+        LastReviewMpsRequest = request;
+        return Task.FromResult(new BusinessConsoleMpsBucketItem(
+            mpsId,
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            new DateOnly(2026, 6, 15),
+            120m,
+            "Reviewed",
+            request.ReviewedBy,
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture)));
+    }
+
+    public Task<BusinessConsoleMpsBucketItem> ReleaseMpsBucketAsync(
+        string internalBearerToken,
+        string mpsId,
+        BusinessConsoleReleaseMpsBucketRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastReleaseMpsId = mpsId;
+        LastReleaseMpsRequest = request;
+        return Task.FromResult(new BusinessConsoleMpsBucketItem(
+            mpsId,
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            new DateOnly(2026, 6, 15),
+            120m,
+            "Released",
+            "planner.li",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            request.ReleasedBy,
+            DateTimeOffset.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture)));
+    }
 
     public Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesAsync(
         string internalBearerToken,
@@ -5432,6 +7283,48 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 
+    public Task<BusinessConsoleForecastInputListResponse> ListForecastInputsAsync(
+        string internalBearerToken,
+        BusinessConsoleForecastInputListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastForecastListRequest = request;
+        return Task.FromResult(new BusinessConsoleForecastInputListResponse([
+            new BusinessConsoleForecastInputItem(
+                "forecast-001",
+                "FC-2026-06-SKU-FG-1000",
+                "SKU-FG-1000",
+                "pcs",
+                "SITE-01",
+                new DateOnly(2026, 6, 1),
+                new DateOnly(2026, 6, 30),
+                10m,
+                7,
+                3),
+        ]));
+    }
+
+    public Task<BusinessConsoleForecastInputItem> CreateOrUpdateForecastInputAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateForecastInputRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateForecastRequest = request;
+        return Task.FromResult(new BusinessConsoleForecastInputItem(
+            "forecast-created",
+            request.ForecastReference,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.PeriodStartDate,
+            request.PeriodEndDate,
+            request.Quantity,
+            request.BackwardConsumptionDays,
+            request.ForwardConsumptionDays));
+    }
+
     public Task<BusinessConsoleRunMrpResponse> RunMrpAsync(
         string internalBearerToken,
         BusinessConsoleRunMrpRequest request,
@@ -5439,7 +7332,14 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
     {
         LastInternalToken = internalBearerToken;
         LastRunMrpRequest = request;
-        return Task.FromResult(new BusinessConsoleRunMrpResponse("mrp-run-001", 2, false, []));
+        return Task.FromResult(new BusinessConsoleRunMrpResponse(
+            "mrp-run-001",
+            2,
+            false,
+            [],
+            ["mps", "sales-order"],
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 6, 30)));
     }
 
     public Task<BusinessConsoleMrpRunListResponse> ListMrpRunsAsync(
@@ -5460,7 +7360,10 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
                 "product-engineering-http:1",
                 "inventory-http:2;scheduled-receipts:error",
                 true,
-                ["scheduled-receipts"]),
+                ["scheduled-receipts"],
+                ["mps", "sales-order"],
+                new DateOnly(2026, 6, 1),
+                new DateOnly(2026, 6, 30)),
         ]));
     }
 
@@ -5470,7 +7373,7 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleMrpPeggingListResponse([]));
+        return Task.FromResult(PeggingResponse);
     }
 
     public Task<BusinessConsolePlanningSuggestionListResponse> ListSuggestionsAsync(
@@ -5480,7 +7383,7 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
     {
         SuggestionListCallCount++;
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsolePlanningSuggestionListResponse([]));
+        return Task.FromResult(SuggestionsResponse);
     }
 
     public Task<BusinessConsoleAcceptedResponse> AcceptSuggestionAsync(
@@ -5490,7 +7393,8 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+        LastAcceptedSuggestionId = suggestionId;
+        return Task.FromResult(AcceptedSuggestionResponse);
     }
 }
 
@@ -5501,6 +7405,10 @@ internal sealed class RecordingErpClient : IBusinessErpClient
     public string? LastInternalToken { get; private set; }
 
     public BusinessConsoleErpListRequest? LastPurchaseOrderListRequest { get; private set; }
+
+    public BusinessConsoleErpListRequest? LastPurchaseRequisitionListRequest { get; private set; }
+
+    public BusinessConsoleConvertErpPurchaseRequisitionsRequest? LastConvertPurchaseRequisitionRequest { get; private set; }
 
     public BusinessConsoleErpListRequest? LastRequestForQuotationListRequest { get; private set; }
 
@@ -5520,7 +7428,13 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public BusinessConsoleErpListRequest? LastJournalVoucherListRequest { get; private set; }
 
+    public BusinessConsoleErpPeriodRequest? LastFinancePeriodRequest { get; private set; }
+
     public BusinessConsoleErpSourceDocumentRequest? LastFinanceSourceDocumentRequest { get; private set; }
+
+    public BusinessConsoleExecuteErpPaymentExecutionRequest? LastExecutePaymentExecutionRequest { get; private set; }
+
+    public BusinessConsoleMatchErpCashReceiptRequest? LastMatchCashReceiptRequest { get; private set; }
 
     public Task<BusinessConsoleCreateErpPurchaseRequisitionResponse> CreatePurchaseRequisitionFromSuggestionAsync(
         string internalBearerToken,
@@ -5538,6 +7452,34 @@ internal sealed class RecordingErpClient : IBusinessErpClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleCreateErpRequestForQuotationResponse("rfq-001"));
+    }
+
+    public Task<BusinessConsoleConvertErpPurchaseRequisitionsResponse> ConvertPurchaseRequisitionsToPurchaseOrderAsync(
+        string internalBearerToken,
+        BusinessConsoleConvertErpPurchaseRequisitionsRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastConvertPurchaseRequisitionRequest = request;
+        return Task.FromResult(new BusinessConsoleConvertErpPurchaseRequisitionsResponse(
+            "PurchaseOrderCreated",
+            "po-id-001",
+            "PO-REQ-001",
+            null,
+            "SUP-001",
+            [
+                new BusinessConsoleConvertedErpPurchaseOrderLine(
+                    "10",
+                    "SKU-RM-001",
+                    "EA",
+                    5m,
+                    12m,
+                    DateOnly.Parse("2026-06-06"),
+                    [
+                        new BusinessConsoleConvertedErpPurchaseOrderLineSource("PR-001", "10", 2m),
+                        new BusinessConsoleConvertedErpPurchaseOrderLineSource("PR-002", "10", 3m),
+                    ]),
+            ]));
     }
 
     public Task<BusinessConsoleReceiveErpSupplierQuotationResponse> ReceiveSupplierQuotationAsync(
@@ -5570,6 +7512,30 @@ internal sealed class RecordingErpClient : IBusinessErpClient
             1));
     }
 
+    public Task<BusinessConsoleErpPurchaseRequisitionListResponse> ListPurchaseRequisitionsAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPurchaseRequisitionListRequest = request;
+        return Task.FromResult(new BusinessConsoleErpPurchaseRequisitionListResponse(
+            [
+                new BusinessConsoleErpPurchaseRequisitionItem(
+                    "purchase-requisition-001",
+                    "PR-001",
+                    "suggestion-001",
+                    "SKU-RM-001",
+                    "EA",
+                    "SITE-01",
+                    5m,
+                    DateOnly.Parse("2026-06-10"),
+                    "Open",
+                    DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture)),
+            ],
+            1));
+    }
+
     public Task<BusinessConsoleErpPurchaseOrderListResponse> ListPurchaseOrdersAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
@@ -5594,6 +7560,8 @@ internal sealed class RecordingErpClient : IBusinessErpClient
                             "EA",
                             120m,
                             40m,
+                            80m,
+                            false,
                             20m,
                             DateOnly.Parse("2026-06-06")),
                     ]),
@@ -5746,6 +7714,38 @@ internal sealed class RecordingErpClient : IBusinessErpClient
             1));
     }
 
+    public Task<BusinessConsoleErpTrialBalanceResponse> GetTrialBalanceAsync(
+        string internalBearerToken,
+        BusinessConsoleErpPeriodRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastFinancePeriodRequest = request;
+        return Task.FromResult(new BusinessConsoleErpTrialBalanceResponse(
+            request.PeriodStartDate,
+            request.PeriodEndDate,
+            100m,
+            100m,
+            true,
+            [new BusinessConsoleErpTrialBalanceLine("1401", 100m, 0m, 100m, 0m, 100m)]));
+    }
+
+    public Task<BusinessConsoleErpMonthEndChecklistResponse> GetMonthEndChecklistAsync(
+        string internalBearerToken,
+        BusinessConsoleErpPeriodRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastFinancePeriodRequest = request;
+        return Task.FromResult(new BusinessConsoleErpMonthEndChecklistResponse(
+            request.PeriodStartDate,
+            request.PeriodEndDate,
+            0,
+            1,
+            25m,
+            3));
+    }
+
     public Task<BusinessConsoleOpenErpOpportunityResponse> OpenOpportunityAsync(
         string internalBearerToken,
         BusinessConsoleOpenErpOpportunityRequest request,
@@ -5825,6 +7825,71 @@ internal sealed class RecordingErpClient : IBusinessErpClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsolePostErpJournalVoucherResponse("jv-001"));
+    }
+
+    public Task<string> ApprovePaymentExecutionAsync(
+        string internalBearerToken,
+        BusinessConsoleApproveErpPaymentExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult("PE-001");
+    }
+
+    public Task<string> ExecutePaymentExecutionAsync(
+        string internalBearerToken,
+        BusinessConsoleExecuteErpPaymentExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastExecutePaymentExecutionRequest = request;
+        return Task.FromResult("executed");
+    }
+
+    public Task<string> RegisterCashReceiptAsync(
+        string internalBearerToken,
+        BusinessConsoleRegisterErpCashReceiptRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult("CR-001");
+    }
+
+    public Task<string> MatchCashReceiptAsync(
+        string internalBearerToken,
+        BusinessConsoleMatchErpCashReceiptRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastMatchCashReceiptRequest = request;
+        return Task.FromResult("matched");
+    }
+
+    public Task<BusinessConsoleOpenErpAccountingPeriodResponse> OpenAccountingPeriodAsync(
+        string internalBearerToken,
+        BusinessConsoleOpenErpAccountingPeriodRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleOpenErpAccountingPeriodResponse("period-001"));
+    }
+
+    public Task<string> CloseAccountingPeriodAsync(
+        string internalBearerToken,
+        BusinessConsoleCloseErpAccountingPeriodRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult("closed");
+    }
+
+    public Task<string> ReopenAccountingPeriodAsync(
+        string internalBearerToken,
+        BusinessConsoleReopenErpAccountingPeriodRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult("reopened");
     }
 
     public Task<BusinessConsoleErpFinanceSummaryResponse> GetFinanceSummaryAsync(
@@ -5998,6 +8063,7 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient
                 request.SourceDocumentId ?? "WO-001",
                 "accepted",
                 null,
+                "observed",
                 DateTimeOffset.Parse("2026-06-03T01:00:00Z", CultureInfo.InvariantCulture)),
         ], 1));
     }
@@ -6134,6 +8200,16 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
 
     public BusinessConsolePostTelemetryAlarmRequest? LastPostAlarmRequest { get; private set; }
 
+    public BusinessConsoleTelemetryDeviceControlCommandRequest? LastDeviceControlRequest { get; private set; }
+
+    public string? LastDeviceControlRequestedBy { get; private set; }
+
+    public string? LastDeviceControlCommandId { get; private set; }
+
+    public BusinessConsoleTelemetryDeviceControlCommandContextRequest? LastDeviceControlContextRequest { get; private set; }
+
+    public BusinessConsoleTelemetryDeviceControlCommandListRequest? LastDeviceControlListRequest { get; private set; }
+
     public EquipmentRuntimeAvailabilityResponse? RuntimeAvailabilityResponse { get; init; }
 
     public EquipmentRuntimeAvailabilityResponse? DeviceRuntimeAvailabilityResponse { get; init; }
@@ -6145,6 +8221,16 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleTelemetryTagListResponse([]));
+    }
+
+    public Task<BusinessConsoleTelemetryTagCurrentValueResponse> GetTagCurrentValueAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryTagCurrentValueRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleTelemetryTagCurrentValueResponse(
+            request.DeviceAssetId, request.TagKey, HasSample: true, Value: 42m, OccurredAtUtc: DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture)));
     }
 
     public Task<BusinessConsoleTelemetryAlarmRuleListResponse> ListAlarmRulesAsync(
@@ -6222,11 +8308,18 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
             2,
             0.5m,
             0.75m,
+            1,
+            80m,
+            10m,
+            10m,
+            "PCS",
+            100m,
+            100m,
             1m,
-            1m,
-            0.5m,
-            true,
-            true));
+            0.8m,
+            0.4m,
+            false,
+            []));
     }
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
@@ -6292,14 +8385,201 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleEquipmentAlarmListPageResponse(
         [
-            new EquipmentRuntimeAlarmSummary(
+            new BusinessConsoleTelemetryAlarmEventItem(
                 "alarm-001",
+                request.OrganizationId,
+                request.EnvironmentId,
                 "DEV-OIL-01",
                 "TEMP_HIGH",
                 "critical",
+                "raised",
                 DateTimeOffset.Parse("2026-06-01T08:20:00Z", CultureInfo.InvariantCulture),
+                null,
                 "EXT-ALARM-001"),
         ], 1));
+    }
+
+    public Task<BusinessConsoleAlarmLifecycleResponse> AcknowledgeAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleAcknowledgeAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
+    }
+
+    public Task<BusinessConsoleAlarmLifecycleResponse> ShelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleShelveAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
+    }
+
+    public Task<BusinessConsoleAlarmLifecycleResponse> UnshelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleUnshelveAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
+    }
+
+    public Task<BusinessConsoleTelemetryDeviceControlCommandResponse> CreateDeviceControlCommandAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryDeviceControlCommandRequest request,
+        string requestedBy,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDeviceControlRequest = request;
+        LastDeviceControlRequestedBy = requestedBy;
+        return Task.FromResult(new BusinessConsoleTelemetryDeviceControlCommandResponse(
+            "op-task-001",
+            "pending-approval",
+            new BusinessConsoleTelemetryOperationApprovalSummary(
+                "pending",
+                requestedBy,
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+                null,
+                null,
+                null)));
+    }
+
+    public Task<BusinessConsoleTelemetryDeviceControlCommandDetail> GetDeviceControlCommandAsync(
+        string internalBearerToken,
+        string commandId,
+        BusinessConsoleTelemetryDeviceControlCommandContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDeviceControlCommandId = commandId;
+        LastDeviceControlContextRequest = request;
+        return Task.FromResult(new BusinessConsoleTelemetryDeviceControlCommandDetail(
+            commandId,
+            commandId,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "connector-host-001",
+            "opcua-cell-01",
+            "DEV-CNC-01",
+            "write-tag",
+            "spindle.speed",
+            "80",
+            null,
+            "user-admin",
+            "speed adjustment",
+            "corr-device-control-001",
+            "idem-device-control-001",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            "completed",
+            true,
+            new BusinessConsoleTelemetryOperationApprovalSummary(
+                "approved",
+                "user-admin",
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+                "user-supervisor",
+                DateTimeOffset.Parse("2026-06-01T08:02:00Z", CultureInfo.InvariantCulture),
+                "approved"),
+            "attempt-001",
+            [
+                new BusinessConsoleTelemetryDeviceControlCommandAttempt(
+                    "attempt-001",
+                    "succeeded",
+                    DateTimeOffset.Parse("2026-06-01T08:03:00Z", CultureInfo.InvariantCulture),
+                    DateTimeOffset.Parse("2026-06-01T08:05:00Z", CultureInfo.InvariantCulture),
+                    null,
+                    new Dictionary<string, string> { ["result"] = "ok" }),
+            ]));
+    }
+
+    public Task<BusinessConsoleTelemetryDeviceControlCommandListResponse> ListDeviceControlCommandsAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryDeviceControlCommandListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDeviceControlListRequest = request;
+        return Task.FromResult(new BusinessConsoleTelemetryDeviceControlCommandListResponse(
+            [
+                new BusinessConsoleTelemetryDeviceControlCommandListItem(
+                    "op-task-001",
+                    "op-task-001",
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    "connector-host-001",
+                    request.DeviceAssetId ?? "DEV-CNC-01",
+                    "write-tag",
+                    "spindle.speed",
+                    "80",
+                    "user-admin",
+                    "speed adjustment",
+                    "approval-pending",
+                    "pending",
+                    null,
+                    null,
+                    null,
+                    "corr-device-control-001",
+                    DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture)),
+            ],
+            1));
+    }
+
+    public BusinessConsoleTelemetryDeviceControlBindingListRequest? LastDeviceControlBindingListRequest { get; private set; }
+
+    public BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest? LastCreateDeviceControlBindingRequest { get; private set; }
+
+    public BusinessConsoleDisableTelemetryDeviceControlBindingRequest? LastDisableDeviceControlBindingRequest { get; private set; }
+
+    public string? LastDisableDeviceControlBindingDeviceAssetId { get; private set; }
+
+    public Task<BusinessConsoleTelemetryDeviceControlBindingListResponse> ListDeviceControlBindingsAsync(
+        string internalBearerToken,
+        BusinessConsoleTelemetryDeviceControlBindingListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDeviceControlBindingListRequest = request;
+        return Task.FromResult(new BusinessConsoleTelemetryDeviceControlBindingListResponse(
+            [
+                new BusinessConsoleTelemetryDeviceControlBindingItem(
+                    "binding-001",
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    request.DeviceAssetId ?? "DEV-CNC-01",
+                    "connector-host-001",
+                    "opcua-cell-01",
+                    IsActive: true,
+                    DisabledReason: null,
+                    DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture)),
+            ],
+            1));
+    }
+
+    public Task<BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse> CreateOrUpdateDeviceControlBindingAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateDeviceControlBindingRequest = request;
+        return Task.FromResult(new BusinessConsoleCreateOrUpdateTelemetryDeviceControlBindingResponse("binding-001"));
+    }
+
+    public Task<BusinessConsoleDisableTelemetryDeviceControlBindingResponse> DisableDeviceControlBindingAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleDisableTelemetryDeviceControlBindingRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDisableDeviceControlBindingDeviceAssetId = deviceAssetId;
+        LastDisableDeviceControlBindingRequest = request;
+        return Task.FromResult(new BusinessConsoleDisableTelemetryDeviceControlBindingResponse("binding-001"));
     }
 }
 
@@ -6338,7 +8618,7 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
 
     public Task<BusinessConsoleMaintenanceWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMaintenanceListRequest request,
+        BusinessConsoleMaintenanceWorkOrderListRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
@@ -6410,6 +8690,20 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
             false));
     }
 
+    public Task<BusinessConsoleMaintenanceReliabilitySummaryResponse> QueryReliabilitySummaryAsync(
+        string internalBearerToken,
+        BusinessConsoleQueryMaintenanceReliabilitySummaryRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMaintenanceReliabilitySummaryResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WindowStartUtc,
+            request.WindowEndUtc,
+            []));
+    }
+
     public Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(
         string internalBearerToken,
         BusinessConsoleRecordMaintenanceInspectionRequest request,
@@ -6426,6 +8720,22 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleMaintenanceInspectionListResponse([], request.Skip, request.Take, 0));
+    }
+
+    public Task<BusinessConsoleMaintenanceInspectionMeasurementTrendResponse> QueryInspectionMeasurementTrendAsync(
+        string internalBearerToken,
+        BusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMaintenanceInspectionMeasurementTrendResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            request.CharacteristicCode,
+            request.WindowStartUtc,
+            request.WindowEndUtc,
+            []));
     }
 
     public Task<BusinessConsoleMaintenanceSparePartListResponse> ListSparePartsAsync(
@@ -6478,7 +8788,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public string? LastInternalToken { get; private set; }
 
-    public BusinessConsoleMesListRequest? LastWorkOrderListRequest { get; private set; }
+    public BusinessConsoleMesWorkOrderListRequest? LastWorkOrderListRequest { get; private set; }
 
     public Exception? FoundationReadinessFailure { get; init; }
 
@@ -6497,6 +8807,28 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public BusinessConsoleMesProductionPlanListRequest? LastProductionPlanListRequest { get; private set; }
 
     public BusinessConsoleMesConvertPlanToWorkOrderRequest? LastConvertPlanToWorkOrderRequest { get; private set; }
+
+    public int HoldWorkOrderCallCount { get; private set; }
+
+    public BusinessConsoleMesWorkOrderReasonRequest? LastHoldWorkOrderRequest { get; private set; }
+
+    public int CancelWorkOrderCallCount { get; private set; }
+
+    public BusinessConsoleMesWorkOrderReasonRequest? LastCancelWorkOrderRequest { get; private set; }
+
+    public int ForceReleaseQualityHoldCallCount { get; private set; }
+
+    public BusinessConsoleMesForceReleaseQualityHoldRequest? LastForceReleaseQualityHoldRequest { get; private set; }
+
+    public string? LastForceReleaseQualityHoldActor { get; private set; }
+
+    public int ReverseProductionReportCallCount { get; private set; }
+
+    public BusinessConsoleMesReverseProductionReportRequest? LastReverseProductionReportRequest { get; private set; }
+
+    public int RetryFinishedGoodsReceiptInventoryPostingCallCount { get; private set; }
+
+    public BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest? LastRetryFinishedGoodsReceiptInventoryPostingRequest { get; private set; }
 
     public Task<BusinessConsoleMesReadinessArea> GetFoundationReadinessAreaAsync(
         string internalBearerToken,
@@ -6561,7 +8893,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public Task<BusinessConsoleMesWorkOrderListResponse> ListWorkOrdersAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesWorkOrderListRequest request,
         CancellationToken cancellationToken)
     {
         WorkOrderListCallCount++;
@@ -6613,6 +8945,68 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         }
 
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> HoldWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesWorkOrderReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        HoldWorkOrderCallCount++;
+        LastHoldWorkOrderRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> CancelWorkOrderAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesWorkOrderReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        CancelWorkOrderCallCount++;
+        LastCancelWorkOrderRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> ForceReleaseQualityHoldAsync(
+        string internalBearerToken,
+        string sourceDocumentId,
+        BusinessConsoleMesForceReleaseQualityHoldRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        ForceReleaseQualityHoldCallCount++;
+        LastForceReleaseQualityHoldRequest = request;
+        LastForceReleaseQualityHoldActor = actor;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(
+        string internalBearerToken,
+        string reportNo,
+        BusinessConsoleMesReverseProductionReportRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        ReverseProductionReportCallCount++;
+        LastReverseProductionReportRequest = request;
+        return Task.FromResult(new BusinessConsoleMesReverseProductionReportResponse("PR-REV-001", reportNo, "PR-ORIG-001"));
+    }
+
+    public Task<BusinessConsoleMesCreateReceiptResponse> RetryFinishedGoodsReceiptInventoryPostingAsync(
+        string internalBearerToken,
+        string requestNo,
+        BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        RetryFinishedGoodsReceiptInventoryPostingCallCount++;
+        LastRetryFinishedGoodsReceiptInventoryPostingRequest = request;
+        return Task.FromResult(new BusinessConsoleMesCreateReceiptResponse("FG-REQ-001", requestNo));
     }
 
     public Task<BusinessConsoleCreateRushWorkOrderResponse> CreateRushWorkOrderAsync(

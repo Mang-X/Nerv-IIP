@@ -33,33 +33,35 @@ const forwarded = useForwardProps(delegated)
 </template>
 
 <style scoped>
-.ds-strigger {
-  transition:
-    border-color 0.15s var(--ease-out-quart, ease-out),
-    box-shadow 0.15s var(--ease-out-quart, ease-out);
-}
-.ds-strigger:hover {
-  border-color: color-mix(in oklch, var(--foreground) 18%, transparent);
-}
-.ds-strigger:focus-visible,
-.ds-strigger[data-state='open'] {
-  border-color: var(--brand);
-  box-shadow:
-    0 0 0 3px color-mix(in oklch, var(--brand) 22%, transparent),
-    0 1px 2px 0 color-mix(in oklch, black 6%, transparent);
-}
-.ds-strigger[data-invalid] {
-  border-color: var(--destructive);
-}
-.ds-strigger-chevron {
-  transition: transform 0.2s var(--ease-out-quart, ease-out);
-}
-.ds-strigger[data-state='open'] .ds-strigger-chevron {
-  transform: rotate(180deg);
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
+  .ds-strigger {
+    transition:
+      border-color 0.15s var(--nv-ease-out-quart, ease-out),
+      box-shadow 0.15s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-strigger:hover {
+    border-color: color-mix(in oklch, var(--foreground) 18%, transparent);
+  }
+  .ds-strigger:focus-visible,
+  .ds-strigger[data-state='open'] {
+    border-color: var(--nv-brand);
+    box-shadow:
+      0 0 0 3px color-mix(in oklch, var(--nv-brand) 22%, transparent),
+      0 1px 2px 0 color-mix(in oklch, black 6%, transparent);
+  }
+  .ds-strigger[data-invalid] {
+    border-color: var(--destructive);
+  }
   .ds-strigger-chevron {
-    transition: none;
+    transition: transform 0.2s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-strigger[data-state='open'] .ds-strigger-chevron {
+    transform: rotate(180deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-strigger-chevron {
+      transition: none;
+    }
   }
 }
 </style>

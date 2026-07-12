@@ -5,7 +5,7 @@ import type {
   ConsoleResetIamUserPasswordRequest,
   ConsoleUpdateIamUserRequest,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import UserCreateDialog from '@/components/iam/UserCreateDialog.vue'
 import UserEditDialog from '@/components/iam/UserEditDialog.vue'
 import UserResetPasswordDialog from '@/components/iam/UserResetPasswordDialog.vue'
@@ -21,16 +21,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Button,
-  DataTable,
-  DataTablePagination,
-  PageHeader,
+  NvDataTable,
+  NvDataTablePagination,
+  NvPageHeader,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  StatusBadge,
-  Toolbar,
+  NvStatusBadge,
+  NvToolbar,
   toast,
 } from '@nerv-iip/ui'
 import { computed, shallowRef, watch } from 'vue'
@@ -49,6 +49,9 @@ const {
   disableUser,
   disableUserError,
   disableUserPending,
+  enableUser,
+  enableUserError,
+  enableUserPending,
   filters,
   refreshUsers,
   resetUserPassword,
@@ -65,6 +68,7 @@ const {
 
 type CreateUserData = Parameters<typeof createUser>[0]
 type DisableUserData = Parameters<typeof disableUser>[0]
+type EnableUserData = Parameters<typeof enableUser>[0]
 type ResetUserPasswordData = Parameters<typeof resetUserPassword>[0]
 type UpdateUserData = Parameters<typeof updateUser>[0]
 type UserRow = ConsoleIamUserResponse
@@ -85,6 +89,7 @@ const pageError = computed(
     createUserError.value ??
     updateUserError.value ??
     disableUserError.value ??
+    enableUserError.value ??
     resetUserPasswordError.value,
 )
 
@@ -94,6 +99,7 @@ const tablePending = computed(
     createUserPending.value ||
     updateUserPending.value ||
     disableUserPending.value ||
+    enableUserPending.value ||
     resetUserPasswordPending.value,
 )
 
@@ -120,7 +126,7 @@ const statusModel = computed({
   },
 })
 
-const columns: DataTableColumn<UserRow>[] = [
+const columns: NvDataTableColumn<UserRow>[] = [
   {
     key: 'loginName',
     header: '登录名',
@@ -128,6 +134,16 @@ const columns: DataTableColumn<UserRow>[] = [
     accessor: (r) => r.loginName || '—',
   },
   { key: 'email', header: '邮箱', accessor: (r) => r.email || '—' },
+  {
+    key: 'accountExpiresAtUtc',
+    header: '有效期',
+    accessor: (r) => formatDate(r.accountExpiresAtUtc),
+  },
+  {
+    key: 'password',
+    header: '密码策略',
+    width: 'w-32',
+  },
   {
     key: 'userId',
     header: '用户 ID',
@@ -158,6 +174,10 @@ function userLabel(user: ConsoleIamUserResponse) {
   return user.loginName || user.userId || '用户'
 }
 
+function formatDate(value?: string | null) {
+  return value ? value.slice(0, 10) : '—'
+}
+
 function openCreateDialog() {
   createDialogOpen.value = true
 }
@@ -172,14 +192,14 @@ function openResetPasswordDialog(user: ConsoleIamUserResponse) {
   resetPasswordDialogOpen.value = true
 }
 
-async function handleCreate(payload: Required<ConsoleCreateIamUserRequest>) {
+async function handleCreate(payload: ConsoleCreateIamUserRequest) {
   const data: CreateUserData = { body: payload }
   await createUser(data)
   await refreshUsers()
   toast.success('用户已创建')
 }
 
-async function handleUpdate(payload: Required<ConsoleUpdateIamUserRequest>) {
+async function handleUpdate(payload: ConsoleUpdateIamUserRequest) {
   const userId = selectedUser.value?.userId
   if (!userId) return
 
@@ -206,6 +226,16 @@ async function confirmDisable() {
   toast.success('用户已停用')
 }
 
+async function handleEnable(user: ConsoleIamUserResponse) {
+  const userId = user.userId
+  if (!userId) return
+
+  const data: EnableUserData = { path: { userId } }
+  await enableUser(data)
+  await refreshUsers()
+  toast.success('用户已启用')
+}
+
 async function handleResetPassword(payload: Required<ConsoleResetIamUserPasswordRequest>) {
   const userId = selectedUser.value?.userId
   if (!userId) return
@@ -220,7 +250,7 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
 <template>
   <DefaultLayout>
     <section class="grid gap-6">
-      <PageHeader
+      <NvPageHeader
         title="用户"
         :breadcrumbs="[{ label: '身份与访问' }]"
         :count="`${totalCount} 个用户`"
@@ -230,9 +260,9 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
             >新建用户</Button
           >
         </template>
-      </PageHeader>
+      </NvPageHeader>
 
-      <Toolbar
+      <NvToolbar
         :search="search"
         search-label="搜索用户"
         search-placeholder="搜索用户"
@@ -250,11 +280,14 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
             </SelectContent>
           </Select>
         </template>
-      </Toolbar>
+      </NvToolbar>
 
       <p v-if="pageError" class="text-sm text-destructive" role="alert">{{ pageError.message }}</p>
 
-      <DataTable
+      <NvDataTable
+        :pagination="false"
+        :searchable="false"
+        :column-settings="false"
         :columns="columns"
         :rows="users"
         row-key="userId"
@@ -262,10 +295,16 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
         empty-message="没有符合当前条件的用户。"
       >
         <template #cell-status="{ row }">
-          <StatusBadge
+          <NvStatusBadge
             :label="row.enabled === false ? '禁用' : '启用'"
             :tone="row.enabled === false ? 'neutral' : 'success'"
           />
+        </template>
+        <template #cell-password="{ row }">
+          <NvStatusBadge v-if="row.passwordChangeRequired" label="需改密" tone="warning" />
+          <span v-else class="text-sm text-muted-foreground">
+            {{ row.passwordExpiresAtUtc ? `至 ${formatDate(row.passwordExpiresAtUtc)}` : '—' }}
+          </span>
         </template>
         <template #cell-actions="{ row }">
           <div class="flex items-center justify-end gap-2">
@@ -290,20 +329,32 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
               重置密码
             </Button>
             <Button
+              v-if="row.enabled === false"
+              size="sm"
+              type="button"
+              variant="outline"
+              :aria-label="`启用用户 ${userLabel(row)}`"
+              :disabled="!canManageUsers"
+              @click="handleEnable(row)"
+            >
+              启用
+            </Button>
+            <Button
+              v-else
               size="sm"
               type="button"
               variant="destructive"
               :aria-label="`停用用户 ${userLabel(row)}`"
-              :disabled="!canManageUsers || row.enabled === false"
+              :disabled="!canManageUsers"
               @click="openDisableDialog(row)"
             >
-              停用
+              禁用
             </Button>
           </div>
         </template>
-      </DataTable>
+      </NvDataTable>
 
-      <DataTablePagination
+      <NvDataTablePagination
         v-model:page="page"
         v-model:page-size="pageSize"
         :total-items="totalCount"

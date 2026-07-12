@@ -4,8 +4,8 @@ import { type _JSONValue, defineQueryOptions, type UseMutationOptions } from '@p
 
 import { serializeQueryKeyValue } from '../client';
 import { client } from '../client.gen';
-import { completeConsoleFileUploadSession, createConsoleFileDownloadGrant, createConsoleFileUploadSession, createConsoleIamRole, createConsoleIamUser, disableConsoleIamUser, downloadConsoleFileGrantContent, getBuildInfoEndpoint, getConsoleFileMetadata, getConsoleInstanceDetail, getConsoleOperationTask, getConsolePrincipal, healthEndpoint, invalidateGatewayCacheEndpoint, listConsoleFiles, listConsoleIamPermissions, listConsoleIamRoles, listConsoleIamSessions, listConsoleIamUsers, listConsoleInstances, listConsoleNotificationMessages, listConsoleNotificationTasks, loginConsoleUser, logoutConsoleSession, markConsoleNotificationMessageRead, markConsoleNotificationMessagesRead, type Options, patchConsoleTusUpload, queryConsoleLogs, refreshConsoleSession, resetConsoleIamUserPassword, restartConsoleInstance, revokeConsoleIamSession, submitConsoleNotificationIntent, updateConsoleIamRolePermissions, updateConsoleIamUser } from '../sdk.gen';
-import type { CompleteConsoleFileUploadSessionData, CompleteConsoleFileUploadSessionResponse, CreateConsoleFileDownloadGrantData, CreateConsoleFileDownloadGrantResponse, CreateConsoleFileUploadSessionData, CreateConsoleFileUploadSessionResponse, CreateConsoleIamRoleData, CreateConsoleIamRoleResponse, CreateConsoleIamUserData, CreateConsoleIamUserResponse, DisableConsoleIamUserData, DisableConsoleIamUserResponse, DownloadConsoleFileGrantContentData, DownloadConsoleFileGrantContentResponse, GetBuildInfoEndpointData, GetBuildInfoEndpointResponse, GetConsoleFileMetadataData, GetConsoleFileMetadataResponse, GetConsoleInstanceDetailData, GetConsoleInstanceDetailResponse, GetConsoleOperationTaskData, GetConsoleOperationTaskResponse, GetConsolePrincipalData, GetConsolePrincipalResponse, HealthEndpointData, HealthEndpointResponse, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponse, ListConsoleFilesData, ListConsoleFilesResponse, ListConsoleIamPermissionsData, ListConsoleIamPermissionsResponse, ListConsoleIamRolesData, ListConsoleIamRolesResponse, ListConsoleIamSessionsData, ListConsoleIamSessionsResponse, ListConsoleIamUsersData, ListConsoleIamUsersResponse, ListConsoleInstancesData, ListConsoleInstancesResponse, ListConsoleNotificationMessagesData, ListConsoleNotificationMessagesResponse, ListConsoleNotificationTasksData, ListConsoleNotificationTasksResponse, LoginConsoleUserData, LoginConsoleUserResponse, LogoutConsoleSessionData, LogoutConsoleSessionResponse, MarkConsoleNotificationMessageReadData, MarkConsoleNotificationMessageReadResponse, MarkConsoleNotificationMessagesReadData, MarkConsoleNotificationMessagesReadResponse, PatchConsoleTusUploadData, PatchConsoleTusUploadResponse, QueryConsoleLogsData, QueryConsoleLogsResponse, RefreshConsoleSessionData, RefreshConsoleSessionResponse, ResetConsoleIamUserPasswordData, ResetConsoleIamUserPasswordResponse, RestartConsoleInstanceData, RestartConsoleInstanceResponse, RevokeConsoleIamSessionData, RevokeConsoleIamSessionResponse, SubmitConsoleNotificationIntentData, SubmitConsoleNotificationIntentResponse, UpdateConsoleIamRolePermissionsData, UpdateConsoleIamRolePermissionsResponse, UpdateConsoleIamUserData, UpdateConsoleIamUserResponse } from '../types.gen';
+import { completeConsoleFileUploadSession, createConsoleFileDownloadGrant, createConsoleFileUploadSession, createConsoleIamRole, createConsoleIamUser, disableConsoleIamUser, downloadConsoleFileGrantContent, enableConsoleIamUser, getBuildInfoEndpoint, getConsoleFileMetadata, getConsoleFileStorageUsage, getConsoleInstanceDetail, getConsoleNotificationDeadLetter, getConsoleNotificationDeadLetterMetrics, getConsoleOperationTask, getConsolePrincipal, healthEndpoint, ignoreConsoleNotificationDeadLetter, invalidateGatewayCacheEndpoint, listConsoleFiles, listConsoleIamPermissions, listConsoleIamRoles, listConsoleIamSessions, listConsoleIamUsers, listConsoleInstances, listConsoleNotificationDeadLetters, listConsoleNotificationMessages, listConsoleNotificationTasks, loginConsoleUser, logoutConsoleSession, markConsoleNotificationMessageRead, markConsoleNotificationMessagesRead, type Options, patchConsoleTusUpload, queryConsoleLogs, refreshConsoleSession, replayConsoleNotificationDeadLetter, replayConsoleNotificationDeadLetters, resetConsoleIamUserPassword, restartConsoleInstance, revokeConsoleIamSession, submitConsoleNotificationIntent, updateConsoleIamRolePermissions, updateConsoleIamUser, upsertConsoleNotificationPreference, upsertConsoleNotificationRecipientChannelBinding, upsertConsoleNotificationSubscription } from '../sdk.gen';
+import type { CompleteConsoleFileUploadSessionData, CompleteConsoleFileUploadSessionResponse, CreateConsoleFileDownloadGrantData, CreateConsoleFileDownloadGrantResponse, CreateConsoleFileUploadSessionData, CreateConsoleFileUploadSessionResponse, CreateConsoleIamRoleData, CreateConsoleIamRoleResponse, CreateConsoleIamUserData, CreateConsoleIamUserResponse, DisableConsoleIamUserData, DisableConsoleIamUserResponse, DownloadConsoleFileGrantContentData, DownloadConsoleFileGrantContentResponse, EnableConsoleIamUserData, EnableConsoleIamUserResponse, GetBuildInfoEndpointData, GetBuildInfoEndpointResponse, GetConsoleFileMetadataData, GetConsoleFileMetadataResponse, GetConsoleFileStorageUsageData, GetConsoleFileStorageUsageResponse, GetConsoleInstanceDetailData, GetConsoleInstanceDetailResponse, GetConsoleNotificationDeadLetterData, GetConsoleNotificationDeadLetterMetricsData, GetConsoleNotificationDeadLetterMetricsResponse, GetConsoleNotificationDeadLetterResponse, GetConsoleOperationTaskData, GetConsoleOperationTaskResponse, GetConsolePrincipalData, GetConsolePrincipalResponse, HealthEndpointData, HealthEndpointResponse, IgnoreConsoleNotificationDeadLetterData, IgnoreConsoleNotificationDeadLetterResponse, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointResponse, ListConsoleFilesData, ListConsoleFilesResponse, ListConsoleIamPermissionsData, ListConsoleIamPermissionsResponse, ListConsoleIamRolesData, ListConsoleIamRolesResponse, ListConsoleIamSessionsData, ListConsoleIamSessionsResponse, ListConsoleIamUsersData, ListConsoleIamUsersResponse, ListConsoleInstancesData, ListConsoleInstancesResponse, ListConsoleNotificationDeadLettersData, ListConsoleNotificationDeadLettersResponse, ListConsoleNotificationMessagesData, ListConsoleNotificationMessagesResponse, ListConsoleNotificationTasksData, ListConsoleNotificationTasksResponse, LoginConsoleUserData, LoginConsoleUserResponse, LogoutConsoleSessionData, LogoutConsoleSessionResponse, MarkConsoleNotificationMessageReadData, MarkConsoleNotificationMessageReadResponse, MarkConsoleNotificationMessagesReadData, MarkConsoleNotificationMessagesReadResponse, PatchConsoleTusUploadData, PatchConsoleTusUploadResponse, QueryConsoleLogsData, QueryConsoleLogsResponse, RefreshConsoleSessionData, RefreshConsoleSessionResponse, ReplayConsoleNotificationDeadLetterData, ReplayConsoleNotificationDeadLetterResponse, ReplayConsoleNotificationDeadLettersData, ReplayConsoleNotificationDeadLettersResponse, ResetConsoleIamUserPasswordData, ResetConsoleIamUserPasswordResponse, RestartConsoleInstanceData, RestartConsoleInstanceResponse, RevokeConsoleIamSessionData, RevokeConsoleIamSessionResponse, SubmitConsoleNotificationIntentData, SubmitConsoleNotificationIntentResponse, UpdateConsoleIamRolePermissionsData, UpdateConsoleIamRolePermissionsResponse, UpdateConsoleIamUserData, UpdateConsoleIamUserResponse, UpsertConsoleNotificationPreferenceData, UpsertConsoleNotificationPreferenceResponse, UpsertConsoleNotificationRecipientChannelBindingData, UpsertConsoleNotificationRecipientChannelBindingResponse, UpsertConsoleNotificationSubscriptionData, UpsertConsoleNotificationSubscriptionResponse } from '../types.gen';
 
 export const restartConsoleInstanceMutationOptions = (options?: Partial<Options<RestartConsoleInstanceData>>): UseMutationOptions<RestartConsoleInstanceResponse, Options<RestartConsoleInstanceData>, Error> => ({
     mutation: async (vars) => {
@@ -95,6 +95,81 @@ export const listConsoleNotificationTasksQueryOptions = defineQueryOptions<Optio
     }
 }));
 
+export const listConsoleNotificationDeadLettersQueryKey = (options?: Options<ListConsoleNotificationDeadLettersData>) => createQueryKey('listConsoleNotificationDeadLetters', options, ['Api']);
+
+export const listConsoleNotificationDeadLettersQueryOptions = defineQueryOptions<Options<ListConsoleNotificationDeadLettersData>, ListConsoleNotificationDeadLettersResponse, Error>((options?: Options<ListConsoleNotificationDeadLettersData>) => ({
+    key: listConsoleNotificationDeadLettersQueryKey(options),
+    query: async (context) => {
+        const { data } = await listConsoleNotificationDeadLetters({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const getConsoleNotificationDeadLetterMetricsQueryKey = (options?: Options<GetConsoleNotificationDeadLetterMetricsData>) => createQueryKey('getConsoleNotificationDeadLetterMetrics', options, ['Api']);
+
+export const getConsoleNotificationDeadLetterMetricsQueryOptions = defineQueryOptions<Options<GetConsoleNotificationDeadLetterMetricsData>, GetConsoleNotificationDeadLetterMetricsResponse, Error>((options?: Options<GetConsoleNotificationDeadLetterMetricsData>) => ({
+    key: getConsoleNotificationDeadLetterMetricsQueryKey(options),
+    query: async (context) => {
+        const { data } = await getConsoleNotificationDeadLetterMetrics({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const getConsoleNotificationDeadLetterQueryKey = (options: Options<GetConsoleNotificationDeadLetterData>) => createQueryKey('getConsoleNotificationDeadLetter', options, ['Api']);
+
+export const getConsoleNotificationDeadLetterQueryOptions = defineQueryOptions<Options<GetConsoleNotificationDeadLetterData>, GetConsoleNotificationDeadLetterResponse, Error>((options: Options<GetConsoleNotificationDeadLetterData>) => ({
+    key: getConsoleNotificationDeadLetterQueryKey(options),
+    query: async (context) => {
+        const { data } = await getConsoleNotificationDeadLetter({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const replayConsoleNotificationDeadLetterMutationOptions = (options?: Partial<Options<ReplayConsoleNotificationDeadLetterData>>): UseMutationOptions<ReplayConsoleNotificationDeadLetterResponse, Options<ReplayConsoleNotificationDeadLetterData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await replayConsoleNotificationDeadLetter({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const replayConsoleNotificationDeadLettersMutationOptions = (options?: Partial<Options<ReplayConsoleNotificationDeadLettersData>>): UseMutationOptions<ReplayConsoleNotificationDeadLettersResponse, Options<ReplayConsoleNotificationDeadLettersData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await replayConsoleNotificationDeadLetters({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const ignoreConsoleNotificationDeadLetterMutationOptions = (options?: Partial<Options<IgnoreConsoleNotificationDeadLetterData>>): UseMutationOptions<IgnoreConsoleNotificationDeadLetterResponse, Options<IgnoreConsoleNotificationDeadLetterData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await ignoreConsoleNotificationDeadLetter({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
 export const submitConsoleNotificationIntentMutationOptions = (options?: Partial<Options<SubmitConsoleNotificationIntentData>>): UseMutationOptions<SubmitConsoleNotificationIntentResponse, Options<SubmitConsoleNotificationIntentData>, Error> => ({
     mutation: async (vars) => {
         const { data } = await submitConsoleNotificationIntent({
@@ -120,6 +195,39 @@ export const markConsoleNotificationMessageReadMutationOptions = (options?: Part
 export const markConsoleNotificationMessagesReadMutationOptions = (options?: Partial<Options<MarkConsoleNotificationMessagesReadData>>): UseMutationOptions<MarkConsoleNotificationMessagesReadResponse, Options<MarkConsoleNotificationMessagesReadData>, Error> => ({
     mutation: async (vars) => {
         const { data } = await markConsoleNotificationMessagesRead({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const upsertConsoleNotificationPreferenceMutationOptions = (options?: Partial<Options<UpsertConsoleNotificationPreferenceData>>): UseMutationOptions<UpsertConsoleNotificationPreferenceResponse, Options<UpsertConsoleNotificationPreferenceData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await upsertConsoleNotificationPreference({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const upsertConsoleNotificationSubscriptionMutationOptions = (options?: Partial<Options<UpsertConsoleNotificationSubscriptionData>>): UseMutationOptions<UpsertConsoleNotificationSubscriptionResponse, Options<UpsertConsoleNotificationSubscriptionData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await upsertConsoleNotificationSubscription({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const upsertConsoleNotificationRecipientChannelBindingMutationOptions = (options?: Partial<Options<UpsertConsoleNotificationRecipientChannelBindingData>>): UseMutationOptions<UpsertConsoleNotificationRecipientChannelBindingResponse, Options<UpsertConsoleNotificationRecipientChannelBindingData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await upsertConsoleNotificationRecipientChannelBinding({
             ...options,
             ...vars,
             throwOnError: true
@@ -206,6 +314,17 @@ export const updateConsoleIamUserMutationOptions = (options?: Partial<Options<Up
 export const disableConsoleIamUserMutationOptions = (options?: Partial<Options<DisableConsoleIamUserData>>): UseMutationOptions<DisableConsoleIamUserResponse, Options<DisableConsoleIamUserData>, Error> => ({
     mutation: async (vars) => {
         const { data } = await disableConsoleIamUser({
+            ...options,
+            ...vars,
+            throwOnError: true
+        });
+        return data;
+    }
+});
+
+export const enableConsoleIamUserMutationOptions = (options?: Partial<Options<EnableConsoleIamUserData>>): UseMutationOptions<EnableConsoleIamUserResponse, Options<EnableConsoleIamUserData>, Error> => ({
+    mutation: async (vars) => {
+        const { data } = await enableConsoleIamUser({
             ...options,
             ...vars,
             throwOnError: true
@@ -356,6 +475,20 @@ export const listConsoleFilesQueryOptions = defineQueryOptions<Options<ListConso
     key: listConsoleFilesQueryKey(options),
     query: async (context) => {
         const { data } = await listConsoleFiles({
+            ...options,
+            ...context,
+            throwOnError: true
+        });
+        return data;
+    }
+}));
+
+export const getConsoleFileStorageUsageQueryKey = (options?: Options<GetConsoleFileStorageUsageData>) => createQueryKey('getConsoleFileStorageUsage', options, ['Console Files', 'Api']);
+
+export const getConsoleFileStorageUsageQueryOptions = defineQueryOptions<Options<GetConsoleFileStorageUsageData>, GetConsoleFileStorageUsageResponse, Error>((options?: Options<GetConsoleFileStorageUsageData>) => ({
+    key: getConsoleFileStorageUsageQueryKey(options),
+    query: async (context) => {
+        const { data } = await getConsoleFileStorageUsage({
             ...options,
             ...context,
             throwOnError: true

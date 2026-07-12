@@ -5,7 +5,7 @@ pageClass: ds-wide
 
 <script setup>
 import { ResourceSchedulerBoard } from '@nerv-iip/scheduling'
-import { ButtonPro, FieldPro, FieldProGroup, FieldProLabel, InputPro, SelectPro, SelectProContent, SelectProItem, SelectProTrigger, SelectProValue } from '@nerv-iip/ui'
+import { Button, Field, FieldGroup, FieldLabel, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@nerv-iip/ui'
 import SchedulingLegend from '../../../../../packages/scheduling/src/components/panels/SchedulingLegend.vue'
 import { computed, ref } from 'vue'
 import { makeModel, makeCalendarModel, makeBlockDemoModel } from '../../.vitepress/schedulingDemo'
@@ -330,23 +330,23 @@ function onDrag(p) {
     <div v-if="editTask">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-bottom:.875rem">
         <div style="font-weight:600; font-size:.875rem">编辑工序 · {{ editTask.text }} · {{ editTask.orderId }}</div>
-        <ButtonPro :variant="editTask.locked ? 'brand' : 'outline'" size="sm" @click="toggleLock">{{ editTask.locked ? '已锁定 · 点击解锁' : '锁定' }}</ButtonPro>
+        <Button :variant="editTask.locked ? 'default' : 'outline'" size="sm" @click="toggleLock">{{ editTask.locked ? '已锁定 · 点击解锁' : '锁定' }}</Button>
       </div>
-      <FieldProGroup>
-        <FieldPro>
-          <FieldProLabel for="edit-start">开始时间</FieldProLabel>
-          <InputPro id="edit-start" type="datetime-local" v-model="editStart" />
-        </FieldPro>
-        <FieldPro>
-          <FieldProLabel for="edit-res">资源 / 泳道</FieldProLabel>
-          <SelectPro v-model="editResource">
-            <SelectProTrigger id="edit-res"><SelectProValue placeholder="选择资源泳道" /></SelectProTrigger>
-            <SelectProContent>
-              <SelectProItem v-for="[val, label] in RES_OPTIONS" :key="val" :value="val">{{ label }}</SelectProItem>
-            </SelectProContent>
-          </SelectPro>
-        </FieldPro>
-      </FieldProGroup>
+      <FieldGroup>
+        <Field>
+          <FieldLabel for="edit-start">开始时间</FieldLabel>
+          <Input id="edit-start" v-model="editStart" name="edit-start" type="datetime-local" />
+        </Field>
+        <Field>
+          <FieldLabel for="edit-res">资源 / 泳道</FieldLabel>
+          <Select v-model="editResource">
+            <SelectTrigger id="edit-res"><SelectValue placeholder="选择资源泳道" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="[val, label] in RES_OPTIONS" :key="val" :value="val">{{ label }}</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+      </FieldGroup>
       <div style="color:var(--muted-foreground); font-size:.75rem; margin-top:.75rem">
         时长 {{ fmtDur(editTask) }}h · 改开始时间按原时长顺移结束 · 改资源即跨泳道换道 · 锁定后重排不被算法挪动。
       </div>

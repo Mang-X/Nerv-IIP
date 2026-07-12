@@ -58,28 +58,30 @@ function toggle() {
 </template>
 
 <style scoped>
-.ds-mcheck {
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-/* WinUI3-style press: the box depresses (shrinks) while held, then springs back. */
-.ds-mcheck-box {
-  transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease,
-    transform 0.2s var(--ease-out-back, cubic-bezier(0.34, 1.4, 0.64, 1));
-}
-.ds-mcheck:active:not(:disabled) .ds-mcheck-box {
-  transform: scale(0.88);
-}
-.ds-mcheck-tick {
-  transition:
-    transform 0.18s var(--ease-out-back, cubic-bezier(0.34, 1.4, 0.64, 1)),
-    opacity 0.14s ease;
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
+  .ds-mcheck {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  /* WinUI3-style press: the box depresses (shrinks) while held, then springs back. */
+  .ds-mcheck-box {
+    transition:
+      background-color 0.18s ease,
+      border-color 0.18s ease,
+      transform 0.2s var(--nv-ease-out-quart);
+  }
+  .ds-mcheck:active:not(:disabled) .ds-mcheck-box {
+    transform: scale(0.88);
+  }
   .ds-mcheck-tick {
-    transition: opacity 0.12s linear;
+    transition:
+      transform 0.18s var(--nv-ease-out-quart),
+      opacity 0.14s ease;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-mcheck-tick {
+      transition: opacity 0.12s linear;
+    }
   }
 }
 </style>

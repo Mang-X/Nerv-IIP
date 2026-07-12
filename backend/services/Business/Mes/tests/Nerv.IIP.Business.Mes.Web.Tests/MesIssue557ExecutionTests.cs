@@ -31,6 +31,72 @@ public sealed class MesIssue557ExecutionTests
     }
 
     [Fact]
+    public async Task Operation_pause_on_queued_task_surfaces_domain_rule_as_business_error()
+    {
+        await using var dbContext = CreateDbContext(nameof(Operation_pause_on_queued_task_surfaces_domain_rule_as_business_error));
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
+        workOrder.MarkReleased();
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "OP-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-10",
+            [],
+            Utc("2026-06-29T08:00:00Z"),
+            TimeSpan.FromHours(4),
+            null,
+            null));
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
+
+        // Pausing a queued (not in-progress) task trips OperationTask.Pause's InvalidOperationException. Before the
+        // domain-rule guard it escaped unwrapped as an unhandled HTTP 500; it must now surface as a KnownException.
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-10", "pause", Utc("2026-06-30T09:00:00Z")),
+            CancellationToken.None));
+
+        Assert.Contains("in-progress", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Confirm_line_side_receipt_over_requested_quantity_surfaces_domain_rule_as_business_error()
+    {
+        await using var dbContext = CreateDbContext(nameof(Confirm_line_side_receipt_over_requested_quantity_surfaces_domain_rule_as_business_error));
+        dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-001",
+            "WO-001",
+            "OP-10",
+            "MAT-001",
+            "PCS",
+            5m,
+            Utc("2026-06-29T08:00:00Z")));
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ConfirmLineSideMaterialReceiptCommandHandler(dbContext);
+
+        // Confirming more than requested trips ConfirmLineSideReceipt's ArgumentOutOfRangeException guard — a sibling
+        // of InvalidOperationException that a catch(InvalidOperationException) would miss. It must still surface as a
+        // KnownException business error, not an unhandled HTTP 500.
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ConfirmLineSideMaterialReceiptCommand(
+                "org-001",
+                "env-dev",
+                "MIR-001",
+                Utc("2026-06-29T09:00:00Z"),
+                15m),
+            CancellationToken.None));
+
+        Assert.Contains("exceed", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Operation_complete_rejects_later_sequence_before_previous_operations_complete()
     {
         await using var dbContext = CreateDbContext(nameof(Operation_complete_rejects_later_sequence_before_previous_operations_complete));
@@ -341,6 +407,37 @@ public sealed class MesIssue557ExecutionTests
         Assert.Equal(0m, materialRequest.ReceivedQuantity);
         Assert.Null(materialRequest.MaterialLotId);
         Assert.Null(materialRequest.ReceivedAtUtc);
+    }
+
+    [Fact]
+    public async Task Cancel_work_order_maps_received_material_without_lot_to_business_error()
+    {
+        await using var dbContext = CreateDbContext(nameof(Cancel_work_order_maps_received_material_without_lot_to_business_error));
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-695-NOLOT", "SKU-FG", "PV-001", 10m, 1, Utc("2026-07-03T08:00:00Z"), "PCS");
+        workOrder.MarkReleased();
+        var materialRequest = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-695-NOLOT",
+            "WO-695-NOLOT",
+            "OP-10",
+            "MAT-001",
+            "PCS",
+            5m,
+            Utc("2026-07-03T07:00:00Z"));
+        materialRequest.ConfirmLineSideReceipt(Utc("2026-07-03T07:30:00Z"), 5m);
+        materialRequest.ClearDomainEvents();
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.MaterialIssueRequests.Add(materialRequest);
+        await dbContext.SaveChangesAsync();
+        var handler = new CancelWorkOrderCommandHandler(dbContext);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CancelWorkOrderCommand("org-001", "env-dev", "WO-695-NOLOT", "plan cancelled", Utc("2026-07-03T09:00:00Z")),
+            CancellationToken.None));
+
+        Assert.Contains("received material lot", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
     }
 
     private static void SeedReleasedWorkOrderWithTwoOperations(ApplicationDbContext dbContext, OperationTaskLifecycleStatus secondStatus)

@@ -37,6 +37,14 @@ public sealed record MasterDataResourceItem(
     int? Precision = null,
     string? RoundingMode = null,
     string? DeviceAssetId = null,
+    DateOnly? PurchaseDate = null,
+    decimal? PurchaseCost = null,
+    string? PurchaseCurrencyCode = null,
+    DateOnly? WarrantyExpiresOn = null,
+    string? SupplierPartnerCode = null,
+    string? StationCode = null,
+    string? ParentDeviceId = null,
+    DateOnly? RetiredOn = null,
     decimal? CreditLimit = null,
     string? CreditCurrencyCode = null);
 
@@ -197,38 +205,15 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
                 x.Code,
                 x.Name,
                 !x.Disabled,
-                x.UpdatedAtUtc.ToString("O"),
-                x.PartnerType,
-                x.PartnerRoles,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                x.Disabled ? "disabled" : "active",
-                null,
-                null,
-                null,
-                null,
-                x.TaxId,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                x.CreditLimit,
-                x.CreditCurrencyCode));
+                x.UpdatedAtUtc.ToString("O"))
+            {
+                PartnerType = x.PartnerType,
+                PartnerRoles = x.PartnerRoles,
+                Status = x.Disabled ? "disabled" : "active",
+                TaxId = x.TaxId,
+                CreditLimit = x.CreditLimit,
+                CreditCurrencyCode = x.CreditCurrencyCode,
+            });
     }
 
     private IQueryable<MasterDataResourceItem> ListDepartments(ListMasterDataResourcesQuery request, string resourceType)
@@ -331,9 +316,19 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
                 x.UpdatedAtUtc.ToString("O"))
             {
                 LineCode = x.LineCode,
+                SiteCode = x.SiteCode,
+                WorkshopCode = x.WorkshopCode,
                 WorkCenterCode = x.WorkCenterCode,
                 Status = x.Disabled ? "disabled" : "active",
                 DeviceAssetId = x.Id.ToString(),
+                PurchaseDate = x.PurchaseDate,
+                PurchaseCost = x.PurchaseCost,
+                PurchaseCurrencyCode = x.PurchaseCurrencyCode,
+                WarrantyExpiresOn = x.WarrantyExpiresOn,
+                SupplierPartnerCode = x.SupplierPartnerCode,
+                StationCode = x.StationCode,
+                ParentDeviceId = x.ParentDeviceId,
+                RetiredOn = x.RetiredOn,
             });
     }
 
@@ -425,6 +420,14 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
         int? Precision = null,
         string? RoundingMode = null,
         string? DeviceAssetId = null,
+        DateOnly? PurchaseDate = null,
+        decimal? PurchaseCost = null,
+        string? PurchaseCurrencyCode = null,
+        DateOnly? WarrantyExpiresOn = null,
+        string? SupplierPartnerCode = null,
+        string? StationCode = null,
+        string? ParentDeviceId = null,
+        DateOnly? RetiredOn = null,
         decimal? CreditLimit = null,
         string? CreditCurrencyCode = null)
     {
@@ -463,6 +466,14 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             Precision,
             RoundingMode,
             DeviceAssetId,
+            PurchaseDate,
+            PurchaseCost,
+            PurchaseCurrencyCode,
+            WarrantyExpiresOn,
+            SupplierPartnerCode,
+            StationCode,
+            ParentDeviceId,
+            RetiredOn,
             CreditLimit,
             CreditCurrencyCode);
     }

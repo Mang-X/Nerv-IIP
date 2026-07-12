@@ -1,9 +1,90 @@
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
+using System.Text.Json;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 
 public sealed class MrpCalculatorTests
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    [Fact]
+    public void Suggestions_expose_net_requirement_formula_from_real_mrp_inputs()
+    {
+        var input = NewInput(
+            availability:
+            [
+                new InventoryAvailabilitySnapshot("SKU-FG-1000", "pcs", "SITE-01", 8m),
+            ],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 2m, null, null, null),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order");
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(workOrder, JsonOptions));
+        var explanation = document.RootElement.GetProperty("netRequirementExplanation");
+        Assert.Equal(10m, explanation.GetProperty("grossDemandQuantity").GetDecimal());
+        Assert.Equal(8m, explanation.GetProperty("onHandQuantity").GetDecimal());
+        Assert.Equal(0m, explanation.GetProperty("reservedQuantity").GetDecimal());
+        Assert.Equal(6m, explanation.GetProperty("availableToNetQuantity").GetDecimal());
+        Assert.Equal(0m, explanation.GetProperty("scheduledReceiptQuantity").GetDecimal());
+        Assert.Equal(2m, explanation.GetProperty("safetyStockQuantity").GetDecimal());
+        Assert.Equal(4m, explanation.GetProperty("netRequirementQuantity").GetDecimal());
+        Assert.Equal(4m, explanation.GetProperty("plannedQuantity").GetDecimal());
+        Assert.Contains("10 - 6 - 0 = 4", explanation.GetProperty("formula").GetString(), StringComparison.Ordinal);
+        Assert.Empty(explanation.GetProperty("degradationSources").EnumerateArray());
+    }
+
+    [Fact]
+    public void Net_requirement_formula_uses_actual_available_quantity_when_safety_stock_exceeds_available()
+    {
+        var input = NewInput(
+            availability:
+            [
+                new InventoryAvailabilitySnapshot("SKU-FG-1000", "pcs", "SITE-01", 8m),
+            ],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 12m, null, null, null),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order");
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(workOrder, JsonOptions));
+        var explanation = document.RootElement.GetProperty("netRequirementExplanation");
+        Assert.Equal(10m, explanation.GetProperty("grossDemandQuantity").GetDecimal());
+        Assert.Equal(8m, explanation.GetProperty("onHandQuantity").GetDecimal());
+        Assert.Equal(0m, explanation.GetProperty("availableToNetQuantity").GetDecimal());
+        Assert.Equal(12m, explanation.GetProperty("safetyStockQuantity").GetDecimal());
+        Assert.Equal(10m, explanation.GetProperty("netRequirementQuantity").GetDecimal());
+        Assert.Contains("10 - 0 - 0 = 10", explanation.GetProperty("formula").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Component_suggestions_explain_scrap_yield_and_component_source()
+    {
+        var input = NewInput(
+            availability: [],
+            bomComponents:
+            [
+                new BomComponentSnapshot("SKU-FG-1000", "SKU-RM-1000", "pcs", 2m, ScrapRate: 0.1m, YieldRate: 0.8m),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var purchase = Assert.Single(suggestions, x => x.SuggestionType == "planned-purchase");
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(purchase, JsonOptions));
+        var explanation = document.RootElement.GetProperty("netRequirementExplanation");
+        Assert.Equal(27.5m, explanation.GetProperty("grossDemandQuantity").GetDecimal());
+        Assert.Equal(0.1m, explanation.GetProperty("scrapRate").GetDecimal());
+        Assert.Equal(0.8m, explanation.GetProperty("yieldRate").GetDecimal());
+        Assert.Equal("component", explanation.GetProperty("primarySourceType").GetString());
+        Assert.Contains("scrap/yield", explanation.GetProperty("formula").GetString(), StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void Deterministic_fixture_creates_work_order_8_and_purchase_19()
     {
@@ -62,6 +143,147 @@ public sealed class MrpCalculatorTests
         var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order");
         Assert.Equal(3m, workOrder.Quantity);
         Assert.Contains(workOrder.PeggingLinks, x => x.PeggingType == "scheduled-receipt" && x.DemandSourceReference == "erp:purchase-order:PO-001");
+    }
+
+    [Fact]
+    public void Late_scheduled_receipt_creates_reschedule_in_exception_instead_of_duplicate_new_supply()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("SO-1001", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1), "sales-order"),
+            ],
+            availability: [],
+            bomComponents: [],
+            scheduledReceipts:
+            [
+                new ScheduledReceiptSnapshot("SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 5), "erp", "purchase-order", "PO-1001"),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var exception = Assert.Single(suggestions);
+        Assert.Equal("reschedule-in", exception.SuggestionType);
+        Assert.Equal("SKU-FG-1000", exception.SkuCode);
+        Assert.Equal(10m, exception.Quantity);
+        Assert.Equal(new DateOnly(2026, 6, 1), exception.RequiredDate);
+        Assert.Equal(new DateOnly(2026, 6, 5), exception.ReleaseDate);
+        Assert.Equal("scheduled-receipt-late", exception.ReasonCode);
+        Assert.Contains(exception.PeggingLinks, x => x.PeggingType == "demand" && x.DemandSourceReference == "SO-1001");
+        Assert.Contains(exception.PeggingLinks, x => x.PeggingType == "scheduled-receipt" && x.DemandSourceReference == "erp:purchase-order:PO-1001");
+    }
+
+    [Fact]
+    public void Late_same_day_scheduled_receipt_exceptions_keep_receipt_pegging_separate()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("SO-1001", "SKU-FG-1000", "pcs", "SITE-01", 12m, new DateOnly(2026, 6, 1), "sales-order"),
+            ],
+            availability: [],
+            bomComponents: [],
+            scheduledReceipts:
+            [
+                new ScheduledReceiptSnapshot("SKU-FG-1000", "pcs", "SITE-01", 5m, new DateOnly(2026, 6, 5), "erp", "purchase-order", "PO-1001"),
+                new ScheduledReceiptSnapshot("SKU-FG-1000", "pcs", "SITE-01", 7m, new DateOnly(2026, 6, 5), "erp", "purchase-order", "PO-1002"),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input)
+            .Where(x => x.SuggestionType == "reschedule-in")
+            .OrderBy(x => x.Quantity)
+            .ToArray();
+
+        Assert.Equal(2, suggestions.Length);
+        Assert.All(suggestions, suggestion =>
+        {
+            var receiptLink = Assert.Single(suggestion.PeggingLinks, x => x.PeggingType == "scheduled-receipt");
+            Assert.Equal(suggestion.Quantity, receiptLink.Quantity);
+        });
+        Assert.Contains(suggestions, x => x.Quantity == 5m && x.PeggingLinks.Any(y => y.DemandSourceReference == "erp:purchase-order:PO-1001"));
+        Assert.Contains(suggestions, x => x.Quantity == 7m && x.PeggingLinks.Any(y => y.DemandSourceReference == "erp:purchase-order:PO-1002"));
+    }
+
+    [Fact]
+    public void Early_scheduled_receipt_used_by_future_requirement_creates_reschedule_out_exception()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("SO-1001", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 10), "sales-order"),
+            ],
+            availability: [],
+            bomComponents: [],
+            scheduledReceipts:
+            [
+                new ScheduledReceiptSnapshot("SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1), "erp", "purchase-order", "PO-1001"),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var exception = Assert.Single(suggestions);
+        Assert.Equal("reschedule-out", exception.SuggestionType);
+        Assert.Equal(10m, exception.Quantity);
+        Assert.Equal(new DateOnly(2026, 6, 10), exception.RequiredDate);
+        Assert.Equal(new DateOnly(2026, 6, 1), exception.ReleaseDate);
+        Assert.Equal("scheduled-receipt-early", exception.ReasonCode);
+        Assert.Contains(exception.PeggingLinks, x => x.PeggingType == "demand" && x.DemandSourceReference == "SO-1001");
+        Assert.Contains(exception.PeggingLinks, x => x.PeggingType == "scheduled-receipt" && x.DemandSourceReference == "erp:purchase-order:PO-1001");
+    }
+
+    [Fact]
+    public void Unused_scheduled_receipt_creates_cancel_exception_when_no_matching_requirement_exists()
+    {
+        var input = NewInput(
+            demands: [],
+            availability: [],
+            bomComponents: [],
+            scheduledReceipts:
+            [
+                new ScheduledReceiptSnapshot("SKU-RM-1000", "pcs", "SITE-01", 6m, new DateOnly(2026, 6, 15), "erp", "purchase-order", "PO-2001"),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var exception = Assert.Single(suggestions);
+        Assert.Equal("cancel", exception.SuggestionType);
+        Assert.Equal("SKU-RM-1000", exception.SkuCode);
+        Assert.Equal(6m, exception.Quantity);
+        Assert.Equal(new DateOnly(2026, 6, 15), exception.RequiredDate);
+        Assert.Equal(new DateOnly(2026, 6, 15), exception.ReleaseDate);
+        Assert.Equal("scheduled-receipt-unneeded", exception.ReasonCode);
+        var receipt = Assert.Single(exception.PeggingLinks);
+        Assert.Equal("scheduled-receipt", receipt.PeggingType);
+        Assert.Equal("erp:purchase-order:PO-2001", receipt.DemandSourceReference);
+    }
+
+    [Fact]
+    public void Cancel_exception_keeps_receipt_quantity_needed_to_restore_safety_stock()
+    {
+        var input = NewInput(
+            demands: [],
+            availability:
+            [
+                new InventoryAvailabilitySnapshot("SKU-RM-1000", "pcs", "SITE-01", 2m),
+            ],
+            bomComponents: [],
+            scheduledReceipts:
+            [
+                new ScheduledReceiptSnapshot("SKU-RM-1000", "pcs", "SITE-01", 6m, new DateOnly(2026, 6, 15), "erp", "purchase-order", "PO-2001"),
+            ],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-RM-1000", "pcs", "SITE-01", 0, 5m, null, null, null, ProcurementType: "buy"),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var exception = Assert.Single(suggestions);
+        Assert.Equal("cancel", exception.SuggestionType);
+        Assert.Equal(3m, exception.Quantity);
+        Assert.Equal("scheduled-receipt-unneeded", exception.ReasonCode);
+        var receipt = Assert.Single(exception.PeggingLinks);
+        Assert.Equal(3m, receipt.Quantity);
     }
 
     [Fact]

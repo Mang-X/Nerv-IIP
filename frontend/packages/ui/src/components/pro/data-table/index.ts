@@ -1,11 +1,11 @@
-export { default as DataTablePro } from './DataTablePro.vue'
-export { default as DataTablePaginationPro } from './DataTablePaginationPro.vue'
-export { default as DataTableToolbarPro } from './DataTableToolbarPro.vue'
+export { default as NvDataTable } from './DataTablePro.vue'
+export { default as NvDataTablePagination } from './DataTablePaginationPro.vue'
+export { default as NvDataTableToolbar } from './DataTableToolbarPro.vue'
 export type {
-  DataTableProAlign,
-  DataTableProColumn,
-  DataTableProDensity,
-  DataTableProFilterOption,
-  DataTableProFilters,
-  DataTableProSort,
+  DataTableProAlign as NvDataTableAlign,
+  DataTableProColumn as NvDataTableColumn,
+  DataTableProDensity as NvDataTableDensity,
+  DataTableProFilterOption as NvDataTableFilterOption,
+  DataTableProFilters as NvDataTableFilters,
+  DataTableProSort as NvDataTableSort,
 } from './types'

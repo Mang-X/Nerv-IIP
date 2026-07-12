@@ -1,2 +1,1 @@
-export { default as PageHeader } from './PageHeader.vue'
-export type { PageHeaderCrumb } from './PageHeader.vue'
+export { default as NvPageHeader, type PageHeaderCrumb } from './PageHeader.vue'

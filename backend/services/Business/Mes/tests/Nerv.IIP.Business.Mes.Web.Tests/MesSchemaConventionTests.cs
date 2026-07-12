@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Nerv.IIP.Business.Mes.Domain;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
@@ -42,6 +43,7 @@ public sealed class MesSchemaConventionTests
         var businessEntities = new[]
         {
             typeof(WorkOrder),
+            typeof(MesEngineeringChangeWorkOrderImpact),
             typeof(OperationTask),
             typeof(ProductionReport),
             typeof(ProductionReportMaterialConsumption),
@@ -75,6 +77,7 @@ public sealed class MesSchemaConventionTests
         failures.AddRange(ForeignKeysAreConfigured(fixture.DbContext));
         failures.AddRange(IndexNamesAreExplicit(fixture.DbContext, businessEntities));
         failures.AddRange(MaterialConsumptionHasIdempotencyIndex(fixture.DbContext));
+        failures.AddRange(ProductionReportReversalHasUniqueOriginalReportIndex(fixture.DbContext.Model));
         failures.AddRange(ProcessedIntegrationEventHasUniqueInboxIndex(fixture.DbContext.Model));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
@@ -90,6 +93,26 @@ public sealed class MesSchemaConventionTests
             .Invoke(migration, [migrationBuilder]);
 
         AssertInboxDeduplicationBeforeUniqueIndex(migrationBuilder, MesFacts.Schema);
+    }
+
+    [Fact]
+    public void Production_report_reversal_migration_creates_unique_original_report_index()
+    {
+        var migration = new AddMesProductionReportReversal();
+        var migrationBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddMesProductionReportReversal)
+            .GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [migrationBuilder]);
+
+        var hasUniqueReversalIndex = migrationBuilder.Operations.Any(operation =>
+            operation is CreateIndexOperation createIndexOperation &&
+            createIndexOperation.Schema == MesFacts.Schema &&
+            createIndexOperation.Table == "production_reports" &&
+            createIndexOperation.Name == "ux_production_reports_scope_reversed_report_no" &&
+            createIndexOperation.IsUnique &&
+            createIndexOperation.Columns.SequenceEqual(["organization_id", "environment_id", "reversed_report_no"]));
+
+        Assert.True(hasUniqueReversalIndex, $"{MesFacts.Schema}: reversal migration must create a unique original-report index.");
     }
 
     private static IReadOnlyCollection<string> ProcessedIntegrationEventHasUniqueInboxIndex(IModel model)
@@ -111,6 +134,28 @@ public sealed class MesSchemaConventionTests
         return hasUniqueIndex
             ? []
             : [$"{MesFacts.ServiceName}: processed integration event inbox requires a unique consumer/idempotency key index."];
+    }
+
+    private static IReadOnlyCollection<string> ProductionReportReversalHasUniqueOriginalReportIndex(IModel model)
+    {
+        var entity = model.FindEntityType(typeof(ProductionReport));
+        if (entity is null)
+        {
+            return [$"{MesFacts.ServiceName}: missing entity type {nameof(ProductionReport)}."];
+        }
+
+        var hasUniqueIndex = entity.GetIndexes().Any(index =>
+            index.IsUnique &&
+            index.GetDatabaseName() == "ux_production_reports_scope_reversed_report_no" &&
+            index.Properties.Select(property => property.Name).SequenceEqual([
+                nameof(ProductionReport.OrganizationId),
+                nameof(ProductionReport.EnvironmentId),
+                nameof(ProductionReport.ReversedReportNo),
+            ]));
+
+        return hasUniqueIndex
+            ? []
+            : [$"{MesFacts.ServiceName}: production report reversal requires a unique organization/environment/reversed report index."];
     }
 
     private static void AssertInboxDeduplicationBeforeUniqueIndex(MigrationBuilder migrationBuilder, string schema)

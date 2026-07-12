@@ -36,7 +36,7 @@ public sealed class WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDel
         return consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Wms.WmsIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(WmsIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);
@@ -74,7 +74,7 @@ public sealed class WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDel
             return;
         }
 
-        var delivery = await dbContext.DeliveryOrders.SingleOrDefaultAsync(x =>
+        var delivery = await dbContext.DeliveryOrders.Include(x => x.Lines).SingleOrDefaultAsync(x =>
             x.OrganizationId == integrationEvent.OrganizationId
             && x.EnvironmentId == integrationEvent.EnvironmentId
             && x.DeliveryOrderNo == integrationEvent.Payload.PublicReference,
@@ -109,7 +109,21 @@ public sealed class WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDel
             return;
         }
 
-        delivery.Cancel(integrationEvent.Payload.DiagnosticMessage, integrationEvent.OccurredAtUtc.UtcDateTime);
+        if (delivery.Cancel(integrationEvent.Payload.DiagnosticMessage, integrationEvent.OccurredAtUtc.UtcDateTime))
+        {
+            var order = await dbContext.SalesOrders.Include(x => x.Lines).SingleOrDefaultAsync(x =>
+                x.OrganizationId == integrationEvent.OrganizationId
+                && x.EnvironmentId == integrationEvent.EnvironmentId
+                && x.SalesOrderNo == delivery.SalesOrderNo,
+                cancellationToken);
+            if (order is not null)
+            {
+                foreach (var line in delivery.Lines)
+                {
+                    order.ReleaseDelivery(line.SalesOrderLineNo, line.Quantity);
+                }
+            }
+        }
     }
 
     private Task DeadLetterAsync(

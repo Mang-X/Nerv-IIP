@@ -20,6 +20,7 @@ const GOLD_STANDARD_PAGES = [
   'mes/quality.vue',
   'quality/inspections.vue',
   'quality/ncrs.vue',
+  'quality/analysis.vue',
   'quality/reason-codes.vue',
   'engineering/production-versions.vue',
   'engineering/standard-operations.vue',
@@ -48,11 +49,28 @@ const GOLD_STANDARD_PAGES = [
   'wms/outbound.vue',
   'wms/wcs.vue',
   'wms/counts.vue',
+  'barcode/rules.vue',
+  'barcode/templates.vue',
   'maintenance/work-orders.vue',
   'maintenance/plans.vue',
+  'inventory/lots.vue',
+  'equipment/telemetry/tags.vue',
+  'equipment/telemetry/alarm-rules.vue',
+  'equipment/telemetry/history.vue',
+  'equipment/telemetry/oee.vue',
   'erp/index.vue',
+  'erp/procurement/rfqs.vue',
+  'erp/procurement/supplier-quotations.vue',
+  'erp/procurement/purchase-orders.vue',
+  'erp/procurement/receipts.vue',
   'erp/sales.vue',
+  'erp/sales/quotations.vue',
+  'erp/sales/orders.vue',
+  'erp/sales/deliveries.vue',
   'erp/finance.vue',
+  'erp/finance/ar-ap.vue',
+  'erp/finance/vouchers.vue',
+  'erp/finance/cost-candidates.vue',
 ]
 
 // SectionCards is NOT required: KPI cards are decided per page (business-meaningful,
@@ -60,7 +78,7 @@ const GOLD_STANDARD_PAGES = [
 // maintenance pages legitimately have none. See master-data-templates.md §0/§2 and
 // business-console AGENTS.md §1.5-B.
 // 分页已集成进 DataTablePro（manual 服务端模式 → 卡内页脚），不再要求独立的 DataTablePagination 块。
-const REQUIRED_BLOCKS = ['PageHeader', 'DataTablePro']
+const REQUIRED_BLOCKS = ['NvPageHeader', 'NvDataTable']
 const LEGACY_BLOCKS = [
   'BusinessPageHeader',
   'BusinessContextBar',
@@ -94,17 +112,23 @@ describe('gold-standard page enforcement', () => {
 
       it('does not use legacy per-app block components', () => {
         for (const legacy of LEGACY_BLOCKS) {
-          expect.soft(src, `${legacy} must be replaced by a @nerv-iip/ui block`).not.toMatch(new RegExp(`\\b${legacy}\\b`))
+          expect
+            .soft(src, `${legacy} must be replaced by a @nerv-iip/ui block`)
+            .not.toMatch(new RegExp(`\\b${legacy}\\b`))
         }
       })
 
       it('renders the table via DataTable, not a raw <Table>', () => {
-        expect.soft(src, 'raw <Table> assembly is banned — use DataTable').not.toMatch(/<Table[\s>]/)
+        expect
+          .soft(src, 'raw <Table> assembly is banned — use DataTable')
+          .not.toMatch(/<Table[\s>]/)
         expect.soft(src).not.toMatch(/<TableHeader[\s>]/)
       })
 
       it('has no deep imports (only @nerv-iip/ui and @nerv-iip/app-shell)', () => {
-        expect.soft(src, 'deep @nerv-iip/ui import is banned').not.toMatch(/from ['"]@nerv-iip\/ui\//)
+        expect
+          .soft(src, 'deep @nerv-iip/ui import is banned')
+          .not.toMatch(/from ['"]@nerv-iip\/ui\//)
         expect.soft(src, 'import reka-ui directly is banned').not.toMatch(/from ['"]reka-ui/)
         expect.soft(src, 'import shadcn-vue directly is banned').not.toMatch(/from ['"]shadcn-vue/)
       })
@@ -112,7 +136,9 @@ describe('gold-standard page enforcement', () => {
       it('has no developer-language / platform-metadata copy', () => {
         const lower = src.toLowerCase()
         for (const term of BANNED_COPY) {
-          expect.soft(lower, `"${term}" must not appear in a business page`).not.toContain(term.toLowerCase())
+          expect
+            .soft(lower, `"${term}" must not appear in a business page`)
+            .not.toContain(term.toLowerCase())
         }
       })
     })

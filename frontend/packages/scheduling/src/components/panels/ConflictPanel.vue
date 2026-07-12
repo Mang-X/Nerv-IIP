@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Empty, EmptyDescription, EmptyTitle, ScrollArea, StatusBadge } from '@nerv-iip/ui'
+import { Empty, EmptyDescription, EmptyTitle, NvStatusBadge, ScrollArea } from '@nerv-iip/ui'
 import { conflictReasonLabel, severityTone } from '../../model/labels'
 import type { ScheduleConflict } from '../../model/types'
 
@@ -31,7 +31,7 @@ function onClick(c: ScheduleConflict) {
             @click="onClick(c)"
           >
             <span class="flex items-center gap-2">
-              <StatusBadge :tone="severityTone[c.severity]" :label="conflictReasonLabel[c.reason]" />
+              <NvStatusBadge :tone="severityTone[c.severity]" :label="conflictReasonLabel[c.reason]" />
               <span class="truncate text-xs text-muted-foreground">{{ c.orderId }}</span>
             </span>
             <span class="text-sm text-foreground">{{ c.message }}</span>

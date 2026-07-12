@@ -23,6 +23,9 @@ public sealed record LabelPrintBatchSummary(
     string IdempotencyKey,
     int RequestedQuantity,
     string Status,
+    string? PrinterId,
+    string? PrintJobId,
+    string? FailureReason,
     DateTimeOffset CreatedAtUtc);
 
 public sealed class ListLabelPrintBatchesQueryValidator : AbstractValidator<ListLabelPrintBatchesQuery>
@@ -77,6 +80,9 @@ public sealed class ListLabelPrintBatchesQueryHandler(ApplicationDbContext dbCon
                 x.IdempotencyKey,
                 x.RequestedQuantity,
                 x.Status,
+                x.PrinterId,
+                x.PrintJobId,
+                x.FailureReason,
                 x.CreatedAtUtc))
             .ToArrayAsync(cancellationToken);
         return new LabelPrintBatchListResult(items, total);

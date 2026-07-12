@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
@@ -440,7 +441,8 @@ public sealed record MesOperationTaskRow(
     string? WorkCenterCode = null,
     string? WorkCenterName = null,
     string? DeviceAssetCode = null,
-    string? DeviceAssetName = null);
+    string? DeviceAssetName = null,
+    string? OperationCode = null);
 
 public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetMesWorkOrderDetailQuery, MesWorkOrderDetailResponse>
@@ -533,7 +535,8 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
                 x.WorkCenterId,
                 null,
                 x.DeviceAssetId,
-                null));
+                null,
+                x.OperationCode));
     }
 
     internal static IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask> QueryOperationTaskEntities(
@@ -692,6 +695,7 @@ public sealed record MesMaterialIssueRequestRow(
     string? MaterialLotId,
     decimal RequestedQuantity,
     decimal ReceivedQuantity,
+    decimal ConsumedQuantity,
     string Status,
     DateTimeOffset RequestedAtUtc,
     string? WorkOrderNo = null,
@@ -764,6 +768,16 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
                 x.MaterialLotId,
                 x.RequestedQuantity,
                 x.ReceivedQuantity,
+                // Authoritative consumed-so-far, matching WorkOrderCancellation's derivation
+                // (sum of production-report consumptions for this request/material/lot). Lets the cancel
+                // preview compute returnable = max(0, received - consumed) instead of assuming received.
+                dbContext.ProductionReportMaterialConsumptions
+                    .Where(c => c.OrganizationId == x.OrganizationId
+                        && c.EnvironmentId == x.EnvironmentId
+                        && c.MaterialIssueRequestNo == x.RequestNo
+                        && c.MaterialId == x.MaterialId
+                        && c.MaterialLotId == x.MaterialLotId)
+                    .Sum(c => (decimal?)c.ConsumedQuantity) ?? 0m,
                 x.Status,
                 x.RequestedAtUtc,
                 x.WorkOrderId,
@@ -1383,6 +1397,21 @@ public sealed record MesTraceabilityNode(string NodeId, string NodeType, string 
 
 public sealed record MesTraceabilityEdge(string FromNodeId, string ToNodeId, string RelationType);
 
+public static class MesTraceabilityProductionReportQueries
+{
+    public static IQueryable<ProductionReport> ActiveProductionReports(this ApplicationDbContext dbContext)
+    {
+        return dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(report =>
+                report.ReversedReportNo == null &&
+                !dbContext.ProductionReports.Any(reversal =>
+                    reversal.OrganizationId == report.OrganizationId &&
+                    reversal.EnvironmentId == report.EnvironmentId &&
+                    reversal.ReversedReportNo == report.ReportNo));
+    }
+}
+
 public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetWorkOrderTraceabilityQuery, MesTraceabilityResponse>
 {
@@ -1405,14 +1434,15 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
         var detail = await new GetMesWorkOrderDetailQueryHandler(dbContext).Handle(
             new GetMesWorkOrderDetailQuery(request.OrganizationId, request.EnvironmentId, request.WorkOrderId),
             cancellationToken);
-        var reports = await dbContext.ProductionReports
-            .AsNoTracking()
+        var activeProductionReports = dbContext.ActiveProductionReports();
+        var reports = await activeProductionReports
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.WorkOrderId == request.WorkOrderId)
             .Select(x => new { Id = x.ReportNo, x.OperationTaskId, x.ProducedLotNo, x.SerialNo })
             .ToArrayAsync(cancellationToken);
+        var activeReportNos = reports.Select(x => x.Id).ToArray();
 
         var nodes = new List<MesTraceabilityNode>
         {
@@ -1474,7 +1504,8 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderId == request.WorkOrderId)
+                x.WorkOrderId == request.WorkOrderId &&
+                activeReportNos.Contains(x.ReportNo))
             .Select(x => new { x.ReportNo, x.MaterialId, x.MaterialLotId, x.MaterialIssueRequestNo })
             .ToArrayAsync(cancellationToken);
         foreach (var consumption in consumptions)
@@ -1504,12 +1535,17 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
 {
     public async Task<MesTraceabilityResponse> Handle(GetBatchTraceabilityQuery request, CancellationToken cancellationToken)
     {
+        var activeProductionReports = dbContext.ActiveProductionReports();
         var consumptions = await dbContext.ProductionReportMaterialConsumptions
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                x.MaterialLotId == request.BatchOrSerial)
+                x.MaterialLotId == request.BatchOrSerial &&
+                activeProductionReports.Any(report =>
+                    report.OrganizationId == x.OrganizationId &&
+                    report.EnvironmentId == x.EnvironmentId &&
+                    report.ReportNo == x.ReportNo))
             .Select(x => new
             {
                 x.ReportNo,
@@ -1521,8 +1557,7 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
             })
             .ToArrayAsync(cancellationToken);
 
-        var producedReports = await dbContext.ProductionReports
-            .AsNoTracking()
+        var producedReports = await activeProductionReports
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
@@ -1586,12 +1621,17 @@ public sealed class GetMaterialLotTraceabilityQueryHandler(ApplicationDbContext 
 {
     public async Task<MesTraceabilityResponse> Handle(GetMaterialLotTraceabilityQuery request, CancellationToken cancellationToken)
     {
+        var activeProductionReports = dbContext.ActiveProductionReports();
         var consumptions = await dbContext.ProductionReportMaterialConsumptions
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                x.MaterialLotId == request.MaterialLotId)
+                x.MaterialLotId == request.MaterialLotId &&
+                activeProductionReports.Any(report =>
+                    report.OrganizationId == x.OrganizationId &&
+                    report.EnvironmentId == x.EnvironmentId &&
+                    report.ReportNo == x.ReportNo))
             .Select(x => new
             {
                 x.ReportNo,

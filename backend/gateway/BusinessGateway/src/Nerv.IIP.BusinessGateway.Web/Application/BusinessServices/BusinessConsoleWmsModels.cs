@@ -285,3 +285,64 @@ public sealed record BusinessConsoleWmsInventoryContext(
     decimal? ReservedQuantity,
     decimal? AvailableQuantity,
     IReadOnlyCollection<BusinessConsoleInventoryAvailabilityLineResponse> Items);
+
+public sealed record BusinessConsoleWmsReceivingQualityGateListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? GateStatus = null,
+    string? Keyword = null);
+
+public sealed record BusinessConsoleWmsReceivingQualityGateListResponse(
+    IReadOnlyCollection<BusinessConsoleWmsReceivingQualityGateItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleWmsReceivingQualityGateItem(
+    string InboundOrderId,
+    string InboundOrderLineId,
+    string OrganizationId,
+    string EnvironmentId,
+    string InboundOrderNo,
+    string InboundOrderStatus,
+    string SiteCode,
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal ReceivedQuantity,
+    string StagingLocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string QualityGateStatus,
+    string? InspectionRecordId,
+    string? QualityDispositionReason,
+    string OwnerType,
+    string? OwnerId,
+    DateTime CreatedAtUtc);
+
+public sealed record BusinessConsoleWmsSupplierReturnListResponse(
+    IReadOnlyCollection<BusinessConsoleWmsSupplierReturnItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleWmsSupplierReturnItem(
+    string SupplierReturnRequestId,
+    string OrganizationId,
+    string EnvironmentId,
+    string SupplierReturnNo,
+    string InboundOrderNo,
+    string InboundOrderLineNo,
+    string InspectionRecordId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string OwnerType,
+    string? OwnerId,
+    decimal Quantity,
+    string DispositionType,
+    string? DispositionReason,
+    string Status,
+    DateTime CreatedAtUtc);

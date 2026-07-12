@@ -31,9 +31,9 @@ const props = withDefaults(
 const orderedItems = computed(() => (props.reverse ? [...props.items].reverse() : props.items))
 
 const toneVar: Record<TimelineTone, string> = {
-  brand: 'var(--brand)',
-  success: 'var(--success)',
-  warning: 'var(--warning)',
+  brand: 'var(--nv-brand)',
+  success: 'var(--nv-success)',
+  warning: 'var(--nv-warning)',
   danger: 'var(--destructive)',
   neutral: 'var(--muted-foreground)',
 }
@@ -70,7 +70,7 @@ function dotColor(item: TimelineItem): string {
 
     <li v-if="pending" class="ds-tl-item">
       <div class="ds-tl-rail">
-        <span class="ds-tl-dot ds-tl-dot-pending" style="--ds-tl-dot: var(--brand)">
+        <span class="ds-tl-dot ds-tl-dot-pending" style="--ds-tl-dot: var(--nv-brand)">
           <span class="ds-tl-pulse" aria-hidden="true" />
         </span>
       </div>
@@ -82,115 +82,117 @@ function dotColor(item: TimelineItem): string {
 </template>
 
 <style scoped>
-.ds-tl {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.ds-tl-item {
-  display: grid;
-  grid-template-columns: 0.875rem 1fr;
-  gap: 0.75rem;
-}
-.ds-tl-rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-/* Opaque node with a card-colored ring so the rail can't show through it. */
-.ds-tl-dot {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 0.875rem;
-  height: 0.875rem;
-  margin-top: 0.28rem;
-  border-radius: 9999px;
-  background-color: var(--ds-tl-dot);
-  box-shadow: 0 0 0 3px var(--card);
-  color: var(--brand-foreground);
-}
-.ds-tl-dot[data-icon] {
-  width: 1.375rem;
-  height: 1.375rem;
-  margin-top: 0.05rem;
-}
-.ds-tl-dot[data-hollow] {
-  background-color: var(--card);
-  box-shadow:
-    0 0 0 3px var(--card),
-    inset 0 0 0 2px var(--ds-tl-dot);
-}
-/* Connector: a hairline that starts below the node and runs to the next one. */
-.ds-tl-line {
-  flex: 1;
-  width: 2px;
-  margin-top: 0.25rem;
-  margin-bottom: -0.25rem;
-  border-radius: 1px;
-  background-color: var(--border);
-}
-.ds-tl-body {
-  min-width: 0;
-  padding-bottom: 1.25rem;
-}
-.ds-tl-item:last-child .ds-tl-body {
-  padding-bottom: 0;
-}
-.ds-tl-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.5rem;
-}
-.ds-tl-title {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--foreground);
-  line-height: 1.25rem;
-}
-.ds-tl-label {
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted-foreground);
-}
-.ds-tl-desc {
-  margin: 0.25rem 0 0;
-  font-size: 0.8125rem;
-  line-height: 1.4;
-  color: var(--muted-foreground);
-  max-width: 70ch;
-}
-.ds-tl-slot {
-  margin-top: 0.5rem;
-}
+@layer nv-components {
+  .ds-tl {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .ds-tl-item {
+    display: grid;
+    grid-template-columns: 0.875rem 1fr;
+    gap: 0.75rem;
+  }
+  .ds-tl-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  /* Opaque node with a card-colored ring so the rail can't show through it. */
+  .ds-tl-dot {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.875rem;
+    height: 0.875rem;
+    margin-top: 0.28rem;
+    border-radius: 9999px;
+    background-color: var(--ds-tl-dot);
+    box-shadow: 0 0 0 3px var(--card);
+    color: var(--nv-brand-foreground);
+  }
+  .ds-tl-dot[data-icon] {
+    width: 1.375rem;
+    height: 1.375rem;
+    margin-top: 0.05rem;
+  }
+  .ds-tl-dot[data-hollow] {
+    background-color: var(--card);
+    box-shadow:
+      0 0 0 3px var(--card),
+      inset 0 0 0 2px var(--ds-tl-dot);
+  }
+  /* Connector: a hairline that starts below the node and runs to the next one. */
+  .ds-tl-line {
+    flex: 1;
+    width: 2px;
+    margin-top: 0.25rem;
+    margin-bottom: -0.25rem;
+    border-radius: 1px;
+    background-color: var(--border);
+  }
+  .ds-tl-body {
+    min-width: 0;
+    padding-bottom: 1.25rem;
+  }
+  .ds-tl-item:last-child .ds-tl-body {
+    padding-bottom: 0;
+  }
+  .ds-tl-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+  .ds-tl-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--foreground);
+    line-height: 1.25rem;
+  }
+  .ds-tl-label {
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-foreground);
+  }
+  .ds-tl-desc {
+    margin: 0.25rem 0 0;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: var(--muted-foreground);
+    max-width: 70ch;
+  }
+  .ds-tl-slot {
+    margin-top: 0.5rem;
+  }
 
-/* Pending node: a calm pulse signalling in-progress. */
-.ds-tl-dot-pending {
-  background-color: var(--brand);
-}
-.ds-tl-pulse {
-  position: absolute;
-  inset: 0;
-  border-radius: 9999px;
-  background-color: var(--brand);
-  animation: ds-tl-ping 1.6s var(--ease-out-quart, ease-out) infinite;
-}
-@keyframes ds-tl-ping {
-  0% {
-    transform: scale(1);
-    opacity: 0.55;
+  /* Pending node: a calm pulse signalling in-progress. */
+  .ds-tl-dot-pending {
+    background-color: var(--nv-brand);
   }
-  70%,
-  100% {
-    transform: scale(2.4);
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
   .ds-tl-pulse {
-    animation: none;
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background-color: var(--nv-brand);
+    animation: ds-tl-ping 1.6s var(--nv-ease-out-quart, ease-out) infinite;
+  }
+  @keyframes ds-tl-ping {
+    0% {
+      transform: scale(1);
+      opacity: 0.55;
+    }
+    70%,
+    100% {
+      transform: scale(2.4);
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-tl-pulse {
+      animation: none;
+    }
   }
 }
 </style>

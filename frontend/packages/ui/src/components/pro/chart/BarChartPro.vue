@@ -92,47 +92,49 @@ const tooltipTemplate = (d: Row) => {
 </template>
 
 <style scoped>
-.ds-chart {
-  width: 100%;
-  --vis-axis-grid-color: var(--border);
-  --vis-axis-tick-label-color: var(--muted-foreground);
-  --vis-axis-tick-label-font-size: 11px;
-  --vis-axis-font-family: var(--font-sans);
-  --vis-crosshair-line-stroke-color: color-mix(in oklch, var(--foreground) 16%, transparent);
-  --vis-crosshair-circle-stroke-color: var(--card);
-  --vis-tooltip-background-color: color-mix(in oklch, var(--popover) 86%, transparent);
-  --vis-tooltip-text-color: var(--popover-foreground);
-  --vis-tooltip-border-color: color-mix(in oklch, var(--border) 80%, transparent);
-  --vis-tooltip-padding: 0;
-  --vis-tooltip-border-radius: 8px;
-}
-.ds-chart :deep([class*='-tooltip']) {
-  backdrop-filter: blur(8px) saturate(1.4);
-  -webkit-backdrop-filter: blur(8px) saturate(1.4);
-  box-shadow: 0 8px 28px -12px color-mix(in oklch, black 50%, transparent);
-}
-.ds-chart :deep(.ds-vis-card) {
-  min-width: 9rem;
-  padding: 8px 10px;
-  font-size: 12px;
-}
-.ds-chart :deep(.ds-vis-head) {
-  margin-bottom: 6px;
-  font-weight: 600;
-}
-.ds-chart :deep(.ds-vis-row) {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 0;
-}
-.ds-chart :deep(.ds-vis-row b) {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-}
-.ds-chart :deep(.ds-vis-dot) {
-  width: 8px;
-  height: 8px;
-  border-radius: 9999px;
+@layer nv-components {
+  .ds-chart {
+    width: 100%;
+    --vis-axis-grid-color: var(--border);
+    --vis-axis-tick-label-color: var(--muted-foreground);
+    --vis-axis-tick-label-font-size: 11px;
+    --vis-axis-font-family: var(--font-sans);
+    --vis-crosshair-line-stroke-color: color-mix(in oklch, var(--foreground) 16%, transparent);
+    --vis-crosshair-circle-stroke-color: var(--card);
+    --vis-tooltip-background-color: color-mix(in oklch, var(--popover) 86%, transparent);
+    --vis-tooltip-text-color: var(--popover-foreground);
+    --vis-tooltip-border-color: color-mix(in oklch, var(--border) 80%, transparent);
+    --vis-tooltip-padding: 0;
+    --vis-tooltip-border-radius: 8px;
+  }
+  .ds-chart :deep([class*='-tooltip']) {
+    backdrop-filter: blur(8px) saturate(1.4);
+    -webkit-backdrop-filter: blur(8px) saturate(1.4);
+    box-shadow: 0 8px 28px -12px color-mix(in oklch, black 50%, transparent);
+  }
+  .ds-chart :deep(.ds-vis-card) {
+    min-width: 9rem;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  .ds-chart :deep(.ds-vis-head) {
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .ds-chart :deep(.ds-vis-row) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 0;
+  }
+  .ds-chart :deep(.ds-vis-row b) {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+  }
+  .ds-chart :deep(.ds-vis-dot) {
+    width: 8px;
+    height: 8px;
+    border-radius: 9999px;
+  }
 }
 </style>

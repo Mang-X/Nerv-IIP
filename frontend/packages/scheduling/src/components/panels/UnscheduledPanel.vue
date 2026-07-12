@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ButtonPro, Empty, EmptyDescription, EmptyTitle, ScrollArea, StatusBadge } from '@nerv-iip/ui'
+import { Button, Empty, EmptyDescription, EmptyTitle, NvStatusBadge, ScrollArea } from '@nerv-iip/ui'
 import { conflictReasonLabel } from '../../model/labels'
 import type { UnscheduledItem } from '../../model/types'
 
@@ -25,13 +25,13 @@ defineEmits<{ fix: [orderId: string, operationId: string] }>()
           class="flex flex-col gap-1 rounded-md border border-border bg-card px-3 py-2"
         >
           <span class="flex items-center gap-2">
-            <StatusBadge tone="warning" :label="conflictReasonLabel[item.reason]" />
+            <NvStatusBadge tone="warning" :label="conflictReasonLabel[item.reason]" />
             <span class="truncate text-xs text-muted-foreground">{{ item.orderId }}</span>
           </span>
           <span class="text-sm text-foreground">{{ item.message }}</span>
-          <ButtonPro size="sm" variant="outline" class="mt-1 self-start" @click="$emit('fix', item.orderId, item.operationId)">
+          <Button size="sm" variant="outline" class="mt-1 self-start" @click="$emit('fix', item.orderId, item.operationId)">
             去处理
-          </ButtonPro>
+          </Button>
         </li>
       </ul>
     </ScrollArea>

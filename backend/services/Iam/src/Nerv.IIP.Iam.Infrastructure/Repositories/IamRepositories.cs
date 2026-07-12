@@ -30,13 +30,17 @@ public sealed class UserRepository(ApplicationDbContext context)
 
     public async Task<User?> GetByIdAsync(UserId userId, CancellationToken cancellationToken = default)
     {
-        return await DbContext.Users.SingleOrDefaultAsync(x => x.Id == userId && x.Deleted == NotDeleted, cancellationToken);
+        return await DbContext.Users
+            .Include(x => x.PasswordHistory)
+            .SingleOrDefaultAsync(x => x.Id == userId && x.Deleted == NotDeleted, cancellationToken);
     }
 
     public async Task<User?> GetByLoginNameAsync(string loginName, CancellationToken cancellationToken = default)
     {
         var normalizedLoginName = loginName.ToLowerInvariant();
-        return await DbContext.Users.SingleOrDefaultAsync(
+        return await DbContext.Users
+            .Include(x => x.PasswordHistory)
+            .SingleOrDefaultAsync(
             x => x.LoginName.ToLower() == normalizedLoginName && x.Deleted == NotDeleted,
             cancellationToken);
     }
@@ -44,7 +48,9 @@ public sealed class UserRepository(ApplicationDbContext context)
     public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = email.ToLowerInvariant();
-        return await DbContext.Users.SingleOrDefaultAsync(
+        return await DbContext.Users
+            .Include(x => x.PasswordHistory)
+            .SingleOrDefaultAsync(
             x => x.Email.ToLower() == normalizedEmail && x.Deleted == NotDeleted,
             cancellationToken);
     }
@@ -88,6 +94,7 @@ public sealed class RoleRepository(ApplicationDbContext context)
     {
         return await DbContext.Roles
             .Include(x => x.Permissions)
+            .Include(x => x.DataScopes)
             .SingleOrDefaultAsync(x => x.Id == roleId && x.Deleted == NotDeleted, cancellationToken);
     }
 
@@ -158,6 +165,11 @@ public interface IMembershipRepository : IRepository<Membership, MembershipId>
         OrganizationId organizationId,
         IamEnvironmentId environmentId,
         CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<DataScopeBinding>> ListEffectiveDataScopesAsync(
+        UserId userId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        CancellationToken cancellationToken = default);
     Task<bool> UserHasMembershipAsync(
         UserId userId,
         OrganizationId organizationId,
@@ -185,8 +197,9 @@ public sealed class MembershipRepository(ApplicationDbContext context)
         IamEnvironmentId environmentId,
         CancellationToken cancellationToken = default)
     {
-        return await DbContext.Memberships.SingleOrDefaultAsync(
-            x => x.UserId == userId
+        return await DbContext.Memberships
+            .Include(x => x.DataScopes)
+            .SingleOrDefaultAsync(x => x.UserId == userId
                 && x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId,
             cancellationToken);
@@ -232,6 +245,40 @@ public sealed class MembershipRepository(ApplicationDbContext context)
             .Distinct()
             .OrderBy(x => x)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<DataScopeBinding>> ListEffectiveDataScopesAsync(
+        UserId userId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var membershipScopes =
+            from membership in DbContext.Memberships
+            join membershipScope in DbContext.MembershipDataScopes on membership.Id equals membershipScope.MembershipId
+            where membership.UserId == userId
+                && membership.OrganizationId == organizationId
+                && membership.EnvironmentId == environmentId
+            select new { membershipScope.ScopeType, membershipScope.ScopeCode };
+
+        var roleScopes =
+            from membership in DbContext.Memberships
+            join membershipRole in DbContext.MembershipRoles on membership.Id equals membershipRole.MembershipId
+            join role in DbContext.Roles on membershipRole.RoleId equals role.Id
+            join roleScope in DbContext.RoleDataScopes on role.Id equals roleScope.RoleId
+            where membership.UserId == userId
+                && membership.OrganizationId == organizationId
+                && membership.EnvironmentId == environmentId
+                && role.Deleted == NotDeleted
+            select new { roleScope.ScopeType, roleScope.ScopeCode };
+
+        var scopes = await membershipScopes
+            .Concat(roleScopes)
+            .Distinct()
+            .OrderBy(x => x.ScopeType)
+            .ThenBy(x => x.ScopeCode)
+            .ToListAsync(cancellationToken);
+        return scopes.Select(x => new DataScopeBinding(x.ScopeType, x.ScopeCode)).ToArray();
     }
 
     public async Task<bool> UserHasMembershipAsync(

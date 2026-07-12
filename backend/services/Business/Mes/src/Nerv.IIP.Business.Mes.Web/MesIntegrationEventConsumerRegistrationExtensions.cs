@@ -10,10 +10,14 @@ public static class MesIntegrationEventConsumerRegistrationExtensions
         services.AddScoped<AssetRestoredIntegrationEventHandlerForReschedule>();
         services.AddScoped<NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect>();
         services.AddScoped<PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder>();
+        services.AddScoped<EngineeringChangeReleasedIntegrationEventHandlerForMesWip>();
         services.AddScoped<ProductionVersionCreatedIntegrationEventHandlerForBindMesWorkOrders>();
         services.AddScoped<QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext>();
         services.AddScoped<StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted>();
         services.AddScoped<StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed>();
+        services.AddScoped<InventoryReservationExpiredIntegrationEventHandlerForMarkMesRequestExpired>();
+        services.AddScoped<SchedulePlanReleasedIntegrationEventHandlerForDispatch>();
+        services.AddScoped<SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalidated>();
         return services;
     }
 }

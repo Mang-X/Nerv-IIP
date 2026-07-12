@@ -11,6 +11,12 @@ public static class QualityIntegrationEventTypes
     public const string NcrOpened = "quality.NcrOpened";
     public const string DispositionDecided = "quality.DispositionDecided";
     public const string NcrClosed = "quality.NcrClosed";
+    public const string InspectionTaskOverdue = "quality.InspectionTaskOverdue";
+    public const string CapaOpened = "quality.CapaOpened";
+    public const string CapaEffectivenessVerified = "quality.CapaEffectivenessVerified";
+    public const string CapaClosed = "quality.CapaClosed";
+    public const string SpcAlertRaised = "quality.SpcAlertRaised";
+    public const string MeasuringDeviceCalibrationDue = "quality.MeasuringDeviceCalibrationDue";
 }
 
 public static class QualityIntegrationEventVersions
@@ -22,6 +28,19 @@ public static class QualityIntegrationEventSources
 {
     public const string BusinessQuality = "business-quality";
     public const string BusinessMes = "business-mes";
+}
+
+public static class QualityInspectionSourceTypes
+{
+    public const string Wms = "wms";
+    public const string Receiving = "receiving";
+}
+
+public static class QualityInspectionDispositionStatuses
+{
+    public const string Passed = "passed";
+    public const string ConditionalRelease = "conditional-release";
+    public const string Rejected = "rejected";
 }
 
 public static class QualityStockReleaseTargetStatuses
@@ -38,6 +57,15 @@ public static class QualityNcrDispositionTypes
     public const string ReturnToSupplier = "return-to-supplier";
     public const string ConditionalRelease = "conditional-release";
     public const string SortAndScreen = "sort-and-screen";
+}
+
+public static class QualitySpcRuleCodes
+{
+    public const string BeyondControlLimit = "beyond-control-limit";
+    public const string ConsecutiveShiftAboveCenter = "consecutive-shift-above-center";
+    public const string ConsecutiveShiftBelowCenter = "consecutive-shift-below-center";
+    public const string TrendIncreasing = "trend-increasing";
+    public const string TrendDecreasing = "trend-decreasing";
 }
 
 public sealed record DefectRaisedIntegrationEvent(
@@ -116,6 +144,57 @@ public sealed record NcrClosedIntegrationEvent(
     object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }
 
+public sealed record CapaOpenedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    CapaOpenedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record CapaEffectivenessVerifiedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    CapaEffectivenessVerifiedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record CapaClosedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    CapaClosedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
 public sealed record InspectionResultIntegrationEvent(
     string EventId,
     string EventType,
@@ -132,6 +211,73 @@ public sealed record InspectionResultIntegrationEvent(
 {
     object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }
+
+public sealed record InspectionTaskOverdueIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    InspectionTaskOverduePayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record MeasuringDeviceCalibrationDueIntegrationEvent(
+    string EventId, string EventType, int EventVersion, DateTimeOffset OccurredAtUtc,
+    string SourceService, string CorrelationId, string CausationId, string OrganizationId,
+    string EnvironmentId, string Actor, string IdempotencyKey, MeasuringDeviceCalibrationDuePayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record MeasuringDeviceCalibrationDuePayload(
+    string MeasuringDeviceId, string DeviceCode, string DeviceType, string CalibrationState,
+    DateTimeOffset CalibrationDueAtUtc, DateTimeOffset EvaluatedAtUtc);
+
+public sealed record SpcAlertRaisedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    SpcAlertRaisedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record InspectionTaskOverduePayload(
+    string InspectionTaskId,
+    string SourceType,
+    string SourceService,
+    string SourceDocumentId,
+    string? SourceDocumentLineId,
+    string SkuCode,
+    DateTimeOffset DueAtUtc,
+    DateTimeOffset RemindedAtUtc);
+
+public sealed record SpcAlertRaisedPayload(
+    string AlertKey,
+    string ResourceType,
+    string SkuCode,
+    string CharacteristicCode,
+    string WorkCenterId,
+    IReadOnlyCollection<string> RuleCodes,
+    string Severity,
+    DateTimeOffset LatestMeasuredAtUtc,
+    string Summary);
 
 public sealed record InspectionResultPayload(
     string InspectionRecordId,
@@ -226,4 +372,30 @@ public sealed record NcrClosedPayload(
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId,
+    DateTimeOffset ClosedAtUtc);
+
+public sealed record CapaOpenedPayload(
+    string CorrectiveActionId,
+    string CapaCode,
+    string? SourceNcrId,
+    string OwnerUserId,
+    string Status,
+    DateTimeOffset DueAtUtc,
+    DateTimeOffset OpenedAtUtc);
+
+public sealed record CapaEffectivenessVerifiedPayload(
+    string CorrectiveActionId,
+    string CapaCode,
+    string? SourceNcrId,
+    string VerificationInspectionRecordId,
+    string VerifiedByUserId,
+    string Result,
+    DateTimeOffset VerifiedAtUtc);
+
+public sealed record CapaClosedPayload(
+    string CorrectiveActionId,
+    string CapaCode,
+    string? SourceNcrId,
+    string? CloseApprovalChainId,
+    string ClosedByUserId,
     DateTimeOffset ClosedAtUtc);

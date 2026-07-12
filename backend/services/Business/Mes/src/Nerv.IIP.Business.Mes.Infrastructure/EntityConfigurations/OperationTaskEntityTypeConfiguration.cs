@@ -38,6 +38,11 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.ShiftId).HasColumnName("shift_id").HasMaxLength(100).HasComment("Assigned MasterData shift public id captured by MES dispatch.");
         builder.Property(x => x.AssignedAtUtc).HasColumnName("assigned_at_utc").HasComment("UTC time when MES dispatch assignment facts were captured.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the operation task fact was created.");
+        builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("Produced SKU code copied from the MES work order for downstream inspection triggers.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(30).HasComment("Produced quantity unit of measure for downstream inspection triggers.");
+        builder.Property(x => x.PlannedQuantity).HasColumnName("planned_quantity").HasPrecision(18, 6).IsRequired().HasComment("Planned operation quantity used as the default good quantity for operation completion inspection triggers.");
+        builder.Property(x => x.RequiresQualityInspection).HasColumnName("requires_quality_inspection").IsRequired().HasComment("Whether this operation completion should trigger a Quality inspection task.");
+        builder.Property(x => x.OperationCode).HasColumnName("operation_code").HasMaxLength(100).HasComment("ProductEngineering standard operation code used to resolve current SOP or electronic work instructions.");
         builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskIdValue })
             .HasName("ak_operation_tasks_scope_task");
         builder.HasOne<WorkOrder>()

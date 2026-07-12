@@ -22,6 +22,7 @@ frontend/
     business-pda/              # PDA 一线作业（Capacitor APK 基线，已建）
     design-system/             # VitePress 设计系统文档/预览站
     docs/                      # VitePress 产品文档站
+    screen/                    # 工业数据大屏：车间/产线/仓库/工厂（公共展示/指挥中心，只读，独立 app）
   packages/
     ui/
     ui-mobile/                # 触摸组件层（PDA/移动密度，复制重建、原版零改）
@@ -41,7 +42,7 @@ frontend/
 - `packages/ui-mobile`：触摸/PDA 区块组件层（Reka UI + Tailwind + 复用 `@nerv-iip/ui` 的设计 token），按「原版零改、复制重建」doctrine 自建移动密度组件（ScanBar、TabBar、BottomSheet、ListRow 等），不 import PC FE-2 区块以避免桌面密度污染。
 - `packages/business-core`：与 PC 同源的内核——领域类型 + SOP/状态机 + 字典(CodeSet) + 命令构造器，由 `business-console` 现有 `src/data/*.ts` 有界抽取，PC 与移动端共用；PC 端逐步迁移消费，不一次性改写。
 
-`apps/business-workstation`（工位机/平板触摸操作台）与 `apps/business-board`（大屏只读看板）为 roadmap 预留，v1 不实现，也不创建空目录；`business-board` 未来应复用 `ui` 的图表与 token，但不依赖 `ui-mobile`（展示态非触摸操作态）。
+`apps/business-workstation`（工位机/平板触摸操作台）为 roadmap 预留，v1 不实现。大屏只读看板已由 `apps/screen` 落地（取代原 `business-board` 占位命名，见 GitHub Epic #562）：独立 Vite app，全屏深色 `ScreenLayout` + `ScreenScaler` 等比缩放，复用 `ui` 的 screen 层组件与 `--sb-*` token，不依赖 `ui-mobile`（展示态非触摸操作态）。
 
 Business Console MVP 是第二个真实应用入口：`frontend/apps/business-console` 使用 Vite Plus + Vue 3 建立独立 app shell，承载 #166 到 #169 的 MasterData、Inventory、Quality 和 MES 业务页面，并已补入 ProductEngineering、DemandPlanning 和 MES PC 工作台相关路由。它消费 BusinessGateway 的 `/api/business-console/v1/**` facade，不直接调用业务服务 URL，也不把业务 CRUD 页面放回主平台 `frontend/apps/console`。完整导航地图、能力目录、角色导航、分期和“后端存在但前端不得提前暴露”的规则见 `docs/architecture/frontend-navigation-map.md`。Business Console 的可见导航不得机械映射后端服务列表；实现时必须按 RBAC、角色任务、feature flag、近期/星标、全局搜索和上下文穿透组织入口。PC 端长期采用顶部-侧边 T 型导航，但当前 `@nerv-iip/app-shell` 只有侧边栏 `navItems` 契约；落地前必须先扩展 app-shell 公共 API 和测试，不得在业务页面局部硬拼顶部域导航。
 
@@ -208,10 +209,12 @@ Business Console 登录、刷新、退出和 `/me` 复用 PlatformGateway Consol
 | `/planning` | 需求、MRP run、pegging、计划建议和建议接受。 | BusinessGateway DemandPlanning facade。 |
 | `/erp` | ERP 业务协同过渡聚合页。 | 当前本地场景数据；正式 ERP facade/page 尚未落地。 |
 | `/inventory/availability` | 可用量查询。 | BusinessGateway Inventory facade。 |
+| `/inventory/lots` | 批次与预留视图，展示 availability facade 返回的批次、序列号、预留和可用量，并提供 MES/WMS/Quality/Barcode 上下文链接；独立冻结、预留明细和库存分析仍按后端 facade 缺口处理。 | BusinessGateway Inventory availability facade。 |
 | `/inventory/movements` | 库存移动工作台；新建移动通过抽屉承载。 | BusinessGateway Inventory facade。 |
 | `/inventory/counts` | 盘点任务工作台；创建任务和确认差异通过抽屉承载。 | BusinessGateway Inventory facade。 |
 | `/quality/inspections` | 检验任务与记录；检验记录创建通过抽屉承载。 | BusinessGateway Quality facade。 |
 | `/quality/ncrs` | NCR 列表、处置和关闭。 | BusinessGateway Quality facade。 |
+| `/quality/analysis` | 基于当前 NCR 返回窗口的缺陷 Pareto、物料/来源维度摘要，并可按 SKU、特性和工作中心查询 SPC Xbar-R 控制图、判异与 Cp/Cpk；工位/设备/班次全量聚合和 CAPA 读面仍按后续 facade 缺口处理。 | BusinessGateway Quality NCR/SPC facade。 |
 | `/mes` | 生产驾驶舱，展示工单、工序、在制、阻塞和角色待办。 | BusinessGateway MES facade。 |
 | `/mes/foundation` | 基础准备，展示 MasterData、ProductEngineering、Supply、Quality、Equipment、Barcode/Numbering 等开工前就绪结果。 | BusinessGateway MES facade。 |
 | `/mes/plans` | 生产计划，展示可转入 MES 执行的计划和计划就绪状态。 | BusinessGateway MES facade。 |
@@ -226,7 +229,7 @@ Business Console 登录、刷新、退出和 `/me` 复用 PlatformGateway Consol
 | `/mes/production-reports` | 旧报工记录查询路由；新增报工从工单或工序上下文进入。 | BusinessGateway MES facade。 |
 | `/mes/quality` | 质量与不良，展示 MES 缺陷上下文和关联 Quality 事项。 | BusinessGateway MES facade。 |
 | `/mes/receipts` | 完工入库请求；新增请求通过抽屉承载，行级入口可回到工单上下文。 | BusinessGateway MES facade。 |
-| `/mes/schedules` | MES 规则排程结果和显式运行动作；不包含甘特，也不承担 APS 算法。 | BusinessGateway MES facade。 |
+| `/mes/schedules` | MES 规则排程过渡页，保留执行域规则分配结果和显式运行动作；不包含甘特，不承担 APS 算法，正式排产输出进入 `/scheduling`。 | BusinessGateway MES facade。 |
 | `/mes/downtime` | 设备与停机，展示停机、恢复和未结异常。 | BusinessGateway MES facade。 |
 | `/mes/handovers` | 班次交接，展示待交接事项和班组交接状态。 | BusinessGateway MES facade。 |
 | `/mes/traceability` | 追溯查询，可按工单、批次/序列、物料批次进入执行证据链。 | BusinessGateway MES facade。 |

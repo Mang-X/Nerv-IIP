@@ -19,7 +19,11 @@ public class User : Entity<UserId>, IAggregateRoot
         string passwordHash,
         bool enabled,
         string securityStamp,
-        int permissionVersion)
+        int permissionVersion,
+        DateTimeOffset? accountExpiresAtUtc = null,
+        DateTimeOffset? passwordChangedAtUtc = null,
+        DateTimeOffset? passwordExpiresAtUtc = null,
+        bool passwordChangeRequired = false)
     {
         Id = id;
         LoginName = loginName;
@@ -28,7 +32,13 @@ public class User : Entity<UserId>, IAggregateRoot
         Enabled = enabled;
         SecurityStamp = securityStamp;
         PermissionVersion = permissionVersion;
+        AccountExpiresAtUtc = accountExpiresAtUtc;
+        PasswordChangedAtUtc = passwordChangedAtUtc;
+        PasswordExpiresAtUtc = passwordExpiresAtUtc;
+        PasswordChangeRequired = passwordChangeRequired;
     }
+
+    private readonly List<UserPasswordHistory> passwordHistory = [];
 
     public string LoginName { get; private set; } = string.Empty;
     public string Email { get; private set; } = string.Empty;
@@ -40,12 +50,22 @@ public class User : Entity<UserId>, IAggregateRoot
     public DateTimeOffset? LastFailedLoginAtUtc { get; private set; }
     public int FailedLoginCount { get; private set; }
     public DateTimeOffset? LockoutUntilUtc { get; private set; }
+    public DateTimeOffset? AccountExpiresAtUtc { get; private set; }
+    public DateTimeOffset? PasswordChangedAtUtc { get; private set; }
+    public DateTimeOffset? PasswordExpiresAtUtc { get; private set; }
+    public bool PasswordChangeRequired { get; private set; }
     public Deleted Deleted { get; private set; } = new(false);
     public RowVersion RowVersion { get; private set; } = new(0);
+    public IReadOnlyCollection<UserPasswordHistory> PasswordHistory => passwordHistory;
 
     public bool IsLockedOut(DateTimeOffset now)
     {
         return LockoutUntilUtc is not null && LockoutUntilUtc > now;
+    }
+
+    public bool IsAccountExpired(DateTimeOffset now)
+    {
+        return AccountExpiresAtUtc is not null && AccountExpiresAtUtc <= now;
     }
 
     public void RecordSuccessfulLogin(DateTimeOffset now)
@@ -79,6 +99,18 @@ public class User : Entity<UserId>, IAggregateRoot
         }
     }
 
+    public void Enable()
+    {
+        if (Enabled)
+        {
+            return;
+        }
+
+        Enabled = true;
+        RotateSecurityStamp();
+        PermissionVersion++;
+    }
+
     public void Disable()
     {
         if (!Enabled)
@@ -91,10 +123,11 @@ public class User : Entity<UserId>, IAggregateRoot
         PermissionVersion++;
     }
 
-    public void UpdateProfile(string loginName, string email, bool enabled)
+    public void UpdateProfile(string loginName, string email, bool enabled, DateTimeOffset? accountExpiresAtUtc)
     {
         LoginName = loginName;
         Email = email;
+        AccountExpiresAtUtc = accountExpiresAtUtc;
 
         if (Enabled == enabled)
         {
@@ -106,15 +139,65 @@ public class User : Entity<UserId>, IAggregateRoot
         PermissionVersion++;
     }
 
-    public void UpdatePasswordHash(string passwordHash)
+    public void UpdatePasswordHash(
+        string passwordHash,
+        DateTimeOffset changedAtUtc,
+        DateTimeOffset? passwordExpiresAtUtc,
+        bool passwordChangeRequired,
+        int historyLimit)
     {
+        if (!string.IsNullOrWhiteSpace(PasswordHash))
+        {
+            passwordHistory.Add(new UserPasswordHistory(Id, PasswordHash, changedAtUtc));
+            TrimPasswordHistory(historyLimit);
+        }
+
         PasswordHash = passwordHash;
+        PasswordChangedAtUtc = changedAtUtc;
+        PasswordExpiresAtUtc = passwordExpiresAtUtc;
+        PasswordChangeRequired = passwordChangeRequired;
         RotateSecurityStamp();
         PermissionVersion++;
+    }
+
+    private void TrimPasswordHistory(int historyLimit)
+    {
+        if (historyLimit < 1)
+        {
+            passwordHistory.Clear();
+            return;
+        }
+
+        while (passwordHistory.Count > historyLimit)
+        {
+            var oldest = passwordHistory.OrderBy(x => x.CreatedAtUtc).First();
+            passwordHistory.Remove(oldest);
+        }
     }
 
     private void RotateSecurityStamp()
     {
         SecurityStamp = Guid.NewGuid().ToString("n");
     }
+}
+
+public partial record UserPasswordHistoryId : IGuidStronglyTypedId;
+
+public class UserPasswordHistory : Entity<UserPasswordHistoryId>
+{
+    private UserPasswordHistory()
+    {
+        UserId = new UserId(string.Empty);
+    }
+
+    public UserPasswordHistory(UserId userId, string passwordHash, DateTimeOffset createdAtUtc)
+    {
+        UserId = userId;
+        PasswordHash = passwordHash;
+        CreatedAtUtc = createdAtUtc;
+    }
+
+    public UserId UserId { get; private set; }
+    public string PasswordHash { get; private set; } = string.Empty;
+    public DateTimeOffset CreatedAtUtc { get; private set; }
 }

@@ -7,9 +7,12 @@ public partial record FinishedGoodsReceiptRequestId : IGuidStronglyTypedId;
 public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptRequestId>, IAggregateRoot
 {
     public const string RequestedStatus = "Requested";
+    public const string PartiallyPostedStatus = "PartiallyPosted";
     public const string PostedStatus = "Posted";
     public const string InventoryPostingFailedStatus = "InventoryPostingFailed";
+    public const string CancelledStatus = "Cancelled";
     public const int FailureMessageMaxLength = 500;
+    public const decimal QuantityTolerance = 0.000001m;
 
     private FinishedGoodsReceiptRequest()
     {
@@ -26,7 +29,9 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         DateTimeOffset requestedAtUtc,
         decimal? unitCost,
         string? producedLotNo,
-        string? serialNo)
+        string? serialNo,
+        DateOnly? productionDate,
+        DateOnly? expiryDate)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -39,6 +44,8 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         UnitCost = unitCost is null ? null : DomainGuard.Positive(unitCost.Value, nameof(unitCost));
         ProducedLotNo = string.IsNullOrWhiteSpace(producedLotNo) ? null : producedLotNo.Trim();
         SerialNo = string.IsNullOrWhiteSpace(serialNo) ? null : serialNo.Trim();
+        ProductionDate = productionDate;
+        ExpiryDate = expiryDate;
         Status = RequestedStatus;
     }
 
@@ -53,7 +60,11 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
     public decimal? UnitCost { get; private set; }
     public string? ProducedLotNo { get; private set; }
     public string? SerialNo { get; private set; }
+    public DateOnly? ProductionDate { get; private set; }
+    public DateOnly? ExpiryDate { get; private set; }
     public string Status { get; private set; } = string.Empty;
+    public decimal PostedQuantity { get; private set; }
+    public decimal RemainingQuantity => Math.Max(0m, Quantity - PostedQuantity);
     public string? PostedInventoryMovementId { get; private set; }
     public DateTimeOffset? PostedAtUtc { get; private set; }
     public string? InventoryPostingFailureCode { get; private set; }
@@ -71,7 +82,9 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         DateTimeOffset requestedAtUtc,
         string? producedLotNo = null,
         string? serialNo = null,
-        decimal? unitCost = null)
+        decimal? unitCost = null,
+        DateOnly? ProductionDate = null,
+        DateOnly? ExpiryDate = null)
     {
         var request = new FinishedGoodsReceiptRequest(
             organizationId,
@@ -84,16 +97,67 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
             requestedAtUtc,
             unitCost,
             producedLotNo,
-            serialNo);
-        request.AddDomainEvent(new FinishedGoodsReceiptRequestedDomainEvent(request));
+            serialNo,
+            ProductionDate,
+            ExpiryDate);
+        if (request.UnitCost.HasValue)
+        {
+            request.AddDomainEvent(new FinishedGoodsReceiptRequestedDomainEvent(
+                request,
+                request.Quantity,
+                BuildInventoryPostingIdempotencyKey(organizationId, environmentId, requestNo)));
+        }
         return request;
+    }
+
+    public void ApplyCapitalizedUnitCost(decimal unitCost)
+    {
+        if (Status != RequestedStatus || PostedQuantity > QuantityTolerance)
+        {
+            throw new InvalidOperationException("Capitalized unit cost can only be applied before Inventory posting starts.");
+        }
+
+        var normalizedUnitCost = DomainGuard.Positive(unitCost, nameof(unitCost));
+        if (UnitCost.HasValue)
+        {
+            if (UnitCost.Value != normalizedUnitCost)
+            {
+                throw new InvalidOperationException("Finished-goods receipt already has a different unit cost.");
+            }
+            return;
+        }
+
+        UnitCost = normalizedUnitCost;
+        AddDomainEvent(new FinishedGoodsReceiptRequestedDomainEvent(
+            this,
+            Quantity,
+            BuildInventoryPostingIdempotencyKey(OrganizationId, EnvironmentId, RequestNo)));
     }
 
     public void MarkPosted(string inventoryMovementId, DateTimeOffset postedAtUtc)
     {
+        MarkInventoryPosted(inventoryMovementId, RemainingQuantity, postedAtUtc);
+    }
+
+    public void MarkInventoryPosted(string inventoryMovementId, decimal postedQuantity, DateTimeOffset postedAtUtc)
+    {
+        if (Status == CancelledStatus)
+        {
+            return;
+        }
+
+        var normalizedQuantity = DomainGuard.Positive(postedQuantity, nameof(postedQuantity));
+        if (PostedQuantity + normalizedQuantity > Quantity + QuantityTolerance)
+        {
+            throw new InvalidOperationException("Inventory posted quantity exceeds the MES finished-goods receipt request quantity.");
+        }
+
+        PostedQuantity = PostedQuantity + normalizedQuantity >= Quantity - QuantityTolerance
+            ? Quantity
+            : PostedQuantity + normalizedQuantity;
         PostedInventoryMovementId = DomainGuard.Required(inventoryMovementId, nameof(inventoryMovementId));
         PostedAtUtc = postedAtUtc;
-        Status = PostedStatus;
+        Status = RemainingQuantity <= QuantityTolerance ? PostedStatus : PartiallyPostedStatus;
         InventoryPostingFailureCode = null;
         InventoryPostingFailureMessage = null;
         InventoryPostingFailedAtUtc = null;
@@ -101,17 +165,72 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
 
     public void MarkInventoryPostingFailed(string failureCode, string failureMessage, DateTimeOffset failedAtUtc)
     {
-        if (Status == PostedStatus)
+        if (Status == PostedStatus || Status == CancelledStatus)
         {
             return;
         }
 
         Status = InventoryPostingFailedStatus;
-        PostedInventoryMovementId = null;
-        PostedAtUtc = null;
+        if (PostedQuantity <= QuantityTolerance)
+        {
+            PostedInventoryMovementId = null;
+            PostedAtUtc = null;
+        }
+
         InventoryPostingFailureCode = DomainGuard.Required(failureCode, nameof(failureCode));
         InventoryPostingFailureMessage = NormalizeFailureMessage(failureMessage);
         InventoryPostingFailedAtUtc = failedAtUtc;
+    }
+
+    public void RetryInventoryPosting(string idempotencyKey)
+    {
+        if (Status != InventoryPostingFailedStatus)
+        {
+            throw new InvalidOperationException("Only failed finished-goods receipt requests can retry Inventory posting.");
+        }
+
+        if (RemainingQuantity <= QuantityTolerance)
+        {
+            throw new InvalidOperationException("Finished-goods receipt request has no remaining quantity to post.");
+        }
+
+        Status = PostedQuantity > 0m ? PartiallyPostedStatus : RequestedStatus;
+        InventoryPostingFailureCode = null;
+        InventoryPostingFailureMessage = null;
+        InventoryPostingFailedAtUtc = null;
+        AddDomainEvent(new FinishedGoodsReceiptRequestedDomainEvent(
+            this,
+            RemainingQuantity,
+            BuildInventoryPostingRetryIdempotencyKey(OrganizationId, EnvironmentId, RequestNo, idempotencyKey)));
+    }
+
+    public void Cancel()
+    {
+        if (Status == PostedStatus)
+        {
+            return;
+        }
+
+        Status = CancelledStatus;
+        PostedInventoryMovementId = null;
+        PostedAtUtc = null;
+        InventoryPostingFailureCode = null;
+        InventoryPostingFailureMessage = null;
+        InventoryPostingFailedAtUtc = null;
+    }
+
+    private static string BuildInventoryPostingIdempotencyKey(string organizationId, string environmentId, string requestNo)
+    {
+        return $"mes:finished-goods-receipt:{organizationId}:{environmentId}:{requestNo}";
+    }
+
+    private static string BuildInventoryPostingRetryIdempotencyKey(
+        string organizationId,
+        string environmentId,
+        string requestNo,
+        string idempotencyKey)
+    {
+        return $"{BuildInventoryPostingIdempotencyKey(organizationId, environmentId, requestNo)}:{DomainGuard.Required(idempotencyKey, nameof(idempotencyKey))}";
     }
 
     private static string NormalizeFailureMessage(string failureMessage)

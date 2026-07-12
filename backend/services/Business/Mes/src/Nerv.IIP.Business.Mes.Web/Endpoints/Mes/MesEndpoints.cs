@@ -7,9 +7,11 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
+using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
+using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
 
@@ -43,7 +45,9 @@ public sealed record ListMesWorkOrdersRequest(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? WorkCenterIds = null,
+    string? DeviceAssetIds = null);
 
 public sealed record ListProductionPlansRequest(
     string OrganizationId,
@@ -79,6 +83,19 @@ public sealed record RecordProductionReportResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId ProductionReportId,
     string ReportNo);
 
+public sealed record ReverseProductionReportRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string ReportNo,
+    string Reason,
+    DateTimeOffset? ReversedAtUtc,
+    string? IdempotencyKey = null);
+
+public sealed record ReverseProductionReportResponse(
+    global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId ProductionReportId,
+    string ReportNo,
+    string OriginalReportNo);
+
 public sealed record ListProductionReportsRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -101,11 +118,19 @@ public sealed record CreateFinishedGoodsReceiptRequestRequest(
     decimal? UnitCost,
     string? IdempotencyKey = null,
     string? ProducedLotNo = null,
-    string? SerialNo = null);
+    string? SerialNo = null,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);
 
 public sealed record CreateFinishedGoodsReceiptRequestResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequestId FinishedGoodsReceiptRequestId,
     string RequestNo);
+
+public sealed record RetryFinishedGoodsReceiptInventoryPostingRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string RequestNo,
+    string IdempotencyKey);
 
 public sealed record ListFinishedGoodsReceiptRequestsRequest(
     string OrganizationId,
@@ -200,6 +225,15 @@ public sealed record ReleaseWorkOrderRequest(
     [property: RouteParam] string WorkOrderId,
     DateTimeOffset? ReleasedAtUtc);
 
+public sealed record ForceReleaseQualityHoldRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string SourceDocumentId,
+    string Reason,
+    string Actor,
+    string? SourceService,
+    DateTimeOffset? ReleasedAtUtc);
+
 public sealed record CloseWorkOrderRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -212,6 +246,15 @@ public sealed record WorkOrderReasonRequest(
     [property: RouteParam] string WorkOrderId,
     string Reason,
     DateTimeOffset? ChangedAtUtc);
+
+public sealed record RecordEngineeringChangeDecisionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string WorkOrderId,
+    string ChangeNumber,
+    string Decision,
+    string DecidedBy,
+    string Reason);
 
 public sealed record CreateMaterialIssueRequestRequest(
     string OrganizationId,
@@ -546,7 +589,9 @@ public sealed class ListMesWorkOrdersEndpoint(ISender sender)
                 req.Keyword,
                 req.WorkCenterId,
                 req.ShiftId,
-                req.DeviceAssetId),
+                req.DeviceAssetId,
+                req.WorkCenterIds,
+                req.DeviceAssetIds),
             ct);
         await Send.OkAsync(response, ct);
     }
@@ -575,6 +620,25 @@ public sealed class ReleaseWorkOrderEndpoint(ISender sender, TimeProvider timePr
             req.OrganizationId,
             req.EnvironmentId,
             req.WorkOrderId,
+            req.ReleasedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class ForceReleaseQualityHoldEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<ForceReleaseQualityHoldRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ForceReleaseQualityHoldEndpoint>());
+
+    public override async Task HandleAsync(ForceReleaseQualityHoldRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ForceReleaseQualityHoldCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            string.IsNullOrWhiteSpace(req.SourceService) ? QualityIntegrationEventSources.BusinessMes : req.SourceService,
+            req.SourceDocumentId,
+            req.Reason,
+            req.Actor,
             req.ReleasedAtUtc ?? timeProvider.GetUtcNow()), ct);
         await Send.OkAsync(response, ct);
     }
@@ -630,6 +694,25 @@ public sealed class CancelWorkOrderEndpoint(ISender sender, TimeProvider timePro
     }
 }
 
+public sealed class RecordEngineeringChangeDecisionEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<RecordEngineeringChangeDecisionRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<RecordEngineeringChangeDecisionEndpoint>());
+
+    public override async Task HandleAsync(RecordEngineeringChangeDecisionRequest req, CancellationToken ct)
+    {
+        await sender.Send(new RecordEngineeringChangeDecisionCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.ChangeNumber,
+            req.Decision,
+            req.DecidedBy,
+            req.Reason), ct);
+        await Send.OkAsync(new MesAcceptedResponse("Accepted", req.WorkOrderId, timeProvider.GetUtcNow()), ct);
+    }
+}
+
 public sealed class GetMaterialReadinessEndpoint(ISender sender)
     : MesEndpoint<WorkOrderContextRequest, MesMaterialReadinessResponse>
 {
@@ -679,7 +762,8 @@ public sealed class ListMaterialIssueRequestsEndpoint(ISender sender)
             req.Keyword,
             req.WorkCenterId,
             req.ShiftId,
-            req.DeviceAssetId), ct);
+            req.DeviceAssetId,
+            req.Status), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -888,6 +972,24 @@ public sealed class ListProductionReportsEndpoint(ISender sender)
     }
 }
 
+public sealed class ReverseProductionReportEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<ReverseProductionReportRequest, ReverseProductionReportResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ReverseProductionReportEndpoint>());
+
+    public override async Task HandleAsync(ReverseProductionReportRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ReverseProductionReportCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ReportNo,
+            req.Reason,
+            req.ReversedAtUtc ?? timeProvider.GetUtcNow(),
+            req.IdempotencyKey), ct);
+        await Send.OkAsync(new ReverseProductionReportResponse(result.Id, result.ReportNo, result.OriginalReportNo), ct);
+    }
+}
+
 public sealed class RecordDefectEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<RecordDefectRequest, MesAcceptedResponse>
 {
@@ -948,7 +1050,9 @@ public sealed class CreateFinishedGoodsReceiptRequestEndpoint(ISender sender)
             req.UnitCost,
             req.IdempotencyKey,
             req.ProducedLotNo,
-            req.SerialNo), ct);
+            req.SerialNo,
+            req.ProductionDate,
+            req.ExpiryDate), ct);
         await Send.OkAsync(new CreateFinishedGoodsReceiptRequestResponse(result.Id, result.RequestNo), ct);
     }
 }
@@ -971,6 +1075,22 @@ public sealed class ListFinishedGoodsReceiptRequestsEndpoint(ISender sender)
             req.ShiftId,
             req.DeviceAssetId), ct);
         await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class RetryFinishedGoodsReceiptInventoryPostingEndpoint(ISender sender)
+    : MesEndpoint<RetryFinishedGoodsReceiptInventoryPostingRequest, CreateFinishedGoodsReceiptRequestResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<RetryFinishedGoodsReceiptInventoryPostingEndpoint>());
+
+    public override async Task HandleAsync(RetryFinishedGoodsReceiptInventoryPostingRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new RetryFinishedGoodsReceiptInventoryPostingCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.RequestNo,
+            req.IdempotencyKey), ct);
+        await Send.OkAsync(new CreateFinishedGoodsReceiptRequestResponse(result.Id, result.RequestNo), ct);
     }
 }
 
@@ -1169,6 +1289,8 @@ public static class MesEndpointContracts
         new(typeof(CloseWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/close", MesPermissionCodes.WorkOrdersManage, "closeBusinessMesWorkOrder"),
         new(typeof(HoldWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/hold", MesPermissionCodes.WorkOrdersManage, "holdBusinessMesWorkOrder"),
         new(typeof(CancelWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/cancel", MesPermissionCodes.WorkOrdersManage, "cancelBusinessMesWorkOrder"),
+        new(typeof(RecordEngineeringChangeDecisionEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions", MesPermissionCodes.WorkOrdersManage, "recordBusinessMesEngineeringChangeDecision"),
+        new(typeof(ForceReleaseQualityHoldEndpoint), "POST", "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release", MesPermissionCodes.QualityWrite, "forceReleaseBusinessMesQualityHold"),
         new(typeof(GetMaterialReadinessEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialReadiness"),
         new(typeof(CreateMaterialIssueRequestEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/material-issue-requests", MesPermissionCodes.MaterialsManage, "createBusinessMesMaterialIssueRequest"),
         new(typeof(ListMaterialIssueRequestsEndpoint), "GET", "/api/business/v1/mes/material-issue-requests", MesPermissionCodes.MaterialsRead, "listBusinessMesMaterialIssueRequests"),
@@ -1184,10 +1306,12 @@ public static class MesEndpointContracts
         new(typeof(GetWipSummaryEndpoint), "GET", "/api/business/v1/mes/wip", MesPermissionCodes.OperationsRead, "getBusinessMesWipSummary"),
         new(typeof(RecordProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingWrite, "recordBusinessMesProductionReport"),
         new(typeof(ListProductionReportsEndpoint), "GET", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingRead, "listBusinessMesProductionReports"),
+        new(typeof(ReverseProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports/{reportNo}/reverse", MesPermissionCodes.ReportingWrite, "reverseBusinessMesProductionReport"),
         new(typeof(RecordDefectEndpoint), "POST", "/api/business/v1/mes/defects", MesPermissionCodes.QualityWrite, "recordBusinessMesDefect"),
         new(typeof(ListRelatedQualityItemsEndpoint), "GET", "/api/business/v1/mes/related-quality-items", MesPermissionCodes.QualityRead, "listBusinessMesRelatedQualityItems"),
         new(typeof(CreateFinishedGoodsReceiptRequestEndpoint), "POST", "/api/business/v1/mes/finished-goods-receipt-requests", MesPermissionCodes.ReceiptsManage, "createBusinessMesFinishedGoodsReceiptRequest"),
         new(typeof(ListFinishedGoodsReceiptRequestsEndpoint), "GET", "/api/business/v1/mes/finished-goods-receipt-requests", MesPermissionCodes.ReceiptsRead, "listBusinessMesFinishedGoodsReceiptRequests"),
+        new(typeof(RetryFinishedGoodsReceiptInventoryPostingEndpoint), "POST", "/api/business/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-posting/retry", MesPermissionCodes.ReceiptsManage, "retryBusinessMesFinishedGoodsReceiptInventoryPosting"),
         new(typeof(ListDowntimeEventsEndpoint), "GET", "/api/business/v1/mes/downtime-events", MesPermissionCodes.DowntimeRead, "listBusinessMesDowntimeEvents"),
         new(typeof(RecordDowntimeEventEndpoint), "POST", "/api/business/v1/mes/downtime-events", MesPermissionCodes.DowntimeManage, "recordBusinessMesDowntimeEvent"),
         new(typeof(ConfirmDowntimeRecoveryEndpoint), "POST", "/api/business/v1/mes/downtime-events/{downtimeEventId}/recover", MesPermissionCodes.DowntimeManage, "confirmBusinessMesDowntimeRecovery"),

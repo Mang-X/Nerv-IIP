@@ -1,26 +1,23 @@
 <script setup lang="ts">
-import { Button, ThemePicker, useColorMode } from '@nerv-iip/ui'
+import { Button, NvThemePicker, useColorMode } from '@nerv-iip/ui'
 import { Moon, Search, Sun } from 'lucide-vue-next'
 import { useData } from 'vitepress'
 import DefaultTheme from 'vitepress/theme'
 import { onMounted, ref, watch } from 'vue'
+import SceneBadge from './SceneBadge.vue'
 
 // Wrap the default layout and swap VitePress's built-in nav controls for our own
 // @nerv-iip/ui components, so the docs chrome matches the system it documents:
 //   • the search box  → our Button-styled trigger (opens VitePress's own local
 //     search modal via its Ctrl/⌘-K shortcut, so the index/modal still work);
 //   • the appearance switch → our Sun/Moon Button bound to `isDark`;
-//   • the accent picker (ThemePicker) was already here.
+//   • the accent picker (NvThemePicker) was already here.
 // The originals are hidden in style.css (the search container stays mounted so
 // its modal + key listeners keep working — only its button is hidden).
 const { Layout } = DefaultTheme
 const { isDark } = useData()
-
-// 文档用 VitePress 外观(.dark 类)驱动 CSS token;而 @nerv-iip 组件内部(如排产
-// DHTMLX 引擎)按 useColorMode 自有状态解析并重发主题。两者默认不同步,导致切换
-// 明暗时组件不跟随。桥接:VitePress isDark 变化时同步 useColorMode。
 const { setMode } = useColorMode()
-watch(isDark, (d) => setMode(d ? 'dark' : 'light'), { immediate: true })
+watch(isDark, (dark) => setMode(dark ? 'dark' : 'light'), { immediate: true })
 
 const isMac = ref(false)
 onMounted(() => {
@@ -42,6 +39,13 @@ function toggleAppearance() {
 
 <template>
   <Layout>
+    <!-- Scene-availability badge above the article title for doc-layout surfaces
+         (desktop / touch / screen). PDA pages use `layout: page` + MobileDoc, which
+         injects its own <SceneBadge>. Renders nothing on non-component pages. -->
+    <template #doc-before>
+      <SceneBadge />
+    </template>
+
     <template #nav-bar-content-before>
       <ClientOnly>
         <div class="ds-doc-search-slot">
@@ -76,7 +80,7 @@ function toggleAppearance() {
             <Moon v-if="isDark" class="size-4" />
             <Sun v-else class="size-4" />
           </Button>
-          <ThemePicker class="ds-doc-accent" />
+          <NvThemePicker class="ds-doc-accent" />
         </div>
       </ClientOnly>
     </template>

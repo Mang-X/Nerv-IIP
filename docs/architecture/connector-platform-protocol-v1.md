@@ -277,6 +277,45 @@ Connector Host 机器身份认证、短期 access token、capability scope 到 p
 4. 立即实现 Ops 的 operation-tasks、operation-results、claim/heartbeat/abandon 和任务详情接口。
 5. 立即实现 Connector Host 通过 Nerv.IIP.Sdk.Ops claim task、执行低风险 restart 并回传结果。
 
+## OPC UA 采集扩展（MAN-367 / #683）
+
+OPC UA 采集器归属 `connector-hosts`，作为 Connector Host 的设备协议适配能力，不进入 AppHub、Ops、PlatformGateway 或业务服务内部实现。采样数据不通过 AppHub ingestion；Connector Host 仍复用 AppHub registration、heartbeat 和 state-snapshot 上报采集器实例及健康事实，采样 bucket 通过 IndustrialTelemetry 公开服务接口写入。
+
+配置边界：
+
+- `OpcUa:Enabled` 默认关闭。
+- `OpcUa:EndpointUrl`、`SecurityPolicy`、`SecurityMode`、`BrowseRootNodeId` 描述 OPC UA 连接与浏览入口。
+- `OpcUa:CredentialReference` 只保存凭据引用；留空/null 时使用匿名会话。首批实现支持 `env:<PREFIX>`，并从 `<PREFIX>_USERNAME` / `<PREFIX>_PASSWORD` 读取 OPC UA 用户名密码；配置了 `env:<PREFIX>` 但环境变量缺失时会 fail-fast，避免静默降级为匿名。仓库配置不得保存设备用户名、密码、证书私钥或客户密钥。
+- `OpcUa:Tags[]` 绑定 `DeviceAssetId`、`TagKey`、OPC UA `NodeId`、采样间隔和 bucket 秒数。
+
+采样写入约束：
+
+- Connector Host 订阅 OPC UA tag 节点并把通知按 tag bucket 聚合为 `SampleCount`、`MinValue`、`MaxValue` 和 `AverageValue`。
+- 写入 `POST /api/business/v1/iiot/samples` 时必须携带 `source_system=opcua`、`source_connector={connectorHostId}/{connectorId}` 和稳定 `source_sequence=opcua:{connectorId}:{tagKey}:{bucketStartUnixMilliseconds}`，由 IndustrialTelemetry 侧已有幂等约束处理重复 bucket。
+- 断线重连、订阅恢复、丢样计数和最近采样/写入时间通过 state-snapshot 的 metadata/metrics 暴露，heartbeat 仍只证明 Connector Host 存活。
+
+首批自动化验证可使用 Connector Host fake OPC UA adapter 覆盖浏览、订阅、bucket 写入、source_sequence 幂等字段和重连/丢样指标；合入或发布前仍应优先补充 open62541、Prosys 或等价 OPC UA 模拟器 smoke。若 Docker 或外部模拟器不可用，交付说明必须明确限制与替代证据。
+
+## Modbus TCP / MQTT 采集扩展（MAN-368 / #684）
+
+Modbus TCP 与 MQTT 采集器同样归属 `connector-hosts`，复用 Connector Host 的实例发现、heartbeat、state-snapshot 和 IndustrialTelemetry `POST /api/business/v1/iiot/samples` 写入边界。它们不进入 AppHub、Ops、PlatformGateway 或业务服务内部实现，也不保存现场控制凭据。
+
+配置边界：
+
+- `Modbus:Enabled` 与 `Mqtt:Enabled` 默认关闭。
+- `Modbus:Endpoint` 描述 PLC/仪表 TCP endpoint；`Modbus:Registers[]` 绑定 `DeviceAssetId`、`TagKey`、unit id、寄存器表、地址、寄存器数量、`DataType`、`WordOrder`、scale/offset 和 bucket 秒数。首批 `DataType` 支持 `UInt16`、`Int16`、`UInt32`、`Int32`、`Float32`；`WordOrder` 支持 `BigEndian` 与 32 位值的 `LittleEndian` word-swap。
+- `Mqtt:Broker`、`ClientId`、`TopicMappings[]` 描述 broker 连接、topic filter 和 JSON path 到 tag 的映射；首批 JSON path 支持 `$.a.b` 形式的对象属性路径。
+- `Mqtt:CredentialReference` 只保存凭据引用；首批支持 `env:<PREFIX>`，并从 `<PREFIX>_USERNAME` / `<PREFIX>_PASSWORD` 读取 broker 用户名密码。仓库配置不得保存 broker 密码、设备密码或客户密钥。
+
+采样写入约束：
+
+- Modbus TCP 轮询配置化寄存器地址表，支持 holding/input registers，采样值按 scale/offset 归一化后进入 bucket 聚合。
+- MQTT 订阅配置化 topic filter，按 topic + JSON path 解析 payload 数值后进入 bucket 聚合。
+- 写入 `POST /api/business/v1/iiot/samples` 时必须携带 `source_system=modbus|mqtt`、`source_connector={connectorHostId}/{connectorId}` 和稳定 `source_sequence={protocol}:{connectorId}:{tagKey}:{bucketStartUnixMilliseconds}`，由 IndustrialTelemetry 侧已有幂等约束处理重复 bucket。
+- 连接失败、订阅失败、丢样计数和最近采样/写入时间通过 state-snapshot 的 metadata/metrics 暴露，heartbeat 仍只证明 Connector Host 存活。
+
+首批自动化验证覆盖 Modbus 模拟采样入库、MQTT broker/payload 映射采样入库、点位映射配置化、下游写入失败后的 bucket 恢复与稳定 `source_sequence`。真实现场联调仍应在部署 profile 中提供 endpoint/broker 与凭据引用，不得把凭据写入仓库。
+
 ## 非目标
 
 1. 不在本文档中定义全部命令下发传输形态；当前只冻结第二阶段采用的 HTTP claim/lease 拉取模型。

@@ -20,7 +20,7 @@ const forwarded = useForwardPropsEmits(reactiveOmit(props, 'class'), emits)
     v-bind="forwarded"
     :class="
       cn(
-        'ds-switch peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-transparent px-0.5 outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-brand/30 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-brand data-[state=unchecked]:bg-input dark:data-[state=unchecked]:bg-input/60',
+        'ds-switch peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-transparent px-0.5 outline-none focus-visible:ring-[3px] focus-visible:ring-brand/30 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-brand data-[state=unchecked]:bg-input dark:data-[state=unchecked]:bg-input/60',
         props.class,
       )
     "
@@ -32,27 +32,32 @@ const forwarded = useForwardPropsEmits(reactiveOmit(props, 'class'), emits)
 </template>
 
 <style scoped>
-.ds-switch {
-  transition: background-color 0.18s var(--ease-out-quart, ease-out);
-}
-.ds-switch-thumb {
-  /* Tailwind v4 glides the thumb via the `translate` property; `transform` carries
+@layer nv-components {
+  /* Track colour glides with our shared ease. Do NOT add the Tailwind
+     `transition-colors` utility to the root — it outranks this layered rule and
+     would swap the easing to Tailwind's default curve (breaks the unified feel). */
+  .ds-switch {
+    transition: background-color 0.18s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-switch-thumb {
+    /* Tailwind v4 glides the thumb via the `translate` property; `transform` carries
      the press depress (a separate property, composes with `translate`). A slight
      back-ease spring on the glide unifies it with the mobile Switch. */
-  transition:
-    translate 0.22s var(--ease-out-quart, ease-out),
-    transform 0.18s var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1)),
-    box-shadow 0.2s ease;
-}
-/* Press: the thumb depresses while held, then decelerates back — a press
+    transition:
+      translate 0.22s var(--nv-ease-out-quart, ease-out),
+      transform 0.18s var(--nv-ease-out-quart),
+      box-shadow 0.2s ease;
+  }
+  /* Press: the thumb depresses while held, then decelerates back — a press
    micro-interaction unified with Radio/Checkbox. No bounce (per our motion
    philosophy); the desktop curve is calmer than the mobile spring. */
-.ds-switch:active:not([data-disabled]) .ds-switch-thumb {
-  transform: scale(0.86);
-}
-@media (prefers-reduced-motion: reduce) {
-  .ds-switch-thumb {
-    transition: none;
+  .ds-switch:active:not([data-disabled]) .ds-switch-thumb {
+    transform: scale(0.86);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-switch-thumb {
+      transition: none;
+    }
   }
 }
 </style>

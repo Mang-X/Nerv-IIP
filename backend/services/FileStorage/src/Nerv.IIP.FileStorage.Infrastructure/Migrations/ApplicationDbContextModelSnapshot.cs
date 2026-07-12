@@ -112,6 +112,17 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC timestamp when the file metadata was created.");
 
+                    b.Property<DateTimeOffset?>("DeletedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at_utc")
+                        .HasComment("UTC timestamp when FileStorage soft-deleted the file metadata.");
+
+                    b.Property<string>("DeletionReason")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("deletion_reason")
+                        .HasComment("Reason FileStorage marked the file deleted.");
+
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -168,12 +179,28 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                         .HasColumnName("owner_type")
                         .HasComment("Owner resource type within the owning service.");
 
+                    b.Property<DateTimeOffset?>("PhysicalDeleteAfterUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("physical_delete_after_utc")
+                        .HasComment("UTC timestamp after which FileStorage may physically remove file metadata and bytes.");
+
+                    b.Property<string>("ScanDetail")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("scan_detail")
+                        .HasComment("Scanner result summary or degradation reason produced by FileStorage scanning.");
+
                     b.Property<string>("ScanStatus")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("scan_status")
                         .HasComment("Malware or content scan status for the stored file.");
+
+                    b.Property<DateTimeOffset?>("ScannedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("scanned_at_utc")
+                        .HasComment("UTC timestamp when malware or content scanning last completed.");
 
                     b.Property<long>("SizeBytes")
                         .HasColumnType("bigint")
@@ -191,6 +218,10 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
 
                     b.HasIndex("ObjectKey")
                         .IsUnique();
+
+                    b.HasIndex("ScanStatus", "Status");
+
+                    b.HasIndex("Status", "PhysicalDeleteAfterUtc");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "CompletedAtUtc");
 

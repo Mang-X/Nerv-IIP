@@ -5,7 +5,7 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-  StatusBadge,
+  NvStatusBadge,
 } from '@nerv-iip/ui'
 import { computed } from 'vue'
 import { conflictReasonLabel } from '../../model/labels'
@@ -46,12 +46,12 @@ function fmt(iso?: string) {
         <template v-if="!isOrder">
           <dt class="text-muted-foreground">锁定</dt>
           <dd>
-            <StatusBadge :tone="task.locked ? 'info' : 'neutral'" :label="task.locked ? '已锁定' : '未锁定'" />
+            <NvStatusBadge :tone="task.locked ? 'info' : 'neutral'" :label="task.locked ? '已锁定' : '未锁定'" />
           </dd>
         </template>
         <template v-if="task.hasConflict && task.conflictReason">
           <dt class="text-muted-foreground">冲突</dt>
-          <dd><StatusBadge tone="danger" :label="conflictReasonLabel[task.conflictReason]" /></dd>
+          <dd><NvStatusBadge tone="danger" :label="conflictReasonLabel[task.conflictReason]" /></dd>
         </template>
       </dl>
     </SheetContent>

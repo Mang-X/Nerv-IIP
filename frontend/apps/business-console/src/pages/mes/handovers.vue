@@ -1,41 +1,57 @@
 <script setup lang="ts">
-import type { DataTableProColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { mesHandoverStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesShiftHandovers } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  ButtonPro,
-  DataTablePro,
-  PageHeader,
-  SectionCard,
-  SectionCards,
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
-  StatusBadgePro,
-  Toolbar,
+  NvButton,
+  NvDataTable,
+  NvPageHeader,
+  NvSectionCard,
+  NvSectionCards,
+  NvSelect,
+  NvSelectContent,
+  NvSelectItem,
+  NvSelectTrigger,
+  NvSelectValue,
+  NvStatusBadge,
+  NvToolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '班次交接', requiredPermissions: ['business.mes.handovers.read'] } })
+definePage({
+  meta: {
+    requiresAuth: true,
+    title: '班次交接',
+    requiredPermissions: ['business.mes.handovers.read'],
+  },
+})
 
-const { filters, handovers, handoversError, handoversPending, handoversTotal, refreshHandovers } = useMesShiftHandovers()
+const { filters, handovers, handoversError, handoversPending, handoversTotal, refreshHandovers } =
+  useMesShiftHandovers()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
 const statusFilter = computed({
   get: () => filters.status || 'all',
-  set: (value: string) => { filters.status = value === 'all' ? undefined : value },
+  set: (value: string) => {
+    filters.status = value === 'all' ? undefined : value
+  },
 })
-const openIssueTotal = computed(() => handovers.value.reduce((s, r) => s + (r.openIssueCount ?? 0), 0))
+const openIssueTotal = computed(() =>
+  handovers.value.reduce((s, r) => s + (r.openIssueCount ?? 0), 0),
+)
 const errorMessage = computed(() => formatError(handoversError.value))
 
 type HandoverRow = (typeof handovers)['value'][number]
-const columns: DataTableProColumn<HandoverRow>[] = [
-  { key: 'handoverId', header: '交接单', cellClass: 'font-medium', accessor: (r) => r.handoverId ?? '无' },
+const columns: NvDataTableColumn<HandoverRow>[] = [
+  {
+    key: 'handoverId',
+    header: '交接单',
+    cellClass: 'font-medium',
+    accessor: (r) => r.handoverId ?? '无',
+  },
   { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '无' },
   { key: 'teamId', header: '班组', accessor: (r) => r.teamId ?? '无' },
   { key: 'handoverStatus', header: '状态', width: 'w-24' },
@@ -55,35 +71,52 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="班次交接" :breadcrumbs="[{ label: '制造执行' }]" :count="`${handoversTotal} 条交接`">
+    <NvPageHeader
+      title="班次交接"
+      :breadcrumbs="[{ label: '制造执行' }]"
+      :count="`${handoversTotal} 条交接`"
+    >
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" :disabled="handoversPending" @click="refreshHandovers">
+        <NvButton
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="handoversPending"
+          @click="refreshHandovers"
+        >
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </ButtonPro>
+        </NvButton>
       </template>
-    </PageHeader>
+    </NvPageHeader>
 
-    <SectionCards :columns="3">
-      <SectionCard description="交接单" :value="handoversTotal" hint="后端筛选总数" />
-      <SectionCard description="本页未结事项" :value="openIssueTotal" hint="当前页统计" />
-      <SectionCard description="本页当前班次" :value="handovers.length" hint="当前页统计" />
-    </SectionCards>
+    <NvSectionCards :columns="3">
+      <NvSectionCard description="交接单" :value="handoversTotal" hint="后端筛选总数" />
+      <NvSectionCard description="本页未结事项" :value="openIssueTotal" hint="当前页统计" />
+      <NvSectionCard description="本页当前班次" :value="handovers.length" hint="当前页统计" />
+    </NvSectionCards>
 
-    <Toolbar :show-search="false">
+    <NvToolbar :show-search="false">
       <template #filters>
-        <SelectPro v-model="statusFilter">
-          <SelectProTrigger class="h-9 w-32" aria-label="交接状态"><SelectProValue /></SelectProTrigger>
-          <SelectProContent>
-            <SelectProItem v-for="option in mesHandoverStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
-          </SelectProContent>
-        </SelectPro>
+        <NvSelect v-model="statusFilter">
+          <NvSelectTrigger class="h-9 w-32" aria-label="交接状态"
+            ><NvSelectValue
+          /></NvSelectTrigger>
+          <NvSelectContent>
+            <NvSelectItem
+              v-for="option in mesHandoverStatusOptions"
+              :key="option.value"
+              :value="option.value"
+              >{{ option.label }}</NvSelectItem
+            >
+          </NvSelectContent>
+        </NvSelect>
       </template>
-    </Toolbar>
+    </NvToolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro
+    <NvDataTable
       manual
       :page="page"
       :page-size="pageSize"
@@ -98,10 +131,13 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="暂无班次交接。班次结束时创建交接单，记录未完成事项。"
     >
-      <template #cell-handoverStatus="{ row }"><StatusBadgePro :value="row.handoverStatus" /></template>
-      <template #cell-openIssueCount="{ row }"><span class="tabular-nums">{{ row.openIssueCount ?? 0 }}</span></template>
+      <template #cell-handoverStatus="{ row }"
+        ><NvStatusBadge :value="row.handoverStatus"
+      /></template>
+      <template #cell-openIssueCount="{ row }"
+        ><span class="tabular-nums">{{ row.openIssueCount ?? 0 }}</span></template
+      >
       <template #cell-createdAtUtc="{ row }">{{ formatDateTime(row.createdAtUtc) }}</template>
-    </DataTablePro>
-
+    </NvDataTable>
   </BusinessLayout>
 </template>

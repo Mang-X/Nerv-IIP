@@ -53,6 +53,7 @@ public static class CommercialFinanceAcceptanceData
         Endpoint("BusinessMes", "GET", "/api/business/v1/mes/production-reports", "listBusinessMesProductionReports"),
         Endpoint("BusinessMes", "POST", "/api/business/v1/mes/finished-goods-receipt-requests", "createBusinessMesFinishedGoodsReceiptRequest"),
         Endpoint("BusinessMes", "GET", "/api/business/v1/mes/finished-goods-receipt-requests", "listBusinessMesFinishedGoodsReceiptRequests"),
+        Endpoint("BusinessMes", "POST", "/api/business/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-posting/retry", "retryBusinessMesFinishedGoodsReceiptInventoryPosting"),
         Endpoint("BusinessQuality", "POST", "/api/business/v1/quality/inspection-records", "createBusinessQualityInspectionRecord"),
         Endpoint("BusinessWms", "POST", "/api/business/v1/wms/inbound-orders", "createWmsInboundOrder"),
         Endpoint("BusinessWms", "POST", "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete", "completeWmsInboundOrder"),

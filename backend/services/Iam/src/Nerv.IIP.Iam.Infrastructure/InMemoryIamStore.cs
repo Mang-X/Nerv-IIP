@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Nerv.IIP.Iam.Domain;
+using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 
 namespace Nerv.IIP.Iam.Infrastructure;
 
@@ -15,6 +16,8 @@ public sealed class InMemoryIamStore
     private readonly List<UserFact> _users = [];
     private readonly List<RoleFact> _roles = [];
     private readonly List<MembershipFact> _memberships = [];
+    private readonly Dictionary<string, IReadOnlySet<DataScopeBinding>> _roleDataScopes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlySet<DataScopeBinding>> _membershipDataScopes = new(StringComparer.Ordinal);
     private readonly List<UserSessionFact> _sessions = [];
     private readonly List<ConnectorHostCredentialFact> _connectorHostCredentials = [];
     private readonly List<ExternalClientFact> _externalClients = [];
@@ -46,6 +49,11 @@ public sealed class InMemoryIamStore
             }
 
             var now = DateTimeOffset.UtcNow;
+            if (user.AccountExpiresAtUtc is not null && user.AccountExpiresAtUtc <= now)
+            {
+                throw new UnauthorizedAccessException("Invalid login.");
+            }
+
             if (user.LockoutUntilUtc is not null && user.LockoutUntilUtc > now)
             {
                 throw new UnauthorizedAccessException("Invalid login.");
@@ -83,7 +91,7 @@ public sealed class InMemoryIamStore
             var session = _sessions.SingleOrDefault(x => x.RefreshTokenHash == hash && x.RevokedAtUtc is null && x.ExpiresAtUtc > DateTimeOffset.UtcNow)
                 ?? throw new UnauthorizedAccessException("Invalid refresh token.");
             var user = _users.Single(x => x.UserId == session.UserId);
-            if (!user.Enabled)
+            if (!user.Enabled || (user.AccountExpiresAtUtc is not null && user.AccountExpiresAtUtc <= DateTimeOffset.UtcNow))
             {
                 throw new UnauthorizedAccessException("User disabled.");
             }
@@ -120,7 +128,10 @@ public sealed class InMemoryIamStore
             }
 
             var user = _users.Single(x => x.UserId == session.UserId);
-            if (!user.Enabled || user.SecurityStamp != securityStamp || user.PermissionVersion != permissionVersion)
+            if (!user.Enabled
+                || (user.AccountExpiresAtUtc is not null && user.AccountExpiresAtUtc <= DateTimeOffset.UtcNow)
+                || user.SecurityStamp != securityStamp
+                || user.PermissionVersion != permissionVersion)
             {
                 throw new UnauthorizedAccessException("Stale access token.");
             }
@@ -302,12 +313,19 @@ public sealed class InMemoryIamStore
         }
     }
 
-    public UserFact CreateUser(string loginName, string email, string password)
+    public UserFact CreateUser(
+        string loginName,
+        string email,
+        string password,
+        DateTimeOffset? accountExpiresAtUtc,
+        InMemoryIamPasswordPolicy passwordPolicy)
     {
         lock (_gate)
         {
+            ValidateComplexity(password, passwordPolicy);
             EnsureUserIsUnique(null, loginName, email);
 
+            var now = DateTimeOffset.UtcNow;
             var user = new UserFact(
                 $"user-{Guid.NewGuid():N}",
                 loginName,
@@ -315,7 +333,12 @@ public sealed class InMemoryIamStore
                 Hash(password),
                 true,
                 Guid.NewGuid().ToString("n"),
-                1);
+                1,
+                AccountExpiresAtUtc: accountExpiresAtUtc,
+                PasswordChangedAtUtc: now,
+                PasswordExpiresAtUtc: GetPasswordExpiresAtUtc(now, passwordPolicy),
+                PasswordChangeRequired: true,
+                PasswordHistoryHashes: []);
             _users.Add(user);
             return user;
         }
@@ -352,7 +375,42 @@ public sealed class InMemoryIamStore
         }
     }
 
-    public UserFact UpdateUser(string userId, string loginName, string email, bool enabled)
+    public IReadOnlyList<DataScopeBinding> ReplaceRoleDataScopes(string roleId, IEnumerable<DataScopeBinding> scopes)
+    {
+        lock (_gate)
+        {
+            if (_roles.All(x => x.RoleId != roleId))
+            {
+                throw new InvalidOperationException($"Role '{roleId}' was not found.");
+            }
+
+            var normalized = NormalizeDataScopes(scopes);
+            _roleDataScopes[roleId] = normalized.ToHashSet();
+            return normalized;
+        }
+    }
+
+    public IReadOnlyList<DataScopeBinding> ReplaceMembershipDataScopes(
+        string userId,
+        string organizationId,
+        string environmentId,
+        IEnumerable<DataScopeBinding> scopes)
+    {
+        lock (_gate)
+        {
+            var key = MembershipDataScopeKey(userId, organizationId, environmentId);
+            if (_memberships.All(x => MembershipDataScopeKey(x.UserId, x.OrganizationId, x.EnvironmentId) != key))
+            {
+                throw new InvalidOperationException($"Membership for user '{userId}' in '{organizationId}/{environmentId}' was not found.");
+            }
+
+            var normalized = NormalizeDataScopes(scopes);
+            _membershipDataScopes[key] = normalized.ToHashSet();
+            return normalized;
+        }
+    }
+
+    public UserFact UpdateUser(string userId, string loginName, string email, bool enabled, DateTimeOffset? accountExpiresAtUtc)
     {
         lock (_gate)
         {
@@ -365,16 +423,42 @@ public sealed class InMemoryIamStore
             }
 
             var current = _users[index];
+            var shouldRevokeSessions = current.Enabled && !enabled;
             var updated = current with
             {
                 LoginName = loginName,
                 Email = email,
+                AccountExpiresAtUtc = accountExpiresAtUtc,
                 Enabled = enabled,
                 SecurityStamp = current.Enabled == enabled ? current.SecurityStamp : Guid.NewGuid().ToString("n"),
                 PermissionVersion = current.Enabled == enabled ? current.PermissionVersion : current.PermissionVersion + 1
             };
             _users[index] = updated;
+            if (shouldRevokeSessions)
+            {
+                RevokeActiveUserSessions(userId, DateTimeOffset.UtcNow);
+            }
+
             return updated;
+        }
+    }
+
+    public void EnableUser(string userId)
+    {
+        lock (_gate)
+        {
+            var user = _users.SingleOrDefault(x => x.UserId == userId);
+            if (user is null || user.Enabled)
+            {
+                return;
+            }
+
+            _users[_users.IndexOf(user)] = user with
+            {
+                Enabled = true,
+                SecurityStamp = Guid.NewGuid().ToString("n"),
+                PermissionVersion = user.PermissionVersion + 1
+            };
         }
     }
 
@@ -394,10 +478,12 @@ public sealed class InMemoryIamStore
                 SecurityStamp = Guid.NewGuid().ToString("n"),
                 PermissionVersion = user.PermissionVersion + 1
             };
+
+            RevokeActiveUserSessions(userId, DateTimeOffset.UtcNow);
         }
     }
 
-    public void ResetPassword(string userId, string newPassword)
+    public void ResetPassword(string userId, string newPassword, InMemoryIamPasswordPolicy passwordPolicy)
     {
         lock (_gate)
         {
@@ -407,22 +493,52 @@ public sealed class InMemoryIamStore
                 throw new InvalidOperationException($"User '{userId}' was not found.");
             }
 
+            ValidateNewPassword(user, newPassword, passwordPolicy);
+            var now = DateTimeOffset.UtcNow;
+            var history = AppendPasswordHistory(user, passwordPolicy);
             _users[_users.IndexOf(user)] = user with
             {
                 PasswordHash = Hash(newPassword),
+                PasswordChangedAtUtc = now,
+                PasswordExpiresAtUtc = GetPasswordExpiresAtUtc(now, passwordPolicy),
+                PasswordChangeRequired = true,
+                PasswordHistoryHashes = history,
                 SecurityStamp = Guid.NewGuid().ToString("n"),
                 PermissionVersion = user.PermissionVersion + 1
             };
 
-            var now = DateTimeOffset.UtcNow;
-            for (var i = 0; i < _sessions.Count; i++)
+            RevokeActiveUserSessions(userId, now);
+        }
+    }
+
+    public void ChangePassword(
+        string userId,
+        string currentPassword,
+        string newPassword,
+        InMemoryIamPasswordPolicy passwordPolicy)
+    {
+        lock (_gate)
+        {
+            var user = _users.SingleOrDefault(x => x.UserId == userId)
+                ?? throw new InvalidOperationException($"User '{userId}' was not found.");
+            if (!Verify(currentPassword, user.PasswordHash))
             {
-                var session = _sessions[i];
-                if (session.UserId == userId && session.RevokedAtUtc is null && session.ExpiresAtUtc > now)
-                {
-                    _sessions[i] = session with { RevokedAtUtc = now };
-                }
+                throw new UnauthorizedAccessException("Current password is invalid.");
             }
+
+            ValidateNewPassword(user, newPassword, passwordPolicy);
+            var now = DateTimeOffset.UtcNow;
+            var history = AppendPasswordHistory(user, passwordPolicy);
+            _users[_users.IndexOf(user)] = user with
+            {
+                PasswordHash = Hash(newPassword),
+                PasswordChangedAtUtc = now,
+                PasswordExpiresAtUtc = GetPasswordExpiresAtUtc(now, passwordPolicy),
+                PasswordChangeRequired = false,
+                PasswordHistoryHashes = history,
+                SecurityStamp = Guid.NewGuid().ToString("n"),
+                PermissionVersion = user.PermissionVersion + 1
+            };
         }
     }
 
@@ -473,7 +589,8 @@ public sealed class InMemoryIamStore
             user.LoginName,
             user.Email,
             membership?.OrganizationId,
-            membership?.EnvironmentId);
+            membership?.EnvironmentId,
+            user.PasswordChangeRequired || (user.PasswordExpiresAtUtc is not null && user.PasswordExpiresAtUtc <= now));
     }
 
     private AuthResult CreateSession(
@@ -528,7 +645,8 @@ public sealed class InMemoryIamStore
             user.LoginName,
             user.Email,
             organizationId,
-            environmentId);
+            environmentId,
+            user.PasswordChangeRequired || (user.PasswordExpiresAtUtc is not null && user.PasswordExpiresAtUtc <= now));
     }
 
     private bool UserHasMembershipCore(string userId, string organizationId, string environmentId)
@@ -568,7 +686,18 @@ public sealed class InMemoryIamStore
         _organizations.Add(new OrganizationFact("org-001", "Nerv IIP", "active"));
         _environments.Add(new IamEnvironmentFact("env-dev", "org-001", "Development", "active"));
         _roles.Add(new RoleFact("role-platform-admin", "Platform Administrator", NervIipSeedPermissions.All.ToHashSet(StringComparer.Ordinal)));
-        _users.Add(new UserFact("user-admin", "admin", "admin@nerv-iip.local", Hash("Admin123!"), true, Guid.NewGuid().ToString("n"), 1));
+        var now = DateTimeOffset.UtcNow;
+        _users.Add(new UserFact(
+            "user-admin",
+            "admin",
+            "admin@nerv-iip.local",
+            Hash("Admin123!"),
+            true,
+            Guid.NewGuid().ToString("n"),
+            1,
+            PasswordChangedAtUtc: now,
+            PasswordExpiresAtUtc: now.AddDays(90),
+            PasswordHistoryHashes: []));
         _memberships.Add(new MembershipFact("user-admin", "org-001", "env-dev", new HashSet<string> { "role-platform-admin" }));
         _connectorHostCredentials.Add(new ConnectorHostCredentialFact("connector-host-001", "org-001", "env-dev", new HashSet<string>(NervIipSeedPermissions.All.Where(x => x.StartsWith("connectors.", StringComparison.Ordinal))), Hash("local-connector-secret"), DateTimeOffset.UtcNow.AddDays(-1), null));
         _externalClients.Add(new ExternalClientFact("external-client-demo", "Demo External Client", "org-001", "env-dev", Hash("external-client-secret"), true, 1, DateTimeOffset.UtcNow.AddDays(-1), null));
@@ -576,6 +705,17 @@ public sealed class InMemoryIamStore
         _externalClients.Add(new ExternalClientFact("external-client-resource-demo", "Resource Scoped External Client", "org-001", "env-dev", Hash("external-client-resource-secret"), true, 1, DateTimeOffset.UtcNow.AddDays(-1), null));
         _authorizationGrants.Add(new AuthorizationGrantFact("external-client", "external-client-resource-demo", "org-001", "env-dev", "ops.tasks.create", "operation-template", "restart-critical", DateTimeOffset.UtcNow.AddDays(-1), null, null));
     }
+
+    private static IReadOnlyList<DataScopeBinding> NormalizeDataScopes(IEnumerable<DataScopeBinding> scopes) =>
+        scopes
+            .Select(DataScopeBinding.Normalize)
+            .Distinct()
+            .OrderBy(x => x.ScopeType, StringComparer.Ordinal)
+            .ThenBy(x => x.ScopeCode, StringComparer.Ordinal)
+            .ToArray();
+
+    private static string MembershipDataScopeKey(string userId, string organizationId, string environmentId) =>
+        $"{userId}:{organizationId}:{environmentId}";
 
     private void EnsureUserIsUnique(string? currentUserId, string loginName, string email)
     {
@@ -587,6 +727,71 @@ public sealed class InMemoryIamStore
         if (_users.Any(x => x.UserId != currentUserId && string.Equals(x.Email, email, StringComparison.OrdinalIgnoreCase)))
         {
             throw new InvalidOperationException($"Email '{email}' is already used.");
+        }
+    }
+
+    private static void ValidateNewPassword(
+        UserFact user,
+        string password,
+        InMemoryIamPasswordPolicy passwordPolicy)
+    {
+        ValidateComplexity(password, passwordPolicy);
+        if (Verify(password, user.PasswordHash)
+            || (user.PasswordHistoryHashes ?? []).Any(hash => Verify(password, hash)))
+        {
+            throw new InvalidOperationException("Password was recently used.");
+        }
+    }
+
+    private static void ValidateComplexity(string password, InMemoryIamPasswordPolicy passwordPolicy)
+    {
+        if (string.IsNullOrWhiteSpace(password) || password.Length < passwordPolicy.MinimumLength)
+        {
+            throw new InvalidOperationException("Password does not satisfy IAM password policy.");
+        }
+
+        if ((passwordPolicy.RequireUppercase && !password.Any(char.IsUpper))
+            || (passwordPolicy.RequireLowercase && !password.Any(char.IsLower))
+            || (passwordPolicy.RequireDigit && !password.Any(char.IsDigit))
+            || (passwordPolicy.RequireNonAlphanumeric && password.All(char.IsLetterOrDigit)))
+        {
+            throw new InvalidOperationException("Password does not satisfy IAM password policy.");
+        }
+    }
+
+    private static IReadOnlyList<string> AppendPasswordHistory(
+        UserFact user,
+        InMemoryIamPasswordPolicy passwordPolicy)
+    {
+        if (passwordPolicy.PasswordHistoryCount <= 0)
+        {
+            return [];
+        }
+
+        return (user.PasswordHistoryHashes ?? [])
+            .Append(user.PasswordHash)
+            .TakeLast(passwordPolicy.PasswordHistoryCount)
+            .ToArray();
+    }
+
+    private static DateTimeOffset? GetPasswordExpiresAtUtc(
+        DateTimeOffset changedAtUtc,
+        InMemoryIamPasswordPolicy passwordPolicy)
+    {
+        return passwordPolicy.PasswordExpiresDays <= 0
+            ? null
+            : changedAtUtc.AddDays(passwordPolicy.PasswordExpiresDays);
+    }
+
+    private void RevokeActiveUserSessions(string userId, DateTimeOffset now)
+    {
+        for (var i = 0; i < _sessions.Count; i++)
+        {
+            var session = _sessions[i];
+            if (session.UserId == userId && session.RevokedAtUtc is null && session.ExpiresAtUtc > now)
+            {
+                _sessions[i] = session with { RevokedAtUtc = now };
+            }
         }
     }
 
@@ -652,7 +857,16 @@ public sealed record AuthResult(
     string LoginName,
     string Email,
     string? OrganizationId,
-    string? EnvironmentId);
+    string? EnvironmentId,
+    bool PasswordChangeRequired);
+public sealed record InMemoryIamPasswordPolicy(
+    int MinimumLength,
+    bool RequireUppercase,
+    bool RequireLowercase,
+    bool RequireDigit,
+    bool RequireNonAlphanumeric,
+    int PasswordExpiresDays,
+    int PasswordHistoryCount);
 public sealed record ConnectorPrincipal(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
 public sealed record ExternalClientPrincipal(
     string ClientId,

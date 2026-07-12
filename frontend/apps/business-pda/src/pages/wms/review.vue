@@ -1,8 +1,15 @@
 <script setup lang="ts">
+import RetryableListError from '@/components/RetryableListError.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useWmsOutbound } from '@/composables/useBusinessWms'
 import { outboundOrderStatusLabel, outboundReviewFlow } from '@nerv-iip/business-core'
-import { AppShellMobile, BottomSheet, ListRow, Result, ScanBar } from '@nerv-iip/ui-mobile'
+import {
+  NvAppShellMobile,
+  NvBottomSheet,
+  NvListRow,
+  NvMobileResult,
+  NvScanBar,
+} from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -14,7 +21,8 @@ definePage({
 })
 
 const router = useRouter()
-const { filters, orders, pending, error, completeOutbound, completePending } = useWmsOutbound()
+const { filters, orders, pending, error, refresh, completeOutbound, completePending } =
+  useWmsOutbound()
 
 // 选中的出库单号 + GUID（GUID 仅用于 complete 调用与 :key，绝不展示）。
 const selectedOrderId = ref('')
@@ -112,7 +120,7 @@ function goHome() {
 </script>
 
 <template>
-  <AppShellMobile>
+  <NvAppShellMobile>
     <template #header>
       <div class="px-4 py-3">
         <h1 class="text-lg font-semibold text-foreground">复核发货</h1>
@@ -120,7 +128,7 @@ function goHome() {
     </template>
 
     <!-- 成功结果态 -->
-    <Result
+    <NvMobileResult
       v-if="completed"
       status="success"
       title="出库复核已完成"
@@ -142,22 +150,19 @@ function goHome() {
           返回
         </button>
       </template>
-    </Result>
+    </NvMobileResult>
 
     <div v-else class="space-y-4 p-4">
-      <ScanBar
-        placeholder="扫描出库单号"
-        :active="scanActive"
-        @scan="onScan"
-      />
+      <NvScanBar placeholder="扫描出库单号" :active="scanActive" @scan="onScan" />
 
-      <p
+      <RetryableListError
         v-if="error"
-        data-testid="error-banner"
-        class="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-      >
-        单据加载失败，请下拉重试或检查网络。
-      </p>
+        :error="error"
+        :pending="pending"
+        fallback="单据加载失败，请下拉重试或检查网络。"
+        test-id="error-banner"
+        @retry="() => refresh()"
+      />
 
       <div
         v-if="showEmpty"
@@ -167,7 +172,7 @@ function goHome() {
       </div>
 
       <div v-else class="overflow-hidden rounded-lg border border-border">
-        <ListRow
+        <NvListRow
           v-for="order in orders"
           :key="order.outboundOrderId"
           :title="order.outboundOrderNo ?? ''"
@@ -178,11 +183,7 @@ function goHome() {
     </div>
 
     <!-- 复核完成确认抽屉 -->
-    <BottomSheet
-      :open="sheetOpen"
-      title="完成出库复核"
-      @update:open="(v) => (sheetOpen = v)"
-    >
+    <NvBottomSheet :open="sheetOpen" title="完成出库复核" @update:open="(v) => (sheetOpen = v)">
       <div class="space-y-4">
         <p v-if="selectedOrderNo" class="text-sm text-muted-foreground">
           出库单 {{ selectedOrderNo }}
@@ -198,7 +199,7 @@ function goHome() {
             inputmode="text"
             placeholder="请输入复核单号"
             class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base text-foreground"
-          >
+          />
         </label>
 
         <div class="flex items-center justify-between">
@@ -207,9 +208,11 @@ function goHome() {
             type="button"
             data-testid="toggle-passed"
             class="min-h-touch rounded-lg border px-4 text-base font-medium"
-            :class="passed
-              ? 'border-primary bg-primary/10 text-primary'
-              : 'border-destructive bg-destructive/10 text-destructive'"
+            :class="
+              passed
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-destructive bg-destructive/10 text-destructive'
+            "
             @click="passed = !passed"
           >
             {{ passed ? '通过' : '不通过' }}
@@ -237,6 +240,6 @@ function goHome() {
           </button>
         </div>
       </div>
-    </BottomSheet>
-  </AppShellMobile>
+    </NvBottomSheet>
+  </NvAppShellMobile>
 </template>

@@ -1,11 +1,10 @@
 ---
-title: Descriptions 描述列表
+title: NvDescriptions 描述列表
 pageClass: ds-wide
-aside: false
 ---
 
 <script setup>
-import { DescriptionsPro, StatusBadgePro } from '@nerv-iip/ui'
+import { NvDescriptions, NvStatusBadge } from '@nerv-iip/ui'
 
 const items = [
   { key: 'code', label: '工单号', value: 'WO-2406-0413' },
@@ -28,49 +27,49 @@ const clampItems = [
 ]
 </script>
 
-# Descriptions 描述列表
+# NvDescriptions 描述列表
 
-工单 / 设备等实体详情页的键值列表。`DescriptionsPro` 支持多列网格、单元格跨列、`#<key>` 自定义值插槽，以及带边框的正式记录样式。
+工单 / 设备等实体详情页的键值列表。`NvDescriptions` 支持多列网格、单元格跨列、`#<key>` 自定义值插槽，以及带边框的正式记录样式。
 
 ## 网格
 
 <Demo block>
-  <DescriptionsPro :items="items" :columns="3">
+  <NvDescriptions :items="items" :columns="3">
     <template #code="{ item }">
       <span class="font-mono text-xs">{{ item.value }}</span>
     </template>
     <template #status="{ item }">
-      <StatusBadgePro :value="String(item.value)" :pulse="item.value === 'running'" />
+      <NvStatusBadge :value="String(item.value)" :pulse="item.value === 'running'" />
     </template>
-  </DescriptionsPro>
+  </NvDescriptions>
 </Demo>
 
 ```vue
-<DescriptionsPro :items="items" :columns="3">
+<NvDescriptions :items="items" :columns="3">
   <template #code="{ item }">
     <span class="font-mono text-xs">{{ item.value }}</span>
   </template>
   <template #status="{ item }">
-    <StatusBadgePro :value="String(item.value)" :pulse="item.value === 'running'" />
+    <NvStatusBadge :value="String(item.value)" :pulse="item.value === 'running'" />
   </template>
-</DescriptionsPro>
+</NvDescriptions>
 ```
 
 ## 带边框
 
 <Demo block>
-  <DescriptionsPro :items="items" :columns="3" bordered>
+  <NvDescriptions :items="items" :columns="3" bordered>
     <template #code="{ item }">
       <span class="font-mono text-xs">{{ item.value }}</span>
     </template>
     <template #status="{ item }">
-      <StatusBadgePro :value="String(item.value)" :pulse="item.value === 'running'" />
+      <NvStatusBadge :value="String(item.value)" :pulse="item.value === 'running'" />
     </template>
-  </DescriptionsPro>
+  </NvDescriptions>
 </Demo>
 
 ```vue
-<DescriptionsPro :items="items" :columns="3" bordered />
+<NvDescriptions :items="items" :columns="3" bordered />
 ```
 
 ## 标题超长省略
@@ -78,21 +77,21 @@ const clampItems = [
 `ellipsis` + `label-width`：标题单行截断，悬停弹 Tooltip 看全文。
 
 <Demo block>
-  <DescriptionsPro :items="clampItems" :columns="2" bordered ellipsis label-width="6rem" />
+  <NvDescriptions :items="clampItems" :columns="2" bordered ellipsis label-width="6rem" />
 </Demo>
 
 ```vue
-<DescriptionsPro :items="items" :columns="2" bordered ellipsis label-width="6rem" />
+<NvDescriptions :items="items" :columns="2" bordered ellipsis label-width="6rem" />
 ```
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `items` | 条目数组（`label` / `value` / `span` / `key`） | `DescriptionItem[]` | — |
-| `columns` | 每行键值对数（≤640px 折叠为 1） | `number` | `2` |
-| `bordered` | 带边框正式记录样式 | `boolean` | `false` |
-| `layout` | 标签布局：横排或上下 | `horizontal \| vertical` | `horizontal` |
-| `labelWidth` | 固定标签列宽（如 `6rem`） | `string` | — |
-| `ellipsis` | 标签单行截断 + 悬停 Tooltip | `boolean` | `false` |
-| `size` | 密度 | `default \| compact` | `default` |
+| 属性         | 说明                                           | 类型                     | 默认         |
+| ------------ | ---------------------------------------------- | ------------------------ | ------------ |
+| `items`      | 条目数组（`label` / `value` / `span` / `key`） | `DescriptionItem[]`      | —            |
+| `columns`    | 每行键值对数（≤640px 折叠为 1）                | `number`                 | `2`          |
+| `bordered`   | 带边框正式记录样式                             | `boolean`                | `false`      |
+| `layout`     | 标签布局：横排或上下                           | `horizontal \| vertical` | `horizontal` |
+| `labelWidth` | 固定标签列宽（如 `6rem`）                      | `string`                 | —            |
+| `ellipsis`   | 标签单行截断 + 悬停 Tooltip                    | `boolean`                | `false`      |
+| `size`       | 密度                                           | `default \| compact`     | `default`    |

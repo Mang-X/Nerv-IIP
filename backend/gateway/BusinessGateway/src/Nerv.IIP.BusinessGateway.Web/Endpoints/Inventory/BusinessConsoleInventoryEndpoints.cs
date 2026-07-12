@@ -30,6 +30,28 @@ public sealed class GetBusinessConsoleInventoryAvailabilityEndpoint(
 }
 
 [Tags("Business Console Inventory")]
+[HttpGet("/api/business-console/v1/inventory/expiry-alerts")]
+[BusinessGatewayOperationId("listBusinessConsoleInventoryExpiryAlerts")]
+public sealed class ListBusinessConsoleInventoryExpiryAlertsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessInventoryClient inventory,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleInventoryExpiryAlertsRequest, BusinessConsoleInventoryExpiryAlertsResponse>(
+        auth,
+        BusinessGatewayPermissions.InventoryLedgerRead)
+{
+    protected override string OrganizationId(BusinessConsoleInventoryExpiryAlertsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleInventoryExpiryAlertsRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleInventoryExpiryAlertsResponse> ForwardAsync(
+        BusinessConsoleInventoryExpiryAlertsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        inventory.ListExpiryAlertsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Inventory")]
 [HttpPost("/api/business-console/v1/inventory/movements")]
 [BusinessGatewayOperationId("postBusinessConsoleInventoryMovement")]
 public sealed class PostBusinessConsoleInventoryMovementEndpoint(
@@ -44,11 +66,38 @@ public sealed class PostBusinessConsoleInventoryMovementEndpoint(
 
     protected override string EnvironmentId(BusinessConsolePostStockMovementRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsolePostStockMovementResponse> ForwardAsync(
+    protected override async Task<BusinessConsolePostStockMovementResponse> ForwardAsync(
         BusinessConsolePostStockMovementRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        inventory.PostMovementAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var forwardedPermissions = new List<string>();
+        if (request.AllowExpiredStock)
+        {
+            var overrideAuthorization = await AuthorizationClient.CheckAsync(
+                bearerToken,
+                new BusinessGatewayPermissionRequirement(
+                    BusinessGatewayPermissions.InventoryExpiredStockOverride,
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    null,
+                    null),
+                BusinessGatewayAuthorizationContinuityMode.RealtimeRequired,
+                cancellationToken);
+            if (!overrideAuthorization.IsAllowed)
+            {
+                throw new BusinessServiceProxyException(System.Net.HttpStatusCode.Forbidden, "Forbidden.");
+            }
+
+            forwardedPermissions.Add(BusinessGatewayPermissions.InventoryExpiredStockOverride);
+        }
+
+        return await inventory.PostMovementAsync(
+            tokenProvider.BearerToken,
+            request,
+            cancellationToken,
+            forwardedPermissions);
+    }
 }
 
 [Tags("Business Console Inventory")]

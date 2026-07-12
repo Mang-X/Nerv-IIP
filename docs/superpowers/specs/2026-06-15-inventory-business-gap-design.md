@@ -13,7 +13,7 @@ Inventory owns the new behavior. WMS, MES, ERP, and Quality keep their private w
 1. Stock status becomes a controlled Inventory value with canonical statuses `unrestricted`, `quality`, and `blocked`. Existing `qualified` input is accepted as a compatibility alias for `unrestricted`; persisted new facts use canonical values.
 2. Inventory adds service-local reservations. A reservation references a source service/document/line and a ledger dimension, increments `StockLedger.ReservedQuantity`, can be released, and can be allocated by outbound movement. Available quantity is always `onHand - reserved`.
 3. Inventory adds moving-average valuation fields. Positive movements may carry `UnitCost`; ledger value and moving average update on receipt. Negative movements consume current moving average unless a command supplies a cost override. This provides Inventory value facts without implementing ERP GL posting.
-4. Count tasks freeze the target ledger while open and capture `ExpectedLedgerVersion`. Confirmation posts the count adjustment and releases the freeze; cancellation explicitly releases the freeze without posting an adjustment. Version drift is represented by a structured recount-required domain exception instead of message-text control flow.
+4. Count tasks freeze the target ledger while open and capture `ExpectedLedgerVersion`. Variances at or below the configured quantity and moving-average amount thresholds post immediately and release the freeze. Above-threshold variances persist as `pending-approval`, start the established `COUNT-VARIANCE` BusinessApproval chain, and do not create a movement or change the ledger until `ApprovalCompleted`. Approval posts the movement and releases the freeze; rejection or return voids the adjustment, releases the freeze, and marks the task `recount-required` so a new count can be started. Cancellation explicitly releases the freeze without posting an adjustment. Version drift is represented by a structured recount-required domain exception instead of message-text control flow.
 5. Quality inspection result events are consumed through `Nerv.IIP.Contracts.Quality` and the shared CAP consumer guard/DLQ path. Passed inspections transfer quantity from `quality` to `unrestricted`; rejected inspections transfer from `quality` to `blocked`; conditional releases transfer from `quality` to `restricted`. `InspectionResultPayload` now carries optional top-level stock locator fields (`LotNo`, `SerialNo`, `SiteCode`, `LocationCode`, `OwnerType`, `OwnerId`, `UomCode`) and retains the nested `StockRelease` shape for compatibility. Inventory uses these dimensions to post status-transfer out/in movement pairs against the exact ledger; if an older event lacks locator dimensions, Inventory keeps the legacy single matching `quality` ledger fallback and fails visibly when it cannot resolve exactly one source ledger.
 
 ## API And Events
@@ -26,6 +26,8 @@ New Inventory internal endpoints:
 
 Existing movement and availability contracts gain optional valuation fields. OpenAPI/api-client regeneration is required if Gateway exposes these fields later; this slice updates service-local endpoint contracts and backend tests.
 
+The existing count-adjustment facade returns the adjustment lifecycle status and optional approval-chain ID. The Business Console must show a high-variance adjustment as pending approval rather than as posted stock.
+
 ## Persistence
 
 Inventory schema adds:
@@ -36,6 +38,9 @@ Inventory schema adds:
 - `stock_ledgers.inventory_value`
 - `stock_movements.unit_cost`
 - `stock_movements.movement_amount`
+- `stock_count_adjustments.approval_chain_id`
+- `stock_count_adjustments.variance_amount`
+- `stock_count_adjustments.status`
 
 Schema comments and convention tests must cover the new table and columns.
 
@@ -47,4 +52,5 @@ Focused tests must prove:
 - reservations reduce availability, cannot exceed available quantity, release idempotently, and outbound allocation consumes reserved quantity;
 - moving-average cost and inventory value update on inbound/outbound movements;
 - open count tasks freeze movements, confirmation or cancellation releases the freeze, and stale ledger versions require recount;
+- above-threshold count adjustments leave the ledger unchanged until an approved `ApprovalCompleted` event posts the movement; rejection/return voids the adjustment and requires recount;
 - Quality inspection passed/rejected events create status-transfer movements through public contracts.

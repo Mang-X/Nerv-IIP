@@ -22,6 +22,8 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.DiagnosticDescription).HasColumnName("diagnostic_description").HasMaxLength(1000).HasComment("Diagnostic description captured when the work order was opened from an upstream fact.");
         builder.Property(x => x.FailureModeCode).HasColumnName("failure_mode_code").HasMaxLength(100).HasComment("Structured failure mode code captured from alarm or inspection context.");
         builder.Property(x => x.FailureCauseCode).HasColumnName("failure_cause_code").HasMaxLength(100).HasComment("Structured failure cause code captured from alarm or inspection context.");
+        builder.Property(x => x.AssignedTechnicianUserId).HasColumnName("assigned_technician_user_id").HasMaxLength(150).HasComment("Assigned technician user reference owned outside Maintenance.");
+        builder.Property(x => x.EstimatedLaborMinutes).HasColumnName("estimated_labor_minutes").HasComment("Estimated technician labor minutes.");
         builder.Property(x => x.OpenedBy).HasColumnName("opened_by").IsRequired().HasMaxLength(150).HasComment("Actor or source that opened the work order.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Maintenance work order lifecycle status.");
         builder.Property(x => x.OpenedAtUtc).HasColumnName("opened_at_utc").IsRequired().HasComment("UTC time when work order was opened.");
@@ -33,6 +35,10 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.CompletionResult).HasColumnName("completion_result").HasMaxLength(1000).HasComment("Maintenance completion result.");
         builder.Property(x => x.DowntimeReasonCode).HasColumnName("downtime_reason_code").HasMaxLength(100).HasComment("Downtime reason attribution code.");
         builder.Property(x => x.DowntimeMinutes).HasColumnName("downtime_minutes").HasComment("Attributed downtime minutes.");
+        builder.Property(x => x.ActualLaborMinutes).HasColumnName("actual_labor_minutes").HasComment("Actual technician labor minutes captured at completion.");
+        builder.Property(x => x.SparePartCostAmount).HasColumnName("spare_part_cost_amount").HasPrecision(18, 6).HasComment("Summarized spare part cost amount captured by Maintenance.");
+        builder.Property(x => x.ExternalServiceCostAmount).HasColumnName("external_service_cost_amount").HasPrecision(18, 6).HasComment("External service or outsourcing cost amount captured by Maintenance.");
+        builder.Property(x => x.CostCurrencyCode).HasColumnName("cost_currency_code").HasMaxLength(10).HasComment("Currency code for summarized maintenance cost fields.");
         builder.Property(x => x.RepairStartedAtUtc).HasColumnName("repair_started_at_utc").HasComment("UTC time when effective repair work started.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
         builder.HasMany(x => x.SparePartLines).WithOne().HasForeignKey("MaintenanceWorkOrderId").OnDelete(DeleteBehavior.Cascade);
@@ -105,6 +111,28 @@ public sealed class MaintenanceInspectionEntityTypeConfiguration : IEntityTypeCo
         builder.Property(x => x.Inspector).HasColumnName("inspector").IsRequired().HasMaxLength(150).HasComment("Inspector actor.");
         builder.Property(x => x.Result).HasColumnName("result").IsRequired().HasMaxLength(1000).HasComment("Inspection result.");
         builder.Property(x => x.InspectedAtUtc).HasColumnName("inspected_at_utc").IsRequired().HasComment("UTC inspection time.");
+        builder.HasMany(x => x.Measurements).WithOne().HasForeignKey("MaintenanceInspectionId").OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(x => x.Measurements).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.InspectedAtUtc });
+    }
+}
+
+public sealed class MaintenanceInspectionMeasurementEntityTypeConfiguration : IEntityTypeConfiguration<MaintenanceInspectionMeasurement>
+{
+    public void Configure(EntityTypeBuilder<MaintenanceInspectionMeasurement> builder)
+    {
+        builder.ToTable("maintenance_inspection_measurements", table => table.HasComment("Measurement value lines captured during Maintenance inspections."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Maintenance inspection measurement line id.");
+        builder.Property<MaintenanceInspectionId>("MaintenanceInspectionId").HasColumnName("maintenance_inspection_id").IsRequired().HasComment("Owning maintenance inspection id.");
+        builder.Property(x => x.CharacteristicCode).HasColumnName("characteristic_code").IsRequired().HasMaxLength(100).HasComment("Maintenance-owned characteristic code measured during inspection.");
+        builder.Property(x => x.MeasuredValue).HasColumnName("measured_value").IsRequired().HasPrecision(18, 6).HasComment("Measured numeric value.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("Unit of measure code for the measured value.");
+        builder.Property(x => x.LowerSpecLimit).HasColumnName("lower_spec_limit").HasPrecision(18, 6).HasComment("Optional lower acceptable limit for the measured value.");
+        builder.Property(x => x.UpperSpecLimit).HasColumnName("upper_spec_limit").HasPrecision(18, 6).HasComment("Optional upper acceptable limit for the measured value.");
+        builder.Property(x => x.IsWithinSpec).HasColumnName("is_within_spec").IsRequired().HasComment("Whether the measured value is inside the configured acceptable range.");
+        builder.HasIndex("MaintenanceInspectionId");
+        builder.HasIndex(x => x.CharacteristicCode);
     }
 }
 

@@ -684,6 +684,209 @@ public sealed class MesPersistenceContractTests
     }
 
     [Fact]
+    public async Task Conditional_release_clears_only_matching_operation_hold_and_allows_dispatch_without_manual_intervention()
+    {
+        var services = CreateServices(nameof(Conditional_release_clears_only_matching_operation_hold_and_allows_dispatch_without_manual_intervention));
+        var now = DateTimeOffset.Parse("2026-07-05T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-QH-SCOPE", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.OperationTasks.AddRange(
+            OperationTask.Create(
+                "org-001",
+                "env-dev",
+                "WO-QH-SCOPE",
+                "OP-QH-SCOPE-10",
+                OperationTaskLifecycleStatus.Queued,
+                10,
+                "WC-FILL",
+                [],
+                now,
+                TimeSpan.FromMinutes(45),
+                null,
+                null),
+            OperationTask.Create(
+                "org-001",
+                "env-dev",
+                "WO-QH-SCOPE",
+                "OP-QH-SCOPE-20",
+                OperationTaskLifecycleStatus.Queued,
+                20,
+                "WC-PACK",
+                [],
+                now,
+                TimeSpan.FromMinutes(45),
+                null,
+                null));
+        await dbContext.SaveChangesAsync();
+
+        var qualityConsumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
+        await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-qh-scope-rejected-10",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-QH-SCOPE-REJECTED-10",
+            "OP-QH-SCOPE-10",
+            now.AddMinutes(1)),
+            CancellationToken.None);
+        await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-qh-scope-rejected-20",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-QH-SCOPE-REJECTED-20",
+            "OP-QH-SCOPE-20",
+            now.AddMinutes(2)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var blockedDispatch = await Assert.ThrowsAsync<KnownException>(() =>
+            new AssignDispatchTaskCommandHandler(dbContext).Handle(
+                new AssignDispatchTaskCommand("org-001", "env-dev", "OP-QH-SCOPE-10", "operator-a", null, "shift-a", now.AddMinutes(3)),
+                CancellationToken.None));
+        Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, blockedDispatch.Message);
+
+        await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-qh-scope-conditional-10",
+            QualityIntegrationEventTypes.InspectionConditionalReleased,
+            "QI-QH-SCOPE-RELEASED-10",
+            "OP-QH-SCOPE-10",
+            now.AddMinutes(4),
+            dispositionReason: "conditional release for OP-QH-SCOPE-10 only"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var releasedDispatch = await new AssignDispatchTaskCommandHandler(dbContext).Handle(
+            new AssignDispatchTaskCommand("org-001", "env-dev", "OP-QH-SCOPE-10", "operator-a", null, "shift-a", now.AddMinutes(5)),
+            CancellationToken.None);
+        Assert.Equal("Accepted", releasedDispatch.Status);
+
+        var stillBlockedDispatch = await Assert.ThrowsAsync<KnownException>(() =>
+            new AssignDispatchTaskCommandHandler(dbContext).Handle(
+                new AssignDispatchTaskCommand("org-001", "env-dev", "OP-QH-SCOPE-20", "operator-b", null, "shift-b", now.AddMinutes(6)),
+                CancellationToken.None));
+        Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, stillBlockedDispatch.Message);
+
+        var releasedHold = await dbContext.QualityHoldContexts.SingleAsync(x => x.SourceDocumentId == "OP-QH-SCOPE-10");
+        var activeHold = await dbContext.QualityHoldContexts.SingleAsync(x => x.SourceDocumentId == "OP-QH-SCOPE-20");
+        Assert.False(releasedHold.Active);
+        Assert.Equal("QI-QH-SCOPE-REJECTED-10", releasedHold.HeldInspectionRecordId);
+        Assert.Equal("QI-QH-SCOPE-RELEASED-10", releasedHold.ReleaseInspectionRecordId);
+        Assert.Equal(now.AddMinutes(4), releasedHold.ReleasedAtUtc);
+        Assert.Equal("quality.InspectionConditionalReleased", releasedHold.ReleaseSource);
+        Assert.True(activeHold.Active);
+    }
+
+    [Fact]
+    public async Task Force_release_quality_hold_requires_reason_and_is_idempotent()
+    {
+        var services = CreateServices(nameof(Force_release_quality_hold_requires_reason_and_is_idempotent));
+        var now = DateTimeOffset.Parse("2026-07-05T09:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-QH-FORCE", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-QH-FORCE",
+            "OP-QH-FORCE-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            null,
+            null));
+        await dbContext.SaveChangesAsync();
+
+        var qualityConsumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
+        await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-qh-force-rejected",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-QH-FORCE-REJECTED",
+            "WO-QH-FORCE",
+            now.AddMinutes(1)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var validator = new ForceReleaseQualityHoldCommandValidator();
+        var validation = validator.Validate(new ForceReleaseQualityHoldCommand(
+            "org-001",
+            "env-dev",
+            QualityIntegrationEventSources.BusinessMes,
+            "WO-QH-FORCE",
+            "",
+            "supervisor-001",
+            now.AddMinutes(2)));
+        Assert.False(validation.IsValid);
+
+        var handler = new ForceReleaseQualityHoldCommandHandler(dbContext);
+        var first = await handler.Handle(
+            new ForceReleaseQualityHoldCommand(
+                "org-001",
+                "env-dev",
+                QualityIntegrationEventSources.BusinessMes,
+                "WO-QH-FORCE",
+                "QA supervisor approved urgent release after recheck.",
+                "supervisor-001",
+                now.AddMinutes(3)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var second = await handler.Handle(
+            new ForceReleaseQualityHoldCommand(
+                "org-001",
+                "env-dev",
+                QualityIntegrationEventSources.BusinessMes,
+                "WO-QH-FORCE",
+                "second release should be idempotent",
+                "supervisor-002",
+                now.AddMinutes(4)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var hold = await dbContext.QualityHoldContexts.SingleAsync(x => x.SourceDocumentId == "WO-QH-FORCE");
+        Assert.Equal("Accepted", first.Status);
+        Assert.Equal("Accepted", second.Status);
+        Assert.False(hold.Active);
+        Assert.Equal("QI-QH-FORCE-REJECTED", hold.HeldInspectionRecordId);
+        Assert.Equal("manual-force-release", hold.ReleaseSource);
+        Assert.Equal("QA supervisor approved urgent release after recheck.", hold.ReleaseReason);
+        Assert.Equal("supervisor-001", hold.ReleasedBy);
+        Assert.Equal(now.AddMinutes(3), hold.ReleasedAtUtc);
+    }
+
+    [Fact]
+    public void FinishedGoodsReceipt_validator_treats_unit_cost_as_optional()
+    {
+        // Now that the command validators actually run in the request pipeline, this guards against the validator
+        // over-constraining an optional field: FinishedGoodsReceiptRequest.Create accepts a null UnitCost, so the
+        // validator must accept it too (and only require positivity when a value is supplied).
+        var validator = new CreateFinishedGoodsReceiptRequestCommandValidator();
+        var command = new CreateFinishedGoodsReceiptRequestCommand(
+            "org-001",
+            "env-dev",
+            "WO-FG",
+            "SKU-FG",
+            5m,
+            "PCS",
+            DateTimeOffset.Parse("2026-05-27T08:00:00Z"),
+            UnitCost: null,
+            IdempotencyKey: "idem-fg",
+            ProducedLotNo: "LOT-FG-1");
+
+        Assert.True(validator.Validate(command).IsValid);
+        Assert.True(validator.Validate(command with { UnitCost = 12.34m }).IsValid);
+
+        // Every other field is valid, so a negative unit cost is the only thing that can fail here — exactly one error.
+        var negative = validator.Validate(command with { UnitCost = -1m });
+        Assert.False(negative.IsValid);
+        Assert.Single(negative.Errors);
+    }
+
+    [Fact]
     public async Task Foundation_readiness_reports_quality_plan_and_equipment_blocking_reason_codes()
     {
         var services = CreateServices(nameof(Foundation_readiness_reports_quality_plan_and_equipment_blocking_reason_codes));
@@ -967,6 +1170,44 @@ public sealed class MesPersistenceContractTests
     }
 
     [Fact]
+    public async Task Dispatch_without_active_quality_hold_does_not_block_on_missing_quality_plan()
+    {
+        var services = CreateServices(nameof(Dispatch_without_active_quality_hold_does_not_block_on_missing_quality_plan));
+        var now = DateTimeOffset.Parse("2026-07-05T10:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-DISPATCH-NO-PV", "FG-FSA", null, 10m, 20, now.AddHours(8)));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-DISPATCH-NO-PV",
+            "OP-DISPATCH-NO-PV-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            null,
+            null));
+        await dbContext.SaveChangesAsync();
+
+        var response = await new AssignDispatchTaskCommandHandler(dbContext).Handle(
+            new AssignDispatchTaskCommand(
+                "org-001",
+                "env-dev",
+                "OP-DISPATCH-NO-PV-10",
+                "operator-001",
+                null,
+                "SHIFT-A",
+                now.AddMinutes(15)),
+            CancellationToken.None);
+
+        Assert.Equal("Accepted", response.Status);
+    }
+
+    [Fact]
     public void Equipment_inspection_required_reason_classifies_as_maintenance()
     {
         var classification = MesReadinessReasonCodes.ClassifyEquipmentReason(EquipmentRuntimeReasonCodes.InspectionRequired);
@@ -1186,13 +1427,15 @@ public sealed class MesPersistenceContractTests
 
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        // Invalid lifecycle transitions are domain-rule violations and must surface as a clean KnownException
+        // business error, not an unhandled InvalidOperationException (which would become an HTTP 500).
+        await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "complete", now.AddMinutes(1)), CancellationToken.None));
 
         await handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "start", now.AddMinutes(2)), CancellationToken.None);
         await handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "complete", now.AddMinutes(45)), CancellationToken.None);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "pause", now.AddMinutes(46)), CancellationToken.None));
     }
 
@@ -1802,6 +2045,217 @@ public sealed class MesPersistenceContractTests
     }
 
     [Fact]
+    public async Task Reverse_production_report_restores_progress_consumption_and_traceability_to_initial_state()
+    {
+        var services = CreateServices(nameof(Reverse_production_report_restores_progress_consumption_and_traceability_to_initial_state));
+        var now = DateTimeOffset.Parse("2026-07-03T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var codingService = new MesCodingService();
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-REV-001", "SKU-FG-REV", "PV-REV-1", 10m, 20, now.AddHours(8), "PCS");
+        workOrder.MarkReleased();
+        workOrder.Start(now);
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-REV-001",
+            "OP-REV-10",
+            OperationTaskLifecycleStatus.InProgress,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            now,
+            null));
+        var materialIssue = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-REV-001",
+            "WO-REV-001",
+            "OP-REV-10",
+            "MAT-OIL",
+            "L",
+            6m,
+            now.AddMinutes(1));
+        materialIssue.ConfirmLineSideReceipt(now.AddMinutes(5), 6m, "LOT-OIL-REV");
+        materialIssue.ClearDomainEvents();
+        dbContext.MaterialIssueRequests.Add(materialIssue);
+        await dbContext.SaveChangesAsync();
+
+        var reportResult = await new RecordProductionReportCommandHandler(dbContext, codingService).Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-REV-001",
+                "OP-REV-10",
+                4m,
+                1m,
+                true,
+                now.AddMinutes(30),
+                "report-rev-001",
+                [new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-REV", 3m, "MIR-REV-001")],
+                ReworkQuantity: 2m,
+                ProducedLotNo: "LOT-FG-REV"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var receiptResult = await new CreateFinishedGoodsReceiptRequestCommandHandler(dbContext, codingService).Handle(
+            new CreateFinishedGoodsReceiptRequestCommand(
+                "org-001",
+                "env-dev",
+                "WO-REV-001",
+                "SKU-FG-REV",
+                4m,
+                "PCS",
+                now.AddMinutes(40),
+                UnitCost: 12.34m,
+                IdempotencyKey: "receipt-rev-001",
+                ProducedLotNo: "LOT-FG-REV"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var reversal = await new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+            new ReverseProductionReportCommand(
+                "org-001",
+                "env-dev",
+                reportResult.ReportNo,
+                "wrong quantity",
+                now.AddMinutes(50),
+                "reverse-rev-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.NotEqual(reportResult.ReportNo, reversal.ReportNo);
+        var persistedWorkOrder = await dbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-REV-001");
+        Assert.Equal(0m, persistedWorkOrder.CompletedQuantity);
+        Assert.Equal(0m, persistedWorkOrder.ScrapQuantity);
+        Assert.Equal(WorkOrder.StartedStatus, persistedWorkOrder.Status);
+        var operationTask = await dbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-REV-10");
+        Assert.Equal(OperationTaskLifecycleStatus.InProgress, operationTask.Status);
+        Assert.Null(operationTask.ExistingEndUtc);
+
+        var reversalReport = await dbContext.ProductionReports.SingleAsync(x => x.ReportNo == reversal.ReportNo);
+        Assert.Equal(reportResult.ReportNo, reversalReport.ReversedReportNo);
+        Assert.Equal(-4m, reversalReport.GoodQuantity);
+        Assert.Equal(-1m, reversalReport.ScrapQuantity);
+        Assert.Equal(-2m, reversalReport.ReworkQuantity);
+        Assert.Equal(reportResult.ReportNo, reversal.OriginalReportNo);
+
+        var netConsumed = await dbContext.ProductionReportMaterialConsumptions
+            .Where(x => x.MaterialLotId == "LOT-OIL-REV")
+            .SumAsync(x => x.ConsumedQuantity);
+        Assert.Equal(0m, netConsumed);
+        Assert.Empty(await dbContext.OutputLotGenealogies.Where(x => x.ProducedLotNo == "LOT-FG-REV").ToArrayAsync());
+        Assert.Equal(
+            FinishedGoodsReceiptRequest.CancelledStatus,
+            (await dbContext.FinishedGoodsReceiptRequests.SingleAsync(x => x.RequestNo == receiptResult.RequestNo)).Status);
+
+        var traceability = await new GetMaterialLotTraceabilityQueryHandler(dbContext)
+            .Handle(new GetMaterialLotTraceabilityQuery("org-001", "env-dev", "LOT-OIL-REV"), CancellationToken.None);
+        Assert.Single(traceability.Nodes);
+        Assert.Equal("Unknown", traceability.Nodes.Single().Status);
+        Assert.Empty(traceability.Edges);
+    }
+
+    [Fact]
+    public async Task Reverse_production_report_rejects_closed_work_order_and_duplicate_reversal()
+    {
+        var services = CreateServices(nameof(Reverse_production_report_rejects_closed_work_order_and_duplicate_reversal));
+        var now = DateTimeOffset.Parse("2026-07-03T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var codingService = new MesCodingService();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-REV-CLOSED", "SKU-FG-REV", "PV-REV-1", 5m, 20, now.AddHours(8), "PCS"));
+        var workOrder = dbContext.WorkOrders.Local.Single();
+        workOrder.MarkReleased();
+        workOrder.Start(now);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-REV-CLOSED",
+            "OP-REV-CLOSED",
+            OperationTaskLifecycleStatus.InProgress,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            now,
+            null));
+        await dbContext.SaveChangesAsync();
+
+        var report = await new RecordProductionReportCommandHandler(dbContext, codingService).Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-REV-CLOSED",
+                "OP-REV-CLOSED",
+                5m,
+                0m,
+                true,
+                now.AddMinutes(30),
+                "report-rev-closed",
+                ProducedLotNo: "LOT-FG-CLOSED"),
+            CancellationToken.None);
+        workOrder.Close(now.AddMinutes(40));
+        await dbContext.SaveChangesAsync();
+
+        var closedException = await Assert.ThrowsAsync<KnownException>(() =>
+            new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+                new ReverseProductionReportCommand("org-001", "env-dev", report.ReportNo, "closed", now.AddMinutes(50), "reverse-closed"),
+                CancellationToken.None));
+        Assert.Contains("已关闭", closedException.Message);
+
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-REV-DUP", "SKU-FG-REV", "PV-REV-1", 5m, 20, now.AddHours(9), "PCS"));
+        var duplicateWorkOrder = dbContext.WorkOrders.Local.Single(x => x.WorkOrderIdValue == "WO-REV-DUP");
+        duplicateWorkOrder.MarkReleased();
+        duplicateWorkOrder.Start(now);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-REV-DUP",
+            "OP-REV-DUP",
+            OperationTaskLifecycleStatus.InProgress,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            now,
+            null));
+        await dbContext.SaveChangesAsync();
+        var duplicateReport = await new RecordProductionReportCommandHandler(dbContext, codingService).Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-REV-DUP",
+                "OP-REV-DUP",
+                5m,
+                0m,
+                true,
+                now.AddMinutes(45),
+                "report-rev-dup",
+                ProducedLotNo: "LOT-FG-DUP"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        await new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+            new ReverseProductionReportCommand("org-001", "env-dev", duplicateReport.ReportNo, "first reversal", now.AddMinutes(60), "reverse-first"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var duplicateException = await Assert.ThrowsAsync<KnownException>(() =>
+            new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+                new ReverseProductionReportCommand("org-001", "env-dev", duplicateReport.ReportNo, "duplicate reversal", now.AddMinutes(70), "reverse-second"),
+                CancellationToken.None));
+        Assert.Contains("已冲销", duplicateException.Message);
+    }
+
+    [Fact]
     public async Task List_work_orders_query_returns_scoped_persisted_work_orders_with_tasks()
     {
         var services = CreateServices(nameof(List_work_orders_query_returns_scoped_persisted_work_orders_with_tasks));
@@ -1875,7 +2329,8 @@ public sealed class MesPersistenceContractTests
         string eventType,
         string inspectionRecordId,
         string workOrderId,
-        DateTimeOffset occurredAtUtc)
+        DateTimeOffset occurredAtUtc,
+        string? dispositionReason = null)
     {
         var result = eventType == QualityIntegrationEventTypes.InspectionPassed
             ? "passed"
@@ -1903,7 +2358,7 @@ public sealed class MesPersistenceContractTests
                 "FG-FSA",
                 10m,
                 result,
-                eventType == QualityIntegrationEventTypes.InspectionRejected ? "critical-defect" : null,
+                dispositionReason ?? (eventType == QualityIntegrationEventTypes.InspectionRejected ? "critical-defect" : null),
                 [],
                 occurredAtUtc));
     }

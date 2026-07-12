@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 
@@ -101,6 +102,85 @@ public sealed class ListRequestsForQuotationQueryHandler(ApplicationDbContext db
     }
 }
 
+public sealed record ListPurchaseRequisitionsQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100) : IQuery<ListPurchaseRequisitionsResponse>;
+
+public sealed record ListPurchaseRequisitionsResponse(IReadOnlyCollection<PurchaseRequisitionResponse> Items, int Total);
+
+public sealed record PurchaseRequisitionResponse(
+    string PurchaseRequisitionId,
+    string RequisitionNo,
+    string SuggestionId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    decimal Quantity,
+    DateOnly RequiredDate,
+    string Status,
+    string? ConvertedPurchaseOrderNo,
+    DateTime? ConvertedAtUtc,
+    DateTime CreatedAtUtc);
+
+public sealed class ListPurchaseRequisitionsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListPurchaseRequisitionsQuery, ListPurchaseRequisitionsResponse>
+{
+    public async Task<ListPurchaseRequisitionsResponse> Handle(ListPurchaseRequisitionsQuery request, CancellationToken cancellationToken)
+    {
+        var query = dbContext.PurchaseRequisitions
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+
+        if (!string.IsNullOrWhiteSpace(request.Status)
+            && Enum.TryParse<PurchaseRequisitionStatus>(request.Status.Trim(), ignoreCase: true, out var status))
+        {
+            query = query.Where(x => x.Status == status);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            query = query.Where(x => false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.Trim();
+            query = query.Where(x =>
+                x.RequisitionNo.Contains(keyword)
+                || x.SuggestionId.Contains(keyword)
+                || x.SkuCode.Contains(keyword)
+                || x.SiteCode.Contains(keyword));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var skip = Math.Max(request.Skip, 0);
+        var take = ErpProcurementListPaging.NormalizeTake(request.Take);
+        var items = await query
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => new PurchaseRequisitionResponse(
+                x.Id.ToString(),
+                x.RequisitionNo,
+                x.SuggestionId,
+                x.SkuCode,
+                x.UomCode,
+                x.SiteCode,
+                x.Quantity,
+                x.RequiredDate,
+                x.Status.ToString(),
+                x.ConvertedPurchaseOrderNo,
+                x.ConvertedAtUtc,
+                x.CreatedAtUtc))
+            .ToArrayAsync(cancellationToken);
+
+        return new ListPurchaseRequisitionsResponse(items, total);
+    }
+}
+
 public sealed record ListPurchaseOrdersQuery(
     string OrganizationId,
     string EnvironmentId,
@@ -125,8 +205,16 @@ public sealed record PurchaseOrderLineResponse(
     string UomCode,
     decimal OrderedQuantity,
     decimal ReceivedQuantity,
+    decimal OpenQuantity,
+    bool FinalDelivery,
     decimal UnitPrice,
-    DateOnly PromisedDate);
+    DateOnly PromisedDate,
+    IReadOnlyCollection<PurchaseOrderLineSourceResponse> Sources);
+
+public sealed record PurchaseOrderLineSourceResponse(
+    string PurchaseRequisitionNo,
+    string PurchaseRequisitionLineNo,
+    decimal Quantity);
 
 public sealed class ListPurchaseOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListPurchaseOrdersQuery, ListPurchaseOrdersResponse>
@@ -178,8 +266,17 @@ public sealed class ListPurchaseOrdersQueryHandler(ApplicationDbContext dbContex
                         line.UomCode,
                         line.OrderedQuantity,
                         line.ReceivedQuantity,
+                        line.FinalDelivery ? 0m : Math.Max(line.OrderedQuantity - line.ReceivedQuantity, 0m),
+                        line.FinalDelivery,
                         line.UnitPrice,
-                        line.PromisedDate))
+                        line.PromisedDate,
+                        line.SourceLinks
+                            .OrderBy(source => source.PurchaseRequisitionNo)
+                            .Select(source => new PurchaseOrderLineSourceResponse(
+                                source.PurchaseRequisitionNo,
+                                source.PurchaseRequisitionLineNo,
+                                source.Quantity))
+                            .ToArray()))
                     .ToArray()))
             .ToArrayAsync(cancellationToken);
 

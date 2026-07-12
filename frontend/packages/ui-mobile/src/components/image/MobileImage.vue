@@ -87,27 +87,29 @@ const boxStyle = computed(() =>
 </template>
 
 <style scoped>
-.ds-mimg-skeleton {
-  background: linear-gradient(
-    100deg,
-    transparent 30%,
-    color-mix(in oklch, var(--foreground) 6%, transparent) 50%,
-    transparent 70%
-  );
-  background-size: 220% 100%;
-  animation: ds-mimg-shimmer 1.4s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)) infinite;
-}
-@keyframes ds-mimg-shimmer {
-  from {
-    background-position: 180% 0;
-  }
-  to {
-    background-position: -80% 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
   .ds-mimg-skeleton {
-    animation: none;
+    background: linear-gradient(
+      100deg,
+      transparent 30%,
+      color-mix(in oklch, var(--foreground) 6%, transparent) 50%,
+      transparent 70%
+    );
+    background-size: 220% 100%;
+    animation: ds-mimg-shimmer 1.4s var(--nv-ease-out-expo) infinite;
+  }
+  @keyframes ds-mimg-shimmer {
+    from {
+      background-position: 180% 0;
+    }
+    to {
+      background-position: -80% 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-mimg-skeleton {
+      animation: none;
+    }
   }
 }
 </style>

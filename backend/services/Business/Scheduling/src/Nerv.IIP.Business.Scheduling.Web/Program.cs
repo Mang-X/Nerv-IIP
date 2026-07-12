@@ -86,6 +86,7 @@ try
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ISchedulingIntegrationEventContextAccessor, HttpSchedulingIntegrationEventContextAccessor>();
+    builder.Services.AddScoped<SchedulePlanInvalidatedIntegrationEventConverter>();
     if (isTesting)
     {
         builder.Services.AddScoped<ISchedulingEquipmentAvailabilityProvider, NoopSchedulingEquipmentAvailabilityProvider>();
@@ -109,6 +110,7 @@ try
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddScoped<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans>();
+    builder.Services.AddScoped<DeviceStateChangedIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans>();

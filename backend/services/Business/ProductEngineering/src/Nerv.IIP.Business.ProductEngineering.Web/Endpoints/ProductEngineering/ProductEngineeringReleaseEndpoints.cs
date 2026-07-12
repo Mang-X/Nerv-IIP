@@ -58,6 +58,49 @@ public sealed class RegisterEngineeringDocumentEndpoint(ISender sender)
     }
 }
 
+public sealed record PublishSopDocumentRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DocumentNumber,
+    string Revision,
+    string OperationCode,
+    string? WorkCenterCode,
+    string? RoutingCode,
+    string? RoutingRevision,
+    DateOnly EffectiveDate,
+    string FileId,
+    string FileName,
+    string ContentType,
+    string? IdempotencyKey = null);
+
+public sealed class PublishSopDocumentEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<PublishSopDocumentRequest, ResponseData<EntityResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<PublishSopDocumentEndpoint>());
+    }
+
+    public override async Task HandleAsync(PublishSopDocumentRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new PublishSopDocumentCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.DocumentNumber,
+            req.Revision,
+            req.OperationCode,
+            req.WorkCenterCode,
+            req.RoutingCode,
+            req.RoutingRevision,
+            req.EffectiveDate,
+            req.FileId,
+            req.FileName,
+            req.ContentType,
+            req.IdempotencyKey), ct);
+        await Send.OkAsync(new EntityResponse(result.Id).AsResponseData(), ct);
+    }
+}
+
 public sealed record CreateEngineeringItemRevisionRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -206,6 +249,70 @@ public sealed class ReleaseEngineeringChangeEndpoint(ISender sender)
     }
 }
 
+public sealed record CancelScheduledEngineeringChangeRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeNumber,
+    string Reason);
+
+public sealed class CancelScheduledEngineeringChangeEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<CancelScheduledEngineeringChangeRequest, ResponseData<EntityResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<CancelScheduledEngineeringChangeEndpoint>());
+    }
+
+    public override async Task HandleAsync(CancelScheduledEngineeringChangeRequest req, CancellationToken ct)
+    {
+        await sender.Send(new CancelScheduledEngineeringChangeCommand(req.OrganizationId, req.EnvironmentId, req.ChangeNumber, req.Reason), ct);
+        await Send.OkAsync(new EntityResponse(req.ChangeNumber).AsResponseData(), ct);
+    }
+}
+
+public sealed record RescheduleEngineeringChangeRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeNumber,
+    DateOnly EffectiveDate,
+    string Reason);
+
+public sealed class RescheduleEngineeringChangeEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<RescheduleEngineeringChangeRequest, ResponseData<EntityResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<RescheduleEngineeringChangeEndpoint>());
+    }
+
+    public override async Task HandleAsync(RescheduleEngineeringChangeRequest req, CancellationToken ct)
+    {
+        await sender.Send(new RescheduleEngineeringChangeCommand(req.OrganizationId, req.EnvironmentId, req.ChangeNumber, req.EffectiveDate, req.Reason), ct);
+        await Send.OkAsync(new EntityResponse(req.ChangeNumber).AsResponseData(), ct);
+    }
+}
+
+public sealed record GetEngineeringChangeImpactPreviewRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateOnly EffectiveDate,
+    IReadOnlyCollection<EngineeringChangeImpactAffectedVersionInput> AffectedVersions);
+
+public sealed class GetEngineeringChangeImpactPreviewEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<GetEngineeringChangeImpactPreviewRequest, ResponseData<EngineeringChangeImpactPreviewResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<GetEngineeringChangeImpactPreviewEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetEngineeringChangeImpactPreviewRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetEngineeringChangeImpactPreviewQuery(req.OrganizationId, req.EnvironmentId, req.EffectiveDate, req.AffectedVersions), ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
 public sealed record ListEngineeringBomsRequest(string OrganizationId, string EnvironmentId, string? ParentItemCode, string? Status, int Skip = 0, int Take = 100);
 
 public sealed class ListEngineeringBomsEndpoint(ISender sender)
@@ -270,6 +377,37 @@ public sealed class ListEngineeringDocumentsEndpoint(ISender sender)
     public override async Task HandleAsync(ListEngineeringDocumentsRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new ListEngineeringDocumentsQuery(req.OrganizationId, req.EnvironmentId, req.ItemCode, req.DocumentType, req.Skip, req.Take), ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
+public sealed record GetCurrentSopDocumentsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string OperationCode,
+    string? WorkCenterCode,
+    string? RoutingCode,
+    string? RoutingRevision,
+    DateOnly? AsOfDate);
+
+public sealed class GetCurrentSopDocumentsEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<GetCurrentSopDocumentsRequest, ResponseData<CurrentSopDocumentsResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<GetCurrentSopDocumentsEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetCurrentSopDocumentsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetCurrentSopDocumentsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.OperationCode,
+            req.WorkCenterCode,
+            req.RoutingCode,
+            req.RoutingRevision,
+            req.AsOfDate), ct);
         await Send.OkAsync(response.AsResponseData(), ct);
     }
 }
@@ -383,6 +521,30 @@ public sealed class GetEngineeringBomWhereUsedEndpoint(ISender sender)
     public override async Task HandleAsync(GetEngineeringBomWhereUsedRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new GetEngineeringBomWhereUsedQuery(req.OrganizationId, req.EnvironmentId, req.ComponentCode, req.EffectiveDate), ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
+public sealed record GetBomDiffRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string BomKind,
+    string FromBomCode,
+    string FromRevision,
+    string ToBomCode,
+    string ToRevision);
+
+public sealed class GetBomDiffEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<GetBomDiffRequest, ResponseData<BomDiffResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<GetBomDiffEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetBomDiffRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetBomDiffQuery(req.OrganizationId, req.EnvironmentId, req.BomKind, req.FromBomCode, req.FromRevision, req.ToBomCode, req.ToRevision), ct);
         await Send.OkAsync(response.AsResponseData(), ct);
     }
 }
@@ -533,6 +695,8 @@ public static class ProductEngineeringEndpointContracts
     public static readonly IReadOnlyCollection<ProductEngineeringEndpointContract> All =
     [
         new(typeof(RegisterEngineeringDocumentEndpoint), "POST", "/api/business/v1/engineering/documents", EngineeringPermissionCodes.DocumentsManage, "registerBusinessEngineeringDocument"),
+        new(typeof(PublishSopDocumentEndpoint), "POST", "/api/business/v1/engineering/sops/publish", EngineeringPermissionCodes.DocumentsManage, "publishBusinessEngineeringSopDocument"),
+        new(typeof(GetCurrentSopDocumentsEndpoint), "GET", "/api/business/v1/engineering/sops/current", EngineeringPermissionCodes.DocumentsRead, "getBusinessCurrentEngineeringSopDocuments"),
         new(typeof(ListEngineeringDocumentsEndpoint), "GET", "/api/business/v1/engineering/documents", EngineeringPermissionCodes.DocumentsRead, "listBusinessEngineeringDocuments"),
         new(typeof(GetEngineeringDocumentEndpoint), "GET", "/api/business/v1/engineering/documents/{documentNumber}/{revision}", EngineeringPermissionCodes.DocumentsRead, "getBusinessEngineeringDocument"),
         new(typeof(CreateEngineeringItemRevisionEndpoint), "POST", "/api/business/v1/engineering/items", EngineeringPermissionCodes.ItemsManage, "createBusinessEngineeringItemRevision"),
@@ -542,6 +706,7 @@ public static class ProductEngineeringEndpointContracts
         new(typeof(GetEngineeringBomEndpoint), "GET", "/api/business/v1/engineering/engineering-boms/{bomCode}/{revision}", EngineeringPermissionCodes.BomsRead, "getBusinessEngineeringBom"),
         new(typeof(GetEngineeringBomExplosionEndpoint), "GET", "/api/business/v1/engineering/engineering-boms/explosion", EngineeringPermissionCodes.BomsRead, "getBusinessEngineeringBomExplosion"),
         new(typeof(GetEngineeringBomWhereUsedEndpoint), "GET", "/api/business/v1/engineering/engineering-boms/where-used", EngineeringPermissionCodes.BomsRead, "getBusinessEngineeringBomWhereUsed"),
+        new(typeof(GetBomDiffEndpoint), "GET", "/api/business/v1/engineering/boms/diff", EngineeringPermissionCodes.BomsRead, "getBusinessBomDiff"),
         new(typeof(ReleaseManufacturingBomEndpoint), "POST", "/api/business/v1/engineering/manufacturing-boms/release", EngineeringPermissionCodes.BomsManage, "releaseBusinessManufacturingBom"),
         new(typeof(GetManufacturingBomEndpoint), "GET", "/api/business/v1/engineering/manufacturing-boms/{bomCode}/{revision}", EngineeringPermissionCodes.BomsRead, "getBusinessManufacturingBom"),
         new(typeof(GetManufacturingBomExplosionEndpoint), "GET", "/api/business/v1/engineering/manufacturing-boms/explosion", EngineeringPermissionCodes.BomsRead, "getBusinessManufacturingBomExplosion"),
@@ -549,6 +714,9 @@ public static class ProductEngineeringEndpointContracts
         new(typeof(ReleaseRoutingEndpoint), "POST", "/api/business/v1/engineering/routings/release", EngineeringPermissionCodes.RoutingsManage, "releaseBusinessRouting"),
         new(typeof(GetRoutingEndpoint), "GET", "/api/business/v1/engineering/routings/{routingCode}/{revision}", EngineeringPermissionCodes.RoutingsRead, "getBusinessRouting"),
         new(typeof(ReleaseEngineeringChangeEndpoint), "POST", "/api/business/v1/engineering/engineering-changes/release", EngineeringPermissionCodes.ChangesManage, "releaseBusinessEngineeringChange"),
+        new(typeof(CancelScheduledEngineeringChangeEndpoint), "POST", "/api/business/v1/engineering/engineering-changes/cancel-scheduled", EngineeringPermissionCodes.ChangesManage, "cancelScheduledBusinessEngineeringChange"),
+        new(typeof(RescheduleEngineeringChangeEndpoint), "POST", "/api/business/v1/engineering/engineering-changes/reschedule", EngineeringPermissionCodes.ChangesManage, "rescheduleBusinessEngineeringChange"),
+        new(typeof(GetEngineeringChangeImpactPreviewEndpoint), "POST", "/api/business/v1/engineering/engineering-changes/impact-preview", EngineeringPermissionCodes.ChangesRead, "previewBusinessEngineeringChangeImpact"),
         new(typeof(ListEngineeringChangesEndpoint), "GET", "/api/business/v1/engineering/engineering-changes", EngineeringPermissionCodes.ChangesRead, "listBusinessEngineeringChanges"),
         new(typeof(GetEngineeringChangeEndpoint), "GET", "/api/business/v1/engineering/engineering-changes/{changeNumber}", EngineeringPermissionCodes.ChangesRead, "getBusinessEngineeringChange"),
         new(typeof(ListEngineeringBomsEndpoint), "GET", "/api/business/v1/engineering/engineering-boms", EngineeringPermissionCodes.BomsRead, "listBusinessEngineeringBoms"),

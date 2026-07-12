@@ -6,8 +6,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Mvc.Testing;
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -23,7 +26,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(42, MesEndpointContracts.All.Count);
+        Assert.Equal(46, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -90,6 +93,16 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/cancel"
             && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
             && x.OperationId == "cancelBusinessMesWorkOrder");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions"
+            && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
+            && x.OperationId == "recordBusinessMesEngineeringChangeDecision");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release"
+            && x.PermissionCode == MesPermissionCodes.QualityWrite
+            && x.OperationId == "forceReleaseBusinessMesQualityHold");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness"
@@ -167,6 +180,11 @@ public sealed class MesEndpointContractTests
             && x.OperationId == "listBusinessMesProductionReports");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/production-reports/{reportNo}/reverse"
+            && x.PermissionCode == MesPermissionCodes.ReportingWrite
+            && x.OperationId == "reverseBusinessMesProductionReport");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/mes/defects"
             && x.PermissionCode == MesPermissionCodes.QualityWrite
             && x.OperationId == "recordBusinessMesDefect");
@@ -185,6 +203,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/finished-goods-receipt-requests"
             && x.PermissionCode == MesPermissionCodes.ReceiptsRead
             && x.OperationId == "listBusinessMesFinishedGoodsReceiptRequests");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-posting/retry"
+            && x.PermissionCode == MesPermissionCodes.ReceiptsManage
+            && x.OperationId == "retryBusinessMesFinishedGoodsReceiptInventoryPosting");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/capacity-impacts"
@@ -269,14 +292,15 @@ public sealed class MesEndpointContractTests
         var invalidClose = await Assert.ThrowsAsync<KnownException>(() => closeHandler.Handle(
             new CloseWorkOrderCommand("org-001", "env-dev", "WO-ACTIVE", now.AddHours(2)),
             CancellationToken.None));
-        var invalidCancel = await Assert.ThrowsAsync<KnownException>(() => new CancelWorkOrderCommandHandler(dbContext).Handle(
+        var duplicateCancelResponse = await new CancelWorkOrderCommandHandler(dbContext).Handle(
             new CancelWorkOrderCommand("org-001", "env-dev", "WO-ACTIVE", "duplicate cancellation", now.AddMinutes(30)),
-            CancellationToken.None));
+            CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Equal("Accepted", closeResponse.Status);
         Assert.Equal("Accepted", holdResponse.Status);
         Assert.Equal("Accepted", cancelResponse.Status);
+        Assert.Equal("Accepted", duplicateCancelResponse.Status);
         Assert.Equal(WorkOrder.ClosedStatus, completed.Status);
         Assert.Equal(now.AddHours(1), completed.ClosedAtUtc);
         Assert.Equal(WorkOrder.CancelledStatus, active.Status);
@@ -285,8 +309,62 @@ public sealed class MesEndpointContractTests
         Assert.NotEqual("duplicate cancellation", active.CancelReason);
         Assert.Contains("completed", invalidClose.Message, StringComparison.OrdinalIgnoreCase);
         Assert.IsType<InvalidOperationException>(invalidClose.InnerException);
-        Assert.Contains("cancelled or scrapped", invalidCancel.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.IsType<InvalidOperationException>(invalidCancel.InnerException);
+    }
+
+    [Fact]
+    public async Task Cancel_released_work_order_cancels_open_material_receipt_and_operation_facts()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-07-03T08:00:00Z");
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-695-LOCAL", "SKU-FG", "PV-001", 2m, 10, now.AddDays(1));
+        workOrder.MarkReleased();
+        var materialIssue = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-695-LOCAL",
+            "WO-695-LOCAL",
+            "OP-10",
+            "MAT-OIL",
+            "L",
+            2m,
+            now);
+        var receipt = FinishedGoodsReceiptRequest.Create(
+            "org-001",
+            "env-dev",
+            "FGR-695-LOCAL",
+            "WO-695-LOCAL",
+            "SKU-FG",
+            1m,
+            "PCS",
+            now);
+        var operationTask = OperationTask.Queue(
+            "org-001",
+            "env-dev",
+            "WO-695-LOCAL",
+            "OP-10",
+            10,
+            "WC-10",
+            [],
+            now,
+            TimeSpan.FromMinutes(30));
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.MaterialIssueRequests.Add(materialIssue);
+        dbContext.FinishedGoodsReceiptRequests.Add(receipt);
+        dbContext.OperationTasks.Add(operationTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CancelWorkOrderCommandHandler(dbContext).Handle(
+            new CancelWorkOrderCommand("org-001", "env-dev", "WO-695-LOCAL", "plan cancelled", now.AddMinutes(30)),
+            CancellationToken.None);
+
+        Assert.Equal(WorkOrder.CancelledStatus, workOrder.Status);
+        Assert.Equal(MaterialIssueRequest.CancelledStatus, materialIssue.Status);
+        Assert.Equal(FinishedGoodsReceiptRequest.CancelledStatus, receipt.Status);
+        Assert.Equal(OperationTaskLifecycleStatus.Cancelled, operationTask.Status);
+        var cancelledEvent = Assert.IsType<WorkOrderCancelledDomainEvent>(workOrder.GetDomainEvents().Last());
+        Assert.Equal(["MIR-695-LOCAL"], cancelledEvent.MaterialIssueRequestNos);
     }
 
     [Fact]
@@ -339,7 +417,8 @@ public sealed class MesEndpointContractTests
                     10,
                     "WC-MIX-01",
                     [],
-                    TimeSpan.FromMinutes(30)),
+                    TimeSpan.FromMinutes(30),
+                    OperationCode: "OP-MIX"),
             ]);
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.AddRange(tasks);
@@ -366,8 +445,12 @@ public sealed class MesEndpointContractTests
         Assert.Equal("WO-001", detail.WorkOrderId);
         Assert.Equal("Ready", detail.ReadinessStatus);
         Assert.Empty(detail.BlockingReasons);
-        Assert.Equal("OP-10", Assert.Single(detail.OperationTasks).OperationTaskId);
-        Assert.Equal("OP-10", Assert.Single(operations.Items).OperationTaskId);
+        var detailOperation = Assert.Single(detail.OperationTasks);
+        Assert.Equal("OP-10", detailOperation.OperationTaskId);
+        Assert.Equal("OP-MIX", detailOperation.OperationCode);
+        var operation = Assert.Single(operations.Items);
+        Assert.Equal("OP-10", operation.OperationTaskId);
+        Assert.Equal("OP-MIX", operation.OperationCode);
         var wipRow = Assert.Single(wip.Items);
         Assert.Equal(10m, wipRow.PlannedQuantity);
         Assert.Equal(8m, wipRow.GoodQuantity);
@@ -517,6 +600,65 @@ public sealed class MesEndpointContractTests
         var sql = query.ToQueryString();
         Assert.Contains("operation_tasks", sql, StringComparison.Ordinal);
         Assert.Contains("status", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Traceability_active_report_filters_translate_to_npgsql_exists_queries()
+    {
+        var options = new DbContextOptionsBuilder<Infrastructure.ApplicationDbContext>()
+            .UseNpgsql("Host=localhost;Database=nerv_iip_query_translation;Username=nerv;Password=nerv")
+            .Options;
+        using var dbContext = new Infrastructure.ApplicationDbContext(options, new NoopMediator());
+
+        var activeProductionReports = dbContext.ActiveProductionReports();
+        var materialLotSql = dbContext.ProductionReportMaterialConsumptions
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == "org-001" &&
+                x.EnvironmentId == "env-dev" &&
+                x.MaterialLotId == "LOT-001" &&
+                activeProductionReports.Any(report =>
+                    report.OrganizationId == x.OrganizationId &&
+                    report.EnvironmentId == x.EnvironmentId &&
+                    report.ReportNo == x.ReportNo))
+            .Select(x => x.ReportNo)
+            .ToQueryString();
+        var producedBatchSql = activeProductionReports
+            .Where(x =>
+                x.OrganizationId == "org-001" &&
+                x.EnvironmentId == "env-dev" &&
+                (x.ProducedLotNo == "LOT-001" || x.SerialNo == "LOT-001"))
+            .Select(x => x.ReportNo)
+            .ToQueryString();
+
+        Assert.Contains("EXISTS", materialLotSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NOT EXISTS", materialLotSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("reversed_report_no", materialLotSql, StringComparison.Ordinal);
+        Assert.Contains("NOT EXISTS", producedBatchSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("reversed_report_no", producedBatchSql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Finished_goods_receipt_cumulative_quantity_guard_translates_to_npgsql_sum_query()
+    {
+        var options = new DbContextOptionsBuilder<Infrastructure.ApplicationDbContext>()
+            .UseNpgsql("Host=localhost;Database=nerv_iip_query_translation;Username=nerv;Password=nerv")
+            .Options;
+        using var dbContext = new Infrastructure.ApplicationDbContext(options, new NoopMediator());
+
+        var sql = CreateFinishedGoodsReceiptRequestCommandHandler.ActiveReceiptRequestsForWorkOrder(
+                dbContext.FinishedGoodsReceiptRequests,
+                "org-001",
+                "env-dev",
+                "WO-001")
+            .GroupBy(_ => 1)
+            .Select(group => group.Sum(x => x.Quantity))
+            .ToQueryString();
+
+        Assert.Contains("finished_goods_receipt_requests", sql, StringComparison.Ordinal);
+        Assert.Contains("sum", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("status", sql, StringComparison.Ordinal);
+        Assert.Contains("Cancelled", sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1103,6 +1245,40 @@ public sealed class MesEndpointContractTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Cancel_work_order_endpoint_executes_command_validator_and_rejects_empty_reason()
+    {
+        // Regression guard for the MES command-validation wiring (AddValidatorsFromAssembly +
+        // AddKnownExceptionValidationBehavior in Program.cs). Reason is validated only by
+        // CancelWorkOrderCommandValidator — WorkOrderReasonRequest has no FastEndpoints Validator<> — so the
+        // success=false envelope here proves the MediatR validation pipeline runs. Without the wiring the command
+        // validators are dead and the request would fall through to the handler instead. Validation short-circuits
+        // before any database access, so this needs no Postgres.
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token"));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/mes/work-orders/WO-VALIDATION/cancel",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                reason = string.Empty,
+            });
+
+        // MES uses the plain UseKnownExceptionHandler(), so a KnownException is returned at the SERVICE level as
+        // HTTP 200 + a success=false envelope; the BusinessGateway is what maps that success=false to a 400
+        // downstream. Lock the service-level contract (200) so a status-code regression fails this test, and assert
+        // the envelope carries the "Reason" validation message the command validator produced.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Reason", body, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [MemberData(nameof(EndpointTypes))]
     public void Mes_endpoints_route_through_mediator(Type endpointType)
@@ -1223,47 +1399,68 @@ public sealed class MesEndpointContractTests
         Assert.Equal("FGR-002", Assert.Single(receipts.Items).RequestNo);
     }
 
-    [Theory]
-    [InlineData("/api/business/v1/mes/schedules/run")]
-    [InlineData("/api/business/v1/mes/work-orders/rush")]
-    [InlineData("/api/business/v1/mes/work-orders/WO-001/close")]
-    [InlineData("/api/business/v1/mes/work-orders/WO-001/hold")]
-    [InlineData("/api/business/v1/mes/work-orders/WO-001/cancel")]
-    public async Task Mes_write_endpoints_require_internal_service_authentication(string route)
+    [Fact]
+    public async Task Mes_endpoints_require_internal_service_authentication()
     {
-        await using var factory = new WebApplicationFactory<Program>();
-        using var client = factory.CreateClient();
-
-        var response = await client.PostAsJsonAsync(route, new
+        var factory = new WebApplicationFactory<Program>();
+        try
         {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            trigger = "Manual",
-            workOrderId = "WO-RUSH",
-            skuId = "SKU-R",
-            productionVersionId = "PV-001",
-            quantity = 1,
-            dueUtc = DateTimeOffset.Parse("2026-05-22T12:00:00Z"),
-            workCenterId = "WC-A",
-            durationMinutes = 60
-        });
+            using var client = factory.CreateClient();
 
-        Assert.True(
-            response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
-            $"Expected auth failure but received {(int)response.StatusCode}.");
+            foreach (var route in MesWriteAuthRoutes)
+            {
+                var postResponse = await client.PostAsJsonAsync(route, new
+                {
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    trigger = "Manual",
+                    workOrderId = "WO-RUSH",
+                    skuId = "SKU-R",
+                    productionVersionId = "PV-001",
+                    quantity = 1,
+                    dueUtc = DateTimeOffset.Parse("2026-05-22T12:00:00Z"),
+                    workCenterId = "WC-A",
+                    durationMinutes = 60
+                });
+
+                Assert.True(
+                    postResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
+                    $"Expected auth failure for {route} but received {(int)postResponse.StatusCode}.");
+            }
+
+            var queryResponse = await client.GetAsync("/api/business/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev");
+
+            Assert.True(
+                queryResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
+                $"Expected auth failure for MES work-order query but received {(int)queryResponse.StatusCode}.");
+        }
+        finally
+        {
+            await DisposeAuthOnlyFactoryAsync(factory);
+        }
     }
 
-    [Fact]
-    public async Task Mes_work_order_query_endpoint_requires_internal_service_authentication()
+    private static readonly string[] MesWriteAuthRoutes =
+    [
+        "/api/business/v1/mes/schedules/run",
+        "/api/business/v1/mes/work-orders/rush",
+        "/api/business/v1/mes/work-orders/WO-001/close",
+        "/api/business/v1/mes/work-orders/WO-001/hold",
+        "/api/business/v1/mes/work-orders/WO-001/cancel",
+        "/api/business/v1/mes/quality-holds/WO-001/force-release",
+        "/api/business/v1/mes/finished-goods-receipt-requests/FGR-001/inventory-posting/retry",
+    ];
+
+    private static async ValueTask DisposeAuthOnlyFactoryAsync(WebApplicationFactory<Program> factory)
     {
-        await using var factory = new WebApplicationFactory<Program>();
-        using var client = factory.CreateClient();
-
-        var response = await client.GetAsync("/api/business/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev");
-
-        Assert.True(
-            response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
-            $"Expected auth failure but received {(int)response.StatusCode}.");
+        try
+        {
+            await factory.DisposeAsync();
+        }
+        catch (ObjectDisposedException)
+        {
+            // CAP/TestHost can race during auth-only factory cleanup; the auth response was already asserted.
+        }
     }
 
     public static IEnumerable<object[]> EndpointTypes()

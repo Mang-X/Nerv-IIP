@@ -59,31 +59,27 @@ describe('@nerv-iip/ui foundation primitive exports', () => {
       resolve(process.cwd(), 'src/components/ui/dropdown-menu/DropdownMenuContent.vue'),
       'utf8',
     )
-    const themeCss = readFileSync(
-      resolve(process.cwd(), 'src/styles/theme.css'),
-      'utf8',
-    )
+    const themeCss = readFileSync(resolve(process.cwd(), 'src/styles/theme.css'), 'utf8')
 
-    expect(selectContent).toContain('ds-overlay-content ds-select-content')
-    expect(selectContent).toContain('ds-select-content')
+    // ADR 0020 §3 Appendix C — overlay classes renamed `.ds-*` → `.nv-*`.
+    expect(selectContent).toContain('nv-overlay-content nv-select-content')
+    expect(selectContent).toContain('nv-select-content')
     expect(selectContent).toContain(':data-align-trigger="position === \'item-aligned\'"')
     expect(selectContent).not.toContain('<style')
-    expect(dropdownContent).toContain('ds-overlay-content ds-dropdown-menu-content')
+    expect(dropdownContent).toContain('nv-overlay-content nv-dropdown-menu-content')
     expect(dropdownContent).not.toContain('<style')
-    expect(themeCss).toContain('@keyframes ds-overlay-content-open-transform')
-    expect(themeCss).toContain(".ds-overlay-content[data-align-trigger='true']")
+    expect(themeCss).toContain('@keyframes nv-overlay-content-open-transform')
+    expect(themeCss).toContain(".nv-overlay-content[data-align-trigger='true']")
     expect(themeCss).toContain('@media (prefers-reduced-motion: reduce)')
   })
 
   it('keeps Motion for Vue curves paired with CSS motion tokens', () => {
-    const themeCss = readFileSync(
-      resolve(process.cwd(), 'src/styles/theme.css'),
-      'utf8',
-    )
+    const themeCss = readFileSync(resolve(process.cwd(), 'src/styles/theme.css'), 'utf8')
 
-    expect(themeCss).toContain('--ease-fast-invoke: cubic-bezier(0, 0, 0, 1)')
-    expect(themeCss).toContain('--ease-point-to-point: cubic-bezier(0.55, 0.55, 0, 1)')
-    expect(themeCss).toContain('--duration-fast-invoke: 187ms')
+    // ADR 0020 §3 Appendix C — motion tokens namespaced `--nv-*` (values unchanged).
+    expect(themeCss).toContain('--nv-ease-fast-invoke: cubic-bezier(0, 0, 0, 1)')
+    expect(themeCss).toContain('--nv-ease-point-to-point: cubic-bezier(0.55, 0.55, 0, 1)')
+    expect(themeCss).toContain('--nv-duration-fast-invoke: 187ms')
     expect(ui.fileUploadMotion.fastInvoke).toEqual(ui.filePreviewMotion.fastInvoke)
     expect(ui.fileUploadMotion.pointToPointShort).toEqual({
       duration: 0.187,

@@ -36,21 +36,62 @@ public sealed class MaintenanceIntegrationEventDeadLetterStore(ApplicationDbCont
         IntegrationEventDeadLetterStatus? status,
         CancellationToken cancellationToken)
     {
-        var query = dbContext.IntegrationEventDeadLetters.AsNoTracking();
-        if (!string.IsNullOrWhiteSpace(consumerName))
+        return await ListAsync(new IntegrationEventDeadLetterQuery(consumerName, status, EventType: null), cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> ListAsync(
+        IntegrationEventDeadLetterQuery query,
+        CancellationToken cancellationToken)
+    {
+        var queryable = dbContext.IntegrationEventDeadLetters.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(query.ConsumerName))
         {
-            query = query.Where(x => x.ConsumerName == consumerName);
+            queryable = queryable.Where(x => x.ConsumerName == query.ConsumerName);
         }
 
-        if (status is not null)
+        if (query.Status is not null)
         {
-            query = query.Where(x => x.Status == status);
+            queryable = queryable.Where(x => x.Status == query.Status);
         }
 
-        return await query
+        if (!string.IsNullOrWhiteSpace(query.EventType))
+        {
+            queryable = queryable.Where(x => x.EventType == query.EventType || x.EventClrType == query.EventType);
+        }
+
+        return await queryable
             .OrderBy(x => x.DeadLetteredAtUtc)
+            .Skip(query.Skip)
+            .Take(query.Take)
             .Select(x => x.ToMessage())
             .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<IntegrationEventDeadLetterMetrics> GetMetricsAsync(CancellationToken cancellationToken)
+    {
+        var rows = await dbContext.IntegrationEventDeadLetters
+            .AsNoTracking()
+            .GroupBy(x => new
+            {
+                EventType = x.EventType ?? "(unknown)",
+                x.Status
+            })
+            .Select(group => new IntegrationEventDeadLetterMetricsRow(
+                group.Key.EventType,
+                group.Key.Status,
+                group.Count()))
+            .ToArrayAsync(cancellationToken);
+        return IntegrationEventDeadLetterMetrics.FromRows(rows);
+    }
+
+    public async Task<IntegrationEventDeadLetterMessage?> GetAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        return (await dbContext.IntegrationEventDeadLetters
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken))
+            ?.ToMessage();
     }
 
     public async Task MarkReplayedAsync(
@@ -66,6 +107,41 @@ public sealed class MaintenanceIntegrationEventDeadLetterStore(ApplicationDbCont
         }
 
         message.MarkReplayed(replayedAtUtc);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task MarkFailedAsync(
+        Guid id,
+        string failureCode,
+        string failureMessage,
+        DateTimeOffset failedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var message = await dbContext.IntegrationEventDeadLetters
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (message is null)
+        {
+            return;
+        }
+
+        message.MarkFailed(failureCode, failureMessage, failedAtUtc);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task MarkIgnoredAsync(
+        Guid id,
+        string reason,
+        DateTimeOffset ignoredAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var message = await dbContext.IntegrationEventDeadLetters
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (message is null)
+        {
+            return;
+        }
+
+        message.MarkIgnored(reason, ignoredAtUtc);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 }
@@ -115,6 +191,27 @@ public sealed class IntegrationEventDeadLetter
         ReplayedAtUtc = replayedAtUtc;
     }
 
+    public void MarkFailed(string failureCode, string failureMessage, DateTimeOffset failedAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(failureCode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(failureMessage);
+
+        FailureCode = failureCode;
+        FailureMessage = Truncate(failureMessage);
+        Status = IntegrationEventDeadLetterStatus.Failed;
+        ReplayedAtUtc = failedAtUtc;
+    }
+
+    public void MarkIgnored(string reason, DateTimeOffset ignoredAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+
+        FailureCode = "ignored";
+        FailureMessage = Truncate(reason);
+        Status = IntegrationEventDeadLetterStatus.Ignored;
+        ReplayedAtUtc = ignoredAtUtc;
+    }
+
     public IntegrationEventDeadLetterMessage ToMessage()
     {
         return new IntegrationEventDeadLetterMessage(
@@ -133,6 +230,9 @@ public sealed class IntegrationEventDeadLetter
             DeadLetteredAtUtc,
             ReplayedAtUtc);
     }
+
+    private static string Truncate(string value) =>
+        value.Length <= 1000 ? value : value[..1000];
 }
 
 public sealed class IntegrationEventDeadLetterEntityTypeConfiguration : IEntityTypeConfiguration<IntegrationEventDeadLetter>
@@ -152,7 +252,7 @@ public sealed class IntegrationEventDeadLetterEntityTypeConfiguration : IEntityT
         builder.Property(x => x.EventJson).HasColumnName("event_json").IsRequired().HasColumnType("jsonb").HasComment("Serialized rejected integration event envelope and payload.");
         builder.Property(x => x.FailureCode).HasColumnName("failure_code").IsRequired().HasMaxLength(100).HasComment("Machine-readable reason the consumer rejected the message.");
         builder.Property(x => x.FailureMessage).HasColumnName("failure_message").IsRequired().HasMaxLength(1000).HasComment("Operator-readable rejection detail.");
-        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Dead-letter status: Pending or Replayed.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Dead-letter status: Pending, Replayed, Failed, or Ignored.");
         builder.Property(x => x.DeadLetteredAtUtc).HasColumnName("dead_lettered_at_utc").IsRequired().HasComment("UTC time when Maintenance stored the dead-letter message.");
         builder.Property(x => x.ReplayedAtUtc).HasColumnName("replayed_at_utc").HasComment("UTC time when the dead-letter message was marked replayed.");
         builder.HasIndex(x => new { x.ConsumerName, x.Status, x.DeadLetteredAtUtc });

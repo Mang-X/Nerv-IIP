@@ -6,14 +6,14 @@ using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
-using Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 
-[IntegrationEventConsumer("Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents.PurchaseReceiptRecordedIntegrationEvent", ConsumerName)]
+[IntegrationEventConsumer("Nerv.IIP.Contracts.Erp.PurchaseReceiptRecordedIntegrationEvent", ConsumerName)]
 public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore)
@@ -24,7 +24,7 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
     private static readonly IntegrationEventConsumerOptions ConsumerOptions = new(
         ConsumerName,
         ErpIntegrationEventTypes.PurchaseReceiptRecorded,
-        1);
+        ErpIntegrationEventVersions.V1);
 
     private readonly IntegrationEventConsumerGuard<PurchaseReceiptRecordedIntegrationEvent> consumerGuard = new(
         new IntegrationEventEnvelopeValidator(),
@@ -38,7 +38,7 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
         return consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents.PurchaseReceiptRecordedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(PurchaseReceiptRecordedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(
         PurchaseReceiptRecordedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
@@ -101,6 +101,26 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
                 integrationEvent,
                 failureCode,
                 failureMessage,
+                cancellationToken);
+            return;
+        }
+
+        try
+        {
+            await AccountingPeriodPostingGuard.EnsureOpenAsync(
+                dbContext,
+                receipt.OrganizationId,
+                receipt.EnvironmentId,
+                DateOnly.FromDateTime(receipt.RecordedAtUtc),
+                "late purchase receipt GR/IR accrual voucher",
+                cancellationToken);
+        }
+        catch (KnownException ex)
+        {
+            await DeadLetterAsync(
+                integrationEvent,
+                "closed-accounting-period",
+                ex.Message,
                 cancellationToken);
             return;
         }

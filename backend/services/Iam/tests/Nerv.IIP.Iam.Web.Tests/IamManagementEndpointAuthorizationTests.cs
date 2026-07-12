@@ -21,6 +21,7 @@ public sealed class IamManagementEndpointAuthorizationTests
     {
         AssertRoleMutationEndpointUsesMediator<CreateRoleEndpoint>();
         AssertRoleMutationEndpointUsesMediator<PatchRolePermissionsEndpoint>();
+        AssertRoleMutationEndpointUsesMediator<PatchRoleDataScopesEndpoint>();
     }
 
     [Fact]
@@ -52,11 +53,13 @@ public sealed class IamManagementEndpointAuthorizationTests
     [InlineData("GET", "/api/iam/v1/users")]
     [InlineData("POST", "/api/iam/v1/users")]
     [InlineData("PATCH", "/api/iam/v1/users/user-admin")]
+    [InlineData("PATCH", "/api/iam/v1/users/user-admin/membership-data-scopes")]
     [InlineData("POST", "/api/iam/v1/users/user-admin/disable")]
     [InlineData("POST", "/api/iam/v1/users/user-admin/reset-password")]
     [InlineData("GET", "/api/iam/v1/roles")]
     [InlineData("POST", "/api/iam/v1/roles")]
     [InlineData("PATCH", "/api/iam/v1/roles/role-platform-admin/permissions")]
+    [InlineData("PATCH", "/api/iam/v1/roles/role-platform-admin/data-scopes")]
     [InlineData("GET", "/api/iam/v1/permissions")]
     public async Task Postgres_management_endpoints_reject_anonymous_callers_before_touching_persistence(string method, string path)
     {
@@ -145,6 +148,9 @@ public sealed class IamManagementEndpointAuthorizationTests
             return Task.FromResult(false);
         }
 
+        public Task<string?> GetAuthenticatedUserIdAsync(HttpContext httpContext, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<AuthResponse> LoginAsync(string loginName, string password, string? clientInfo, string? ipAddress, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<AuthResponse> RefreshAsync(string refreshToken, string? clientInfo, string? ipAddress, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RevokeSessionAsync(string sessionId, string reason, SecurityAuditContext? auditContext, CancellationToken cancellationToken) => throw new NotSupportedException();
@@ -152,7 +158,7 @@ public sealed class IamManagementEndpointAuthorizationTests
         public Task<ClientCredentialsTokenResponse> IssueClientCredentialsTokenAsync(string clientId, string clientSecret, string? scope, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<EnterpriseAuthResponse> HandleOidcCallbackAsync(OidcLoginCallbackRequest request, string? clientInfo, string? ipAddress, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<EnterpriseAuthResponse> VerifyMfaChallengeAsync(string challengeId, string code, string? clientInfo, string? ipAddress, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<bool> PrincipalHasPermissionAsync(CurrentPrincipalResponse principal, string organizationId, string environmentId, string permissionCode, string? resourceType, string? resourceId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<IamAuthorizationCheckResult> PrincipalHasPermissionAsync(CurrentPrincipalResponse principal, string organizationId, string environmentId, string permissionCode, string? resourceType, string? resourceId, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class EmptyRoleApplicationService : IIamRoleApplicationService

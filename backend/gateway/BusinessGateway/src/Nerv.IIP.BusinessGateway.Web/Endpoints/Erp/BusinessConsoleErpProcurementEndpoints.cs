@@ -30,6 +30,28 @@ public sealed class ListBusinessConsoleErpRequestsForQuotationEndpoint(
 }
 
 [Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/procurement/purchase-requisitions")]
+[BusinessGatewayOperationId("listBusinessConsoleErpPurchaseRequisitions")]
+public sealed class ListBusinessConsoleErpPurchaseRequisitionsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpListRequest, BusinessConsoleErpPurchaseRequisitionListResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpProcurementRead)
+{
+    protected override string OrganizationId(BusinessConsoleErpListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleErpListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpPurchaseRequisitionListResponse> ForwardAsync(
+        BusinessConsoleErpListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ListPurchaseRequisitionsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
 [HttpPost("/api/business-console/v1/erp/procurement/purchase-requisitions/from-suggestion")]
 [BusinessGatewayOperationId("createBusinessConsoleErpPurchaseRequisitionFromSuggestion")]
 public sealed class CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionEndpoint(
@@ -71,6 +93,28 @@ public sealed class CreateBusinessConsoleErpRequestForQuotationEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         erp.CreateRequestForQuotationAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
+[HttpPost("/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order")]
+[BusinessGatewayOperationId("convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrder")]
+public sealed class ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleConvertErpPurchaseRequisitionsRequest, BusinessConsoleConvertErpPurchaseRequisitionsResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpProcurementManage)
+{
+    protected override string OrganizationId(BusinessConsoleConvertErpPurchaseRequisitionsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleConvertErpPurchaseRequisitionsRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleConvertErpPurchaseRequisitionsResponse> ForwardAsync(
+        BusinessConsoleConvertErpPurchaseRequisitionsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ConvertPurchaseRequisitionsToPurchaseOrderAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console ERP")]
@@ -150,5 +194,21 @@ public sealed class BusinessConsoleCreateErpPurchaseRequisitionRequestValidator 
         RuleFor(x => x.UomCode).NotEmpty().MaximumLength(30);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Quantity).GreaterThan(0);
+    }
+}
+
+public sealed class BusinessConsoleConvertErpPurchaseRequisitionsRequestValidator : Validator<BusinessConsoleConvertErpPurchaseRequisitionsRequest>
+{
+    public BusinessConsoleConvertErpPurchaseRequisitionsRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PurchaseRequisitionNos).NotEmpty();
+        RuleForEach(x => x.PurchaseRequisitionNos).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PurchaseOrderNo).MaximumLength(100);
+        RuleFor(x => x.SupplierCode).MaximumLength(100);
+        RuleForEach(x => x.RfqSupplierCodes).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.RfqNo).MaximumLength(100);
+        RuleFor(x => x.CurrencyCode).NotEmpty().MaximumLength(10);
     }
 }

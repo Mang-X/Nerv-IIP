@@ -8,15 +8,25 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.OeeProductionFactAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Auth;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.IndustrialTelemetry;
+using Nerv.IIP.Contracts.Mes;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.DistributedLocks;
@@ -31,16 +41,28 @@ public sealed class IndustrialTelemetryEndpointContractTests
     {
         var contracts = IndustrialTelemetryEndpointContracts.All.ToArray();
 
-        Assert.Equal(12, contracts.Length);
+        Assert.Equal(24, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/tags" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TagsManage && x.OperationId == "createBusinessIiotTelemetryTag");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/tags" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "listBusinessIiotTelemetryTags");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/tags/current-value" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "getBusinessIiotTelemetryTagCurrentValue");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/device-control-commands" && x.PermissionCode == IndustrialTelemetryPermissionCodes.DeviceControlWrite && x.OperationId == "createBusinessIiotDeviceControlCommand");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/device-control-commands/{commandId}" && x.PermissionCode == IndustrialTelemetryPermissionCodes.DeviceControlRead && x.OperationId == "getBusinessIiotDeviceControlCommand");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/device-control-commands" && x.PermissionCode == IndustrialTelemetryPermissionCodes.DeviceControlRead && x.OperationId == "listBusinessIiotDeviceControlCommands");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/device-control-bindings" && x.PermissionCode == IndustrialTelemetryPermissionCodes.DeviceControlManage && x.OperationId == "createOrUpdateBusinessIiotDeviceControlBinding");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/device-control-bindings/{deviceAssetId}/disable" && x.PermissionCode == IndustrialTelemetryPermissionCodes.DeviceControlManage && x.OperationId == "disableBusinessIiotDeviceControlBinding");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/device-control-bindings" && x.PermissionCode == IndustrialTelemetryPermissionCodes.DeviceControlRead && x.OperationId == "listBusinessIiotDeviceControlBindings");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarm-rules" && x.PermissionCode == "business.iiot.alarm-rules.manage" && x.OperationId == "createOrUpdateBusinessIiotAlarmRule");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/alarm-rules" && x.PermissionCode == "business.iiot.alarms.read" && x.OperationId == "listBusinessIiotAlarmRules");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/samples" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryWrite && x.OperationId == "recordBusinessIiotTelemetrySample");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarms" && x.PermissionCode == IndustrialTelemetryPermissionCodes.AlarmsWrite && x.OperationId == "raiseBusinessIiotAlarm");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/alarms" && x.PermissionCode == IndustrialTelemetryPermissionCodes.AlarmsRead && x.OperationId == "listBusinessIiotAlarms");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarms/{alarmEventId}/acknowledge" && x.PermissionCode == IndustrialTelemetryPermissionCodes.AlarmsWrite && x.OperationId == "acknowledgeBusinessIiotAlarm");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarms/{alarmEventId}/shelve" && x.PermissionCode == IndustrialTelemetryPermissionCodes.AlarmsWrite && x.OperationId == "shelveBusinessIiotAlarm");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarms/{alarmEventId}/unshelve" && x.PermissionCode == IndustrialTelemetryPermissionCodes.AlarmsWrite && x.OperationId == "unshelveBusinessIiotAlarm");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarms/escalations/run" && x.PermissionCode == IndustrialTelemetryPermissionCodes.AlarmsWrite && x.OperationId == "runBusinessIiotAlarmEscalations");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/devices/{deviceAssetId}/timeline" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "queryBusinessIiotDeviceTimeline");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/oee" && x.PermissionCode == "business.iiot.telemetry.read" && x.OperationId == "queryBusinessIiotOee");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/runtime-hours" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "queryBusinessIiotRuntimeHours");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/devices/{deviceAssetId}/runtime-availability" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "getBusinessIiotDeviceRuntimeAvailability");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/runtime-availability" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "queryBusinessIiotRuntimeAvailability");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/devices/{deviceAssetId}/current-state" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "getBusinessIiotDeviceCurrentState");
@@ -72,6 +94,21 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Contains(sampleResult.Errors, x => SameProperty(x.PropertyName, nameof(RecordTelemetrySampleCommand.TagKey)));
         Assert.Contains(sampleResult.Errors, x => SameProperty(x.PropertyName, nameof(RecordTelemetrySampleCommand.SourceSequence)));
         Assert.Contains(alarmRuleResult.Errors, x => SameProperty(x.PropertyName, nameof(CreateOrUpdateAlarmRuleCommand.ComparisonOperator)));
+    }
+
+    [Fact]
+    public void Runtime_hours_validator_allows_long_pm_lifecycle_windows()
+    {
+        var start = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        var result = new QueryRuntimeHoursQueryValidator().Validate(new QueryRuntimeHoursQuery(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            start,
+            start.AddDays(367)));
+
+        Assert.True(result.IsValid);
     }
 
     [Fact]
@@ -117,6 +154,30 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Contains(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.ActiveAlarm && x.SourceType == EquipmentRuntimeSourceType.Alarm);
         Assert.Contains(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable && x.SourceType == EquipmentRuntimeSourceType.DeviceState);
         Assert.Contains(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.SourceStale && x.SourceType == EquipmentRuntimeSourceType.StaleSource);
+    }
+
+    [Fact]
+    public async Task Runtime_availability_reflects_running_to_faulted_state_change_as_device_state_unavailable()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-STATE-690", "running", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "state-690-001");
+        await PostSampleAsync(client, "DEV-STATE-690", "faulted", new DateTimeOffset(2026, 6, 1, 8, 5, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "state-690-002");
+
+        var response = await client.GetFromJsonAsync<ResponseData<EquipmentRuntimeAvailabilityResponse>>(
+            "/api/business/v1/iiot/devices/DEV-STATE-690/runtime-availability?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T08:30:00Z&freshnessMaxAgeMinutes=60",
+            EquipmentRuntimeJson.Options);
+
+        Assert.NotNull(response?.Data);
+        var window = Assert.Single(response.Data.Items, x =>
+            x.DeviceAssetId == "DEV-STATE-690"
+            && x.AvailabilityStatus == EquipmentRuntimeAvailabilityStatus.Unavailable
+            && x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable
+            && x.SourceType == EquipmentRuntimeSourceType.DeviceState);
+        Assert.Equal(new DateTimeOffset(2026, 6, 1, 8, 5, 0, TimeSpan.Zero), window.StartUtc);
+        Assert.Equal(new DateTimeOffset(2026, 6, 1, 8, 30, 0, TimeSpan.Zero), window.EndUtc);
     }
 
     [Fact]
@@ -172,7 +233,80 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
-    public async Task Oee_endpoint_aggregates_state_samples_for_window()
+    public async Task Alarm_lifecycle_endpoints_ack_shelve_expire_and_publish_escalation_once()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var alarmId = await PostAlarmAndReadIdAsync(
+            client,
+            "DEV-LIFE-01",
+            "TEMP_HIGH",
+            "critical",
+            new DateTimeOffset(2026, 7, 6, 8, 0, 0, TimeSpan.Zero),
+            "life-alarm-001");
+
+        await PostLifecycleAsync(client, $"/api/business/v1/iiot/alarms/{alarmId}/acknowledge", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            acknowledgedAtUtc = "2026-07-06T08:05:00Z",
+            acknowledgedBy = "operator-001",
+        });
+        await PostLifecycleAsync(client, $"/api/business/v1/iiot/alarms/{alarmId}/shelve", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            shelvedAtUtc = "2026-07-06T08:06:00Z",
+            durationMinutes = 20,
+            shelvedBy = "operator-001",
+            reason = "maintenance check",
+        });
+        await PostLifecycleAsync(client, "/api/business/v1/iiot/alarms/escalations/run", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            asOfUtc = "2026-07-06T08:10:00Z",
+            unacknowledgedTimeoutMinutes = 5,
+            severityLevels = new[] { "critical" },
+            recipientRefs = new[] { "role:maintenance-manager" },
+        });
+
+        Assert.Empty(factory.PublishedEvents.OfType<AlarmEscalatedIntegrationEvent>());
+
+        await PostLifecycleAsync(client, "/api/business/v1/iiot/alarms/escalations/run", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            asOfUtc = "2026-07-06T08:40:00Z",
+            unacknowledgedTimeoutMinutes = 5,
+            severityLevels = new[] { "critical" },
+            recipientRefs = new[] { "role:maintenance-manager" },
+        });
+        await PostLifecycleAsync(client, "/api/business/v1/iiot/alarms/escalations/run", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            asOfUtc = "2026-07-06T08:45:00Z",
+            unacknowledgedTimeoutMinutes = 5,
+            severityLevels = new[] { "critical" },
+            recipientRefs = new[] { "role:maintenance-manager" },
+        });
+
+        var escalated = Assert.Single(factory.PublishedEvents.OfType<AlarmEscalatedIntegrationEvent>());
+        Assert.Equal("role:maintenance-manager", Assert.Single(escalated.Payload.RecipientRefs));
+
+        using var response = await client.GetAsync("/api/business/v1/iiot/alarms?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-LIFE-01");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = Assert.Single(document.RootElement.GetProperty("data").GetProperty("items").EnumerateArray());
+        Assert.Equal("acknowledged", item.GetProperty("status").GetString());
+        Assert.Equal("operator-001", item.GetProperty("acknowledgedBy").GetString());
+        Assert.Equal("role:maintenance-manager", item.GetProperty("escalationRecipientRefs")[0].GetString());
+    }
+
+    [Fact]
+    public async Task Oee_endpoint_marks_result_degraded_when_mes_production_facts_are_absent()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
         using var client = factory.CreateClient();
@@ -190,11 +324,290 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal("DEV-OEE-01", data.GetProperty("deviceAssetId").GetString());
         Assert.Equal(2, data.GetProperty("stateSampleCount").GetInt32());
         Assert.Equal(0.5m, data.GetProperty("availabilityRate").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("performanceRate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("qualityRate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
+        Assert.True(data.GetProperty("isDegraded").GetBoolean());
+        Assert.Contains("production-facts-missing", data.GetProperty("degradedReasons").EnumerateArray().Select(x => x.GetString()));
+    }
+
+    [Fact]
+    public async Task Oee_endpoint_calculates_explainable_factors_from_mes_projection_and_productive_runtime()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-OEE-FACTS-01", "running", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-facts-state-001");
+        await PostSampleAsync(client, "DEV-OEE-FACTS-01", "stopped", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-facts-state-002");
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.OeeProductionFacts.Add(OeeProductionFact.Project(
+                "org-001",
+                "env-dev",
+                "PRPT-OEE-001",
+                "WC-PACK-01",
+                "DEV-OEE-FACTS-01",
+                80m,
+                10m,
+                10m,
+                "PCS",
+                100m,
+                new DateTimeOffset(2026, 6, 1, 8, 45, 0, TimeSpan.Zero)));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var response = await client.GetAsync("/api/business/v1/iiot/oee?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OEE-FACTS-01&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T10:00:00Z");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, data.GetProperty("productionFactCount").GetInt32());
+        Assert.Equal(100m, data.GetProperty("expectedOutputQuantity").GetDecimal());
         Assert.Equal(1m, data.GetProperty("performanceRate").GetDecimal());
-        Assert.Equal(1m, data.GetProperty("qualityRate").GetDecimal());
-        Assert.Equal(0.5m, data.GetProperty("oeeRate").GetDecimal());
-        Assert.True(data.GetProperty("performanceRateEstimated").GetBoolean());
-        Assert.True(data.GetProperty("qualityRateEstimated").GetBoolean());
+        Assert.Equal(0.8m, data.GetProperty("qualityRate").GetDecimal());
+        Assert.Equal(0.4m, data.GetProperty("oeeRate").GetDecimal());
+        Assert.False(data.GetProperty("isDegraded").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Oee_endpoint_marks_quality_and_oee_unavailable_when_reported_units_are_mixed()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-OEE-MIXED-UOM-01", "running", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-mixed-uom-state-001");
+        await PostSampleAsync(client, "DEV-OEE-MIXED-UOM-01", "stopped", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-mixed-uom-state-002");
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var reportedAtUtc = new DateTimeOffset(2026, 6, 1, 8, 30, 0, TimeSpan.Zero);
+            dbContext.OeeProductionFacts.AddRange(
+                OeeProductionFact.Project("org-001", "env-dev", "PRPT-OEE-MIXED-UOM-001", "WC-PACK-01", "DEV-OEE-MIXED-UOM-01", 80m, 10m, 10m, "PCS", 100m, reportedAtUtc),
+                OeeProductionFact.Project("org-001", "env-dev", "PRPT-OEE-MIXED-UOM-002", "WC-PACK-01", "DEV-OEE-MIXED-UOM-01", 1m, 0m, 0m, "KG", 100m, reportedAtUtc));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var response = await client.GetAsync("/api/business/v1/iiot/oee?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OEE-MIXED-UOM-01&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T10:00:00Z");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("qualityRate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
+        Assert.Contains("production-uom-ambiguous", data.GetProperty("degradedReasons").EnumerateArray().Select(x => x.GetString()));
+    }
+
+    [Fact]
+    public async Task Production_report_event_consumer_projects_each_mes_report_once_for_device_oee()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetterStore = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        var handler = new ProductionReportOeeProjectionHandler(dbContext, deadLetterStore);
+        var reportedAtUtc = new DateTimeOffset(2026, 7, 10, 8, 45, 0, TimeSpan.Zero);
+        var integrationEvent = new ProductionReportRecordedIntegrationEvent(
+            "evt-prpt-oee-001",
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1,
+            reportedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            "PRPT-OEE-001",
+            "PRPT-OEE-001",
+            "org-001",
+            "env-dev",
+            "system:mes",
+            "production-report-recorded:org-001:env-dev:PRPT-OEE-001",
+            new ProductionReportRecordedPayload(
+                "PRPT-OEE-001",
+                "WO-001",
+                "OP-10",
+                "WC-PACK-01",
+                "DEV-PACK-01",
+                80m,
+                10m,
+                10m,
+                "PCS",
+                100m,
+                reportedAtUtc,
+                false));
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        var fact = Assert.Single(dbContext.OeeProductionFacts);
+        Assert.Equal("PRPT-OEE-001", fact.SourceReportNo);
+        Assert.Equal("DEV-PACK-01", fact.DeviceAssetId);
+        Assert.Equal(100m, fact.TheoreticalRatePerHour);
+    }
+
+    [Fact]
+    public async Task Production_report_event_consumer_ignores_incomplete_assignment_snapshot_without_poisoning_delivery()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetterStore = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        var handler = new ProductionReportOeeProjectionHandler(dbContext, deadLetterStore);
+        var reportedAtUtc = new DateTimeOffset(2026, 7, 10, 8, 45, 0, TimeSpan.Zero);
+        var integrationEvent = new ProductionReportRecordedIntegrationEvent(
+            "evt-prpt-oee-missing-work-center-001",
+            MesIntegrationEventTypes.ProductionReportRecorded,
+            MesIntegrationEventVersions.V1,
+            reportedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            "PRPT-OEE-MISSING-WORK-CENTER-001",
+            "PRPT-OEE-MISSING-WORK-CENTER-001",
+            "org-001",
+            "env-dev",
+            "system:mes",
+            "production-report-recorded:org-001:env-dev:PRPT-OEE-MISSING-WORK-CENTER-001",
+            new ProductionReportRecordedPayload(
+                "PRPT-OEE-MISSING-WORK-CENTER-001",
+                "WO-001",
+                "OP-10",
+                string.Empty,
+                "DEV-PACK-01",
+                80m,
+                10m,
+                10m,
+                "PCS",
+                100m,
+                reportedAtUtc,
+                false));
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        Assert.Empty(dbContext.OeeProductionFacts);
+    }
+
+    [Fact]
+    public async Task Runtime_hours_endpoint_splits_productive_runtime_by_utc_day_and_excludes_planned_down_time()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-RUNTIME-01", "running", new DateTimeOffset(2026, 6, 1, 23, 30, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "runtime-001");
+        await PostSampleAsync(client, "DEV-RUNTIME-01", "standby", new DateTimeOffset(2026, 6, 2, 0, 30, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "runtime-002");
+        await PostSampleAsync(client, "DEV-RUNTIME-01", "planned_down", new DateTimeOffset(2026, 6, 2, 1, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "runtime-003");
+        await PostSampleAsync(client, "DEV-RUNTIME-01", "running", new DateTimeOffset(2026, 6, 2, 2, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "runtime-004");
+
+        using var response = await client.GetAsync("/api/business/v1/iiot/runtime-hours?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-RUNTIME-01&windowStartUtc=2026-06-01T23:00:00Z&windowEndUtc=2026-06-02T03:00:00Z");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("DEV-RUNTIME-01", data.GetProperty("deviceAssetId").GetString());
+        Assert.True(data.GetProperty("hasRuntimeSamples").GetBoolean());
+        Assert.Equal(2m, data.GetProperty("totalRuntimeHours").GetDecimal());
+        Assert.Equal(2.5m, data.GetProperty("totalLoadingHours").GetDecimal());
+        var daily = data.GetProperty("daily").EnumerateArray().ToArray();
+        Assert.Equal(2, daily.Length);
+        Assert.Equal("2026-06-01", daily[0].GetProperty("businessDate").GetString());
+        Assert.Equal(0.5m, daily[0].GetProperty("runtimeHours").GetDecimal());
+        Assert.Equal(0.5m, daily[0].GetProperty("loadingHours").GetDecimal());
+        Assert.Equal("2026-06-02", daily[1].GetProperty("businessDate").GetString());
+        Assert.Equal(1.5m, daily[1].GetProperty("runtimeHours").GetDecimal());
+        Assert.Equal(2m, daily[1].GetProperty("loadingHours").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Runtime_hours_endpoint_accepts_pm_lifecycle_windows_longer_than_single_chunk()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-RUNTIME-LONG", "running", new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "runtime-long-001");
+        await PostSampleAsync(client, "DEV-RUNTIME-LONG", "stopped", new DateTimeOffset(2026, 1, 3, 0, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "runtime-long-002");
+
+        using var response = await client.GetAsync("/api/business/v1/iiot/runtime-hours?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-RUNTIME-LONG&windowStartUtc=2025-01-01T00:00:00Z&windowEndUtc=2026-01-03T00:00:00Z");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(367m * 24m, data.GetProperty("totalRuntimeHours").GetDecimal());
+        Assert.Equal(367m * 24m, data.GetProperty("totalLoadingHours").GetDecimal());
+        Assert.True(data.GetProperty("hasRuntimeSamples").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Runtime_hours_query_uses_recorded_at_and_source_sequence_tiebreakers_for_same_occurred_at()
+    {
+        await using var dbContext = CreateDbContext(nameof(Runtime_hours_query_uses_recorded_at_and_source_sequence_tiebreakers_for_same_occurred_at));
+        var occurredAtUtc = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var laterRunning = DeviceStateSnapshot.Record(
+            "org-001",
+            "env-dev",
+            "DEV-RUNTIME-TIE",
+            "running",
+            occurredAtUtc,
+            "state-002",
+            "SCADA-A",
+            "opc-ua-cell-01");
+        var earlierStopped = DeviceStateSnapshot.Record(
+            "org-001",
+            "env-dev",
+            "DEV-RUNTIME-TIE",
+            "stopped",
+            occurredAtUtc,
+            "state-001",
+            "SCADA-A",
+            "opc-ua-cell-01");
+        dbContext.DeviceStateSnapshots.AddRange(laterRunning, earlierStopped);
+        dbContext.Entry(laterRunning).Property(nameof(DeviceStateSnapshot.RecordedAtUtc)).CurrentValue = occurredAtUtc.AddSeconds(2);
+        dbContext.Entry(earlierStopped).Property(nameof(DeviceStateSnapshot.RecordedAtUtc)).CurrentValue = occurredAtUtc.AddSeconds(1);
+        await dbContext.SaveChangesAsync();
+
+        var result = await new QueryRuntimeHoursQueryHandler(dbContext).Handle(
+            new QueryRuntimeHoursQuery(
+                "org-001",
+                "env-dev",
+                "DEV-RUNTIME-TIE",
+                occurredAtUtc,
+                occurredAtUtc.AddHours(1)),
+            CancellationToken.None);
+
+        Assert.Equal(1m, result.TotalRuntimeHours);
+        Assert.Equal(1m, result.TotalLoadingHours);
+    }
+
+    [Fact]
+    public async Task Runtime_hours_query_does_not_split_daily_sample_count_at_chunk_boundary()
+    {
+        await using var dbContext = CreateDbContext(nameof(Runtime_hours_query_does_not_split_daily_sample_count_at_chunk_boundary));
+        var windowStartUtc = new DateTimeOffset(2025, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var windowEndUtc = new DateTimeOffset(2026, 1, 3, 12, 0, 0, TimeSpan.Zero);
+        dbContext.DeviceStateSnapshots.Add(DeviceStateSnapshot.Record(
+            "org-001",
+            "env-dev",
+            "DEV-RUNTIME-CHUNK-DAY",
+            "running",
+            windowStartUtc,
+            "chunk-day-001",
+            "SCADA-A",
+            "opc-ua-cell-01"));
+        await dbContext.SaveChangesAsync();
+
+        var result = await new QueryRuntimeHoursQueryHandler(dbContext).Handle(
+            new QueryRuntimeHoursQuery(
+                "org-001",
+                "env-dev",
+                "DEV-RUNTIME-CHUNK-DAY",
+                windowStartUtc,
+                windowEndUtc),
+            CancellationToken.None);
+
+        var splitBoundaryDay = Assert.Single(result.Daily, x => x.BusinessDate == "2026-01-02");
+        Assert.Equal(24m, splitBoundaryDay.RuntimeHours);
+        Assert.Equal(24m, splitBoundaryDay.LoadingHours);
+        Assert.Equal(1, splitBoundaryDay.StateSampleCount);
     }
 
     [Fact]
@@ -217,7 +630,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
         using var document = JsonDocument.Parse(oeeBody);
         var data = document.RootElement.GetProperty("data");
         Assert.Equal(0.5m, data.GetProperty("availabilityRate").GetDecimal());
-        Assert.Equal(0.5m, data.GetProperty("oeeRate").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
+        Assert.True(data.GetProperty("isDegraded").GetBoolean());
         Assert.NotNull(availability?.Data);
         Assert.DoesNotContain(availability.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable);
     }
@@ -243,7 +657,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal(4, data.GetProperty("stateSampleCount").GetInt32());
         Assert.Equal(0.5m, data.GetProperty("availabilityRate").GetDecimal());
         Assert.Equal(0.5m, data.GetProperty("loadingRate").GetDecimal());
-        Assert.Equal(0.5m, data.GetProperty("oeeRate").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
+        Assert.True(data.GetProperty("isDegraded").GetBoolean());
     }
 
     [Fact]
@@ -263,7 +678,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
         var data = document.RootElement.GetProperty("data");
         Assert.Equal(1, data.GetProperty("stateSampleCount").GetInt32());
         Assert.Equal(0m, data.GetProperty("availabilityRate").GetDecimal());
-        Assert.Equal(0m, data.GetProperty("oeeRate").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
+        Assert.True(data.GetProperty("isDegraded").GetBoolean());
     }
 
     [Fact]
@@ -304,7 +720,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal(4, data.GetProperty("stateSampleCount").GetInt32());
         Assert.Equal(0.333333m, data.GetProperty("availabilityRate").GetDecimal());
         Assert.Equal(0.75m, data.GetProperty("loadingRate").GetDecimal());
-        Assert.Equal(0.333333m, data.GetProperty("oeeRate").GetDecimal());
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
+        Assert.True(data.GetProperty("isDegraded").GetBoolean());
         Assert.NotNull(availability?.Data);
         Assert.Contains(availability.Data.Items, x =>
             x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable
@@ -312,7 +729,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
-    public async Task Oee_endpoint_marks_performance_quality_estimated_when_state_facts_are_missing()
+    public async Task Oee_endpoint_marks_result_degraded_when_all_oee_input_facts_are_missing()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
         using var client = factory.CreateClient();
@@ -326,12 +743,14 @@ public sealed class IndustrialTelemetryEndpointContractTests
         var data = document.RootElement.GetProperty("data");
         Assert.Equal("DEV-OEE-NO-DATA", data.GetProperty("deviceAssetId").GetString());
         Assert.Equal(0, data.GetProperty("stateSampleCount").GetInt32());
-        Assert.Equal(0m, data.GetProperty("availabilityRate").GetDecimal());
-        Assert.Equal(0m, data.GetProperty("performanceRate").GetDecimal());
-        Assert.Equal(0m, data.GetProperty("qualityRate").GetDecimal());
-        Assert.Equal(0m, data.GetProperty("oeeRate").GetDecimal());
-        Assert.True(data.GetProperty("performanceRateEstimated").GetBoolean());
-        Assert.True(data.GetProperty("qualityRateEstimated").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("availabilityRate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("performanceRate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("qualityRate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("oeeRate").ValueKind);
+        Assert.True(data.GetProperty("isDegraded").GetBoolean());
+        var reasons = data.GetProperty("degradedReasons").EnumerateArray().Select(x => x.GetString()).ToArray();
+        Assert.Contains("runtime-state-facts-missing", reasons);
+        Assert.Contains("production-facts-missing", reasons);
     }
 
     [Theory]
@@ -448,6 +867,24 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
+    public async Task Device_state_changed_event_is_published_only_when_current_state_value_changes()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-STATE-EVENT", "running", new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "event-state-001");
+        await PostSampleAsync(client, "DEV-STATE-EVENT", "running", new DateTimeOffset(2026, 6, 1, 10, 1, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "event-state-002");
+        await PostSampleAsync(client, "DEV-STATE-EVENT", "faulted", new DateTimeOffset(2026, 6, 1, 10, 2, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "event-state-003");
+
+        var stateEvents = factory.PublishedEvents.OfType<DeviceStateChangedIntegrationEvent>().ToArray();
+
+        Assert.Equal(2, stateEvents.Length);
+        Assert.Equal(new[] { "running", "faulted" }, stateEvents.Select(x => x.Payload.CurrentState).ToArray());
+        Assert.Equal(new[] { "event-state-001", "event-state-003" }, stateEvents.Select(x => x.Payload.SourceSequence).ToArray());
+    }
+
+    [Fact]
     public async Task Telemetry_sample_source_sequence_is_trimmed_before_dedupe_lookup()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
@@ -540,7 +977,127 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
-    public void Public_contracts_do_not_expose_control_payload_credential_or_scada_concepts()
+    public async Task List_alarm_events_active_status_includes_lifecycle_active_states_and_excludes_cleared()
+    {
+        await using var dbContext = CreateDbContext(nameof(List_alarm_events_active_status_includes_lifecycle_active_states_and_excludes_cleared));
+        var raisedAtUtc = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var raised = AlarmEvent.Raise("org-001", "env-dev", "DEV-OIL-01", "OIL_TEMP_HIGH", "warning", raisedAtUtc, "alarm-oil-001");
+        var acknowledged = AlarmEvent.Raise("org-001", "env-dev", "DEV-OIL-02", "OIL_TEMP_HIGH", "warning", raisedAtUtc.AddMinutes(1), "alarm-oil-002");
+        var shelved = AlarmEvent.Raise("org-001", "env-dev", "DEV-OIL-03", "OIL_TEMP_HIGH", "warning", raisedAtUtc.AddMinutes(2), "alarm-oil-003");
+        var cleared = AlarmEvent.Raise("org-001", "env-dev", "DEV-OIL-04", "OIL_TEMP_HIGH", "warning", raisedAtUtc.AddMinutes(3), "alarm-oil-004");
+        acknowledged.Acknowledge(raisedAtUtc.AddMinutes(4), "operator-001");
+        shelved.Shelve(raisedAtUtc.AddMinutes(5), raisedAtUtc.AddMinutes(35), "operator-001", "maintenance window");
+        cleared.Clear(raisedAtUtc.AddMinutes(6), "operator-001", "recovered");
+        dbContext.AlarmEvents.AddRange(raised, acknowledged, shelved, cleared);
+        await dbContext.SaveChangesAsync();
+
+        var response = await new ListAlarmEventsQueryHandler(dbContext).Handle(
+            new ListAlarmEventsQuery("org-001", "env-dev", null, "active"),
+            CancellationToken.None);
+
+        Assert.Equal(3, response.Total);
+        Assert.Contains(response.Items, x => x.AlarmEventId == raised.Id && x.Status == "raised");
+        Assert.Contains(response.Items, x => x.AlarmEventId == acknowledged.Id && x.Status == "acknowledged");
+        Assert.Contains(response.Items, x => x.AlarmEventId == shelved.Id && x.Status == "shelved");
+        Assert.DoesNotContain(response.Items, x => x.AlarmEventId == cleared.Id);
+    }
+
+    [Fact]
+    public void Alarm_escalation_scheduler_reads_configured_scopes()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:OrganizationId"] = " org-001 ",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:EnvironmentId"] = " env-dev ",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:UnacknowledgedTimeoutMinutes"] = "30",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:SeverityLevels:0"] = "critical",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:SeverityLevels:1"] = "high",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:RecipientRefs:0"] = "role:maintenance-manager",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:MaxAlarms"] = "250",
+            })
+            .Build();
+
+        var scope = Assert.Single(AlarmEscalationScheduler.GetConfiguredScopes(configuration));
+
+        Assert.Equal("org-001", scope.OrganizationId);
+        Assert.Equal("env-dev", scope.EnvironmentId);
+        Assert.Equal(30, scope.UnacknowledgedTimeoutMinutes);
+        Assert.Equal(["critical", "high"], scope.SeverityLevels);
+        Assert.Equal(["role:maintenance-manager"], scope.RecipientRefs);
+        Assert.Equal(250, scope.MaxAlarms);
+    }
+
+    [Fact]
+    public async Task Alarm_escalation_scheduler_does_not_stop_host_for_invalid_interval_configuration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["IndustrialTelemetry:AlarmEscalation:Enabled"] = "true",
+                ["IndustrialTelemetry:AlarmEscalation:OrganizationId"] = "org-001",
+                ["IndustrialTelemetry:AlarmEscalation:EnvironmentId"] = "env-dev",
+                ["IndustrialTelemetry:AlarmEscalation:RecipientRefs:0"] = "role:maintenance-manager",
+                ["IndustrialTelemetry:AlarmEscalation:Interval"] = "not-a-timespan",
+            })
+            .Build();
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        var scheduler = new AlarmEscalationScheduler(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            configuration,
+            NullLogger<AlarmEscalationScheduler>.Instance,
+            TimeProvider.System);
+
+        await scheduler.StartAsync(CancellationToken.None);
+        await scheduler.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Alarm_escalation_scheduler_does_not_stop_host_for_invalid_enabled_configuration()
+    {
+        using var host = new HostBuilder()
+            .ConfigureHostOptions(options => options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.StopHost)
+            .ConfigureAppConfiguration(builder =>
+            {
+                builder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["IndustrialTelemetry:AlarmEscalation:Enabled"] = "not-a-bool",
+                });
+            })
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(TimeProvider.System);
+                services.AddHostedService<AlarmEscalationScheduler>();
+            })
+            .Build();
+
+        await host.StartAsync(CancellationToken.None);
+
+        var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
+        await Task.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None);
+        Assert.False(lifetime.ApplicationStopping.IsCancellationRequested);
+
+        await host.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public void Alarm_escalation_scheduler_skips_invalid_scope_configuration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:OrganizationId"] = "org-001",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:EnvironmentId"] = "env-dev",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:RecipientRefs:0"] = "role:maintenance-manager",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:MaxAlarms"] = "not-an-int",
+            })
+            .Build();
+
+        Assert.Empty(AlarmEscalationScheduler.GetConfiguredScopes(configuration));
+    }
+
+    [Fact]
+    public void Public_contracts_do_not_expose_payload_credential_or_scada_concepts()
     {
         var publicNames = typeof(IndustrialTelemetryEndpointContracts).Assembly
             .GetTypes()
@@ -548,7 +1105,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
             .SelectMany(type => type.GetProperties().Select(property => $"{type.Name}.{property.Name}"))
             .ToArray();
 
-        var forbidden = new[] { "Control", "CommandPayload", "Credential", "Secret", "Password", "Scada" };
+        var forbidden = new[] { "CommandPayload", "Credential", "Secret", "Password", "Scada" };
         Assert.NotEmpty(publicNames);
         Assert.DoesNotContain(publicNames, name => forbidden.Any(fragment => name.Contains(fragment, StringComparison.OrdinalIgnoreCase)));
     }
@@ -629,6 +1186,38 @@ public sealed class IndustrialTelemetryEndpointContractTests
         });
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(response.IsSuccessStatusCode, $"Expected alarm post to succeed, got {(int)response.StatusCode}: {body}");
+    }
+
+    private static async Task<string> PostAlarmAndReadIdAsync(
+        HttpClient client,
+        string deviceAssetId,
+        string alarmCode,
+        string severity,
+        DateTimeOffset raisedAtUtc,
+        string externalAlarmId)
+    {
+        using var response = await client.PostAsJsonAsync("/api/business/v1/iiot/alarms", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId,
+            alarmCode,
+            severity,
+            raisedAtUtc,
+            externalAlarmId,
+        });
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected alarm post to succeed, got {(int)response.StatusCode}: {body}");
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.GetProperty("data").GetProperty("alarmEventId").GetString()
+            ?? throw new InvalidOperationException("Alarm response did not contain alarmEventId.");
+    }
+
+    private static async Task PostLifecycleAsync(HttpClient client, string route, object request)
+    {
+        using var response = await client.PostAsJsonAsync(route, request);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected lifecycle post to succeed, got {(int)response.StatusCode}: {body}");
     }
 
     private static async Task PostTagAsync(HttpClient client, string deviceAssetId, string tagKey)
@@ -715,6 +1304,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
             .AddEntityFrameworkInMemoryDatabase()
             .BuildServiceProvider();
 
+        public IReadOnlyList<object> PublishedEvents => Services.GetRequiredService<CapturingIntegrationEventPublisher>().PublishedEvents;
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("environment", "Testing");
@@ -727,7 +1318,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
                 services.RemoveAll<IDistributedLock>();
                 services.RemoveAll<IIntegrationEventPublisher>();
                 services.AddInMemoryDistributedLock();
-                services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+                services.AddSingleton<CapturingIntegrationEventPublisher>();
+                services.AddSingleton<IIntegrationEventPublisher>(provider => provider.GetRequiredService<CapturingIntegrationEventPublisher>());
                 services.AddDbContext<ApplicationDbContext>(options =>
                     options
                         .UseInMemoryDatabase(databaseName)
@@ -746,10 +1338,29 @@ public sealed class IndustrialTelemetryEndpointContractTests
         }
     }
 
-    private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
+    private sealed class CapturingIntegrationEventPublisher : IIntegrationEventPublisher
     {
+        private readonly List<object> publishedEvents = [];
+        private readonly object syncRoot = new();
+
+        public IReadOnlyList<object> PublishedEvents
+        {
+            get
+            {
+                lock (syncRoot)
+                {
+                    return publishedEvents.ToArray();
+                }
+            }
+        }
+
         Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         {
+            lock (syncRoot)
+            {
+                publishedEvents.Add(integrationEvent!);
+            }
+
             return Task.CompletedTask;
         }
     }

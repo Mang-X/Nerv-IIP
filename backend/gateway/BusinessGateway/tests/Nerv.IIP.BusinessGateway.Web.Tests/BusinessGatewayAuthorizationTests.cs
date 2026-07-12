@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
@@ -185,6 +186,71 @@ public sealed class BusinessGatewayAuthorizationTests
         Assert.Null(auth.LastRequirement.ResourceId);
     }
 
+    [Theory]
+    [InlineData("GET", "/api/business-console/v1/planning/forecasts?skuCode=SKU-FG-1000&siteCode=SITE-01", BusinessGatewayPermissions.PlanningDemandsRead)]
+    [InlineData("POST", "/api/business-console/v1/planning/forecasts", BusinessGatewayPermissions.PlanningDemandsManage)]
+    public async Task Planning_forecast_facade_returns_forbidden_when_iam_denies(
+        string method,
+        string path,
+        string expectedPermission)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        using var request = new HttpRequestMessage(new HttpMethod(method), $"{path}{(path.Contains('?') ? '&' : '?')}organizationId=org-001&environmentId=env-dev")
+        {
+            Content = method != "GET"
+                ? JsonContent.Create(ValidPostBody(path))
+                : null
+        };
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Equal(expectedPermission, auth.LastRequirement!.PermissionCode);
+    }
+
+    [Theory]
+    [InlineData("/api/business-console/v1/telemetry/device-control-commands/op-task-001")]
+    [InlineData("/api/business-console/v1/telemetry/device-control-commands")]
+    public async Task Device_control_read_facade_returns_forbidden_when_iam_denies(string path)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync($"{path}?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Equal(BusinessGatewayPermissions.IiotDeviceControlRead, auth.LastRequirement!.PermissionCode);
+        // Device control audit is a device-resource surface: both the single-command and device-scoped
+        // history reads authorize on the device asset, not just org/env.
+        Assert.Equal("device-asset", auth.LastRequirement.ResourceType);
+        Assert.Equal("DEV-CNC-01", auth.LastRequirement.ResourceId);
+    }
+
+    [Fact]
+    public async Task Tag_current_value_facade_returns_forbidden_scoped_to_the_device_when_iam_denies()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/telemetry/tags/current-value?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01&tagKey=spindle.speed");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Equal(BusinessGatewayPermissions.IiotTelemetryRead, auth.LastRequirement!.PermissionCode);
+        // The current-value read is a device-scoped surface: it authorizes on the device asset, not just org/env.
+        Assert.Equal("device-asset", auth.LastRequirement.ResourceType);
+        Assert.Equal("DEV-CNC-01", auth.LastRequirement.ResourceId);
+    }
+
     [Fact]
     public async Task Business_console_endpoint_rejects_context_mismatch_before_permission_check()
     {
@@ -336,6 +402,28 @@ public sealed class BusinessGatewayAuthorizationTests
         Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
     }
 
+    [Fact]
+    public async Task Business_console_purchase_requisition_convert_route_requires_erp_procurement_manage_permission()
+    {
+        const string path = "/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order";
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{path}?organizationId=org-001&environmentId=env-dev")
+        {
+            Content = JsonContent.Create(ValidPostBody(path))
+        };
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Equal(BusinessGatewayPermissions.ErpProcurementManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
+    }
+
     private static object ValidPostBody(string path)
     {
         if (BusinessConsoleTestRequestBodies.IsMasterDataCreatePath(path))
@@ -369,12 +457,53 @@ public sealed class BusinessGatewayAuthorizationTests
             quantity = 10,
             dueDate = "2026-06-01",
         },
+        "/api/business-console/v1/planning/forecasts" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            forecastReference = "FCST-001",
+            skuCode = "SKU-FG-1000",
+            uomCode = "pcs",
+            siteCode = "SITE-01",
+            periodStartDate = "2026-06-01",
+            periodEndDate = "2026-06-30",
+            quantity = 120m,
+            backwardConsumptionDays = 7,
+            forwardConsumptionDays = 7,
+        },
+        "/api/business-console/v1/planning/mps" or "/api/business-console/v1/planning/mps/mps-001" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skuCode = "SKU-FG-1000",
+            uomCode = "pcs",
+            siteCode = "SITE-01",
+            bucketDate = "2026-06-15",
+            quantity = 120m,
+        },
+        "/api/business-console/v1/planning/mps/mps-001/review" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reviewedBy = "planner.li",
+        },
+        "/api/business-console/v1/planning/mps/mps-001/release" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            releasedBy = "planning.manager",
+        },
         "/api/business-console/v1/planning/mrp-runs" => new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
             horizonStart = "2026-05-25",
             horizonEnd = "2026-06-30",
+        },
+        "/api/business-console/v1/files/file-sop-v2/download-grants" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
         },
         "/api/business-console/v1/scheduling/plans/preview" or "/api/business-console/v1/scheduling/plans" => new
         {
@@ -441,6 +570,32 @@ public sealed class BusinessGatewayAuthorizationTests
             thresholdValue = 95m,
             unitCode = "celsius",
             isEnabled = true,
+        },
+        "/api/business-console/v1/telemetry/device-control-commands" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-OIL-01",
+            commandType = "write-tag",
+            tagKey = "temperature",
+            value = "80",
+            reason = "authorization test",
+            idempotencyKey = "idem-devctl-001",
+            correlationId = "corr-devctl-001",
+        },
+        "/api/business-console/v1/telemetry/device-control-bindings" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-OIL-01",
+            connectorHostId = "connector-host-001",
+            instanceKey = "opcua-cell-01",
+        },
+        "/api/business-console/v1/telemetry/device-control-bindings/DEV-OIL-01/disable" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reason = "authorization test",
         },
         "/api/business-console/v1/approval/delegations" => new
         {
@@ -569,6 +724,13 @@ public sealed class BusinessGatewayAuthorizationTests
             siteCode = "SITE-01",
             quantity = 10,
             requiredDate = "2026-06-10",
+        },
+        "/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            purchaseRequisitionNos = new[] { "PR-001", "PR-002" },
+            purchaseOrderNo = "PO-REQ-001",
         },
         "/api/business-console/v1/wms/inbound-orders" => new
         {
@@ -787,6 +949,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/ncrs/ncr-001/disposition", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/ncrs/ncr-001/close", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/documents", BusinessGatewayPermissions.EngineeringDocumentsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/sops/publish", BusinessGatewayPermissions.EngineeringDocumentsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/sops/current?operationCode=STD-MIX", BusinessGatewayPermissions.EngineeringDocumentsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/documents", BusinessGatewayPermissions.EngineeringDocumentsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/documents/DOC-001/A", BusinessGatewayPermissions.EngineeringDocumentsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/items", BusinessGatewayPermissions.EngineeringItemsManage);
@@ -813,13 +977,24 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-changes", BusinessGatewayPermissions.EngineeringChangesRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-changes/ECO-001", BusinessGatewayPermissions.EngineeringChangesRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/engineering-changes/release", BusinessGatewayPermissions.EngineeringChangesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/engineering-changes/cancel-scheduled", BusinessGatewayPermissions.EngineeringChangesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/engineering-changes/reschedule", BusinessGatewayPermissions.EngineeringChangesManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/production-versions", BusinessGatewayPermissions.EngineeringProductionVersionsManage);
         routes.Add(HttpMethod.Put, "/api/business-console/v1/engineering/production-versions/pv-001", BusinessGatewayPermissions.EngineeringProductionVersionsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/production-versions/pv-001/archive", BusinessGatewayPermissions.EngineeringProductionVersionsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions/resolve", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/files/file-sop-v2/download-grants", BusinessGatewayPermissions.EngineeringDocumentsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/files/download-grants/grant-sop-v2/content", BusinessGatewayPermissions.EngineeringDocumentsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/forecasts", BusinessGatewayPermissions.PlanningDemandsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/forecasts", BusinessGatewayPermissions.PlanningDemandsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mps", BusinessGatewayPermissions.PlanningMpsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/mps", BusinessGatewayPermissions.PlanningMpsManage);
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/planning/mps/mps-001", BusinessGatewayPermissions.PlanningMpsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/mps/mps-001/review", BusinessGatewayPermissions.PlanningMpsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/mps/mps-001/release", BusinessGatewayPermissions.PlanningMpsRelease);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/mrp-runs", BusinessGatewayPermissions.PlanningMrpRun);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mrp-runs", BusinessGatewayPermissions.PlanningMrpRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mrp-runs/mrp-run-001/pegging", BusinessGatewayPermissions.PlanningMrpRead);
@@ -836,11 +1011,19 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/devices/DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/availability?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/alarms", BusinessGatewayPermissions.IiotAlarmsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/equipment/alarms/alarm-001/acknowledge", BusinessGatewayPermissions.IiotAlarmsWrite);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/equipment/alarms/alarm-001/shelve", BusinessGatewayPermissions.IiotAlarmsWrite);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/equipment/alarms/alarm-001/unshelve", BusinessGatewayPermissions.IiotAlarmsWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/tags?deviceAssetId=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/tags/current-value?deviceAssetId=DEV-OIL-01&tagKey=temperature", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/alarm-rules?deviceAssetId=DEV-OIL-01", BusinessGatewayPermissions.IiotAlarmsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/samples", BusinessGatewayPermissions.IiotTelemetryWrite);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/alarms", BusinessGatewayPermissions.IiotAlarmsWrite);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/alarm-rules", "business.iiot.alarm-rules.manage");
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/device-control-commands", BusinessGatewayPermissions.IiotDeviceControlWrite);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/device-control-bindings", BusinessGatewayPermissions.IiotDeviceControlRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/device-control-bindings", BusinessGatewayPermissions.IiotDeviceControlManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/device-control-bindings/DEV-OIL-01/disable", BusinessGatewayPermissions.IiotDeviceControlManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/alarms?deviceAssetId=DEV-OIL-01&status=raised", BusinessGatewayPermissions.IiotAlarmsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/devices/DEV-OIL-01/history?fromUtc=2026-06-01T08:00:00Z&toUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/oee?deviceAssetId=DEV-OIL-01&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.IiotTelemetryRead);
@@ -853,12 +1036,15 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/plans", BusinessGatewayPermissions.MaintenancePlansManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/inspections", BusinessGatewayPermissions.MaintenancePlansManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/inspections", BusinessGatewayPermissions.MaintenancePlansRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/inspection-measurements/trends?deviceAssetId=DEV-OIL-01&characteristicCode=bearing-temperature&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.MaintenancePlansRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/reliability/summary?deviceAssetId=DEV-OIL-01&technicianUserId=worker-001&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/spare-parts", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/spare-parts", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/availability-windows?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/procurement/purchase-orders", BusinessGatewayPermissions.ErpProcurementRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/procurement/rfqs", BusinessGatewayPermissions.ErpProcurementRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/purchase-requisitions/from-suggestion", BusinessGatewayPermissions.ErpProcurementManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order", BusinessGatewayPermissions.ErpProcurementManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/rfqs", BusinessGatewayPermissions.ErpProcurementManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/supplier-quotations", BusinessGatewayPermissions.ErpProcurementManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/purchase-orders", BusinessGatewayPermissions.ErpProcurementManage);
@@ -920,6 +1106,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/wcs-tasks/EXT-001/complete", BusinessGatewayPermissions.WmsAutomationManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/work-orders", BusinessGatewayPermissions.MesWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/work-orders/rush", BusinessGatewayPermissions.MesWorkOrdersManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/operation-sops/current?operationCode=STD-MIX", BusinessGatewayPermissions.MesOperationsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/schedules/run", BusinessGatewayPermissions.MesSchedulesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/production-reports", BusinessGatewayPermissions.MesReportingWrite);
         return routes;
@@ -964,7 +1151,9 @@ public sealed class BusinessGatewayAuthorizationTests
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 }
 
-internal sealed class FakeBusinessGatewayAuthorizationClient(Func<BusinessGatewayPermissionRequirement, bool> isAllowed)
+internal sealed class FakeBusinessGatewayAuthorizationClient(
+    Func<BusinessGatewayPermissionRequirement, bool> isAllowed,
+    AuthorizationDataScope? dataScope = null)
     : IBusinessGatewayAuthorizationClient
 {
     public int CallCount { get; private set; }
@@ -973,7 +1162,7 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(Func<BusinessGatewa
 
     public List<BusinessGatewayPermissionRequirement> Requirements { get; } = [];
 
-    public static FakeBusinessGatewayAuthorizationClient Allowed() => new(_ => true);
+    public static FakeBusinessGatewayAuthorizationClient Allowed(AuthorizationDataScope? dataScope = null) => new(_ => true, dataScope);
 
     public static FakeBusinessGatewayAuthorizationClient Forbidden() => new(_ => false);
 
@@ -992,7 +1181,7 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(Func<BusinessGatewa
         LastRequirement = requirement;
         Requirements.Add(requirement);
         return Task.FromResult(isAllowed(requirement)
-            ? BusinessGatewayAuthorizationResult.Allowed("user-admin", "user", "admin")
+            ? BusinessGatewayAuthorizationResult.Allowed("user-admin", "user", "admin", dataScope)
             : BusinessGatewayAuthorizationResult.Forbidden("forbidden"));
     }
 }

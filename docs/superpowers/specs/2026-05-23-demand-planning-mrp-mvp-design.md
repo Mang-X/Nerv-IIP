@@ -17,11 +17,12 @@ DemandPlanning has no service directory. Wave 1 now provides the two required up
 
 DemandPlanning owns:
 
-1. DemandSource: forecast, sales-order demand, safety-stock demand or manual planning demand.
-2. MasterProductionSchedule: planned finished-good demand bucketed by SKU and date.
-3. MrpRun: a calculation run, input snapshot metadata, horizon and status.
-4. PlanningSuggestion: planned purchase, planned work order, reschedule, cancel or expedite suggestion.
-5. PeggingLink: traceability from suggestion to demand, BOM component, inventory input and upstream version reference.
+1. DemandSource: sales-order demand, safety-stock demand or manual planning demand.
+2. ForecastInput: forecast demand by SKU/UOM/site/period with forward/backward consumption windows.
+3. MasterProductionSchedule: planned finished-good demand bucketed by SKU and date.
+4. MrpRun: a calculation run, input snapshot metadata, horizon and status.
+5. PlanningSuggestion: planned purchase, planned work order, reschedule, cancel or expedite suggestion.
+6. PeggingLink: traceability from suggestion to demand, BOM component, inventory input and upstream version reference.
 
 DemandPlanning does not own:
 
@@ -41,6 +42,7 @@ The MVP accepts input through adapters so the MRP algorithm can be tested withou
 | Released MBOM lines | ProductEngineering event/API snapshot | Use single-level BOM explosion in MVP. |
 | Inventory availability | Inventory `GET /api/inventory/v1/availability` or fixture adapter | Snapshot available quantity by SKU/UOM/site. |
 | Demand source | DemandPlanning command/API | Owned as planning input. |
+| Forecast input | DemandPlanning forecast command/API | Sales-order demand consumes forecast in the configured forward/backward window; only remaining forecast enters MRP. |
 | Planning parameters | DemandPlanning local defaults | Daily buckets, no finite capacity optimization. |
 
 ## MVP Calculation Rules
@@ -52,8 +54,9 @@ The MVP accepts input through adapters so the MRP algorithm can be tested withou
 5. Component gross requirement equals planned work order quantity multiplied by MBOM quantity per parent.
 6. Planned purchase suggestions are generated only for positive component net requirement.
 7. All suggestions carry pegging refs back to the demand source and input version facts.
-8. Suggestions are immutable once accepted, rejected or closed.
-9. Rerun creates a new MrpRun and does not rewrite past accepted suggestions.
+8. Scheduled receipts that are late, early, or unmatched create `reschedule-in`, `reschedule-out`, or `cancel` exception suggestions linked to the scheduled receipt and relevant demand where one exists.
+9. Suggestions are immutable once accepted, rejected or closed.
+10. Rerun creates a new MrpRun and does not rewrite past accepted suggestions.
 
 ## Deterministic Fixture
 
@@ -79,6 +82,8 @@ Expected suggestions:
 | --- | --- | --- |
 | `POST /api/business/v1/planning/demands` | Create or update a demand source. | `business.planning.demands.manage` |
 | `GET /api/business/v1/planning/demands` | List demand sources. | `business.planning.demands.read` |
+| `POST /api/business/v1/planning/forecasts` | Create or update forecast input. | `business.planning.demands.manage` |
+| `GET /api/business/v1/planning/forecasts` | List forecast inputs. | `business.planning.demands.read` |
 | `POST /api/business/v1/planning/mrp-runs` | Run deterministic MRP for a horizon. | `business.planning.mrp.run` |
 | `GET /api/business/v1/planning/mrp-runs` | List MRP runs. | `business.planning.mrp.read` |
 | `GET /api/business/v1/planning/mrp-runs/{runId}/pegging` | Read pegging for a run. | `business.planning.mrp.read` |
@@ -130,4 +135,3 @@ Acceptance requires:
 4. Schema convention tests using `Nerv.IIP.Testing`.
 5. Integration event converter/serialization tests for the DemandPlanning event names.
 6. Adapter tests proving ProductEngineering and Inventory inputs are represented as snapshots, not cross-service table reads.
-

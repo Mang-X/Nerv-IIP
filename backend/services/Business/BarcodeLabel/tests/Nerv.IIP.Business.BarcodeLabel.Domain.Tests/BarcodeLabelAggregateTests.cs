@@ -239,7 +239,42 @@ public sealed class BarcodeLabelAggregateTests
         Assert.Equal(first.Items.Select(x => x.LabelValue), second.Items.Select(x => x.LabelValue));
         Assert.Equal(["FGASN0010001", "FGASN0010002", "FGASN0010003"], first.Items.Select(x => x.LabelValue).ToArray());
         Assert.IsType<LabelPrintBatchCreatedDomainEvent>(first.GetDomainEvents().First());
-        Assert.Contains(first.GetDomainEvents(), x => x is LabelPrintBatchCompletedDomainEvent);
+        Assert.DoesNotContain(first.GetDomainEvents(), x => x is LabelPrintBatchCompletedDomainEvent);
+    }
+
+    [Fact]
+    public void Print_batch_moves_from_pending_to_sent_then_printed_only_after_a_printer_result()
+    {
+        var batch = NewPrintBatch(ActiveRule(), "idem-print-lifecycle-001", "ASN-001", 1);
+
+        Assert.Equal("pending", batch.Status);
+        Assert.Equal("created", batch.Items.Single().Status);
+        Assert.Null(batch.CompletedAtUtc);
+
+        batch.RecordSentToPrinter("printer-zpl-01", "job-001");
+        batch.RecordPrinted();
+
+        Assert.Equal("printed", batch.Status);
+        Assert.Equal("printer-zpl-01", batch.PrinterId);
+        Assert.Equal("job-001", batch.PrintJobId);
+        Assert.NotNull(batch.CompletedAtUtc);
+        Assert.Equal("printed", batch.Items.Single().Status);
+    }
+
+    [Fact]
+    public void Printed_item_can_be_reprinted_or_voided_but_voided_item_cannot_be_reprinted()
+    {
+        var batch = NewPrintBatch(ActiveRule(), "idem-print-lifecycle-002", "ASN-001", 1);
+        batch.RecordSentToPrinter("printer-zpl-01", "job-002");
+        batch.RecordPrinted();
+
+        batch.ReprintItem(1);
+        Assert.Equal("reprinted", batch.Items.Single().Status);
+
+        batch.VoidItem(1, "damaged");
+        Assert.Equal("voided", batch.Items.Single().Status);
+        Assert.Equal("damaged", batch.Items.Single().VoidReason);
+        Assert.Throws<InvalidOperationException>(() => batch.ReprintItem(1));
     }
 
     [Fact]

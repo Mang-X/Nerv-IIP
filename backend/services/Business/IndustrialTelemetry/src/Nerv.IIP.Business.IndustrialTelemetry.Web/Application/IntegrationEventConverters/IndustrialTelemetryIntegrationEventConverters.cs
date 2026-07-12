@@ -21,7 +21,7 @@ public sealed class DeviceStateChangedIntegrationEventConverter
             snapshot.OrganizationId,
             snapshot.EnvironmentId,
             "system:industrial-telemetry",
-            $"industrialTelemetry:device-state:{snapshot.OrganizationId}:{snapshot.EnvironmentId}:{snapshot.DeviceAssetId}:{snapshot.SourceSequence}",
+            $"industrialTelemetry:device-state:{snapshot.OrganizationId}:{snapshot.EnvironmentId}:{snapshot.DeviceAssetId}:{snapshot.SourceSequence}:{snapshot.Id.Id:D}",
             new DeviceStateChangedPayload(
                 snapshot.Id.Id.ToString("D"),
                 snapshot.DeviceAssetId,
@@ -47,7 +47,7 @@ public sealed class AlarmRaisedIntegrationEventConverter
             alarm.OrganizationId,
             alarm.EnvironmentId,
             "system:industrial-telemetry",
-            $"industrialTelemetry:alarm-raised:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.DeviceAssetId}:{alarm.AlarmCode}:{alarm.ExternalAlarmId}",
+            $"industrialTelemetry:alarm-raised:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.DeviceAssetId}:{alarm.AlarmCode}:{alarm.ExternalAlarmId}:{alarm.Id.Id:D}",
             new AlarmRaisedPayload(
                 alarm.Id.Id.ToString("D"),
                 alarm.DeviceAssetId,
@@ -80,7 +80,7 @@ public sealed class AlarmClearedIntegrationEventConverter
             alarm.OrganizationId,
             alarm.EnvironmentId,
             "system:industrial-telemetry",
-            $"industrialTelemetry:alarm-cleared:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.DeviceAssetId}:{alarm.AlarmCode}:{alarm.ExternalAlarmId}",
+            $"industrialTelemetry:alarm-cleared:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.DeviceAssetId}:{alarm.AlarmCode}:{alarm.ExternalAlarmId}:{alarm.Id.Id:D}",
             new AlarmClearedPayload(
                 alarm.Id.Id.ToString("D"),
                 alarm.DeviceAssetId,
@@ -89,6 +89,71 @@ public sealed class AlarmClearedIntegrationEventConverter
                 alarm.RaisedAtUtc,
                 alarm.ClearedAtUtc.Value,
                 alarm.ExternalAlarmId));
+    }
+}
+
+public sealed class AlarmEscalatedIntegrationEventConverter
+    : IIntegrationEventConverter<AlarmEscalatedDomainEvent, AlarmEscalatedIntegrationEvent>
+{
+    public AlarmEscalatedIntegrationEvent Convert(AlarmEscalatedDomainEvent domainEvent)
+    {
+        var alarm = domainEvent.AlarmEvent;
+        return new AlarmEscalatedIntegrationEvent(
+            EventIdFactory.New(),
+            IndustrialTelemetryIntegrationEventTypes.AlarmEscalated,
+            IndustrialTelemetryIntegrationEventVersions.V1,
+            alarm.EscalatedAtUtc ?? throw new InvalidOperationException("Alarm escalation event requires escalated time."),
+            IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
+            $"industrialTelemetry:alarm:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.Id.Id:D}",
+            alarm.Id.Id.ToString("D"),
+            alarm.OrganizationId,
+            alarm.EnvironmentId,
+            "system:industrial-telemetry",
+            $"industrialTelemetry:alarm-escalated:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.DeviceAssetId}:{alarm.AlarmCode}:{alarm.ExternalAlarmId}:{alarm.Id.Id:D}",
+            new AlarmEscalatedPayload(
+                alarm.Id.Id.ToString("D"),
+                alarm.DeviceAssetId,
+                alarm.AlarmCode,
+                alarm.Severity,
+                alarm.RaisedAtUtc,
+                alarm.EscalatedAtUtc.Value,
+                alarm.ExternalAlarmId,
+                alarm.EscalationReason ?? "alarm-escalated",
+                alarm.EscalationRecipientRefs,
+                alarm.Priority));
+    }
+}
+
+public sealed class TelemetryProductionCountDeltaIntegrationEventConverter
+    : IIntegrationEventConverter<TelemetryProductionCountDeltaDomainEvent, TelemetryProductionCountDeltaIntegrationEvent>
+{
+    public TelemetryProductionCountDeltaIntegrationEvent Convert(TelemetryProductionCountDeltaDomainEvent domainEvent)
+    {
+        var summary = domainEvent.TelemetrySummary;
+        var sourceSystem = summary.SourceSystem ?? "unknown";
+        var sourceConnector = summary.SourceConnector ?? "unknown";
+        var sourceSequence = summary.SourceSequence ?? throw new InvalidOperationException("Production count delta requires source sequence.");
+        return new TelemetryProductionCountDeltaIntegrationEvent(
+            EventIdFactory.New(),
+            IndustrialTelemetryIntegrationEventTypes.ProductionCountDeltaRecorded,
+            IndustrialTelemetryIntegrationEventVersions.V1,
+            summary.BucketEndUtc,
+            IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
+            $"industrialTelemetry:production-count:{summary.OrganizationId}:{summary.EnvironmentId}:{summary.DeviceAssetId}:{summary.TagKey}:{sourceSequence}",
+            summary.Id.Id.ToString("D"),
+            summary.OrganizationId,
+            summary.EnvironmentId,
+            "system:industrial-telemetry",
+            $"industrialTelemetry:production-count:{summary.OrganizationId}:{summary.EnvironmentId}:{summary.DeviceAssetId}:{summary.TagKey}:{sourceSystem}:{sourceConnector}:{sourceSequence}",
+            new TelemetryProductionCountDeltaPayload(
+                summary.DeviceAssetId,
+                summary.TagKey,
+                domainEvent.ReportingMode,
+                domainEvent.DeltaQuantity,
+                summary.BucketStartUtc,
+                summary.BucketEndUtc,
+                sourceSequence,
+                domainEvent.HasActiveAlarm));
     }
 }
 

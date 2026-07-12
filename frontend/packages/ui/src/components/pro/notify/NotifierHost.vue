@@ -91,92 +91,94 @@ const toneClass: Record<NotifyKind, string> = {
 </template>
 
 <style scoped>
-.ds-msg-region {
-  position: fixed;
-  top: 1rem;
-  left: 0;
-  right: 0;
-  z-index: 90;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-}
-.ds-note-region {
-  position: fixed;
-  top: 1rem;
-  right: 1rem;
-  z-index: 90;
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-}
+@layer nv-components {
+  .ds-msg-region {
+    position: fixed;
+    top: 1rem;
+    left: 0;
+    right: 0;
+    z-index: 90;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .ds-note-region {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 90;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
 
-.ds-msg-enter-active,
-.ds-msg-leave-active,
-.ds-note-enter-active,
-.ds-note-leave-active {
-  transition:
-    opacity 0.3s var(--ease-out-expo, ease-out),
-    transform 0.3s var(--ease-out-expo, ease-out);
-}
-/* Surviving siblings slide to their new slot instead of snapping (fixes the
+  .ds-msg-enter-active,
+  .ds-msg-leave-active,
+  .ds-note-enter-active,
+  .ds-note-leave-active {
+    transition:
+      opacity 0.3s var(--nv-ease-out-expo, ease-out),
+      transform 0.3s var(--nv-ease-out-expo, ease-out);
+  }
+  /* Surviving siblings slide to their new slot instead of snapping (fixes the
    multi-item exit jitter). */
-.ds-msg-move,
-.ds-note-move {
-  transition: transform 0.34s var(--ease-out-expo, ease-out);
-}
+  .ds-msg-move,
+  .ds-note-move {
+    transition: transform 0.34s var(--nv-ease-out-expo, ease-out);
+  }
 
-/* ── Messages (top-center) ──
+  /* ── Messages (top-center) ──
    The region is full-width with centered items; a leaving pill goes out of flow
    (so siblings slide up at once) but stays centered via fit-content + auto
    margins — keeping the leave transform pure fade + rise + scale (clearly
    visible, no sideways re-centering jump). Single-line pill never collapses. */
-.ds-msg-enter-from {
-  opacity: 0;
-  transform: translateY(-14px) scale(0.94);
-}
-.ds-msg-leave-active {
-  position: absolute;
-  left: 0;
-  right: 0;
-  width: fit-content;
-  margin-inline: auto;
-}
-.ds-msg-leave-to {
-  opacity: 0;
-  transform: translateY(-12px) scale(0.94);
-}
-
-/* ── Notifications (top-right) ──
-   Fixed-width card, anchored to the right edge while leaving. */
-.ds-note-enter-from {
-  opacity: 0;
-  transform: translateX(16px) scale(0.98);
-}
-.ds-note-leave-active {
-  position: absolute;
-  right: 0;
-}
-.ds-note-leave-to {
-  opacity: 0;
-  transform: translateX(16px) scale(0.98);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ds-msg-enter-active,
-  .ds-msg-leave-active,
-  .ds-note-enter-active,
-  .ds-note-leave-active,
-  .ds-msg-move,
-  .ds-note-move {
-    transition: opacity 0.2s linear;
+  .ds-msg-enter-from {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.94);
   }
-  .ds-msg-enter-from,
-  .ds-msg-leave-to,
-  .ds-note-enter-from,
+  .ds-msg-leave-active {
+    position: absolute;
+    left: 0;
+    right: 0;
+    width: fit-content;
+    margin-inline: auto;
+  }
+  .ds-msg-leave-to {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.94);
+  }
+
+  /* ── Notifications (top-right) ──
+   Fixed-width card, anchored to the right edge while leaving. */
+  .ds-note-enter-from {
+    opacity: 0;
+    transform: translateX(16px) scale(0.98);
+  }
+  .ds-note-leave-active {
+    position: absolute;
+    right: 0;
+  }
   .ds-note-leave-to {
-    transform: none;
+    opacity: 0;
+    transform: translateX(16px) scale(0.98);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ds-msg-enter-active,
+    .ds-msg-leave-active,
+    .ds-note-enter-active,
+    .ds-note-leave-active,
+    .ds-msg-move,
+    .ds-note-move {
+      transition: opacity 0.2s linear;
+    }
+    .ds-msg-enter-from,
+    .ds-msg-leave-to,
+    .ds-note-enter-from,
+    .ds-note-leave-to {
+      transform: none;
+    }
   }
 }
 </style>

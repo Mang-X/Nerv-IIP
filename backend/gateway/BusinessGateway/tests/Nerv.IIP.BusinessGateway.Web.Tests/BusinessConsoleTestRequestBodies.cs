@@ -31,6 +31,8 @@ internal static class BusinessConsoleTestRequestBodies
         "/api/business-console/v1/engineering/standard-operations/OP-001" or
         "/api/business-console/v1/engineering/standard-operations/OP-001/archive" or
         "/api/business-console/v1/engineering/engineering-changes/release" or
+        "/api/business-console/v1/engineering/engineering-changes/cancel-scheduled" or
+        "/api/business-console/v1/engineering/engineering-changes/reschedule" or
         "/api/business-console/v1/engineering/production-versions" or
         "/api/business-console/v1/engineering/production-versions/pv-001" or
         "/api/business-console/v1/engineering/production-versions/pv-001/archive";
@@ -325,6 +327,21 @@ internal static class BusinessConsoleTestRequestBodies
             ["effectiveDate"] = "2026-06-01",
             ["affectedVersions"] = new[] { new { versionKind = "mbom", versionId = "MBOM-001:A" } },
             ["idempotencyKey"] = "eco-001",
+        },
+        "/api/business-console/v1/engineering/engineering-changes/cancel-scheduled" => new()
+        {
+            ["organizationId"] = "org-001",
+            ["environmentId"] = "env-dev",
+            ["changeNumber"] = "ECO-001",
+            ["reason"] = "Operator cancel",
+        },
+        "/api/business-console/v1/engineering/engineering-changes/reschedule" => new()
+        {
+            ["organizationId"] = "org-001",
+            ["environmentId"] = "env-dev",
+            ["changeNumber"] = "ECO-001",
+            ["effectiveDate"] = "2026-06-08",
+            ["reason"] = "Supplier delay",
         },
         "/api/business-console/v1/engineering/production-versions" => new()
         {

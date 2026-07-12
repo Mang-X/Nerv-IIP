@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import OperationTasksPage from './operation-tasks.vue'
 import PlansPage from './plans.vue'
 import ReceiptsPage from './receipts.vue'
+import TraceabilityPage from './traceability.vue'
 import WorkOrdersPage from './work-orders/index.vue'
 
 const routeState = vi.hoisted(() => ({
@@ -18,12 +19,13 @@ const routerState = vi.hoisted(() => ({
 const mesSpies = vi.hoisted(() => ({
   createReceiptRequest: vi.fn(async () => undefined),
   refreshReceiptRequests: vi.fn(async () => undefined),
+  traceabilityFilters: undefined as { batchOrSerial: string, materialLotId: string, mode: string, workOrderId: string } | undefined,
 }))
 
 vi.mock('vue-router', () => ({
   RouterLink: {
     props: ['to'],
-    template: '<a data-router-link><slot /></a>',
+    template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
   },
   useRoute: () => routeState,
   useRouter: () => routerState,
@@ -76,6 +78,18 @@ vi.mock('@/composables/useBusinessMes', () => ({
     operationTasksTotal: ref(1),
     refreshOperationTasks: vi.fn(),
   }),
+  useMesCurrentOperationSops: () => ({
+    filters: {
+      environmentId: 'dev',
+      organizationId: 'org',
+      operationCode: '',
+      workCenterCode: '',
+    },
+    currentSops: ref([]),
+    currentSopsError: ref(undefined),
+    currentSopsPending: ref(false),
+    refreshCurrentSops: vi.fn(),
+  }),
   useMesProductionPlans: () => ({
     convertPlanToWorkOrder: vi.fn(),
     convertPlanToWorkOrderError: ref(undefined),
@@ -100,6 +114,23 @@ vi.mock('@/composables/useBusinessMes', () => ({
     productionPlansTotal: ref(1),
     refreshProductionPlans: vi.fn(),
   }),
+  useMesTraceability: () => {
+    const filters = reactive({
+      batchOrSerial: '',
+      materialLotId: '',
+      mode: 'work-order',
+      workOrderId: '',
+    })
+    mesSpies.traceabilityFilters = filters
+
+    return {
+      filters,
+      refreshTraceability: vi.fn(),
+      traceability: ref({ edges: [], nodes: [] }),
+      traceabilityError: ref(undefined),
+      traceabilityPending: ref(false),
+    }
+  },
   useMesWorkOrderDetail: () => ({
     detail: ref(null),
     detailError: ref(null),
@@ -306,7 +337,7 @@ function mountMesPage(component: unknown) {
         ...uiStubs,
         RouterLink: {
           props: ['to'],
-          template: '<a data-router-link><slot /></a>',
+          template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
         },
       },
     },
@@ -323,6 +354,7 @@ describe('MES workflow copy', () => {
     routerState.push.mockReset()
     mesSpies.createReceiptRequest.mockClear()
     mesSpies.refreshReceiptRequests.mockClear()
+    mesSpies.traceabilityFilters = undefined
   })
 
   it('keeps work-order reporting business-facing and row-context driven', () => {
@@ -337,6 +369,18 @@ describe('MES workflow copy', () => {
     expect(wrapper.find('#report-work-order').attributes('readonly')).toBeDefined()
     expect(wrapper.find('#report-operation-task').attributes('readonly')).toBeDefined()
     expectNoForbiddenVisibleTerms(wrapper.text())
+  })
+
+  it('points formal scheduling output from work orders to the Scheduling workbench', () => {
+    const wrapper = mountMesPage(WorkOrdersPage)
+    const schedulingLink = wrapper
+      .findAll('[data-router-link]')
+      .find((link) => link.attributes('data-to') === '"/scheduling"')
+
+    expect(wrapper.text()).toContain('正式排产输出')
+    expect(wrapper.text()).not.toContain('排程结果')
+    expect(schedulingLink).toBeDefined()
+    expect(schedulingLink!.text()).toContain('排产工作台')
   })
 
   it('keeps operation tasks focused on supported row actions', () => {
@@ -401,6 +445,31 @@ describe('MES workflow copy', () => {
       unitCost: 12.34,
       uomCode: 'EA',
       workOrderId: 'WO-001',
+    }))
+  })
+
+  it('links non-work-order traceability to scan records without hardcoding a workflow filter', () => {
+    routeState.query = { batchOrSerial: 'LOT-001', mode: 'batch' }
+    const wrapper = mountMesPage(TraceabilityPage)
+
+    const scanLink = wrapper.get('[data-router-link]')
+    const target = scanLink.attributes('data-to')
+
+    expect(target).toContain('"path":"/barcode/scans"')
+    expect(target).toContain('"sourceDocumentId":"LOT-001"')
+    expect(target).toContain('"scannedValue":"LOT-001"')
+    expect(target).not.toContain('sourceWorkflow')
+  })
+
+  it('initializes traceability filters from an inventory batch or serial route', () => {
+    routeState.query = { batchOrSerial: 'SN-001', mode: 'batch' }
+
+    mountMesPage(TraceabilityPage)
+
+    expect(mesSpies.traceabilityFilters).toEqual(expect.objectContaining({
+      batchOrSerial: 'SN-001',
+      materialLotId: 'SN-001',
+      mode: 'batch',
     }))
   })
 })

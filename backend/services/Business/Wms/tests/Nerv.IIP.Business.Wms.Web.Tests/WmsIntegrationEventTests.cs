@@ -108,7 +108,7 @@ public sealed class WmsIntegrationEventTests
         Assert.Equal(WmsIntegrationEventTypes.WcsTaskDispatched, new WcsTaskDispatchedIntegrationEventConverter().Convert(new WcsTaskDispatchedDomainEvent(wcs)).EventType);
         Assert.Equal(WmsIntegrationEventTypes.WcsTaskFailed, new WcsTaskFailedIntegrationEventConverter().Convert(new WcsTaskFailedDomainEvent(wcs)).EventType);
 
-        wcs.Retry("EXT-002", "{}");
+        wcs.Retry("EXT-002", "{}", wcs.NextRetryAtUtc!.Value);
         wcs.Complete("{}");
 
         var completedEvent = new WcsTaskCompletedIntegrationEventConverter().Convert(new WcsTaskCompletedDomainEvent(wcs));

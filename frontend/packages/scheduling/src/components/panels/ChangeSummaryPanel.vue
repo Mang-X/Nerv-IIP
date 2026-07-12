@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Empty, EmptyDescription, EmptyTitle, ScrollArea, StatusBadge } from '@nerv-iip/ui'
+import { Empty, EmptyDescription, EmptyTitle, NvStatusBadge, ScrollArea } from '@nerv-iip/ui'
 import { changeTone, changeTypeLabel } from '../../model/labels'
 import type { ScheduleChange } from '../../model/types'
 
@@ -30,7 +30,7 @@ function onClick(c: ScheduleChange) {
             class="flex w-full items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             @click="onClick(c)"
           >
-            <StatusBadge :tone="changeTone[c.changeType]" :label="changeTypeLabel[c.changeType]" />
+            <NvStatusBadge :tone="changeTone[c.changeType]" :label="changeTypeLabel[c.changeType]" />
             <span class="flex-1 truncate text-sm text-foreground">{{ c.message }}</span>
             <span class="text-xs text-muted-foreground">{{ c.orderId }}</span>
           </button>

@@ -15,6 +15,20 @@ namespace Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate
 {
     public record ApplicationInstanceRegisteredDomainEvent(string OrganizationId, string EnvironmentId, string InstanceKey) : IDomainEvent;
     public record ApplicationHeartbeatRecordedDomainEvent(string InstanceKey, DateTimeOffset HeartbeatAtUtc, bool Reachable) : IDomainEvent;
+    public record ConnectorHostUnreachableDomainEvent(
+        string OrganizationId,
+        string EnvironmentId,
+        string ConnectorHostId,
+        string InstanceKey,
+        DateTimeOffset LastHeartbeatAtUtc,
+        DateTimeOffset DetectedAtUtc,
+        TimeSpan HeartbeatTimeout) : IDomainEvent;
+    public record ConnectorHostRestoredDomainEvent(
+        string OrganizationId,
+        string EnvironmentId,
+        string ConnectorHostId,
+        string InstanceKey,
+        DateTimeOffset RestoredAtUtc) : IDomainEvent;
     public record InstanceStateSnapshotRecordedDomainEvent(string InstanceKey, DateTimeOffset ObservedAtUtc, string ReportedStatus, string HealthStatus) : IDomainEvent;
     public record ApplicationInstanceStatusChangedDomainEvent(string InstanceKey, string PreviousStatus, string CurrentStatus, DateTimeOffset ChangedAtUtc) : IDomainEvent;
 }

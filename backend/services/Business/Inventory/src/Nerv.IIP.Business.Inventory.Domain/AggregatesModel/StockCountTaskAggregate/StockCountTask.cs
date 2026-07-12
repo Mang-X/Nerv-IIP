@@ -6,6 +6,15 @@ namespace Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggre
 
 public partial record StockCountTaskId : IGuidStronglyTypedId;
 
+public static class StockCountTaskStatuses
+{
+    public const string Open = "open";
+    public const string PendingApproval = "pending-approval";
+    public const string Confirmed = "confirmed";
+    public const string RecountRequired = "recount-required";
+    public const string Cancelled = "cancelled";
+}
+
 public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
 {
     private StockCountTask()
@@ -16,6 +25,7 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         string organizationId,
         string environmentId,
         string countTaskCode,
+        string idempotencyKey,
         string ledgerOrganizationId,
         string ledgerEnvironmentId,
         string skuCode,
@@ -32,6 +42,7 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         OrganizationId = InventoryText.Required(organizationId);
         EnvironmentId = InventoryText.Required(environmentId);
         CountTaskCode = InventoryText.Required(countTaskCode);
+        IdempotencyKey = InventoryText.Required(idempotencyKey);
         LedgerOrganizationId = InventoryText.Required(ledgerOrganizationId);
         LedgerEnvironmentId = InventoryText.Required(ledgerEnvironmentId);
         SkuCode = InventoryText.Required(skuCode);
@@ -44,7 +55,7 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         OwnerType = StockOwnerType.Normalize(ownerType);
         OwnerId = InventoryText.Optional(ownerId);
         ExpectedLedgerVersion = expectedLedgerVersion;
-        Status = "open";
+        Status = StockCountTaskStatuses.Open;
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
     }
@@ -52,6 +63,7 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
     public string CountTaskCode { get; private set; } = string.Empty;
+    public string IdempotencyKey { get; private set; } = string.Empty;
     public string LedgerOrganizationId { get; private set; } = string.Empty;
     public string LedgerEnvironmentId { get; private set; } = string.Empty;
     public string SkuCode { get; private set; } = string.Empty;
@@ -74,6 +86,7 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         string organizationId,
         string environmentId,
         string countTaskCode,
+        string idempotencyKey,
         string ledgerOrganizationId,
         string ledgerEnvironmentId,
         string skuCode,
@@ -91,6 +104,7 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
             organizationId,
             environmentId,
             countTaskCode,
+            idempotencyKey,
             ledgerOrganizationId,
             ledgerEnvironmentId,
             skuCode,
@@ -105,27 +119,107 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
             expectedLedgerVersion);
     }
 
+    public bool HasSameCreationScope(
+        string countTaskCode,
+        string skuCode,
+        string uomCode,
+        string siteCode,
+        string locationCode,
+        string? lotNo,
+        string? serialNo,
+        string qualityStatus,
+        string ownerType,
+        string? ownerId)
+    {
+        return CountTaskCode == InventoryText.Required(countTaskCode)
+            && SkuCode == InventoryText.Required(skuCode)
+            && UomCode == InventoryText.Required(uomCode)
+            && SiteCode == InventoryText.Required(siteCode)
+            && LocationCode == InventoryText.Required(locationCode)
+            && LotNo == InventoryText.Optional(lotNo)
+            && SerialNo == InventoryText.Optional(serialNo)
+            && QualityStatus == StockQualityStatus.Normalize(qualityStatus)
+            && OwnerType == StockOwnerType.Normalize(ownerType)
+            && OwnerId == InventoryText.Optional(ownerId);
+    }
+
     public StockMovement ConfirmAdjustment(StockLedger ledger, decimal countedQuantity, string idempotencyKey)
     {
-        ArgumentNullException.ThrowIfNull(ledger);
-        if (Status == "confirmed")
-        {
-            throw new InvalidOperationException("Stock count task has already been confirmed.");
-        }
+        EnsureStatus(StockCountTaskStatuses.Open, "Only open stock count tasks can be confirmed.");
+        return ApplyConfirmedAdjustment(ledger, countedQuantity, idempotencyKey);
+    }
 
-        if (countedQuantity < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(countedQuantity), "Counted quantity cannot be negative.");
-        }
+    public decimal SubmitForApproval(StockLedger ledger, decimal countedQuantity)
+    {
+        EnsureStatus(StockCountTaskStatuses.Open, "Only open stock count tasks can be submitted for approval.");
+        EnsureReadyForAdjustment(ledger, countedQuantity);
+        var variance = countedQuantity - ledger.OnHandQuantity;
+        CountedQuantity = countedQuantity;
+        VarianceQuantity = variance;
+        Status = StockCountTaskStatuses.PendingApproval;
+        UpdatedAtUtc = DateTime.UtcNow;
+        return variance;
+    }
 
+    public StockMovement ConfirmApprovedAdjustment(StockLedger ledger, string idempotencyKey)
+    {
+        EnsureStatus(StockCountTaskStatuses.PendingApproval, "Only a pending stock count adjustment can be posted after approval.");
+        return ApplyConfirmedAdjustment(
+            ledger,
+            CountedQuantity ?? throw new InvalidOperationException("Pending stock count approval has no counted quantity."),
+            idempotencyKey);
+    }
+
+    public void RequireRecountAfterApprovalRejection(StockLedger ledger)
+    {
+        EnsureStatus(StockCountTaskStatuses.PendingApproval, "Only a pending stock count adjustment can require recount after approval rejection.");
         EnsureSameDimension(ledger);
-        if (ledger.LedgerVersion != ExpectedLedgerVersion)
+        ledger.ReleaseCountFreeze();
+        Status = StockCountTaskStatuses.RecountRequired;
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    public void Cancel(StockLedger ledger, string reason)
+    {
+        ArgumentNullException.ThrowIfNull(ledger);
+        if (Status == StockCountTaskStatuses.Confirmed)
         {
-            Status = "recount-required";
-            UpdatedAtUtc = DateTime.UtcNow;
-            throw new StockCountRecountRequiredException("Stock count task requires recount because ledger version changed after the count snapshot.");
+            throw new InvalidOperationException("Confirmed stock count task cannot be cancelled.");
         }
 
+        if (Status == StockCountTaskStatuses.Cancelled)
+        {
+            return;
+        }
+
+        _ = InventoryText.Required(reason);
+        EnsureSameDimension(ledger);
+        ledger.ReleaseCountFreeze();
+        Status = StockCountTaskStatuses.Cancelled;
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    private void EnsureSameDimension(StockLedger ledger)
+    {
+        if (LedgerOrganizationId != ledger.OrganizationId
+            || LedgerEnvironmentId != ledger.EnvironmentId
+            || SkuCode != ledger.SkuCode
+            || UomCode != ledger.UomCode
+            || SiteCode != ledger.SiteCode
+            || LocationCode != ledger.LocationCode
+            || LotNo != ledger.LotNo
+            || SerialNo != ledger.SerialNo
+            || QualityStatus != ledger.QualityStatus
+            || OwnerType != ledger.OwnerType
+            || OwnerId != ledger.OwnerId)
+        {
+            throw new InvalidOperationException("Stock count task dimensions do not match the ledger dimensions.");
+        }
+    }
+
+    private StockMovement ApplyConfirmedAdjustment(StockLedger ledger, decimal countedQuantity, string idempotencyKey)
+    {
+        EnsureReadyForAdjustment(ledger, countedQuantity);
         var variance = countedQuantity - ledger.OnHandQuantity;
         var adjustment = StockMovement.Post(
             ledger.OrganizationId,
@@ -149,47 +243,34 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         ledger.ApplyMovement(adjustment);
         CountedQuantity = countedQuantity;
         VarianceQuantity = variance;
-        Status = "confirmed";
+        Status = StockCountTaskStatuses.Confirmed;
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new StockCountVarianceConfirmedDomainEvent(this, adjustment));
         return adjustment;
     }
 
-    public void Cancel(StockLedger ledger, string reason)
+    private void EnsureReadyForAdjustment(StockLedger ledger, decimal countedQuantity)
     {
         ArgumentNullException.ThrowIfNull(ledger);
-        if (Status == "confirmed")
+        if (countedQuantity < 0)
         {
-            throw new InvalidOperationException("Confirmed stock count task cannot be cancelled.");
+            throw new ArgumentOutOfRangeException(nameof(countedQuantity), "Counted quantity cannot be negative.");
         }
 
-        if (Status == "cancelled")
-        {
-            return;
-        }
-
-        _ = InventoryText.Required(reason);
         EnsureSameDimension(ledger);
-        ledger.ReleaseCountFreeze();
-        Status = "cancelled";
-        UpdatedAtUtc = DateTime.UtcNow;
+        if (ledger.LedgerVersion != ExpectedLedgerVersion)
+        {
+            Status = StockCountTaskStatuses.RecountRequired;
+            UpdatedAtUtc = DateTime.UtcNow;
+            throw new StockCountRecountRequiredException("Stock count task requires recount because ledger version changed after the count snapshot.");
+        }
     }
 
-    private void EnsureSameDimension(StockLedger ledger)
+    private void EnsureStatus(string expectedStatus, string message)
     {
-        if (LedgerOrganizationId != ledger.OrganizationId
-            || LedgerEnvironmentId != ledger.EnvironmentId
-            || SkuCode != ledger.SkuCode
-            || UomCode != ledger.UomCode
-            || SiteCode != ledger.SiteCode
-            || LocationCode != ledger.LocationCode
-            || LotNo != ledger.LotNo
-            || SerialNo != ledger.SerialNo
-            || QualityStatus != ledger.QualityStatus
-            || OwnerType != ledger.OwnerType
-            || OwnerId != ledger.OwnerId)
+        if (Status != expectedStatus)
         {
-            throw new InvalidOperationException("Stock count task dimensions do not match the ledger dimensions.");
+            throw new InvalidOperationException(message);
         }
     }
 }

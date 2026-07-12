@@ -1,1 +1,1 @@
-export { default as TimePickerPro } from './TimePickerPro.vue'
+export { default as NvTimePicker } from './TimePickerPro.vue'

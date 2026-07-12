@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringDocumentAggregate;
@@ -6,8 +7,11 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingB
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperationAggregate;
+using Nerv.IIP.Business.ProductEngineering.Infrastructure;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.Scheduling;
 using Nerv.IIP.ServiceAuth;
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 
@@ -87,6 +91,92 @@ public sealed class RegisterEngineeringDocumentCommandHandler(IEngineeringDocume
         return itemCode is null
             ? ProductEngineeringCodingService.Fingerprint(request.Revision, request.FileId, request.FileName, request.ContentType, request.DocumentType)
             : ProductEngineeringCodingService.Fingerprint(request.Revision, itemCode, request.FileId, request.FileName, request.ContentType, request.DocumentType);
+    }
+}
+
+public sealed record PublishSopDocumentCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DocumentNumber,
+    string Revision,
+    string OperationCode,
+    string? WorkCenterCode,
+    string? RoutingCode,
+    string? RoutingRevision,
+    DateOnly EffectiveDate,
+    string FileId,
+    string FileName,
+    string ContentType,
+    string? IdempotencyKey = null) : ICommand<EntityCommandResult>;
+
+public sealed class PublishSopDocumentCommandValidator : AbstractValidator<PublishSopDocumentCommand>
+{
+    public PublishSopDocumentCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DocumentNumber).MaximumLength(100);
+        RuleFor(x => x.Revision).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.OperationCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkCenterCode).MaximumLength(100);
+        RuleFor(x => x.RoutingCode).MaximumLength(100);
+        RuleFor(x => x.RoutingRevision).MaximumLength(50);
+        RuleFor(x => x.FileId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.FileName).NotEmpty().MaximumLength(255);
+        RuleFor(x => x.ContentType).NotEmpty().MaximumLength(120);
+    }
+}
+
+public sealed class PublishSopDocumentCommandHandler(IEngineeringDocumentRepository repository, ProductEngineeringCodingService? codingService = null)
+    : ICommandHandler<PublishSopDocumentCommand, EntityCommandResult>
+{
+    private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
+
+    public async Task<EntityCommandResult> Handle(PublishSopDocumentCommand request, CancellationToken cancellationToken)
+    {
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "engineering-document",
+            request.DocumentNumber,
+            request.IdempotencyKey,
+            ProductEngineeringCodingService.Fingerprint(
+                request.Revision,
+                request.OperationCode,
+                request.WorkCenterCode ?? string.Empty,
+                request.RoutingCode ?? string.Empty,
+                request.RoutingRevision ?? string.Empty,
+                request.EffectiveDate,
+                request.FileId,
+                request.FileName,
+                request.ContentType,
+                "sop"),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new EntityCommandResult(allocation.Code);
+        }
+
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
+        {
+            throw new KnownException($"SOP document '{allocation.Code}' revision '{request.Revision}' already exists.");
+        }
+
+        var document = EngineeringDocument.PublishSop(
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Code,
+            request.Revision,
+            request.OperationCode,
+            request.WorkCenterCode,
+            request.RoutingCode,
+            request.RoutingRevision,
+            request.EffectiveDate,
+            request.FileId,
+            request.FileName,
+            request.ContentType);
+        await repository.AddAsync(document, cancellationToken);
+        return new EntityCommandResult(document.DocumentNumber);
     }
 }
 
@@ -747,11 +837,14 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
     IRoutingRepository routingRepository,
     IProductionVersionRepository productionVersionRepository,
     IEngineeringApprovalVerifier? approvalVerifier = null,
-    ProductEngineeringCodingService? codingService = null)
+    ProductEngineeringCodingService? codingService = null,
+    IProductEngineeringBusinessDateProvider? businessDateProvider = null,
+    IEngineeringDocumentRepository? engineeringDocumentRepository = null)
     : ICommandHandler<ReleaseEngineeringChangeCommand, EntityCommandResult>
 {
     private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
     private readonly IEngineeringApprovalVerifier _approvalVerifier = approvalVerifier ?? new RejectingEngineeringApprovalVerifier();
+    private readonly IProductEngineeringBusinessDateProvider _businessDateProvider = businessDateProvider ?? UtcProductEngineeringBusinessDateProvider.Instance;
 
     public async Task<EntityCommandResult> Handle(ReleaseEngineeringChangeCommand request, CancellationToken cancellationToken)
     {
@@ -785,10 +878,17 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
             change.Affect(affectedVersion.VersionKind, affectedVersion.VersionId, affectedVersion.SupersededByVersionId);
         }
 
-        change.Release(request.EffectiveDate);
-        foreach (var archive in affectedVersions)
+        if (request.EffectiveDate > _businessDateProvider.GetBusinessDate())
         {
-            archive(change.ChangeNumber, request.EffectiveDate);
+            change.Schedule(request.EffectiveDate);
+        }
+        else
+        {
+            change.Release(request.EffectiveDate);
+            foreach (var archive in affectedVersions)
+            {
+                archive(change.ChangeNumber, request.EffectiveDate);
+            }
         }
 
         await repository.AddAsync(change, cancellationToken);
@@ -822,6 +922,11 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
                 request.EnvironmentId,
                 affectedVersion.VersionId,
                 cancellationToken), affectedVersion.VersionId, await GetSuccessorProductionVersionAsync(request, affectedVersion, cancellationToken)),
+            "engineering-document" => ArchiveEngineeringDocument(await GetEngineeringDocumentRepository().GetByVersionIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.VersionId,
+                cancellationToken), affectedVersion.VersionId, await GetSuccessorEngineeringDocumentAsync(request, affectedVersion, cancellationToken)),
             _ => throw new KnownException($"Affected version kind '{affectedVersion.VersionKind}' is not supported.")
         };
     }
@@ -974,6 +1079,21 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
             ?? throw new KnownException($"Successor production version '{affectedVersion.SupersededByVersionId}' was not found.");
     }
 
+    private async Task<EngineeringDocument?> GetSuccessorEngineeringDocumentAsync(
+        ReleaseEngineeringChangeCommand request,
+        AffectedVersionCommand affectedVersion,
+        CancellationToken cancellationToken)
+    {
+        return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
+            ? null
+            : await GetEngineeringDocumentRepository().GetByVersionIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.SupersededByVersionId,
+                cancellationToken)
+            ?? throw new KnownException($"Successor engineering document version '{affectedVersion.SupersededByVersionId}' was not found.");
+    }
+
     private static Action<string, DateOnly> ArchiveEngineeringBom(EngineeringBom? bom, string versionId, EngineeringBom? successor)
     {
         if (bom is not null && successor is not null)
@@ -1024,6 +1144,24 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
                 : (reason, effectiveDate) => ProductEngineeringReleaseValidation.AsKnownException(() => version.SupersedeWith(successor, effectiveDate, reason));
     }
 
+    private static Action<string, DateOnly> ArchiveEngineeringDocument(EngineeringDocument? document, string versionId, EngineeringDocument? successor)
+    {
+        if (document is not null && successor is not null)
+        {
+            EnsurePublishedSuccessor(successor.Status, successor.DocumentNumber == document.DocumentNumber, "engineering document", successor.DocumentNumber, versionId);
+        }
+
+        return document is null
+            ? throw new KnownException($"Engineering document version '{versionId}' was not found.")
+            : (reason, _) => ProductEngineeringReleaseValidation.AsKnownException(() => document.Archive(reason));
+    }
+
+    private IEngineeringDocumentRepository GetEngineeringDocumentRepository()
+    {
+        return engineeringDocumentRepository
+            ?? throw new KnownException("Engineering document repository is required to release engineering-document affected versions.");
+    }
+
     private static void EnsurePublishedSuccessor(EngineeringVersionStatus status, bool sameBusinessCode, string versionKind, string successorCode, string versionId)
     {
         if (status != EngineeringVersionStatus.Published || !sameBusinessCode)
@@ -1038,6 +1176,145 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
         {
             throw new KnownException($"Successor production version '{successor.Id.Id:D}' must be active for the same SKU before it can supersede '{versionId}'.");
         }
+    }
+}
+
+public sealed record PromoteScheduledEngineeringChangeCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeNumber,
+    DateOnly BusinessDate) : ICommand<bool>;
+
+public sealed class PromoteScheduledEngineeringChangeCommandLock : ICommandLock<PromoteScheduledEngineeringChangeCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(PromoteScheduledEngineeringChangeCommand command, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        var lockKey = string.Join(
+            ':',
+            "business-product-engineering",
+            "eco-scheduled-release",
+            Normalize(command.OrganizationId),
+            Normalize(command.EnvironmentId),
+            Normalize(command.ChangeNumber),
+            command.BusinessDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture));
+        return Task.FromResult(new CommandLockSettings(lockKey, 30));
+    }
+
+    private static string Normalize(string value)
+    {
+        return Uri.EscapeDataString(value.Trim().ToLowerInvariant());
+    }
+}
+
+public sealed class PromoteScheduledEngineeringChangeCommandHandler(
+    ApplicationDbContext dbContext,
+    IEngineeringBomRepository engineeringBomRepository,
+    IManufacturingBomRepository manufacturingBomRepository,
+    IRoutingRepository routingRepository,
+    IProductionVersionRepository productionVersionRepository,
+    IEngineeringDocumentRepository? engineeringDocumentRepository = null)
+    : ICommandHandler<PromoteScheduledEngineeringChangeCommand, bool>
+{
+    public async Task<bool> Handle(PromoteScheduledEngineeringChangeCommand request, CancellationToken cancellationToken)
+    {
+        var change = await dbContext.EngineeringChanges
+            .Include(x => x.AffectedVersions)
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.ChangeNumber == request.ChangeNumber,
+                cancellationToken)
+            ?? throw new KnownException($"Engineering change '{request.ChangeNumber}' was not found.");
+        if (change.Status != EngineeringVersionStatus.Scheduled ||
+            !change.EffectiveDate.HasValue ||
+            change.EffectiveDate.Value > request.BusinessDate)
+        {
+            return false;
+        }
+
+        var effectiveDate = change.EffectiveDate.Value;
+        var resolver = new ScheduledEngineeringChangeArchiveResolver(
+            engineeringBomRepository,
+            manufacturingBomRepository,
+            routingRepository,
+            productionVersionRepository,
+            engineeringDocumentRepository);
+        var archiveActions = await resolver.ResolveArchiveActionsAsync(change, cancellationToken);
+        foreach (var archive in archiveActions)
+        {
+            archive(change.ChangeNumber, effectiveDate);
+        }
+
+        ProductEngineeringReleaseValidation.AsKnownException(() => change.Release(effectiveDate));
+        return true;
+    }
+}
+
+public sealed record CancelScheduledEngineeringChangeCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeNumber,
+    string Reason) : ICommand;
+
+public sealed class CancelScheduledEngineeringChangeCommandValidator : AbstractValidator<CancelScheduledEngineeringChangeCommand>
+{
+    public CancelScheduledEngineeringChangeCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ChangeNumber).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
+public sealed class CancelScheduledEngineeringChangeCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CancelScheduledEngineeringChangeCommand>
+{
+    public async Task Handle(CancelScheduledEngineeringChangeCommand request, CancellationToken cancellationToken)
+    {
+        var change = await dbContext.EngineeringChanges.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId &&
+            x.ChangeNumber == request.ChangeNumber,
+            cancellationToken)
+            ?? throw new KnownException($"Engineering change '{request.ChangeNumber}' was not found.");
+
+        ProductEngineeringReleaseValidation.AsKnownException(change.CancelScheduled);
+    }
+}
+
+public sealed record RescheduleEngineeringChangeCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeNumber,
+    DateOnly EffectiveDate,
+    string Reason) : ICommand;
+
+public sealed class RescheduleEngineeringChangeCommandValidator : AbstractValidator<RescheduleEngineeringChangeCommand>
+{
+    public RescheduleEngineeringChangeCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ChangeNumber).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
+public sealed class RescheduleEngineeringChangeCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<RescheduleEngineeringChangeCommand>
+{
+    public async Task Handle(RescheduleEngineeringChangeCommand request, CancellationToken cancellationToken)
+    {
+        var change = await dbContext.EngineeringChanges.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId &&
+            x.ChangeNumber == request.ChangeNumber,
+            cancellationToken)
+            ?? throw new KnownException($"Engineering change '{request.ChangeNumber}' was not found.");
+
+        ProductEngineeringReleaseValidation.AsKnownException(() => change.Reschedule(request.EffectiveDate));
     }
 }
 

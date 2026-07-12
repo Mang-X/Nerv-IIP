@@ -25,7 +25,9 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
         string? serialNo,
         string qualityStatus,
         string ownerType,
-        string? ownerId)
+        string? ownerId,
+        DateOnly? productionDate,
+        DateOnly? expiryDate)
     {
         OrganizationId = InventoryText.Required(organizationId);
         EnvironmentId = InventoryText.Required(environmentId);
@@ -38,6 +40,8 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
         QualityStatus = StockQualityStatus.Normalize(qualityStatus);
         OwnerType = StockOwnerType.Normalize(ownerType);
         OwnerId = InventoryText.Optional(ownerId);
+        ProductionDate = productionDate;
+        ExpiryDate = expiryDate;
         UpdatedAtUtc = DateTime.UtcNow;
     }
 
@@ -52,6 +56,8 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
     public string QualityStatus { get; private set; } = string.Empty;
     public string OwnerType { get; private set; } = string.Empty;
     public string? OwnerId { get; private set; }
+    public DateOnly? ProductionDate { get; private set; }
+    public DateOnly? ExpiryDate { get; private set; }
     public decimal OnHandQuantity { get; private set; }
     public decimal ReservedQuantity { get; private set; }
     public decimal AvailableQuantity => OnHandQuantity - ReservedQuantity;
@@ -75,7 +81,9 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
         string? serialNo,
         string qualityStatus,
         string ownerType,
-        string? ownerId)
+        string? ownerId,
+        DateOnly? ProductionDate = null,
+        DateOnly? ExpiryDate = null)
     {
         return new StockLedger(
             organizationId,
@@ -88,8 +96,12 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
             serialNo,
             qualityStatus,
             ownerType,
-            ownerId);
+            ownerId,
+            ProductionDate,
+            ExpiryDate);
     }
+
+    public bool IsExpired(DateOnly asOfDate) => ExpiryDate is not null && ExpiryDate.Value < asOfDate;
 
     public StockMovement ApplyMovement(StockMovement movement)
     {
@@ -207,6 +219,30 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
         this.AddDomainEvent(new StockAvailabilityChangedDomainEvent(this));
     }
 
+    public decimal ExpireReservation(StockReservation reservation, DateTime expiredAtUtc)
+    {
+        ArgumentNullException.ThrowIfNull(reservation);
+        EnsureSameDimension(reservation);
+        var expiredQuantity = reservation.Expire(expiredAtUtc);
+        if (expiredQuantity <= 0m)
+        {
+            return 0m;
+        }
+
+        ReservedQuantity -= expiredQuantity;
+        if (ReservedQuantity < 0m)
+        {
+            throw new InventoryDomainException(
+                InventoryDomainFailureReason.ReservationAllocationRejected,
+                "Ledger committed quantity cannot be negative.");
+        }
+
+        LedgerVersion++;
+        UpdatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new StockAvailabilityChangedDomainEvent(this));
+        return expiredQuantity;
+    }
+
     public void FreezeForCount(string countTaskCode)
     {
         if (IsFrozenForCount && FrozenCountTaskCode != countTaskCode)
@@ -261,7 +297,9 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
             || SerialNo != movement.SerialNo
             || QualityStatus != movement.QualityStatus
             || OwnerType != movement.OwnerType
-            || OwnerId != movement.OwnerId)
+            || OwnerId != movement.OwnerId
+            || (movement.ProductionDate is not null && ProductionDate != movement.ProductionDate)
+            || (movement.ExpiryDate is not null && ExpiryDate != movement.ExpiryDate))
         {
             throw new InventoryDomainException(
                 InventoryDomainFailureReason.DimensionMismatch,
@@ -281,7 +319,9 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
             || SerialNo != reservation.SerialNo
             || QualityStatus != reservation.QualityStatus
             || OwnerType != reservation.OwnerType
-            || OwnerId != reservation.OwnerId)
+            || OwnerId != reservation.OwnerId
+            || ProductionDate != reservation.ProductionDate
+            || ExpiryDate != reservation.ExpiryDate)
         {
             throw new InventoryDomainException(
                 InventoryDomainFailureReason.DimensionMismatch,

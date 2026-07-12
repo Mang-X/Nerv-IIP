@@ -11,6 +11,7 @@ public static class WmsIntegrationEventTypes
     public const string CountExecutionCompleted = "wms.CountExecutionCompleted";
     public const string WcsTaskDispatched = "wms.WcsTaskDispatched";
     public const string WcsTaskFailed = "wms.WcsTaskFailed";
+    public const string WcsTaskRetryExhausted = "wms.WcsTaskRetryExhausted";
     public const string WcsTaskCompleted = "wms.WcsTaskCompleted";
     public const string WcsTaskCancelled = "wms.WcsTaskCancelled";
 }
@@ -24,6 +25,51 @@ public static class WmsIntegrationEventSources
 {
     public const string BusinessWms = "business-wms";
     public const string BusinessErp = "business-erp";
+}
+
+public static class WmsSourceDocumentTypes
+{
+    public const string PurchaseReceipt = "purchase-receipt";
+    public const string PurchaseReceiptReturn = "purchase-receipt-return";
+    public const string SalesReturnRma = "sales-return-rma";
+}
+
+public static class WmsReceivingQualityStatuses
+{
+    public const string Quality = "quality";
+    public const string InspectionRequired = "inspection-required";
+    public const string QualityInspectionRequired = "quality-inspection-required";
+    public const string PendingQualityCheck = "pending-quality-check";
+    public const string Exempt = "exempt";
+    public const string InspectionExempt = "inspection-exempt";
+    public const string SkipInspection = "skip-inspection";
+    public const string SamplingSkip = "sampling-skip";
+    public const string SamplingSkipped = "sampling-skipped";
+    public const string Unrestricted = "unrestricted";
+    public const string Qualified = "qualified";
+
+    public static readonly IReadOnlyCollection<string> InspectionSkippedStatuses =
+    [
+        Exempt,
+        InspectionExempt,
+        SkipInspection,
+        SamplingSkip,
+        SamplingSkipped,
+        Unrestricted,
+        Qualified,
+    ];
+
+    private static readonly HashSet<string> InspectionSkippedLookup = new(InspectionSkippedStatuses, StringComparer.OrdinalIgnoreCase);
+
+    public static bool ShouldSkipInspection(string? qualityStatus)
+    {
+        return !string.IsNullOrWhiteSpace(qualityStatus) && InspectionSkippedLookup.Contains(qualityStatus.Trim());
+    }
+
+    public static bool RequiresInspection(string? qualityStatus)
+    {
+        return !ShouldSkipInspection(qualityStatus);
+    }
 }
 
 public sealed record WmsIntegrationEvent(

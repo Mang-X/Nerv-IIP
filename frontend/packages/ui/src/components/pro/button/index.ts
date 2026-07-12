@@ -1,1 +1,1 @@
-export { default as ButtonPro } from './ButtonPro.vue'
+export { default as NvButton } from './ButtonPro.vue'

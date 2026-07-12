@@ -44,7 +44,9 @@ public sealed class StockMovementPostedIntegrationEventConverter(IInventoryInteg
                 movement.Quantity,
                 movement.PostedAtUtc,
                 movement.UnitCost,
-                movement.MovementAmount));
+                movement.MovementAmount,
+                movement.ProductionDate,
+                movement.ExpiryDate));
     }
 }
 
@@ -78,6 +80,35 @@ public sealed class StockCountVarianceConfirmedIntegrationEventConverter(IInvent
                 task.CountedQuantity,
                 task.VarianceQuantity ?? 0,
                 occurredAtUtc));
+    }
+}
+
+public sealed class StockReservationExpiredIntegrationEventConverter(IInventoryIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<StockReservationExpiredDomainEvent, InventoryReservationExpiredIntegrationEvent>
+{
+    public InventoryReservationExpiredIntegrationEvent Convert(StockReservationExpiredDomainEvent domainEvent)
+    {
+        var reservation = domainEvent.StockReservation;
+        var context = contextAccessor.GetContext();
+        return new InventoryReservationExpiredIntegrationEvent(
+            EventIds.New(),
+            InventoryIntegrationEventTypes.StockReservationExpired,
+            InventoryIntegrationEventVersions.V1,
+            new DateTimeOffset(domainEvent.ExpiredAtUtc),
+            InventoryIntegrationEventSources.BusinessInventory,
+            context.CorrelationId,
+            context.CausationId,
+            reservation.OrganizationId,
+            reservation.EnvironmentId,
+            context.Actor,
+            EventIds.Idempotency("stock-reservation-expired", reservation.OrganizationId, reservation.EnvironmentId, reservation.Id.ToString()),
+            new InventoryReservationExpiredPayload(
+                reservation.Id.ToString(),
+                reservation.SourceService,
+                reservation.SourceDocumentId,
+                reservation.SourceDocumentLineId,
+                domainEvent.ReleasedQuantity,
+                new DateTimeOffset(reservation.ExpiresAtUtc)));
     }
 }
 
@@ -117,7 +148,9 @@ public sealed class StockAvailabilityChangedIntegrationEventConverter(IInventory
                 ledger.LedgerVersion,
                 occurredAtUtc,
                 ledger.MovingAverageUnitCost,
-                ledger.InventoryValue));
+                ledger.InventoryValue,
+                ledger.ProductionDate,
+                ledger.ExpiryDate));
     }
 }
 

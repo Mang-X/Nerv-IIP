@@ -90,9 +90,11 @@ function onCancel() {
 </template>
 
 <style scoped>
-.ds-pc-icon {
-  flex-shrink: 0;
-  margin-top: 0.0625rem;
-  color: var(--warning-strong);
+@layer nv-components {
+  .ds-pc-icon {
+    flex-shrink: 0;
+    margin-top: 0.0625rem;
+    color: var(--nv-warning-strong);
+  }
 }
 </style>

@@ -192,6 +192,6 @@ describe('IAM sessions page', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('显示 1-20 / 45 条')
+    expect(wrapper.text()).toContain('显示 1–20 / 45 条')
   })
 })

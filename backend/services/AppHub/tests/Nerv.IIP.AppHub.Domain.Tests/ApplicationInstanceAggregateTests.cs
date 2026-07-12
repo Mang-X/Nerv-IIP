@@ -46,6 +46,62 @@ public sealed class ApplicationInstanceAggregateTests
     }
 
     [Fact]
+    public void Heartbeat_timeout_marks_instance_unreachable_once_and_restores_on_next_reachable_heartbeat()
+    {
+        var instance = CreateInstance();
+        var heartbeatAt = DateTimeOffset.Parse("2026-07-06T01:00:00Z");
+        var detectedAt = DateTimeOffset.Parse("2026-07-06T01:06:00Z");
+        instance.RecordHeartbeat(heartbeatAt, true, 12);
+        instance.ClearDomainEvents();
+
+        var firstMark = instance.MarkHeartbeatUnreachable(detectedAt, TimeSpan.FromMinutes(5));
+        var duplicateMark = instance.MarkHeartbeatUnreachable(detectedAt.AddMinutes(1), TimeSpan.FromMinutes(5));
+
+        Assert.True(firstMark);
+        Assert.False(duplicateMark);
+        Assert.NotNull(instance.Heartbeat);
+        Assert.False(instance.Heartbeat.Reachable);
+        var unreachable = Assert.IsType<ConnectorHostUnreachableDomainEvent>(Assert.Single(instance.GetDomainEvents()));
+        Assert.Equal("org-001", unreachable.OrganizationId);
+        Assert.Equal("env-dev", unreachable.EnvironmentId);
+        Assert.Equal("connector-host-001", unreachable.ConnectorHostId);
+        Assert.Equal("demo-api-001", unreachable.InstanceKey);
+        Assert.Equal(heartbeatAt, unreachable.LastHeartbeatAtUtc);
+        Assert.Equal(detectedAt, unreachable.DetectedAtUtc);
+        Assert.Equal(TimeSpan.FromMinutes(5), unreachable.HeartbeatTimeout);
+
+        instance.ClearDomainEvents();
+        var restoredAt = DateTimeOffset.Parse("2026-07-06T01:08:00Z");
+        instance.RecordHeartbeat(restoredAt, true, 9);
+
+        Assert.True(instance.Heartbeat.Reachable);
+        var restored = Assert.Single(instance.GetDomainEvents().OfType<ConnectorHostRestoredDomainEvent>());
+        Assert.Equal("connector-host-001", restored.ConnectorHostId);
+        Assert.Equal("demo-api-001", restored.InstanceKey);
+        Assert.Equal(restoredAt, restored.RestoredAtUtc);
+    }
+
+    [Fact]
+    public void Heartbeat_timeout_with_empty_connector_host_does_not_emit_unreachable_or_restored_events()
+    {
+        var instance = CreateInstance(connectorHostId: "");
+        var heartbeatAt = DateTimeOffset.Parse("2026-07-06T01:00:00Z");
+        instance.RecordHeartbeat(heartbeatAt, true, 12);
+        instance.ClearDomainEvents();
+
+        var marked = instance.MarkHeartbeatUnreachable(
+            DateTimeOffset.Parse("2026-07-06T01:06:00Z"),
+            TimeSpan.FromMinutes(5));
+
+        Assert.False(marked);
+        Assert.True(instance.Heartbeat!.Reachable);
+        Assert.Empty(instance.GetDomainEvents().OfType<ConnectorHostUnreachableDomainEvent>());
+
+        instance.RecordHeartbeat(DateTimeOffset.Parse("2026-07-06T01:08:00Z"), true, 9);
+        Assert.Empty(instance.GetDomainEvents().OfType<ConnectorHostRestoredDomainEvent>());
+    }
+
+    [Fact]
     public void State_snapshots_track_history_and_publish_status_changes_after_initial_status()
     {
         var instance = CreateInstance();
@@ -92,11 +148,12 @@ public sealed class ApplicationInstanceAggregateTests
         Assert.Equal("idem-result-001", instance.Metadata["ops.lastCompletedOperationIdempotencyKey"]);
     }
 
-    private static ApplicationInstance CreateInstance()
+    private static ApplicationInstance CreateInstance(string connectorHostId = "connector-host-001")
     {
         return new ApplicationInstance(
             "org-001",
             "env-dev",
+            connectorHostId,
             "demo-api",
             "1.0.0",
             "node-001",

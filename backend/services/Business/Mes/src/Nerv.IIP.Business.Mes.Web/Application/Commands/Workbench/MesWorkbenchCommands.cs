@@ -1,12 +1,15 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
+using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using DomainScheduleResult = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleResult;
 using DomainScheduleTrigger = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleTrigger;
 using DomainScheduledOperationSnapshot = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduledOperationSnapshot;
@@ -81,6 +84,7 @@ public sealed class ReleaseWorkOrderCommandHandler(
             request.OrganizationId,
             request.EnvironmentId,
             request.WorkOrderId,
+            null,
             cancellationToken);
         if (qualityIssues.Count > 0)
         {
@@ -110,6 +114,50 @@ public sealed class ReleaseWorkOrderCommandHandler(
 
         workOrder.MarkReleased();
         return new MesAcceptedResponse("Accepted", request.WorkOrderId, request.ReleasedAtUtc);
+    }
+}
+
+public sealed record ForceReleaseQualityHoldCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string SourceService,
+    string SourceDocumentId,
+    string Reason,
+    string Actor,
+    DateTimeOffset ReleasedAtUtc) : ICommand<MesAcceptedResponse>;
+
+public sealed class ForceReleaseQualityHoldCommandValidator : AbstractValidator<ForceReleaseQualityHoldCommand>
+{
+    public ForceReleaseQualityHoldCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SourceService).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.Actor).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class ForceReleaseQualityHoldCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<ForceReleaseQualityHoldCommand, MesAcceptedResponse>
+{
+    public async Task<MesAcceptedResponse> Handle(ForceReleaseQualityHoldCommand request, CancellationToken cancellationToken)
+    {
+        var hold = await dbContext.QualityHoldContexts.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.SourceService == request.SourceService &&
+                x.SourceDocumentId == request.SourceDocumentId,
+            cancellationToken);
+
+        if (hold is null)
+        {
+            throw new KnownException($"未找到质量保留上下文，SourceDocumentId = {request.SourceDocumentId}");
+        }
+
+        hold.ForceRelease(request.Reason, request.Actor, request.ReleasedAtUtc);
+        return new MesAcceptedResponse("Accepted", request.SourceDocumentId, request.ReleasedAtUtc);
     }
 }
 
@@ -206,16 +254,92 @@ public sealed class CancelWorkOrderCommandHandler(ApplicationDbContext dbContext
 {
     public async Task<MesAcceptedResponse> Handle(CancelWorkOrderCommand request, CancellationToken cancellationToken)
     {
-        var workOrder = await WorkOrderLifecycleCommandGuards.GetWorkOrderAsync(
+        return await WorkOrderCancellationOrchestrator.CancelAsync(
             dbContext,
             request.OrganizationId,
             request.EnvironmentId,
             request.WorkOrderId,
+            request.Reason,
+            request.CancelledAtUtc,
+            cancellationToken);
+    }
+}
+
+internal static class WorkOrderCancellationOrchestrator
+{
+    public static async Task<MesAcceptedResponse> CancelAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        string reason,
+        DateTimeOffset cancelledAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var workOrder = await WorkOrderLifecycleCommandGuards.GetWorkOrderAsync(
+            dbContext,
+            organizationId,
+            environmentId,
+            workOrderId,
             cancellationToken);
 
-        WorkOrderLifecycleCommandGuards.ApplyTransition(workOrder, x => x.Cancel(request.Reason));
+        var materialIssueRequests = await dbContext.MaterialIssueRequests
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.WorkOrderId == workOrderId)
+            .ToListAsync(cancellationToken);
+        var finishedGoodsReceiptRequests = await dbContext.FinishedGoodsReceiptRequests
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.WorkOrderId == workOrderId)
+            .ToListAsync(cancellationToken);
+        var operationTasks = await dbContext.OperationTasks
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.WorkOrderId == workOrderId)
+            .ToListAsync(cancellationToken);
 
-        return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, request.CancelledAtUtc);
+        WorkOrderLifecycleCommandGuards.ApplyTransition(workOrder, x => x.Cancel(
+            reason,
+            cancelledAtUtc,
+            materialIssueRequests.Select(materialIssueRequest => materialIssueRequest.RequestNo).ToArray()));
+
+        foreach (var materialIssueRequest in materialIssueRequests)
+        {
+            try
+            {
+                var consumedQuantity = await dbContext.ProductionReportMaterialConsumptions
+                    .AsNoTracking()
+                    .Where(x =>
+                        x.OrganizationId == materialIssueRequest.OrganizationId &&
+                        x.EnvironmentId == materialIssueRequest.EnvironmentId &&
+                        x.MaterialIssueRequestNo == materialIssueRequest.RequestNo &&
+                        x.MaterialId == materialIssueRequest.MaterialId &&
+                        x.MaterialLotId == materialIssueRequest.MaterialLotId)
+                    .SumAsync(x => x.ConsumedQuantity, cancellationToken);
+                materialIssueRequest.CancelForWorkOrderCancellation(cancelledAtUtc, consumedQuantity);
+            }
+            catch (InvalidOperationException exception)
+            {
+                throw new KnownException(exception.Message, exception);
+            }
+            catch (ArgumentOutOfRangeException exception)
+            {
+                throw new KnownException(exception.Message, exception);
+            }
+        }
+
+        foreach (var receiptRequest in finishedGoodsReceiptRequests)
+        {
+            receiptRequest.Cancel();
+        }
+
+        foreach (var operationTask in operationTasks)
+        {
+            operationTask.Cancel(cancelledAtUtc);
+        }
+
+        return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, cancelledAtUtc);
     }
 }
 
@@ -238,14 +362,7 @@ internal static class WorkOrderLifecycleCommandGuards
 
     public static void ApplyTransition(WorkOrder workOrder, Action<WorkOrder> transition)
     {
-        try
-        {
-            transition(workOrder);
-        }
-        catch (InvalidOperationException exception)
-        {
-            throw new KnownException(exception.Message, exception);
-        }
+        MesDomainRuleGuard.Enforce(() => transition(workOrder));
     }
 }
 
@@ -321,6 +438,12 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
         var sourceSystem = string.IsNullOrWhiteSpace(request.SourceSystem) ? "DemandPlanning" : request.SourceSystem.Trim();
         var sourceDocumentType = string.IsNullOrWhiteSpace(request.SourceDocumentType) ? "PlanningSuggestion" : request.SourceDocumentType.Trim();
         var sourceDocumentId = string.IsNullOrWhiteSpace(request.SourceDocumentId) ? request.ProductionPlanId.Trim() : request.SourceDocumentId.Trim();
+        await MesArchivedProductionVersionGuard.ThrowIfArchivedAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ProductionVersionId,
+            cancellationToken);
         var allocation = await _codingService.AllocateWorkOrderIdAsync(
             request.OrganizationId,
             request.EnvironmentId,
@@ -662,7 +785,8 @@ public sealed class ConfirmLineSideMaterialReceiptCommandHandler(ApplicationDbCo
             throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
         }
 
-        materialRequest.ConfirmLineSideReceipt(request.ReceivedAtUtc, request.ReceivedQuantity, request.MaterialLotId);
+        MesDomainRuleGuard.Enforce(() =>
+            materialRequest.ConfirmLineSideReceipt(request.ReceivedAtUtc, request.ReceivedQuantity, request.MaterialLotId));
         return new MesAcceptedResponse("Accepted", materialRequest.RequestNo, request.ReceivedAtUtc);
     }
 }
@@ -752,6 +876,18 @@ public sealed class AssignDispatchTaskCommandHandler(ApplicationDbContext dbCont
             throw new KnownException($"未找到工序任务，OperationTaskId = {request.OperationTaskId}");
         }
 
+        var qualityIssues = await ReadinessReasonCodes.GetActiveQualityHoldIssuesAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            task.WorkOrderId,
+            task.OperationTaskIdValue,
+            cancellationToken);
+        if (qualityIssues.Count > 0)
+        {
+            throw new KnownException(string.Join("; ", qualityIssues.Select(x => x.Code)));
+        }
+
         var equipmentIssues = await ReadinessReasonCodes.GetEquipmentBlockingIssuesAsync(
             dbContext,
             request.OrganizationId,
@@ -765,7 +901,8 @@ public sealed class AssignDispatchTaskCommandHandler(ApplicationDbContext dbCont
             throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
         }
 
-        task.Assign(request.AssignedUserId, request.DeviceAssetId, request.ShiftId, request.AssignedAtUtc);
+        MesDomainRuleGuard.Enforce(() =>
+            task.Assign(request.AssignedUserId, request.DeviceAssetId, request.ShiftId, request.AssignedAtUtc));
         dbContext.Entry(task).Property(x => x.AssignedUserId).IsModified = true;
         dbContext.Entry(task).Property(x => x.DeviceAssetId).IsModified = true;
         dbContext.Entry(task).Property(x => x.ShiftId).IsModified = true;
@@ -804,6 +941,7 @@ public sealed class ChangeOperationTaskStateCommandHandler(
                 request.OrganizationId,
                 request.EnvironmentId,
                 task.WorkOrderId,
+                task.OperationTaskIdValue,
                 cancellationToken);
             if (qualityIssues.Count > 0)
             {
@@ -850,11 +988,14 @@ public sealed class ChangeOperationTaskStateCommandHandler(
                 }
             }
 
-            task.Start(request.ChangedAtUtc);
-            if (workOrder.Status is WorkOrder.ReleasedStatus or WorkOrder.HoldStatus)
+            MesDomainRuleGuard.Enforce(() =>
             {
-                workOrder.Start(request.ChangedAtUtc);
-            }
+                task.Start(request.ChangedAtUtc);
+                if (workOrder.Status is WorkOrder.ReleasedStatus or WorkOrder.HoldStatus)
+                {
+                    workOrder.Start(request.ChangedAtUtc);
+                }
+            });
 
             return new MesOperationActionResponse(task.OperationTaskIdValue, task.Status.ToString(), request.ChangedAtUtc);
         }
@@ -862,14 +1003,14 @@ public sealed class ChangeOperationTaskStateCommandHandler(
         switch (request.Action)
         {
             case "pause":
-                task.Pause(request.ChangedAtUtc);
+                MesDomainRuleGuard.Enforce(() => task.Pause(request.ChangedAtUtc));
                 break;
             case "resume":
-                task.Resume(request.ChangedAtUtc);
+                MesDomainRuleGuard.Enforce(() => task.Resume(request.ChangedAtUtc));
                 break;
             case "complete":
                 await EnsurePreviousOperationsCompletedAsync(dbContext, task, cancellationToken);
-                task.Complete(request.ChangedAtUtc);
+                MesDomainRuleGuard.Enforce(() => task.Complete(request.ChangedAtUtc));
                 break;
             default:
                 throw new KnownException($"不支持的工序动作：{request.Action}");
@@ -1126,6 +1267,7 @@ internal static class ReadinessReasonCodes
         string organizationId,
         string environmentId,
         string workOrderId,
+        string? operationTaskId,
         CancellationToken cancellationToken)
     {
         var productionVersionId = await dbContext.WorkOrders
@@ -1149,25 +1291,44 @@ internal static class ReadinessReasonCodes
                     "工单缺少已发布生产版本或检验方案。"));
         }
 
+        issues.AddRange(await GetActiveQualityHoldIssuesAsync(
+            dbContext,
+            organizationId,
+            environmentId,
+            workOrderId,
+            operationTaskId,
+            cancellationToken));
+
+        return issues;
+    }
+
+    public static async Task<IReadOnlyCollection<ReadinessBlockingIssue>> GetActiveQualityHoldIssuesAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        string? operationTaskId,
+        CancellationToken cancellationToken)
+    {
         var activeHolds = await dbContext.QualityHoldContexts
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == organizationId &&
                 x.EnvironmentId == environmentId &&
                 x.WorkOrderId == workOrderId &&
+                (operationTaskId == null || x.OperationTaskId == null || x.OperationTaskId == operationTaskId) &&
                 x.Active)
             .OrderByDescending(x => x.RecordedAtUtc)
             .ToArrayAsync(cancellationToken);
-        issues.AddRange(activeHolds.Select(x => new ReadinessBlockingIssue(
+        return activeHolds.Select(x => new ReadinessBlockingIssue(
             MesReadinessReasonCodes.QualityHoldActive,
             "Quality",
             "InspectionRecord",
             x.InspectionRecordId,
             string.IsNullOrWhiteSpace(x.DispositionReason)
                 ? "工单存在有效质量保留，无法放行或开工。"
-                : $"工单存在有效质量保留，无法放行或开工：{x.DispositionReason}")));
-
-        return issues;
+                : $"工单存在有效质量保留，无法放行或开工：{x.DispositionReason}"))
+            .ToArray();
     }
 
     public static async Task<IReadOnlyCollection<ReadinessBlockingIssue>> GetEquipmentBlockingIssuesAsync(

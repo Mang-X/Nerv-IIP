@@ -3,7 +3,12 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Iam.Web.Application.Commands.Users;
 
-public sealed record UpdateUserCommand(string UserId, string LoginName, string Email, bool Enabled) : ICommand<UserResponse>;
+public sealed record UpdateUserCommand(
+    string UserId,
+    string LoginName,
+    string Email,
+    bool Enabled,
+    DateTimeOffset? AccountExpiresAtUtc) : ICommand<UserResponse>;
 
 public sealed class UpdateUserCommandHandler(IIamUserApplicationService users)
     : ICommandHandler<UpdateUserCommand, UserResponse>
@@ -15,6 +20,7 @@ public sealed class UpdateUserCommandHandler(IIamUserApplicationService users)
             request.LoginName,
             request.Email,
             request.Enabled,
+            request.AccountExpiresAtUtc,
             cancellationToken);
     }
 }

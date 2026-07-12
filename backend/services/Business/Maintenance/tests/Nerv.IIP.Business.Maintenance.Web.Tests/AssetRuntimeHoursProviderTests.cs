@@ -8,7 +8,54 @@ namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 public sealed class AssetRuntimeHoursProviderTests
 {
     [Fact]
-    public async Task Http_runtime_provider_does_not_query_fallback_when_oee_has_samples()
+    public async Task Http_runtime_provider_reads_industrial_telemetry_runtime_hours_endpoint()
+    {
+        var fallback = new CountingFallbackProvider(new AssetRuntimeHoursResult(99m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false));
+        var handler = new JsonResponseHandler("""
+            {
+              "data": {
+                "organizationId": "org-001",
+                "environmentId": "env-dev",
+                "deviceAssetId": "DEV-CNC-01",
+                "windowStartUtc": "2026-06-08T00:00:00Z",
+                "windowEndUtc": "2026-06-08T06:00:00Z",
+                "stateSampleCount": 3,
+                "totalRuntimeHours": 2.5,
+                "totalLoadingHours": 3,
+                "hasRuntimeSamples": true,
+                "daily": [
+                  {
+                    "businessDate": "2026-06-08",
+                    "runtimeHours": 2.5,
+                    "loadingHours": 3,
+                    "stateSampleCount": 3
+                  }
+                ]
+              },
+              "success": true,
+              "message": "",
+              "code": 0
+            }
+            """);
+        var provider = CreateProvider(fallback, handler);
+
+        var result = await provider.CalculateAsync(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            DateTimeOffset.Parse("2026-06-08T00:00:00Z"),
+            DateTimeOffset.Parse("2026-06-08T06:00:00Z"),
+            CancellationToken.None);
+
+        Assert.Equal(2.5m, result.RuntimeHours);
+        Assert.Equal(AssetRuntimeSources.Oee, result.RuntimeSource);
+        Assert.True(result.HasRuntimeSamples);
+        Assert.Equal(0, fallback.CallCount);
+        Assert.Contains("/api/business/v1/iiot/runtime-hours?", handler.LastRequestUri);
+    }
+
+    [Fact]
+    public async Task Http_runtime_provider_queries_fallback_when_runtime_hours_response_omits_total_runtime_hours()
     {
         var fallback = new CountingFallbackProvider(new AssetRuntimeHoursResult(99m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false));
         var provider = CreateProvider(fallback, """
@@ -41,14 +88,14 @@ public sealed class AssetRuntimeHoursProviderTests
             DateTimeOffset.Parse("2026-06-08T04:00:00Z"),
             CancellationToken.None);
 
-        Assert.Equal(1m, result.RuntimeHours);
-        Assert.Equal(AssetRuntimeSources.Oee, result.RuntimeSource);
-        Assert.True(result.HasRuntimeSamples);
-        Assert.Equal(0, fallback.CallCount);
+        Assert.Equal(99m, result.RuntimeHours);
+        Assert.Equal(AssetRuntimeSources.Fallback, result.RuntimeSource);
+        Assert.False(result.HasRuntimeSamples);
+        Assert.Equal(1, fallback.CallCount);
     }
 
     [Fact]
-    public async Task Http_runtime_provider_multiplies_oee_availability_by_loading_hours()
+    public async Task Http_runtime_provider_uses_total_runtime_hours_instead_of_legacy_oee_fields()
     {
         var fallback = new CountingFallbackProvider(new AssetRuntimeHoursResult(99m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false));
         var provider = CreateProvider(fallback, """
@@ -60,6 +107,9 @@ public sealed class AssetRuntimeHoursProviderTests
                 "windowStartUtc": "2026-06-08T00:00:00Z",
                 "windowEndUtc": "2026-06-08T06:00:00Z",
                 "stateSampleCount": 3,
+                "totalRuntimeHours": 2.25,
+                "totalLoadingHours": 3,
+                "hasRuntimeSamples": true,
                 "availabilityRate": 0.5,
                 "loadingRate": 0.5,
                 "performanceRate": 1,
@@ -82,7 +132,7 @@ public sealed class AssetRuntimeHoursProviderTests
             DateTimeOffset.Parse("2026-06-08T06:00:00Z"),
             CancellationToken.None);
 
-        Assert.Equal(1.5m, result.RuntimeHours);
+        Assert.Equal(2.25m, result.RuntimeHours);
         Assert.Equal(AssetRuntimeSources.Oee, result.RuntimeSource);
         Assert.True(result.HasRuntimeSamples);
         Assert.Equal(0, fallback.CallCount);
@@ -102,12 +152,9 @@ public sealed class AssetRuntimeHoursProviderTests
                 "windowStartUtc": "2026-06-08T00:00:00Z",
                 "windowEndUtc": "2026-06-08T04:00:00Z",
                 "stateSampleCount": 2,
-                "availabilityRate": 0.25,
-                "performanceRate": 1,
-                "qualityRate": 1,
-                "oeeRate": 0.25,
-                "performanceRateEstimated": true,
-                "qualityRateEstimated": true
+                "totalRuntimeHours": 1,
+                "totalLoadingHours": 2,
+                "hasRuntimeSamples": true
               },
               "success": true,
               "message": "",
@@ -225,7 +272,14 @@ public sealed class AssetRuntimeHoursProviderTests
         CountingFallbackProvider fallback,
         string responseJson)
     {
-        var httpClient = new HttpClient(new JsonResponseHandler(responseJson))
+        return CreateProvider(fallback, new JsonResponseHandler(responseJson));
+    }
+
+    private static HttpIndustrialTelemetryAssetRuntimeHoursProvider CreateProvider(
+        CountingFallbackProvider fallback,
+        JsonResponseHandler responseHandler)
+    {
+        var httpClient = new HttpClient(responseHandler)
         {
             BaseAddress = new Uri("https://industrial-telemetry.local"),
         };
@@ -270,10 +324,12 @@ public sealed class AssetRuntimeHoursProviderTests
 
     private sealed class JsonResponseHandler(string responseJson) : HttpMessageHandler
     {
+        public string? LastRequestUri { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            _ = request;
             _ = cancellationToken;
+            LastRequestUri = request.RequestUri?.PathAndQuery;
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(responseJson, Encoding.UTF8, "application/json"),

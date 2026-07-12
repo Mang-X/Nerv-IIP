@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ScheduleAssignmentContract } from '@nerv-iip/api-client'
-import { ButtonPro, TabsPro, TabsProContent, TabsProList, TabsProTrigger, toast } from '@nerv-iip/ui'
+import { Button, Tabs, TabsContent, TabsList, TabsTrigger, toast } from '@nerv-iip/ui'
 import { ListFilterIcon, PanelRightCloseIcon, PanelRightOpenIcon } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import type { EngineCommand, TaskDragPayload, TimeScale } from '../engine/engine'
@@ -148,13 +148,13 @@ async function onRelease() {
     />
 
     <div class="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
-      <TabsPro v-model="view">
-        <TabsProList>
-          <TabsProTrigger value="order">工单甘特</TabsProTrigger>
-          <TabsProTrigger value="resource">资源排产板</TabsProTrigger>
-        </TabsProList>
-      </TabsPro>
-      <ButtonPro
+      <Tabs v-model="view">
+        <TabsList>
+          <TabsTrigger value="order">工单甘特</TabsTrigger>
+          <TabsTrigger value="resource">资源排产板</TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <Button
         size="sm"
         variant="ghost"
         class="ml-auto h-8 gap-1.5"
@@ -163,7 +163,7 @@ async function onRelease() {
       >
         <ListFilterIcon aria-hidden="true" />
         图例
-      </ButtonPro>
+      </Button>
     </div>
 
     <div class="flex min-h-0 flex-1">
@@ -223,30 +223,30 @@ async function onRelease() {
         >
           <div class="flex items-center justify-between px-3 pt-2.5">
             <span class="text-xs font-semibold tracking-wide text-muted-foreground">详情与排程</span>
-            <ButtonPro size="icon" variant="ghost" class="size-7 text-muted-foreground" :tabindex="sidebarOpen ? 0 : -1" aria-label="收起侧栏" @click="sidebarOpen = false">
+            <Button size="icon" variant="ghost" class="size-7 text-muted-foreground" :tabindex="sidebarOpen ? 0 : -1" aria-label="收起侧栏" @click="sidebarOpen = false">
               <PanelRightCloseIcon class="size-4" aria-hidden="true" />
-            </ButtonPro>
+            </Button>
           </div>
 
           <!-- 选中详情(常驻,取代弹出抽屉) -->
           <TaskDetailPanel :task="selectedTask" @toggle-lock="onToggleLock" />
 
-          <TabsPro default-value="conflicts" class="flex min-h-0 flex-1 flex-col">
-            <TabsProList class="mx-3 mt-3">
-              <TabsProTrigger value="conflicts">冲突 {{ conflicts.length }}</TabsProTrigger>
-              <TabsProTrigger value="unscheduled">未排 {{ unscheduled.length }}</TabsProTrigger>
-              <TabsProTrigger value="changes">变更 {{ changes.length }}</TabsProTrigger>
-            </TabsProList>
-            <TabsProContent value="conflicts" class="min-h-0 flex-1">
+          <Tabs default-value="conflicts" class="flex min-h-0 flex-1 flex-col">
+            <TabsList class="mx-3 mt-3">
+              <TabsTrigger value="conflicts">冲突 {{ conflicts.length }}</TabsTrigger>
+              <TabsTrigger value="unscheduled">未排 {{ unscheduled.length }}</TabsTrigger>
+              <TabsTrigger value="changes">变更 {{ changes.length }}</TabsTrigger>
+            </TabsList>
+            <TabsContent value="conflicts" class="min-h-0 flex-1">
               <ConflictPanel :conflicts="conflicts" @select="focusTask" />
-            </TabsProContent>
-            <TabsProContent value="unscheduled" class="min-h-0 flex-1">
+            </TabsContent>
+            <TabsContent value="unscheduled" class="min-h-0 flex-1">
               <UnscheduledPanel :items="unscheduled" @fix="(o, op) => emit('fix', o, op)" />
-            </TabsProContent>
-            <TabsProContent value="changes" class="min-h-0 flex-1">
+            </TabsContent>
+            <TabsContent value="changes" class="min-h-0 flex-1">
               <ChangeSummaryPanel :changes="changes" @select="focusTask" />
-            </TabsProContent>
-          </TabsPro>
+            </TabsContent>
+          </Tabs>
         </div>
       </aside>
     </div>

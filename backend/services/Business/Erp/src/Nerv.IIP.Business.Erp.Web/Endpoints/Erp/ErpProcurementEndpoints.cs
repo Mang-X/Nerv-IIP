@@ -47,7 +47,9 @@ public sealed record CreatePurchaseRequisitionFromSuggestionRequest(
     DateOnly RequiredDate,
     string? IdempotencyKey = null);
 
-public sealed record CreatePurchaseRequisitionFromSuggestionResponse(PurchaseRequisitionId PurchaseRequisitionId);
+public sealed record CreatePurchaseRequisitionFromSuggestionResponse(
+    PurchaseRequisitionId PurchaseRequisitionId,
+    string RequisitionNo);
 
 public sealed record CreateRequestForQuotationRequest(
     string OrganizationId,
@@ -58,6 +60,25 @@ public sealed record CreateRequestForQuotationRequest(
     string? IdempotencyKey = null);
 
 public sealed record CreateRequestForQuotationResponse(RequestForQuotationId RequestForQuotationId);
+
+public sealed record ConvertPurchaseRequisitionsToPurchaseOrderRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<string> PurchaseRequisitionNos,
+    string? PurchaseOrderNo = null,
+    string? SupplierCode = null,
+    IReadOnlyCollection<string>? RfqSupplierCodes = null,
+    string? RfqNo = null,
+    string? IdempotencyKey = null,
+    string CurrencyCode = "CNY");
+
+public sealed record ConvertPurchaseRequisitionsToPurchaseOrderResponse(
+    string Status,
+    PurchaseOrderId? PurchaseOrderId = null,
+    string? PurchaseOrderNo = null,
+    string? RfqNo = null,
+    string? SupplierCode = null,
+    IReadOnlyCollection<ConvertedPurchaseOrderLineResult>? Lines = null);
 
 public sealed record ReceiveSupplierQuotationRequest(
     string OrganizationId,
@@ -81,6 +102,11 @@ public sealed record CreatePurchaseOrderRequest(
     string CurrencyCode = "CNY");
 
 public sealed record CreatePurchaseOrderResponse(PurchaseOrderId PurchaseOrderId);
+
+public sealed record RequestPurchaseOrderChangeRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, IReadOnlyCollection<PurchaseOrderLineChangeDraft> Lines, string? Reason = null, string StartedBy = "system:erp");
+public sealed record RequestPurchaseOrderChangeResponse(string ApprovalChainId);
+public sealed record ClosePurchaseOrderLineRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string LineNo, string Reason);
+public sealed record CancelPurchaseOrderRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string Reason);
 
 public sealed record RecordPurchaseReceiptRequest(
     string OrganizationId,
@@ -149,6 +175,14 @@ public sealed record ListRequestsForQuotationRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record ListPurchaseRequisitionsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed class CreatePurchaseRequisitionFromSuggestionEndpoint(ISender sender)
     : ErpEndpoint<CreatePurchaseRequisitionFromSuggestionRequest, ResponseData<CreatePurchaseRequisitionFromSuggestionResponse>>
 {
@@ -159,7 +193,7 @@ public sealed class CreatePurchaseRequisitionFromSuggestionEndpoint(ISender send
 
     public override async Task HandleAsync(CreatePurchaseRequisitionFromSuggestionRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreatePurchaseRequisitionFromSuggestionCommand(
+        var result = await sender.Send(new CreatePurchaseRequisitionFromSuggestionCommand(
             req.OrganizationId,
             req.EnvironmentId,
             req.RequisitionNo,
@@ -170,7 +204,7 @@ public sealed class CreatePurchaseRequisitionFromSuggestionEndpoint(ISender send
             req.Quantity,
             req.RequiredDate,
             req.IdempotencyKey), ct);
-        await Send.OkAsync(new CreatePurchaseRequisitionFromSuggestionResponse(id).AsResponseData(), cancellation: ct);
+        await Send.OkAsync(new CreatePurchaseRequisitionFromSuggestionResponse(result.PurchaseRequisitionId, result.RequisitionNo).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -186,6 +220,36 @@ public sealed class CreateRequestForQuotationEndpoint(ISender sender)
     {
         var id = await sender.Send(new CreateRequestForQuotationCommand(req.OrganizationId, req.EnvironmentId, req.RfqNo, req.SupplierCodes, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new CreateRequestForQuotationResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ConvertPurchaseRequisitionsToPurchaseOrderEndpoint(ISender sender)
+    : ErpEndpoint<ConvertPurchaseRequisitionsToPurchaseOrderRequest, ResponseData<ConvertPurchaseRequisitionsToPurchaseOrderResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureErpContract(ErpProcurementEndpointContracts.Get<ConvertPurchaseRequisitionsToPurchaseOrderEndpoint>());
+    }
+
+    public override async Task HandleAsync(ConvertPurchaseRequisitionsToPurchaseOrderRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ConvertPurchaseRequisitionsToPurchaseOrderCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.PurchaseRequisitionNos,
+            req.PurchaseOrderNo,
+            req.SupplierCode,
+            req.RfqSupplierCodes,
+            req.RfqNo,
+            req.IdempotencyKey,
+            req.CurrencyCode), ct);
+        await Send.OkAsync(new ConvertPurchaseRequisitionsToPurchaseOrderResponse(
+            result.Status.ToString(),
+            result.PurchaseOrderId,
+            result.PurchaseOrderNo,
+            result.RfqNo,
+            result.SupplierCode,
+            result.Lines).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -219,6 +283,21 @@ public sealed class ListRequestsForQuotationEndpoint(ISender sender)
     }
 }
 
+public sealed class ListPurchaseRequisitionsEndpoint(ISender sender)
+    : ErpEndpoint<ListPurchaseRequisitionsRequest, ResponseData<ListPurchaseRequisitionsResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureErpContract(ErpProcurementEndpointContracts.Get<ListPurchaseRequisitionsEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListPurchaseRequisitionsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListPurchaseRequisitionsQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class CreatePurchaseOrderEndpoint(ISender sender)
     : ErpEndpoint<CreatePurchaseOrderRequest, ResponseData<CreatePurchaseOrderResponse>>
 {
@@ -231,6 +310,40 @@ public sealed class CreatePurchaseOrderEndpoint(ISender sender)
     {
         var id = await sender.Send(new CreatePurchaseOrderCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.SupplierCode, req.SiteCode, req.Lines, req.IdempotencyKey, req.CurrencyCode), ct);
         await Send.OkAsync(new CreatePurchaseOrderResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class RequestPurchaseOrderChangeEndpoint(ISender sender)
+    : ErpEndpoint<RequestPurchaseOrderChangeRequest, ResponseData<RequestPurchaseOrderChangeResponse>>
+{
+    public override void Configure() => ConfigureErpContract(ErpProcurementEndpointContracts.Get<RequestPurchaseOrderChangeEndpoint>());
+
+    public override async Task HandleAsync(RequestPurchaseOrderChangeRequest req, CancellationToken ct)
+    {
+        var approvalChainId = await sender.Send(new RequestPurchaseOrderChangeCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.Lines, req.Reason, req.StartedBy), ct);
+        await Send.OkAsync(new RequestPurchaseOrderChangeResponse(approvalChainId).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ClosePurchaseOrderLineEndpoint(ISender sender) : ErpEndpoint<ClosePurchaseOrderLineRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpProcurementEndpointContracts.Get<ClosePurchaseOrderLineEndpoint>());
+
+    public override async Task HandleAsync(ClosePurchaseOrderLineRequest req, CancellationToken ct)
+    {
+        await sender.Send(new ClosePurchaseOrderLineCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.LineNo, req.Reason), ct);
+        await Send.OkAsync("closed".AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CancelPurchaseOrderEndpoint(ISender sender) : ErpEndpoint<CancelPurchaseOrderRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpProcurementEndpointContracts.Get<CancelPurchaseOrderEndpoint>());
+
+    public override async Task HandleAsync(CancelPurchaseOrderRequest req, CancellationToken ct)
+    {
+        await sender.Send(new CancelPurchaseOrderCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.Reason), ct);
+        await Send.OkAsync("cancelled".AsResponseData(), cancellation: ct);
     }
 }
 
@@ -365,10 +478,15 @@ public static class ErpProcurementEndpointContracts
     public static readonly IReadOnlyCollection<ErpEndpointContract> All =
     [
         new(typeof(CreatePurchaseRequisitionFromSuggestionEndpoint), "POST", "/api/business/v1/erp/purchase-requisitions/from-suggestion", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "createErpPurchaseRequisitionFromSuggestion"),
+        new(typeof(ListPurchaseRequisitionsEndpoint), "GET", "/api/business/v1/erp/purchase-requisitions", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "listErpPurchaseRequisitions"),
+        new(typeof(ConvertPurchaseRequisitionsToPurchaseOrderEndpoint), "POST", "/api/business/v1/erp/purchase-requisitions/convert-to-purchase-order", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "convertErpPurchaseRequisitionsToPurchaseOrder"),
         new(typeof(CreateRequestForQuotationEndpoint), "POST", "/api/business/v1/erp/rfqs", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "createErpRequestForQuotation"),
         new(typeof(ReceiveSupplierQuotationEndpoint), "POST", "/api/business/v1/erp/supplier-quotations", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "receiveErpSupplierQuotation"),
         new(typeof(ListRequestsForQuotationEndpoint), "GET", "/api/business/v1/erp/rfqs", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "listErpRequestsForQuotation"),
         new(typeof(CreatePurchaseOrderEndpoint), "POST", "/api/business/v1/erp/purchase-orders", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "createErpPurchaseOrder"),
+        new(typeof(RequestPurchaseOrderChangeEndpoint), "POST", "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/changes", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "requestErpPurchaseOrderChange"),
+        new(typeof(ClosePurchaseOrderLineEndpoint), "POST", "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/final-delivery", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "closeErpPurchaseOrderLineFinalDelivery"),
+        new(typeof(CancelPurchaseOrderEndpoint), "POST", "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/cancel", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "cancelErpPurchaseOrder"),
         new(typeof(RecordPurchaseReceiptEndpoint), "POST", "/api/business/v1/erp/purchase-receipts", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "recordErpPurchaseReceipt"),
         new(typeof(GetPurchaseReceiptSourceDocumentEndpoint), "GET", "/api/business/v1/erp/purchase-receipts/{purchaseReceiptNo}/source-document", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "getErpPurchaseReceiptSourceDocument"),
         new(typeof(RecordSupplierInvoiceEndpoint), "POST", "/api/business/v1/erp/supplier-invoices", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "recordErpSupplierInvoice"),

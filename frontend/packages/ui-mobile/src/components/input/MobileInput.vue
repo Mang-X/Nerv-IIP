@@ -55,13 +55,15 @@ const model = useVModel(props, 'modelValue', emits, {
 </template>
 
 <style scoped>
-.ds-minput {
-  transition:
-    border-color 0.15s var(--ease-out-quart, ease-out),
-    box-shadow 0.15s var(--ease-out-quart, ease-out);
-}
-.ds-minput:focus-within {
-  border-color: var(--brand);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--brand) 20%, transparent);
+@layer nv-components {
+  .ds-minput {
+    transition:
+      border-color 0.15s var(--nv-ease-out-quart, ease-out),
+      box-shadow 0.15s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-minput:focus-within {
+    border-color: var(--nv-brand);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--nv-brand) 20%, transparent);
+  }
 }
 </style>

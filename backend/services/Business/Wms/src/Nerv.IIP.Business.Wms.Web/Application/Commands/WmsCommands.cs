@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.BackorderOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
@@ -10,6 +12,13 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Commands;
+
+public sealed class WcsRetryOptions
+{
+    public int MaxRetryAttempts { get; init; } = WcsTask.MaxRetryAttempts;
+    public TimeSpan InitialRetryBackoff { get; init; } = TimeSpan.FromMinutes(1);
+    public int CircuitFailureThreshold { get; init; } = WcsTask.MaxRetryAttempts;
+}
 
 public sealed record WmsInboundLineInput(
     string LineNo,
@@ -21,7 +30,9 @@ public sealed record WmsInboundLineInput(
     string? SerialNo,
     string QualityStatus,
     string OwnerType,
-    string? OwnerId);
+    string? OwnerId,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);
 
 public sealed record WmsOutboundLineInput(
     string LineNo,
@@ -70,7 +81,7 @@ public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbCont
             request.SourceDocumentType,
             request.SourceDocumentId,
             request.SiteCode,
-            request.Lines.Select(x => new InboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.ReceivedQuantity, x.StagingLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId)));
+            request.Lines.Select(x => new InboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.ReceivedQuantity, x.StagingLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId, x.ProductionDate, x.ExpiryDate)));
         dbContext.InboundOrders.Add(order);
         await Task.CompletedTask;
         return order.Id;
@@ -195,49 +206,158 @@ public sealed class CreatePickingTaskCommandHandler(
 
         // Remote Inventory reservation and local WMS task persistence are not atomic; the stable
         // line-level idempotency key lets command retries recover the same reservation.
-        var inventoryReservationId = line.InventoryReservationId ?? (inventoryReservationClient is null
-            ? null
-            : (await inventoryReservationClient.ReserveAsync(
-                new WmsInventoryReservationRequest(
-                    outbound.OrganizationId,
-                    outbound.EnvironmentId,
-                    "wms",
-                    outbound.OutboundOrderNo,
-                    line.LineNo,
-                    WmsInventoryReservationIdempotencyKeys.ForPickingTask(outbound, line.LineNo),
-                    line.SkuCode,
-                    line.UomCode,
-                    outbound.SiteCode,
-                    request.FromLocationCode,
-                    line.LotNo,
-                    line.SerialNo,
-                    line.QualityStatus,
-                    line.OwnerType,
-                    line.OwnerId,
-                    request.Quantity),
-                cancellationToken)).ReservationId);
+        var reservation = line.InventoryReservationId is null && inventoryReservationClient is not null
+            ? await ReserveInventoryForPickingAsync(inventoryReservationClient, outbound, line, request.FromLocationCode, request.Quantity, cancellationToken)
+            : null;
+        var inventoryReservationId = line.InventoryReservationId ?? reservation?.ReservationId;
         var task = outbound.CreatePickingTask(
             request.TaskNo,
             request.LineNo,
             request.FromLocationCode,
             request.ToLocationCode,
             request.Quantity,
-            inventoryReservationId);
+            inventoryReservationId,
+            reservation?.LocationCode,
+            reservation?.LotNo,
+            reservation?.SerialNo);
         dbContext.WarehouseTasks.Add(task);
         return task.Id;
     }
+
+    private static async Task<PickingReservationResult> ReserveInventoryForPickingAsync(
+        IWmsInventoryReservationClient inventoryReservationClient,
+        OutboundOrder outbound,
+        OutboundOrderLine line,
+        string fromLocationCode,
+        decimal quantity,
+        CancellationToken cancellationToken)
+    {
+        var idempotencyKey = WmsInventoryReservationIdempotencyKeys.ForPickingTask(outbound, line.LineNo);
+        if (string.IsNullOrWhiteSpace(line.LotNo))
+        {
+            var fefo = await inventoryReservationClient.ReserveFefoAsync(
+                new WmsInventoryFefoReservationRequest(
+                    outbound.OrganizationId,
+                    outbound.EnvironmentId,
+                    "wms",
+                    outbound.OutboundOrderNo,
+                    line.LineNo,
+                    idempotencyKey,
+                    line.SkuCode,
+                    line.UomCode,
+                    outbound.SiteCode,
+                    line.QualityStatus,
+                    line.OwnerType,
+                    line.OwnerId,
+                    quantity,
+                    fromLocationCode),
+                cancellationToken);
+            if (fefo.Allocations.Count != 1)
+            {
+                await ReleaseRejectedFefoAllocationsAsync(inventoryReservationClient, fefo, cancellationToken);
+                throw new KnownException("Inventory FEFO reservation split the picking line; WMS split-pick execution is outside the current issue scope.");
+            }
+
+            var allocation = fefo.Allocations.Single();
+            if (allocation.ReservedQuantity != quantity)
+            {
+                await ReleaseRejectedFefoAllocationsAsync(inventoryReservationClient, fefo, cancellationToken);
+                throw new KnownException("Inventory FEFO reservation split the picking line; WMS split-pick execution is outside the current issue scope.");
+            }
+
+            return new PickingReservationResult(allocation.ReservationId, allocation.LocationCode, allocation.LotNo, allocation.SerialNo);
+        }
+
+        var reservation = await inventoryReservationClient.ReserveAsync(
+            new WmsInventoryReservationRequest(
+                outbound.OrganizationId,
+                outbound.EnvironmentId,
+                "wms",
+                outbound.OutboundOrderNo,
+                line.LineNo,
+                idempotencyKey,
+                line.SkuCode,
+                line.UomCode,
+                outbound.SiteCode,
+                fromLocationCode,
+                line.LotNo,
+                line.SerialNo,
+                line.QualityStatus,
+                line.OwnerType,
+                line.OwnerId,
+                quantity),
+            cancellationToken);
+        return new PickingReservationResult(reservation.ReservationId, fromLocationCode, reservation.LotNo ?? line.LotNo, line.SerialNo);
+    }
+
+    private static async Task ReleaseRejectedFefoAllocationsAsync(
+        IWmsInventoryReservationClient inventoryReservationClient,
+        WmsInventoryFefoReservationResult fefo,
+        CancellationToken cancellationToken)
+    {
+        foreach (var allocation in fefo.Allocations)
+        {
+            await inventoryReservationClient.ReleaseAsync(
+                new WmsInventoryReservationReleaseRequest(allocation.ReservationId, allocation.ReservedQuantity),
+                cancellationToken);
+        }
+    }
 }
+
+public sealed record PickingReservationResult(string ReservationId, string LocationCode, string? LotNo, string? SerialNo);
 
 public sealed record RecordWarehouseTaskProgressCommand(WarehouseTaskId WarehouseTaskId, decimal ExecutedQuantity) : ICommand;
 
-public sealed class RecordWarehouseTaskProgressCommandHandler(ApplicationDbContext dbContext)
+public sealed class RecordWarehouseTaskProgressCommandHandler(
+    ApplicationDbContext dbContext,
+    IWmsInventoryReservationClient? inventoryReservationClient = null,
+    ILogger<RecordWarehouseTaskProgressCommandHandler>? logger = null)
     : ICommandHandler<RecordWarehouseTaskProgressCommand>
 {
     public async Task Handle(RecordWarehouseTaskProgressCommand request, CancellationToken cancellationToken)
     {
         var task = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == request.WarehouseTaskId, cancellationToken)
             ?? throw new KnownException($"Warehouse task was not found: {request.WarehouseTaskId}");
+        var previouslyExecutedQuantity = task.ExecutedQuantity;
         task.RecordProgress(request.ExecutedQuantity);
+        if (inventoryReservationClient is null ||
+            task.TaskType != WarehouseTaskType.Picking ||
+            task.Status != WarehouseTaskStatus.Open ||
+            task.ExecutedQuantity <= previouslyExecutedQuantity)
+        {
+            return;
+        }
+
+        var reservationId = await dbContext.OutboundOrders
+            .Where(x => x.OrganizationId == task.OrganizationId
+                && x.EnvironmentId == task.EnvironmentId
+                && x.OutboundOrderNo == task.SourceOrderNo)
+            .SelectMany(x => x.Lines)
+            .Where(x => x.LineNo == task.SourceOrderLineNo)
+            .Select(x => x.InventoryReservationId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(reservationId))
+        {
+            try
+            {
+                await inventoryReservationClient.RenewAsync(
+                    new WmsInventoryReservationRenewalRequest(reservationId),
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                logger?.LogWarning(
+                    "Inventory reservation renewal timed out for open WMS picking task {WarehouseTaskId}; preserving recorded task progress.",
+                    task.Id);
+            }
+            catch (Exception exception) when (exception is HttpRequestException or KnownException)
+            {
+                logger?.LogWarning(
+                    exception,
+                    "Inventory reservation renewal failed for open WMS picking task {WarehouseTaskId}; preserving recorded task progress.",
+                    task.Id);
+            }
+        }
     }
 }
 
@@ -256,6 +376,35 @@ public sealed class CompleteWarehouseTaskCommandHandler(ApplicationDbContext dbC
 
 public sealed record CompleteOutboundOrderCommand(OutboundOrderId OutboundOrderId, string PackReviewNo, bool Passed, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
 
+public sealed record CloseBackorderOrderCommand(BackorderOrderId BackorderOrderId, string Reason) : ICommand;
+
+public sealed class CloseBackorderOrderCommandValidator : AbstractValidator<CloseBackorderOrderCommand>
+{
+    public CloseBackorderOrderCommandValidator()
+    {
+        RuleFor(x => x.BackorderOrderId).NotEmpty();
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(1000);
+    }
+}
+
+public sealed class CloseBackorderOrderCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CloseBackorderOrderCommand>
+{
+    public async Task Handle(CloseBackorderOrderCommand request, CancellationToken cancellationToken)
+    {
+        var backorder = await dbContext.BackorderOrders.SingleOrDefaultAsync(x => x.Id == request.BackorderOrderId, cancellationToken)
+            ?? throw new KnownException($"Backorder order was not found: {request.BackorderOrderId}");
+        try
+        {
+            backorder.Close(request.Reason);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+    }
+}
+
 public sealed class CompleteOutboundOrderCommandHandler(
     ApplicationDbContext dbContext,
     IWmsInventoryReservationClient? inventoryReservationClient = null)
@@ -265,11 +414,42 @@ public sealed class CompleteOutboundOrderCommandHandler(
     {
         var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.OutboundOrderId, cancellationToken)
             ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
+        if (outbound.Status == OutboundOrderStatus.Completed)
+        {
+            var existingRequest = await dbContext.InventoryMovementRequests
+                .Where(x => x.OrganizationId == outbound.OrganizationId
+                    && x.EnvironmentId == outbound.EnvironmentId
+                    && x.SourceDocumentId == outbound.OutboundOrderNo
+                    && (x.IdempotencyKey == request.IdempotencyKey || x.IdempotencyKey.StartsWith(request.IdempotencyKey + ":")))
+                .OrderBy(x => x.SourceDocumentLineId)
+                .FirstOrDefaultAsync(cancellationToken)
+                ?? throw new KnownException("Completed outbound order does not match the supplied idempotency key.");
+            return new CompleteWmsMovementResult(existingRequest.Id, null);
+        }
+
         var executedQuantitiesByLine = await GetExecutedPickingQuantitiesAsync(outbound, cancellationToken);
         EnsureInventoryClientAvailableForShortPickRelease(outbound, executedQuantitiesByLine);
         var movementRequests = outbound.CompletePackReview(request.PackReviewNo, request.Passed, request.IdempotencyKey, executedQuantitiesByLine);
         await ReleaseShortPickedReservationBalancesAsync(outbound, cancellationToken);
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
+        foreach (var line in outbound.Lines.Where(x => x.BackorderQuantity > 0))
+        {
+            var backorderNo = WmsText.StableOperationalCode("BO", outbound.OutboundOrderNo, line.LineNo);
+            var backorder = BackorderOrder.Create(
+                outbound.OrganizationId,
+                outbound.EnvironmentId,
+                backorderNo,
+                outbound.OutboundOrderNo,
+                line.LineNo,
+                line.SkuCode,
+                line.UomCode,
+                outbound.SiteCode,
+                line.PickLocationCode,
+                line.BackorderQuantity);
+            dbContext.BackorderOrders.Add(backorder);
+            dbContext.WarehouseTasks.Add(backorder.CreateReplenishmentRecommendation(WmsText.StableOperationalCode("RPL", outbound.OutboundOrderNo, line.LineNo)));
+        }
+
         return new CompleteWmsMovementResult(movementRequests.First().Id, null);
     }
 
@@ -387,6 +567,72 @@ public sealed class CancelOutboundOrderCommandHandler(
     }
 }
 
+public sealed record CancelInboundOrdersForSourceCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string SourceDocumentType,
+    string SourceDocumentId,
+    string Reason) : ICommand<int>;
+
+public sealed class CancelInboundOrdersForSourceCommandValidator : AbstractValidator<CancelInboundOrdersForSourceCommand>
+{
+    public CancelInboundOrdersForSourceCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SourceDocumentType).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(1000);
+    }
+}
+
+public sealed class CancelInboundOrdersForSourceCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CancelInboundOrdersForSourceCommand, int>
+{
+    public async Task<int> Handle(CancelInboundOrdersForSourceCommand request, CancellationToken cancellationToken)
+    {
+        var sourceDocumentType = WmsText.Required(request.SourceDocumentType, nameof(request.SourceDocumentType));
+        var sourceDocumentId = WmsText.Required(request.SourceDocumentId, nameof(request.SourceDocumentId));
+        var reason = WmsText.Required(request.Reason, nameof(request.Reason));
+        var inboundOrders = await dbContext.InboundOrders
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.SourceDocumentType == sourceDocumentType
+                && x.SourceDocumentId == sourceDocumentId
+                && x.Status == InboundOrderStatus.Open)
+            .ToArrayAsync(cancellationToken);
+        var inboundOrderNos = inboundOrders.Select(x => x.InboundOrderNo).ToArray();
+        var openPutawayTasks = await dbContext.WarehouseTasks
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.TaskType == WarehouseTaskType.Putaway
+                && inboundOrderNos.Contains(x.SourceOrderNo)
+                && x.Status == WarehouseTaskStatus.Open)
+            .ToArrayAsync(cancellationToken);
+        var openPutawayTaskIds = openPutawayTasks.Select(x => x.Id).ToArray();
+        var cancellableWcsTasks = await dbContext.WcsTasks
+            .Where(x => openPutawayTaskIds.Contains(x.WarehouseTaskId) && x.Status != WcsTaskStatus.Completed)
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var inboundOrder in inboundOrders)
+        {
+            inboundOrder.Cancel(reason);
+        }
+
+        foreach (var task in openPutawayTasks)
+        {
+            task.Cancel();
+        }
+
+        foreach (var task in cancellableWcsTasks)
+        {
+            task.Cancel();
+        }
+
+        return inboundOrders.Length;
+    }
+}
+
 public sealed record RetryOutboundInventoryPostingCommand(OutboundOrderId OutboundOrderId, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
 
 public sealed class RetryOutboundInventoryPostingCommandValidator : AbstractValidator<RetryOutboundInventoryPostingCommand>
@@ -493,7 +739,8 @@ public sealed class CreateCountExecutionCommandHandler(
             null,
             "qualified",
             "company",
-            null);
+            null,
+            WmsInventoryReservationIdempotencyKeys.ForCountExecution(count));
     }
 }
 
@@ -663,15 +910,21 @@ internal static class WmsInventoryReservationIdempotencyKeys
         return $"wms-retry-res:{StableHash(raw)}";
     }
 
+    public static string ForCountExecution(CountExecution count)
+    {
+        var raw = $"{count.OrganizationId}:{count.EnvironmentId}:{count.CountNo}";
+        return $"wms-count-freeze:{StableHash(raw)}";
+    }
+
     private static string StableHash(string raw)
     {
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw)))[..32].ToLowerInvariant();
     }
 }
 
-public sealed record DispatchWcsTaskCommand(WarehouseTaskId WarehouseTaskId, string AdapterType, string ExternalTaskId, string PayloadJson) : ICommand<WcsTaskId>;
+public sealed record DispatchWcsTaskCommand(WarehouseTaskId WarehouseTaskId, string AdapterType, string ExternalTaskId, string PayloadJson, string? DeviceId = null) : ICommand<WcsTaskId>;
 
-public sealed class DispatchWcsTaskCommandHandler(ApplicationDbContext dbContext)
+public sealed class DispatchWcsTaskCommandHandler(ApplicationDbContext dbContext, TimeProvider? timeProvider = null)
     : ICommandHandler<DispatchWcsTaskCommand, WcsTaskId>
 {
     public async Task<WcsTaskId> Handle(DispatchWcsTaskCommand request, CancellationToken cancellationToken)
@@ -679,18 +932,37 @@ public sealed class DispatchWcsTaskCommandHandler(ApplicationDbContext dbContext
         var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == request.WarehouseTaskId, cancellationToken)
             ?? throw new KnownException($"Warehouse task was not found: {request.WarehouseTaskId}");
         var adapterType = request.AdapterType.ToLowerInvariant();
+        var deviceId = string.IsNullOrWhiteSpace(request.DeviceId) ? adapterType : request.DeviceId.Trim();
+        var circuit = await dbContext.WcsDispatchCircuits.SingleOrDefaultAsync(
+            x => x.OrganizationId == warehouseTask.OrganizationId
+                && x.EnvironmentId == warehouseTask.EnvironmentId
+                && x.AdapterType == adapterType
+                && x.DeviceId == deviceId,
+            cancellationToken);
+        if (circuit?.IsOpen is true)
+        {
+            throw new KnownException(circuit.RejectionReason!);
+        }
+
         var existing = await dbContext.WcsTasks.SingleOrDefaultAsync(x => x.WarehouseTaskId == request.WarehouseTaskId && x.AdapterType == adapterType, cancellationToken);
         if (existing is not null)
         {
             if (existing.Status == WcsTaskStatus.Failed)
             {
-                existing.Retry(request.ExternalTaskId, request.PayloadJson);
+                try
+                {
+                    existing.Retry(request.ExternalTaskId, request.PayloadJson, (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime);
+                }
+                catch (InvalidOperationException exception)
+                {
+                    throw new KnownException(exception.Message);
+                }
             }
 
             return existing.Id;
         }
 
-        var task = WcsTask.Dispatch(warehouseTask.OrganizationId, warehouseTask.EnvironmentId, request.WarehouseTaskId, adapterType, request.ExternalTaskId, request.PayloadJson);
+        var task = WcsTask.Dispatch(warehouseTask.OrganizationId, warehouseTask.EnvironmentId, request.WarehouseTaskId, adapterType, request.ExternalTaskId, request.PayloadJson, deviceId);
         dbContext.WcsTasks.Add(task);
         return task.Id;
     }
@@ -718,6 +990,13 @@ public sealed class CompleteWcsTaskCommandHandler(
 
         var executedQuantity = ExtractExecutedQuantity(request.CompletionPayloadJson, out var diagnosticMessage);
         task.Complete(request.CompletionPayloadJson);
+        var circuit = await dbContext.WcsDispatchCircuits.SingleOrDefaultAsync(
+            x => x.OrganizationId == task.OrganizationId
+                && x.EnvironmentId == task.EnvironmentId
+                && x.AdapterType == task.AdapterType
+                && x.DeviceId == task.DeviceId,
+            cancellationToken);
+        circuit?.RecordSuccess();
         var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == task.WarehouseTaskId, cancellationToken)
             ?? throw new KnownException($"Warehouse task was not found: {task.WarehouseTaskId}");
         if (executedQuantity is null)
@@ -765,7 +1044,10 @@ public sealed class CompleteWcsTaskCommandHandler(
 
 public sealed record FailWcsTaskCommand(string OrganizationId, string EnvironmentId, string ExternalTaskId, string FailureCode, string FailureMessage) : ICommand;
 
-public sealed class FailWcsTaskCommandHandler(ApplicationDbContext dbContext)
+public sealed class FailWcsTaskCommandHandler(
+    ApplicationDbContext dbContext,
+    TimeProvider? timeProvider = null,
+    IOptions<WcsRetryOptions>? retryOptions = null)
     : ICommandHandler<FailWcsTaskCommand>
 {
     public async Task Handle(FailWcsTaskCommand request, CancellationToken cancellationToken)
@@ -776,6 +1058,37 @@ public sealed class FailWcsTaskCommandHandler(ApplicationDbContext dbContext)
                     && x.ExternalTaskId == request.ExternalTaskId,
                 cancellationToken)
             ?? throw new KnownException($"WCS task was not found: {request.ExternalTaskId}");
-        task.Fail(request.FailureCode, request.FailureMessage);
+        var now = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
+        var options = retryOptions?.Value ?? new WcsRetryOptions();
+        if (!task.Fail(request.FailureCode, request.FailureMessage, now, options.MaxRetryAttempts, options.InitialRetryBackoff))
+        {
+            return;
+        }
+        var circuit = await dbContext.WcsDispatchCircuits.SingleOrDefaultAsync(
+            x => x.OrganizationId == task.OrganizationId
+                && x.EnvironmentId == task.EnvironmentId
+                && x.AdapterType == task.AdapterType
+                && x.DeviceId == task.DeviceId,
+            cancellationToken);
+        if (circuit is null)
+        {
+            circuit = WcsDispatchCircuit.Create(task.OrganizationId, task.EnvironmentId, task.AdapterType, task.DeviceId);
+            dbContext.WcsDispatchCircuits.Add(circuit);
+        }
+
+        circuit.RecordFailure(now, options.CircuitFailureThreshold);
+    }
+}
+
+public sealed record ResetWcsDispatchCircuitCommand(string OrganizationId, string EnvironmentId, string AdapterType, string DeviceId) : ICommand;
+
+public sealed class ResetWcsDispatchCircuitCommandHandler(ApplicationDbContext dbContext, TimeProvider? timeProvider = null)
+    : ICommandHandler<ResetWcsDispatchCircuitCommand>
+{
+    public async Task Handle(ResetWcsDispatchCircuitCommand request, CancellationToken cancellationToken)
+    {
+        var circuit = await dbContext.WcsDispatchCircuits.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.AdapterType == request.AdapterType.ToLowerInvariant() && x.DeviceId == request.DeviceId, cancellationToken)
+            ?? throw new KnownException($"WCS dispatch circuit was not found for adapter '{request.AdapterType}' and device '{request.DeviceId}'.");
+        circuit.Reset((timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime);
     }
 }

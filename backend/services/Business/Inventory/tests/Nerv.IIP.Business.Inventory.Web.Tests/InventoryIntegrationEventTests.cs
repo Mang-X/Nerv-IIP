@@ -102,6 +102,35 @@ public sealed class InventoryIntegrationEventTests
         Assert.Contains("\"eventType\":\"inventory.StockMovementPostingFailed\"", json, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Inventory_reservation_release_requested_event_uses_required_adr0011_envelope_shape()
+    {
+        var integrationEvent = new InventoryReservationReleaseRequestedIntegrationEvent(
+            "evt-release-001",
+            InventoryIntegrationEventTypes.InventoryReservationReleaseRequested,
+            InventoryIntegrationEventVersions.V1,
+            DateTimeOffset.Parse("2026-07-03T08:00:00Z"),
+            InventoryIntegrationEventSources.BusinessMes,
+            "corr-001",
+            "WO-695",
+            "org-001",
+            "env-dev",
+            "system:mes",
+            "mes:work-order-cancelled-reservation-release:org-001:env-dev:WO-695",
+            new InventoryReservationReleaseRequestedPayload(
+                InventoryIntegrationEventSources.BusinessMes,
+                "WO-695",
+                ["MIR-001"],
+                "plan cancelled",
+                DateTimeOffset.Parse("2026-07-03T08:00:00Z")));
+        var json = JsonSerializer.Serialize(integrationEvent, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Equal("inventory.InventoryReservationReleaseRequested", integrationEvent.EventType);
+        Assert.Equal("business-mes", integrationEvent.Payload.ReservationSourceService);
+        Assert.Equal("WO-695", integrationEvent.Payload.SourceDocumentId);
+        Assert.Contains("\"eventType\":\"inventory.InventoryReservationReleaseRequested\"", json, StringComparison.Ordinal);
+    }
+
     private sealed class StubInventoryIntegrationEventContextAccessor(
         InventoryIntegrationEventContext? context = null)
         : IInventoryIntegrationEventContextAccessor

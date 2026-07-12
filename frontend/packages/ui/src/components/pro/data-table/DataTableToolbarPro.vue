@@ -207,115 +207,117 @@ onMounted(() => nextTick(measureSeg))
 </template>
 
 <style scoped>
-/* Count chip beside the title. */
-.ds-tb-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.375rem;
-  height: 1.375rem;
-  padding-inline: 0.4rem;
-  border-radius: 6px;
-  background-color: var(--muted);
-  color: var(--muted-foreground);
-  font-size: 0.75rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.ds-tb-clear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  color: var(--muted-foreground);
-  transition:
-    color 0.15s ease,
-    background-color 0.15s ease;
-}
-.ds-tb-clear:hover {
-  color: var(--foreground);
-  background-color: var(--muted);
-}
-
-/* Segmented quick-filter control. */
-.ds-tb-seg {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.125rem;
-  padding: 0.1875rem;
-  border-radius: 9px;
-  background-color: color-mix(in oklch, var(--muted) 70%, var(--card));
-  border: 1px solid var(--border);
-}
-/* Sliding active pill (measured from the active button). */
-.ds-tb-seg-ind {
-  position: absolute;
-  top: 0.1875rem;
-  bottom: 0.1875rem;
-  left: 0;
-  z-index: 0;
-  border-radius: 6px;
-  background-color: var(--card);
-  box-shadow:
-    0 1px 2px 0 color-mix(in oklch, black 12%, transparent),
-    inset 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent);
-  transition:
-    left 0.26s var(--ease-out-quart, ease-out),
-    width 0.26s var(--ease-out-quart, ease-out);
-}
-.ds-tb-seg-btn {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  height: 1.75rem;
-  padding-inline: 0.625rem;
-  border-radius: 6px;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--muted-foreground);
-  outline: none;
-  transition: color 0.15s var(--ease-out-quart, ease-out);
-}
-.ds-tb-seg-btn:hover:not([data-active]) {
-  color: var(--foreground);
-}
-.ds-tb-seg-btn:focus-visible {
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 45%, transparent);
-}
-.ds-tb-seg-btn[data-active] {
-  color: var(--foreground);
-}
-@media (prefers-reduced-motion: reduce) {
-  .ds-tb-seg-ind {
-    transition: none;
+@layer nv-components {
+  /* Count chip beside the title. */
+  .ds-tb-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.375rem;
+    height: 1.375rem;
+    padding-inline: 0.4rem;
+    border-radius: 6px;
+    background-color: var(--muted);
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
-}
-.ds-tb-seg-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.125rem;
-  height: 1.125rem;
-  padding-inline: 0.25rem;
-  border-radius: 9999px;
-  background-color: color-mix(in oklch, var(--muted-foreground) 18%, transparent);
-  color: var(--muted-foreground);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.ds-tb-seg-btn[data-active] .ds-tb-seg-count {
-  background-color: color-mix(in oklch, var(--brand) 16%, transparent);
-  color: var(--brand-strong);
-}
 
-@media (prefers-reduced-motion: reduce) {
+  .ds-tb-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    color: var(--muted-foreground);
+    transition:
+      color 0.15s ease,
+      background-color 0.15s ease;
+  }
+  .ds-tb-clear:hover {
+    color: var(--foreground);
+    background-color: var(--muted);
+  }
+
+  /* Segmented quick-filter control. */
+  .ds-tb-seg {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.125rem;
+    padding: 0.1875rem;
+    border-radius: 9px;
+    background-color: color-mix(in oklch, var(--muted) 70%, var(--card));
+    border: 1px solid var(--border);
+  }
+  /* Sliding active pill (measured from the active button). */
+  .ds-tb-seg-ind {
+    position: absolute;
+    top: 0.1875rem;
+    bottom: 0.1875rem;
+    left: 0;
+    z-index: 0;
+    border-radius: 6px;
+    background-color: var(--card);
+    box-shadow:
+      0 1px 2px 0 color-mix(in oklch, black 12%, transparent),
+      inset 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent);
+    transition:
+      left 0.26s var(--nv-ease-out-quart, ease-out),
+      width 0.26s var(--nv-ease-out-quart, ease-out);
+  }
   .ds-tb-seg-btn {
-    transition: none;
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 1.75rem;
+    padding-inline: 0.625rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    outline: none;
+    transition: color 0.15s var(--nv-ease-out-quart, ease-out);
+  }
+  .ds-tb-seg-btn:hover:not([data-active]) {
+    color: var(--foreground);
+  }
+  .ds-tb-seg-btn:focus-visible {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 45%, transparent);
+  }
+  .ds-tb-seg-btn[data-active] {
+    color: var(--foreground);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-tb-seg-ind {
+      transition: none;
+    }
+  }
+  .ds-tb-seg-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.125rem;
+    height: 1.125rem;
+    padding-inline: 0.25rem;
+    border-radius: 9999px;
+    background-color: color-mix(in oklch, var(--muted-foreground) 18%, transparent);
+    color: var(--muted-foreground);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .ds-tb-seg-btn[data-active] .ds-tb-seg-count {
+    background-color: color-mix(in oklch, var(--nv-brand) 16%, transparent);
+    color: var(--nv-brand-strong);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ds-tb-seg-btn {
+      transition: none;
+    }
   }
 }
 </style>

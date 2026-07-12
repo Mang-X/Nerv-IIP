@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import {
-  SelectPro,
-  SelectProContent,
-  SelectProItem,
-  SelectProTrigger,
-  SelectProValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@nerv-iip/ui'
 import { computed, ref, watch } from 'vue'
 import type { EngineCommand, TaskDragPayload, TimeScale } from '../engine/engine'
@@ -53,12 +53,12 @@ defineExpose({ command })
       class="flex items-center gap-2 border-b border-border/50 px-4 py-2"
     >
       <span class="text-xs font-medium text-muted-foreground">分组维度</span>
-      <SelectPro v-model="groupBy">
-        <SelectProTrigger class="h-7 w-28 border-border/70 text-xs" aria-label="分组维度"><SelectProValue /></SelectProTrigger>
-        <SelectProContent>
-          <SelectProItem v-for="d in dimensions" :key="d.key" :value="d.key">{{ d.label }}</SelectProItem>
-        </SelectProContent>
-      </SelectPro>
+      <Select v-model="groupBy">
+        <SelectTrigger class="h-7 w-28 border-border/70 text-xs" aria-label="分组维度"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem v-for="d in dimensions" :key="d.key" :value="d.key">{{ d.label }}</SelectItem>
+        </SelectContent>
+      </Select>
       <span class="text-xs text-muted-foreground">·  共 {{ laneCount }} 条泳道</span>
     </div>
     <div class="min-h-0 flex-1">

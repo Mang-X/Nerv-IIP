@@ -1,1 +1,1 @@
-export { default as AppShellInset } from './AppShellInset.vue'
+export { default as NvAppShellInset } from './AppShellInset.vue'

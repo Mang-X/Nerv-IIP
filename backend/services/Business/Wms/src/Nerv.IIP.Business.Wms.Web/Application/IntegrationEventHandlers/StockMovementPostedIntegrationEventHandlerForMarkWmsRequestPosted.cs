@@ -27,7 +27,7 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkWmsRequestP
         await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Inventory.StockMovementPostedIntegrationEvent", Group = ConsumerName)]
+    [CapSubscribe(nameof(StockMovementPostedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(StockMovementPostedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         return HandleAsync(integrationEvent, cancellationToken);

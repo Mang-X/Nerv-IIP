@@ -14,6 +14,7 @@
     "@nerv-iip/api-client": "workspace:*",
     "@nerv-iip/app-shell": "workspace:*",
     "@nerv-iip/auth": "workspace:*",
+    "@nerv-iip/business-core": "workspace:*",
     "@nerv-iip/scheduling": "workspace:*",
     "@nerv-iip/ui": "workspace:*",
     "@pinia/colada": "1.3.0",

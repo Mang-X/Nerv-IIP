@@ -8,7 +8,7 @@ public sealed class StockLedgerEntityTypeConfiguration : IEntityTypeConfiguratio
     {
         builder.ToTable("stock_ledgers", tableBuilder =>
         {
-            tableBuilder.HasComment("Inventory current stock ledger balances by SKU, UOM, site, location, lot, serial, quality and owner dimensions.");
+            tableBuilder.HasComment("Inventory current stock ledger balances by SKU, UOM, site, location, lot, serial, expiry, quality and owner dimensions.");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_ledgers_location_code_format", "location_code");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_ledgers_sku_code_format", "sku_code");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_ledgers_site_code_format", "site_code");
@@ -27,6 +27,8 @@ public sealed class StockLedgerEntityTypeConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.QualityStatus).HasColumnName("quality_status").IsRequired().HasMaxLength(50).HasComment("Quality status carried by stock facts: unrestricted, quality, restricted or blocked.");
         builder.Property(x => x.OwnerType).HasColumnName("owner_type").IsRequired().HasMaxLength(50).HasComment("Stock ownership type such as company, customer or supplier.");
         builder.Property(x => x.OwnerId).HasColumnName("owner_id").HasMaxLength(100).HasComment("Optional public owner reference id.");
+        builder.Property(x => x.ProductionDate).HasColumnName("production_date").HasComment("Optional batch production date captured from receipt or production completion.");
+        builder.Property(x => x.ExpiryDate).HasColumnName("expiry_date").HasComment("Optional batch expiry date used by expiry alerts and FEFO allocation.");
         builder.Property(x => x.OnHandQuantity).HasColumnName("on_hand_quantity").IsRequired().HasPrecision(18, 6).HasComment("Current on-hand stock quantity.");
         builder.Property(x => x.ReservedQuantity).HasColumnName("reserved_quantity").IsRequired().HasPrecision(18, 6).HasComment("Current reserved stock quantity held by Inventory reservations.");
         builder.Property(x => x.MovingAverageUnitCost).HasColumnName("moving_average_unit_cost").IsRequired().HasPrecision(18, 6).HasComment("Current moving-average unit cost for this ledger dimension.");
@@ -38,6 +40,7 @@ public sealed class StockLedgerEntityTypeConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.RowVersion).HasColumnName("row_version").HasConversion(x => x.VersionNumber, x => new RowVersion(x)).IsConcurrencyToken().HasComment("Optimistic row version for concurrent stock balance updates.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the ledger was last changed.");
         builder.Ignore(x => x.AppliedMovements);
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SkuCode, x.UomCode, x.SiteCode, x.LocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SkuCode, x.UomCode, x.SiteCode, x.LocationCode, x.LotNo, x.SerialNo, x.ProductionDate, x.ExpiryDate, x.QualityStatus, x.OwnerType, x.OwnerId }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SiteCode, x.SkuCode, x.ExpiryDate });
     }
 }

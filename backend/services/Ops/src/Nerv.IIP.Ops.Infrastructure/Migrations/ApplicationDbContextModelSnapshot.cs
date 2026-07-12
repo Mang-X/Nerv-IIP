@@ -152,6 +152,10 @@ namespace Nerv.IIP.Ops.Infrastructure.Migrations
                         .HasColumnType("character varying(64)")
                         .HasComment("Operation task identifier.");
 
+                    b.Property<string>("OutputJson")
+                        .HasColumnType("text")
+                        .HasComment("JSON connector execution output and device receipt metadata produced by Connector Host; additive optional keys are compatible, removing or changing key semantics requires Ops contract versioning.");
+
                     b.Property<DateTimeOffset>("StartedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasComment("Attempt start time in UTC.");
@@ -348,7 +352,7 @@ namespace Nerv.IIP.Ops.Infrastructure.Migrations
                     b.Property<string>("ParameterSchemaJson")
                         .IsRequired()
                         .HasColumnType("text")
-                        .HasComment("JSON schema describing accepted operation parameters.");
+                        .HasComment("JSON schema produced by Ops operation type registration and consumed by Gateway or Connector Host clients to validate operation parameters; additive optional schema fields are compatible, required field or semantic changes require Ops contract versioning.");
 
                     b.Property<bool>("RequiresApproval")
                         .HasColumnType("boolean")

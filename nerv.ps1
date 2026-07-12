@@ -105,6 +105,7 @@ Platform services:
   5120 BusinessScheduling
   5125 BusinessConsole
   5126 BusinessPDA
+  5128 Screen
   5180 DesignSystem
 
 Infrastructure services:

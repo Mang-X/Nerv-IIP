@@ -22,7 +22,18 @@ public sealed record ApprovalTemplateStepInput(
     string ApproverRef,
     int? DueInHours,
     string? CompletionPolicy = null,
-    string? ConditionExpression = null);
+    string? ConditionExpression = null,
+    ApprovalRoutingConditionInput? Condition = null);
+
+public sealed record ApprovalRoutingConditionInput(
+    decimal? MinimumAmount = null,
+    decimal? MaximumAmount = null,
+    IReadOnlyCollection<string>? DocumentTypes = null,
+    IReadOnlyCollection<string>? OrganizationIds = null,
+    IReadOnlyCollection<string>? DepartmentIds = null)
+{
+    public ApprovalRoutingCondition ToDomain() => new(MinimumAmount, MaximumAmount, DocumentTypes, OrganizationIds, DepartmentIds);
+}
 
 public sealed class CreateOrUpdateApprovalTemplateCommandValidator : AbstractValidator<CreateOrUpdateApprovalTemplateCommand>
 {
@@ -44,6 +55,14 @@ public sealed class CreateOrUpdateApprovalTemplateCommandValidator : AbstractVal
                 .MaximumLength(200)
                 .Must(ApprovalConditionMatcher.IsValid)
                 .WithMessage("ConditionExpression must be empty or use supported key=value syntax: documentType=<value> or sourceService=<value>.");
+            step.RuleFor(x => x).Must(x => x.Condition is null || string.IsNullOrWhiteSpace(x.ConditionExpression))
+                .WithMessage("Use either structured Condition or legacy ConditionExpression, not both.");
+            step.RuleFor(x => x.Condition).Must(condition =>
+            {
+                if (condition is null) return true;
+                try { condition.ToDomain().Validate(); return true; }
+                catch (InvalidOperationException) { return false; }
+            }).WithMessage("Structured approval condition contains an invalid amount range or empty dimension value.");
             step.RuleFor(x => x.ApproverType).RequiredApprovalCode(50);
             step.RuleFor(x => x.ApproverRef).RequiredApprovalCode(150);
             step.RuleFor(x => x.DueInHours).GreaterThan(0).When(x => x.DueInHours.HasValue);
@@ -65,7 +84,8 @@ public sealed class CreateOrUpdateApprovalTemplateCommandHandler(ApplicationDbCo
                 x.ApproverRef,
                 x.DueInHours,
                 x.CompletionPolicy ?? ApprovalCompletionPolicies.All,
-                x.ConditionExpression))
+                x.ConditionExpression,
+                x.Condition?.ToDomain()))
             .ToArray();
         var template = await dbContext.ApprovalTemplates
             .Include(x => x.Steps)

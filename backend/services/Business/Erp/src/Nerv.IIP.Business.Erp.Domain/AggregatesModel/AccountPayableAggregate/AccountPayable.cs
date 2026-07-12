@@ -47,16 +47,18 @@ public sealed class AccountPayable : Entity<AccountPayableId>, IAggregateRoot
     public string SupplierCode { get; private set; } = string.Empty;
     public decimal Amount { get; private set; }
     public decimal PaidAmount { get; private set; }
+    public decimal DebitNoteAmount { get; private set; }
     public decimal LocalAmount { get; private set; }
     public decimal LocalPaidAmount { get; private set; }
+    public decimal LocalDebitNoteAmount { get; private set; }
     public string CurrencyCode { get; private set; } = string.Empty;
     public decimal ExchangeRate { get; private set; }
     public DateOnly InvoiceDate { get; private set; }
     public DateOnly DueDate { get; private set; }
     public string PaymentTermCode { get; private set; } = string.Empty;
     public DateTime CreatedAtUtc { get; private set; }
-    public decimal OpenAmount => Amount - PaidAmount;
-    public decimal LocalOpenAmount => LocalAmount - LocalPaidAmount;
+    public decimal OpenAmount => Amount - PaidAmount - DebitNoteAmount;
+    public decimal LocalOpenAmount => LocalAmount - LocalPaidAmount - LocalDebitNoteAmount;
 
     public static AccountPayable Create(
         string organizationId,
@@ -84,6 +86,18 @@ public sealed class AccountPayable : Entity<AccountPayableId>, IAggregateRoot
 
         PaidAmount += amount;
         LocalPaidAmount += amount * ExchangeRate;
+    }
+
+    public void ApplyDebitNote(decimal amount)
+    {
+        _ = ErpText.Positive(amount, nameof(amount));
+        if (amount > OpenAmount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(amount), amount, "Debit note amount cannot exceed open payable amount.");
+        }
+
+        DebitNoteAmount += amount;
+        LocalDebitNoteAmount += amount * ExchangeRate;
     }
 
     public string GetAgingBucket(DateOnly asOfDate)

@@ -35,6 +35,32 @@ public interface IGatewayNotificationClient
         GatewayNotificationRequestContext context,
         CancellationToken cancellationToken);
 
+    Task<NotificationDeadLetterListResponse> ListDeadLettersAsync(
+        GatewayNotificationRequestContext context,
+        CancellationToken cancellationToken);
+
+    Task<NotificationDeadLetterMetricsResponse> GetDeadLetterMetricsAsync(
+        GatewayNotificationRequestContext context,
+        CancellationToken cancellationToken);
+
+    Task<NotificationDeadLetterDetailResponse> GetDeadLetterAsync(
+        GatewayNotificationRequestContext context,
+        CancellationToken cancellationToken);
+
+    Task<NotificationDeadLetterReplayResponse> ReplayDeadLetterAsync(
+        GatewayNotificationRequestContext context,
+        CancellationToken cancellationToken);
+
+    Task<NotificationDeadLetterBatchReplayResponse> ReplayDeadLettersAsync(
+        GatewayNotificationRequestContext context,
+        ReplayNotificationDeadLetterBatchRequest request,
+        CancellationToken cancellationToken);
+
+    Task<NotificationDeadLetterDetailResponse> IgnoreDeadLetterAsync(
+        GatewayNotificationRequestContext context,
+        IgnoreNotificationDeadLetterRequest request,
+        CancellationToken cancellationToken);
+
     Task<NotificationIntentResponse> SubmitIntentAsync(
         GatewayNotificationRequestContext context,
         SubmitNotificationIntentRequest request,
@@ -48,6 +74,21 @@ public interface IGatewayNotificationClient
     Task<IReadOnlyCollection<MarkNotificationMessageReadResponse>> MarkMessagesReadAsync(
         GatewayNotificationRequestContext context,
         MarkNotificationMessagesReadRequest request,
+        CancellationToken cancellationToken);
+
+    Task<NotificationPreferenceResponse> UpsertPreferenceAsync(
+        GatewayNotificationRequestContext context,
+        UpsertNotificationPreferenceRequest request,
+        CancellationToken cancellationToken);
+
+    Task<NotificationSubscriptionResponse> UpsertSubscriptionAsync(
+        GatewayNotificationRequestContext context,
+        UpsertNotificationSubscriptionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<NotificationRecipientChannelBindingResponse> UpsertRecipientChannelBindingAsync(
+        GatewayNotificationRequestContext context,
+        UpsertNotificationRecipientChannelBindingRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -69,6 +110,62 @@ public sealed class HttpGatewayNotificationClient(HttpClient httpClient, IIntern
             context,
             HttpMethod.Get,
             () => null,
+            cancellationToken);
+
+    public Task<NotificationDeadLetterListResponse> ListDeadLettersAsync(
+        GatewayNotificationRequestContext context,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<NotificationDeadLetterListResponse>(
+            context,
+            HttpMethod.Get,
+            () => null,
+            cancellationToken);
+
+    public Task<NotificationDeadLetterMetricsResponse> GetDeadLetterMetricsAsync(
+        GatewayNotificationRequestContext context,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<NotificationDeadLetterMetricsResponse>(
+            context,
+            HttpMethod.Get,
+            () => null,
+            cancellationToken);
+
+    public Task<NotificationDeadLetterDetailResponse> GetDeadLetterAsync(
+        GatewayNotificationRequestContext context,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<NotificationDeadLetterDetailResponse>(
+            context,
+            HttpMethod.Get,
+            () => null,
+            cancellationToken);
+
+    public Task<NotificationDeadLetterReplayResponse> ReplayDeadLetterAsync(
+        GatewayNotificationRequestContext context,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<NotificationDeadLetterReplayResponse>(
+            context,
+            HttpMethod.Post,
+            () => null,
+            cancellationToken);
+
+    public Task<NotificationDeadLetterBatchReplayResponse> ReplayDeadLettersAsync(
+        GatewayNotificationRequestContext context,
+        ReplayNotificationDeadLetterBatchRequest request,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<NotificationDeadLetterBatchReplayResponse>(
+            context,
+            HttpMethod.Post,
+            () => JsonContent.Create(request),
+            cancellationToken);
+
+    public Task<NotificationDeadLetterDetailResponse> IgnoreDeadLetterAsync(
+        GatewayNotificationRequestContext context,
+        IgnoreNotificationDeadLetterRequest request,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<NotificationDeadLetterDetailResponse>(
+            context,
+            HttpMethod.Post,
+            () => JsonContent.Create(request),
             cancellationToken);
 
     public Task<NotificationIntentResponse> SubmitIntentAsync(
@@ -96,6 +193,36 @@ public sealed class HttpGatewayNotificationClient(HttpClient httpClient, IIntern
         MarkNotificationMessagesReadRequest request,
         CancellationToken cancellationToken) =>
         SendForJsonAsync<IReadOnlyCollection<MarkNotificationMessageReadResponse>>(
+            context,
+            HttpMethod.Post,
+            () => JsonContent.Create(request),
+            cancellationToken);
+
+    public Task<NotificationPreferenceResponse> UpsertPreferenceAsync(
+        GatewayNotificationRequestContext context,
+        UpsertNotificationPreferenceRequest request,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<NotificationPreferenceResponse>(
+            context,
+            HttpMethod.Post,
+            () => JsonContent.Create(request),
+            cancellationToken);
+
+    public Task<NotificationSubscriptionResponse> UpsertSubscriptionAsync(
+        GatewayNotificationRequestContext context,
+        UpsertNotificationSubscriptionRequest request,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<NotificationSubscriptionResponse>(
+            context,
+            HttpMethod.Post,
+            () => JsonContent.Create(request),
+            cancellationToken);
+
+    public Task<NotificationRecipientChannelBindingResponse> UpsertRecipientChannelBindingAsync(
+        GatewayNotificationRequestContext context,
+        UpsertNotificationRecipientChannelBindingRequest request,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<NotificationRecipientChannelBindingResponse>(
             context,
             HttpMethod.Post,
             () => JsonContent.Create(request),

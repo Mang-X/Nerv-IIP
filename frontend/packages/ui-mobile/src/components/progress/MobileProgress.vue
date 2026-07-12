@@ -31,10 +31,7 @@ const fillClass: Record<Tone, string> = {
 </script>
 
 <template>
-  <div
-    data-slot="progress"
-    :class="cn('flex items-center gap-2.5', props.class)"
-  >
+  <div data-slot="progress" :class="cn('flex items-center gap-2.5', props.class)">
     <div
       class="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-muted"
       role="progressbar"
@@ -58,12 +55,14 @@ const fillClass: Record<Tone, string> = {
 </template>
 
 <style scoped>
-.ds-progress-fill {
-  transition: width 0.4s var(--ease-out-quart, ease-out);
-}
-@media (prefers-reduced-motion: reduce) {
+@layer nv-components {
   .ds-progress-fill {
-    transition: none;
+    transition: width 0.4s var(--nv-ease-out-quart, ease-out);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ds-progress-fill {
+      transition: none;
+    }
   }
 }
 </style>

@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.Iam;
+using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.Auth;
 
@@ -23,13 +24,18 @@ public sealed record BusinessGatewayAuthorizationResult(
     string? PrincipalId,
     string? PrincipalType,
     string? LoginName,
-    string? DenialReason)
+    string? DenialReason,
+    AuthorizationDataScope? DataScope = null)
 {
-    public static BusinessGatewayAuthorizationResult Allowed(string principalId, string principalType, string loginName) =>
-        new(true, principalId, principalType, loginName, null);
+    public static BusinessGatewayAuthorizationResult Allowed(
+        string principalId,
+        string principalType,
+        string loginName,
+        AuthorizationDataScope? dataScope = null) =>
+        new(true, principalId, principalType, loginName, null, dataScope);
 
     public static BusinessGatewayAuthorizationResult Forbidden(string reason) =>
-        new(false, null, null, null, reason);
+        new(false, null, null, null, reason, null);
 }
 
 public interface IBusinessGatewayAuthorizationClient
@@ -38,6 +44,19 @@ public interface IBusinessGatewayAuthorizationClient
         string bearerToken,
         BusinessGatewayPermissionRequirement requirement,
         CancellationToken cancellationToken);
+
+    Task<BusinessGatewayAuthorizationResult> CheckAsync(
+        string bearerToken,
+        BusinessGatewayPermissionRequirement requirement,
+        BusinessGatewayAuthorizationContinuityMode continuityMode,
+        CancellationToken cancellationToken) =>
+        CheckAsync(bearerToken, requirement, cancellationToken);
+}
+
+public enum BusinessGatewayAuthorizationContinuityMode
+{
+    ReadCacheAllowed,
+    RealtimeRequired
 }
 
 public static class BusinessGatewayPermissions
@@ -50,6 +69,7 @@ public static class BusinessGatewayPermissions
     public const string InventoryLedgerRead = "business.inventory.ledger.read";
     public const string InventoryMovementsCreate = "business.inventory.movements.create";
     public const string InventoryCountsManage = "business.inventory.counts.manage";
+    public const string InventoryExpiredStockOverride = "business.inventory.expired-stock.override";
     public const string QualityInspectionRecordsRead = "business.quality.inspection-records.read";
     public const string QualityInspectionRecordsCreate = "business.quality.inspection-records.create";
     public const string QualityNcrRead = "business.quality.ncr.read";
@@ -70,6 +90,9 @@ public static class BusinessGatewayPermissions
     public const string EngineeringProductionVersionsManage = "business.engineering.production-versions.manage";
     public const string PlanningDemandsRead = "business.planning.demands.read";
     public const string PlanningDemandsManage = "business.planning.demands.manage";
+    public const string PlanningMpsRead = "business.planning.mps.read";
+    public const string PlanningMpsManage = "business.planning.mps.manage";
+    public const string PlanningMpsRelease = "business.planning.mps.release";
     public const string PlanningMrpRead = "business.planning.mrp.read";
     public const string PlanningMrpRun = "business.planning.mrp.run";
     public const string PlanningSuggestionsManage = "business.planning.suggestions.manage";
@@ -81,6 +104,9 @@ public static class BusinessGatewayPermissions
     public const string IiotAlarmsRead = "business.iiot.alarms.read";
     public const string IiotAlarmsWrite = "business.iiot.alarms.write";
     public const string IiotAlarmRulesManage = "business.iiot.alarm-rules.manage";
+    public const string IiotDeviceControlWrite = "business.iiot.device-control.write";
+    public const string IiotDeviceControlManage = "business.iiot.device-control.manage";
+    public const string IiotDeviceControlRead = "business.iiot.device-control.read";
     public const string MaintenanceWorkOrdersRead = "business.maintenance.work-orders.read";
     public const string MaintenanceWorkOrdersManage = "business.maintenance.work-orders.manage";
     public const string MaintenancePlansRead = "business.maintenance.plans.read";
@@ -132,7 +158,7 @@ public static class BusinessGatewayPermissions
 
 public sealed class BusinessGatewayAuthorizationOptions
 {
-    public int AuthorizationCacheTtlSeconds { get; set; } = 15;
+    public int AuthorizationCacheTtlSeconds { get; set; } = 10;
 
     public string AuthorizationCheckPath { get; set; } = "/internal/iam/v1/authorization/check";
 }
@@ -140,18 +166,35 @@ public sealed class BusinessGatewayAuthorizationOptions
 public sealed class HttpBusinessGatewayAuthorizationClient(
     HttpClient httpClient,
     IAppCache cache,
-    IOptions<BusinessGatewayAuthorizationOptions> options) : IBusinessGatewayAuthorizationClient
+    IOptions<BusinessGatewayAuthorizationOptions> options,
+    BusinessGatewayDownstreamHealthState healthState) : IBusinessGatewayAuthorizationClient
 {
     private TimeSpan AuthorizationCacheTtl => TimeSpan.FromSeconds(
         options.Value.AuthorizationCacheTtlSeconds > 0
             ? options.Value.AuthorizationCacheTtlSeconds
-            : 15);
+            : 10);
 
     public async Task<BusinessGatewayAuthorizationResult> CheckAsync(
         string bearerToken,
         BusinessGatewayPermissionRequirement requirement,
+        CancellationToken cancellationToken) =>
+        await CheckAsync(
+            bearerToken,
+            requirement,
+            BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed,
+            cancellationToken);
+
+    public async Task<BusinessGatewayAuthorizationResult> CheckAsync(
+        string bearerToken,
+        BusinessGatewayPermissionRequirement requirement,
+        BusinessGatewayAuthorizationContinuityMode continuityMode,
         CancellationToken cancellationToken)
     {
+        if (continuityMode == BusinessGatewayAuthorizationContinuityMode.RealtimeRequired)
+        {
+            return await CheckRemoteAsync(bearerToken, requirement, cancellationToken);
+        }
+
         var cacheKey = BuildCacheKey(bearerToken, requirement);
         return await cache.GetOrCreateAsync(
             cacheKey,
@@ -173,23 +216,34 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
             requirement.ResourceType,
             requirement.ResourceId));
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        try
         {
-            return BusinessGatewayAuthorizationResult.Forbidden("unauthorized");
-        }
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                healthState.RecordSuccess("IAM");
+                return BusinessGatewayAuthorizationResult.Forbidden("unauthorized");
+            }
 
-        if (response.StatusCode == HttpStatusCode.Forbidden)
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                healthState.RecordSuccess("IAM");
+                return BusinessGatewayAuthorizationResult.Forbidden("forbidden");
+            }
+
+            response.EnsureSuccessStatusCode();
+            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<AuthorizationCheckResponse>>(cancellationToken);
+            var body = envelope?.Data;
+            healthState.RecordSuccess("IAM");
+            return body is not null && body.Allowed
+                ? BusinessGatewayAuthorizationResult.Allowed(body.PrincipalId!, body.PrincipalType!, body.LoginName!, body.DataScope)
+                : BusinessGatewayAuthorizationResult.Forbidden(body?.DenialReason ?? "forbidden");
+        }
+        catch (Exception ex) when (IsDownstreamFailure(ex, cancellationToken))
         {
-            return BusinessGatewayAuthorizationResult.Forbidden("forbidden");
+            healthState.RecordFailure("IAM", "iam-unavailable");
+            throw;
         }
-
-        response.EnsureSuccessStatusCode();
-        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<AuthorizationCheckResponse>>(cancellationToken);
-        var body = envelope?.Data;
-        return body is not null && body.Allowed
-            ? BusinessGatewayAuthorizationResult.Allowed(body.PrincipalId!, body.PrincipalType!, body.LoginName!)
-            : BusinessGatewayAuthorizationResult.Forbidden(body?.DenialReason ?? "forbidden");
     }
 
     private static string BuildCacheKey(string bearerToken, BusinessGatewayPermissionRequirement requirement)
@@ -207,7 +261,7 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
             requirement.EnvironmentId,
             resourceType,
             resourceId,
-            "v1");
+            "v2");
     }
 
     private string AuthorizationCheckPath()
@@ -217,6 +271,11 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
             ? "/internal/iam/v1/authorization/check"
             : configuredPath;
     }
+
+    private static bool IsDownstreamFailure(Exception ex, CancellationToken requestCancellationToken) =>
+        ex is HttpRequestException
+            || ex is TimeoutException
+            || ex is TaskCanceledException && !requestCancellationToken.IsCancellationRequested;
 
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 }
@@ -255,7 +314,25 @@ public static class BusinessGatewayAuthorization
             return null;
         }
 
-        var result = await auth.CheckAsync(bearerToken, requirement, cancellationToken);
+        BusinessGatewayAuthorizationResult result;
+        try
+        {
+            result = await auth.CheckAsync(
+                bearerToken,
+                requirement,
+                ContinuityModeFor(context.Request.Method),
+                cancellationToken);
+        }
+        catch (Exception ex) when (IsAuthorizationUnavailable(ex, cancellationToken))
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                context,
+                StatusCodes.Status503ServiceUnavailable,
+                "Authorization service unavailable.",
+                cancellationToken);
+            return null;
+        }
+
         if (!result.IsAllowed)
         {
             await ResponseDataEndpointResults.WriteErrorAsync(
@@ -283,4 +360,14 @@ public static class BusinessGatewayAuthorization
 
         return null;
     }
+
+    private static BusinessGatewayAuthorizationContinuityMode ContinuityModeFor(string method) =>
+        HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method)
+            ? BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed
+            : BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    private static bool IsAuthorizationUnavailable(Exception ex, CancellationToken requestCancellationToken) =>
+        ex is HttpRequestException
+            || ex is TimeoutException
+            || ex is TaskCanceledException && !requestCancellationToken.IsCancellationRequested;
 }
