@@ -18,7 +18,10 @@ public sealed record SchedulePlanSummaryResponse(
     DateTimeOffset? ReleasedAtUtc,
     int AssignmentCount,
     int ConflictCount,
-    int UnscheduledOperationCount);
+    int UnscheduledOperationCount,
+    bool IsInvalidated = false,
+    string? LatestInvalidationReasonCode = null,
+    DateTimeOffset? LatestInvalidatedAtUtc = null);
 
 public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListSchedulePlansQuery, IReadOnlyCollection<SchedulePlanSummaryResponse>>
@@ -31,7 +34,7 @@ public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext
         var pageIndex = Math.Max(request.PageIndex ?? 0, 0);
         var pageSize = Math.Clamp(request.PageSize ?? DefaultPageSize, 1, MaxPageSize);
 
-        return await dbContext.SchedulePlans.AsNoTracking()
+        var plans = await dbContext.SchedulePlans.AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
             .OrderByDescending(x => x.GeneratedAtUtc)
             .Skip(pageIndex * pageSize)
@@ -46,6 +49,49 @@ public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext
                 x.Conflicts.Count,
                 x.UnscheduledOperations.Count))
             .ToListAsync(cancellationToken);
+
+        if (plans.Count == 0)
+        {
+            return plans;
+        }
+
+        // Invalidation is a separate append-only projection keyed by plan id (no navigation from SchedulePlan).
+        // Resolve the latest invalidation per plan with a bounded second query + in-memory grouping so the
+        // projection stays translatable on every provider (the query handler tests run on EF InMemory, which
+        // does not translate correlated OrderBy + FirstOrDefault subqueries).
+        var planIds = plans.Select(x => x.PlanId).ToArray();
+        var invalidations = await dbContext.SchedulePlanInvalidations.AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                planIds.Contains(x.PlanId))
+            .Select(x => new { x.PlanId, x.ReasonCode, x.OccurredAtUtc, x.RecordedAtUtc })
+            .ToListAsync(cancellationToken);
+        if (invalidations.Count == 0)
+        {
+            return plans;
+        }
+
+        var latestByPlan = invalidations
+            .GroupBy(x => x.PlanId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderByDescending(x => x.RecordedAtUtc)
+                    .ThenByDescending(x => x.OccurredAtUtc)
+                    .First(),
+                StringComparer.Ordinal);
+
+        return plans
+            .Select(plan => latestByPlan.TryGetValue(plan.PlanId, out var latest)
+                ? plan with
+                {
+                    IsInvalidated = true,
+                    LatestInvalidationReasonCode = latest.ReasonCode,
+                    LatestInvalidatedAtUtc = latest.OccurredAtUtc,
+                }
+                : plan)
+            .ToList();
     }
 }
 

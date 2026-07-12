@@ -87,6 +87,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public decimal PlannedQuantity { get; private set; }
     public bool RequiresQualityInspection { get; private set; }
     public string? OperationCode { get; private set; }
+    public string? ScheduleInvalidationReasonCode { get; private set; }
 
     public string OperationTaskId => OperationTaskIdValue;
 
@@ -190,7 +191,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         ExistingEndUtc = null;
     }
 
-    public void MarkScheduleInvalidated()
+    public void MarkScheduleInvalidated(string? reasonCode = null)
     {
         if (Status is OperationTaskLifecycleStatus.InProgress or
             OperationTaskLifecycleStatus.Paused or
@@ -201,6 +202,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         }
 
         Status = OperationTaskLifecycleStatus.ScheduleInvalidated;
+        ScheduleInvalidationReasonCode = NormalizeOptional(reasonCode);
     }
 
     public void Pause(DateTimeOffset pausedAtUtc)
@@ -322,6 +324,9 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         {
             Status = OperationTaskLifecycleStatus.Queued;
         }
+
+        // A released schedule assignment re-plans the task, so any prior invalidation reason no longer applies.
+        ScheduleInvalidationReasonCode = null;
     }
 
     private static string NormalizeAlternatives(IReadOnlyCollection<string> values)
