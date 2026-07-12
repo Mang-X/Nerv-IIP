@@ -1122,6 +1122,60 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
+    public async Task Shelve_fingerprint_does_not_collide_when_separator_appears_in_shelvedBy_or_reason()
+    {
+        // Reviewer P1b: a naive `|` join makes ("a|b","c") and ("a","b|c") identical. The length-prefixed
+        // canonical form must treat them as DIFFERENT payloads → same key + different payload = conflict,
+        // NOT a silent replay.
+        await using var dbContext = CreateDbContext(nameof(Shelve_fingerprint_does_not_collide_when_separator_appears_in_shelvedBy_or_reason));
+        var t0 = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var alarm = AlarmEvent.Raise("org-001", "env-dev", "DEV-01", "C", "critical", t0, "a1");
+        dbContext.AlarmEvents.Add(alarm);
+        await dbContext.SaveChangesAsync();
+        var handler = new ShelveAlarmCommandHandler(dbContext);
+
+        await handler.Handle(new ShelveAlarmCommand(alarm.Id, "org-001", "env-dev", t0.AddMinutes(2), 30, "a|b", "c", "key-sep"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<KnownException>(async () =>
+        {
+            await handler.Handle(new ShelveAlarmCommand(alarm.Id, "org-001", "env-dev", t0.AddMinutes(2), 30, "a", "b|c", "key-sep"), CancellationToken.None);
+            await dbContext.SaveChangesAsync();
+        });
+        Assert.Contains("different payload", ex.Message);
+    }
+
+    [Fact]
+    public async Task List_alarm_events_keeps_a_total_order_for_cleared_rows_identical_in_every_sort_field()
+    {
+        // Reviewer P2: the active-unique index is filtered to status <> cleared, so historical CLEARED
+        // alarms can legitimately share device + alarmCode + externalAlarmId AND RaisedAtUtc. Only the
+        // primary key distinguishes them; the Id tie-breaker must keep pages non-overlapping/complete.
+        await using var dbContext = CreateDbContext(nameof(List_alarm_events_keeps_a_total_order_for_cleared_rows_identical_in_every_sort_field));
+        var raisedAt = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var clearedAt = raisedAt.AddMinutes(5);
+        var cleared = Enumerable.Range(1, 5).Select(_ =>
+        {
+            var a = AlarmEvent.Raise("org-001", "env-dev", "DEV-DUP", "SAME", "critical", raisedAt, "EXT-DUP");
+            a.Clear(clearedAt, "op");
+            return a;
+        }).ToArray();
+        dbContext.AlarmEvents.AddRange(cleared);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ListAlarmEventsQueryHandler(dbContext);
+        var p1 = await handler.Handle(new ListAlarmEventsQuery("org-001", "env-dev", null, null, 0, 2), CancellationToken.None);
+        var p2 = await handler.Handle(new ListAlarmEventsQuery("org-001", "env-dev", null, null, 2, 2), CancellationToken.None);
+        var p3 = await handler.Handle(new ListAlarmEventsQuery("org-001", "env-dev", null, null, 4, 2), CancellationToken.None);
+
+        var paged = p1.Items.Concat(p2.Items).Concat(p3.Items).Select(x => x.AlarmEventId).ToArray();
+        Assert.Equal(5, paged.Length);
+        Assert.Equal(5, paged.Distinct().Count()); // no cross-page duplicate/omission despite identical sort fields
+        var p1Again = await handler.Handle(new ListAlarmEventsQuery("org-001", "env-dev", null, null, 0, 2), CancellationToken.None);
+        Assert.Equal(p1.Items.Select(x => x.AlarmEventId), p1Again.Items.Select(x => x.AlarmEventId)); // deterministic
+    }
+
+    [Fact]
     public void Alarm_escalation_scheduler_reads_configured_scopes()
     {
         var configuration = new ConfigurationBuilder()

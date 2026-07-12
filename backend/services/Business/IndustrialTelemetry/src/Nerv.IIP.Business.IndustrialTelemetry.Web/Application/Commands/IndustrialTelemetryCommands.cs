@@ -1086,13 +1086,16 @@ public sealed class IndustrialTelemetryIdempotentIngestionBehavior<TRequest, TRe
 
     private static bool IsIdempotentIngestionCommand(TRequest request)
     {
-        return request is RecordTelemetrySampleCommand or RaiseAlarmCommand or CreateDeviceControlCommandCommand;
+        // ShelveAlarmCommand is included so a concurrent duplicate that loses the alarm_shelve_idempotency
+        // unique-index race is retried instead of surfacing an unhandled DbUpdateException (500): the retried
+        // handler finds the winner's record and returns a replay (same payload) or a clear conflict.
+        return request is RecordTelemetrySampleCommand or RaiseAlarmCommand or CreateDeviceControlCommandCommand or ShelveAlarmCommand;
     }
 
     private static bool IsIdempotentIngestionUniqueConflict(DbUpdateException exception, ApplicationDbContext context)
     {
         // Keep detection entity-scoped so provider-specific index names do not leak into the application layer.
-        return exception.Entries.Any(entry => entry.Entity is TelemetryRawSample or TelemetrySummary or DeviceStateSnapshot or AlarmEvent or DeviceControlCommand) &&
+        return exception.Entries.Any(entry => entry.Entity is TelemetryRawSample or TelemetrySummary or DeviceStateSnapshot or AlarmEvent or DeviceControlCommand or AlarmShelveIdempotency) &&
             EnumerateExceptions(exception).Any(inner =>
                 IsPostgreSqlUniqueConflict(inner) ||
                 IsSqliteUniqueConflict(context, inner) ||
@@ -1454,14 +1457,20 @@ public sealed class ShelveAlarmCommandHandler(ApplicationDbContext dbContext)
     }
 
     // Canonical fingerprint of the shelve payload (everything that defines the operation's effect).
+    // Length-prefixed so the free-text ShelvedBy/Reason (which may themselves contain any separator)
+    // cannot collide: ("a|b","c") and ("a","b|c") encode to distinct, unambiguously-parseable strings.
+    // Fields are normalized exactly as the domain applies them (trim; empty reason == null == "").
     private static string ComputeShelveFingerprint(ShelveAlarmCommand request)
     {
-        var canonical = string.Join(
-            '|',
+        var parts = new[]
+        {
             request.ShelvedAtUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
             request.DurationMinutes.ToString(CultureInfo.InvariantCulture),
-            request.ShelvedBy ?? string.Empty,
-            IndustrialTelemetryText.Optional(request.Reason) ?? string.Empty);
+            IndustrialTelemetryText.Optional(request.ShelvedBy) ?? string.Empty,
+            IndustrialTelemetryText.Optional(request.Reason) ?? string.Empty,
+        };
+        var canonical = string.Concat(parts.Select(part =>
+            string.Concat(part.Length.ToString(CultureInfo.InvariantCulture), ":", part)));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 }

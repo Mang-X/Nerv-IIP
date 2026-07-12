@@ -406,6 +406,87 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
             "IndustrialTelemetry idempotent ingestion behavior must wrap unit of work save to catch DbUpdateException.");
     }
 
+    [Fact]
+    public void Idempotent_behavior_wraps_unit_of_work_save_for_shelve_command()
+    {
+        // Reviewer P1a: the shelve command must also be wrapped by the idempotent behavior BEFORE the UoW
+        // save so a concurrent alarm_shelve_idempotency unique-index violation is caught + retried into a
+        // graceful replay/conflict instead of an unhandled DbUpdateException (500).
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            });
+        using var scope = factory.Services.CreateScope();
+
+        var behaviorTypes = scope.ServiceProvider
+            .GetServices<IPipelineBehavior<ShelveAlarmCommand, AlarmEventId>>()
+            .Select(behavior => behavior.GetType())
+            .ToArray();
+        var idempotentBehaviorIndex = Array.FindIndex(behaviorTypes, IsIdempotentIngestionBehavior);
+        var unitOfWorkBehaviorIndex = Array.FindIndex(
+            behaviorTypes,
+            type => type.FullName?.Contains("UnitOfWorkBehavior", StringComparison.Ordinal) is true);
+
+        Assert.True(idempotentBehaviorIndex >= 0, "Idempotent behavior must be registered for ShelveAlarmCommand.");
+        Assert.True(unitOfWorkBehaviorIndex >= 0, "Unit of work behavior must be registered.");
+        Assert.True(idempotentBehaviorIndex < unitOfWorkBehaviorIndex, "Idempotent behavior must wrap the UoW save for shelve.");
+    }
+
+    [RealPostgresFact]
+    public async Task Concurrent_shelve_with_same_key_replays_the_loser_on_postgres()
+    {
+        var postgresConnectionString = Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
+        await using var database = await IndustrialTelemetryPostgresDatabase.CreateAsync(postgresConnectionString);
+        var t0 = new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        AlarmEventId alarmId;
+        await using (var setup = database.CreateContext())
+        {
+            var alarm = AlarmEvent.Raise("org-001", "env-dev", "DEV-SHELVE-PG", "C", "critical", t0, "ext-shelve-pg");
+            setup.AlarmEvents.Add(alarm);
+            await setup.SaveChangesAsync();
+            alarmId = alarm.Id;
+        }
+        var command = new ShelveAlarmCommand(alarmId, "org-001", "env-dev", t0.AddMinutes(2), 30, "op", null, "concurrent-key");
+
+        // Loser context stages record + shelve while BOTH still see no idempotency record.
+        await using var loser = database.CreateContext();
+        var loserHandler = new ShelveAlarmCommandHandler(loser);
+        var behavior = new IndustrialTelemetryIdempotentIngestionBehavior<ShelveAlarmCommand, AlarmEventId>(loser);
+        var staged = await loserHandler.Handle(command, CancellationToken.None);
+
+        // Winner commits first (inserts the row that owns the unique key).
+        await using (var winner = database.CreateContext())
+        {
+            await new ShelveAlarmCommandHandler(winner).Handle(command, CancellationToken.None);
+            await winner.SaveChangesAsync();
+        }
+
+        // Loser's save now hits the unique violation → behavior clears + retries → retry finds the winner's
+        // record with the same fingerprint → replay (no exception, no double apply).
+        var attempts = 0;
+        var result = await behavior.Handle(
+            command,
+            async ct =>
+            {
+                attempts++;
+                var r = attempts == 1 ? staged : await loserHandler.Handle(command, ct);
+                await loser.SaveChangesAsync(ct);
+                return r;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(2, attempts); // retried exactly once after the unique conflict
+        Assert.Equal(alarmId, result); // replayed the winner's result, not a 500
+
+        await using var assertionContext = database.CreateContext();
+        Assert.Equal(1, await assertionContext.AlarmShelveIdempotencies.CountAsync()); // single record; concurrency collapsed
+        var shelvedAlarm = await assertionContext.AlarmEvents.SingleAsync();
+        Assert.Equal("shelved", shelvedAlarm.Status);
+        Assert.Equal(t0.AddMinutes(2), shelvedAlarm.ShelvedAtUtc); // exactly one apply (the winner's window)
+    }
+
     private static bool IsIdempotentIngestionBehavior(Type type)
     {
         return type.IsGenericType &&
