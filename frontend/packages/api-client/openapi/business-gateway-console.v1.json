@@ -33175,6 +33175,22 @@
           "operationTaskNo": {
             "type": "string",
             "nullable": true
+          },
+          "reversedReportNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "reversalReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "workOrderStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "reversalReportNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

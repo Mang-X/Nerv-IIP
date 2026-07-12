@@ -37,7 +37,12 @@ public sealed record ProductionReportFact(
     string? ReversalReason = null,
     string? InventoryPostingFailureCode = null,
     string? InventoryPostingFailureMessage = null,
-    DateTimeOffset? InventoryPostingFailedAtUtc = null);
+    DateTimeOffset? InventoryPostingFailedAtUtc = null,
+    // 报工所属工单当前状态,供 Console 报工冲销按钮按工单生命周期分级(已关闭工单禁用冲销,MAN-444/#798)。
+    string? WorkOrderStatus = null,
+    // 冲销本报工的负向记录单号(服务端逐行反查,若本报工已被冲销则非空)。供 Console「已冲销」判定与
+    // 原单→冲销单互链**跨服务端分页稳定**,避免前端只从当前页推断已冲销状态(MAN-444/#798 review)。
+    string? ReversalReportNo = null);
 
 public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListProductionReportsQuery, ListProductionReportsResponse>
@@ -125,6 +130,18 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
                         && consumption.InventoryPostingFailureCode != null)
                     .OrderByDescending(consumption => consumption.InventoryPostingFailedAtUtc)
                     .Select(consumption => consumption.InventoryPostingFailedAtUtc)
+                    .FirstOrDefault(),
+                dbContext.WorkOrders
+                    .Where(workOrder => workOrder.OrganizationId == x.OrganizationId
+                        && workOrder.EnvironmentId == x.EnvironmentId
+                        && workOrder.WorkOrderIdValue == x.WorkOrderId)
+                    .Select(workOrder => workOrder.Status)
+                    .FirstOrDefault(),
+                dbContext.ProductionReports
+                    .Where(reversal => reversal.OrganizationId == x.OrganizationId
+                        && reversal.EnvironmentId == x.EnvironmentId
+                        && reversal.ReversedReportNo == x.ReportNo)
+                    .Select(reversal => reversal.ReportNo)
                     .FirstOrDefault()))
             .ToArrayAsync(cancellationToken);
         return new ListProductionReportsResponse(items, total);

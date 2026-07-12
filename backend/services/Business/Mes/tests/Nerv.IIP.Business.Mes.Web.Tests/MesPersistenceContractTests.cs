@@ -2160,6 +2160,82 @@ public sealed class MesPersistenceContractTests
         Assert.Empty(traceability.Edges);
     }
 
+    // 跨边界事实(MAN-444/#798 review):冲销 handler fingerprint = ReportNo + Reason + ReversedAtUtc,
+    // ReverseProductionReportEndpoint 对缺失 reversedAtUtc 每次补新的 TimeProvider.GetUtcNow()。故幂等重放
+    // 要求前端**同时冻结** idempotencyKey 与 reversedAtUtc:同 key + 同 reversedAtUtc 才走 IsIdempotentReplay;
+    // 同 key + 不同 reversedAtUtc 会因 fingerprint 变被 CodeAllocator 判为冲突(KnownException),而非重放。
+    [Fact]
+    public async Task Reverse_production_report_idempotent_replay_requires_stable_reversed_at()
+    {
+        var services = CreateServices(nameof(Reverse_production_report_idempotent_replay_requires_stable_reversed_at));
+        var now = DateTimeOffset.Parse("2026-07-03T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var codingService = new MesCodingService();
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-REV-IDEM", "SKU-IDEM", "PV-IDEM", 10m, 20, now.AddHours(8), "PCS");
+        workOrder.MarkReleased();
+        workOrder.Start(now);
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-REV-IDEM",
+            "OP-IDEM-10",
+            OperationTaskLifecycleStatus.InProgress,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            now,
+            null));
+        await dbContext.SaveChangesAsync();
+
+        var reportResult = await new RecordProductionReportCommandHandler(dbContext, codingService).Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-REV-IDEM",
+                "OP-IDEM-10",
+                4m,
+                0m,
+                true,
+                now.AddMinutes(30),
+                "report-rev-idem"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var reversedAt = now.AddMinutes(50);
+        var first = await new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+            new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt, "reverse-idem-key"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        // 同 key + 同 reversedAtUtc → 幂等重放:返回同一冲销单,不产生第二条冲销记录,工单不二次回退
+        var replay = await new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+            new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt, "reverse-idem-key"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(first.ReportNo, replay.ReportNo);
+        Assert.Equal(1, await dbContext.ProductionReports.CountAsync(x => x.ReversedReportNo == reportResult.ReportNo));
+        var workOrderAfterReplay = await dbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-REV-IDEM");
+        Assert.Equal(0m, workOrderAfterReplay.CompletedQuantity);
+
+        // 同 key + **不同** reversedAtUtc → fingerprint 变 → CodeAllocator 判冲突(KnownException),不会误重放
+        await Assert.ThrowsAsync<KnownException>(() =>
+            new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+                new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt.AddSeconds(1), "reverse-idem-key"),
+                CancellationToken.None));
+
+        // 同 key + 同 reversedAtUtc + **不同 reason** → fingerprint 同样变 → 冲突。故前端必须把 reason 也冻结进意图。
+        await Assert.ThrowsAsync<KnownException>(() =>
+            new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+                new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "wrong-quantity", reversedAt, "reverse-idem-key"),
+                CancellationToken.None));
+    }
+
     [Fact]
     public async Task Reverse_production_report_rejects_closed_work_order_and_duplicate_reversal()
     {
