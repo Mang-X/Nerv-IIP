@@ -5,7 +5,11 @@
  * 确保 PDA 与 PC 文案一致。每个 label 函数大小写不敏感，未知/空值给中文兜底。
  */
 
-function lookup(map: Record<string, string>, value: string | null | undefined, fallback: string): string {
+function lookup(
+  map: Record<string, string>,
+  value: string | null | undefined,
+  fallback: string,
+): string {
   if (value == null) return fallback
   const normalized = value.trim().toLowerCase()
   if (normalized.length === 0) return fallback
@@ -22,6 +26,41 @@ export const alarmSeverityLabels: Record<string, string> = {
 
 export function alarmSeverityLabel(value: string | null | undefined): string {
   return lookup(alarmSeverityLabels, value, '未知级别')
+}
+
+/**
+ * 报警生命周期状态（镜像 IndustrialTelemetry `AlarmEvent.Status`：raised/acknowledged/shelved/cleared）。
+ * PDA 报警确认/搁置（MAN-456）与 PC 共用同一 code→中文 口径。
+ */
+export const alarmLifecycleStatusLabels: Record<string, string> = {
+  raised: '未确认',
+  acknowledged: '已确认',
+  shelved: '已搁置',
+  cleared: '已清除',
+}
+
+export function alarmLifecycleStatusLabel(value: string | null | undefined): string {
+  return lookup(alarmLifecycleStatusLabels, value, '未知状态')
+}
+
+/**
+ * 报警列表排序权重：未确认 > 已搁置 > 已确认 > 已清除（MAN-456 交互稿）。
+ * 数值越小越靠前；未知状态排在已知状态之后、已清除之前，避免吞掉待处理项。
+ */
+export function alarmLifecycleSortWeight(value: string | null | undefined): number {
+  const normalized = value?.trim().toLowerCase()
+  switch (normalized) {
+    case 'raised':
+      return 0
+    case 'shelved':
+      return 1
+    case 'acknowledged':
+      return 2
+    case 'cleared':
+      return 4
+    default:
+      return 3
+  }
 }
 
 /** 设备运行状态（镜像 PC equipment/index.vue + [deviceAssetId].vue）。 */

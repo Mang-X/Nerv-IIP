@@ -121,7 +121,7 @@ public sealed record PostAlarmEventRequest(
     string? UnitCode = null);
 public sealed record PostAlarmEventResponse(AlarmEventId AlarmEventId);
 public sealed record AcknowledgeAlarmRequest(string OrganizationId, string EnvironmentId, DateTimeOffset AcknowledgedAtUtc, string AcknowledgedBy);
-public sealed record ShelveAlarmRequest(string OrganizationId, string EnvironmentId, DateTimeOffset ShelvedAtUtc, int DurationMinutes, string ShelvedBy, string? Reason);
+public sealed record ShelveAlarmRequest(string OrganizationId, string EnvironmentId, DateTimeOffset ShelvedAtUtc, int DurationMinutes, string ShelvedBy, string? Reason, string? IdempotencyKey = null);
 public sealed record UnshelveAlarmRequest(string OrganizationId, string EnvironmentId, DateTimeOffset? UnshelvedAtUtc);
 public sealed record RunAlarmEscalationsRequest(
     string OrganizationId,
@@ -357,7 +357,7 @@ public sealed class ShelveAlarmEndpoint(ISender sender) : IndustrialTelemetryEnd
 
     public override async Task HandleAsync(ShelveAlarmRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new ShelveAlarmCommand(AlarmEventRouteIds.Parse(Route<string>("alarmEventId")), req.OrganizationId, req.EnvironmentId, req.ShelvedAtUtc, req.DurationMinutes, req.ShelvedBy, req.Reason), ct);
+        var id = await sender.Send(new ShelveAlarmCommand(AlarmEventRouteIds.Parse(Route<string>("alarmEventId")), req.OrganizationId, req.EnvironmentId, req.ShelvedAtUtc, req.DurationMinutes, req.ShelvedBy, req.Reason, req.IdempotencyKey), ct);
         await Send.OkAsync(new AlarmLifecycleResponse(id).AsResponseData(), cancellation: ct);
     }
 }

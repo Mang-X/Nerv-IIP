@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { PDA_TASK_KINDS } from '@nerv-iip/business-core'
-import { NvAppShellMobile, NvScanBar } from '@nerv-iip/ui-mobile'
+import { useUnacknowledgedAlarmCount } from '@/composables/useBusinessEquipmentAlarms'
+import { NvAppShellMobile, NvMobileBadge, NvScanBar } from '@nerv-iip/ui-mobile'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -12,6 +13,10 @@ definePage({
 })
 
 const router = useRouter()
+
+// 工作台报警角标：服务端 status=raised total（全量未确认数，不受列表首页 take 上限影响），
+// 与「查看报警」入口联动（确认/搁置后经查询失效自动回落）。
+const { unacknowledgedCount } = useUnacknowledgedAlarmCount()
 
 const lastScan = ref('')
 
@@ -62,9 +67,15 @@ function openTask(route: string, ready: boolean) {
             :key="kind.id"
             type="button"
             :disabled="!kind.routeReady"
-            class="min-h-touch flex flex-col items-center justify-center gap-1 rounded-xl border border-border bg-card p-3 text-center text-sm text-foreground disabled:opacity-40"
+            class="min-h-touch relative flex flex-col items-center justify-center gap-1 rounded-xl border border-border bg-card p-3 text-center text-sm text-foreground disabled:opacity-40"
             @click="openTask(kind.route, kind.routeReady)"
           >
+            <NvMobileBadge
+              v-if="kind.id === 'equipment.alarms' && unacknowledgedCount > 0"
+              data-testid="alarm-badge"
+              :count="unacknowledgedCount"
+              class="absolute right-2 top-2"
+            />
             <span>{{ kind.label }}</span>
           </button>
         </div>

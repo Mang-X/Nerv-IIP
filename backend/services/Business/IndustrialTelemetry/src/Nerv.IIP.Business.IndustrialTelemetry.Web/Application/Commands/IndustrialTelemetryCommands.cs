@@ -1,8 +1,12 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmShelveIdempotencyAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlChannelBindingAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlCommandAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
@@ -1082,13 +1086,16 @@ public sealed class IndustrialTelemetryIdempotentIngestionBehavior<TRequest, TRe
 
     private static bool IsIdempotentIngestionCommand(TRequest request)
     {
-        return request is RecordTelemetrySampleCommand or RaiseAlarmCommand or CreateDeviceControlCommandCommand;
+        // ShelveAlarmCommand is included so a concurrent duplicate that loses the alarm_shelve_idempotency
+        // unique-index race is retried instead of surfacing an unhandled DbUpdateException (500): the retried
+        // handler finds the winner's record and returns a replay (same payload) or a clear conflict.
+        return request is RecordTelemetrySampleCommand or RaiseAlarmCommand or CreateDeviceControlCommandCommand or ShelveAlarmCommand;
     }
 
     private static bool IsIdempotentIngestionUniqueConflict(DbUpdateException exception, ApplicationDbContext context)
     {
         // Keep detection entity-scoped so provider-specific index names do not leak into the application layer.
-        return exception.Entries.Any(entry => entry.Entity is TelemetryRawSample or TelemetrySummary or DeviceStateSnapshot or AlarmEvent or DeviceControlCommand) &&
+        return exception.Entries.Any(entry => entry.Entity is TelemetryRawSample or TelemetrySummary or DeviceStateSnapshot or AlarmEvent or DeviceControlCommand or AlarmShelveIdempotency) &&
             EnumerateExceptions(exception).Any(inner =>
                 IsPostgreSqlUniqueConflict(inner) ||
                 IsSqliteUniqueConflict(context, inner) ||
@@ -1371,7 +1378,8 @@ public sealed record ShelveAlarmCommand(
     DateTimeOffset ShelvedAtUtc,
     int DurationMinutes,
     string ShelvedBy,
-    string? Reason) : ICommand<AlarmEventId>;
+    string? Reason,
+    string? IdempotencyKey = null) : ICommand<AlarmEventId>;
 
 public sealed class ShelveAlarmCommandValidator : AbstractValidator<ShelveAlarmCommand>
 {
@@ -1382,6 +1390,7 @@ public sealed class ShelveAlarmCommandValidator : AbstractValidator<ShelveAlarmC
         RuleFor(x => x.DurationMinutes).InclusiveBetween(1, 24 * 60);
         RuleFor(x => x.ShelvedBy).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Reason).MaximumLength(300);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -1391,6 +1400,42 @@ public sealed class ShelveAlarmCommandHandler(ApplicationDbContext dbContext)
     public async Task<AlarmEventId> Handle(ShelveAlarmCommand request, CancellationToken cancellationToken)
     {
         var alarm = await AcknowledgeAlarmCommandHandler.LoadAlarmAsync(dbContext, request.AlarmEventId, request.OrganizationId, request.EnvironmentId, cancellationToken);
+
+        // Persistent per-(alarm, idempotencyKey) dedup with a payload fingerprint. This survives
+        // window expiry AND independent operations (A→B→delayed-A): each key keeps its own record,
+        // so a delayed duplicate replays its own record instead of re-applying. Same key + a
+        // different payload is a conflicting key reuse. The unique index collapses concurrent
+        // duplicates to a single apply.
+        var idempotencyKey = IndustrialTelemetryText.Optional(request.IdempotencyKey);
+        if (idempotencyKey is not null)
+        {
+            var alarmEventId = request.AlarmEventId.Id.ToString();
+            var fingerprint = ComputeShelveFingerprint(request);
+            var existing = await dbContext.AlarmShelveIdempotencies.SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.AlarmEventId == alarmEventId
+                    && x.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+            if (existing is not null)
+            {
+                if (existing.PayloadFingerprint != fingerprint)
+                {
+                    throw new KnownException("Shelve idempotency key was reused with a different payload.");
+                }
+
+                // Same key + same payload → replay the prior result, apply nothing.
+                return alarm.Id;
+            }
+
+            dbContext.AlarmShelveIdempotencies.Add(new AlarmShelveIdempotency(
+                request.OrganizationId,
+                request.EnvironmentId,
+                alarmEventId,
+                idempotencyKey,
+                fingerprint));
+        }
+
         try
         {
             alarm.Shelve(
@@ -1409,6 +1454,24 @@ public sealed class ShelveAlarmCommandHandler(ApplicationDbContext dbContext)
         }
 
         return alarm.Id;
+    }
+
+    // Canonical fingerprint of the shelve payload (everything that defines the operation's effect).
+    // Length-prefixed so the free-text ShelvedBy/Reason (which may themselves contain any separator)
+    // cannot collide: ("a|b","c") and ("a","b|c") encode to distinct, unambiguously-parseable strings.
+    // Fields are normalized exactly as the domain applies them (trim; empty reason == null == "").
+    private static string ComputeShelveFingerprint(ShelveAlarmCommand request)
+    {
+        var parts = new[]
+        {
+            request.ShelvedAtUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+            request.DurationMinutes.ToString(CultureInfo.InvariantCulture),
+            IndustrialTelemetryText.Optional(request.ShelvedBy) ?? string.Empty,
+            IndustrialTelemetryText.Optional(request.Reason) ?? string.Empty,
+        };
+        var canonical = string.Concat(parts.Select(part =>
+            string.Concat(part.Length.ToString(CultureInfo.InvariantCulture), ":", part)));
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 }
 

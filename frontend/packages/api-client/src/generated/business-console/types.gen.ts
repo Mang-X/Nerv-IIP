@@ -5397,6 +5397,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     durationMinutes?: number;
     shelvedBy?: string;
     reason?: string | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUnshelveAlarmRequest = {

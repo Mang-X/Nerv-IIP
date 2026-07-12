@@ -244,8 +244,24 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
             _ => query.Where(x => x.Status == status),
         };
         var total = await query.CountAsync(cancellationToken);
+        // Lifecycle priority BEFORE pagination so unacknowledged alarms always precede handled ones
+        // across pages: raised(0) > shelved(1) > acknowledged(2) > (other/unknown 3) > cleared(4),
+        // then newest-first. A CASE expression translates on PostgreSQL and the test providers.
+        // Then the primary key as a TRULY-unique tie-breaker so any alarms tying on status + RaisedAtUtc
+        // (batch/bucket generation, or historical cleared rows that legitimately share device + alarm code
+        // + external id since the active-unique index is filtered to status <> cleared) keep a total order —
+        // otherwise the DB could swap them between requests and cause cross-page duplicates/omissions.
+        // AlarmEventId is IComparable (see AlarmEvent.cs) so this orders on both PostgreSQL (uuid column)
+        // and the InMemory test provider.
         var alarmEvents = await query
-            .OrderByDescending(x => x.RaisedAtUtc)
+            .OrderBy(x =>
+                x.Status == "raised" ? 0
+                : x.Status == "shelved" ? 1
+                : x.Status == "acknowledged" ? 2
+                : x.Status == "cleared" ? 4
+                : 3)
+            .ThenByDescending(x => x.RaisedAtUtc)
+            .ThenBy(x => x.Id)
             .Skip(request.Skip)
             .Take(request.Take)
             .ToArrayAsync(cancellationToken);

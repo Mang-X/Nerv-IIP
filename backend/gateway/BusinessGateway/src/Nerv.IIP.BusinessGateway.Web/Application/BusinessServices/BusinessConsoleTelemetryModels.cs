@@ -285,7 +285,8 @@ public sealed record BusinessConsoleShelveAlarmRequest(
     DateTimeOffset ShelvedAtUtc,
     int DurationMinutes,
     string ShelvedBy,
-    string? Reason);
+    string? Reason,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleUnshelveAlarmRequest(
     string OrganizationId,

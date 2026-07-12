@@ -1,11 +1,18 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
 
 // 真实 router.push 返回 Promise（index.vue 的 openTask 会 `.catch`）；mock 同此契约。
 const push = vi.fn(() => Promise.resolve())
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
   RouterView: { template: '<div />' },
+}))
+
+// 报警角标数据源：mock composable，避免拉起 pinia/colada；用 ref 驱动角标可见性。
+const unacknowledgedCount = ref(0)
+vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
+  useUnacknowledgedAlarmCount: () => ({ unacknowledgedCount }),
 }))
 
 import HomePage from './index.vue'
@@ -20,6 +27,22 @@ function buttonByLabel(wrapper: ReturnType<typeof mount>, label: string) {
 describe('PDA home', () => {
   beforeEach(() => {
     push.mockReset()
+    unacknowledgedCount.value = 0
+  })
+
+  it('shows the unacknowledged-alarm count badge on the 查看报警 tile, and hides it at zero', async () => {
+    const wrapper = mount(HomePage)
+    expect(wrapper.find('[data-testid="alarm-badge"]').exists()).toBe(false)
+
+    unacknowledgedCount.value = 3
+    await wrapper.vm.$nextTick()
+    const badge = wrapper.find('[data-testid="alarm-badge"]')
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toContain('3')
+
+    // 角标挂在「查看报警」入口上，而非其它快捷应用
+    const alarmTile = wrapper.findAll('button').find((b) => b.text().includes('查看报警'))
+    expect(alarmTile?.find('[data-testid="alarm-badge"]').exists()).toBe(true)
   })
 
   it('renders the scan bar and the app wall from the task dictionary', () => {

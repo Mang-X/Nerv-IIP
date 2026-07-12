@@ -2,7 +2,13 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain.DomainEvents;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 
-public partial record AlarmEventId : IGuidStronglyTypedId;
+public partial record AlarmEventId : IGuidStronglyTypedId, IComparable<AlarmEventId>
+{
+    // Orderable by the underlying Guid so the id is a truly-unique pagination tie-breaker: PostgreSQL
+    // orders the mapped uuid column; the InMemory test provider (which cannot sort a non-IComparable
+    // value object) uses this comparison.
+    public int CompareTo(AlarmEventId? other) => Id.CompareTo(other?.Id ?? Guid.Empty);
+}
 
 public sealed class AlarmEvent : Entity<AlarmEventId>, IAggregateRoot
 {
