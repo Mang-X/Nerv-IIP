@@ -5694,7 +5694,7 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessServiceProxyException? Failure { get; init; }
 
-    public BusinessServiceProxyException? DetailFailure { get; init; }
+    public Exception? DetailFailure { get; init; }
 
     public Task<BusinessConsoleResourceListResponse> ListResourcesAsync(
         string internalBearerToken,
