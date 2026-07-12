@@ -646,6 +646,38 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_reports_tooling_conflict_for_unavailable_required_tooling_without_blocking_other_orders()
+    {
+        var template = CreateSingleOperationProblem();
+        var blockedOrder = template.Orders.Single();
+        var blockedOperation = blockedOrder.Operations.Single() with
+        {
+            RequiredToolingIds = ["TOOL-00001"],
+            ToolingAvailable = false
+        };
+        var schedulableOperation = blockedOperation with
+        {
+            OperationId = "WO-SNAPSHOT-002-OP10",
+            RequiredToolingIds = [],
+            ToolingAvailable = true
+        };
+        var problem = template with
+        {
+            Orders =
+            [
+                blockedOrder with { Operations = [blockedOperation] },
+                blockedOrder with { OrderId = "WO-SNAPSHOT-002", Operations = [schedulableOperation] }
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-unavailable-tooling-001", GeneratedAtUtc);
+
+        Assert.Contains(plan.UnscheduledOperations, x => x.OrderId == blockedOrder.OrderId && x.ReasonCode == ScheduleConflictReasonCodeContract.Tooling);
+        Assert.Contains(plan.Conflicts, x => x.OrderId == blockedOrder.OrderId && x.ReasonCode == ScheduleConflictReasonCodeContract.Tooling);
+        Assert.Contains(plan.Assignments, x => x.OrderId == "WO-SNAPSHOT-002");
+    }
+
+    [Fact]
     public void Schedule_reports_outside_horizon_when_shift_can_fit_but_horizon_cannot()
     {
         var shiftStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);

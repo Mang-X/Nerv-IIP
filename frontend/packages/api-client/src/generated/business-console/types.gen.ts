@@ -1123,6 +1123,7 @@ export type NervIipContractsSchedulingSchedulingOperationContract = {
     setupMinutes?: number;
     requiredSkillCodes?: Array<string> | null;
     requiredToolingIds?: Array<string> | null;
+    toolingAvailable?: boolean;
 };
 
 export type NervIipContractsSchedulingScheduleSplitPolicyContract = 'nonSplittable';

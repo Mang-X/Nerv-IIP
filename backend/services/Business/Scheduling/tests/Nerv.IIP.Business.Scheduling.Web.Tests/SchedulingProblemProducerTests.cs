@@ -152,7 +152,7 @@ public sealed class SchedulingProblemProducerTests
         var problem = await producer.AssembleAsync(request, CancellationToken.None);
 
         var operation = problem.Orders.Single().Operations.Single();
-        Assert.Equal(0, operation.SetupMinutes);
+        Assert.Equal(11, operation.SetupMinutes);
         Assert.Equal(38, operation.DurationMinutes);
     }
 
@@ -302,7 +302,7 @@ public sealed class SchedulingProblemProducerTests
             captured = request;
             return JsonResponse("""
                 { "data": { "facts": [
-                  { "operationId": "WO-2-10-mixing", "setupMinutes": 35, "requiredToolingCodes": ["TOOL-00001"] }
+                  { "operationId": "WO-2-10-mixing", "setupMinutes": 35, "requiredToolingCodes": ["TOOL-00001"], "toolingAvailable": true }
                 ] }, "success": true, "message": "", "code": 0 }
                 """);
         })) { BaseAddress = new Uri("http://master-data") };

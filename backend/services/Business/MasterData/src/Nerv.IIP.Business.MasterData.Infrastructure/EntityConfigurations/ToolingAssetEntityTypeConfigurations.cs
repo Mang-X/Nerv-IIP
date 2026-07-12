@@ -47,8 +47,8 @@ public sealed class ChangeoverMatrixEntryEntityTypeConfiguration : IEntityTypeCo
         builder.Property(x => x.OrganizationId).HasMaxLength(64).IsRequired().HasComment("Organization scope.");
         builder.Property(x => x.EnvironmentId).HasMaxLength(64).IsRequired().HasComment("Environment scope.");
         builder.Property(x => x.WorkCenterCode).HasMaxLength(64).IsRequired().HasComment("Work-center code.");
-        builder.Property(x => x.SourceType).HasConversion<string>().HasMaxLength(32).IsRequired().HasComment("Source dimension: SKU or ProductFamily.");
-        builder.Property(x => x.SourceCode).HasMaxLength(64).IsRequired().HasComment("Source SKU or product-family code.");
+        builder.Property(x => x.SourceType).HasConversion<string>().HasMaxLength(32).IsRequired().HasComment("Source dimension: SKU or ProductCategory.");
+        builder.Property(x => x.SourceCode).HasMaxLength(64).IsRequired().HasComment("Source SKU or product-category code.");
         builder.Property(x => x.ToSkuCode).HasMaxLength(64).IsRequired().HasComment("Target SKU code.");
         builder.Property(x => x.SetupMinutes).HasComment("Setup duration in minutes.");
         builder.Property(x => x.Active).HasComment("Whether this matrix entry is active.");
@@ -58,7 +58,7 @@ public sealed class ChangeoverMatrixEntryEntityTypeConfiguration : IEntityTypeCo
         builder.HasMany(x => x.RequiredTooling).WithOne().HasForeignKey("ChangeoverMatrixEntryId").IsRequired().OnDelete(DeleteBehavior.Cascade);
         builder.Ignore(x => x.Specificity);
         builder.Ignore(x => x.FromSkuCode);
-        builder.Ignore(x => x.FromProductFamilyCode);
+        builder.Ignore(x => x.FromProductCategoryCode);
     }
 }
 

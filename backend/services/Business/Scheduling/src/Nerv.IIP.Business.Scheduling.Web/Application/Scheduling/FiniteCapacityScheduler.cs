@@ -555,6 +555,12 @@ file sealed class SchedulerState
 
     private ScheduleAssignmentContract? TrySchedule(OperationWorkItem item)
     {
+        if (!item.Operation.ToolingAvailable)
+        {
+            AddUnscheduled(item, ScheduleConflictReasonCodeContract.Tooling, "Required tooling is unavailable or not applicable to this work center and SKU.");
+            return null;
+        }
+
         if (!string.IsNullOrWhiteSpace(item.Operation.QualityBlockReason))
         {
             AddUnscheduled(item, ScheduleConflictReasonCodeContract.Quality, item.Operation.QualityBlockReason);

@@ -2035,8 +2035,10 @@ public sealed class MasterDataApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.ToolingAssets.Add(ToolingAsset.Register("org-001", "env-dev", "TOOL-00001", "Mould A", "mould", ["WC-01"], ["SKU-B"], 1000));
-        dbContext.ChangeoverMatrixEntries.Add(ChangeoverMatrixEntry.Create("org-001", "env-dev", "WC-01", "SKU-A", null, "SKU-B", 35, ["TOOL-00001"]));
+        var tooling = ToolingAsset.Register("org-001", "env-dev", "TOOL-00001", "Mould A", "mould", ["WC-01"], ["SKU-B"], 1000);
+        dbContext.ToolingAssets.Add(tooling);
+        dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-A", "Source SKU", "pcs", "electronic"));
+        dbContext.ChangeoverMatrixEntries.Add(ChangeoverMatrixEntry.Create("org-001", "env-dev", "WC-01", null, "electronic", "SKU-B", 35, ["TOOL-00001"]));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ResolveSchedulingToolingFactsQueryHandler(dbContext).Handle(
@@ -2046,6 +2048,14 @@ public sealed class MasterDataApiContractTests
         var fact = Assert.Single(response.Facts);
         Assert.Equal(35, fact.SetupMinutes);
         Assert.Equal(["TOOL-00001"], fact.RequiredToolingCodes);
+        Assert.True(fact.ToolingAvailable);
+
+        tooling.ChangeStatus(ToolingAssetStatus.Maintenance, "planned maintenance");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var unavailable = await new ResolveSchedulingToolingFactsQueryHandler(dbContext).Handle(
+            new ResolveSchedulingToolingFactsQuery("org-001", "env-dev", [new SchedulingTransitionRequest("WO-2-OP10", "WC-01", "SKU-A", null, "SKU-B")]),
+            CancellationToken.None);
+        Assert.False(Assert.Single(unavailable.Facts).ToolingAvailable);
     }
 
     private static ServiceProvider CreateInMemoryProvider(string? databaseName = null)

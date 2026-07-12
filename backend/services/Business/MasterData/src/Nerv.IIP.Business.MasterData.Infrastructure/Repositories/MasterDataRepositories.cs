@@ -380,6 +380,7 @@ public sealed class DeviceAssetRepository(ApplicationDbContext context)
 public interface IToolingAssetRepository : IRepository<ToolingAsset, ToolingAssetId>
 {
     Task<bool> ExistsAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default);
+    Task<ToolingAsset?> FindAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default);
 }
 
 public sealed class ToolingAssetRepository(ApplicationDbContext context)
@@ -387,6 +388,9 @@ public sealed class ToolingAssetRepository(ApplicationDbContext context)
 {
     public Task<bool> ExistsAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default) =>
         DbContext.ToolingAssets.AnyAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == code, cancellationToken);
+
+    public Task<ToolingAsset?> FindAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default) =>
+        DbContext.ToolingAssets.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == code, cancellationToken);
 }
 
 public interface IChangeoverMatrixEntryRepository : IRepository<ChangeoverMatrixEntry, ChangeoverMatrixEntryId>;

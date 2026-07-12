@@ -5,7 +5,7 @@ public partial record ToolingApplicabilityId : IGuidStronglyTypedId;
 public partial record ChangeoverMatrixEntryId : IGuidStronglyTypedId;
 public partial record ChangeoverRequiredToolingId : IGuidStronglyTypedId;
 
-public enum ChangeoverSourceType { Sku = 0, ProductFamily = 1 }
+public enum ChangeoverSourceType { Sku = 0, ProductCategory = 1 }
 
 public enum ToolingAssetStatus
 {
@@ -120,7 +120,7 @@ public class ChangeoverMatrixEntry : Entity<ChangeoverMatrixEntryId>, IAggregate
     public ChangeoverSourceType SourceType { get; private set; }
     public string SourceCode { get; private set; } = string.Empty;
     public string? FromSkuCode => SourceType == ChangeoverSourceType.Sku ? SourceCode : null;
-    public string? FromProductFamilyCode => SourceType == ChangeoverSourceType.ProductFamily ? SourceCode : null;
+    public string? FromProductCategoryCode => SourceType == ChangeoverSourceType.ProductCategory ? SourceCode : null;
     public string ToSkuCode { get; private set; } = string.Empty;
     public int SetupMinutes { get; private set; }
     public bool Active { get; private set; } = true;
@@ -129,19 +129,19 @@ public class ChangeoverMatrixEntry : Entity<ChangeoverMatrixEntryId>, IAggregate
     public IReadOnlyCollection<ChangeoverRequiredTooling> RequiredTooling => requiredTooling.AsReadOnly();
     public int Specificity => string.IsNullOrWhiteSpace(FromSkuCode) ? 1 : 2;
 
-    public static ChangeoverMatrixEntry Create(string organizationId, string environmentId, string workCenterCode, string? fromSkuCode, string? fromProductFamilyCode, string toSkuCode, int setupMinutes, IEnumerable<string> requiredToolingCodes)
+    public static ChangeoverMatrixEntry Create(string organizationId, string environmentId, string workCenterCode, string? fromSkuCode, string? fromProductCategoryCode, string toSkuCode, int setupMinutes, IEnumerable<string> requiredToolingCodes)
     {
         if (setupMinutes <= 0) throw new ArgumentOutOfRangeException(nameof(setupMinutes));
         var tooling = requiredToolingCodes.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (tooling.Length == 0) throw new ArgumentException("Changeover requires at least one tooling asset.", nameof(requiredToolingCodes));
-        if (string.IsNullOrWhiteSpace(fromSkuCode) == string.IsNullOrWhiteSpace(fromProductFamilyCode))
-            throw new ArgumentException("Specify exactly one from SKU or product family.");
+        if (string.IsNullOrWhiteSpace(fromSkuCode) == string.IsNullOrWhiteSpace(fromProductCategoryCode))
+            throw new ArgumentException("Specify exactly one from SKU or product category.");
         var now = DateTime.UtcNow;
         var entry = new ChangeoverMatrixEntry
         {
             OrganizationId = Required(organizationId), EnvironmentId = Required(environmentId), WorkCenterCode = Required(workCenterCode),
-            SourceType = string.IsNullOrWhiteSpace(fromSkuCode) ? ChangeoverSourceType.ProductFamily : ChangeoverSourceType.Sku,
-            SourceCode = Required(fromSkuCode ?? fromProductFamilyCode!), ToSkuCode = Required(toSkuCode),
+            SourceType = string.IsNullOrWhiteSpace(fromSkuCode) ? ChangeoverSourceType.ProductCategory : ChangeoverSourceType.Sku,
+            SourceCode = Required(fromSkuCode ?? fromProductCategoryCode!), ToSkuCode = Required(toSkuCode),
             SetupMinutes = setupMinutes, CreatedAtUtc = now, UpdatedAtUtc = now
         };
         entry.requiredTooling.AddRange(tooling.Select(ChangeoverRequiredTooling.Create));
@@ -160,11 +160,11 @@ public class ChangeoverMatrixEntry : Entity<ChangeoverMatrixEntryId>, IAggregate
         UpdatedAtUtc = DateTime.UtcNow;
     }
 
-    public bool Matches(string fromSkuCode, string? fromProductFamilyCode, string toSkuCode, string workCenterCode) => Active
+    public bool Matches(string fromSkuCode, string? fromProductCategoryCode, string toSkuCode, string workCenterCode) => Active
         && string.Equals(WorkCenterCode, workCenterCode, StringComparison.OrdinalIgnoreCase)
         && string.Equals(ToSkuCode, toSkuCode, StringComparison.OrdinalIgnoreCase)
         && ((!string.IsNullOrWhiteSpace(FromSkuCode) && string.Equals(FromSkuCode, fromSkuCode, StringComparison.OrdinalIgnoreCase))
-            || (!string.IsNullOrWhiteSpace(FromProductFamilyCode) && string.Equals(FromProductFamilyCode, fromProductFamilyCode, StringComparison.OrdinalIgnoreCase)));
+            || (!string.IsNullOrWhiteSpace(FromProductCategoryCode) && string.Equals(FromProductCategoryCode, fromProductCategoryCode, StringComparison.OrdinalIgnoreCase)));
 
     private static string Required(string value) => string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.") : value.Trim();
 }

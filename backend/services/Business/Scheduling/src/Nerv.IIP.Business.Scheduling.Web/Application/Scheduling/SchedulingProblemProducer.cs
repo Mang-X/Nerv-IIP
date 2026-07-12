@@ -141,9 +141,10 @@ public sealed class SchedulingProblemProducer(
                 MaterialReadyUtc: null,
                 QualityBlockReason: operation.RequiresQualityInspection ? "quality.inspectionRequired" : null,
                 SourceReference: $"product-engineering:routing:{routing.RoutingCode}:{routing.Revision}:{operation.OperationCode}",
-                SetupMinutes: toolingFact?.SetupMinutes ?? 0,
+                SetupMinutes: toolingFact is null || toolingFact.SetupMinutes == 0 ? operation.SetupMinutes : toolingFact.SetupMinutes,
                 RequiredSkillCodes: NormalizeCodes(constraint?.RequiredSkillCodes),
-                RequiredToolingIds: NormalizeCodes(toolingFact?.RequiredToolingCodes)));
+                RequiredToolingIds: NormalizeCodes(toolingFact?.RequiredToolingCodes),
+                ToolingAvailable: toolingFact?.ToolingAvailable ?? true));
             previousOperationIds.Clear();
             previousOperationIds.Add(operationId);
         }
@@ -345,8 +346,8 @@ public sealed record SchedulingProblemShiftWindowSnapshot(
     string ReasonCode);
 
 public sealed record SchedulingProblemDeviceAssetSnapshot(string ResourceId, string WorkCenterCode);
-public sealed record SchedulingProblemToolingTransitionSnapshot(string OperationId, string WorkCenterCode, string FromSkuCode, string? FromProductFamilyCode, string ToSkuCode);
-public sealed record SchedulingProblemToolingFactSnapshot(string OperationId, int SetupMinutes, IReadOnlyCollection<string> RequiredToolingCodes);
+public sealed record SchedulingProblemToolingTransitionSnapshot(string OperationId, string WorkCenterCode, string FromSkuCode, string? FromProductCategoryCode, string ToSkuCode);
+public sealed record SchedulingProblemToolingFactSnapshot(string OperationId, int SetupMinutes, IReadOnlyCollection<string> RequiredToolingCodes, bool ToolingAvailable = true);
 
 public sealed class HttpSchedulingProblemProductEngineeringClient(
     HttpClient httpClient,

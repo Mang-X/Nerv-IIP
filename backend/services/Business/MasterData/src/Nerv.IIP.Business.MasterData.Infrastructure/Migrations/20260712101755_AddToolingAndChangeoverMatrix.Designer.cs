@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260712093043_AddToolingAndChangeoverMatrix")]
+    [Migration("20260712101755_AddToolingAndChangeoverMatrix")]
     partial class AddToolingAndChangeoverMatrix
     {
         /// <inheritdoc />
@@ -1693,13 +1693,13 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
-                        .HasComment("Source SKU or product-family code.");
+                        .HasComment("Source SKU or product-category code.");
 
                     b.Property<string>("SourceType")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
-                        .HasComment("Source dimension: SKU or ProductFamily.");
+                        .HasComment("Source dimension: SKU or ProductCategory.");
 
                     b.Property<string>("ToSkuCode")
                         .IsRequired()

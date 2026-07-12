@@ -54,7 +54,8 @@ public sealed record SchedulingOperationContract(
     string? SourceReference,
     int SetupMinutes = 0,
     IReadOnlyCollection<string>? RequiredSkillCodes = null,
-    IReadOnlyCollection<string>? RequiredToolingIds = null);
+    IReadOnlyCollection<string>? RequiredToolingIds = null,
+    bool ToolingAvailable = true);
 
 public sealed record SchedulingResourceContract(
     string ResourceId,

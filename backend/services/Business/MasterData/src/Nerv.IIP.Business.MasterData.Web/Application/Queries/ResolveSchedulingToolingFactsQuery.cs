@@ -3,9 +3,9 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Queries;
 
-public sealed record SchedulingTransitionRequest(string OperationId, string WorkCenterCode, string FromSkuCode, string? FromProductFamilyCode, string ToSkuCode);
+public sealed record SchedulingTransitionRequest(string OperationId, string WorkCenterCode, string FromSkuCode, string? FromProductCategoryCode, string ToSkuCode);
 public sealed record ResolveSchedulingToolingFactsQuery(string OrganizationId, string EnvironmentId, IReadOnlyCollection<SchedulingTransitionRequest> Transitions) : IQuery<ResolveSchedulingToolingFactsResponse>;
-public sealed record SchedulingToolingFactResponse(string OperationId, int SetupMinutes, IReadOnlyCollection<string> RequiredToolingCodes);
+public sealed record SchedulingToolingFactResponse(string OperationId, int SetupMinutes, IReadOnlyCollection<string> RequiredToolingCodes, bool ToolingAvailable);
 public sealed record ResolveSchedulingToolingFactsResponse(IReadOnlyCollection<SchedulingToolingFactResponse> Facts);
 
 public sealed class ResolveSchedulingToolingFactsQueryHandler(ApplicationDbContext dbContext) : IQueryHandler<ResolveSchedulingToolingFactsQuery, ResolveSchedulingToolingFactsResponse>
@@ -20,22 +20,24 @@ public sealed class ResolveSchedulingToolingFactsQueryHandler(ApplicationDbConte
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Status == ToolingAssetStatus.Available)
             .ToArrayAsync(cancellationToken);
         var fromSkuCodes = request.Transitions.Select(x => x.FromSkuCode).Distinct().ToArray();
-        var productFamilyBySku = await dbContext.Skus.AsNoTracking()
+        var productCategoryBySku = await dbContext.Skus.AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && fromSkuCodes.Contains(x.Code))
-            .ToDictionaryAsync(x => x.Code, x => x.Category, StringComparer.Ordinal, cancellationToken);
+            .ToDictionaryAsync(x => x.Code, x => x.Category, StringComparer.OrdinalIgnoreCase, cancellationToken);
 
         var facts = request.Transitions.Select(transition =>
         {
-            var fromProductFamily = transition.FromProductFamilyCode ?? productFamilyBySku.GetValueOrDefault(transition.FromSkuCode);
-            var match = entries.Where(x => x.Matches(transition.FromSkuCode, fromProductFamily, transition.ToSkuCode, transition.WorkCenterCode))
+            var fromProductCategory = transition.FromProductCategoryCode ?? productCategoryBySku.GetValueOrDefault(transition.FromSkuCode);
+            var match = entries.Where(x => x.Matches(transition.FromSkuCode, fromProductCategory, transition.ToSkuCode, transition.WorkCenterCode))
                 .OrderByDescending(x => x.Specificity).ThenBy(x => x.Id.ToString(), StringComparer.Ordinal).FirstOrDefault();
-            if (match is null) return new SchedulingToolingFactResponse(transition.OperationId, 0, []);
+            if (match is null) return new SchedulingToolingFactResponse(transition.OperationId, 0, [], true);
             var applicable = match.RequiredTooling.Select(x => x.ToolingCode).Where(code => tooling.Any(x =>
                 string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase) && x.IsApplicable(transition.WorkCenterCode, transition.ToSkuCode)))
                 .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
-            if (applicable.Length != match.RequiredTooling.Count)
-                throw new KnownException($"Changeover tooling for operation '{transition.OperationId}' is unavailable or not applicable.");
-            return new SchedulingToolingFactResponse(transition.OperationId, match.SetupMinutes, applicable);
+            return new SchedulingToolingFactResponse(
+                transition.OperationId,
+                match.SetupMinutes,
+                match.RequiredTooling.Select(x => x.ToolingCode).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+                applicable.Length == match.RequiredTooling.Count);
         }).ToArray();
         return new ResolveSchedulingToolingFactsResponse(facts);
     }

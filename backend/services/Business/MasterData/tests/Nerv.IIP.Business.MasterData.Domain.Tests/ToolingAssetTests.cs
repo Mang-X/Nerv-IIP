@@ -53,7 +53,7 @@ public sealed class ToolingAssetTests
     }
 
     [Fact]
-    public void ChangeoverMatrix_MatchesExactSkuBeforeProductFamily()
+    public void ChangeoverMatrix_MatchesExactSkuBeforeProductCategory()
     {
         var exact = ChangeoverMatrixEntry.Create(
             "org-001", "env-dev", "WC-MOULD", "SKU-A", null, "SKU-B", 20, ["TOOL-001"]);

@@ -404,7 +404,7 @@ BusinessApproval 模板步骤现在可通过结构化条件配置金额上下限
 
 ### 2026-07-12 工装与换型矩阵约束源记录（MAN-402 / #718）
 
-MasterData 已新增 Coding-backed `ToolingAsset`、工作中心/SKU 适用范围、Available/Maintenance/Retired 生命周期、保养寿命计数，以及按工作中心和 from-SKU/产品族到 to-SKU 管理 setup 分钟与所需工装的 `ChangeoverMatrixEntry`。BusinessScheduling problem assembly 通过内部 MasterData facts API 获取这些权威事实，不再采用 routing 或调用方内联 setup/tooling；有限产能调度器将同一工装视为跨设备容量 1 的占用资源，争用无法在 horizon 内消解时输出显式 `tooling` error conflict。管理 facade/UI 在 facade matrix 中标记 deferred，本切片不修改前端 scheduling visualization。
+MasterData 已新增 Coding-backed `ToolingAsset`、工作中心/SKU 适用范围、Available/Maintenance/Retired 生命周期、保养寿命计数，以及按工作中心和 from-SKU/现有 ProductCategory 到 to-SKU 管理 setup 分钟与所需工装的 `ChangeoverMatrixEntry`。当前代码没有独立 ProductFamily 主数据，因此不把 SKU `Category` 静默别名为产品族。BusinessScheduling problem assembly 通过内部 MasterData facts API 获取权威换型事实：矩阵命中覆盖 routing 默认 setup，未命中保留 ProductEngineering 发布快照中的基础 setup，不接受调用方内联 tooling。有限产能调度器将同一工装视为跨设备容量 1 的占用资源；工装维护/不适用或争用无法在 horizon 内消解时输出显式 `tooling` error conflict。管理 facade/UI 在 facade matrix 中标记 deferred，本切片不修改前端 scheduling visualization。
 
 ### 可以并行但不阻塞开工的事项
 

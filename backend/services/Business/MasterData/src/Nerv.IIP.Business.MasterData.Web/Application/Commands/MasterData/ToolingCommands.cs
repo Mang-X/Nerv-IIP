@@ -39,28 +39,28 @@ public sealed class RegisterToolingAssetCommandHandler(
 
 public sealed record ChangeToolingStatusCommand(string OrganizationId, string EnvironmentId, string Code, ToolingAssetStatus Status, string Reason) : ICommand;
 
-public sealed class ChangeToolingStatusCommandHandler(ApplicationDbContext dbContext) : ICommandHandler<ChangeToolingStatusCommand>
+public sealed class ChangeToolingStatusCommandHandler(IToolingAssetRepository repository) : ICommandHandler<ChangeToolingStatusCommand>
 {
     public async Task Handle(ChangeToolingStatusCommand request, CancellationToken cancellationToken)
     {
-        var asset = await dbContext.ToolingAssets.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        var asset = await repository.FindAsync(request.OrganizationId, request.EnvironmentId, request.Code, cancellationToken)
             ?? throw new KnownException($"Tooling asset '{request.Code}' was not found.");
         asset.ChangeStatus(request.Status, request.Reason);
     }
 }
 
 public sealed record RecordToolingUsageCommand(string OrganizationId, string EnvironmentId, string Code, long Count) : ICommand;
-public sealed class RecordToolingUsageCommandHandler(ApplicationDbContext dbContext) : ICommandHandler<RecordToolingUsageCommand>
+public sealed class RecordToolingUsageCommandHandler(IToolingAssetRepository repository) : ICommandHandler<RecordToolingUsageCommand>
 {
     public async Task Handle(RecordToolingUsageCommand request, CancellationToken cancellationToken)
     {
-        var asset = await dbContext.ToolingAssets.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        var asset = await repository.FindAsync(request.OrganizationId, request.EnvironmentId, request.Code, cancellationToken)
             ?? throw new KnownException($"Tooling asset '{request.Code}' was not found.");
         asset.RecordUsage(request.Count);
     }
 }
 
-public sealed record ChangeoverMatrixEntryDraft(string WorkCenterCode, string? FromSkuCode, string? FromProductFamilyCode, string ToSkuCode, int SetupMinutes, IReadOnlyCollection<string> RequiredToolingCodes, bool Active = true);
+public sealed record ChangeoverMatrixEntryDraft(string WorkCenterCode, string? FromSkuCode, string? FromProductCategoryCode, string ToSkuCode, int SetupMinutes, IReadOnlyCollection<string> RequiredToolingCodes, bool Active = true);
 public sealed record ImportChangeoverMatrixCommand(string OrganizationId, string EnvironmentId, IReadOnlyCollection<ChangeoverMatrixEntryDraft> Entries) : ICommand<int>;
 
 public sealed class ImportChangeoverMatrixCommandHandler(ApplicationDbContext dbContext, IChangeoverMatrixEntryRepository repository) : ICommandHandler<ImportChangeoverMatrixCommand, int>
@@ -89,7 +89,7 @@ public sealed class ImportChangeoverMatrixCommandHandler(ApplicationDbContext db
             if (current is null)
             {
                 var created = ChangeoverMatrixEntry.Create(request.OrganizationId, request.EnvironmentId, draft.WorkCenterCode,
-                    draft.FromSkuCode, draft.FromProductFamilyCode, draft.ToSkuCode, draft.SetupMinutes, draft.RequiredToolingCodes);
+                    draft.FromSkuCode, draft.FromProductCategoryCode, draft.ToSkuCode, draft.SetupMinutes, draft.RequiredToolingCodes);
                 if (!draft.Active) created.Update(draft.SetupMinutes, draft.RequiredToolingCodes, false);
                 await repository.AddAsync(created, cancellationToken);
             }
@@ -102,9 +102,9 @@ public sealed class ImportChangeoverMatrixCommandHandler(ApplicationDbContext db
     private sealed record ChangeoverKey(string WorkCenterCode, ChangeoverSourceType SourceType, string SourceCode, string ToSkuCode)
     {
         public static ChangeoverKey Create(string workCenter, string? fromSku, string? family, string toSku) => new(
-            workCenter.Trim().ToUpperInvariant(), string.IsNullOrWhiteSpace(fromSku) ? ChangeoverSourceType.ProductFamily : ChangeoverSourceType.Sku,
+            workCenter.Trim().ToUpperInvariant(), string.IsNullOrWhiteSpace(fromSku) ? ChangeoverSourceType.ProductCategory : ChangeoverSourceType.Sku,
             (fromSku ?? family ?? string.Empty).Trim().ToUpperInvariant(), toSku.Trim().ToUpperInvariant());
     }
-    private static ChangeoverKey Key(ChangeoverMatrixEntryDraft x) => ChangeoverKey.Create(x.WorkCenterCode, x.FromSkuCode, x.FromProductFamilyCode, x.ToSkuCode);
+    private static ChangeoverKey Key(ChangeoverMatrixEntryDraft x) => ChangeoverKey.Create(x.WorkCenterCode, x.FromSkuCode, x.FromProductCategoryCode, x.ToSkuCode);
     private static ChangeoverKey Key(ChangeoverMatrixEntry x) => new(x.WorkCenterCode.ToUpperInvariant(), x.SourceType, x.SourceCode.ToUpperInvariant(), x.ToSkuCode.ToUpperInvariant());
 }
