@@ -17,6 +17,7 @@ import {
 } from '@nerv-iip/business-core'
 import {
   NvButton,
+  NvCombobox,
   NvDataTable,
   NvField,
   NvFieldError,
@@ -100,6 +101,22 @@ const detailOpen = shallowRef(false)
 const detailTarget = shallowRef<InspectionRow>()
 
 const measurementsValid = computed(() => measurementRowsValid(measurementRows))
+
+// 测量特性联想建议：从已加载点检记录里去重历史特性（也可自由录入新特性）。
+const characteristicSuggestions = computed(() => {
+  const seen = new Set<string>()
+  const out: { value: string }[] = []
+  for (const inspection of inspections.value) {
+    for (const measurement of inspection.measurements ?? []) {
+      const code = (measurement.characteristicCode ?? '').trim()
+      if (code && !seen.has(code)) {
+        seen.add(code)
+        out.push({ value: code })
+      }
+    }
+  }
+  return out
+})
 
 const listErrorMessage = computed(() => formatError(inspectionsError.value))
 const recordErrorMessage = computed(
@@ -358,7 +375,9 @@ function formatError(error: unknown) {
 
           <div class="grid gap-2">
             <div class="flex items-center justify-between">
-              <span class="text-sm font-medium">测量值 <span class="text-muted-foreground">（可选，填了就须完整）</span></span>
+              <span class="text-sm font-medium"
+                >测量值 <span class="text-muted-foreground">（可选，填了就须完整）</span></span
+              >
               <NvButton type="button" variant="outline" size="sm" @click="addMeasurementRow">
                 <PlusIcon aria-hidden="true" />
                 添加一行
@@ -380,16 +399,21 @@ function formatError(error: unknown) {
               <div class="grid gap-2 sm:grid-cols-3">
                 <NvField>
                   <NvFieldLabel :for="`m-char-${row.id}`">特性</NvFieldLabel>
-                  <NvInput
+                  <NvCombobox
                     :id="`m-char-${row.id}`"
                     v-model="row.characteristicCode"
-                    autocomplete="off"
+                    :suggestions="characteristicSuggestions"
                     placeholder="如 轴承温度"
                   />
                 </NvField>
                 <NvField>
                   <NvFieldLabel :for="`m-value-${row.id}`">数值</NvFieldLabel>
-                  <NvInput :id="`m-value-${row.id}`" v-model="row.measuredValue" type="number" step="any" />
+                  <NvInput
+                    :id="`m-value-${row.id}`"
+                    v-model="row.measuredValue"
+                    type="number"
+                    step="any"
+                  />
                 </NvField>
                 <NvField>
                   <NvFieldLabel :for="`m-uom-${row.id}`">单位</NvFieldLabel>
@@ -404,11 +428,21 @@ function formatError(error: unknown) {
               <div class="grid items-end gap-2 sm:grid-cols-[1fr_1fr_auto]">
                 <NvField>
                   <NvFieldLabel :for="`m-lower-${row.id}`">下限</NvFieldLabel>
-                  <NvInput :id="`m-lower-${row.id}`" v-model="row.lowerSpecLimit" type="number" step="any" />
+                  <NvInput
+                    :id="`m-lower-${row.id}`"
+                    v-model="row.lowerSpecLimit"
+                    type="number"
+                    step="any"
+                  />
                 </NvField>
                 <NvField>
                   <NvFieldLabel :for="`m-upper-${row.id}`">上限</NvFieldLabel>
-                  <NvInput :id="`m-upper-${row.id}`" v-model="row.upperSpecLimit" type="number" step="any" />
+                  <NvInput
+                    :id="`m-upper-${row.id}`"
+                    v-model="row.upperSpecLimit"
+                    type="number"
+                    step="any"
+                  />
                 </NvField>
                 <NvButton
                   type="button"
@@ -451,8 +485,7 @@ function formatError(error: unknown) {
         <NvSheetHeader>
           <NvSheetTitle>{{ detailTarget ? inspectionNo(detailTarget) : '点检详情' }}</NvSheetTitle>
           <NvSheetDescription>
-            {{ resultLabel(detailTarget?.result) }} ·
-            {{ detailTarget?.inspector ?? '未记录' }} ·
+            {{ resultLabel(detailTarget?.result) }} · {{ detailTarget?.inspector ?? '未记录' }} ·
             {{ formatDateTime(detailTarget?.inspectedAtUtc) }}
           </NvSheetDescription>
         </NvSheetHeader>
@@ -473,7 +506,9 @@ function formatError(error: unknown) {
             :data-testid="`detail-measurement-${i}`"
             :data-out-of-spec="measurementOutOfSpec(m) ? 'true' : undefined"
             class="grid gap-1 rounded-md border p-3"
-            :class="measurementOutOfSpec(m) ? 'border-destructive bg-destructive/5' : 'border-border'"
+            :class="
+              measurementOutOfSpec(m) ? 'border-destructive bg-destructive/5' : 'border-border'
+            "
           >
             <div class="flex items-center justify-between gap-2">
               <span class="font-medium">{{ m.characteristicCode ?? '测量值' }}</span>
@@ -484,9 +519,7 @@ function formatError(error: unknown) {
                 <AlertTriangleIcon class="size-3" aria-hidden="true" />
                 超差
               </span>
-              <span
-                v-else
-                class="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+              <span v-else class="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
                 >合格</span
               >
             </div>

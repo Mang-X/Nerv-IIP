@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import type {
-  BusinessConsoleMaintenanceReliabilitySummaryItem,
-} from '@nerv-iip/api-client'
+import type { BusinessConsoleMaintenanceReliabilitySummaryItem } from '@nerv-iip/api-client'
 import type { LineSeries, NvDataTableColumn } from '@nerv-iip/ui'
 import {
   useMaintenanceMeasurementTrend,
   useMaintenanceReliability,
   useMaintenanceReliabilitySummary,
 } from '@/composables/useBusinessMaintenance'
-import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
+import {
+  useBusinessWorkers,
+  useBusinessMasterDataResources,
+} from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
+  NvCombobox,
   NvDataTable,
   NvField,
   NvFieldGroup,
@@ -46,6 +48,17 @@ const { filters, reliability, reliabilityError, reliabilityPending, refreshRelia
 const trend = useMaintenanceMeasurementTrend({ deviceAssetId: initialDeviceAssetId })
 const summary = useMaintenanceReliabilitySummary({ deviceAssetId: initialDeviceAssetId })
 const { workers } = useBusinessWorkers()
+// 设备编号联想建议（master-data device-asset）。
+const { resources: deviceResources } = useBusinessMasterDataResources('device-asset')
+const deviceSuggestions = computed(() =>
+  deviceResources.value
+    .map((r) => ({ value: (r.code ?? '').trim(), label: r.displayName ?? r.code ?? '' }))
+    .filter((s) => s.value.length > 0),
+)
+// 常用测量特性建议（也可自由录入设备特有特性）。
+const characteristicSuggestions = ['轴承温度', '振动', '电流', '油压', '转速', '绝缘电阻'].map(
+  (value) => ({ value }),
+)
 
 // 设备/窗口是唯一事实源（reliability filters）；同步到趋势与汇总子查询。
 watch(
@@ -89,13 +102,19 @@ const trendChartData = computed(() =>
     upper: Number(item.upperSpecLimit ?? 0),
   })),
 )
-const hasLowerLimits = computed(() =>
-  trend.trendItems.value.length > 0 &&
-  trend.trendItems.value.every((i) => i.lowerSpecLimit !== null && i.lowerSpecLimit !== undefined),
+const hasLowerLimits = computed(
+  () =>
+    trend.trendItems.value.length > 0 &&
+    trend.trendItems.value.every(
+      (i) => i.lowerSpecLimit !== null && i.lowerSpecLimit !== undefined,
+    ),
 )
-const hasUpperLimits = computed(() =>
-  trend.trendItems.value.length > 0 &&
-  trend.trendItems.value.every((i) => i.upperSpecLimit !== null && i.upperSpecLimit !== undefined),
+const hasUpperLimits = computed(
+  () =>
+    trend.trendItems.value.length > 0 &&
+    trend.trendItems.value.every(
+      (i) => i.upperSpecLimit !== null && i.upperSpecLimit !== undefined,
+    ),
 )
 const trendSeries = computed<LineSeries[]>(() => {
   const series: LineSeries[] = [{ key: 'value', label: '测量值' }]
@@ -109,13 +128,48 @@ const outOfSpecTrendCount = computed(
 
 type SummaryRow = BusinessConsoleMaintenanceReliabilitySummaryItem
 const summaryColumns: NvDataTableColumn<SummaryRow>[] = [
-  { key: 'assignedTechnicianUserId', header: '技师', accessor: (r) => technicianLabel(r.assignedTechnicianUserId) },
-  { key: 'workOrderCount', header: '工单数', align: 'end', accessor: (r) => String(r.workOrderCount ?? 0) },
-  { key: 'estimatedLaborMinutes', header: '预估工时', align: 'end', accessor: (r) => minutesLabel(r.estimatedLaborMinutes) },
-  { key: 'actualLaborMinutes', header: '实际工时', align: 'end', accessor: (r) => minutesLabel(r.actualLaborMinutes) },
-  { key: 'sparePartCostAmount', header: '备件成本', align: 'end', accessor: (r) => moneyLabel(r.sparePartCostAmount, r.costCurrencyCode) },
-  { key: 'externalServiceCostAmount', header: '外委费用', align: 'end', accessor: (r) => moneyLabel(r.externalServiceCostAmount, r.costCurrencyCode) },
-  { key: 'totalCostAmount', header: '成本合计', align: 'end', cellClass: 'font-medium', accessor: (r) => moneyLabel(r.totalCostAmount, r.costCurrencyCode) },
+  {
+    key: 'assignedTechnicianUserId',
+    header: '技师',
+    accessor: (r) => technicianLabel(r.assignedTechnicianUserId),
+  },
+  {
+    key: 'workOrderCount',
+    header: '工单数',
+    align: 'end',
+    accessor: (r) => String(r.workOrderCount ?? 0),
+  },
+  {
+    key: 'estimatedLaborMinutes',
+    header: '预估工时',
+    align: 'end',
+    accessor: (r) => minutesLabel(r.estimatedLaborMinutes),
+  },
+  {
+    key: 'actualLaborMinutes',
+    header: '实际工时',
+    align: 'end',
+    accessor: (r) => minutesLabel(r.actualLaborMinutes),
+  },
+  {
+    key: 'sparePartCostAmount',
+    header: '备件成本',
+    align: 'end',
+    accessor: (r) => moneyLabel(r.sparePartCostAmount, r.costCurrencyCode),
+  },
+  {
+    key: 'externalServiceCostAmount',
+    header: '外委费用',
+    align: 'end',
+    accessor: (r) => moneyLabel(r.externalServiceCostAmount, r.costCurrencyCode),
+  },
+  {
+    key: 'totalCostAmount',
+    header: '成本合计',
+    align: 'end',
+    cellClass: 'font-medium',
+    accessor: (r) => moneyLabel(r.totalCostAmount, r.costCurrencyCode),
+  },
 ]
 function summaryRowKey(row: SummaryRow) {
   return `${row.deviceAssetId ?? ''}-${row.assignedTechnicianUserId ?? 'unassigned'}`
@@ -200,11 +254,11 @@ function refreshAll() {
     >
       <NvField>
         <NvFieldLabel for="rel-device">设备</NvFieldLabel>
-        <NvInput
+        <NvCombobox
           id="rel-device"
           v-model="filters.deviceAssetId"
-          autocomplete="off"
-          placeholder="输入设备编号后查询，如 DEV-PRESS-01"
+          :suggestions="deviceSuggestions"
+          placeholder="搜索设备台账或直接输入，如 DEV-PRESS-01"
         />
       </NvField>
       <NvField>
@@ -259,11 +313,11 @@ function refreshAll() {
           </div>
           <NvField class="w-full sm:w-64">
             <NvFieldLabel for="rel-characteristic">测量特性</NvFieldLabel>
-            <NvInput
+            <NvCombobox
               id="rel-characteristic"
               v-model="trend.filters.characteristicCode"
-              autocomplete="off"
-              placeholder="输入特性后查询，如 轴承温度"
+              :suggestions="characteristicSuggestions"
+              placeholder="搜索或输入特性，如 轴承温度"
             />
           </NvField>
         </div>
@@ -298,12 +352,7 @@ function refreshAll() {
           >
             窗口内 {{ outOfSpecTrendCount }} 次测量超差。
           </p>
-          <NvLineChart
-            :data="trendChartData"
-            x-key="time"
-            :series="trendSeries"
-            :height="220"
-          />
+          <NvLineChart :data="trendChartData" x-key="time" :series="trendSeries" :height="220" />
         </div>
       </section>
 
@@ -311,7 +360,9 @@ function refreshAll() {
       <section class="grid gap-3">
         <div>
           <h2 class="text-sm font-medium text-foreground">工时与费用（按技师聚合）</h2>
-          <p class="text-sm text-muted-foreground">当前设备窗口内，完工工单按指派技师汇总的工时与成本。</p>
+          <p class="text-sm text-muted-foreground">
+            当前设备窗口内，完工工单按指派技师汇总的工时与成本。
+          </p>
         </div>
         <p v-if="summaryErrorMessage" class="text-sm text-destructive" role="alert">
           {{ summaryErrorMessage }}

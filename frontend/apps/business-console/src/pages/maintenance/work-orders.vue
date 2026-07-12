@@ -6,11 +6,15 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenanceWorkOrders } from '@/composables/useBusinessMaintenance'
-import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
+import {
+  useBusinessWorkers,
+  useBusinessMasterDataResources,
+} from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
+  NvCombobox,
   NvDataTable,
   NvDropdownMenuItem,
   NvField,
@@ -20,6 +24,7 @@ import {
   NvInput,
   NvPageHeader,
   NvRowActions,
+  NvSearchSelect,
   NvSectionCard,
   NvSectionCards,
   NvSelect,
@@ -68,6 +73,8 @@ const route = useRoute()
 
 // 技师目录（人员选择器数据源，读自 /master-data/workers）。
 const { workers, workersPending } = useBusinessWorkers()
+// 设备台账（设备编号联想建议，读自 master-data device-asset 资源）。
+const { resources: deviceResources } = useBusinessMasterDataResources('device-asset')
 
 const priorityOptions = [
   { label: '高', value: 'high' },
@@ -85,6 +92,24 @@ const reasonOptions = [
   { label: '突发故障', value: 'breakdown' },
 ]
 const UNASSIGNED = '__unassigned__'
+
+// 设备编号联想建议：设备台账的编号 + 名称（可自由录入未登记设备）。
+const deviceSuggestions = computed(() =>
+  deviceResources.value
+    .map((r) => ({ value: (r.code ?? '').trim(), label: r.displayName ?? r.code ?? '' }))
+    .filter((s) => s.value.length > 0),
+)
+// 指派技师选项：未指派 + 工人目录（姓名 + 工号）。
+const technicianOptions = computed(() => [
+  { value: UNASSIGNED, label: '未指派' },
+  ...workers.value
+    .map((w) => ({
+      value: w.userId ?? '',
+      label: w.displayName ?? w.userId ?? '',
+      hint: w.employeeNo ?? undefined,
+    }))
+    .filter((o) => o.value.length > 0),
+])
 
 // 待执行 / 已完成基于本页可见行的语义统计（可行动数，非机械总数）。
 const OPEN_STATUSES = new Set(['open', 'opened', 'scheduled', 'inprogress', 'in-progress'])
@@ -189,7 +214,11 @@ const columns: NvDataTableColumn<WorkOrderRow>[] = [
   { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '—' },
   { key: 'priority', header: '优先级', width: 'w-20' },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'assignedTechnicianUserId', header: '技师', accessor: (r) => technicianLabel(r.assignedTechnicianUserId) },
+  {
+    key: 'assignedTechnicianUserId',
+    header: '技师',
+    accessor: (r) => technicianLabel(r.assignedTechnicianUserId),
+  },
   { key: 'openedAtUtc', header: '开单时间', accessor: (r) => formatDateTime(r.openedAtUtc) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
@@ -297,7 +326,9 @@ async function submitComplete() {
     completeError.value = '实际工时需为非负整数。'
     return
   }
-  const externalServiceCostAmount = optionalNonNegativeNumber(completeForm.externalServiceCostAmount)
+  const externalServiceCostAmount = optionalNonNegativeNumber(
+    completeForm.externalServiceCostAmount,
+  )
   if (externalServiceCostAmount === false) {
     completeError.value = '外委费用需为非负数。'
     return
@@ -457,11 +488,11 @@ watch(
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="mwo-device">设备</NvFieldLabel>
-              <NvInput
+              <NvCombobox
                 id="mwo-device"
                 v-model="createForm.deviceAssetId"
-                autocomplete="off"
-                placeholder="如 DEV-SMT-01"
+                :suggestions="deviceSuggestions"
+                placeholder="搜索设备台账或直接输入，如 DEV-SMT-01"
               />
             </NvField>
             <NvField>
@@ -497,17 +528,15 @@ watch(
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-technician">指派技师</NvFieldLabel>
-              <NvSelect v-model="createForm.assignedTechnicianUserId">
-                <NvSelectTrigger id="mwo-technician" aria-label="指派技师"
-                  ><NvSelectValue :placeholder="workersPending ? '加载中…' : '未指派'"
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem :value="UNASSIGNED">未指派</NvSelectItem>
-                  <NvSelectItem v-for="w in workers" :key="w.userId" :value="w.userId ?? ''">
-                    {{ w.displayName ?? w.userId }}{{ w.employeeNo ? ` · ${w.employeeNo}` : '' }}
-                  </NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
+              <NvSearchSelect
+                id="mwo-technician"
+                v-model="createForm.assignedTechnicianUserId"
+                :options="technicianOptions"
+                :loading="workersPending"
+                aria-label="指派技师"
+                placeholder="未指派"
+                search-placeholder="搜索技师姓名 / 工号…"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-est-labor">预估工时（分钟）</NvFieldLabel>
@@ -552,29 +581,21 @@ watch(
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="mwo-result">维护结果</NvFieldLabel>
-              <NvSelect v-model="completeForm.result">
-                <NvSelectTrigger id="mwo-result" aria-label="维护结果"
-                  ><NvSelectValue
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem v-for="o in resultOptions" :key="o.value" :value="o.value">{{
-                    o.label
-                  }}</NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
+              <NvSearchSelect
+                id="mwo-result"
+                v-model="completeForm.result"
+                :options="resultOptions"
+                aria-label="维护结果"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-reason">停机原因</NvFieldLabel>
-              <NvSelect v-model="completeForm.downtimeReasonCode">
-                <NvSelectTrigger id="mwo-reason" aria-label="停机原因"
-                  ><NvSelectValue
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem v-for="o in reasonOptions" :key="o.value" :value="o.value">{{
-                    o.label
-                  }}</NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
+              <NvSearchSelect
+                id="mwo-reason"
+                v-model="completeForm.downtimeReasonCode"
+                :options="reasonOptions"
+                aria-label="停机原因"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-minutes">停机时长（分钟）</NvFieldLabel>
@@ -624,7 +645,13 @@ watch(
               </NvField>
               <NvField>
                 <NvFieldLabel :for="`spare-qty-${row.id}`">数量</NvFieldLabel>
-                <NvInput :id="`spare-qty-${row.id}`" v-model="row.quantity" type="number" min="1" step="1" />
+                <NvInput
+                  :id="`spare-qty-${row.id}`"
+                  v-model="row.quantity"
+                  type="number"
+                  min="1"
+                  step="1"
+                />
               </NvField>
               <NvField>
                 <NvFieldLabel :for="`spare-uom-${row.id}`">单位</NvFieldLabel>
@@ -666,7 +693,8 @@ watch(
               />
               <p class="text-xs text-muted-foreground">
                 自动从备件行（数量 × 单价）合计
-                <span class="tabular-nums">{{ round2(autoSparePartCost) }}</span>，可直接改写。
+                <span class="tabular-nums">{{ round2(autoSparePartCost) }}</span
+                >，可直接改写。
               </p>
             </NvField>
             <NvField>
@@ -682,7 +710,11 @@ watch(
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-currency">币种</NvFieldLabel>
-              <NvInput id="mwo-currency" v-model="completeForm.costCurrencyCode" autocomplete="off" />
+              <NvInput
+                id="mwo-currency"
+                v-model="completeForm.costCurrencyCode"
+                autocomplete="off"
+              />
             </NvField>
           </NvFieldGroup>
 

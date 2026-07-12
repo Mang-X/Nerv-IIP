@@ -51,10 +51,16 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
   }),
 }))
 
-// Worker directory (technician selector) — used by the work-orders create sheet.
+// Worker directory (technician selector) + device-asset resources (device combobox)
+// — both used by the work-orders create sheet.
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessWorkers: () => ({
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', pageIndex: 1, pageSize: 100 }),
+    filters: reactive({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      pageIndex: 1,
+      pageSize: 100,
+    }),
     refresh: vi.fn(),
     workers: computed(() => [
       { userId: 'user-1', displayName: '张工', employeeNo: 'E001', status: 'active' },
@@ -63,6 +69,16 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     workersError: shallowRef(),
     workersPending: shallowRef(false),
     workersTotal: computed(() => 2),
+  }),
+  useBusinessMasterDataResources: () => ({
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
+    refreshResources: vi.fn(),
+    resources: computed(() => [
+      { resourceType: 'device-asset', code: 'DEV-SMT-01', displayName: '贴片机 01', active: true },
+    ]),
+    resourcesError: shallowRef(),
+    resourcesPending: shallowRef(false),
+    resourcesTotal: computed(() => 1),
   }),
 }))
 
@@ -115,9 +131,9 @@ describe('maintenance work orders page', () => {
     setInput('#mwo-est-labor', 45)
     await flushPromises()
 
-    const submit = [...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button[type="submit"]')].find(
-      (b) => b.textContent?.includes('创建维护工单'),
-    )!
+    const submit = [
+      ...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button[type="submit"]'),
+    ].find((b) => b.textContent?.includes('创建维护工单'))!
     submit.click()
     await flushPromises()
 
@@ -139,8 +155,22 @@ describe('maintenance inspections page', () => {
         result: 'failed',
         inspectedAtUtc: '2026-06-10T08:00:00Z',
         measurements: [
-          { characteristicCode: '轴承温度', measuredValue: 85, uomCode: '℃', lowerSpecLimit: 0, upperSpecLimit: 70, isWithinSpec: false },
-          { characteristicCode: '振动', measuredValue: 2, uomCode: 'mm/s', lowerSpecLimit: 0, upperSpecLimit: 5, isWithinSpec: true },
+          {
+            characteristicCode: '轴承温度',
+            measuredValue: 85,
+            uomCode: '℃',
+            lowerSpecLimit: 0,
+            upperSpecLimit: 70,
+            isWithinSpec: false,
+          },
+          {
+            characteristicCode: '振动',
+            measuredValue: 2,
+            uomCode: 'mm/s',
+            lowerSpecLimit: 0,
+            upperSpecLimit: 5,
+            isWithinSpec: true,
+          },
         ],
       },
     ]
