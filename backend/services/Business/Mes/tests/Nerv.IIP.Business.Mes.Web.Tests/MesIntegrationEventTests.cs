@@ -277,7 +277,8 @@ public sealed class MesIntegrationEventTests
             original,
             "PRPT-OEE-REVERSAL-001",
             DateTimeOffset.Parse("2026-07-10T09:00:00Z"),
-            "operator correction");
+            "operator correction",
+            "operator-1");
 
         var domainEvent = Assert.IsType<ProductionReportRecordedDomainEvent>(reversal.GetDomainEvents().Single());
         var integrationEvent = new ProductionReportRecordedIntegrationEventConverter().Convert(domainEvent);

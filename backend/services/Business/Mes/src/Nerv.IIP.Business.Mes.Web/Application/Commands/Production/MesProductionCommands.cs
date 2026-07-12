@@ -287,6 +287,7 @@ public sealed record ReverseProductionReportCommand(
     string ReportNo,
     string Reason,
     DateTimeOffset ReversedAtUtc,
+    string ActorRef,
     string? IdempotencyKey = null) : ICommand<ReverseProductionReportCommandResult>;
 
 public sealed class ReverseProductionReportCommandValidator : AbstractValidator<ReverseProductionReportCommand>
@@ -297,6 +298,7 @@ public sealed class ReverseProductionReportCommandValidator : AbstractValidator<
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ReportNo).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.ActorRef).NotEmpty().MaximumLength(100);
     }
 }
 
@@ -313,7 +315,7 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
             "production-report",
             null,
             request.IdempotencyKey,
-            MesCodingService.Fingerprint(request.ReportNo, request.Reason, request.ReversedAtUtc),
+            MesCodingService.Fingerprint(request.ReportNo, request.Reason, request.ReversedAtUtc, request.ActorRef),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -410,7 +412,8 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
             original,
             allocation.Code,
             request.ReversedAtUtc,
-            request.Reason);
+            request.Reason,
+            request.ActorRef);
         var originalConsumptions = await dbContext.ProductionReportMaterialConsumptions
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&

@@ -2124,6 +2124,7 @@ public sealed class MesPersistenceContractTests
                 reportResult.ReportNo,
                 "wrong quantity",
                 now.AddMinutes(50),
+                "operator-1",
                 "reverse-rev-001"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
@@ -2139,6 +2140,7 @@ public sealed class MesPersistenceContractTests
 
         var reversalReport = await dbContext.ProductionReports.SingleAsync(x => x.ReportNo == reversal.ReportNo);
         Assert.Equal(reportResult.ReportNo, reversalReport.ReversedReportNo);
+        Assert.Equal("operator-1", reversalReport.ReversedBy);
         Assert.Equal(-4m, reversalReport.GoodQuantity);
         Assert.Equal(-1m, reversalReport.ScrapQuantity);
         Assert.Equal(-2m, reversalReport.ReworkQuantity);
@@ -2208,13 +2210,13 @@ public sealed class MesPersistenceContractTests
 
         var reversedAt = now.AddMinutes(50);
         var first = await new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
-            new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt, "reverse-idem-key"),
+            new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt, "operator-1", "reverse-idem-key"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         // 同 key + 同 reversedAtUtc → 幂等重放:返回同一冲销单,不产生第二条冲销记录,工单不二次回退
         var replay = await new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
-            new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt, "reverse-idem-key"),
+            new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt, "operator-1", "reverse-idem-key"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -2226,13 +2228,18 @@ public sealed class MesPersistenceContractTests
         // 同 key + **不同** reversedAtUtc → fingerprint 变 → CodeAllocator 判冲突(KnownException),不会误重放
         await Assert.ThrowsAsync<KnownException>(() =>
             new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
-                new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt.AddSeconds(1), "reverse-idem-key"),
+                new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt.AddSeconds(1), "operator-1", "reverse-idem-key"),
                 CancellationToken.None));
 
         // 同 key + 同 reversedAtUtc + **不同 reason** → fingerprint 同样变 → 冲突。故前端必须把 reason 也冻结进意图。
         await Assert.ThrowsAsync<KnownException>(() =>
             new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
-                new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "wrong-quantity", reversedAt, "reverse-idem-key"),
+                new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "wrong-quantity", reversedAt, "operator-1", "reverse-idem-key"),
+                CancellationToken.None));
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+                new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt, "operator-2", "reverse-idem-key"),
                 CancellationToken.None));
     }
 
@@ -2282,7 +2289,7 @@ public sealed class MesPersistenceContractTests
 
         var closedException = await Assert.ThrowsAsync<KnownException>(() =>
             new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
-                new ReverseProductionReportCommand("org-001", "env-dev", report.ReportNo, "closed", now.AddMinutes(50), "reverse-closed"),
+                new ReverseProductionReportCommand("org-001", "env-dev", report.ReportNo, "closed", now.AddMinutes(50), "operator-1", "reverse-closed"),
                 CancellationToken.None));
         Assert.Contains("已关闭", closedException.Message);
 
@@ -2320,13 +2327,13 @@ public sealed class MesPersistenceContractTests
         await dbContext.SaveChangesAsync();
 
         await new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
-            new ReverseProductionReportCommand("org-001", "env-dev", duplicateReport.ReportNo, "first reversal", now.AddMinutes(60), "reverse-first"),
+            new ReverseProductionReportCommand("org-001", "env-dev", duplicateReport.ReportNo, "first reversal", now.AddMinutes(60), "operator-1", "reverse-first"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         var duplicateException = await Assert.ThrowsAsync<KnownException>(() =>
             new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
-                new ReverseProductionReportCommand("org-001", "env-dev", duplicateReport.ReportNo, "duplicate reversal", now.AddMinutes(70), "reverse-second"),
+                new ReverseProductionReportCommand("org-001", "env-dev", duplicateReport.ReportNo, "duplicate reversal", now.AddMinutes(70), "operator-2", "reverse-second"),
                 CancellationToken.None));
         Assert.Contains("已冲销", duplicateException.Message);
     }

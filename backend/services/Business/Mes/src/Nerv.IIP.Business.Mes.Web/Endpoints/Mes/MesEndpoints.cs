@@ -90,6 +90,7 @@ public sealed record ReverseProductionReportRequest(
     [property: RouteParam] string ReportNo,
     string Reason,
     DateTimeOffset? ReversedAtUtc,
+    string ActorRef,
     string? IdempotencyKey = null);
 
 public sealed record ReverseProductionReportResponse(
@@ -1009,6 +1010,7 @@ public sealed class ReverseProductionReportEndpoint(ISender sender, TimeProvider
             req.ReportNo,
             req.Reason,
             req.ReversedAtUtc ?? timeProvider.GetUtcNow(),
+            req.ActorRef,
             req.IdempotencyKey), ct);
         await Send.OkAsync(new ReverseProductionReportResponse(result.Id, result.ReportNo, result.OriginalReportNo), ct);
     }
