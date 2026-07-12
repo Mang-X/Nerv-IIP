@@ -450,6 +450,8 @@ public sealed class QueryBusinessConsoleTelemetryRuntimeHoursEndpoint(IBusinessG
 {
     protected override string OrganizationId(BusinessConsoleTelemetryRuntimeHoursRequest request) => request.OrganizationId;
     protected override string EnvironmentId(BusinessConsoleTelemetryRuntimeHoursRequest request) => request.EnvironmentId;
+    protected override string ResourceType(BusinessConsoleTelemetryRuntimeHoursRequest request) => "device-asset";
+    protected override string ResourceId(BusinessConsoleTelemetryRuntimeHoursRequest request) => request.DeviceAssetId;
     protected override Task<BusinessConsoleTelemetryRuntimeHoursResponse> ForwardAsync(BusinessConsoleTelemetryRuntimeHoursRequest request, string bearerToken, CancellationToken cancellationToken) => telemetry.QueryRuntimeHoursAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 

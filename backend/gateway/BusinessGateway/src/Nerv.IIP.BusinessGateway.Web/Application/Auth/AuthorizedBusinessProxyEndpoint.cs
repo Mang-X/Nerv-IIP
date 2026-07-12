@@ -76,6 +76,12 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
         return (actorType, actorRef);
     }
 
+    protected string RequireAuthorizedPrincipalRecipientRef()
+    {
+        var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
+        return BusinessGatewayPrincipalReferences.ToRecipientRef(actorType, actorRef);
+    }
+
     protected abstract string OrganizationId(TRequest request);
 
     protected abstract string EnvironmentId(TRequest request);
@@ -84,4 +90,10 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
         TRequest request,
         string bearerToken,
         CancellationToken cancellationToken);
+}
+
+internal static class BusinessGatewayPrincipalReferences
+{
+    public static string ToRecipientRef(string actorType, string actorRef) =>
+        $"{actorType.Trim().ToLowerInvariant()}:{actorRef.Trim()}";
 }

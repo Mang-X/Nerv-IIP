@@ -41,6 +41,7 @@ public sealed class BusinessGatewayProxyTests
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
         var list = await client.GetAsync("/api/business-console/v1/notifications/messages?organizationId=org-001&environmentId=env-dev&recipientRef=user-forged&status=unread");
+        var tasks = await client.GetAsync("/api/business-console/v1/notifications/tasks?organizationId=org-001&environmentId=env-dev&recipientRef=user-forged&status=open");
         var mark = await client.PostAsJsonAsync("/api/business-console/v1/notifications/messages/message-001/read", new
         {
             organizationId = "org-001",
@@ -49,9 +50,11 @@ public sealed class BusinessGatewayProxyTests
         });
 
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, tasks.StatusCode);
         Assert.Equal(HttpStatusCode.OK, mark.StatusCode);
-        Assert.Equal("user-admin", notification.LastListRequest!.RecipientRef);
-        Assert.Equal("user-admin", notification.LastMarkRequest!.RecipientRef);
+        Assert.Equal("user:user-admin", notification.LastListRequest!.RecipientRef);
+        Assert.Equal("user:user-admin", notification.LastTaskRequest!.RecipientRef);
+        Assert.Equal("user:user-admin", notification.LastMarkRequest!.RecipientRef);
         Assert.Equal("internal-notification-token", notification.LastInternalToken);
         Assert.Equal(BusinessGatewayPermissions.NotificationMessagesRead, auth.LastRequirement!.PermissionCode);
     }
@@ -5686,6 +5689,7 @@ internal sealed class PrincipalRecordingNotificationClient : IBusinessNotificati
 {
     public string? LastInternalToken { get; private set; }
     public BusinessConsoleNotificationListRequest? LastListRequest { get; private set; }
+    public BusinessConsoleNotificationListRequest? LastTaskRequest { get; private set; }
     public BusinessConsoleMarkNotificationMessageReadRequest? LastMarkRequest { get; private set; }
 
     public Task<NotificationMessageListResponse> ListMessagesAsync(string internalBearerToken, BusinessConsoleNotificationListRequest request, CancellationToken cancellationToken)
@@ -5695,8 +5699,12 @@ internal sealed class PrincipalRecordingNotificationClient : IBusinessNotificati
         return Task.FromResult(new NotificationMessageListResponse([]));
     }
 
-    public Task<NotificationTaskListResponse> ListTasksAsync(string internalBearerToken, BusinessConsoleNotificationListRequest request, CancellationToken cancellationToken) =>
-        Task.FromResult(new NotificationTaskListResponse([]));
+    public Task<NotificationTaskListResponse> ListTasksAsync(string internalBearerToken, BusinessConsoleNotificationListRequest request, CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastTaskRequest = request;
+        return Task.FromResult(new NotificationTaskListResponse([]));
+    }
 
     public Task<MarkNotificationMessageReadResponse> MarkMessageReadAsync(string internalBearerToken, BusinessConsoleMarkNotificationMessageReadRequest request, CancellationToken cancellationToken)
     {

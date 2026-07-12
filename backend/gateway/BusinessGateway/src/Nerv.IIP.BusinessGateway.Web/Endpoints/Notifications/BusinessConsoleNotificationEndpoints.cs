@@ -27,7 +27,7 @@ public sealed class ListBusinessConsoleNotificationMessagesEndpoint(
         CancellationToken cancellationToken) =>
         notification.ListMessagesAsync(
             internalServiceToken.BearerToken,
-            request with { RecipientRef = RequireAuthorizedPrincipalActor().ActorRef },
+            request with { RecipientRef = RequireAuthorizedPrincipalRecipientRef() },
             cancellationToken);
 }
 
@@ -51,7 +51,7 @@ public sealed class ListBusinessConsoleNotificationTasksEndpoint(
         CancellationToken cancellationToken) =>
         notification.ListTasksAsync(
             internalServiceToken.BearerToken,
-            request with { RecipientRef = RequireAuthorizedPrincipalActor().ActorRef },
+            request with { RecipientRef = RequireAuthorizedPrincipalRecipientRef() },
             cancellationToken);
 }
 
@@ -79,6 +79,6 @@ public sealed class MarkBusinessConsoleNotificationMessageReadEndpoint(
         CancellationToken cancellationToken) =>
         notification.MarkMessageReadAsync(
             internalServiceToken.BearerToken,
-            request with { RecipientRef = RequireAuthorizedPrincipalActor().ActorRef },
+            request with { RecipientRef = RequireAuthorizedPrincipalRecipientRef() },
             cancellationToken);
 }
