@@ -31,7 +31,7 @@ public sealed class GatewayConsoleNotificationTests
         response.EnsureSuccessStatusCode();
         var body = await ReadResponseDataAsync<NotificationMessageListResponse>(response);
         Assert.Single(body.Items);
-        Assert.Equal("/api/notifications/v1/messages?recipientRef=user%3Aadmin&status=unread", notification.LastRequest!.RequestUri);
+        Assert.Equal("/api/notifications/v1/messages?recipientRef=user-admin&status=unread", notification.LastRequest!.RequestUri);
         Assert.Equal("org-001", notification.LastRequest.OrganizationId);
         Assert.Equal("env-dev", notification.LastRequest.EnvironmentId);
         Assert.Equal(bearerToken, notification.LastRequest.BearerToken);
@@ -54,7 +54,7 @@ public sealed class GatewayConsoleNotificationTests
         response.EnsureSuccessStatusCode();
         var body = await ReadResponseDataAsync<NotificationTaskListResponse>(response);
         Assert.Single(body.Items);
-        Assert.Equal("/api/notifications/v1/tasks?recipientRef=user%3Aadmin&status=open", notification.LastRequest!.RequestUri);
+        Assert.Equal("/api/notifications/v1/tasks?recipientRef=user-admin&status=open", notification.LastRequest!.RequestUri);
     }
 
     [Fact]
@@ -87,7 +87,7 @@ public sealed class GatewayConsoleNotificationTests
         response.EnsureSuccessStatusCode();
         var body = await ReadResponseDataAsync<MarkNotificationMessageReadResponse>(response);
         Assert.Equal("msg-001", body.MessageId);
-        Assert.Equal("/api/notifications/v1/messages/msg-001/read", notification.LastRequest!.RequestUri);
+        Assert.Equal("/api/notifications/v1/messages/msg-001/read?recipientRef=user-admin", notification.LastRequest!.RequestUri);
     }
 
     [Fact]

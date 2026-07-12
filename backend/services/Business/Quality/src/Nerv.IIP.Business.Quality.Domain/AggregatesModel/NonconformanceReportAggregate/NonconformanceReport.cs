@@ -97,6 +97,8 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
     public string? ReworkWorkOrderId { get; private set; }
     public string? ScrapMovementId { get; private set; }
     public string? ReturnDocumentId { get; private set; }
+    public string? CloseReason { get; private set; }
+    public string? ClosedByActor { get; private set; }
     public InspectionRecordId? SourceInspectionRecordId { get; private set; }
     public List<MrbReview> MrbReviews { get; private set; } = [];
     public List<string> AttachmentFileIds { get; private set; } = [];
@@ -248,12 +250,15 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         }
     }
 
-    public void Close(string? reworkWorkOrderId, string? scrapMovementId, string? returnDocumentId) =>
-        Close(reworkWorkOrderId, scrapMovementId, returnDocumentId, "system closure");
-
-    public void Close(string? reworkWorkOrderId, string? scrapMovementId, string? returnDocumentId, string reason)
+    public void Close(
+        string? reworkWorkOrderId,
+        string? scrapMovementId,
+        string? returnDocumentId,
+        string reason,
+        string actor)
     {
         var validReason = Required(reason);
+        var validActor = Required(actor);
         EnsureNotClosed();
         if (string.IsNullOrWhiteSpace(DispositionType))
         {
@@ -264,6 +269,8 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         ScrapMovementId = Optional(scrapMovementId) ?? ScrapMovementId;
         ReturnDocumentId = Optional(returnDocumentId) ?? ReturnDocumentId;
         EnsureClosureReferences();
+        CloseReason = validReason;
+        ClosedByActor = validActor;
         Status = "closed";
         Touch();
         this.AddDomainEvent(new NonconformanceReportClosedDomainEvent(this, validReason));
@@ -294,7 +301,7 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             throw new InvalidOperationException("Closed NCR cannot change scrap movement id.");
         }
 
-        Close(null, movementId, null);
+        Close(null, movementId, null, "Inventory scrap disposition completed", "system:business-quality-inventory-consumer");
     }
 
     public void RecordScrapDispositionMovement(string scrapMovementId, decimal quantity)
@@ -345,7 +352,7 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             return;
         }
 
-        Close(null, null, null);
+        Close(null, null, null, "Inventory conditional release completed", "system:business-quality-inventory-consumer");
     }
 
     private void EnsureClosureReferences()

@@ -219,6 +219,6 @@ internal static class CorrectiveActionNcrRedrive
             return;
         }
 
-        ncr.Close(null, null, null, "CAPA effectiveness verified");
+        ncr.Close(null, null, null, "CAPA effectiveness verified", "system:business-quality-capa");
     }
 }

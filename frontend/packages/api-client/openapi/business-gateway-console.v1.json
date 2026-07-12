@@ -28046,6 +28046,9 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNcrCloseRequest": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "reason"
+        ],
         "properties": {
           "reworkWorkOrderId": {
             "type": "string",
@@ -28060,7 +28063,9 @@
             "nullable": true
           },
           "reason": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1
           }
         }
       },
@@ -31976,6 +31981,10 @@
           },
           "environmentId": {
             "type": "string"
+          },
+          "recipientRef": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

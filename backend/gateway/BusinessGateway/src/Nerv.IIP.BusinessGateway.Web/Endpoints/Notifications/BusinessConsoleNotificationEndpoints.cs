@@ -77,5 +77,8 @@ public sealed class MarkBusinessConsoleNotificationMessageReadEndpoint(
         BusinessConsoleMarkNotificationMessageReadRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        notification.MarkMessageReadAsync(internalServiceToken.BearerToken, request, cancellationToken);
+        notification.MarkMessageReadAsync(
+            internalServiceToken.BearerToken,
+            request with { RecipientRef = RequireAuthorizedPrincipalActor().ActorRef },
+            cancellationToken);
 }

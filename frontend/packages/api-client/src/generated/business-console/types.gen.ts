@@ -1524,7 +1524,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleN
     reworkWorkOrderId?: string | null;
     scrapMovementId?: string | null;
     returnDocumentId?: string | null;
-    reason?: string;
+    reason: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringEntityResponse = NetCorePalExtensionsDtoResponseData & {
@@ -2602,6 +2602,7 @@ export type NervIipContractsNotificationMarkNotificationMessageReadResponse = {
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMarkNotificationMessageReadRequest = {
     organizationId?: string;
     environmentId?: string;
+    recipientRef?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesFoundationReadinessResponse = NetCorePalExtensionsDtoResponseData & {

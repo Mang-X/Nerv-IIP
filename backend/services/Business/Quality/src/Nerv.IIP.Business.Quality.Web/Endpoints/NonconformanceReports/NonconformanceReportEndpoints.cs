@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.ComponentModel.DataAnnotations;
 using FastEndpoints;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
@@ -101,7 +102,7 @@ public sealed record CloseNonconformanceReportRequest(
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId,
-    string Reason);
+    [property: Required, MaxLength(500)] string Reason);
 
 public sealed record AcceptedResponse(bool Accepted);
 

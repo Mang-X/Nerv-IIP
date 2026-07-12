@@ -1881,7 +1881,7 @@ public sealed class HttpBusinessNotificationClient(HttpClient httpClient) : Busi
         SendAsync<MarkNotificationMessageReadResponse>(
             internalBearerToken,
             HttpMethod.Post,
-            $"/api/notifications/v1/messages/{Uri.EscapeDataString(request.MessageId)}/read",
+            $"/api/notifications/v1/messages/{Uri.EscapeDataString(request.MessageId)}/read?" + Query(("recipientRef", request.RecipientRef)),
             null,
             cancellationToken,
             configureRequest: notificationRequest => AddNotificationScopeHeaders(

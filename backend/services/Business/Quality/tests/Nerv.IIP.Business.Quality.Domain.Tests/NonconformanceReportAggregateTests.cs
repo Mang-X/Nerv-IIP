@@ -16,11 +16,13 @@ public sealed class NonconformanceReportAggregateTests
             [],
             [MrbReviewInput.Approve("qa-manager-001", "approved", DateTimeOffset.UtcNow)]);
 
-        ncr.Close("RW-001", null, null, "Engineering concession approved");
+        ncr.Close("RW-001", null, null, "Engineering concession approved", "user:qa-manager-001");
 
         var audit = Assert.IsType<NonconformanceReportClosedDomainEvent>(
             Assert.Single(ncr.GetDomainEvents().OfType<NonconformanceReportClosedDomainEvent>()));
         Assert.Equal("Engineering concession approved", audit.Reason);
+        Assert.Equal("Engineering concession approved", ncr.CloseReason);
+        Assert.Equal("user:qa-manager-001", ncr.ClosedByActor);
     }
 
     [Fact]
@@ -180,11 +182,13 @@ public sealed class NonconformanceReportAggregateTests
         var ncr = NewNcr();
         ncr.SubmitDisposition("rework", "approval-chain-001", [], ApprovedMrbReview());
 
-        Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null));
+        Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null, "test closure", "user:test"));
 
-        ncr.Close("RW-0001", null, null);
+        ncr.Close("RW-0001", null, null, "rework completed", "user:test");
 
         Assert.Equal("closed", ncr.Status);
+        Assert.Equal("rework completed", ncr.CloseReason);
+        Assert.Equal("user:test", ncr.ClosedByActor);
         Assert.Equal("RW-0001", ncr.ReworkWorkOrderId);
     }
 
@@ -194,9 +198,9 @@ public sealed class NonconformanceReportAggregateTests
         var ncr = NewNcr();
         ncr.SubmitDisposition("scrap", "approval-chain-001", [], ApprovedMrbReview());
 
-        Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null));
+        Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null, "test closure", "user:test"));
 
-        ncr.Close(null, "SM-0001", null);
+        ncr.Close(null, "SM-0001", null, "scrap completed", "user:test");
 
         Assert.Equal("closed", ncr.Status);
         Assert.Equal("SM-0001", ncr.ScrapMovementId);
@@ -208,9 +212,9 @@ public sealed class NonconformanceReportAggregateTests
         var ncr = NewNcr();
         ncr.SubmitDisposition("return-to-supplier", "approval-chain-001", [], ApprovedMrbReview());
 
-        Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null));
+        Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null, "test closure", "user:test"));
 
-        ncr.Close(null, null, "RTV-0001");
+        ncr.Close(null, null, "RTV-0001", "return completed", "user:test");
 
         Assert.Equal("closed", ncr.Status);
         Assert.Equal("RTV-0001", ncr.ReturnDocumentId);
@@ -244,7 +248,7 @@ public sealed class NonconformanceReportAggregateTests
     {
         var ncr = NewNcr();
         ncr.SubmitDisposition("conditional-release", "approval-chain-001", ["file-waiver-001"], ApprovedMrbReview());
-        ncr.Close(null, null, null);
+        ncr.Close(null, null, null, "conditional release completed", "user:test");
 
         Assert.Equal("closed", ncr.Status);
         Assert.Throws<InvalidOperationException>(() => ncr.SubmitDisposition("scrap", "approval-chain-002", [], ApprovedMrbReview()));
@@ -275,11 +279,11 @@ public sealed class NonconformanceReportAggregateTests
     {
         var ncr = NewNcr();
 
-        Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null));
+        Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null, "test closure", "user:test"));
 
         ncr.SubmitDisposition("sort-and-screen", "approval-chain-001", ["file-screening-result-001"]);
         ncr.ClearDomainEvents();
-        ncr.Close(null, null, null);
+        ncr.Close(null, null, null, "sort and screen completed", "user:test");
 
         Assert.Equal("closed", ncr.Status);
         Assert.IsType<NonconformanceReportClosedDomainEvent>(ncr.GetDomainEvents().Single());

@@ -20,6 +20,9 @@ import type {
   BusinessConsoleForecastInputListEnvelope,
   BusinessConsoleForecastInputListResponse,
   BusinessConsoleMaintenanceAssetReliabilityEnvelope,
+  BusinessConsoleNotificationMessageItem,
+  BusinessConsoleNotificationTaskItem,
+  BusinessConsoleMarkNotificationMessageReadResponse,
   BusinessConsoleOpenNcrFromInspectionEnvelope,
   BusinessConsoleOpenNcrFromInspectionRequest,
   BusinessConsoleOpenNcrFromInspectionResponse,
@@ -127,6 +130,24 @@ import {
 } from './iam'
 
 describe('generated API client contract', () => {
+  it('exposes notification message task and read result shapes through the stable boundary', () => {
+    expectTypeOf<BusinessConsoleNotificationMessageItem>().toMatchTypeOf<{
+      messageId?: string
+      recipientRef?: string
+      status?: string
+      readAtUtc?: string | null
+    }>()
+    expectTypeOf<BusinessConsoleNotificationTaskItem>().toMatchTypeOf<{
+      taskId?: string
+      recipientRef?: string
+      status?: string
+    }>()
+    expectTypeOf<BusinessConsoleMarkNotificationMessageReadResponse>().toMatchTypeOf<{
+      messageId?: string
+      status?: string
+      readAtUtc?: string
+    }>()
+  })
   it('defaults to a browser-relative base URL instead of the OpenAPI export server', () => {
     const config = client.getConfig()
 

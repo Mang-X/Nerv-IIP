@@ -26,6 +26,36 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayProxyTests
 {
     [Fact]
+    public async Task Notification_facade_binds_forged_recipient_to_principal_and_uses_internal_token()
+    {
+        var notification = new PrincipalRecordingNotificationClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessNotificationClient>();
+            services.AddSingleton<IBusinessNotificationClient>(notification);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-notification-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var list = await client.GetAsync("/api/business-console/v1/notifications/messages?organizationId=org-001&environmentId=env-dev&recipientRef=user-forged&status=unread");
+        var mark = await client.PostAsJsonAsync("/api/business-console/v1/notifications/messages/message-001/read", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            recipientRef = "user-forged",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, mark.StatusCode);
+        Assert.Equal("user-admin", notification.LastListRequest!.RecipientRef);
+        Assert.Equal("user-admin", notification.LastMarkRequest!.RecipientRef);
+        Assert.Equal("internal-notification-token", notification.LastInternalToken);
+        Assert.Equal(BusinessGatewayPermissions.NotificationMessagesRead, auth.LastRequirement!.PermissionCode);
+    }
+    [Fact]
     public async Task Quality_ncr_close_forwards_reason_with_authenticated_actor()
     {
         var quality = new RecordingQualityClient();
@@ -42,11 +72,13 @@ public sealed class BusinessGatewayProxyTests
             organizationId = "org-001",
             environmentId = "env-dev",
             reason = "Engineering concession approved",
+            actor = "user:forged-client-actor",
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("Engineering concession approved", quality.LastCloseNcrRequest!.Reason);
-        Assert.False(string.IsNullOrWhiteSpace(quality.LastCloseNcrActor));
+        Assert.Equal("user-admin", quality.LastCloseNcrActor);
+        Assert.NotEqual("user:forged-client-actor", quality.LastCloseNcrActor);
     }
 
     [Fact]
@@ -5647,6 +5679,30 @@ public sealed class BusinessGatewayProxyTests
                     builder.PrimaryHandler = handler;
                 }
             };
+    }
+}
+
+internal sealed class PrincipalRecordingNotificationClient : IBusinessNotificationClient
+{
+    public string? LastInternalToken { get; private set; }
+    public BusinessConsoleNotificationListRequest? LastListRequest { get; private set; }
+    public BusinessConsoleMarkNotificationMessageReadRequest? LastMarkRequest { get; private set; }
+
+    public Task<NotificationMessageListResponse> ListMessagesAsync(string internalBearerToken, BusinessConsoleNotificationListRequest request, CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastListRequest = request;
+        return Task.FromResult(new NotificationMessageListResponse([]));
+    }
+
+    public Task<NotificationTaskListResponse> ListTasksAsync(string internalBearerToken, BusinessConsoleNotificationListRequest request, CancellationToken cancellationToken) =>
+        Task.FromResult(new NotificationTaskListResponse([]));
+
+    public Task<MarkNotificationMessageReadResponse> MarkMessageReadAsync(string internalBearerToken, BusinessConsoleMarkNotificationMessageReadRequest request, CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastMarkRequest = request;
+        return Task.FromResult(new MarkNotificationMessageReadResponse(request.MessageId, "read", DateTimeOffset.UtcNow));
     }
 }
 

@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
+using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 
@@ -24,7 +25,8 @@ public sealed class CloseNonconformanceReportCommandValidator : AbstractValidato
 
 public sealed class CloseNonconformanceReportCommandHandler(
     INonconformanceReportRepository repository,
-    ICorrectiveActionRepository correctiveActionRepository)
+    ICorrectiveActionRepository correctiveActionRepository,
+    IQualityIntegrationEventContextAccessor integrationEventContextAccessor)
     : ICommandHandler<CloseNonconformanceReportCommand>
 {
     public async Task Handle(CloseNonconformanceReportCommand request, CancellationToken cancellationToken)
@@ -41,6 +43,11 @@ public sealed class CloseNonconformanceReportCommandHandler(
             throw new KnownException("NCR requires a linked effective CAPA before closure.");
         }
 
-        ncr.Close(request.ReworkWorkOrderId, request.ScrapMovementId, request.ReturnDocumentId, request.Reason);
+        ncr.Close(
+            request.ReworkWorkOrderId,
+            request.ScrapMovementId,
+            request.ReturnDocumentId,
+            request.Reason,
+            integrationEventContextAccessor.GetContext().Actor);
     }
 }

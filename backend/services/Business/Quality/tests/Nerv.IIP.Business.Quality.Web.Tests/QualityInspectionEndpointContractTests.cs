@@ -899,14 +899,20 @@ public sealed class QualityInspectionEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var closeHandler = new CloseNonconformanceReportCommandHandler(
             new NonconformanceReportRepository(dbContext),
-            new CorrectiveActionRepository(dbContext));
+            new CorrectiveActionRepository(dbContext),
+            new FixedQualityIntegrationEventContextAccessor("user:qa-manager-001"));
 
         await closeHandler.Handle(
             new CloseNonconformanceReportCommand(ncr.Id, null, null, null, "Disposition completed"),
             CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+        var durableAudit = await dbContext.NonconformanceReports.SingleAsync(x => x.Id == ncr.Id);
 
-        Assert.Equal("closed", ncr.Status);
-        Assert.Equal("SM-FULL-RECORDED-001", ncr.ScrapMovementId);
+        Assert.Equal("closed", durableAudit.Status);
+        Assert.Equal("SM-FULL-RECORDED-001", durableAudit.ScrapMovementId);
+        Assert.Equal("Disposition completed", durableAudit.CloseReason);
+        Assert.Equal("user:qa-manager-001", durableAudit.ClosedByActor);
     }
 
     [Fact]
@@ -1154,7 +1160,8 @@ public sealed class QualityInspectionEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new CloseNonconformanceReportCommandHandler(
             new NonconformanceReportRepository(dbContext),
-            new CorrectiveActionRepository(dbContext));
+            new CorrectiveActionRepository(dbContext),
+            new FixedQualityIntegrationEventContextAccessor("user:qa-manager-001"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CloseNonconformanceReportCommand(
@@ -1358,14 +1365,14 @@ public sealed class QualityInspectionEndpointContractTests
         }
     }
 
-    private sealed class FixedQualityIntegrationEventContextAccessor : IQualityIntegrationEventContextAccessor
+    private sealed class FixedQualityIntegrationEventContextAccessor(string actor = "system:business-quality") : IQualityIntegrationEventContextAccessor
     {
         public QualityIntegrationEventContext GetContext()
         {
             return new QualityIntegrationEventContext(
                 "corr-capa-redrive-001",
                 "cause-capa-redrive-001",
-                "system:business-quality");
+                actor);
         }
     }
 
