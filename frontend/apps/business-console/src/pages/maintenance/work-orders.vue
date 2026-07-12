@@ -6,6 +6,7 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenanceWorkOrders } from '@/composables/useBusinessMaintenance'
 import { usePagedList } from '@/composables/usePagedList'
+import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -103,6 +104,7 @@ const completeForm = reactive({
   downtimeMinutes: '30',
   sparePartSku: '',
   sparePartQuantity: '1',
+  actualTechnicianUserId: '',
 })
 const completeError = shallowRef('')
 
@@ -180,6 +182,7 @@ function openComplete(row: WorkOrderRow) {
   completeForm.downtimeMinutes = '30'
   completeForm.sparePartSku = ''
   completeForm.sparePartQuantity = '1'
+  completeForm.actualTechnicianUserId = row.assignedTechnicianUserId ?? ''
   completeError.value = ''
   completeOpen.value = true
 }
@@ -209,6 +212,7 @@ async function submitComplete() {
       downtimeReasonCode: completeForm.downtimeReasonCode,
       downtimeMinutes: minutes,
       spareParts: [{ skuCode: completeForm.sparePartSku.trim(), quantity, uomCode: 'EA' }],
+      actualTechnicianUserId: completeForm.actualTechnicianUserId.trim() || undefined,
     })
     completeOpen.value = false
     toast.success(`维护工单 ${workOrderNo(target)} 已完成`)
@@ -373,6 +377,14 @@ watch(
             <NvField>
               <NvFieldLabel for="mwo-minutes">停机时长（分钟）</NvFieldLabel>
               <NvInput id="mwo-minutes" v-model="completeForm.downtimeMinutes" type="number" min="0" step="1" />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="mwo-actual-technician">实际执行技师</NvFieldLabel>
+              <WorkerSelect
+                id="mwo-actual-technician"
+                v-model="completeForm.actualTechnicianUserId"
+                placeholder="请选择实际执行技师"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-spare-sku">更换备件物料</NvFieldLabel>
