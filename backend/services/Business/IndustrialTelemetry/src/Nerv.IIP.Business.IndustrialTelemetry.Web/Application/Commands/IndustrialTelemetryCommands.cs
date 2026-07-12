@@ -1371,7 +1371,8 @@ public sealed record ShelveAlarmCommand(
     DateTimeOffset ShelvedAtUtc,
     int DurationMinutes,
     string ShelvedBy,
-    string? Reason) : ICommand<AlarmEventId>;
+    string? Reason,
+    string? IdempotencyKey = null) : ICommand<AlarmEventId>;
 
 public sealed class ShelveAlarmCommandValidator : AbstractValidator<ShelveAlarmCommand>
 {
@@ -1382,6 +1383,7 @@ public sealed class ShelveAlarmCommandValidator : AbstractValidator<ShelveAlarmC
         RuleFor(x => x.DurationMinutes).InclusiveBetween(1, 24 * 60);
         RuleFor(x => x.ShelvedBy).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Reason).MaximumLength(300);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -1397,7 +1399,8 @@ public sealed class ShelveAlarmCommandHandler(ApplicationDbContext dbContext)
                 request.ShelvedAtUtc,
                 request.ShelvedAtUtc.AddMinutes(request.DurationMinutes),
                 request.ShelvedBy,
-                request.Reason);
+                request.Reason,
+                request.IdempotencyKey);
         }
         catch (ArgumentOutOfRangeException ex)
         {

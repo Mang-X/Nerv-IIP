@@ -144,6 +144,37 @@ public sealed class IndustrialTelemetryAggregateTests
     }
 
     [Fact]
+    public void Alarm_shelve_with_same_idempotency_key_no_ops_even_after_window_expired()
+    {
+        // Reviewer scenario: a delayed duplicate delivery of the SAME shelve request arriving after
+        // the original window has already ExpireShelving-ed back to an active state must NOT re-apply
+        // (re-shelve into a stale window / re-emit the event). The persistent idempotency key guarantees
+        // this where a stable request timestamp alone could not.
+        var raisedAtUtc = new DateTimeOffset(2026, 7, 6, 8, 0, 0, TimeSpan.Zero);
+        var alarm = AlarmEvent.Raise("org-001", "env-dev", "DEV-CNC-01", "OVER_TEMP", "critical", raisedAtUtc, "alarm-ext-001");
+        var shelvedAtUtc = raisedAtUtc.AddMinutes(3);
+        var expiry = shelvedAtUtc.AddMinutes(30);
+
+        alarm.Shelve(shelvedAtUtc, expiry, "operator-001", "maintenance window", "shelve-key-1");
+        Assert.Equal("shelved", alarm.Status);
+
+        // window expires -> back to raised
+        Assert.True(alarm.ExpireShelving(expiry.AddMinutes(1)));
+        Assert.Equal("raised", alarm.Status);
+
+        // delayed duplicate of the SAME request (same key) -> no-op, no re-shelve, no extra event
+        alarm.Shelve(shelvedAtUtc, expiry, "operator-001", "maintenance window", "shelve-key-1");
+        Assert.Equal("raised", alarm.Status);
+        Assert.Single(alarm.GetDomainEvents().OfType<AlarmShelvedDomainEvent>());
+
+        // a genuinely NEW shelve operation (different key) still applies
+        var newShelvedAtUtc = expiry.AddMinutes(5);
+        alarm.Shelve(newShelvedAtUtc, newShelvedAtUtc.AddMinutes(30), "operator-001", "second window", "shelve-key-2");
+        Assert.Equal("shelved", alarm.Status);
+        Assert.Equal(2, alarm.GetDomainEvents().OfType<AlarmShelvedDomainEvent>().Count());
+    }
+
+    [Fact]
     public void Alarm_can_be_unshelved_before_expiry()
     {
         var raisedAtUtc = new DateTimeOffset(2026, 7, 6, 8, 0, 0, TimeSpan.Zero);

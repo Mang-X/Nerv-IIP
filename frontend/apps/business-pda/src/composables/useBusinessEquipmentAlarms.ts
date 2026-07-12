@@ -100,16 +100,16 @@ export function useUnacknowledgedAlarmCount() {
  * 设备报警（读 + 确认/搁置）数据封装：org/env 取登录主体 `useAuthStore().principal`
  * （PDA 无 business-context store）。scope 为空时不发请求（`enabled:false`）。
  *
- * **未确认优先（跨分页）**：除全量列表读外，另发一支 `status=raised` 服务端过滤查询，
- * 把「全部未确认报警」（≤take）并入列表头部——即便未确认报警落在全量读的第 2 页之后，
- * 也保证被展示且排在最前，不依赖客户端只对首页排序。
+ * **未确认优先（跨分页，服务端落实）**：列表读由服务端 `ListAlarmEventsQuery` 按生命周期
+ * 排序（未确认 > 已搁置 > 已确认 > 已清除，同档发生时间倒序）**在分页前**排好，因此首页永远是
+ * 全部未确认在前，已处理项不会插到未确认之前；前端再做一次同口径排序仅为兜底。角标另用
+ * {@link useUnacknowledgedAlarmCount} 的 `status=raised` total（全量准确）。
  *
- * **幂等（断网重试不重复）**：`acknowledge`/`shelve` 接受调用方铸造的**稳定时间戳** `atUtc`，
- * 同一次用户操作跨重试复用同一 `atUtc`。领域侧 `AlarmEvent.Acknowledge` 对已确认直接返回
- * （first-write-wins，天然幂等）；`Shelve` 的搁置窗口 = `[atUtc, atUtc+duration]`
- * （后端 `ShelveAlarmCommandHandler` 按请求 `ShelvedAtUtc` 派生 `ShelvedUntilUtc`），
- * 复用同一 `atUtc` 使窗口固定、**重试不会延长**。页面对「已发出但结果未知」的失败不盲目重试
- * （交给 verify），只对确定性失败复用同键重试。
+ * **幂等（断网/延迟重投不重复）**：`shelve` 携带调用方铸造的**持久幂等键** `idempotencyKey`，
+ * 后端 `AlarmEvent.ShelveIdempotencyKey` 记录最后一次已应用的搁置操作键，**同键的延迟重复投递
+ * 一律 no-op**（即便原窗口已过期/解除回到 raised），这是稳定时间戳单独做不到的。`acknowledge`
+ * 领域侧 `AcknowledgedAtUtc is not null` 即 first-write-wins，天然幂等，无需额外键。页面对
+ * 「已发出但结果未知」的失败不盲目重试（交给 verify）。
  */
 export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlarmFilters> = {}) {
   const { organizationId, environmentId, actor, scopeReady } = authScope()
@@ -120,28 +120,12 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     ...initialFilters,
   })
 
-  // 全量读（各状态，供已处理行的灰显上下文/历史）。
   const listQuery = useQuery(() => ({
     ...listBusinessConsoleEquipmentAlarmsQueryOptions({
       query: {
         organizationId: organizationId.value,
         environmentId: environmentId.value,
         skip: filters.skip,
-        take: filters.take,
-        ...optionalQuery('deviceAssetId', filters.deviceAssetId),
-      },
-    }),
-    enabled: scopeReady.value,
-  }))
-
-  // status=raised 过滤读：保证全部未确认报警进入列表头部（跨分页未确认优先）。
-  const raisedQuery = useQuery(() => ({
-    ...listBusinessConsoleEquipmentAlarmsQueryOptions({
-      query: {
-        organizationId: organizationId.value,
-        environmentId: environmentId.value,
-        status: RAISED_STATUS,
-        skip: 0,
         take: filters.take,
         ...optionalQuery('deviceAssetId', filters.deviceAssetId),
       },
@@ -178,11 +162,15 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     })
   }
 
-  /** 搁置。`atUtc` 跨重试复用 → 窗口 `[atUtc, atUtc+duration]` 固定，重试不延长。 */
+  /**
+   * 搁置。`atUtc` 固定窗口 `[atUtc, atUtc+时长]`；`idempotencyKey` 为持久判重键，
+   * 跨重试/延迟重投复用同一键 → 后端一律 no-op、不重复应用、不延长窗口。
+   */
   async function shelve(
     alarmEventId: string,
     durationMinutes: number,
     atUtc: string,
+    idempotencyKey: string,
     reason?: string,
   ) {
     return shelveMutation.mutateAsync({
@@ -192,23 +180,18 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
         durationMinutes,
         shelvedAtUtc: atUtc,
         shelvedBy: actor.value,
+        idempotencyKey,
         ...(reason && reason.trim() ? { reason: reason.trim() } : {}),
       },
     })
   }
 
   const alarms = computed<BusinessConsoleTelemetryAlarmEventItem[]>(() => {
-    const raised = listItems<BusinessConsoleTelemetryAlarmEventItem>(
-      raisedQuery.data.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined,
-    )
-    const all = listItems<BusinessConsoleTelemetryAlarmEventItem>(
+    const items = listItems<BusinessConsoleTelemetryAlarmEventItem>(
       listQuery.data.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined,
     )
-    // 并入全部未确认（raised 支）+ 全量读中的其余状态，按 alarmEventId 去重（raised 支优先）。
-    const seen = new Set(raised.map((a) => a.alarmEventId).filter(Boolean))
-    const merged = [...raised, ...all.filter((a) => !a.alarmEventId || !seen.has(a.alarmEventId))]
-    // 未确认 > 已搁置 > 已确认 > 已清除；同档按发生时间倒序（新报警在前）。稳定副本，不改原数组。
-    return merged.sort((a, b) => {
+    // 服务端已按生命周期排好；前端同口径再排一次兜底（稳定副本，不改原数组）。
+    return [...items].sort((a, b) => {
       const weightDiff = alarmLifecycleSortWeight(a.status) - alarmLifecycleSortWeight(b.status)
       if (weightDiff !== 0) return weightDiff
       return (b.raisedAtUtc ?? '').localeCompare(a.raisedAtUtc ?? '')
@@ -218,23 +201,16 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
   return {
     filters,
     alarms,
-    // 全量未确认数（服务端过滤 total，跨分页准确）。
-    unacknowledgedCount: computed(() =>
-      listTotal(raisedQuery.data.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined),
-    ),
     total: computed(() =>
       listTotal(listQuery.data.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined),
     ),
-    pending: computed(() => listQuery.isLoading.value || raisedQuery.isLoading.value),
-    error: computed(() => listQuery.error.value ?? raisedQuery.error.value),
+    pending: listQuery.isLoading,
+    error: listQuery.error,
     actionPending: computed(
       () => acknowledgeMutation.isLoading.value || shelveMutation.isLoading.value,
     ),
     acknowledge,
     shelve,
-    refresh: () =>
-      scopeReady.value
-        ? Promise.all([listQuery.refetch(), raisedQuery.refetch()])
-        : Promise.resolve(),
+    refresh: () => (scopeReady.value ? listQuery.refetch() : Promise.resolve()),
   }
 }

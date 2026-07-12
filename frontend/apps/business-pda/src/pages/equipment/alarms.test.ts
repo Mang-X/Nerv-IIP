@@ -40,9 +40,17 @@ const error = ref<unknown>(null)
 const pending = ref(false)
 const refresh = vi.fn(async () => {})
 const acknowledge = vi.fn(async (_id: string, _atUtc: string) => ({ success: true }))
-const shelve = vi.fn(async (_id: string, _minutes: number, _atUtc: string, _reason?: string) => ({
-  success: true,
-}))
+const shelve = vi.fn(
+  async (
+    _id: string,
+    _minutes: number,
+    _atUtc: string,
+    _idempotencyKey: string,
+    _reason?: string,
+  ) => ({
+    success: true,
+  }),
+)
 const actionPending = ref(false)
 
 vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
@@ -164,15 +172,16 @@ describe('PDA equipment alarms page', () => {
     options.find((b) => b.textContent?.includes('2 小时'))!.click()
     await flushPromises()
     expect(shelve).toHaveBeenCalledTimes(1)
-    const [id, minutes, atUtc] = shelve.mock.calls[0]
+    const [id, minutes, atUtc, idempotencyKey] = shelve.mock.calls[0]
     expect(id).toBe('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
     expect(minutes).toBe(120)
     expect(typeof atUtc).toBe('string')
+    expect(idempotencyKey).toBeTruthy()
     wrapper.unmount()
   })
 
-  // P1 幂等：确定性失败可重试，且重试复用同一 atUtc（搁置窗口不因重试延长）。
-  it('retries a determinate failure with the SAME stable timestamp', async () => {
+  // P1 幂等：确定性失败可重试，且重试复用同一持久 idempotencyKey + atUtc（后端按键判重、不重复应用）。
+  it('retries a determinate failure with the SAME persistent idempotencyKey + timestamp', async () => {
     shelve.mockRejectedValueOnce({ message: '设备不存在' }) // 业务错误对象 → 确定性、可重试
     const wrapper = mount(AlarmsPage, { attachTo: document.body })
     await wrapper
@@ -193,8 +202,9 @@ describe('PDA equipment alarms page', () => {
     await flushPromises()
 
     expect(shelve).toHaveBeenCalledTimes(2)
-    // 第 2 次（重试）复用第 1 次的 atUtc → 窗口固定、不延长
-    expect(shelve.mock.calls[1][2]).toBe(shelve.mock.calls[0][2])
+    // 第 2 次（重试）复用第 1 次的持久幂等键 + atUtc → 后端按键判重、不重复应用、窗口不延长
+    expect(shelve.mock.calls[1][3]).toBe(shelve.mock.calls[0][3]) // 同 idempotencyKey
+    expect(shelve.mock.calls[1][2]).toBe(shelve.mock.calls[0][2]) // 同 atUtc
     expect(shelve.mock.calls[1][1]).toBe(shelve.mock.calls[0][1]) // 同 minutes
     wrapper.unmount()
   })

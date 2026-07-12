@@ -1003,6 +1003,66 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
+    public async Task List_alarm_events_orders_unacknowledged_before_handled_and_keeps_priority_across_pagination()
+    {
+        await using var dbContext = CreateDbContext(nameof(List_alarm_events_orders_unacknowledged_before_handled_and_keeps_priority_across_pagination));
+        var t0 = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var raisedOld = AlarmEvent.Raise("org-001", "env-dev", "DEV-01", "C", "warning", t0.AddMinutes(1), "a1");
+        var raisedNew = AlarmEvent.Raise("org-001", "env-dev", "DEV-02", "C", "warning", t0.AddMinutes(9), "a2");
+        var shelved = AlarmEvent.Raise("org-001", "env-dev", "DEV-03", "C", "warning", t0.AddMinutes(8), "a3");
+        var acked = AlarmEvent.Raise("org-001", "env-dev", "DEV-04", "C", "warning", t0.AddMinutes(7), "a4");
+        shelved.Shelve(t0.AddMinutes(10), t0.AddMinutes(40), "op", "maintenance window");
+        acked.Acknowledge(t0.AddMinutes(10), "op");
+        dbContext.AlarmEvents.AddRange(raisedOld, raisedNew, shelved, acked);
+        await dbContext.SaveChangesAsync();
+
+        // Full order: 未确认 > 已搁置 > 已确认, newest-first within the raised tier.
+        var all = await new ListAlarmEventsQueryHandler(dbContext).Handle(
+            new ListAlarmEventsQuery("org-001", "env-dev", null, null),
+            CancellationToken.None);
+        Assert.Equal(
+            new[] { raisedNew.Id, raisedOld.Id, shelved.Id, acked.Id },
+            all.Items.Select(x => x.AlarmEventId).ToArray());
+
+        // raised total (2) > take (1): the first page is a raised alarm — a handled item never precedes it.
+        var firstPage = await new ListAlarmEventsQueryHandler(dbContext).Handle(
+            new ListAlarmEventsQuery("org-001", "env-dev", null, null, 0, 1),
+            CancellationToken.None);
+        Assert.Equal(4, firstPage.Total);
+        var firstItem = Assert.Single(firstPage.Items);
+        Assert.Equal("raised", firstItem.Status);
+        Assert.Equal(raisedNew.Id, firstItem.AlarmEventId);
+    }
+
+    [Fact]
+    public async Task Shelve_alarm_command_is_idempotent_across_a_delayed_duplicate_after_window_expiry()
+    {
+        await using var dbContext = CreateDbContext(nameof(Shelve_alarm_command_is_idempotent_across_a_delayed_duplicate_after_window_expiry));
+        var t0 = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var alarm = AlarmEvent.Raise("org-001", "env-dev", "DEV-01", "C", "critical", t0, "a1");
+        dbContext.AlarmEvents.Add(alarm);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ShelveAlarmCommandHandler(dbContext);
+        var shelvedAt = t0.AddMinutes(2);
+        var command = new ShelveAlarmCommand(alarm.Id, "org-001", "env-dev", shelvedAt, 30, "op", null, "shelve-key-1");
+        await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var untilAfterFirst = alarm.ShelvedUntilUtc;
+
+        // window expires -> back to raised
+        alarm.ExpireShelving(shelvedAt.AddMinutes(31));
+        await dbContext.SaveChangesAsync();
+        Assert.Equal("raised", alarm.Status);
+
+        // delayed duplicate delivery of the SAME command (same idempotency key) -> no-op, window not extended
+        await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        Assert.Equal("raised", alarm.Status);
+        Assert.Equal(untilAfterFirst, alarm.ShelvedUntilUtc);
+    }
+
+    [Fact]
     public void Alarm_escalation_scheduler_reads_configured_scopes()
     {
         var configuration = new ConfigurationBuilder()

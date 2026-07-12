@@ -7,6 +7,7 @@ import {
   ALARM_SHELVE_DURATIONS_MINUTES,
   useBusinessEquipmentAlarms,
 } from '@/composables/useBusinessEquipmentAlarms'
+import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import {
   NvActionSheet,
   NvAppShellMobile,
@@ -106,12 +107,13 @@ function tagVariant(item: Alarm) {
 const DURATION_LABELS: Record<number, string> = { 30: '30 分钟', 120: '2 小时', 480: '8 小时' }
 
 // --- 稳定的逐操作幂等标识 -----------------------------------------------------
-// 用户发起一次确认/搁置时铸造一次 atUtc，重试该操作复用同一 atUtc：
-//  - 确认：领域 first-write-wins，重复确认为 no-op；
-//  - 搁置：窗口 = [atUtc, atUtc+时长]，复用同 atUtc → 窗口固定、重试不延长。
+// 用户发起一次确认/搁置时铸造一次标识，重试该操作复用同一标识：
+//  - 确认：atUtc 固定；领域 first-write-wins，重复确认为 no-op（无需额外键）；
+//  - 搁置：atUtc 固定窗口 + 持久 idempotencyKey，后端按键判重 → 同键的重试/延迟重投一律 no-op，
+//    即便原窗口已过期/解除也不再重复应用（稳定 atUtc 单独做不到）。
 type PendingAction =
   | { kind: 'ack'; item: Alarm; atUtc: string }
-  | { kind: 'shelve'; item: Alarm; atUtc: string; minutes: number }
+  | { kind: 'shelve'; item: Alarm; atUtc: string; minutes: number; idempotencyKey: string }
 const pendingAction = ref<PendingAction | null>(null)
 
 // 失败结果：确定性失败（无副作用）可复用同键重试；已发出但结果未知（超时/断网）不盲目重试，
@@ -127,7 +129,7 @@ async function runPending() {
       await acknowledge(p.item.alarmEventId, p.atUtc)
       showToast('已确认报警', 'success')
     } else {
-      await shelve(p.item.alarmEventId, p.minutes, p.atUtc)
+      await shelve(p.item.alarmEventId, p.minutes, p.atUtc, p.idempotencyKey)
       showToast(`已搁置 ${DURATION_LABELS[p.minutes] ?? ''}`.trim(), 'success')
     }
     pendingAction.value = null
@@ -186,7 +188,14 @@ function onShelveDuration(value: string) {
   pendingShelve.value = null
   const minutes = Number(value)
   if (!item?.alarmEventId || !Number.isFinite(minutes)) return
-  pendingAction.value = { kind: 'shelve', item, atUtc: new Date().toISOString(), minutes }
+  // 持久幂等键在用户发起搁置时铸造一次；重试复用（见 runPending），后端按键判重。
+  pendingAction.value = {
+    kind: 'shelve',
+    item,
+    atUtc: new Date().toISOString(),
+    minutes,
+    idempotencyKey: makeIdempotencyKey(),
+  }
   void runPending()
 }
 

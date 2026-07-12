@@ -244,8 +244,17 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
             _ => query.Where(x => x.Status == status),
         };
         var total = await query.CountAsync(cancellationToken);
+        // Lifecycle priority BEFORE pagination so unacknowledged alarms always precede handled ones
+        // across pages: raised(0) > shelved(1) > acknowledged(2) > (other/unknown 3) > cleared(4),
+        // then newest-first. A CASE expression translates on PostgreSQL and the test providers.
         var alarmEvents = await query
-            .OrderByDescending(x => x.RaisedAtUtc)
+            .OrderBy(x =>
+                x.Status == "raised" ? 0
+                : x.Status == "shelved" ? 1
+                : x.Status == "acknowledged" ? 2
+                : x.Status == "cleared" ? 4
+                : 3)
+            .ThenByDescending(x => x.RaisedAtUtc)
             .Skip(request.Skip)
             .Take(request.Take)
             .ToArrayAsync(cancellationToken);
