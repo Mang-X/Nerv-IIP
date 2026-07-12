@@ -114,6 +114,8 @@ beforeEach(() => {
       warrantyStatus: 'in-warranty',
       warrantyExpiresOn: '2027-01-14',
       supplierPartnerCode: 'SUP-ACME',
+      // 建单指派技师（#897：完工「实际技师」默认沿用它）。
+      assignedTechnicianUserId: 'user-1',
     },
   ]
   pinia = createPinia()
@@ -213,6 +215,53 @@ describe('maintenance work orders page', () => {
 
     expect(state.completeWorkOrder).not.toHaveBeenCalled()
     expect(document.body.textContent).toContain('备件成本汇总需为非负数')
+  })
+
+  // #897：完工登记「实际执行技师」，默认沿用建单指派技师并随完工请求提交 actualTechnicianUserId。
+  it('submits the actual technician on complete, defaulting from the assigned technician', async () => {
+    state.query = {} // 不自动打开建单抽屉
+    state.workOrders = [
+      {
+        workOrderId: 'wo-tech',
+        deviceAssetId: 'DEV-1',
+        priority: 'high',
+        status: 'open',
+        openedAtUtc: '2026-06-10T08:00:00Z',
+        assignedTechnicianUserId: 'user-1',
+      },
+    ]
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+
+    const rowAction = document.body.querySelector<HTMLButtonElement>(
+      '[aria-label^="维护工单操作"]',
+    )!
+    rowAction.click()
+    await flushPromises()
+    const completeItem = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (el) => el.textContent?.includes('完成工单'),
+    )!
+    completeItem.click()
+    await flushPromises()
+
+    // 「实际执行技师」字段进入完工抽屉。
+    expect(document.body.textContent).toContain('实际执行技师')
+
+    // 登记一条更换备件（完工前置：至少一条备件行）。
+    const spareSku = document.body.querySelector<HTMLInputElement>('[id^="spare-sku-"]')!
+    spareSku.value = '主控芯片MCU'
+    spareSku.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    const form = spareSku.closest('form')!
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(state.completeWorkOrder).toHaveBeenCalledTimes(1)
+    const [id, body] = state.completeWorkOrder.mock.calls[0]
+    expect(id).toBe('wo-tech')
+    // 实际技师默认沿用建单指派技师 user-1（未改选时）。
+    expect(body.actualTechnicianUserId).toBe('user-1')
   })
 })
 

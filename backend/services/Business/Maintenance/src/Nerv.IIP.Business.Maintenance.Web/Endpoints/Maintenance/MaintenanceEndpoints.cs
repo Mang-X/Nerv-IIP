@@ -62,7 +62,8 @@ public sealed record CompleteMaintenanceWorkOrderRequest(
     int? ActualLaborMinutes = null,
     decimal? SparePartCostAmount = null,
     decimal? ExternalServiceCostAmount = null,
-    string? CostCurrencyCode = null);
+    string? CostCurrencyCode = null,
+    string? ActualTechnicianUserId = null);
 
 public sealed record StartMaintenanceRepairRequest(
     MaintenanceWorkOrderId WorkOrderId,
@@ -205,7 +206,7 @@ public sealed class CompleteMaintenanceWorkOrderEndpoint(ISender sender)
 
     public override async Task HandleAsync(CompleteMaintenanceWorkOrderRequest req, CancellationToken ct)
     {
-        await sender.Send(new CompleteMaintenanceWorkOrderCommand(req.WorkOrderId, req.Result, req.DowntimeReasonCode, req.DowntimeMinutes, req.SpareParts, req.ActualLaborMinutes, req.SparePartCostAmount, req.ExternalServiceCostAmount, req.CostCurrencyCode), ct);
+        await sender.Send(new CompleteMaintenanceWorkOrderCommand(req.WorkOrderId, req.Result, req.DowntimeReasonCode, req.DowntimeMinutes, req.SpareParts, req.ActualLaborMinutes, req.SparePartCostAmount, req.ExternalServiceCostAmount, req.CostCurrencyCode, req.ActualTechnicianUserId), ct);
         await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
     }
 }

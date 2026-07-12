@@ -12,6 +12,7 @@ import {
 } from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
+import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -113,28 +114,15 @@ const reasonOptions = [
   { label: '部件磨损', value: 'worn-part' },
   { label: '突发故障', value: 'breakdown' },
 ]
-const UNASSIGNED = '__unassigned__'
-
 // 设备编号联想建议：设备台账的编号 + 名称（可自由录入未登记设备）。
 const deviceSuggestions = computed(() =>
   deviceResources.value
     .map((r) => ({ value: (r.code ?? '').trim(), label: r.displayName ?? r.code ?? '' }))
     .filter((s) => s.value.length > 0),
 )
-// 指派技师选项：未指派 + 工人目录（姓名 + 工号）。
-// 注：技师只能在**建单**时写 assignedTechnicianUserId——CompleteMaintenanceWorkOrderRequest
-// 契约无该字段、Maintenance 域也无 assign/reassign 端点，故"完工时记录/改选实际技师"是待补的
-// 后端缺口，追踪于 #897（本 PR 因此 refs #793 而非 closes）。可靠性汇总按建单指派技师聚合。
-const technicianOptions = computed(() => [
-  { value: UNASSIGNED, label: '未指派' },
-  ...workers.value
-    .map((w) => ({
-      value: w.userId ?? '',
-      label: w.displayName ?? w.userId ?? '',
-      hint: w.employeeNo ?? undefined,
-    }))
-    .filter((o) => o.value.length > 0),
-])
+// 指派技师 / 实际技师均走 master-data 复用件 WorkerSelect（服务端检索工人目录，绑 userId）。
+// 建单写 assignedTechnicianUserId、完工写 actualTechnicianUserId（#897 已补契约）。
+// 可靠性汇总按技师聚合。
 
 // 待执行 / 已完成基于本页可见行的语义统计（可行动数，非机械总数）。
 const OPEN_STATUSES = new Set(['open', 'opened', 'scheduled', 'inprogress', 'in-progress'])
@@ -156,7 +144,7 @@ const createForm = reactive({
   priority: 'medium',
   openedByUserId: '',
   sourceAlarmId: '',
-  assignedTechnicianUserId: UNASSIGNED,
+  assignedTechnicianUserId: '',
   estimatedLaborMinutes: '',
 })
 const createError = shallowRef('')
@@ -182,6 +170,8 @@ const completeForm = reactive({
   actualLaborMinutes: '',
   externalServiceCostAmount: '',
   costCurrencyCode: 'CNY',
+  // 实际执行技师（#897 完工契约 actualTechnicianUserId，userId）。默认取建单指派技师。
+  actualTechnicianUserId: '',
 })
 const spareRows = reactive<SparePartRow[]>([createSpareRow()])
 // 备件成本覆盖：空串 = 未覆盖（用自动合计）；非空 = 人工改写值。
@@ -288,7 +278,7 @@ function openCreate(prefill: Partial<typeof createForm> = {}) {
   createForm.priority = 'medium'
   createForm.openedByUserId = currentUserId.value
   createForm.sourceAlarmId = prefill.sourceAlarmId ?? ''
-  createForm.assignedTechnicianUserId = UNASSIGNED
+  createForm.assignedTechnicianUserId = ''
   createForm.estimatedLaborMinutes = ''
   createError.value = ''
   createOpen.value = true
@@ -310,10 +300,7 @@ async function submitCreate() {
     priority: createForm.priority,
     openedBy: personLabel(createForm.openedByUserId),
     sourceAlarmId: createForm.sourceAlarmId.trim() || undefined,
-    assignedTechnicianUserId:
-      createForm.assignedTechnicianUserId === UNASSIGNED
-        ? undefined
-        : createForm.assignedTechnicianUserId,
+    assignedTechnicianUserId: createForm.assignedTechnicianUserId || undefined,
     ...(estimatedLaborMinutes !== undefined ? { estimatedLaborMinutes } : {}),
   }
   try {
@@ -333,6 +320,8 @@ function openComplete(row: WorkOrderRow) {
   completeForm.actualLaborMinutes = ''
   completeForm.externalServiceCostAmount = ''
   completeForm.costCurrencyCode = 'CNY'
+  // 实际技师默认沿用建单指派技师，完工时可改选真正执行人。
+  completeForm.actualTechnicianUserId = row.assignedTechnicianUserId ?? ''
   spareRows.splice(0, spareRows.length, createSpareRow())
   sparePartCostOverride.value = ''
   completeError.value = ''
@@ -412,6 +401,8 @@ async function submitComplete() {
       ...(sparePartCostAmount !== undefined ? { sparePartCostAmount } : {}),
       ...(externalServiceCostAmount !== undefined ? { externalServiceCostAmount } : {}),
       costCurrencyCode: completeForm.costCurrencyCode.trim() || undefined,
+      // #897：完工登记实际执行技师（userId）；空则不带该字段。
+      actualTechnicianUserId: completeForm.actualTechnicianUserId.trim() || undefined,
     })
     completeOpen.value = false
     toast.success(`维护工单 ${workOrderNo(target)} 已完成`)
@@ -589,14 +580,10 @@ watch(
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-technician">指派技师</NvFieldLabel>
-              <NvSearchSelect
+              <WorkerSelect
                 id="mwo-technician"
                 v-model="createForm.assignedTechnicianUserId"
-                :options="technicianOptions"
-                :loading="workersPending"
-                aria-label="指派技师"
                 placeholder="未指派"
-                search-placeholder="搜索技师姓名 / 工号…"
               />
             </NvField>
             <NvField>
@@ -677,6 +664,16 @@ watch(
                 min="0"
                 step="1"
                 placeholder="可选"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="mwo-actual-technician">实际执行技师</NvFieldLabel>
+              <!-- #897 完工登记实际技师；keep-out-of-range 保留预填的建单指派技师（即便不在当前检索页）。 -->
+              <WorkerSelect
+                id="mwo-actual-technician"
+                v-model="completeForm.actualTechnicianUserId"
+                keep-out-of-range
+                placeholder="请选择实际执行技师"
               />
             </NvField>
           </NvFieldGroup>

@@ -30,6 +30,7 @@ public sealed record MaintenanceWorkOrderListItem(
     string? SourceAlarmId,
     DateTimeOffset OpenedAtUtc,
     string? AssignedTechnicianUserId,
+    string? ActualTechnicianUserId,
     int? EstimatedLaborMinutes,
     int? ActualLaborMinutes,
     decimal? SparePartCostAmount,
@@ -59,6 +60,7 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
                 x.SourceAlarmId,
                 x.OpenedAtUtc,
                 x.AssignedTechnicianUserId,
+                x.ActualTechnicianUserId,
                 x.EstimatedLaborMinutes,
                 x.ActualLaborMinutes,
                 x.SparePartCostAmount,
@@ -443,7 +445,9 @@ public sealed record MaintenanceReliabilitySummaryResponse(
 
 public sealed record MaintenanceReliabilitySummaryItem(
     string DeviceAssetId,
+    // Null when an actual-technician group contains more than one planned assignee.
     string? AssignedTechnicianUserId,
+    string? ActualTechnicianUserId,
     string? CostCurrencyCode,
     int WorkOrderCount,
     int EstimatedLaborMinutes,
@@ -476,12 +480,13 @@ public sealed class QueryMaintenanceReliabilitySummaryQueryHandler(ApplicationDb
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.OpenedAtUtc >= windowStartUtc && x.OpenedAtUtc < windowEndUtc)
             .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
-            .Where(x => request.TechnicianUserId == null || x.AssignedTechnicianUserId == request.TechnicianUserId)
+            .Where(x => request.TechnicianUserId == null || (x.ActualTechnicianUserId ?? x.AssignedTechnicianUserId) == request.TechnicianUserId)
             .Where(x => x.Status == MaintenanceWorkOrderStatus.Completed)
             .Select(x => new
             {
                 x.DeviceAssetId,
                 x.AssignedTechnicianUserId,
+                x.ActualTechnicianUserId,
                 x.CostCurrencyCode,
                 x.Status,
                 x.EstimatedLaborMinutes,
@@ -492,19 +497,24 @@ public sealed class QueryMaintenanceReliabilitySummaryQueryHandler(ApplicationDb
             .ToArrayAsync(cancellationToken);
 
         var items = workOrders
-            .GroupBy(x => new { x.DeviceAssetId, x.AssignedTechnicianUserId, x.CostCurrencyCode })
-            .Select(group => new MaintenanceReliabilitySummaryItem(
-                group.Key.DeviceAssetId,
-                group.Key.AssignedTechnicianUserId,
-                group.Key.CostCurrencyCode,
-                group.Count(),
-                group.Sum(x => x.EstimatedLaborMinutes ?? 0),
-                group.Sum(x => x.ActualLaborMinutes ?? 0),
-                group.Sum(x => x.SparePartCostAmount ?? 0m),
-                group.Sum(x => x.ExternalServiceCostAmount ?? 0m),
-                group.Sum(x => (x.SparePartCostAmount ?? 0m) + (x.ExternalServiceCostAmount ?? 0m))))
+            .GroupBy(x => new { x.DeviceAssetId, TechnicianUserId = x.ActualTechnicianUserId ?? x.AssignedTechnicianUserId, x.CostCurrencyCode })
+            .Select(group =>
+            {
+                var assignedTechnicians = group.Select(x => x.AssignedTechnicianUserId).Distinct().ToArray();
+                return new MaintenanceReliabilitySummaryItem(
+                    group.Key.DeviceAssetId,
+                    assignedTechnicians.Length == 1 ? assignedTechnicians[0] : null,
+                    group.Key.TechnicianUserId,
+                    group.Key.CostCurrencyCode,
+                    group.Count(),
+                    group.Sum(x => x.EstimatedLaborMinutes ?? 0),
+                    group.Sum(x => x.ActualLaborMinutes ?? 0),
+                    group.Sum(x => x.SparePartCostAmount ?? 0m),
+                    group.Sum(x => x.ExternalServiceCostAmount ?? 0m),
+                    group.Sum(x => (x.SparePartCostAmount ?? 0m) + (x.ExternalServiceCostAmount ?? 0m)));
+            })
             .OrderBy(x => x.DeviceAssetId)
-            .ThenBy(x => x.AssignedTechnicianUserId)
+            .ThenBy(x => x.ActualTechnicianUserId)
             .ThenBy(x => x.CostCurrencyCode)
             .ToArray();
 

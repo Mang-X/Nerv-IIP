@@ -212,4 +212,42 @@ public sealed class MaintenanceAggregateTests
         Assert.Equal(35m, workOrder.ExternalServiceCostAmount);
         Assert.Equal("CNY", workOrder.CostCurrencyCode);
     }
+
+    [Fact]
+    public void Work_order_completion_records_actual_technician_without_replacing_assignment()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "normal",
+            "operator-001",
+            assignedTechnicianUserId: "worker-planned");
+
+        workOrder.Complete(
+            "fixed",
+            "minor-stop",
+            5,
+            [],
+            actualTechnicianUserId: " worker-actual ");
+
+        Assert.Equal("worker-planned", workOrder.AssignedTechnicianUserId);
+        Assert.Equal("worker-actual", workOrder.ActualTechnicianUserId);
+    }
+
+    [Fact]
+    public void Work_order_completion_defaults_actual_technician_to_assignment()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "normal",
+            "operator-001",
+            assignedTechnicianUserId: "worker-planned");
+
+        workOrder.Complete("fixed", "minor-stop", 5, []);
+
+        Assert.Equal("worker-planned", workOrder.ActualTechnicianUserId);
+    }
 }

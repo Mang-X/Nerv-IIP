@@ -12,6 +12,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
@@ -375,6 +376,27 @@ public sealed class DeviceAssetRepository(ApplicationDbContext context)
             cancellationToken);
     }
 }
+
+public interface IToolingAssetRepository : IRepository<ToolingAsset, ToolingAssetId>
+{
+    Task<bool> ExistsAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default);
+    Task<ToolingAsset?> FindAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default);
+}
+
+public sealed class ToolingAssetRepository(ApplicationDbContext context)
+    : RepositoryBase<ToolingAsset, ToolingAssetId, ApplicationDbContext>(context), IToolingAssetRepository
+{
+    public Task<bool> ExistsAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default) =>
+        DbContext.ToolingAssets.AnyAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == code, cancellationToken);
+
+    public Task<ToolingAsset?> FindAsync(string organizationId, string environmentId, string code, CancellationToken cancellationToken = default) =>
+        DbContext.ToolingAssets.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == code, cancellationToken);
+}
+
+public interface IChangeoverMatrixEntryRepository : IRepository<ChangeoverMatrixEntry, ChangeoverMatrixEntryId>;
+
+public sealed class ChangeoverMatrixEntryRepository(ApplicationDbContext context)
+    : RepositoryBase<ChangeoverMatrixEntry, ChangeoverMatrixEntryId, ApplicationDbContext>(context), IChangeoverMatrixEntryRepository;
 
 public interface IReferenceDataCodeRepository : IRepository<ReferenceDataCode, ReferenceDataCodeId>
 {

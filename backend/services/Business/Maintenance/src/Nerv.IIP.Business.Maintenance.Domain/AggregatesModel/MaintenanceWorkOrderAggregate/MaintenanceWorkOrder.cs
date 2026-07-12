@@ -83,6 +83,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public string? FailureModeCode { get; private set; }
     public string? FailureCauseCode { get; private set; }
     public string? AssignedTechnicianUserId { get; private set; }
+    public string? ActualTechnicianUserId { get; private set; }
     public int? EstimatedLaborMinutes { get; private set; }
     public string OpenedBy { get; private set; } = string.Empty;
     public MaintenanceWorkOrderStatus Status { get; private set; }
@@ -253,13 +254,15 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         int? actualLaborMinutes = null,
         decimal? sparePartCostAmount = null,
         decimal? externalServiceCostAmount = null,
-        string? costCurrencyCode = null)
+        string? costCurrencyCode = null,
+        string? actualTechnicianUserId = null)
     {
         EnsureOpen();
         CompletionResult = MaintenanceText.Required(result, nameof(result));
         DowntimeReasonCode = MaintenanceText.Required(downtimeReasonCode, nameof(downtimeReasonCode));
         DowntimeMinutes = MaintenanceText.Positive(downtimeMinutes, nameof(downtimeMinutes));
         ActualLaborMinutes = actualLaborMinutes is null ? null : MaintenanceText.Positive(actualLaborMinutes.Value, nameof(actualLaborMinutes));
+        ActualTechnicianUserId = MaintenanceText.Optional(actualTechnicianUserId) ?? AssignedTechnicianUserId;
         SparePartCostAmount = NonNegative(sparePartCostAmount, nameof(sparePartCostAmount));
         ExternalServiceCostAmount = NonNegative(externalServiceCostAmount, nameof(externalServiceCostAmount));
         CostCurrencyCode = MaintenanceText.Optional(costCurrencyCode);

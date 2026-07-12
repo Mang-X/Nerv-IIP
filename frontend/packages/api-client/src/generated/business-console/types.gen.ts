@@ -1040,7 +1040,7 @@ export type NervIipContractsSchedulingScheduleConflictContract = {
     message?: string;
 };
 
-export type NervIipContractsSchedulingScheduleConflictReasonCodeContract = 'dueDate' | 'capacity' | 'calendar' | 'material' | 'quality' | 'equipment' | 'noEligibleResource' | 'outsideHorizon' | 'invalidLockedAssignment' | 'predecessorUnscheduled';
+export type NervIipContractsSchedulingScheduleConflictReasonCodeContract = 'dueDate' | 'capacity' | 'calendar' | 'material' | 'quality' | 'equipment' | 'noEligibleResource' | 'outsideHorizon' | 'invalidLockedAssignment' | 'predecessorUnscheduled' | 'tooling';
 
 export type NervIipContractsSchedulingScheduleConflictSeverityContract = 'info' | 'warning' | 'error';
 
@@ -1123,6 +1123,7 @@ export type NervIipContractsSchedulingSchedulingOperationContract = {
     setupMinutes?: number;
     requiredSkillCodes?: Array<string> | null;
     requiredToolingIds?: Array<string> | null;
+    toolingAvailable?: boolean;
 };
 
 export type NervIipContractsSchedulingScheduleSplitPolicyContract = 'nonSplittable';
@@ -4101,6 +4102,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     sparePartCostAmount?: number | null;
     externalServiceCostAmount?: number | null;
     costCurrencyCode?: string | null;
+    actualTechnicianUserId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceSparePartInput = {
@@ -4137,6 +4139,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     warrantyStatus?: string | null;
     warrantyExpiresOn?: string | null;
     supplierPartnerCode?: string | null;
+    actualTechnicianUserId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderListRequest = {
@@ -4379,6 +4382,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     sparePartCostAmount?: number;
     externalServiceCostAmount?: number;
     totalCostAmount?: number;
+    actualTechnicianUserId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQueryMaintenanceReliabilitySummaryRequest = {

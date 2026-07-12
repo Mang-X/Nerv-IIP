@@ -46,6 +46,7 @@ public enum ScheduleConflictReasonCode
     OutsideHorizon = 7,
     PredecessorUnscheduled = 8,
     InvalidLockedAssignment = 9,
+    Tooling = 10,
 }
 
 public enum ScheduleConflictSeverity

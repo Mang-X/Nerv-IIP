@@ -17,6 +17,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
@@ -99,7 +100,7 @@ public sealed class MasterDataApiContractTests
     {
         var contracts = MasterDataEndpointContracts.All;
 
-        Assert.Equal(41, contracts.Count);
+        Assert.Equal(46, contracts.Count);
         Assert.Equal(contracts.Count, contracts.Select(x => x.EndpointType).Distinct().Count());
         Assert.Equal(contracts.Count, contracts.Select(x => x.OperationId).Distinct(StringComparer.Ordinal).Count());
         Assert.All(contracts, contract =>
@@ -2026,6 +2027,35 @@ public sealed class MasterDataApiContractTests
         Assert.Single(dbContext.CodeCounters);
         var idempotency = Assert.Single(dbContext.CodeIdempotencyKeys);
         Assert.Equal(result.Code, idempotency.Code);
+    }
+
+    [Fact]
+    public async Task Scheduling_tooling_facts_resolve_setup_and_only_applicable_available_tooling()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var tooling = ToolingAsset.Register("org-001", "env-dev", "TOOL-00001", "Mould A", "mould", ["WC-01"], ["SKU-B"], 1000);
+        dbContext.ToolingAssets.Add(tooling);
+        dbContext.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-A", "Source SKU", "pcs", "electronic"));
+        dbContext.ChangeoverMatrixEntries.Add(ChangeoverMatrixEntry.Create("org-001", "env-dev", "WC-01", null, "electronic", "SKU-B", 35, ["TOOL-00001"]));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ResolveSchedulingToolingFactsQueryHandler(dbContext).Handle(
+            new ResolveSchedulingToolingFactsQuery("org-001", "env-dev", [new SchedulingTransitionRequest("WO-2-OP10", "WC-01", "SKU-A", null, "SKU-B")]),
+            CancellationToken.None);
+
+        var fact = Assert.Single(response.Facts);
+        Assert.Equal(35, fact.SetupMinutes);
+        Assert.Equal(["TOOL-00001"], fact.RequiredToolingCodes);
+        Assert.True(fact.ToolingAvailable);
+
+        tooling.ChangeStatus(ToolingAssetStatus.Maintenance, "planned maintenance");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var unavailable = await new ResolveSchedulingToolingFactsQueryHandler(dbContext).Handle(
+            new ResolveSchedulingToolingFactsQuery("org-001", "env-dev", [new SchedulingTransitionRequest("WO-2-OP10", "WC-01", "SKU-A", null, "SKU-B")]),
+            CancellationToken.None);
+        Assert.False(Assert.Single(unavailable.Facts).ToolingAvailable);
     }
 
     private static ServiceProvider CreateInMemoryProvider(string? databaseName = null)
