@@ -111,7 +111,10 @@ public sealed record BusinessConsoleMaintenanceWorkOrderItem(
     int? ActualLaborMinutes = null,
     decimal? SparePartCostAmount = null,
     decimal? ExternalServiceCostAmount = null,
-    string? CostCurrencyCode = null);
+    string? CostCurrencyCode = null,
+    string? WarrantyStatus = null,
+    DateOnly? WarrantyExpiresOn = null,
+    string? SupplierPartnerCode = null);
 
 public sealed record BusinessConsoleMaintenancePlanListResponse(
     IReadOnlyCollection<BusinessConsoleMaintenancePlanItem> Items,

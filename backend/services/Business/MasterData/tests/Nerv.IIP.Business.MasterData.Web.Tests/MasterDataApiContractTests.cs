@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
@@ -514,7 +515,10 @@ public sealed class MasterDataApiContractTests
         dbContext.Workshops.Add(Workshop.Create("org-001", "env-dev", "WS-001", "Mixing Workshop", "SITE-001", "manager-001", "Wet process"));
         dbContext.ProductionLines.Add(Domain.AggregatesModel.ProductionLineAggregate.ProductionLine.Create("org-001", "env-dev", "LINE-001", "Line 1", "SITE-001", "WS-001"));
         dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.CreateResource("org-001", "env-dev", "WC-001", "Mixing", 960, "work-center", "PLANT-001", "LINE-001", "WS-001", "CAL-001", "minute", true));
-        dbContext.DeviceAssets.Add(Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset.RegisterCapability("org-001", "env-dev", "DEV-001", "Mixer", "LINE-001", "WC-001", "mixer", "ACME", "SN-001", 10m, 500m, "kg", "critical", true, true, new Dictionary<string, string>()));
+        dbContext.DeviceAssets.Add(
+            Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset.RegisterCapability("org-001", "env-dev", "DEV-001", "Mixer", "LINE-001", "WC-001", "mixer", "ACME", "SN-001", 10m, 500m, "kg", "critical", true, true, new Dictionary<string, string>())
+                .WithLedger(new DateOnly(2024, 1, 15), 125000m, "CNY", new DateOnly(2027, 1, 14), "SUP-001", "SITE-001", "WS-001", "LINE-001", "ST-001", "DEV-PARENT-01", null)
+                .ReplaceComponents([new Domain.AggregatesModel.DeviceAssetAggregate.DeviceAssetComponentDraft("MOTOR", "Drive motor", 1m, true)]));
         dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-ROOT", "Manufacturing", null));
         dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-ALT", "Quality", null));
         dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-SUB", "Line Ops", "DEPT-ROOT"));
@@ -556,7 +560,28 @@ public sealed class MasterDataApiContractTests
         Assert.Equal("LINE-001", device.LineCode);
         Assert.Equal("WC-001", device.WorkCenterCode);
         Assert.False(string.IsNullOrWhiteSpace(device.DeviceAssetId));
+        Assert.Equal("SITE-001", device.SiteCode);
+        Assert.Equal("WS-001", device.WorkshopCode);
+        Assert.Equal(new DateOnly(2027, 1, 14), device.WarrantyExpiresOn);
+        Assert.Equal("SUP-001", device.SupplierPartnerCode);
         Assert.Equal("active", device.Status);
+
+        var detail = await new GetMasterDataResourceDetailQueryHandler(dbContext).Handle(
+            new GetMasterDataResourceDetailQuery("org-001", "env-dev", "device-asset", "DEV-001"),
+            CancellationToken.None);
+        Assert.Equal(new DateOnly(2024, 1, 15), detail.PurchaseDate);
+        Assert.Equal(125000m, detail.PurchaseCost);
+        Assert.Equal("CNY", detail.PurchaseCurrencyCode);
+        Assert.Equal("ST-001", detail.StationCode);
+        Assert.Equal("DEV-PARENT-01", detail.ParentDeviceId);
+        Assert.Single(detail.Components!);
+        Assert.Equal("MOTOR", detail.Components!.Single().ComponentCode);
+
+        var detailByPublicId = await new GetMasterDataResourceDetailQueryHandler(dbContext).Handle(
+            new GetMasterDataResourceDetailQuery("org-001", "env-dev", "device-asset", device.DeviceAssetId!),
+            CancellationToken.None);
+        Assert.Equal("DEV-001", detailByPublicId.Code);
+        Assert.Equal(new DateOnly(2027, 1, 14), detailByPublicId.WarrantyExpiresOn);
 
         var childDepartment = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "department", ParentCode: "DEPT-ROOT"), CancellationToken.None)).Resources);
         Assert.Equal("DEPT-SUB", childDepartment.Code);
@@ -935,6 +960,36 @@ public sealed class MasterDataApiContractTests
             CancellationToken.None));
 
         Assert.Contains("UOM conversion", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task MasterData_disable_rejects_device_asset_supplier_and_parent_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.BusinessPartners.Add(BusinessPartner.Create("org-001", "env-dev", "SUP-ACME", "supplier", "ACME Supplier"));
+        var supplierDevice = DeviceAsset.Register("org-001", "env-dev", "DEV-SUP", "Supplier Device", "LINE-1", "WC-1")
+            .WithLedger(null, null, string.Empty, null, "SUP-ACME", string.Empty, string.Empty, "LINE-1", string.Empty, null, null);
+        var parentDevice = DeviceAsset.Register("org-001", "env-dev", "DEV-PARENT", "Parent Device", "LINE-1", "WC-1");
+        dbContext.DeviceAssets.AddRange(supplierDevice, parentDevice);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var childDevice = DeviceAsset.Register("org-001", "env-dev", "DEV-CHILD", "Child Device", "LINE-1", "WC-1")
+            .WithLedger(null, null, string.Empty, null, string.Empty, string.Empty, string.Empty, "LINE-1", string.Empty, parentDevice.Id.ToString(), null);
+        dbContext.DeviceAssets.Add(childDevice);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
+        var supplierReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "business-partner", "SUP-ACME", false, Reason: "retired"),
+            CancellationToken.None));
+        Assert.Contains("active device asset", supplierReference.Message, StringComparison.OrdinalIgnoreCase);
+
+        var parentReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "device-asset", "DEV-PARENT", false, Reason: "retired"),
+            CancellationToken.None));
+        Assert.Contains("active child device asset", parentReference.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -1373,6 +1428,73 @@ public sealed class MasterDataApiContractTests
         Assert.Contains(created, x => x.ResourceType == "team-member" && x.Code == "T-001:user-001");
         Assert.Contains(created, x => x.ResourceType == "reference-data-code" && x.Code == "scratch");
         Assert.Equal(16, dbContext.ChangeTracker.Entries().Count(entry => entry.State == EntityState.Added));
+    }
+
+    [Fact]
+    public async Task Device_asset_commands_reject_invalid_component_quantity_and_currency()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var registerHandler = new RegisterDeviceAssetCommandHandler(new DeviceAssetRepository(dbContext));
+
+        var invalidQuantity = await Assert.ThrowsAsync<KnownException>(() => registerHandler.Handle(
+            new RegisterDeviceAssetCommand(
+                OrganizationId: "org-001",
+                EnvironmentId: "env-dev",
+                Code: "EQ-BAD-QTY",
+                Model: "Mixer 500",
+                LineCode: "LINE-001",
+                WorkCenterCode: "WC-001",
+                AssetClassCode: "mixer",
+                Manufacturer: "ACME",
+                SerialNo: "SN-001",
+                MinimumCapacity: 10m,
+                MaximumCapacity: 500m,
+                CapacityUomCode: "kg",
+                Criticality: "critical",
+                Maintainable: true,
+                TelemetryEnabled: true,
+                ExternalReferences: new Dictionary<string, string>(),
+                Components: [new DeviceAssetComponentDraft("MOTOR", "Drive motor", 0m, true)]),
+            CancellationToken.None));
+        Assert.Contains("quantity must be greater than zero", invalidQuantity.Message, StringComparison.OrdinalIgnoreCase);
+
+        var invalidCurrency = await Assert.ThrowsAsync<KnownException>(() => registerHandler.Handle(
+            new RegisterDeviceAssetCommand(
+                OrganizationId: "org-001",
+                EnvironmentId: "env-dev",
+                Code: "EQ-BAD-CURRENCY",
+                Model: "Mixer 500",
+                LineCode: "LINE-001",
+                WorkCenterCode: "WC-001",
+                AssetClassCode: "mixer",
+                Manufacturer: "ACME",
+                SerialNo: "SN-002",
+                MinimumCapacity: 10m,
+                MaximumCapacity: 500m,
+                CapacityUomCode: "kg",
+                Criticality: "critical",
+                Maintainable: true,
+                TelemetryEnabled: true,
+                ExternalReferences: new Dictionary<string, string>(),
+                PurchaseCurrencyCode: "USDT"),
+            CancellationToken.None));
+        Assert.Contains("3-letter ISO 4217", invalidCurrency.Message, StringComparison.OrdinalIgnoreCase);
+
+        dbContext.DeviceAssets.Add(DeviceAsset.Register("org-001", "env-dev", "EQ-OK", "Mixer 500", "LINE-001", "WC-001"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var updateHandler = new UpdateMasterDataResourceCommandHandler(dbContext, new ReferenceDataCodeRepository(dbContext));
+
+        var invalidUpdate = await Assert.ThrowsAsync<KnownException>(() => updateHandler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "device-asset",
+                "EQ-OK",
+                Components: [new DeviceAssetComponentDetail("MOTOR", "Drive motor", -1m, true)]),
+            CancellationToken.None));
+        Assert.Contains("quantity must be greater than zero", invalidUpdate.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

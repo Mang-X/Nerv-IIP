@@ -76,6 +76,7 @@ public sealed class CompleteBusinessConsoleMaintenanceWorkOrderEndpoint(
 public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMaintenanceClient maintenance,
+    IBusinessMasterDataClient masterData,
     BusinessGatewayDataScopeFilter dataScopeFilter,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMaintenanceWorkOrderListRequest, BusinessConsoleMaintenanceWorkOrderListResponse>(
@@ -95,7 +96,15 @@ public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
             request,
             AuthorizationResult?.DataScope,
             cancellationToken);
-        return await maintenance.ListWorkOrdersAsync(tokenProvider.BearerToken, scopedRequest, cancellationToken);
+        var response = await maintenance.ListWorkOrdersAsync(tokenProvider.BearerToken, scopedRequest, cancellationToken);
+        var items = await MaintenanceDeviceAssetWarrantyEnricher.EnrichAsync(
+            response.Items,
+            masterData,
+            tokenProvider.BearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            cancellationToken);
+        return response with { Items = items };
     }
 }
 
@@ -105,6 +114,7 @@ public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
 public sealed class GetBusinessConsoleMaintenanceWorkOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMaintenanceClient maintenance,
+    IBusinessMasterDataClient masterData,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMaintenanceContextRequest, BusinessConsoleMaintenanceWorkOrderItem>(
         auth,
@@ -118,11 +128,115 @@ public sealed class GetBusinessConsoleMaintenanceWorkOrderEndpoint(
 
     protected override string? ResourceId(BusinessConsoleMaintenanceContextRequest request) => Route<string>("workOrderId");
 
-    protected override Task<BusinessConsoleMaintenanceWorkOrderItem> ForwardAsync(
+    protected override async Task<BusinessConsoleMaintenanceWorkOrderItem> ForwardAsync(
         BusinessConsoleMaintenanceContextRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        maintenance.GetWorkOrderAsync(tokenProvider.BearerToken, Route<string>("workOrderId")!, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var workOrder = await maintenance.GetWorkOrderAsync(tokenProvider.BearerToken, Route<string>("workOrderId")!, request, cancellationToken);
+        var enriched = await MaintenanceDeviceAssetWarrantyEnricher.EnrichAsync(
+            [workOrder],
+            masterData,
+            tokenProvider.BearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            cancellationToken);
+        return enriched.Single();
+    }
+}
+
+internal static class MaintenanceDeviceAssetWarrantyEnricher
+{
+    public static async Task<IReadOnlyCollection<BusinessConsoleMaintenanceWorkOrderItem>> EnrichAsync(
+        IReadOnlyCollection<BusinessConsoleMaintenanceWorkOrderItem> items,
+        IBusinessMasterDataClient masterData,
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        var details = await LoadDeviceAssetDetailsAsync(
+            items.Select(x => x.DeviceAssetId),
+            masterData,
+            internalBearerToken,
+            organizationId,
+            environmentId,
+            cancellationToken);
+
+        return items
+            .Select(item =>
+            {
+                details.TryGetValue(item.DeviceAssetId, out var detail);
+                return item with
+                {
+                    WarrantyStatus = WarrantyStatus(detail?.WarrantyExpiresOn),
+                    WarrantyExpiresOn = detail?.WarrantyExpiresOn,
+                    SupplierPartnerCode = detail?.SupplierPartnerCode,
+                };
+            })
+            .ToArray();
+    }
+
+    private static async Task<Dictionary<string, BusinessConsoleMasterDataResourceDetail?>> LoadDeviceAssetDetailsAsync(
+        IEnumerable<string> deviceAssetIds,
+        IBusinessMasterDataClient masterData,
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        var distinctIds = deviceAssetIds
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        using var throttle = new SemaphoreSlim(8);
+        var tasks = distinctIds.Select(async deviceAssetId =>
+        {
+            await throttle.WaitAsync(cancellationToken);
+            try
+            {
+                var detail = await GetDeviceAssetDetailAsync(deviceAssetId, masterData, internalBearerToken, organizationId, environmentId, cancellationToken);
+                return (DeviceAssetId: deviceAssetId, Detail: detail);
+            }
+            finally
+            {
+                throttle.Release();
+            }
+        });
+        var results = await Task.WhenAll(tasks);
+        return results.ToDictionary(x => x.DeviceAssetId, x => x.Detail, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static async Task<BusinessConsoleMasterDataResourceDetail?> GetDeviceAssetDetailAsync(
+        string deviceAssetId,
+        IBusinessMasterDataClient masterData,
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await masterData.GetResourceDetailAsync(
+                internalBearerToken,
+                new BusinessConsoleMasterDataResourceRequest(organizationId, environmentId, "device-asset", deviceAssetId),
+                cancellationToken);
+        }
+        catch (BusinessServiceProxyException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
+    private static string WarrantyStatus(DateOnly? warrantyExpiresOn)
+    {
+        if (warrantyExpiresOn is null)
+        {
+            return "unknown";
+        }
+
+        return warrantyExpiresOn.Value >= DateOnly.FromDateTime(DateTime.UtcNow) ? "in-warranty" : "out-of-warranty";
+    }
 }
 
 [Tags("Business Console Maintenance")]
@@ -407,17 +521,6 @@ public sealed class BusinessConsoleMaintenanceContextRequestValidator : Validato
 public sealed class BusinessConsoleMaintenanceListRequestValidator : Validator<BusinessConsoleMaintenanceListRequest>
 {
     public BusinessConsoleMaintenanceListRequestValidator()
-    {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 200);
-    }
-}
-
-public sealed class BusinessConsoleMaintenanceWorkOrderListRequestValidator : Validator<BusinessConsoleMaintenanceWorkOrderListRequest>
-{
-    public BusinessConsoleMaintenanceWorkOrderListRequestValidator()
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);

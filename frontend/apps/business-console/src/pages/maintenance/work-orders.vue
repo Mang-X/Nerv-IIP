@@ -40,13 +40,7 @@ import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-definePage({
-  meta: {
-    requiresAuth: true,
-    title: '维护工单',
-    requiredPermissions: ['business.maintenance.work-orders.read'],
-  },
-})
+definePage({ meta: { requiresAuth: true, title: '维护工单', requiredPermissions: ['business.maintenance.work-orders.read'] } })
 
 const {
   workOrders,
@@ -87,12 +81,9 @@ const pendingCount = computed(
   () => workOrders.value.filter((w) => OPEN_STATUSES.has((w.status ?? '').toLowerCase())).length,
 )
 const highPriorityPending = computed(
-  () =>
-    workOrders.value.filter(
-      (w) =>
-        OPEN_STATUSES.has((w.status ?? '').toLowerCase()) &&
-        (w.priority ?? '').toLowerCase() === 'high',
-    ).length,
+  () => workOrders.value.filter(
+    (w) => OPEN_STATUSES.has((w.status ?? '').toLowerCase()) && (w.priority ?? '').toLowerCase() === 'high',
+  ).length,
 )
 
 const createOpen = shallowRef(false)
@@ -116,23 +107,17 @@ const completeForm = reactive({
 const completeError = shallowRef('')
 
 const listErrorMessage = computed(() => formatError(workOrdersError.value))
-const createErrorMessage = computed(
-  () => createError.value || formatError(createWorkOrderError.value),
-)
-const completeErrorMessage = computed(
-  () => completeError.value || formatError(completeWorkOrderError.value),
-)
+const createErrorMessage = computed(() => createError.value || formatError(createWorkOrderError.value))
+const completeErrorMessage = computed(() => completeError.value || formatError(completeWorkOrderError.value))
 const queryPrefilled = shallowRef(false)
 
 type WorkOrderRow = BusinessConsoleMaintenanceWorkOrderItem
 const columns: NvDataTableColumn<WorkOrderRow>[] = [
-  {
-    key: 'workOrderNo',
-    header: '工单号',
-    cellClass: 'font-medium',
-    accessor: (r) => workOrderNo(r),
-  },
+  { key: 'workOrderNo', header: '工单号', cellClass: 'font-medium', accessor: (r) => workOrderNo(r) },
   { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '—' },
+  { key: 'warrantyStatus', header: '保修', width: 'w-24' },
+  { key: 'warrantyExpiresOn', header: '保修到期', width: 'w-28', accessor: (r) => formatDate(r.warrantyExpiresOn) },
+  { key: 'supplierPartnerCode', header: '供应商', width: 'w-28', accessor: (r) => r.supplierPartnerCode ?? '—' },
   { key: 'priority', header: '优先级', width: 'w-20' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'openedAtUtc', header: '开单时间', accessor: (r) => formatDateTime(r.openedAtUtc) },
@@ -146,6 +131,13 @@ function workOrderNo(row: WorkOrderRow) {
 }
 function priorityLabel(value?: string | null) {
   return priorityOptions.find((o) => o.value === (value ?? '').toLowerCase())?.label ?? value ?? '—'
+}
+function warrantyStatusLabel(value?: string | null) {
+  switch ((value ?? '').toLowerCase()) {
+    case 'in-warranty': return '在保'
+    case 'out-of-warranty': return '出保'
+    default: return '未知'
+  }
 }
 function rowKey(row: WorkOrderRow) {
   return row.workOrderId ?? '维护工单'
@@ -230,6 +222,11 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
+function formatDate(value?: string | null) {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
+}
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
@@ -250,19 +247,9 @@ watch(
 
 <template>
   <BusinessLayout>
-    <NvPageHeader
-      title="维护工单"
-      :breadcrumbs="[{ label: '设备监控' }]"
-      :count="`${workOrdersTotal} 张维护工单`"
-    >
+    <NvPageHeader title="维护工单" :breadcrumbs="[{ label: '设备监控' }]" :count="`${workOrdersTotal} 张维护工单`">
       <template #actions>
-        <NvButton
-          size="sm"
-          type="button"
-          variant="outline"
-          :disabled="workOrdersPending"
-          @click="refreshWorkOrders"
-        >
+        <NvButton size="sm" type="button" variant="outline" :disabled="workOrdersPending" @click="refreshWorkOrders">
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
@@ -275,16 +262,10 @@ watch(
 
     <NvSectionCards :columns="2">
       <NvSectionCard description="待执行工单" :value="pendingCount" hint="本页未完成，待派工执行" />
-      <NvSectionCard
-        description="待执行 · 高优先"
-        :value="highPriorityPending"
-        hint="本页高优先级，需优先排程"
-      />
+      <NvSectionCard description="待执行 · 高优先" :value="highPriorityPending" hint="本页高优先级，需优先排程" />
     </NvSectionCards>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
-      {{ listErrorMessage }}
-    </p>
+    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
     <NvDataTable
       manual
@@ -301,9 +282,8 @@ watch(
       :column-settings="false"
       empty-message="暂无维护工单。设备报警或巡检发现异常时在此开单。"
     >
-      <template #cell-priority="{ row }"
-        ><NvStatusBadge :value="priorityLabel(row.priority)"
-      /></template>
+      <template #cell-warrantyStatus="{ row }"><NvStatusBadge :value="warrantyStatusLabel(row.warrantyStatus)" /></template>
+      <template #cell-priority="{ row }"><NvStatusBadge :value="priorityLabel(row.priority)" /></template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-actions="{ row }">
         <NvRowActions :label="`维护工单操作 ${workOrderNo(row)}`">
@@ -315,6 +295,7 @@ watch(
       </template>
     </NvDataTable>
 
+
     <NvDialog v-model:open="createOpen">
       <NvDialogContent>
         <NvDialogHeader>
@@ -325,43 +306,24 @@ watch(
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="mwo-device">设备</NvFieldLabel>
-              <NvInput
-                id="mwo-device"
-                v-model="createForm.deviceAssetId"
-                autocomplete="off"
-                placeholder="如 DEV-SMT-01"
-              />
+              <NvInput id="mwo-device" v-model="createForm.deviceAssetId" autocomplete="off" placeholder="如 DEV-SMT-01" />
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-priority">优先级</NvFieldLabel>
               <NvSelect v-model="createForm.priority">
-                <NvSelectTrigger id="mwo-priority" aria-label="优先级"
-                  ><NvSelectValue
-                /></NvSelectTrigger>
+                <NvSelectTrigger id="mwo-priority" aria-label="优先级"><NvSelectValue /></NvSelectTrigger>
                 <NvSelectContent>
-                  <NvSelectItem v-for="o in priorityOptions" :key="o.value" :value="o.value">{{
-                    o.label
-                  }}</NvSelectItem>
+                  <NvSelectItem v-for="o in priorityOptions" :key="o.value" :value="o.value">{{ o.label }}</NvSelectItem>
                 </NvSelectContent>
               </NvSelect>
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-opened-by">开单人</NvFieldLabel>
-              <NvInput
-                id="mwo-opened-by"
-                v-model="createForm.openedBy"
-                autocomplete="off"
-                placeholder="如 巡检员-张工"
-              />
+              <NvInput id="mwo-opened-by" v-model="createForm.openedBy" autocomplete="off" placeholder="如 巡检员-张工" />
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-alarm">关联报警</NvFieldLabel>
-              <NvInput
-                id="mwo-alarm"
-                v-model="createForm.sourceAlarmId"
-                autocomplete="off"
-                placeholder="可选"
-              />
+              <NvInput id="mwo-alarm" v-model="createForm.sourceAlarmId" autocomplete="off" placeholder="可选" />
             </NvField>
           </NvFieldGroup>
 
@@ -385,11 +347,7 @@ watch(
         <NvDialogHeader>
           <NvDialogTitle>完成维护工单</NvDialogTitle>
           <NvDialogDescription>
-            {{
-              completeTarget
-                ? `${workOrderNo(completeTarget)} · ${completeTarget.deviceAssetId ?? ''}`
-                : '登记维护结果与停机时长。'
-            }}
+            {{ completeTarget ? `${workOrderNo(completeTarget)} · ${completeTarget.deviceAssetId ?? ''}` : '登记维护结果与停机时长。' }}
           </NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitComplete">
@@ -397,57 +355,32 @@ watch(
             <NvField>
               <NvFieldLabel for="mwo-result">维护结果</NvFieldLabel>
               <NvSelect v-model="completeForm.result">
-                <NvSelectTrigger id="mwo-result" aria-label="维护结果"
-                  ><NvSelectValue
-                /></NvSelectTrigger>
+                <NvSelectTrigger id="mwo-result" aria-label="维护结果"><NvSelectValue /></NvSelectTrigger>
                 <NvSelectContent>
-                  <NvSelectItem v-for="o in resultOptions" :key="o.value" :value="o.value">{{
-                    o.label
-                  }}</NvSelectItem>
+                  <NvSelectItem v-for="o in resultOptions" :key="o.value" :value="o.value">{{ o.label }}</NvSelectItem>
                 </NvSelectContent>
               </NvSelect>
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-reason">停机原因</NvFieldLabel>
               <NvSelect v-model="completeForm.downtimeReasonCode">
-                <NvSelectTrigger id="mwo-reason" aria-label="停机原因"
-                  ><NvSelectValue
-                /></NvSelectTrigger>
+                <NvSelectTrigger id="mwo-reason" aria-label="停机原因"><NvSelectValue /></NvSelectTrigger>
                 <NvSelectContent>
-                  <NvSelectItem v-for="o in reasonOptions" :key="o.value" :value="o.value">{{
-                    o.label
-                  }}</NvSelectItem>
+                  <NvSelectItem v-for="o in reasonOptions" :key="o.value" :value="o.value">{{ o.label }}</NvSelectItem>
                 </NvSelectContent>
               </NvSelect>
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-minutes">停机时长（分钟）</NvFieldLabel>
-              <NvInput
-                id="mwo-minutes"
-                v-model="completeForm.downtimeMinutes"
-                type="number"
-                min="0"
-                step="1"
-              />
+              <NvInput id="mwo-minutes" v-model="completeForm.downtimeMinutes" type="number" min="0" step="1" />
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-spare-sku">更换备件物料</NvFieldLabel>
-              <NvInput
-                id="mwo-spare-sku"
-                v-model="completeForm.sparePartSku"
-                autocomplete="off"
-                placeholder="如 主控芯片MCU"
-              />
+              <NvInput id="mwo-spare-sku" v-model="completeForm.sparePartSku" autocomplete="off" placeholder="如 主控芯片MCU" />
             </NvField>
             <NvField>
               <NvFieldLabel for="mwo-spare-qty">备件数量</NvFieldLabel>
-              <NvInput
-                id="mwo-spare-qty"
-                v-model="completeForm.sparePartQuantity"
-                type="number"
-                min="1"
-                step="1"
-              />
+              <NvInput id="mwo-spare-qty" v-model="completeForm.sparePartQuantity" type="number" min="1" step="1" />
             </NvField>
           </NvFieldGroup>
 
