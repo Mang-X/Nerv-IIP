@@ -453,7 +453,7 @@ watch(
             >对设备开具维护工单，可关联触发的设备报警，并指派技师与预估工时。</NvSheetDescription
           >
         </NvSheetHeader>
-        <form class="grid gap-4 py-2" @submit.prevent="submitCreate">
+        <form class="grid gap-4 px-4 pb-4" @submit.prevent="submitCreate">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="mwo-device">设备</NvFieldLabel>
@@ -524,7 +524,7 @@ watch(
 
           <NvFieldError v-if="createErrorMessage" :errors="[createErrorMessage]" />
 
-          <NvSheetFooter>
+          <NvSheetFooter class="px-0">
             <NvButton type="button" variant="outline" @click="createOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="createWorkOrderPending">
               <Spinner v-if="createWorkOrderPending" aria-hidden="true" />
@@ -548,7 +548,7 @@ watch(
             }}
           </NvSheetDescription>
         </NvSheetHeader>
-        <form class="grid gap-4 py-2" @submit.prevent="submitComplete">
+        <form class="grid gap-4 px-4 pb-4" @submit.prevent="submitComplete">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="mwo-result">维护结果</NvFieldLabel>
@@ -688,7 +688,7 @@ watch(
 
           <NvFieldError v-if="completeErrorMessage" :errors="[completeErrorMessage]" />
 
-          <NvSheetFooter>
+          <NvSheetFooter class="px-0">
             <NvButton type="button" variant="outline" @click="completeOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="completeWorkOrderPending">
               <Spinner v-if="completeWorkOrderPending" aria-hidden="true" />

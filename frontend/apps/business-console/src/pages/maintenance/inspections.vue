@@ -308,7 +308,7 @@ function formatError(error: unknown) {
             >点检可关联保养计划或维修工单，用于释放设备维护上下文。可记录测量值，超出上下限的行会即时红色警示。</NvSheetDescription
           >
         </NvSheetHeader>
-        <form class="grid gap-5 py-2" @submit.prevent="submitRecord">
+        <form class="grid gap-5 px-4 pb-4" @submit.prevent="submitRecord">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="insp-plan">保养计划</NvFieldLabel>
@@ -433,7 +433,7 @@ function formatError(error: unknown) {
 
           <NvFieldError v-if="recordErrorMessage" :errors="[recordErrorMessage]" />
 
-          <NvSheetFooter>
+          <NvSheetFooter class="px-0">
             <NvButton type="button" variant="outline" @click="recordOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="recordInspectionPending">
               <Spinner v-if="recordInspectionPending" aria-hidden="true" />
@@ -457,7 +457,7 @@ function formatError(error: unknown) {
           </NvSheetDescription>
         </NvSheetHeader>
 
-        <div class="grid gap-2 py-2">
+        <div class="grid gap-2 px-4 pb-4">
           <p
             v-if="detailTarget && outOfSpecCount(detailTarget) > 0"
             class="flex items-center gap-1.5 rounded-md border border-destructive bg-destructive/5 px-3 py-2 text-sm font-medium text-destructive"
