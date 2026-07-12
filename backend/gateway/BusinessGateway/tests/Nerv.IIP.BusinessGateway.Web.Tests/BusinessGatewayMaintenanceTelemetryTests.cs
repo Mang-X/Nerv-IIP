@@ -164,6 +164,42 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("warrantyStatus").GetString());
     }
 
+    public static TheoryData<Exception> UnavailableMasterDataTransportFailures =>
+        new()
+        {
+            new HttpRequestException("connection refused"),
+            new TaskCanceledException("client timeout"),
+        };
+
+    [Theory]
+    [MemberData(nameof(UnavailableMasterDataTransportFailures))]
+    public async Task Maintenance_work_order_warranty_enrichment_degrades_transport_failures_to_unknown(Exception transportFailure)
+    {
+        var masterData = new RecordingMasterDataClient
+        {
+            DetailFailure = transportFailure,
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(new RecordingMaintenanceFacadeClient());
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=10");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "unknown",
+            document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("warrantyStatus").GetString());
+    }
+
     [Fact]
     public void Maintenance_work_order_list_validator_bounds_downstream_fan_out()
     {

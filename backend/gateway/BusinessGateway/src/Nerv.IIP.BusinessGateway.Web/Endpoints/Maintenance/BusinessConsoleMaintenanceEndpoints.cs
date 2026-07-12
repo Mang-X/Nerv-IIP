@@ -226,6 +226,14 @@ internal static class MaintenanceDeviceAssetWarrantyEnricher
         {
             return null;
         }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
     }
 
     private static bool IsUnavailableDeviceAssetDetail(System.Net.HttpStatusCode statusCode) =>
