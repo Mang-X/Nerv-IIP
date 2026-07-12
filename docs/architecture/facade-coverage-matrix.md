@@ -105,7 +105,7 @@ declaration against what actually shipped (facade + codegen + barrel for
 | **Total** | **343** | **275** | **48** | **20** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-The `exposed` rows (271) — each with its verified facade `gatewayOperationIds` — are
+The `exposed` rows (275) — each with its verified facade `gatewayOperationIds` — are
 enumerated in the JSON registry. The `deferred` and `internal` rows, the actual
 governance decisions, are listed in full below.
 
