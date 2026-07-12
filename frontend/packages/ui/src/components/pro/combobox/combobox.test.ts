@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import NvCombobox from './ComboboxPro.vue'
-import NvSearchSelect from './SearchSelectPro.vue'
+import NvCombobox from './NvCombobox.vue'
+import NvSearchSelect from './NvSearchSelect.vue'
 
 describe('NvSearchSelect', () => {
   const options = [
