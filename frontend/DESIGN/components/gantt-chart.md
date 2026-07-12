@@ -1,4 +1,4 @@
-# GanttChart — 工单甘特
+# GanttChart — 工单甘特图
 
 > 导出:`@nerv-iip/scheduling`（**非** shadcn 原版；引擎无关的复合组件）
 > 引擎接缝详见 `frontend/packages/scheduling/README.md`。
@@ -39,5 +39,5 @@ defineEmits<{
 
 ## Do / Don't
 
-- **Do** 通过 `SchedulingWorkbench` 组合工具栏/面板使用；单独使用时父层负责 toolbar 与 inspector。
+- **Do** 按页面任务独立组合工具栏与详情面板，保持甘特组件只负责工单/工序时间线。
 - **Don't** 直接 import 引擎实现(DHTMLX);**Don't** 在模板出现 reasonCode/operationId 等工程语言。

@@ -174,8 +174,8 @@ export default defineConfig({
         {
           text: '排产 Scheduling',
           items: [
-            { text: 'GanttChart 工单甘特', link: '/components/desktop/gantt-chart' },
-            { text: 'ResourceSchedulerBoard 资源排产板', link: '/components/desktop/resource-scheduler' },
+            { text: 'GanttChart 工单甘特图', link: '/components/desktop/gantt-chart' },
+            { text: 'ResourceSchedulerBoard 资源甘特图', link: '/components/desktop/resource-scheduler' },
           ],
         },
       ],

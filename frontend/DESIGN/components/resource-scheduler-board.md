@@ -1,4 +1,4 @@
-# ResourceSchedulerBoard — 资源排产板
+# ResourceSchedulerBoard — 资源甘特图
 
 > 导出:`@nerv-iip/scheduling`（引擎无关的复合组件，与 `GanttChart` 同契约、同引擎）
 
@@ -19,10 +19,10 @@
 
 ## 交互
 
-- 拖动工序到**另一资源行/时间** → `taskDragEnd { kind: 'reassign' | 'move' }`,经工作台进入锁定—重预览。
+- 拖动工序到**另一资源行/时间** → `taskDragEnd { kind: 'reassign' | 'move' }`，由消费页面接入锁定—重预览。
 - 利用率 >1 的资源带显著加深,提示过载。
 
 ## Do / Don't
 
-- **Do** 与 `GanttChart` 共享同一 `ScheduleModel` 与 `SchedulingEngine`,在工作台内用 Tabs 切换。
+- **Do** 与 `GanttChart` 共享同一 `ScheduleModel` 与 `SchedulingEngine`，按页面任务独立使用或组合切换。
 - **Don't** 为资源视图复制一套数据契约;两视图只是同一模型的不同编排。

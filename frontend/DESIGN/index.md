@@ -92,9 +92,9 @@ See `components/install-backlog.md` for full list and install commands.
 | Search + filter + primary action bar | Toolbar | `patterns/blocks/toolbar.md` |
 | Data table with loading/empty states | Data Table | `patterns/blocks/data-table.md` |
 | Paginated table footer | Pagination Bar | `patterns/blocks/pagination-bar.md` |
-| 甘特 / 资源排产可视化 | Scheduling Workbench | `patterns/blocks/scheduling-workbench.md` |
+| 工单 / 资源排程可视化 | GanttChart / ResourceSchedulerBoard | `components/gantt-chart.md` / `components/resource-scheduler-board.md` |
 
-> **排程可视化组件**（`GanttChart` / `ResourceSchedulerBoard` / `SchedulingWorkbench`）来自独立包 **`@nerv-iip/scheduling`**（非 `@nerv-iip/ui`）：引擎无关契约 + DHTMLX 适配器(试用开发 / 正式手动分发),无本地引擎时优雅占位。组件契约见 `components/gantt-chart.md`、`components/resource-scheduler-board.md`；引擎接缝见包 `README.md`。
+> **排程可视化组件**（工单甘特图 `GanttChart` / 资源甘特图 `ResourceSchedulerBoard`）来自独立包 **`@nerv-iip/scheduling`**（非 `@nerv-iip/ui`）：引擎无关契约 + DHTMLX 适配器（试用开发 / 正式手动分发），无本地引擎时优雅占位。组件契约见 `components/gantt-chart.md`、`components/resource-scheduler-board.md`；引擎接缝见包 `README.md`。
 
 ## Roadmaps
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Button, useColorMode } from '@nerv-iip/ui'
-import { SchedulingWorkbench, toModel } from '@nerv-iip/scheduling'
+import { toModel } from '@nerv-iip/scheduling'
+import SchedulingWorkbench from '../../../../packages/scheduling/src/components/SchedulingWorkbench.vue'
 import { computed, ref } from 'vue'
 import { previewPlan } from './schedulingPreviewData'
 

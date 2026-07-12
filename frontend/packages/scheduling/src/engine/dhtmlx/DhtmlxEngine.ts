@@ -1138,6 +1138,14 @@ export class DhtmlxEngine implements SchedulingEngine {
       // 真正与格子融为一体、恒在卡片之下、绝不覆盖。见 timeline_cell_class + this.blockCells。
       const blocks = model.tasks.filter((t) => !!t.blockKind)
       const resById = new Map(model.resources.map((r) => [r.id, r]))
+      const loadByResource = new Map<string, { assigned: number; available: number; utilization: number }>()
+      for (const load of model.loads) {
+        const total = loadByResource.get(load.resourceId) ?? { assigned: 0, available: 0, utilization: 0 }
+        total.assigned += load.assignedMinutes
+        total.available += load.availableMinutes
+        total.utilization = Math.max(total.utilization, load.utilization)
+        loadByResource.set(load.resourceId, total)
+      }
       const groups = new Map<string, string>()
       const laneOf = (t: ScheduleTask) => t.dimensions?.[dim]?.id ?? t.resourceId ?? '__none__'
       // 先用全部资源播种泳道(工作中心维度=资源本身),保证空泳道也常驻——拖走最后一个工序时该行不消失。
@@ -1169,6 +1177,10 @@ export class DhtmlxEngine implements SchedulingEngine {
       )
       for (const [id, label] of sortedGroups) {
         const res = resById.get(id)
+        const load = loadByResource.get(id)
+        const utilization = load
+          ? load.available > 0 ? load.assigned / load.available : load.utilization
+          : undefined
         data.push({
           id: `lane:${id}`,
           text: label,
@@ -1176,7 +1188,7 @@ export class DhtmlxEngine implements SchedulingEngine {
           render: 'split',
           open: true,
           kpi: res
-            ? { utilization: res.utilization, oee: res.oee, changeoverCount: res.changeoverCount, materialRisk: res.materialRisk }
+            ? { utilization: res.utilization ?? utilization, oee: res.oee, changeoverCount: res.changeoverCount, materialRisk: res.materialRisk }
             : undefined,
           nerv: { type: 'order', orderId: id, operationId: '', operationSequence: 0, text: label, startUtc: '', endUtc: '', locked: false, hasConflict: false },
         })

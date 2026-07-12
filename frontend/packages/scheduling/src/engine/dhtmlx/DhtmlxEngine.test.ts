@@ -12,6 +12,7 @@ interface FakeTask {
   start_date?: Date
   end_date?: Date
   $resource?: string
+  kpi?: { utilization?: number }
 }
 
 function makeFakeGantt() {
@@ -80,6 +81,14 @@ describe('DhtmlxEngine (fake factory)', () => {
     ])
     engine.destroy()
     expect(fake.state.destroyed).toBe(true)
+  })
+
+  it('maps resource load utilization into the resource lane header', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    engine.mount(el(), { ...options(), view: 'resource' })
+    engine.setData(toModel(samplePlan))
+    expect(fake.state.parsed.data.find((task) => task.id === 'lane:WC-001')?.kpi?.utilization).toBe(0.25)
   })
 
   it('selectTask command selects in gantt and emits taskSelected', () => {

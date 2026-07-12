@@ -1,5 +1,5 @@
 ---
-title: GanttChart 工单甘特
+title: GanttChart 工单甘特图
 pageClass: ds-wide
 ---
 
@@ -66,7 +66,7 @@ const readOnlyModel = ref(makeModel())
 const emptyModel = ref({ ...makeModel(), tasks: [], links: [] })
 </script>
 
-# GanttChart 工单甘特
+# GanttChart 工单甘特图
 
 工单 → 工序 WBS 视角的时间线:工序条、依赖链、里程碑、进度。给跟单与管理看进度和瓶颈。来自 `@nerv-iip/scheduling`(引擎无关的复合组件,非 shadcn 原版)。
 
@@ -160,7 +160,7 @@ function onDrag(p) {
 
 ### 选中 → 详情
 
-监听 `@task-select` 拿到 `taskId`,在模型里查回工序绘制详情。（`TaskDetailPanel` 内部组件尚未公开导出,这里用页面内简易 inspector;正式页面用 `SchedulingWorkbench` 自带的详情面板。）在上方甘特里点任意工序条即可选中。
+监听 `@task-select` 拿到 `taskId`，在模型里查回工序绘制详情。这里用页面内简易 inspector，正式页面按具体任务组合详情面板。在上方甘特里点任意工序条即可选中。
 
 <Demo block>
   <div v-if="selected" style="border:1px solid var(--border); border-radius:8px; padding:.875rem 1rem; font-size:.8125rem">
@@ -254,4 +254,4 @@ function onDrag(p) {
 
 ## 相关
 
-- [ResourceSchedulerBoard 资源排产板](./resource-scheduler) — 同一模型的资源泳道视角;页内「业务操作 · 编辑工序」演示板外编辑面板改开始时间 / 资源泳道 / 锁定。
+- [ResourceSchedulerBoard 资源甘特图](./resource-scheduler) — 同一模型的资源泳道视角；页内「业务操作 · 编辑工序」演示图外编辑面板改开始时间 / 资源泳道 / 锁定。

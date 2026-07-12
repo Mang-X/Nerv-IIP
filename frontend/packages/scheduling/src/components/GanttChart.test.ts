@@ -41,6 +41,17 @@ describe('GanttChart', () => {
     expect(wrapper.text()).toContain('排程引擎未加载')
     wrapper.unmount()
   })
+
+  it('shows a clear empty state when the schedule has no tasks', async () => {
+    const model = { ...toModel(samplePlan), tasks: [], links: [] }
+    const wrapper = mount(GanttChart, {
+      props: { model },
+      attachTo: document.body,
+    })
+    await settle()
+    expect(wrapper.find('[data-testid="gantt-empty"]').text()).toContain('暂无排程任务')
+    wrapper.unmount()
+  })
 })
 
 describe('ResourceSchedulerBoard', () => {

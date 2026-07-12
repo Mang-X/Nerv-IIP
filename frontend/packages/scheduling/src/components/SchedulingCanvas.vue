@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Skeleton } from '@nerv-iip/ui'
 import { CalendarClockIcon } from 'lucide-vue-next'
-import { ref, toRef } from 'vue'
+import { computed, ref, toRef } from 'vue'
 import type { EngineCommand, TaskDragPayload, TimeScale } from '../engine/engine'
 import type { ScheduleModel } from '../model/types'
 import { useEngine } from './useEngine'
@@ -29,6 +29,7 @@ const emit = defineEmits<{
 }>()
 
 const container = ref<HTMLElement>()
+const isEmpty = computed(() => props.model != null && props.model.tasks.length === 0)
 
 const { engine, engineName } = useEngine({
   container,
@@ -66,11 +67,26 @@ defineExpose({ command, engineName })
       <div ref="container" :data-view="view" :data-engine="engineName" class="h-full w-full" />
       <!-- 无可用引擎时的优雅占位:容器仍在 DOM 中,引擎一旦可用即可挂载。 -->
       <div
-        v-if="engineName === 'unavailable'"
-        data-testid="engine-unavailable"
+        v-if="isEmpty"
+        data-testid="gantt-empty"
+        role="status"
+        aria-live="polite"
         class="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-md border border-dashed bg-card text-center text-muted-foreground"
       >
-        <CalendarClockIcon class="h-8 w-8" />
+        <CalendarClockIcon class="h-8 w-8" aria-hidden="true" />
+        <div class="space-y-1">
+          <p class="text-sm font-medium">暂无排程任务</p>
+          <p class="text-xs">调整筛选条件或生成排程后再查看甘特图。</p>
+        </div>
+      </div>
+      <div
+        v-else-if="engineName === 'unavailable'"
+        data-testid="engine-unavailable"
+        role="status"
+        aria-live="polite"
+        class="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-md border border-dashed bg-card text-center text-muted-foreground"
+      >
+        <CalendarClockIcon class="h-8 w-8" aria-hidden="true" />
         <div class="space-y-1">
           <p class="text-sm font-medium">排程引擎未加载</p>
           <p class="text-xs">DHTMLX 引擎在生产部署时手动分发;开发环境请配置本地 vendor。</p>

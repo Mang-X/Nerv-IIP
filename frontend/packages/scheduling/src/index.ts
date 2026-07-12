@@ -2,7 +2,6 @@
 
 export { default as GanttChart } from './components/GanttChart.vue'
 export { default as ResourceSchedulerBoard } from './components/ResourceSchedulerBoard.vue'
-export { default as SchedulingWorkbench } from './components/SchedulingWorkbench.vue'
 
 export { useSchedulingPlan, type SchedulingContext } from './composables/useSchedulingPlan'
 export { useSchedulingEdits, type SchedulingEditsDeps } from './composables/useSchedulingEdits'

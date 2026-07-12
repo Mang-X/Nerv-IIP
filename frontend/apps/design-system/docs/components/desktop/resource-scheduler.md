@@ -1,5 +1,5 @@
 ---
-title: ResourceSchedulerBoard 资源排产板
+title: ResourceSchedulerBoard 资源甘特图
 pageClass: ds-wide
 ---
 
@@ -140,7 +140,7 @@ function patch(id, fn) {
 const fmtDur = (t) => Math.round((Date.parse(t.endUtc) - Date.parse(t.startUtc)) / H * 10) / 10
 </script>
 
-# ResourceSchedulerBoard 资源排产板
+# ResourceSchedulerBoard 资源甘特图
 
 一资源一泳道,左轴维度可切换(工作中心 / 设备 / 班组 / 产线)。给计划员看机台负载、换型与过载。来自 `@nerv-iip/scheduling`,与 `GanttChart` 同模型、同引擎。
 
