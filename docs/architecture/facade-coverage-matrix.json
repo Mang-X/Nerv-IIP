@@ -2651,6 +2651,42 @@
     },
     {
       "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/telemetry-production-report-candidates",
+      "operationId": "listBusinessMesTelemetryProductionReportCandidates",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["listBusinessConsoleMesTelemetryProductionReportCandidates"]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/telemetry-production-report-candidates/{candidateId}",
+      "operationId": "getBusinessMesTelemetryProductionReportCandidate",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["getBusinessConsoleMesTelemetryProductionReportCandidate"]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/telemetry-production-report-candidates/{candidateId}/promote",
+      "operationId": "promoteBusinessMesTelemetryProductionReportCandidate",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["promoteBusinessConsoleMesTelemetryProductionReportCandidate"]
+    },
+    {
+      "service": "Mes",
+      "method": "POST",
+      "route": "/api/business/v1/mes/telemetry-production-report-candidates/{candidateId}/dismiss",
+      "operationId": "dismissBusinessMesTelemetryProductionReportCandidate",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "gatewayOperationIds": ["dismissBusinessConsoleMesTelemetryProductionReportCandidate"]
+    },
+    {
+      "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release",
       "operationId": "forceReleaseBusinessMesQualityHold",

@@ -1,4 +1,8 @@
 export {
+  dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
+  getBusinessConsoleMesTelemetryProductionReportCandidateQueryOptions,
+  listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions,
+  promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   acceptBusinessConsoleMesShiftHandoverMutationOptions,
   acceptBusinessConsolePlanningSuggestionMutationOptions,
   assignBusinessConsoleMesDispatchTaskMutationOptions,
@@ -2074,32 +2078,7 @@ export type BusinessConsoleForecastInputListEnvelope =
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleForecastInputListResponse
 export type BusinessConsoleOpenNcrFromInspectionEnvelope =
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleOpenNcrFromInspectionResponse
-
-// --- Scheduling / APS lite (#206) -----------------------------------------
-import type {
-  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse,
-  NervIipContractsSchedulingSchedulePlanContract,
-  NervIipContractsSchedulingSchedulePlanStatusContract,
-  NervIipContractsSchedulingScheduleAssignmentContract,
-  NervIipContractsSchedulingScheduleResourceLoadContract,
-  NervIipContractsSchedulingScheduleConflictContract,
-  NervIipContractsSchedulingScheduleConflictReasonCodeContract,
-  NervIipContractsSchedulingScheduleConflictSeverityContract,
-  NervIipContractsSchedulingUnscheduledOperationContract,
-  NervIipContractsSchedulingScheduleChangeContract,
-  NervIipContractsSchedulingScheduleChangeTypeContract,
-  NervIipContractsSchedulingGanttScheduleItemContract,
-} from './generated/business-console/types.gen'
-
-export type SchedulePlanContract = NervIipContractsSchedulingSchedulePlanContract
-export type SchedulePlanStatusContract = NervIipContractsSchedulingSchedulePlanStatusContract
-export type ScheduleAssignmentContract = NervIipContractsSchedulingScheduleAssignmentContract
-export type ScheduleResourceLoadContract = NervIipContractsSchedulingScheduleResourceLoadContract
-export type ScheduleConflictContract = NervIipContractsSchedulingScheduleConflictContract
-export type ScheduleConflictReasonCodeContract = NervIipContractsSchedulingScheduleConflictReasonCodeContract
-export type ScheduleConflictSeverityContract = NervIipContractsSchedulingScheduleConflictSeverityContract
-export type UnscheduledOperationContract = NervIipContractsSchedulingUnscheduledOperationContract
-export type ScheduleChangeContract = NervIipContractsSchedulingScheduleChangeContract
-export type ScheduleChangeTypeContract = NervIipContractsSchedulingScheduleChangeTypeContract
-export type GanttScheduleItemContract = NervIipContractsSchedulingGanttScheduleItemContract
-export type SchedulePlanSummary = NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse
+export type {
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateRow as BusinessConsoleMesTelemetryCandidateRow,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTelemetryCandidateTransition as BusinessConsoleMesTelemetryCandidateTransition,
+} from './generated/business-console'
