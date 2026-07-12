@@ -29,7 +29,10 @@ it('preserves a selected worker when the current search page no longer contains 
     global: {
       stubs: {
         NvSelect: { template: '<div><slot /></div>' },
-        NvSelectTrigger: { template: '<div><slot /></div>' },
+        // 不渲染 trigger 的 slot：NvSelectValue 是 reka SelectValue 的裸导出，无法按 `NvSelectValue`
+        // 名 stub，一旦渲染就会去 inject SelectRoot（已被 NvSelect stub 抹平）而抛错。这两个用例只断言
+        // watch(options) 的 emit，不需要真实下拉，故让 trigger 不吐 slot 即可自洽（不依赖跨用例 stub 泄漏）。
+        NvSelectTrigger: { template: '<div />' },
         NvSelectValue: true,
         NvSelectContent: { template: '<div><slot /></div>' },
         NvSelectItem: { template: '<div><slot /></div>' },
@@ -50,7 +53,10 @@ it('clears a selected worker outside the current result set by default', async (
     global: {
       stubs: {
         NvSelect: { template: '<div><slot /></div>' },
-        NvSelectTrigger: { template: '<div><slot /></div>' },
+        // 不渲染 trigger 的 slot：NvSelectValue 是 reka SelectValue 的裸导出，无法按 `NvSelectValue`
+        // 名 stub，一旦渲染就会去 inject SelectRoot（已被 NvSelect stub 抹平）而抛错。这两个用例只断言
+        // watch(options) 的 emit，不需要真实下拉，故让 trigger 不吐 slot 即可自洽（不依赖跨用例 stub 泄漏）。
+        NvSelectTrigger: { template: '<div />' },
         NvSelectValue: true,
         NvSelectContent: { template: '<div><slot /></div>' },
         NvSelectItem: { template: '<div><slot /></div>' },

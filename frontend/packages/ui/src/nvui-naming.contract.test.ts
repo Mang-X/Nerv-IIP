@@ -16,7 +16,8 @@ const exported = ui as Record<string, unknown>
 const transitionalPcIdentifier = /(?:^|[\s"'`.])ds-/m
 const transitionalScreenIdentifier = /(?:^|[\s"'`.])sb-/m
 
-// --- Frozen Appendix A (ui): 179 Nv names (incl. renamed derived types) + 174 old.
+// --- Frozen Appendix A (ui): 181 Nv names (incl. renamed derived types) + 174 old.
+// (NvCombobox / NvSearchSelect added post-freeze by MAN-439 — new components, see ADR 0020 Appendix A.)
 const NV_ALL = [
   'NvAlarmTable',
   'NvAlertDialog',
@@ -47,6 +48,7 @@ const NV_ALL = [
   'NvCardTitle',
   'NvCarousel',
   'NvCheckbox',
+  'NvCombobox',
   'NvCommand',
   'NvContainer',
   'NvDataTable',
@@ -151,6 +153,7 @@ const NV_ALL = [
   'NvScreenTabs',
   'NvScreenTrendChart',
   'NvScrollBoard',
+  'NvSearchSelect',
   'NvSectionCard',
   'NvSectionCards',
   'NvSelect',
