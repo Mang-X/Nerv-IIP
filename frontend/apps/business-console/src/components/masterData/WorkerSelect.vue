@@ -8,7 +8,7 @@ import {
   NvSelectTrigger,
   NvSelectValue,
 } from '@nerv-iip/ui'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
 /**
  * 可复用「工人选择器」。选项来自工人目录（IAM 用户），显示姓名（工号 · 部门），
@@ -17,9 +17,10 @@ import { computed } from 'vue'
  */
 const model = defineModel<string>({ default: '' })
 
-defineProps<{
+const props = defineProps<{
   id?: string
   placeholder?: string
+  keepOutOfRange?: boolean
 }>()
 
 const { workers, workersPending, filters } = useBusinessWorkers()
@@ -46,6 +47,14 @@ const options = computed(() =>
       }
     }),
 )
+
+// Most consumers must not retain a worker outside the active result set. Completion forms opt in
+// to preserving a planned/selected technician while server-side search or pagination changes.
+watch(options, (list) => {
+  if (!props.keepOutOfRange && model.value && !list.some((option) => option.value === model.value)) {
+    model.value = ''
+  }
+})
 
 </script>
 

@@ -445,6 +445,7 @@ public sealed record MaintenanceReliabilitySummaryResponse(
 
 public sealed record MaintenanceReliabilitySummaryItem(
     string DeviceAssetId,
+    // Null when an actual-technician group contains more than one planned assignee.
     string? AssignedTechnicianUserId,
     string? ActualTechnicianUserId,
     string? CostCurrencyCode,

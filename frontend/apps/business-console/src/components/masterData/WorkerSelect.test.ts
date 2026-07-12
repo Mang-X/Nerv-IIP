@@ -25,7 +25,7 @@ beforeEach(() => {
 
 it('preserves a selected worker when the current search page no longer contains it', async () => {
   const wrapper = mount(WorkerSelect, {
-    props: { modelValue: 'worker-planned' },
+    props: { modelValue: 'worker-planned', keepOutOfRange: true },
     global: {
       stubs: {
         NvSelect: { template: '<div><slot /></div>' },
@@ -42,4 +42,25 @@ it('preserves a selected worker when the current search page no longer contains 
   await nextTick()
 
   expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+})
+
+it('clears a selected worker outside the current result set by default', async () => {
+  const wrapper = mount(WorkerSelect, {
+    props: { modelValue: 'worker-planned' },
+    global: {
+      stubs: {
+        NvSelect: { template: '<div><slot /></div>' },
+        NvSelectTrigger: { template: '<div><slot /></div>' },
+        NvSelectValue: true,
+        NvSelectContent: { template: '<div><slot /></div>' },
+        NvSelectItem: { template: '<div><slot /></div>' },
+        NvInput: true,
+      },
+    },
+  })
+
+  workerDirectory.workers.value = [{ userId: 'worker-other', displayName: '其他技师' }]
+  await nextTick()
+
+  expect(wrapper.emitted('update:modelValue')).toEqual([['']])
 })

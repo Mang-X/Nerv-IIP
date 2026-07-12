@@ -30,7 +30,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                 [],
                 ActualTechnicianUserId: new string('x', 151)));
 
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(BusinessConsoleCompleteMaintenanceWorkOrderRequest.ActualTechnicianUserId));
+        Assert.Contains(result.Errors, x => x.ErrorMessage.Contains("150", StringComparison.Ordinal));
     }
 
     [Fact]

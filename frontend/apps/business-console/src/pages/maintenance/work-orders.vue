@@ -383,6 +383,7 @@ watch(
               <WorkerSelect
                 id="mwo-actual-technician"
                 v-model="completeForm.actualTechnicianUserId"
+                keep-out-of-range
                 placeholder="请选择实际执行技师"
               />
             </NvField>
