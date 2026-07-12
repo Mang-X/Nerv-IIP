@@ -37,4 +37,15 @@ public sealed class MesProductionReportReversalAuditTests
         Assert.Null((await dbContext.ProductionReports.SingleAsync(x => x.ReportNo == "RPT-1")).ReversedBy);
         Assert.Equal("user-42", (await dbContext.ProductionReports.SingleAsync(x => x.ReportNo == "RPT-2")).ReversedBy);
     }
+
+    [Fact]
+    public void Reverse_domain_rejects_blank_or_overlong_actor_ref()
+    {
+        var original = ProductionReport.Record("org", "env", "RPT-1", "WO-1", "OP-1", 1m, 0m, false, DateTimeOffset.UtcNow);
+
+        Assert.Throws<ArgumentException>(() =>
+            ProductionReport.Reverse(original, "RPT-2", DateTimeOffset.UtcNow, "reason", "   "));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ProductionReport.Reverse(original, "RPT-2", DateTimeOffset.UtcNow, "reason", new string('a', 101)));
+    }
 }

@@ -236,6 +236,7 @@ Source:
 16. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260705071030_AddOperationTaskQualityInspectionTrigger.cs`
 17. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260706064951_AddMesEngineeringChangeWorkOrderImpacts.cs`
 18. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260707024208_AddOperationTaskSopOperationCode.cs`
+19. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260712144704_AddProductionReportReversalAudit.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |

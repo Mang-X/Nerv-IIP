@@ -2210,7 +2210,7 @@ public sealed class MesPersistenceContractTests
 
         var reversedAt = now.AddMinutes(50);
         var first = await new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
-            new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt, "operator-1", "reverse-idem-key"),
+            new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt, "  operator-1  ", "reverse-idem-key"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 

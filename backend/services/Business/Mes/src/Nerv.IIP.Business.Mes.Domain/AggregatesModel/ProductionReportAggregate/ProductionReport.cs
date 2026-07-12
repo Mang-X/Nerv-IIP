@@ -8,6 +8,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
 {
     public const string ManualSource = "manual";
     public const string TelemetrySource = "telemetry";
+    public const int ReversedByMaxLength = 100;
 
     private ProductionReport()
     {
@@ -158,6 +159,12 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         string actorRef)
     {
         ArgumentNullException.ThrowIfNull(original);
+        var normalizedActorRef = DomainGuard.Required(actorRef, nameof(actorRef));
+        if (normalizedActorRef.Length > ReversedByMaxLength)
+        {
+            throw new ArgumentOutOfRangeException(nameof(actorRef), $"Actor reference cannot exceed {ReversedByMaxLength} characters.");
+        }
+
         if (original.IsReversal)
         {
             throw new InvalidOperationException("Reversal production reports cannot be reversed.");
@@ -181,7 +188,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             original.SerialNo,
             original.ReportNo,
             reason,
-            DomainGuard.Required(actorRef, nameof(actorRef)),
+            normalizedActorRef,
             originalOeeProjection,
             original.Source,
             original.MaterialMovementCount);

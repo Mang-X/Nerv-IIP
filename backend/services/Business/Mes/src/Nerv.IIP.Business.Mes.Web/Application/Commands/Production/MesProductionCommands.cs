@@ -309,13 +309,14 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
 
     public async Task<ReverseProductionReportCommandResult> Handle(ReverseProductionReportCommand request, CancellationToken cancellationToken)
     {
+        var normalizedActorRef = request.ActorRef.Trim();
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId,
             "production-report",
             null,
             request.IdempotencyKey,
-            MesCodingService.Fingerprint(request.ReportNo, request.Reason, request.ReversedAtUtc, request.ActorRef),
+            MesCodingService.Fingerprint(request.ReportNo, request.Reason, request.ReversedAtUtc, normalizedActorRef),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -413,7 +414,7 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
             allocation.Code,
             request.ReversedAtUtc,
             request.Reason,
-            request.ActorRef);
+            normalizedActorRef);
         var originalConsumptions = await dbContext.ProductionReportMaterialConsumptions
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
