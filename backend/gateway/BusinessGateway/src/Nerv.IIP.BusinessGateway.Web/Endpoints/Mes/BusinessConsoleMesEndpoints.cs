@@ -901,6 +901,32 @@ public sealed class ListBusinessConsoleMesProductionReportsEndpoint(
 }
 
 [Tags("Business Console MES")]
+[HttpGet("/api/business-console/v1/mes/production-reports/{reportNo}")]
+[BusinessGatewayOperationId("getBusinessConsoleMesProductionReport")]
+public sealed class GetBusinessConsoleMesProductionReportEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesProductionReportDetailRequest, BusinessConsoleMesProductionReportDetailResponse>(
+        auth,
+        BusinessGatewayPermissions.MesReportingRead)
+{
+    protected override string OrganizationId(BusinessConsoleMesProductionReportDetailRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesProductionReportDetailRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleMesProductionReportDetailResponse> ForwardAsync(
+        BusinessConsoleMesProductionReportDetailRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        mes.GetProductionReportAsync(
+            tokenProvider.BearerToken,
+            request.ReportNo,
+            new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
+            cancellationToken);
+}
+
+[Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/production-reports")]
 [BusinessGatewayOperationId("recordBusinessConsoleMesProductionReport")]
 public sealed class RecordBusinessConsoleMesProductionReportEndpoint(

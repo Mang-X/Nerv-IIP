@@ -1359,6 +1359,12 @@ public interface IBusinessMesClient
         BusinessConsoleMesListWithoutStatusRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleMesProductionReportDetailResponse> GetProductionReportAsync(
+        string internalBearerToken,
+        string reportNo,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleMesTelemetryCandidateListResponse> ListTelemetryCandidatesAsync(string internalBearerToken, BusinessConsoleMesTelemetryCandidateListRequest request, CancellationToken cancellationToken);
     Task<BusinessConsoleMesTelemetryCandidateRow> GetTelemetryCandidateAsync(string internalBearerToken, string candidateId, string organizationId, string environmentId, CancellationToken cancellationToken);
     Task<BusinessConsoleRecordProductionReportResponse> PromoteTelemetryCandidateAsync(string internalBearerToken, string candidateId, BusinessConsoleMesTelemetryCandidatePromoteRequest request, string actor, CancellationToken cancellationToken);
@@ -6121,6 +6127,18 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/mes/production-reports?" + ListQueryWithoutStatus(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesProductionReportDetailResponse> GetProductionReportAsync(
+        string internalBearerToken,
+        string reportNo,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesProductionReportDetailResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/production-reports/{Uri.EscapeDataString(reportNo)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
             cancellationToken);
 

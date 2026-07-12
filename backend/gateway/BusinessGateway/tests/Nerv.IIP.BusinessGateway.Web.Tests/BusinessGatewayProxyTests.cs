@@ -1167,6 +1167,34 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Mes_production_report_detail_forwards_scoped_context_and_preserves_consumed_lot_uom()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/production-reports/PR-001?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.Equal("PR-001", mes.LastProductionReportNo);
+        Assert.Equal("org-001", mes.LastProductionReportContext?.OrganizationId);
+        Assert.Equal("env-dev", mes.LastProductionReportContext?.EnvironmentId);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("LOT-FG-001", data.GetProperty("report").GetProperty("producedLotNo").GetString());
+        Assert.Equal("KG", data.GetProperty("consumedMaterialLots")[0].GetProperty("uomCode").GetString());
+    }
+
+    [Fact]
     public async Task Mes_finished_goods_receipt_inventory_posting_retry_forwards_context_and_maps_response()
     {
         var mes = new RecordingMesClient();
@@ -4703,6 +4731,50 @@ public sealed class BusinessGatewayProxyTests
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Equal("/api/business/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released&keyword=filter&workCenterId=WC-FILTER&shiftId=SHIFT-FILTER&deviceAssetId=DEV-FILTER&skip=4&take=12", request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Mes_http_client_gets_production_report_detail_with_escaped_report_number_and_scoped_context()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            report = new
+            {
+                productionReportId = "report-id",
+                reportNo = "PR/001",
+                workOrderId = "WO-001",
+                operationTaskId = "OP-10",
+                goodQuantity = 8,
+                scrapQuantity = 1,
+                reworkQuantity = 0,
+                reportedAtUtc = DateTimeOffset.Parse("2026-07-12T00:00:00Z"),
+            },
+            consumedMaterialLots = new[]
+            {
+                new
+                {
+                    materialId = "MAT-001",
+                    materialLotId = "LOT-RM-001",
+                    consumedQuantity = 2.5m,
+                    uomCode = "KG",
+                    materialIssueRequestNo = "MIR-001",
+                },
+            },
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var response = await client.GetProductionReportAsync(
+            "internal-token-001",
+            "PR/001",
+            new BusinessConsoleMesContextRequest("org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal("KG", response.ConsumedMaterialLots.Single().UomCode);
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal("/api/business/v1/mes/production-reports/PR%2F001?organizationId=org-001&environmentId=env-dev", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
     }
 
@@ -8786,6 +8858,8 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
 
 internal sealed class RecordingMesClient : IBusinessMesClient
 {
+    public string? LastProductionReportNo { get; private set; }
+    public BusinessConsoleMesContextRequest? LastProductionReportContext { get; private set; }
     public int WorkOrderListCallCount { get; private set; }
 
     public string? LastInternalToken { get; private set; }
@@ -9121,6 +9195,22 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleMesProductionReportListResponse([], 0));
+    }
+
+    public Task<BusinessConsoleMesProductionReportDetailResponse> GetProductionReportAsync(
+        string internalBearerToken,
+        string reportNo,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastProductionReportNo = reportNo;
+        LastProductionReportContext = request;
+        return Task.FromResult(new BusinessConsoleMesProductionReportDetailResponse(
+            new BusinessConsoleMesProductionReportDetail(
+                "report-id", reportNo, "WO-001", "OP-10", 8m, 1m, 0m,
+                DateTimeOffset.Parse("2026-07-12T00:00:00Z"), ProducedLotNo: "LOT-FG-001"),
+            [new BusinessConsoleMesConsumedMaterialLot("MAT-001", "LOT-RM-001", 2.5m, "KG", "MIR-001")]));
     }
 
     public Task<BusinessConsoleMesTelemetryCandidateListResponse> ListTelemetryCandidatesAsync(
