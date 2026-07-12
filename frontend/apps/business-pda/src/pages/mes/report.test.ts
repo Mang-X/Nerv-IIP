@@ -79,6 +79,13 @@ vi.mock('@/composables/useBusinessMes', () => ({
     refresh: vi.fn(),
     recordReport,
   }),
+  useMesTelemetryProductionReportCandidates: () => ({
+    candidates: computed(() => []),
+    total: computed(() => 0),
+    pending: ref(false),
+    promote: vi.fn(),
+    dismiss: vi.fn(),
+  }),
 }))
 
 import ReportPage from './report.vue'
