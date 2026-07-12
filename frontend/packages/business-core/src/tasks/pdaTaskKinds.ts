@@ -1,7 +1,7 @@
 export interface PdaTaskKind {
   id: string
   label: string
-  group: 'wms' | 'mes' | 'equipment'
+  group: 'wms' | 'mes' | 'equipment' | 'quality'
   route: string
   /** 对应作业页是否已落地；false 时应用墙入口 disabled。 */
   routeReady: boolean
@@ -21,6 +21,7 @@ export const PDA_TASK_KINDS: PdaTaskKind[] = [
   { id: 'equipment.repair', label: '报修', group: 'equipment', route: '/equipment/repair', routeReady: true },
   { id: 'equipment.inspect', label: '点检', group: 'equipment', route: '/equipment/inspect', routeReady: true },
   { id: 'equipment.alarms', label: '查看报警', group: 'equipment', route: '/equipment/alarms', routeReady: true },
+  { id: 'quality.tasks', label: '检验任务', group: 'quality', route: '/quality/tasks', routeReady: true },
 ]
 
 const byId = new Map(PDA_TASK_KINDS.map((k) => [k.id, k]))

@@ -1,0 +1,167 @@
+import {
+  createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions,
+  listBusinessConsoleQualityInspectionTasksQueryOptions,
+  listBusinessConsoleQualityReasonCodesQueryOptions,
+  type BusinessConsoleInspectionCharacteristicResult,
+  type BusinessConsoleQualityInspectionTaskItem,
+  type BusinessConsoleQualityReasonItem,
+} from '@nerv-iip/api-client'
+import type { QualityCharacteristicResultLine as ResultLine } from '@nerv-iip/business-core'
+import { useAuthStore } from '@/stores/auth'
+import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
+import { computed, reactive } from 'vue'
+
+const DEFAULT_TAKE = 100
+
+/** 待检工作台默认只呈现 pending（未检）任务；提交后任务转 completed 并从列表失效回落。 */
+const PENDING_STATUS = 'pending'
+
+export interface InspectionTaskFilters {
+  status: string
+  skip: number
+  take: number
+}
+
+function listItems<TItem>(
+  envelope: { success?: boolean; data?: { items?: TItem[] } | null } | undefined,
+) {
+  if (!envelope?.success) return []
+  return envelope.data?.items ?? []
+}
+
+function listTotal(envelope: { success?: boolean; data?: { total?: number } | null } | undefined) {
+  if (!envelope?.success) return 0
+  return envelope.data?.total ?? 0
+}
+
+/** 谓词匹配检验任务列表读的查询键——提交后跨 composable 实例失效。 */
+function isInspectionTasksQuery(entry: UseQueryEntry) {
+  const keyParts = Array.isArray(entry.key) ? entry.key : [entry.key]
+  return keyParts.some(
+    (part) =>
+      typeof part === 'object' &&
+      part !== null &&
+      '_id' in part &&
+      part._id === 'listBusinessConsoleQualityInspectionTasks',
+  )
+}
+
+function ignoreBackgroundError(_error: unknown) {}
+
+/**
+ * 检验任务（待检工作台）读 + 逐特性录结果提交数据封装（MAN-457 / #811，与 console C3-1 / #801 同源）。
+ *
+ * - org/env 取登录主体 `useAuthStore().principal`（PDA 无 business-context store）；
+ *   `inspectorUserId` = `principal.principalId`（写面必填的检验员身份，服务端审计操作人）。
+ *   scope 空（未登录 / 缺 org/env）时列表不发请求（`enabled:false`）。
+ * - 列表默认按 `status=pending` 服务端过滤；来源类型筛选、超期置顶排序、扫码直达均为
+ *   **客户端**逻辑（facade 仅支持 org/env/status/skuCode/skip/take，无 sourceType/超期/关键字参数），
+ *   因此当扫码/来源筛选命中第一页之外时以 `total` 判断是否可 `loadMore`，不把"页内未命中"当"不存在"。
+ * - 提交端点 `CreateInspectionRecordFromTask` **按任务生命周期天然幂等**：任务已 completed 则
+ *   返回同一 inspectionRecordId（first-write-wins keyed on task），故重试安全；权威 pass/fail 由
+ *   后端按检验计划规格计算并在不合格时自动发起 NCR。请求体无幂等键字段，无需携带。
+ */
+export function useBusinessQualityInspectionTasks() {
+  const auth = useAuthStore()
+  const organizationId = computed(() => auth.principal?.organizationId ?? '')
+  const environmentId = computed(() => auth.principal?.environmentId ?? '')
+  const inspectorUserId = computed(() => auth.principal?.principalId ?? '')
+  const scopeReady = computed(() => Boolean(organizationId.value && environmentId.value))
+
+  const queryCache = useQueryCache()
+  const filters = reactive<InspectionTaskFilters>({
+    status: PENDING_STATUS,
+    skip: 0,
+    take: DEFAULT_TAKE,
+  })
+
+  const listQuery = useQuery(() => ({
+    ...listBusinessConsoleQualityInspectionTasksQueryOptions({
+      query: {
+        organizationId: organizationId.value,
+        environmentId: environmentId.value,
+        status: filters.status,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: scopeReady.value,
+  }))
+
+  // 原因码目录（计数特性判不合格时的 Picker 数据源）：只取启用项，小目录一次拉全。
+  const reasonCodesQuery = useQuery(() => ({
+    ...listBusinessConsoleQualityReasonCodesQueryOptions({
+      query: {
+        organizationId: organizationId.value,
+        environmentId: environmentId.value,
+        enabled: true,
+        skip: 0,
+        take: 200,
+      },
+    }),
+    enabled: scopeReady.value,
+  }))
+
+  const reasonCodes = computed<BusinessConsoleQualityReasonItem[]>(() =>
+    listItems<BusinessConsoleQualityReasonItem>(reasonCodesQuery.data.value),
+  )
+
+  const submitMutation = useMutation({
+    ...createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions(),
+    onSuccess() {
+      void queryCache
+        .invalidateQueries({ predicate: isInspectionTasksQuery })
+        .catch(ignoreBackgroundError)
+    },
+  })
+
+  const tasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() =>
+    listItems<BusinessConsoleQualityInspectionTaskItem>(listQuery.data.value),
+  )
+  const total = computed(() => listTotal(listQuery.data.value))
+  const loaded = computed(() => tasks.value.length)
+  const hasMore = computed(() => loaded.value < total.value)
+
+  /** 加载更多页（facade 无关键字/来源过滤，客户端筛选命中首页之外时据 total 加载）。 */
+  function loadMore() {
+    if (filters.take < total.value) filters.take += DEFAULT_TAKE
+  }
+
+  /**
+   * 提交检验结果。`resultLines` 由 `@nerv-iip/business-core` 归一（业务口径），此处仅注入
+   * org/env（query）与 `inspectorUserId`（body）——调用方不可覆盖检验员身份。
+   */
+  async function submitInspection(inspectionTaskId: string, resultLines: readonly ResultLine[]) {
+    if (!scopeReady.value || !inspectorUserId.value) {
+      throw new Error('登录态未就绪，请稍后重试')
+    }
+    return submitMutation.mutateAsync({
+      path: { inspectionTaskId },
+      query: {
+        organizationId: organizationId.value,
+        environmentId: environmentId.value,
+      },
+      body: {
+        inspectorUserId: inspectorUserId.value,
+        // business-core 的行结构与 api-client `InspectionCharacteristicResult` 同形，直接透传。
+        resultLines: resultLines as BusinessConsoleInspectionCharacteristicResult[],
+      },
+    })
+  }
+
+  return {
+    filters,
+    tasks,
+    total,
+    loaded,
+    hasMore,
+    loadMore,
+    pending: listQuery.isLoading,
+    error: listQuery.error,
+    refresh: () => (scopeReady.value ? listQuery.refetch() : Promise.resolve()),
+    reasonCodes,
+    submitInspection,
+    submitPending: submitMutation.isLoading,
+    scopeReady,
+  }
+}

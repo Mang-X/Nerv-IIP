@@ -25,6 +25,8 @@ export { finishedGoodsReceiptFlow, productionReportFlow } from './sop/mesFlows'
 export type { ReceiptCtx, ReportCtx } from './sop/mesFlows'
 export { repairOrderFlow, inspectionFlow } from './sop/equipmentFlows'
 export type { RepairCtx, InspectCtx } from './sop/equipmentFlows'
+export { qualityInspectionTaskFlow } from './sop/qualityFlows'
+export type { QualityInspectionTaskCtx } from './sop/qualityFlows'
 export {
   alarmLifecycleSortWeight,
   alarmLifecycleStatusLabel,
@@ -56,6 +58,28 @@ export type {
   MeasurementPayloadLine,
   ParsedNumber,
 } from './inspections/measurements'
+export {
+  characteristicRowOutOfTolerance,
+  characteristicRowResult,
+  createQualityCharacteristicDraft,
+  isQualityCharacteristicRowValid,
+  qualityCharacteristicRowsValid,
+  qualityInspectionOverallVerdict,
+  toQualityCharacteristicResultLines,
+} from './inspections/qualityResults'
+export type {
+  CharacteristicResult,
+  CharacteristicResultKind,
+  QualityCharacteristicDraftRow,
+  QualityCharacteristicResultLine,
+} from './inspections/qualityResults'
+export {
+  INSPECTION_TASK_SOURCE_TYPES,
+  inspectionTaskSourceTypeLabel,
+  inspectionTaskSourceTypeLabels,
+  inspectionTaskStatusLabel,
+  inspectionTaskStatusLabels,
+} from './labels/qualityLabels'
 export { sanitizeRedirectPath } from './routing/sanitizeRedirectPath'
 export { PDA_TASK_KINDS, getPdaTaskKind } from './tasks/pdaTaskKinds'
 export type { PdaTaskKind } from './tasks/pdaTaskKinds'

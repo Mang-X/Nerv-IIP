@@ -38,6 +38,16 @@ describe('PDA task kinds dictionary', () => {
     expect(getPdaTaskKind('equipment.alarms')?.routeReady).toBe(true)
   })
 
+  it('adds the quality.tasks entry pointing at the inspection task execution route', () => {
+    expect(getPdaTaskKind('quality.tasks')).toMatchObject({
+      id: 'quality.tasks',
+      label: '检验任务',
+      group: 'quality',
+      route: '/quality/tasks',
+      routeReady: true,
+    })
+  })
+
   it('adds the equipment.alarms entry pointing at the read-only alarms route', () => {
     expect(getPdaTaskKind('equipment.alarms')).toMatchObject({
       id: 'equipment.alarms',
