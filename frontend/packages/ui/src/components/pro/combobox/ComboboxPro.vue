@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import { computed, ref } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import { PopoverAnchor, PopoverContent, PopoverPortal, PopoverRoot } from 'reka-ui'
 import { cn } from '../../../lib/utils'
 
@@ -35,20 +35,35 @@ const open = ref(false)
 const activeIndex = ref(-1)
 const inputEl = ref<HTMLInputElement>()
 
+// 组件内 query 是过滤的唯一依据，随输入同步更新（受控 modelValue 变化时回同步）。
+// 不直接读 props.modelValue 过滤——emit 后 prop 要到下一次渲染才回传，会令开关/过滤落后一拍。
+const query = ref(props.modelValue ?? '')
+watch(
+  () => props.modelValue,
+  (value) => {
+    const next = value ?? ''
+    if (next !== query.value) query.value = next
+  },
+)
+
 const filtered = computed(() => {
-  const q = (props.modelValue ?? '').trim().toLowerCase()
+  const q = query.value.trim().toLowerCase()
   if (!q) return props.suggestions
   return props.suggestions.filter((s) =>
     `${s.label ?? s.value} ${s.hint ?? ''}`.toLowerCase().includes(q),
   )
 })
 
-function setValue(value: string) {
-  emit('update:modelValue', value)
-}
+const listboxId = useId()
+const optionId = (index: number) => `${listboxId}-opt-${index}`
+const activeDescendant = computed(() =>
+  open.value && activeIndex.value >= 0 ? optionId(activeIndex.value) : undefined,
+)
+
 function onInput(e: Event) {
-  setValue((e.target as HTMLInputElement).value)
-  // 仅在有匹配建议时展开，避免自由录入时"无匹配建议"每次弹出打扰。
+  query.value = (e.target as HTMLInputElement).value
+  emit('update:modelValue', query.value)
+  // filtered 现基于 query（已同步）计算，开关判断与本次输入一致，不再落后一拍。
   open.value = filtered.value.length > 0
   activeIndex.value = -1
 }
@@ -56,7 +71,8 @@ function onFocus() {
   if (filtered.value.length) open.value = true
 }
 function pick(suggestion: ComboboxSuggestion) {
-  setValue(suggestion.value)
+  query.value = suggestion.value
+  emit('update:modelValue', suggestion.value)
   open.value = false
 }
 function onKeydown(e: KeyboardEvent) {
@@ -97,12 +113,15 @@ function onPointerDownOutside(e: Event) {
       <input
         :id="id"
         ref="inputEl"
-        :value="modelValue"
+        :value="query"
         :placeholder="placeholder"
         :disabled="disabled"
         autocomplete="off"
         role="combobox"
+        aria-autocomplete="list"
+        :aria-controls="listboxId"
         :aria-expanded="open"
+        :aria-activedescendant="activeDescendant"
         :class="
           cn(
             'border-input focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 h-8 w-full rounded-lg border bg-transparent px-2.5 py-1 text-base outline-none transition-colors focus-visible:ring-3 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
@@ -116,6 +135,8 @@ function onPointerDownOutside(e: Event) {
     </PopoverAnchor>
     <PopoverPortal>
       <PopoverContent
+        :id="listboxId"
+        role="listbox"
         align="start"
         :side-offset="4"
         class="z-50 max-h-60 w-(--reka-popover-trigger-width) min-w-52 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0"
@@ -125,8 +146,11 @@ function onPointerDownOutside(e: Event) {
       >
         <button
           v-for="(suggestion, index) in filtered"
+          :id="optionId(index)"
           :key="suggestion.value"
           type="button"
+          role="option"
+          :aria-selected="index === activeIndex"
           :data-active="index === activeIndex || undefined"
           class="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm outline-none hover:bg-accent data-active:bg-accent"
           @click="pick(suggestion)"

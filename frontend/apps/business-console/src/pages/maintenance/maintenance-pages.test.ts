@@ -11,6 +11,7 @@ import WorkOrdersPage from './work-orders.vue'
 const state = vi.hoisted(() => ({
   query: { deviceAssetId: 'DEV-PRESS-01', sourceAlarmId: 'ALARM-9001' } as Record<string, string>,
   inspections: [] as Array<Record<string, unknown>>,
+  workOrders: [] as Array<Record<string, unknown>>,
   createWorkOrder: vi.fn(async (_body: Record<string, unknown>) => ({})),
   completeWorkOrder: vi.fn(async (_id: string, _body: Record<string, unknown>) => ({})),
   recordInspection: vi.fn(async (_body: Record<string, unknown>) => ({})),
@@ -28,7 +29,7 @@ vi.mock('vue-router', async (importOriginal) => {
 vi.mock('@/composables/useBusinessMaintenance', () => ({
   useMaintenanceWorkOrders: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
-    workOrders: computed(() => [] as unknown[]),
+    workOrders: computed(() => state.workOrders),
     workOrdersError: shallowRef(),
     workOrdersPending: shallowRef(false),
     workOrdersTotal: computed(() => 0),
@@ -102,6 +103,7 @@ beforeEach(() => {
   state.recordInspection.mockClear()
   state.query = { deviceAssetId: 'DEV-PRESS-01', sourceAlarmId: 'ALARM-9001' }
   state.inspections = []
+  state.workOrders = []
   pinia = createPinia()
   setActivePinia(pinia)
   useAuthStore().$patch({
@@ -157,6 +159,46 @@ describe('maintenance work orders page', () => {
     expect(body.estimatedLaborMinutes).toBe(45)
     // 开单人默认解析为当前用户显示名（验证「默认当前用户」）。
     expect(body.openedBy).toBe('admin')
+  })
+
+  // 审核：备件成本人工覆盖为负/非法时必须拦截，不得发出负成本或静默丢字段。
+  it('rejects a negative / non-numeric spare-part cost override on complete', async () => {
+    state.query = {} // 不自动打开建单抽屉
+    state.workOrders = [
+      {
+        workOrderId: 'wo-1',
+        deviceAssetId: 'DEV-1',
+        priority: 'high',
+        status: 'open',
+        openedAtUtc: '2026-06-10T08:00:00Z',
+      },
+    ]
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+
+    // 通过行操作打开「完成工单」抽屉。
+    const rowAction = document.body.querySelector<HTMLButtonElement>(
+      '[aria-label^="维护工单操作"]',
+    )!
+    rowAction.click()
+    await flushPromises()
+    const completeItem = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (el) => el.textContent?.includes('完成工单'),
+    )!
+    completeItem.click()
+    await flushPromises()
+
+    const costInput = document.body.querySelector<HTMLInputElement>('#mwo-spare-cost')!
+    costInput.value = '-1'
+    costInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    const form = costInput.closest('form')!
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(state.completeWorkOrder).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('备件成本汇总需为非负数')
   })
 })
 

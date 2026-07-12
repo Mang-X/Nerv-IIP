@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, useId, watch } from 'vue'
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import { CheckIcon, ChevronsUpDownIcon, SearchIcon } from 'lucide-vue-next'
 import { cn } from '../../../lib/utils'
@@ -54,6 +54,12 @@ const filtered = computed(() => {
   )
 })
 
+const listboxId = useId()
+const optionId = (index: number) => `${listboxId}-opt-${index}`
+const activeDescendant = computed(() =>
+  open.value && filtered.value.length ? optionId(activeIndex.value) : undefined,
+)
+
 watch(filtered, () => {
   activeIndex.value = 0
 })
@@ -92,6 +98,9 @@ function onKeydown(e: KeyboardEvent) {
         :id="id"
         type="button"
         :aria-label="ariaLabel"
+        aria-haspopup="listbox"
+        :aria-expanded="open"
+        :aria-controls="open ? listboxId : undefined"
         :disabled="disabled"
         :class="
           cn(
@@ -120,15 +129,23 @@ function onKeydown(e: KeyboardEvent) {
             v-model="query"
             :placeholder="searchPlaceholder"
             autocomplete="off"
+            role="combobox"
+            aria-autocomplete="list"
+            :aria-controls="listboxId"
+            :aria-expanded="open"
+            :aria-activedescendant="activeDescendant"
             class="h-9 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             @keydown="onKeydown"
           />
         </div>
-        <div class="max-h-60 overflow-y-auto p-1">
+        <div :id="listboxId" role="listbox" class="max-h-60 overflow-y-auto p-1">
           <button
             v-for="(option, index) in filtered"
+            :id="optionId(index)"
             :key="option.value"
             type="button"
+            role="option"
+            :aria-selected="option.value === modelValue"
             :data-active="index === activeIndex || undefined"
             class="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm outline-none hover:bg-accent data-active:bg-accent"
             @click="pick(option)"

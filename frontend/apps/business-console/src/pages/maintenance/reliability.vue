@@ -2,6 +2,7 @@
 import type { BusinessConsoleMaintenanceReliabilitySummaryItem } from '@nerv-iip/api-client'
 import type { LineSeries, NvDataTableColumn } from '@nerv-iip/ui'
 import {
+  useMaintenanceInspections,
   useMaintenanceMeasurementTrend,
   useMaintenanceReliability,
   useMaintenanceReliabilitySummary,
@@ -57,11 +58,25 @@ const deviceSuggestions = computed(() =>
     .map((r) => ({ value: (r.code ?? '').trim(), label: r.displayName ?? r.code ?? '' }))
     .filter((s) => s.value.length > 0),
 )
-// 测量特性下拉候选（常用特性，从已知项里选）。
-const characteristicOptions = COMMON_INSPECTION_CHARACTERISTICS.map((value) => ({
-  value,
-  label: value,
-}))
+// 测量特性下拉候选：常用特性 + 点检历史里真实出现过的特性（含 PDA 自定义，后端同源），
+// 去重。这样动态/自定义特性也能在趋势里选到，而非只限 15 个预置项。
+const { inspections } = useMaintenanceInspections()
+const characteristicOptions = computed(() => {
+  const seen = new Set<string>()
+  const out: { value: string; label: string }[] = []
+  const add = (code?: string | null) => {
+    const c = (code ?? '').trim()
+    if (c && !seen.has(c)) {
+      seen.add(c)
+      out.push({ value: c, label: c })
+    }
+  }
+  for (const code of COMMON_INSPECTION_CHARACTERISTICS) add(code)
+  for (const inspection of inspections.value) {
+    for (const measurement of inspection.measurements ?? []) add(measurement.characteristicCode)
+  }
+  return out
+})
 
 // 设备/窗口是唯一事实源（reliability filters）；同步到趋势与汇总子查询。
 watch(

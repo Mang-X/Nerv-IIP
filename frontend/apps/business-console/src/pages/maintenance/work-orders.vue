@@ -122,6 +122,9 @@ const deviceSuggestions = computed(() =>
     .filter((s) => s.value.length > 0),
 )
 // 指派技师选项：未指派 + 工人目录（姓名 + 工号）。
+// 注：技师只能在**建单**时写 assignedTechnicianUserId——CompleteMaintenanceWorkOrderRequest
+// 契约无该字段、Maintenance 域也无 assign/reassign 端点，故"完工时记录/改选实际技师"是待补的
+// 后端缺口（见 #793 审核，已建后端 follow-up）。可靠性汇总按建单指派技师聚合。
 const technicianOptions = computed(() => [
   { value: UNASSIGNED, label: '未指派' },
   ...workers.value
@@ -208,14 +211,6 @@ const sparePartCostDisplay = computed({
     sparePartCostOverride.value = value
   },
 })
-const effectiveSparePartCost = computed<number | undefined>(() => {
-  if (sparePartCostOverride.value !== '') {
-    const n = Number(sparePartCostOverride.value)
-    return Number.isFinite(n) ? n : undefined
-  }
-  return autoSparePartCost.value > 0 ? round2(autoSparePartCost.value) : undefined
-})
-
 const listErrorMessage = computed(() => formatError(workOrdersError.value))
 const createErrorMessage = computed(
   () => createError.value || formatError(createWorkOrderError.value),
@@ -355,6 +350,18 @@ async function submitComplete() {
     completeError.value = '外委费用需为非负数。'
     return
   }
+  // 备件成本人工覆盖须为合法非负数——否则负值会发出负成本、非法值会静默丢字段。
+  const overrideCost = optionalNonNegativeNumber(sparePartCostOverride.value)
+  if (overrideCost === false) {
+    completeError.value = '备件成本汇总需为非负数。'
+    return
+  }
+  const sparePartCostAmount =
+    overrideCost !== undefined
+      ? overrideCost
+      : autoSparePartCost.value > 0
+        ? round2(autoSparePartCost.value)
+        : undefined
   // 完成需登记至少一条更换备件（领料扣减）；后端以此核销维护成本。
   const filledSpares = spareRows.filter((row) => row.skuCode.trim())
   if (filledSpares.length === 0) {
@@ -379,9 +386,7 @@ async function submitComplete() {
       downtimeMinutes: minutes,
       spareParts,
       ...(actualLaborMinutes !== undefined ? { actualLaborMinutes } : {}),
-      ...(effectiveSparePartCost.value !== undefined
-        ? { sparePartCostAmount: effectiveSparePartCost.value }
-        : {}),
+      ...(sparePartCostAmount !== undefined ? { sparePartCostAmount } : {}),
       ...(externalServiceCostAmount !== undefined ? { externalServiceCostAmount } : {}),
       costCurrencyCode: completeForm.costCurrencyCode.trim() || undefined,
     })
