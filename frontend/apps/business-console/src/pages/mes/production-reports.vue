@@ -189,15 +189,19 @@ const reverseTarget = ref<ReportRow | null>(null)
 const reverseForm = reactive({ reasonCode: '', remark: '' })
 // 冲销意图以报工单号为准存活:同一报工从打开→(经确认框 Escape / 组件自身 close /「返回」后)重开→重试,
 // 始终复用同一意图,命中后端 handler 幂等重放分支(真机记录里出现过服务端已提交却返回 502)。
-// **key 与 reversedAtUtc 必须一起冻结**:后端 fingerprint = ReportNo + Reason + ReversedAtUtc,MES endpoint
-// 对缺失 reversedAtUtc 每次补新的 UtcNow,若不冻结时间戳,重试虽同 key 但 fingerprint 变 → CodeAllocator
-// 判定为"同 key 不同 payload"抛冲突,而非进入 IsIdempotentReplay。**只在冲销成功后清除**,任何关闭路径
-// (含 Escape)都不重置。
+// 后端 fingerprint = ReportNo + Reason + ReversedAtUtc(endpoint 对缺失 reversedAtUtc 每次补新 UtcNow),
+// CodeAllocator 对"同 key 不同 fingerprint"抛冲突而非重放。故意图必须冻结参与 fingerprint 的全部字段:
+//   - idempotencyKey / reversedAtUtc:打开时冻结;
+//   - reason(reasonCode + remark):**首次提交时冻结**,重试与重开都沿用同一 reason(避免用户改原因导致
+//     fingerprint 变而冲突)。**只在冲销成功后清除**;未发送过的意图若用户「返回」明确放弃,则整个丢弃、
+//     下次打开重新生成 key + timestamp + reason(见 cancelReverse)。
 interface ReverseIntent {
   idempotencyKey: string
   reversedAtUtc: string
+  reasonCode?: string
+  remark?: string
 }
-const reverseIntents = new Map<string, ReverseIntent>()
+const reverseIntents = reactive(new Map<string, ReverseIntent>())
 function reverseIntentFor(reportNo: string): ReverseIntent {
   let intent = reverseIntents.get(reportNo)
   if (!intent) {
@@ -209,6 +213,11 @@ function reverseIntentFor(reportNo: string): ReverseIntent {
   }
   return intent
 }
+// 原因已冻结(意图已提交过):重试须沿用同一 reason,锁定表单不许改。
+const reverseReasonLocked = computed(() => {
+  const reportNo = reverseTarget.value?.reportNo
+  return Boolean(reportNo && reverseIntents.get(reportNo)?.reasonCode !== undefined)
+})
 const requiresRemark = computed(() => reverseForm.reasonCode === 'other')
 const reverseReasonLabel = computed(
   () =>
@@ -232,13 +241,19 @@ const canSubmitReverse = computed(() => {
   return true
 })
 
+function composeReason(reasonCode: string, remark: string): string {
+  const label = REVERSE_REASONS.find((option) => option.value === reasonCode)?.label ?? reasonCode
+  const trimmed = remark.trim()
+  return trimmed ? `${label}：${trimmed}` : label
+}
 function openReverse(row: ReportRow) {
   if (!canReport.value || !canReverse(row) || !row.reportNo) return
   reverseTarget.value = row
-  reverseForm.reasonCode = ''
-  reverseForm.remark = ''
   // 确保本意图(key + reversedAtUtc)已冻结(重开复用,不重新生成)
-  reverseIntentFor(row.reportNo)
+  const intent = reverseIntentFor(row.reportNo)
+  // 已提交过(reason 已冻结,结果未知)→ 恢复原因并锁定,重试沿用同一 fingerprint;否则空表单自由选。
+  reverseForm.reasonCode = intent.reasonCode ?? ''
+  reverseForm.remark = intent.remark ?? ''
   reverseOpen.value = true
 }
 // 统一处理确认框开关(替代 v-model:open):请求进行中禁止关闭——Escape / 点遮罩 / 组件自身 close 都拦下,
@@ -247,17 +262,35 @@ function onReverseOpenChange(next: boolean) {
   if (!next && reverseProductionReportPending.value) return
   reverseOpen.value = next
 }
+// 「返回」= 明确放弃:该意图从未发送(reason 未冻结)则整个丢弃,下次打开生成新 key + timestamp + reason;
+// 已发送过的意图(结果未知)保留,以便重开沿用同一 fingerprint 命中幂等重放。
+function cancelReverse() {
+  const reportNo = reverseTarget.value?.reportNo
+  if (reportNo && reverseIntents.get(reportNo)?.reasonCode === undefined) {
+    reverseIntents.delete(reportNo)
+  }
+  reverseOpen.value = false
+}
 async function submitReverse() {
   const row = reverseTarget.value
   if (!row?.reportNo || !canSubmitReverse.value || reverseProductionReportPending.value) return
-  const remark = reverseForm.remark.trim()
-  const reason = remark ? `${reverseReasonLabel.value}：${remark}` : reverseReasonLabel.value
   const intent = reverseIntentFor(row.reportNo)
+  // 首次提交冻结 reason(reasonCode + remark);之后重试沿用冻结值,即使用户在重开后改了表单也不采用,
+  // 保证 fingerprint(ReportNo + Reason + ReversedAtUtc)跨重试完全稳定。
+  if (intent.reasonCode === undefined) {
+    reverseIntents.set(row.reportNo, {
+      ...intent,
+      reasonCode: reverseForm.reasonCode,
+      remark: reverseForm.remark.trim(),
+    })
+  }
+  const frozen = reverseIntents.get(row.reportNo)!
+  const reason = composeReason(frozen.reasonCode ?? '', frozen.remark ?? '')
   try {
     const response = await reverseProductionReport(row.reportNo, {
       reason,
-      // 复用本报工意图冻结的 reversedAtUtc + key,超时/失败后重试或关闭重开都保持 fingerprint 稳定,
-      // 命中后端幂等重放(仅冻结 key、每次让 endpoint 补新 UtcNow 会因 fingerprint 变而冲突)
+      // 复用本报工意图冻结的 reason + reversedAtUtc + key,超时/失败后重试或关闭重开都保持 fingerprint 稳定,
+      // 命中后端幂等重放(仅冻结 key、每次让 endpoint 补新 UtcNow 或改 reason 都会因 fingerprint 变而冲突)
       reversedAtUtc: intent.reversedAtUtc,
       idempotencyKey: intent.idempotencyKey,
     })
@@ -542,11 +575,17 @@ function formatError(error: unknown) {
         </section>
 
         <NvFieldGroup class="grid gap-3">
+          <p
+            v-if="reverseReasonLocked"
+            class="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-muted-foreground"
+          >
+            本次冲销已提交但结果未确定,重试将沿用首次的冲销原因(幂等),原因已锁定。若确需换原因,请「返回」放弃后重新发起。
+          </p>
           <NvField>
             <NvFieldLabel for="reverse-reason">
               冲销原因 <span class="text-destructive">*</span>
             </NvFieldLabel>
-            <NvSelect v-model="reverseForm.reasonCode">
+            <NvSelect v-model="reverseForm.reasonCode" :disabled="reverseReasonLocked">
               <NvSelectTrigger id="reverse-reason" aria-label="冲销原因">
                 <NvSelectValue placeholder="选择冲销原因" />
               </NvSelectTrigger>
@@ -569,6 +608,7 @@ function formatError(error: unknown) {
               id="reverse-remark"
               v-model="reverseForm.remark"
               :maxlength="remarkMaxLength"
+              :disabled="reverseReasonLocked"
               placeholder="补充冲销说明,随请求提交并进入审计"
             />
             <p
@@ -587,7 +627,7 @@ function formatError(error: unknown) {
             type="button"
             variant="outline"
             :disabled="reverseProductionReportPending"
-            @click="reverseOpen = false"
+            @click="cancelReverse"
           >
             返回
           </NvButton>

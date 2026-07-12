@@ -2228,6 +2228,12 @@ public sealed class MesPersistenceContractTests
             new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
                 new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt.AddSeconds(1), "reverse-idem-key"),
                 CancellationToken.None));
+
+        // 同 key + 同 reversedAtUtc + **不同 reason** → fingerprint 同样变 → 冲突。故前端必须把 reason 也冻结进意图。
+        await Assert.ThrowsAsync<KnownException>(() =>
+            new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+                new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "wrong-quantity", reversedAt, "reverse-idem-key"),
+                CancellationToken.None));
     }
 
     [Fact]

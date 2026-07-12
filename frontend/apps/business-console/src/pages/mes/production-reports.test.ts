@@ -329,6 +329,41 @@ describe('production reports page — reversal permission & cross-page interlink
     expect(second?.reversedAtUtc).toBe(first?.reversedAtUtc)
   })
 
+  it('keeps the first reason on retry even if the user changes it after reopening (fingerprint also covers reason)', async () => {
+    mesState.reverseProductionReport.mockRejectedValue(new Error('timeout'))
+    const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as {
+      openReverse: (row: (typeof rows)[number]) => void
+      onReverseOpenChange: (next: boolean) => void
+      submitReverse: () => Promise<void>
+      reverseReasonLocked: boolean
+      reverseForm: { reasonCode: string; remark: string }
+    }
+
+    // 首次:原因「误报工」提交失败(结果未知)
+    vm.openReverse(rows[0])
+    vm.reverseForm.reasonCode = 'mis-report'
+    await vm.submitReverse()
+    const first = mesState.reverseProductionReport.mock.calls[0]?.[1]
+
+    // Escape 关闭后重开:原因已锁定,即便用户试图改成「重复报工」,提交仍沿用首次冻结的原因
+    vm.onReverseOpenChange(false)
+    vm.openReverse(rows[0])
+    expect(vm.reverseReasonLocked).toBe(true)
+    expect(vm.reverseForm.reasonCode).toBe('mis-report') // 重开恢复首次原因
+    vm.reverseForm.reasonCode = 'duplicate' // 试图更改(界面已禁用,此处直接改绕过)
+    await vm.submitReverse()
+    const second = mesState.reverseProductionReport.mock.calls[1]?.[1]
+
+    // reason / key / reversedAtUtc 三者都跨重试稳定 → 后端 fingerprint 稳定,命中幂等重放
+    expect(first?.reason).toBe('误报工')
+    expect(second?.reason).toBe(first?.reason)
+    expect(second?.idempotencyKey).toBe(first?.idempotencyKey)
+    expect(second?.reversedAtUtc).toBe(first?.reversedAtUtc)
+  })
+
   it('blocks closing the reverse dialog while the request is pending', async () => {
     const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
     await flushPromises()
