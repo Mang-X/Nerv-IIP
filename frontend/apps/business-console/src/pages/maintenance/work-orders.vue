@@ -141,9 +141,11 @@ const completeError = shallowRef('')
 // 自动合计：Σ(数量 × 单价)，仅计入数值有效的行。
 const autoSparePartCost = computed(() =>
   spareRows.reduce((sum, row) => {
+    // number 输入框经 v-model 可能回传 number，String() 归一后再判空/解析。
+    const unitRaw = String(row.unitCost ?? '').trim()
     const qty = Number(row.quantity)
-    const unit = Number(row.unitCost)
-    if (!Number.isFinite(qty) || !Number.isFinite(unit) || !row.unitCost.trim()) return sum
+    const unit = Number(unitRaw)
+    if (!unitRaw || !Number.isFinite(qty) || !Number.isFinite(unit)) return sum
     return sum + qty * unit
   }, 0),
 )
@@ -338,14 +340,15 @@ async function submitComplete() {
 }
 
 // 非负整数：空 → undefined（不带该字段）；非法 → false；合法 → number。
-function optionalNonNegativeInt(value: string): number | undefined | false {
-  const trimmed = value.trim()
+// number 输入框经 v-model 可能回传 number（非 string），故统一 String() 归一再判。
+function optionalNonNegativeInt(value: string | number): number | undefined | false {
+  const trimmed = String(value ?? '').trim()
   if (!trimmed) return undefined
   const n = Number(trimmed)
   return Number.isInteger(n) && n >= 0 ? n : false
 }
-function optionalNonNegativeNumber(value: string): number | undefined | false {
-  const trimmed = value.trim()
+function optionalNonNegativeNumber(value: string | number): number | undefined | false {
+  const trimmed = String(value ?? '').trim()
   if (!trimmed) return undefined
   const n = Number(trimmed)
   return Number.isFinite(n) && n >= 0 ? round2(n) : false

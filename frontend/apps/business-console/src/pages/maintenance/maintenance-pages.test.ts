@@ -9,9 +9,9 @@ import WorkOrdersPage from './work-orders.vue'
 const state = vi.hoisted(() => ({
   query: { deviceAssetId: 'DEV-PRESS-01', sourceAlarmId: 'ALARM-9001' } as Record<string, string>,
   inspections: [] as Array<Record<string, unknown>>,
-  createWorkOrder: vi.fn(async () => ({})),
-  completeWorkOrder: vi.fn(async () => ({})),
-  recordInspection: vi.fn(async () => ({})),
+  createWorkOrder: vi.fn(async (_body: Record<string, unknown>) => ({})),
+  completeWorkOrder: vi.fn(async (_id: string, _body: Record<string, unknown>) => ({})),
+  recordInspection: vi.fn(async (_body: Record<string, unknown>) => ({})),
 }))
 
 vi.mock('vue-router', async (importOriginal) => {
@@ -96,6 +96,35 @@ describe('maintenance work orders page', () => {
     // 指派技师 + 预估工时进入建单表单（技师是可靠性按技师聚合的前提）。
     expect(document.body.textContent).toContain('指派技师')
     expect(document.body.querySelector('#mwo-est-labor')).not.toBeNull()
+  })
+
+  // 回归：number 输入框经 v-model 可能回传 number；预估工时校验若对 number 调用
+  // .trim() 会抛异常，令 submitCreate 静默失败、不发请求（真机走查发现）。
+  it('submits create with a numeric estimated-labor value (no silent .trim() crash)', async () => {
+    mount(WorkOrdersPage, { attachTo: document.body, global: { stubs } })
+    await flushPromises()
+
+    function setInput(selector: string, value: number | string) {
+      const el = document.body.querySelector<HTMLInputElement>(selector)!
+      el.value = String(value)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    setInput('#mwo-device', 'DEV-SMT-01')
+    setInput('#mwo-opened-by', '巡检员-张工')
+    // 直接以 number 赋值，复现 number 型 v-model 回传。
+    setInput('#mwo-est-labor', 45)
+    await flushPromises()
+
+    const submit = [...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button[type="submit"]')].find(
+      (b) => b.textContent?.includes('创建维护工单'),
+    )!
+    submit.click()
+    await flushPromises()
+
+    expect(state.createWorkOrder).toHaveBeenCalledTimes(1)
+    const body = state.createWorkOrder.mock.calls[0][0]
+    expect(body.deviceAssetId).toBe('DEV-SMT-01')
+    expect(body.estimatedLaborMinutes).toBe(45)
   })
 })
 
