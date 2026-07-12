@@ -65,11 +65,6 @@ public sealed class AlarmEvent : Entity<AlarmEventId>, IAggregateRoot
     public DateTimeOffset? ShelvedUntilUtc { get; private set; }
     public string? ShelvedBy { get; private set; }
     public string? ShelveReason { get; private set; }
-
-    // Persistent idempotency identity of the last applied shelve operation. Lets a delayed
-    // duplicate delivery of the SAME shelve request no-op even after the original window has
-    // ExpireShelving/Unshelved back to raised/acknowledged — window-based IsShelvedAt cannot.
-    public string? ShelveIdempotencyKey { get; private set; }
     public DateTimeOffset? EscalatedAtUtc { get; private set; }
     public string? EscalationReason { get; private set; }
     public string? EscalationRecipientRefsText { get; private set; }
@@ -143,18 +138,8 @@ public sealed class AlarmEvent : Entity<AlarmEventId>, IAggregateRoot
         this.AddDomainEvent(new AlarmAcknowledgedDomainEvent(this));
     }
 
-    public void Shelve(DateTimeOffset shelvedAtUtc, DateTimeOffset shelvedUntilUtc, string shelvedBy, string? shelveReason = null, string? idempotencyKey = null)
+    public void Shelve(DateTimeOffset shelvedAtUtc, DateTimeOffset shelvedUntilUtc, string shelvedBy, string? shelveReason = null)
     {
-        var normalizedKey = IndustrialTelemetryText.Optional(idempotencyKey);
-        // Persistent idempotency: a delayed duplicate of the SAME shelve operation no-ops
-        // regardless of current status/window (even after ExpireShelving/Unshelve/Clear). This is
-        // what a stable request timestamp alone cannot guarantee, and must run before EnsureActive
-        // so a duplicate landing on an already-cleared alarm does not surface as an error.
-        if (normalizedKey is not null && ShelveIdempotencyKey == normalizedKey)
-        {
-            return;
-        }
-
         EnsureActive("cleared alarms cannot be shelved.");
         if (shelvedAtUtc < RaisedAtUtc)
         {
@@ -168,7 +153,6 @@ public sealed class AlarmEvent : Entity<AlarmEventId>, IAggregateRoot
 
         if (IsShelvedAt(shelvedAtUtc))
         {
-            ShelveIdempotencyKey = normalizedKey ?? ShelveIdempotencyKey;
             return;
         }
 
@@ -176,7 +160,6 @@ public sealed class AlarmEvent : Entity<AlarmEventId>, IAggregateRoot
         ShelvedUntilUtc = shelvedUntilUtc;
         ShelvedBy = IndustrialTelemetryText.Required(shelvedBy, nameof(shelvedBy));
         ShelveReason = IndustrialTelemetryText.Optional(shelveReason);
-        ShelveIdempotencyKey = normalizedKey;
         Status = "shelved";
         this.AddDomainEvent(new AlarmShelvedDomainEvent(this));
     }

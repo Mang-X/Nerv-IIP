@@ -32,7 +32,6 @@ public sealed class AlarmEventEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.ShelvedUntilUtc).HasColumnName("shelved_until_utc").HasComment("UTC expiry time for temporary alarm shelving.");
         builder.Property(x => x.ShelvedBy).HasMaxLength(150).HasColumnName("shelved_by").HasComment("Actor that shelved the alarm.");
         builder.Property(x => x.ShelveReason).HasMaxLength(300).HasColumnName("shelve_reason").HasComment("Reason recorded when the alarm was shelved.");
-        builder.Property(x => x.ShelveIdempotencyKey).HasMaxLength(150).HasColumnName("shelve_idempotency_key").HasComment("Idempotency key of the last applied shelve operation; a delayed duplicate delivery with the same key no-ops regardless of window.");
         builder.Property(x => x.EscalatedAtUtc).HasColumnName("escalated_at_utc").HasComment("UTC time when the alarm was escalated.");
         builder.Property(x => x.EscalationReason).HasMaxLength(100).HasColumnName("escalation_reason").HasComment("Reason code that triggered alarm escalation.");
         builder.Property(x => x.EscalationRecipientRefsText).HasMaxLength(1000).HasColumnName("escalation_recipient_refs").HasComment("Semicolon-separated Notification recipient refs used for alarm escalation.");

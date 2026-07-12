@@ -15,6 +15,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.DomainEvents;
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.OeeProductionFactAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Auth;
@@ -1035,31 +1037,88 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
-    public async Task Shelve_alarm_command_is_idempotent_across_a_delayed_duplicate_after_window_expiry()
+    public async Task List_alarm_events_has_a_stable_total_order_across_pages_for_identical_status_and_timestamp()
     {
-        await using var dbContext = CreateDbContext(nameof(Shelve_alarm_command_is_idempotent_across_a_delayed_duplicate_after_window_expiry));
+        await using var dbContext = CreateDbContext(nameof(List_alarm_events_has_a_stable_total_order_across_pages_for_identical_status_and_timestamp));
+        // Batch/bucket generation produces alarms sharing a status AND RaisedAtUtc: without a unique
+        // tie-breaker the DB could swap them between requests, causing cross-page duplicates/omissions.
+        var raisedAt = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var alarms = Enumerable.Range(1, 5)
+            .Select(i => AlarmEvent.Raise("org-001", "env-dev", $"DEV-{i:D2}", "C", "warning", raisedAt, $"a{i}"))
+            .ToArray();
+        dbContext.AlarmEvents.AddRange(alarms);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ListAlarmEventsQueryHandler(dbContext);
+        var page1 = await handler.Handle(new ListAlarmEventsQuery("org-001", "env-dev", null, null, 0, 2), CancellationToken.None);
+        var page2 = await handler.Handle(new ListAlarmEventsQuery("org-001", "env-dev", null, null, 2, 2), CancellationToken.None);
+        var page3 = await handler.Handle(new ListAlarmEventsQuery("org-001", "env-dev", null, null, 4, 2), CancellationToken.None);
+
+        var paged = page1.Items.Concat(page2.Items).Concat(page3.Items).Select(x => x.AlarmEventId).ToArray();
+        // No duplicates, no omissions: the 5 alarms are partitioned cleanly across pages.
+        Assert.Equal(5, paged.Length);
+        Assert.Equal(5, paged.Distinct().Count());
+        Assert.Equal(alarms.Select(a => a.Id).OrderBy(id => id.Id).ToArray(), paged.OrderBy(id => id.Id).ToArray());
+
+        // Same query is deterministic across requests (Id tie-breaker => stable slice).
+        var page1Again = await handler.Handle(new ListAlarmEventsQuery("org-001", "env-dev", null, null, 0, 2), CancellationToken.None);
+        Assert.Equal(page1.Items.Select(x => x.AlarmEventId), page1Again.Items.Select(x => x.AlarmEventId));
+    }
+
+    [Fact]
+    public async Task Shelve_command_replays_a_delayed_duplicate_by_persistent_key_even_after_an_intervening_operation()
+    {
+        await using var dbContext = CreateDbContext(nameof(Shelve_command_replays_a_delayed_duplicate_by_persistent_key_even_after_an_intervening_operation));
         var t0 = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
         var alarm = AlarmEvent.Raise("org-001", "env-dev", "DEV-01", "C", "critical", t0, "a1");
         dbContext.AlarmEvents.Add(alarm);
         await dbContext.SaveChangesAsync();
-
         var handler = new ShelveAlarmCommandHandler(dbContext);
-        var shelvedAt = t0.AddMinutes(2);
-        var command = new ShelveAlarmCommand(alarm.Id, "org-001", "env-dev", shelvedAt, 30, "op", null, "shelve-key-1");
-        await handler.Handle(command, CancellationToken.None);
-        await dbContext.SaveChangesAsync();
-        var untilAfterFirst = alarm.ShelvedUntilUtc;
 
-        // window expires -> back to raised
-        alarm.ExpireShelving(shelvedAt.AddMinutes(31));
+        // A: shelve [t0+2, t0+32] with key-A
+        var commandA = new ShelveAlarmCommand(alarm.Id, "org-001", "env-dev", t0.AddMinutes(2), 30, "op", null, "key-A");
+        await handler.Handle(commandA, CancellationToken.None);
         await dbContext.SaveChangesAsync();
-        Assert.Equal("raised", alarm.Status);
+        // A expires -> raised
+        alarm.ExpireShelving(t0.AddMinutes(33));
+        await dbContext.SaveChangesAsync();
 
-        // delayed duplicate delivery of the SAME command (same idempotency key) -> no-op, window not extended
-        await handler.Handle(command, CancellationToken.None);
+        // B: a DIFFERENT operation shelves again [t0+40, t0+70] with key-B (this overwrote a last-key slot in the old design)
+        var commandB = new ShelveAlarmCommand(alarm.Id, "org-001", "env-dev", t0.AddMinutes(40), 30, "op", null, "key-B");
+        await handler.Handle(commandB, CancellationToken.None);
         await dbContext.SaveChangesAsync();
-        Assert.Equal("raised", alarm.Status);
-        Assert.Equal(untilAfterFirst, alarm.ShelvedUntilUtc);
+        Assert.Equal("shelved", alarm.Status);
+        var untilAfterB = alarm.ShelvedUntilUtc;
+        var shelvedEventsAfterB = alarm.GetDomainEvents().OfType<AlarmShelvedDomainEvent>().Count();
+
+        // Delayed duplicate of A (same key-A + same payload) arrives after B — must REPLAY, not re-apply.
+        await handler.Handle(commandA, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        Assert.Equal("shelved", alarm.Status);
+        Assert.Equal(untilAfterB, alarm.ShelvedUntilUtc); // still B's window; A did not re-shelve
+        Assert.Equal(shelvedEventsAfterB, alarm.GetDomainEvents().OfType<AlarmShelvedDomainEvent>().Count()); // no new event
+    }
+
+    [Fact]
+    public async Task Shelve_command_rejects_the_same_key_reused_with_a_different_payload()
+    {
+        await using var dbContext = CreateDbContext(nameof(Shelve_command_rejects_the_same_key_reused_with_a_different_payload));
+        var t0 = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var alarm = AlarmEvent.Raise("org-001", "env-dev", "DEV-01", "C", "critical", t0, "a1");
+        dbContext.AlarmEvents.Add(alarm);
+        await dbContext.SaveChangesAsync();
+        var handler = new ShelveAlarmCommandHandler(dbContext);
+
+        await handler.Handle(new ShelveAlarmCommand(alarm.Id, "org-001", "env-dev", t0.AddMinutes(2), 30, "op", null, "key-X"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        // same key, different duration => different fingerprint => conflicting reuse, rejected
+        var ex = await Assert.ThrowsAsync<KnownException>(async () =>
+        {
+            await handler.Handle(new ShelveAlarmCommand(alarm.Id, "org-001", "env-dev", t0.AddMinutes(2), 60, "op", null, "key-X"), CancellationToken.None);
+            await dbContext.SaveChangesAsync();
+        });
+        Assert.Contains("different payload", ex.Message);
     }
 
     [Fact]

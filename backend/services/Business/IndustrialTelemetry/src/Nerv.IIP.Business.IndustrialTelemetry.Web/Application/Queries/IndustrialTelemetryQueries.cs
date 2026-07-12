@@ -247,6 +247,11 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
         // Lifecycle priority BEFORE pagination so unacknowledged alarms always precede handled ones
         // across pages: raised(0) > shelved(1) > acknowledged(2) > (other/unknown 3) > cleared(4),
         // then newest-first. A CASE expression translates on PostgreSQL and the test providers.
+        // Then a unique tie-breaker so alarms sharing a status + RaisedAtUtc (batch/bucket generation
+        // produces identical timestamps) keep a total order — otherwise the DB could swap them between
+        // requests and cause cross-page duplicates/omissions. The alarm's natural active-unique key
+        // (device + alarm code + external id) is used because the strongly-typed Id is not orderable
+        // by the InMemory test provider; these string columns order deterministically on both.
         var alarmEvents = await query
             .OrderBy(x =>
                 x.Status == "raised" ? 0
@@ -255,6 +260,9 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
                 : x.Status == "cleared" ? 4
                 : 3)
             .ThenByDescending(x => x.RaisedAtUtc)
+            .ThenBy(x => x.DeviceAssetId)
+            .ThenBy(x => x.AlarmCode)
+            .ThenBy(x => x.ExternalAlarmId)
             .Skip(request.Skip)
             .Take(request.Take)
             .ToArrayAsync(cancellationToken);

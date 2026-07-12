@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260712090455_AddAlarmShelveIdempotencyKey")]
-    partial class AddAlarmShelveIdempotencyKey
+    [Migration("20260712112557_AddAlarmShelveIdempotency")]
+    partial class AddAlarmShelveIdempotency
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -141,12 +141,6 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("severity")
                         .HasComment("Alarm severity level.");
-
-                    b.Property<string>("ShelveIdempotencyKey")
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)")
-                        .HasColumnName("shelve_idempotency_key")
-                        .HasComment("Idempotency key of the last applied shelve operation; a delayed duplicate delivery with the same key no-ops regardless of window.");
 
                     b.Property<string>("ShelveReason")
                         .HasMaxLength(300)
@@ -344,6 +338,63 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                     b.ToTable("alarm_rules", "industrial_telemetry", t =>
                         {
                             t.HasComment("BusinessIndustrialTelemetry alarm rule threshold configuration.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmShelveIdempotencyAggregate.AlarmShelveIdempotency", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Shelve idempotency record identifier.");
+
+                    b.Property<string>("AlarmEventId")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("alarm_event_id")
+                        .HasComment("Referenced alarm event identifier (string form; no cross-aggregate FK).");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the idempotency record was created.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Owning environment identifier.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Caller-minted idempotency key of the shelve operation.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Owning organization identifier.");
+
+                    b.Property<string>("PayloadFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("payload_fingerprint")
+                        .HasComment("SHA-256 hex of the canonical shelve payload; same key + same fingerprint replays, same key + different fingerprint conflicts.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "AlarmEventId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("alarm_shelve_idempotency", "industrial_telemetry", t =>
+                        {
+                            t.HasComment("Persistent per-(alarm, idempotency key) shelve dedup records with a payload fingerprint; makes shelve durably idempotent independent of the alarm window/status.");
                         });
                 });
 

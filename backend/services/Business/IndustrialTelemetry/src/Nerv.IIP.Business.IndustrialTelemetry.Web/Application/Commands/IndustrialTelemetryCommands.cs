@@ -1,8 +1,12 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmShelveIdempotencyAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlChannelBindingAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceControlCommandAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
@@ -1393,14 +1397,49 @@ public sealed class ShelveAlarmCommandHandler(ApplicationDbContext dbContext)
     public async Task<AlarmEventId> Handle(ShelveAlarmCommand request, CancellationToken cancellationToken)
     {
         var alarm = await AcknowledgeAlarmCommandHandler.LoadAlarmAsync(dbContext, request.AlarmEventId, request.OrganizationId, request.EnvironmentId, cancellationToken);
+
+        // Persistent per-(alarm, idempotencyKey) dedup with a payload fingerprint. This survives
+        // window expiry AND independent operations (A→B→delayed-A): each key keeps its own record,
+        // so a delayed duplicate replays its own record instead of re-applying. Same key + a
+        // different payload is a conflicting key reuse. The unique index collapses concurrent
+        // duplicates to a single apply.
+        var idempotencyKey = IndustrialTelemetryText.Optional(request.IdempotencyKey);
+        if (idempotencyKey is not null)
+        {
+            var alarmEventId = request.AlarmEventId.Id.ToString();
+            var fingerprint = ComputeShelveFingerprint(request);
+            var existing = await dbContext.AlarmShelveIdempotencies.SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.AlarmEventId == alarmEventId
+                    && x.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+            if (existing is not null)
+            {
+                if (existing.PayloadFingerprint != fingerprint)
+                {
+                    throw new KnownException("Shelve idempotency key was reused with a different payload.");
+                }
+
+                // Same key + same payload → replay the prior result, apply nothing.
+                return alarm.Id;
+            }
+
+            dbContext.AlarmShelveIdempotencies.Add(new AlarmShelveIdempotency(
+                request.OrganizationId,
+                request.EnvironmentId,
+                alarmEventId,
+                idempotencyKey,
+                fingerprint));
+        }
+
         try
         {
             alarm.Shelve(
                 request.ShelvedAtUtc,
                 request.ShelvedAtUtc.AddMinutes(request.DurationMinutes),
                 request.ShelvedBy,
-                request.Reason,
-                request.IdempotencyKey);
+                request.Reason);
         }
         catch (ArgumentOutOfRangeException ex)
         {
@@ -1412,6 +1451,18 @@ public sealed class ShelveAlarmCommandHandler(ApplicationDbContext dbContext)
         }
 
         return alarm.Id;
+    }
+
+    // Canonical fingerprint of the shelve payload (everything that defines the operation's effect).
+    private static string ComputeShelveFingerprint(ShelveAlarmCommand request)
+    {
+        var canonical = string.Join(
+            '|',
+            request.ShelvedAtUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+            request.DurationMinutes.ToString(CultureInfo.InvariantCulture),
+            request.ShelvedBy ?? string.Empty,
+            IndustrialTelemetryText.Optional(request.Reason) ?? string.Empty);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 }
 
