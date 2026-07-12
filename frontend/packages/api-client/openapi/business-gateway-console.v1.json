@@ -37751,6 +37751,12 @@
             "maxLength": 10,
             "minLength": 0,
             "nullable": true
+          },
+          "actualTechnicianUserId": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -37882,6 +37888,10 @@
             "nullable": true
           },
           "supplierPartnerCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "actualTechnicianUserId": {
             "type": "string",
             "nullable": true
           }
@@ -38783,6 +38793,10 @@
           "totalCostAmount": {
             "type": "number",
             "format": "decimal"
+          },
+          "actualTechnicianUserId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
