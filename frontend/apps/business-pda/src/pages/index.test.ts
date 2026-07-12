@@ -12,7 +12,7 @@ vi.mock('vue-router', () => ({
 // 报警角标数据源：mock composable，避免拉起 pinia/colada；用 ref 驱动角标可见性。
 const unacknowledgedCount = ref(0)
 vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
-  useBusinessEquipmentAlarms: () => ({ unacknowledgedCount }),
+  useUnacknowledgedAlarmCount: () => ({ unacknowledgedCount }),
 }))
 
 import HomePage from './index.vue'

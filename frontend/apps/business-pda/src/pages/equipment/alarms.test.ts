@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive, ref } from 'vue'
+import { RequestTimeoutError } from '@/api/request-timeout'
 
 // ---- vue-router mock（捕获 push）---------------------------------------------
 const push = vi.fn()
@@ -38,8 +39,10 @@ const total = ref(2)
 const error = ref<unknown>(null)
 const pending = ref(false)
 const refresh = vi.fn(async () => {})
-const acknowledge = vi.fn(async () => ({ success: true }))
-const shelve = vi.fn(async () => ({ success: true }))
+const acknowledge = vi.fn(async (_id: string, _atUtc: string) => ({ success: true }))
+const shelve = vi.fn(async (_id: string, _minutes: number, _atUtc: string, _reason?: string) => ({
+  success: true,
+}))
 const actionPending = ref(false)
 
 vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
@@ -62,8 +65,10 @@ import AlarmsPage from './alarms.vue'
 beforeEach(() => {
   push.mockClear()
   refresh.mockClear()
-  acknowledge.mockClear()
-  shelve.mockClear()
+  acknowledge.mockReset()
+  acknowledge.mockResolvedValue({ success: true })
+  shelve.mockReset()
+  shelve.mockResolvedValue({ success: true })
   filters.deviceAssetId = undefined
   error.value = null
   pending.value = false
@@ -75,11 +80,10 @@ describe('PDA equipment alarms page', () => {
     const wrapper = mount(AlarmsPage)
     const text = wrapper.text()
     expect(text).toContain('DEV-1001')
-    expect(text).toContain('E-101') // business alarm code OK to show
-    expect(text).toContain('严重') // severity critical → 中文
+    expect(text).toContain('E-101')
+    expect(text).toContain('严重')
     expect(text).toContain('DEV-2002')
-    expect(text).toContain('预警') // severity warning → 中文
-    // raw severity codes must NOT be surfaced
+    expect(text).toContain('预警')
     expect(text).not.toContain('critical')
     expect(text).not.toContain('warning')
   })
@@ -93,59 +97,138 @@ describe('PDA equipment alarms page', () => {
 
   it('shows 确认/搁置 buttons only on unacknowledged rows; processed rows show a status tag + who/when', () => {
     const wrapper = mount(AlarmsPage)
-    // raised row → dual action buttons
     expect(wrapper.find('[data-testid="ack-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]').exists()).toBe(
       true,
     )
     expect(
       wrapper.find('[data-testid="shelve-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]').exists(),
     ).toBe(true)
-    // acknowledged row → no action buttons, a status tag instead
     expect(wrapper.find('[data-testid="ack-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]').exists()).toBe(
       false,
     )
     const tag = wrapper.find('[data-testid="status-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]')
     expect(tag.exists()).toBe(true)
     expect(tag.text()).toContain('已确认')
-    // processed meta: who + when
     expect(wrapper.text()).toContain('张三')
   })
 
-  it('acknowledges via a lightweight confirm dialog (2 taps): 确认 button → dialog 确认', async () => {
+  // P2 回归：行不再是可交互控件，动作/详情是行内同级按钮，键盘操作不会误开详情。
+  it('rows are non-interactive; detail opens via its own button, not a bubbling row keydown', async () => {
+    const wrapper = mount(AlarmsPage, { attachTo: document.body })
+    const row = wrapper.findAll('[data-row]')[0]
+    expect(row.attributes('role')).toBeUndefined()
+    expect(row.attributes('tabindex')).toBeUndefined()
+
+    // Enter 落在行上不应打开详情（行无 keydown 处理）
+    await row.trigger('keydown.enter')
+    await flushPromises()
+    expect(document.body.textContent).not.toContain('去报修')
+
+    // 详情入口是独立按钮
+    await wrapper
+      .get('[data-testid="detail-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]')
+      .trigger('click')
+    await flushPromises()
+    expect(
+      document.body.querySelector('[data-testid="repair-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]'),
+    ).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('acknowledges via a lightweight confirm dialog with a stable timestamp', async () => {
     const wrapper = mount(AlarmsPage, { attachTo: document.body })
     await wrapper.get('[data-testid="ack-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]').trigger('click')
     await flushPromises()
-    // dialog teleported to body; confirm button carries the ds-md-confirm class
     const confirmBtn = document.body.querySelector<HTMLElement>('.ds-md-confirm')
     expect(confirmBtn).toBeTruthy()
     confirmBtn!.click()
     await flushPromises()
-    expect(acknowledge).toHaveBeenCalledWith('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    expect(acknowledge).toHaveBeenCalledTimes(1)
+    const [id, atUtc] = acknowledge.mock.calls[0]
+    expect(id).toBe('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    expect(typeof atUtc).toBe('string')
+    expect(Number.isNaN(Date.parse(atUtc))).toBe(false)
     wrapper.unmount()
   })
 
-  it('shelves via an ActionSheet duration pick (30m/2h/8h)', async () => {
+  it('shelves via an ActionSheet duration pick, passing minutes + a stable timestamp', async () => {
     const wrapper = mount(AlarmsPage, { attachTo: document.body })
     await wrapper
       .get('[data-testid="shelve-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]')
       .trigger('click')
     await flushPromises()
     const options = [...document.body.querySelectorAll<HTMLButtonElement>('button')]
-    // three durations present
     expect(options.some((b) => b.textContent?.includes('30 分钟'))).toBe(true)
     expect(options.some((b) => b.textContent?.includes('2 小时'))).toBe(true)
     expect(options.some((b) => b.textContent?.includes('8 小时'))).toBe(true)
-    const twoHours = options.find((b) => b.textContent?.includes('2 小时'))!
-    twoHours.click()
+    options.find((b) => b.textContent?.includes('2 小时'))!.click()
     await flushPromises()
-    expect(shelve).toHaveBeenCalledWith('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 120)
+    expect(shelve).toHaveBeenCalledTimes(1)
+    const [id, minutes, atUtc] = shelve.mock.calls[0]
+    expect(id).toBe('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    expect(minutes).toBe(120)
+    expect(typeof atUtc).toBe('string')
+    wrapper.unmount()
+  })
+
+  // P1 幂等：确定性失败可重试，且重试复用同一 atUtc（搁置窗口不因重试延长）。
+  it('retries a determinate failure with the SAME stable timestamp', async () => {
+    shelve.mockRejectedValueOnce({ message: '设备不存在' }) // 业务错误对象 → 确定性、可重试
+    const wrapper = mount(AlarmsPage, { attachTo: document.body })
+    await wrapper
+      .get('[data-testid="shelve-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]')
+      .trigger('click')
+    await flushPromises()
+    document.body
+      .querySelectorAll<HTMLButtonElement>('button')
+      .forEach((b) => b.textContent?.includes('2 小时') && b.click())
+    await flushPromises()
+
+    // 失败对话框出现，含「重试」
+    const dialogText = document.body.textContent ?? ''
+    expect(dialogText).toContain('操作失败')
+    const retryBtn = document.body.querySelector<HTMLElement>('.ds-md-confirm')
+    expect(retryBtn?.textContent).toContain('重试')
+    retryBtn!.click()
+    await flushPromises()
+
+    expect(shelve).toHaveBeenCalledTimes(2)
+    // 第 2 次（重试）复用第 1 次的 atUtc → 窗口固定、不延长
+    expect(shelve.mock.calls[1][2]).toBe(shelve.mock.calls[0][2])
+    expect(shelve.mock.calls[1][1]).toBe(shelve.mock.calls[0][1]) // 同 minutes
+    wrapper.unmount()
+  })
+
+  // P1 幂等：已发出但结果未知（超时）不盲目重试——刷新列表引导核对。
+  it('does NOT offer blind retry on an indeterminate failure; steers to verify + refreshes', async () => {
+    acknowledge.mockRejectedValue(new RequestTimeoutError())
+    const wrapper = mount(AlarmsPage, { attachTo: document.body })
+    await wrapper.get('[data-testid="ack-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('.ds-md-confirm')!.click() // 确认弹层
+    await flushPromises()
+
+    expect(acknowledge).toHaveBeenCalledTimes(1)
+    const dialogText = document.body.textContent ?? ''
+    expect(dialogText).toContain('提交结果未知')
+    expect(dialogText).toContain('核对')
+    // 无「重试」按钮，只有「我知道了」
+    const confirmBtn = document.body.querySelector<HTMLElement>('.ds-md-confirm')
+    expect(confirmBtn?.textContent).toContain('我知道了')
+    expect(refresh).toHaveBeenCalled()
+
+    // 点「我知道了」不会再次发起确认
+    confirmBtn!.click()
+    await flushPromises()
+    expect(acknowledge).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 
   it('keeps 去报修 in the row detail sheet, carrying deviceAssetId + sourceAlarmId', async () => {
     const wrapper = mount(AlarmsPage, { attachTo: document.body })
-    // tap the row (not the trailing buttons) → detail sheet
-    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await wrapper
+      .get('[data-testid="detail-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]')
+      .trigger('click')
     await flushPromises()
     const repairBtn = document.body.querySelector<HTMLElement>(
       '[data-testid="repair-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]',

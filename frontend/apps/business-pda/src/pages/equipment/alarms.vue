@@ -19,6 +19,7 @@ import {
   NvScanBar,
   type ActionItem,
 } from '@nerv-iip/ui-mobile'
+import { ChevronRight } from 'lucide-vue-next'
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -102,6 +103,50 @@ function tagVariant(item: Alarm) {
   return TAG_VARIANTS[statusOf(item)] ?? 'default'
 }
 
+const DURATION_LABELS: Record<number, string> = { 30: '30 分钟', 120: '2 小时', 480: '8 小时' }
+
+// --- 稳定的逐操作幂等标识 -----------------------------------------------------
+// 用户发起一次确认/搁置时铸造一次 atUtc，重试该操作复用同一 atUtc：
+//  - 确认：领域 first-write-wins，重复确认为 no-op；
+//  - 搁置：窗口 = [atUtc, atUtc+时长]，复用同 atUtc → 窗口固定、重试不延长。
+type PendingAction =
+  | { kind: 'ack'; item: Alarm; atUtc: string }
+  | { kind: 'shelve'; item: Alarm; atUtc: string; minutes: number }
+const pendingAction = ref<PendingAction | null>(null)
+
+// 失败结果：确定性失败（无副作用）可复用同键重试；已发出但结果未知（超时/断网）不盲目重试，
+// 交给 verify（刷新列表核对是否已处理）。
+const actionError = ref<{ message: string; canRetry: boolean } | null>(null)
+
+async function runPending() {
+  const p = pendingAction.value
+  if (!p?.item.alarmEventId) return
+  actionError.value = null
+  try {
+    if (p.kind === 'ack') {
+      await acknowledge(p.item.alarmEventId, p.atUtc)
+      showToast('已确认报警', 'success')
+    } else {
+      await shelve(p.item.alarmEventId, p.minutes, p.atUtc)
+      showToast(`已搁置 ${DURATION_LABELS[p.minutes] ?? ''}`.trim(), 'success')
+    }
+    pendingAction.value = null
+  } catch (e) {
+    const info = describeRequestError(e, '操作失败，请重试')
+    if (info.indeterminate) {
+      // 已发出、结果未知：不盲目重试，刷新列表引导核对。
+      void refresh()
+      actionError.value = {
+        message: `${info.message}。已为你刷新列表，请核对该报警是否已处理，勿重复提交。`,
+        canRetry: false,
+      }
+    } else {
+      // 确定性失败：服务端已应答、无挂起副作用 → 复用同一 atUtc 安全重试。
+      actionError.value = { message: info.message, canRetry: true }
+    }
+  }
+}
+
 // --- 确认弹层 -----------------------------------------------------------------
 const pendingAck = ref<Alarm | null>(null)
 const ackOpen = computed({
@@ -113,15 +158,15 @@ const ackOpen = computed({
 function askAcknowledge(item: Alarm) {
   pendingAck.value = item
 }
-async function confirmAcknowledge() {
+function confirmAcknowledge() {
   const item = pendingAck.value
   pendingAck.value = null
   if (!item?.alarmEventId) return
-  await runAction(() => acknowledge(item.alarmEventId!), '已确认报警')
+  pendingAction.value = { kind: 'ack', item, atUtc: new Date().toISOString() }
+  void runPending()
 }
 
 // --- 搁置 ActionSheet（30m / 2h / 8h）-----------------------------------------
-const DURATION_LABELS: Record<number, string> = { 30: '30 分钟', 120: '2 小时', 480: '8 小时' }
 const shelveActions: ActionItem[] = ALARM_SHELVE_DURATIONS_MINUTES.map((minutes) => ({
   label: `搁置 ${DURATION_LABELS[minutes] ?? `${minutes} 分钟`}`,
   value: String(minutes),
@@ -136,15 +181,28 @@ const shelveOpen = computed({
 function askShelve(item: Alarm) {
   pendingShelve.value = item
 }
-async function onShelveDuration(value: string) {
+function onShelveDuration(value: string) {
   const item = pendingShelve.value
   pendingShelve.value = null
   const minutes = Number(value)
   if (!item?.alarmEventId || !Number.isFinite(minutes)) return
-  await runAction(
-    () => shelve(item.alarmEventId!, minutes),
-    `已搁置 ${DURATION_LABELS[minutes] ?? ''}`.trim(),
-  )
+  pendingAction.value = { kind: 'shelve', item, atUtc: new Date().toISOString(), minutes }
+  void runPending()
+}
+
+// --- 失败对话框（重试复用同键 / 结果未知引导核对）-----------------------------
+function onErrorConfirm() {
+  if (actionError.value?.canRetry) {
+    actionError.value = null
+    void runPending() // 复用 pendingAction.atUtc
+  } else {
+    actionError.value = null
+    pendingAction.value = null
+  }
+}
+function cancelAction() {
+  actionError.value = null
+  pendingAction.value = null
 }
 
 // --- 行详情（去报修入口）------------------------------------------------------
@@ -171,7 +229,7 @@ function goRepair(item: Alarm) {
   })
 }
 
-// --- 结果反馈（轻操作用 toast；确认/搁置服务端幂等，失败可安全重试）-------------
+// --- 成功轻反馈（toast）------------------------------------------------------
 const toast = reactive<{ show: boolean; message: string; type: 'success' | 'error' }>({
   show: false,
   message: '',
@@ -181,15 +239,6 @@ function showToast(message: string, type: 'success' | 'error') {
   toast.message = message
   toast.type = type
   toast.show = true
-}
-
-async function runAction(action: () => Promise<unknown>, successMessage: string) {
-  try {
-    await action()
-    showToast(successMessage, 'success')
-  } catch (e) {
-    showToast(describeRequestError(e, '操作失败，请重试').message, 'error')
-  }
 }
 </script>
 
@@ -245,20 +294,22 @@ async function runAction(action: () => Promise<unknown>, successMessage: string)
           暂无设备报警
         </div>
 
+        <!-- 行非交互（避免行内交互控件嵌套在 role=button 行内导致键盘冒泡/辅助技术歧义）；
+             确认/搁置/详情均为行内同级控件。 -->
         <div v-else class="overflow-hidden rounded-lg border border-border">
           <NvListRow
             v-for="item in alarms"
             :key="item.alarmEventId"
             :title="alarmTitle(item)"
             :subtitle="alarmSubtitle(item)"
+            :interactive="false"
             :class="isRaised(item) ? undefined : 'opacity-60'"
-            @select="openDetail(item)"
           >
             <template v-if="processedMeta(item)" #meta>
               <div class="truncate text-xs text-muted-foreground">{{ processedMeta(item) }}</div>
             </template>
             <template #trailing>
-              <div class="flex shrink-0 items-center gap-2" @click.stop>
+              <div class="flex shrink-0 items-center gap-2">
                 <template v-if="isRaised(item)">
                   <NvMobileButton
                     :data-testid="`ack-${item.alarmEventId}`"
@@ -286,6 +337,17 @@ async function runAction(action: () => Promise<unknown>, successMessage: string)
                 >
                   {{ alarmLifecycleStatusLabel(item.status) }}
                 </NvMobileTag>
+
+                <!-- 详情入口：独立同级按钮（承载去报修），非嵌套在可交互行内 -->
+                <button
+                  :data-testid="`detail-${item.alarmEventId}`"
+                  type="button"
+                  class="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground"
+                  :aria-label="`${alarmTitle(item)} 详情`"
+                  @click="openDetail(item)"
+                >
+                  <ChevronRight class="size-5" aria-hidden="true" />
+                </button>
               </div>
             </template>
           </NvListRow>
@@ -310,6 +372,23 @@ async function runAction(action: () => Promise<unknown>, successMessage: string)
       :description="pendingShelve ? alarmTitle(pendingShelve) : undefined"
       :actions="shelveActions"
       @select="onShelveDuration"
+    />
+
+    <!-- 失败对话框：确定性失败可重试（复用同键）；结果未知只提示核对 -->
+    <NvMobileDialog
+      :open="actionError !== null"
+      :title="actionError?.canRetry ? '操作失败' : '提交结果未知'"
+      :description="actionError?.message ?? ''"
+      :confirm-text="actionError?.canRetry ? '重试' : '我知道了'"
+      :show-cancel="actionError?.canRetry ?? false"
+      cancel-text="取消"
+      @update:open="
+        (open) => {
+          if (!open) actionError = null
+        }
+      "
+      @confirm="onErrorConfirm"
+      @cancel="cancelAction"
     />
 
     <!-- 行详情：保留去报修入口 -->
