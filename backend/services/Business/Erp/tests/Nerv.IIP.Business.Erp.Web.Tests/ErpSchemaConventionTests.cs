@@ -25,6 +25,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Business.Erp.Infrastructure.MasterData;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Messaging.CAP;
@@ -79,6 +80,7 @@ public sealed class ErpSchemaConventionTests
             typeof(CodeCounter),
             typeof(CodeIdempotencyKey),
             typeof(ProcessedIntegrationEvent),
+            typeof(BusinessPartnerAvailability),
             typeof(IntegrationEventDeadLetter),
         };
 

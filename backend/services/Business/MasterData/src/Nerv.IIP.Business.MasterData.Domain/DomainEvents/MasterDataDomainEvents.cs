@@ -25,7 +25,7 @@ public record SkuDisabledDomainEvent(string OrganizationId, string EnvironmentId
 
 public record UnitOfMeasureChangedDomainEvent(string OrganizationId, string EnvironmentId, string Code) : IDomainEvent;
 
-public record BusinessPartnerChangedDomainEvent(string OrganizationId, string EnvironmentId, string Code) : IDomainEvent;
+public record BusinessPartnerChangedDomainEvent(string OrganizationId, string EnvironmentId, string Code, string Status) : IDomainEvent;
 
 public record ResourceChangedDomainEvent(string ResourceType, string OrganizationId, string EnvironmentId, string Code) : IDomainEvent;
 

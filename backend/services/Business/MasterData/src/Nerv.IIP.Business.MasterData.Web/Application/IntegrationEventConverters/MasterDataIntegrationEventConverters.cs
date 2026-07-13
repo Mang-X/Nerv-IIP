@@ -79,8 +79,9 @@ public sealed class BusinessPartnerChangedIntegrationEventConverter(IMasterDataI
     {
         var occurredAtUtc = DateTimeOffset.UtcNow;
         var context = contextAccessor.GetContext();
+        var eventId = EventIds.New();
         return new BusinessPartnerChangedIntegrationEvent(
-            EventIds.New(),
+            eventId,
             MasterDataIntegrationEventTypes.BusinessPartnerChanged,
             MasterDataIntegrationEventVersions.V1,
             occurredAtUtc,
@@ -90,8 +91,8 @@ public sealed class BusinessPartnerChangedIntegrationEventConverter(IMasterDataI
             domainEvent.OrganizationId,
             domainEvent.EnvironmentId,
             context.Actor,
-            EventIds.Idempotency("partner-changed", domainEvent.OrganizationId, domainEvent.EnvironmentId, domainEvent.Code),
-            new MasterDataChangedPayload("business-partner", domainEvent.Code, "active", occurredAtUtc));
+            EventIds.Idempotency("partner-changed", domainEvent.OrganizationId, domainEvent.EnvironmentId, domainEvent.Code, eventId),
+            new MasterDataChangedPayload("business-partner", domainEvent.Code, domainEvent.Status, occurredAtUtc));
     }
 }
 

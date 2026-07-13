@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Infrastructure.MasterData;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
@@ -517,6 +518,32 @@ public sealed class ErpProcurementEndpointContractTests
             Assert.Equal(PurchaseRequisitionStatus.Converted, requisition.Status);
             Assert.Equal("PO-REQ-001", requisition.ConvertedPurchaseOrderNo);
         });
+    }
+
+    [Fact]
+    public async Task Convert_purchase_requisitions_rejects_a_disabled_supplier()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await SeedPurchaseRequisitionAsync(dbContext, "PR-001", "suggestion-001", "SKU-RM-1000", 3m);
+        await new ReceiveSupplierQuotationCommandHandler(dbContext).Handle(
+            new ReceiveSupplierQuotationCommand(
+                "org-001", "env-dev", "SQ-001", "RFQ-001", "SUP-001",
+                [new SupplierQuotationCommandLine("LINE-001", "SKU-RM-1000", "kg", 10m, 12m, new DateOnly(2026, 6, 7))]),
+            CancellationToken.None);
+        dbContext.BusinessPartnerAvailabilities.Add(BusinessPartnerAvailability.Create(
+            "org-001", "env-dev", "SUP-001", "disabled", DateTimeOffset.Parse("2026-07-13T04:00:00Z"), "evt-disabled"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(dbContext).Handle(
+                new ConvertPurchaseRequisitionsToPurchaseOrderCommand("org-001", "env-dev", ["PR-001"], PurchaseOrderNo: "PO-REQ-001"),
+                CancellationToken.None));
+
+        Assert.Contains("disabled", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(dbContext.PurchaseOrders);
+        Assert.Equal(PurchaseRequisitionStatus.Open, Assert.Single(dbContext.PurchaseRequisitions).Status);
     }
 
     [Fact]
