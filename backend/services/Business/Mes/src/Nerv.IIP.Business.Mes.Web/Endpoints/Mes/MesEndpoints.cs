@@ -689,9 +689,20 @@ public sealed record MesQualityHoldRequestContext(string Actor, string Correlati
     {
         var subject = context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? context.User.FindFirstValue("sub");
         var forwardedActor = context.Request.Headers["X-Authenticated-Actor"].FirstOrDefault();
-        var actor = !string.IsNullOrWhiteSpace(subject) && !string.Equals(subject, "internal-service", StringComparison.Ordinal)
-            ? $"user:{subject}"
-            : !string.IsNullOrWhiteSpace(forwardedActor) ? forwardedActor.Trim() : throw new KnownException("Authenticated actor is required.");
+        var tokenType = context.User.FindFirstValue("token_type");
+        string actor;
+        if (string.Equals(tokenType, "internal_service", StringComparison.Ordinal))
+        {
+            actor = IsCanonicalActor(forwardedActor)
+                ? forwardedActor!.Trim()
+                : throw new KnownException("A canonical X-Authenticated-Actor is required for internal service requests.");
+        }
+        else
+        {
+            actor = !string.IsNullOrWhiteSpace(subject)
+                ? $"user:{subject}"
+                : throw new KnownException("Authenticated actor is required.");
+        }
         var correlationId = context.Request.Headers["X-Correlation-Id"].FirstOrDefault();
         var idempotencyKey = context.Request.Headers["X-Idempotency-Key"].FirstOrDefault();
         if (string.IsNullOrWhiteSpace(correlationId) || string.IsNullOrWhiteSpace(idempotencyKey))
@@ -699,6 +710,17 @@ public sealed record MesQualityHoldRequestContext(string Actor, string Correlati
             throw new KnownException("X-Correlation-Id and X-Idempotency-Key are required.");
         }
         return new(actor, correlationId.Trim(), idempotencyKey.Trim());
+    }
+
+    private static bool IsCanonicalActor(string? actor)
+    {
+        if (string.IsNullOrWhiteSpace(actor)) return false;
+        var trimmed = actor.Trim();
+        var separator = trimmed.IndexOf(':', StringComparison.Ordinal);
+        return separator > 0
+               && separator < trimmed.Length - 1
+               && !string.IsNullOrWhiteSpace(trimmed[..separator])
+               && !string.IsNullOrWhiteSpace(trimmed[(separator + 1)..]);
     }
 }
 

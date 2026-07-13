@@ -26,7 +26,12 @@ public interface IAppHubStateStore
     InstanceDetailFact GetInstanceDetail(string organizationId, string environmentId, string instanceKey);
 }
 
-public sealed class InMemoryAppHubStateStore : IAppHubStateStore
+public interface IInstanceStateSnapshotRecorder
+{
+    Task RecordAsync(InstanceStateSnapshot snapshot, CancellationToken cancellationToken = default);
+}
+
+public sealed class InMemoryAppHubStateStore : IAppHubStateStore, IInstanceStateSnapshotRecorder
 {
     private readonly object _gate = new();
     private readonly ConcurrentDictionary<string, string> _idempotency = new();
@@ -93,6 +98,13 @@ public sealed class InMemoryAppHubStateStore : IAppHubStateStore
 
             Upsert(Instances, x => x.InstanceKey == snapshot.InstanceKey, instance with { ReportedStatus = snapshot.ReportedStatus, HealthStatus = snapshot.HealthStatus, Metadata = snapshot.Metadata });
         }
+    }
+
+    public Task RecordAsync(InstanceStateSnapshot snapshot, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        RecordStateSnapshot(snapshot);
+        return Task.CompletedTask;
     }
 
     public InstanceListResult QueryInstances(InstanceListCriteria query)

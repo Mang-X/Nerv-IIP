@@ -32,8 +32,7 @@ public sealed class ConnectorCollectionHealthQueryEndpoint(IServiceProvider serv
                 await Send.OkAsync(missing.AsResponseData(), ct);
                 return;
             }
-            var inMemoryStale = detail.LastHeartbeatAtUtc is null || detail.LastHeartbeatAtUtc.Value.AddMinutes(2) <= clock.GetUtcNow();
-            var unknown = new ConnectorCollectionHealthResponse(connectorId, inMemoryStale ? "stale" : "unknown", detail.LastHeartbeatAtUtc, null, null, null, null, null, null);
+            var unknown = new ConnectorCollectionHealthResponse(connectorId, "unknown", detail.LastHeartbeatAtUtc, null, null, null, null, null, null);
             await Send.OkAsync(unknown.AsResponseData(), ct);
             return;
         }
@@ -49,9 +48,13 @@ public sealed class ConnectorCollectionHealthQueryEndpoint(IServiceProvider serv
             await Send.OkAsync(missing.AsResponseData(), ct);
             return;
         }
-        var stale = instance.Heartbeat is null || !instance.Heartbeat.Reachable || instance.Heartbeat.LastHeartbeatAtUtc.AddMinutes(2) <= clock.GetUtcNow();
         var health = instance.CollectionHealth;
-        var status = health is null ? "unknown" : stale ? "stale" : "current";
+        var now = clock.GetUtcNow();
+        var heartbeatStale = instance.Heartbeat is null
+            || !instance.Heartbeat.Reachable
+            || instance.Heartbeat.LastHeartbeatAtUtc.AddMinutes(2) <= now;
+        var metricsStale = health is not null && health.ReportedAtUtc.AddMinutes(2) <= now;
+        var status = health is null ? "unknown" : heartbeatStale || metricsStale ? "stale" : "current";
         var response = new ConnectorCollectionHealthResponse(
             connectorId,
             status,

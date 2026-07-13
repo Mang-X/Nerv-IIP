@@ -2,6 +2,7 @@ using MediatR;
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.InMemory.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -29,7 +30,7 @@ public sealed class AppHubIntegrationEventTests
     {
         var error = new DbUpdateException("foreign key violation", new InvalidOperationException("FK_state_history"));
 
-        Assert.False(RecordInstanceStateSnapshotCommandHandler.IsCollectionHealthUniqueConflict(error));
+        Assert.False(CollectionHealthUniqueConflictDetector.IsUniqueConflict(error));
     }
     [Fact]
     public async Task Concurrent_first_collection_health_insert_reloads_and_monotonically_merges()
@@ -53,22 +54,22 @@ public sealed class AppHubIntegrationEventTests
         });
         var conflictOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(databaseName, root)
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .AddInterceptors(interceptor)
             .Options;
-        await using var conflictDb = CreateDbContext(conflictOptions);
-        using var services = new ServiceCollection()
-            .AddSingleton<ApplicationDbContext>(conflictDb)
-            .AddSingleton<IApplicationInstanceRepository, ApplicationInstanceRepository>()
-            .BuildServiceProvider();
+        var mediator = new RecordingDomainEventMediator();
+        await using var conflictDb = new ApplicationDbContext(conflictOptions, mediator);
+        var repository = new ApplicationInstanceRepository(conflictDb);
         var incoming = competing with { ReportedAtUtc = DateTimeOffset.Parse("2026-07-13T01:01:00Z"), ReceivedCount = 8 };
         var snapshot = new InstanceStateSnapshot(new ConnectorRequestContext("1", "1", "corr", incoming.ReportedAtUtc, "org", "env", "host"), "opcua-main", incoming.ReportedAtUtc, "running", "healthy", "ok", new Dictionary<string, string>(), new Dictionary<string, decimal>(), new Dictionary<string, string>(), incoming);
 
-        await new RecordInstanceStateSnapshotCommandHandler(services).Handle(new RecordInstanceStateSnapshotCommand(snapshot), CancellationToken.None);
+        await new RecordInstanceStateSnapshotCommandHandler(repository).Handle(new RecordInstanceStateSnapshotCommand(snapshot), CancellationToken.None);
 
         await using var verify = CreateDbContext(options);
         var saved = await verify.ConnectorCollectionHealth.SingleAsync();
         Assert.Equal(8, saved.ReceivedCount);
         Assert.Equal(incoming.ReportedAtUtc, saved.ReportedAtUtc);
+        Assert.Single(mediator.Published.OfType<InstanceStateSnapshotRecordedDomainEvent>());
     }
     [Fact]
     public async Task Same_connector_identity_is_independent_across_organization_environment_scopes()
@@ -854,6 +855,39 @@ public sealed class AppHubIntegrationEventTests
         }
     }
 
+    private sealed class RecordingDomainEventMediator : IMediator
+    {
+        public List<object> Published { get; } = [];
+
+        public Task Publish(object notification, CancellationToken cancellationToken = default)
+        {
+            Published.Add(notification);
+            return Task.CompletedTask;
+        }
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification
+        {
+            Published.Add(notification);
+            return Task.CompletedTask;
+        }
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest => throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
     private sealed class ConflictOnceSaveChangesInterceptor(Func<Task> createCompetingProjection) : SaveChangesInterceptor
     {
         private bool _thrown;
@@ -867,12 +901,14 @@ public sealed class AppHubIntegrationEventTests
             {
                 _thrown = true;
                 await createCompetingProjection();
-                throw new DbUpdateException("simulated unique insert conflict", new RecordInstanceStateSnapshotCommandHandler.CollectionHealthUniqueConstraintException());
+                throw new DbUpdateException("simulated unique insert conflict", new SimulatedCollectionHealthUniqueConstraintException());
             }
 
             return await base.SavingChangesAsync(eventData, result, cancellationToken);
         }
     }
+
+    private sealed class SimulatedCollectionHealthUniqueConstraintException : Exception, ICollectionHealthUniqueConstraintViolation;
 
     private sealed class RecordingIntegrationEventPublisher : IIntegrationEventPublisher
     {

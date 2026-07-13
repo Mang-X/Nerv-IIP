@@ -1,9 +1,14 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Npgsql;
+using Nerv.IIP.AppHub.Domain;
+using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
 using Nerv.IIP.AppHub.Infrastructure;
+using Nerv.IIP.AppHub.Infrastructure.Repositories;
 using Nerv.IIP.AppHub.Web.Application.Commands;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
 using Nerv.IIP.AppHub.Web.Application.Queries;
@@ -16,6 +21,54 @@ namespace Nerv.IIP.AppHub.Web.Tests;
 
 public sealed class AppHubPostgresProfileTests
 {
+    [AppHubRealPostgresFact]
+    public async Task Concurrent_first_collection_health_reports_use_real_unique_constraint_and_publish_once_each()
+    {
+        await using var database = await TemporaryDatabase.CreateAsync(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        var barrier = new ConcurrentCollectionHealthInsertBarrier();
+        var domainEvents = new SnapshotDomainEventRecorder();
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddConsole());
+        services.AddMediatR(configuration =>
+        {
+            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
+            configuration.AddUnitOfWorkBehaviors();
+        });
+        AddPostgreSqlAppHubPersistence(services, database.ConnectionString, barrier);
+        services.AddIntegrationEvents(typeof(Program));
+        services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+        services.AddSingleton(domainEvents);
+        services.AddSingleton<INotificationHandler<InstanceStateSnapshotRecordedDomainEvent>>(domainEvents);
+        services.AddScoped<AppHubDatabaseMigrationRunner>();
+
+        await using var provider = services.BuildServiceProvider();
+        using (var migrationScope = provider.CreateScope())
+        {
+            await migrationScope.ServiceProvider.GetRequiredService<AppHubDatabaseMigrationRunner>().MigrateAsync();
+            var mediator = migrationScope.ServiceProvider.GetRequiredService<IMediator>();
+            await mediator.Send(new RegisterApplicationCommand(AppHubPostgresSamples.Registration("pg-concurrent-health")));
+        }
+
+        var epoch = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var earlier = DateTimeOffset.Parse("2026-07-13T01:00:00Z");
+        var later = earlier.AddMinutes(1);
+        var low = AppHubPostgresSamples.StateWithCollectionHealth(epoch, earlier, 5);
+        var high = AppHubPostgresSamples.StateWithCollectionHealth(epoch, later, 8);
+
+        await Task.WhenAll(SendSnapshotAsync(provider, low), SendSnapshotAsync(provider, high));
+
+        using var assertionScope = provider.CreateScope();
+        var db = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var projection = Assert.Single(await db.ConnectorCollectionHealth.AsNoTracking().ToListAsync());
+        Assert.Equal(8, projection.ReceivedCount);
+        Assert.Equal(later, projection.ReportedAtUtc);
+        Assert.Equal(2, barrier.FirstProjectionAttempts);
+        Assert.Equal(
+            [earlier, later],
+            domainEvents.ObservedAtUtc.OrderBy(x => x).ToArray());
+    }
+
     [Fact]
     public async Task Postgres_store_generates_guid_strong_ids_on_add()
     {
@@ -154,9 +207,42 @@ public sealed class AppHubPostgresProfileTests
             new Dictionary<string, string>(),
             new Dictionary<string, decimal>(),
             new Dictionary<string, string>());
+
+        public static InstanceStateSnapshot StateWithCollectionHealth(
+            Guid counterEpoch,
+            DateTimeOffset reportedAtUtc,
+            long receivedCount) => new(
+            Context with { OccurredAtUtc = reportedAtUtc },
+            "demo-api-001",
+            reportedAtUtc,
+            "running",
+            "healthy",
+            "summary",
+            new Dictionary<string, string>(),
+            new Dictionary<string, decimal>(),
+            new Dictionary<string, string>(),
+            new ConnectorCollectionHealth(
+                "demo-api-001",
+                "opcua",
+                counterEpoch,
+                reportedAtUtc,
+                receivedCount,
+                0,
+                0,
+                reportedAtUtc));
     }
 
-    private static void AddPostgreSqlAppHubPersistence(IServiceCollection services, string connectionString)
+    private static async Task SendSnapshotAsync(ServiceProvider provider, InstanceStateSnapshot snapshot)
+    {
+        using var scope = provider.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IMediator>()
+            .Send(new RecordInstanceStateSnapshotCommand(snapshot));
+    }
+
+    private static void AddPostgreSqlAppHubPersistence(
+        IServiceCollection services,
+        string connectionString,
+        SaveChangesInterceptor? interceptor = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -166,6 +252,10 @@ public sealed class AppHubPostgresProfileTests
             })
             .Build();
         services.AddAppHubPersistence(configuration);
+        if (interceptor is not null)
+        {
+            services.AddDbContext<ApplicationDbContext>(options => options.AddInterceptors(interceptor));
+        }
     }
 
     private static async Task AssertMigrationsHistoryTableInSchemaAsync(ApplicationDbContext db, string schema)
@@ -187,5 +277,93 @@ public sealed class AppHubPostgresProfileTests
 
         var exists = (bool?)await command.ExecuteScalarAsync() ?? false;
         Assert.True(exists, $"Expected EF migrations history table in schema '{schema}'.");
+    }
+
+    private sealed class ConcurrentCollectionHealthInsertBarrier : SaveChangesInterceptor
+    {
+        private readonly TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int firstProjectionAttempts;
+
+        public int FirstProjectionAttempts => firstProjectionAttempts;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context!.ChangeTracker.Entries<ConnectorCollectionHealthProjection>()
+                .Any(entry => entry.State == EntityState.Added))
+            {
+                var attempt = Interlocked.Increment(ref firstProjectionAttempts);
+                if (attempt == 2)
+                {
+                    completion.TrySetResult();
+                }
+
+                await completion.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
+            }
+
+            return result;
+        }
+    }
+
+    private sealed class SnapshotDomainEventRecorder : INotificationHandler<InstanceStateSnapshotRecordedDomainEvent>
+    {
+        private readonly System.Collections.Concurrent.ConcurrentBag<DateTimeOffset> observedAtUtc = [];
+
+        public IReadOnlyCollection<DateTimeOffset> ObservedAtUtc => observedAtUtc;
+
+        public Task Handle(InstanceStateSnapshotRecordedDomainEvent notification, CancellationToken cancellationToken)
+        {
+            observedAtUtc.Add(notification.ObservedAtUtc);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TemporaryDatabase(
+        string adminConnectionString,
+        string databaseName,
+        string connectionString) : IAsyncDisposable
+    {
+        public string ConnectionString { get; } = connectionString;
+
+        public static async Task<TemporaryDatabase> CreateAsync(string baseConnectionString)
+        {
+            var databaseName = $"nerv_apphub_health_{Guid.CreateVersion7():N}";
+            var adminConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
+            {
+                Database = "postgres"
+            }.ConnectionString;
+            await using var connection = new NpgsqlConnection(adminConnectionString);
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
+            await command.ExecuteNonQueryAsync();
+            var testConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
+            {
+                Database = databaseName
+            }.ConnectionString;
+            return new TemporaryDatabase(adminConnectionString, databaseName, testConnectionString);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await using var connection = new NpgsqlConnection(adminConnectionString);
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand(
+                $"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)",
+                connection);
+            await command.ExecuteNonQueryAsync();
+        }
+    }
+}
+
+internal sealed class AppHubRealPostgresFactAttribute : FactAttribute
+{
+    public AppHubRealPostgresFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
+        {
+            Skip = "Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL AppHub collection-health concurrency proof.";
+        }
     }
 }
