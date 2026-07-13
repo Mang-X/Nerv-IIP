@@ -4,6 +4,8 @@ import Vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vite-plus'
 import VueRouter from 'vue-router/vite'
 
+const port = Number(process.env.PORT ?? '5128')
+
 export default defineConfig({
   plugins: [
     tailwindcss(),
@@ -27,7 +29,8 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5128,
+    port,
+    strictPort: true,
     proxy: {
       '/api/business-console': {
         target: process.env.NERV_IIP_BUSINESS_GATEWAY_URL ?? 'http://127.0.0.1:5119',

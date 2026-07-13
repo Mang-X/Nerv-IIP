@@ -30,6 +30,8 @@ const dhxAlias = dhxInstalled
       '@dhx/trial-gantt': existsSync(dhxVendor) ? dhxVendor : dhxStub,
     }
 
+const port = Number(process.env.PORT ?? '5125')
+
 export default defineConfig({
   plugins: [
     tailwindcss(),
@@ -67,7 +69,8 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5125,
+    port,
+    strictPort: true,
     proxy: {
       '/api/business-console': {
         target: process.env.NERV_IIP_BUSINESS_GATEWAY_URL ?? 'http://127.0.0.1:5119',

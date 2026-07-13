@@ -50,6 +50,118 @@ function Test-NervDockerRecordedNameOwnership {
         $Name.EndsWith("-$SessionId", [StringComparison]::Ordinal)
 }
 
+function Test-NervDockerOptionalSessionLabel {
+    param(
+        [AllowNull()] [object] $Labels,
+        [Parameter(Mandatory)] [string] $SessionId
+    )
+
+    if ($SessionId -notmatch $script:NervFullStackSessionIdPattern) {
+        return $false
+    }
+    if ($null -eq $Labels) {
+        return $true
+    }
+
+    $sessionLabel = $Labels.PSObject.Properties['com.nerv-iip.session']
+    return $null -eq $sessionLabel -or "$($sessionLabel.Value)" -ceq $SessionId
+}
+
+function Get-NervFullStackEnvironment {
+    param(
+        [Parameter(Mandatory)]
+        [string] $SessionId
+    )
+
+    if ($SessionId -notmatch $script:NervFullStackSessionIdPattern) {
+        throw "Invalid full-stack session ID '$SessionId'."
+    }
+
+    return @{
+        NERV_IIP_EPHEMERAL = 'true'
+        NERV_IIP_SESSION_ID = $SessionId
+        ASPNETCORE_ENVIRONMENT = 'Development'
+        DOTNET_ENVIRONMENT = 'Development'
+        NERV_IIP_POSTGRES_VOLUME = "nerv-iip-postgres-18-$SessionId"
+        NERV_IIP_REDIS_VOLUME = "nerv-iip-redis-$SessionId"
+        NERV_IIP_MINIO_VOLUME = "nerv-iip-minio-$SessionId"
+        NERV_IIP_VICTORIA_LOGS_VOLUME = "nerv-iip-victoria-logs-$SessionId"
+    }
+}
+
+function New-NervFullStackSecretValue {
+    param(
+        [ValidateRange(16, 256)]
+        [int] $Bytes = 32
+    )
+
+    $buffer = [Security.Cryptography.RandomNumberGenerator]::GetBytes($Bytes)
+    try {
+        return [Convert]::ToBase64String($buffer)
+    }
+    finally {
+        [Array]::Clear($buffer, 0, $buffer.Length)
+    }
+}
+
+function ConvertTo-NervBase64Url {
+    param(
+        [Parameter(Mandatory)]
+        [byte[]] $Bytes
+    )
+
+    return [Convert]::ToBase64String($Bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+}
+
+function New-NervFullStackSecretEnvironment {
+    param(
+        [Parameter(Mandatory)]
+        [string] $SessionId
+    )
+
+    if ($SessionId -notmatch $script:NervFullStackSessionIdPattern) {
+        throw "Invalid full-stack session ID '$SessionId'."
+    }
+
+    $rsa = [Security.Cryptography.RSA]::Create(2048)
+    try {
+        $parameters = $rsa.ExportParameters($false)
+        $kid = "$SessionId-$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+        $jwks = [ordered]@{
+            keys = @([ordered]@{
+                kty = 'RSA'
+                use = 'sig'
+                kid = $kid
+                alg = 'RS256'
+                n = ConvertTo-NervBase64Url -Bytes $parameters.Modulus
+                e = ConvertTo-NervBase64Url -Bytes $parameters.Exponent
+            })
+        } | ConvertTo-Json -Compress -Depth 5
+        $adminPassword = New-NervFullStackSecretValue -Bytes 24
+        $environment = @{
+            'Parameters__iam-jwt-signing-key-id' = $kid
+            'Parameters__iam-jwt-private-key-pem' = $rsa.ExportPkcs8PrivateKeyPem()
+            'Parameters__iam-jwt-jwks-json' = $jwks
+            'Parameters__iam-secrets-pepper' = New-NervFullStackSecretValue -Bytes 48
+            'Parameters__internal-service-bearer-token' = New-NervFullStackSecretValue -Bytes 48
+            'Parameters__redis-password' = New-NervFullStackSecretValue -Bytes 24
+            'Parameters__minio-root-user' = "nerv-$SessionId"
+            'Parameters__minio-root-password' = New-NervFullStackSecretValue -Bytes 24
+            'Parameters__iam-seed-admin-password' = $adminPassword
+            'Parameters__iam-seed-connector-host-secret' = New-NervFullStackSecretValue -Bytes 32
+            'Parameters__connector-ingestion-token-signing-key' = New-NervFullStackSecretValue -Bytes 48
+        }
+
+        return [pscustomobject]@{
+            Environment = $environment
+            AdminPassword = $adminPassword
+        }
+    }
+    finally {
+        $rsa.Dispose()
+    }
+}
+
 function Get-NervDockerListedValues {
     param(
         [Parameter(Mandatory)] [string[]] $Arguments,
@@ -143,7 +255,7 @@ function Get-NervSessionDockerResources {
         $volumes = @($volumeInspect | Where-Object {
             $name = "$($_.Name)"
             (Test-NervDockerRecordedNameOwnership -Name $name -SessionId $sessionId -RecordedNames $recordedVolumeNames) -and
-                (Test-NervDockerResourceOwnership -InspectObject ([pscustomobject]@{ Id = $name; Labels = $_.Labels }) -SessionId $sessionId -RecordedIds $recordedVolumeNames)
+                (Test-NervDockerOptionalSessionLabel -Labels $_.Labels -SessionId $sessionId)
         })
         foreach ($name in $presentVolumeNames) {
             if (@($volumes.Name) -cnotcontains $name) { $unresolved.Add("volume:$name") }

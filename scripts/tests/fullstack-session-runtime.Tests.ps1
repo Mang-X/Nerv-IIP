@@ -48,5 +48,58 @@ Assert-True `
 Assert-True `
     (-not (Test-NervDockerRecordedNameOwnership -Name 'postgres-data-unsafe-session' -SessionId 'unsafe-session' -RecordedNames @('postgres-data-unsafe-session'))) `
     'An invalid session ID must never prove name ownership.'
+Assert-True `
+    (Test-NervDockerOptionalSessionLabel -Labels $null -SessionId $sessionId) `
+    'Aspire volumes without exposed labels must rely on exact recorded-name ownership.'
+Assert-True `
+    (Test-NervDockerOptionalSessionLabel -Labels ([pscustomobject]@{ 'com.nerv-iip.session' = $sessionId }) -SessionId $sessionId) `
+    'An exposed volume session label must match the active session.'
+Assert-True `
+    (-not (Test-NervDockerOptionalSessionLabel -Labels ([pscustomobject]@{ 'com.nerv-iip.session' = 'nerv-ffff-654321' }) -SessionId $sessionId)) `
+    'An exposed volume label from another session must be rejected.'
+
+$environment = Get-NervFullStackEnvironment -SessionId $sessionId
+Assert-True ($environment.NERV_IIP_EPHEMERAL -eq 'true') 'Ephemeral flag missing.'
+Assert-True ($environment.NERV_IIP_SESSION_ID -eq $sessionId) 'Session ID missing.'
+foreach ($expected in @(
+    "nerv-iip-postgres-18-$sessionId",
+    "nerv-iip-redis-$sessionId",
+    "nerv-iip-minio-$sessionId",
+    "nerv-iip-victoria-logs-$sessionId"
+)) {
+    Assert-True ($environment.Values -ccontains $expected) "Missing ephemeral volume '$expected'."
+}
+
+$invalidEnvironmentFailed = $false
+try { Get-NervFullStackEnvironment -SessionId 'unsafe-session' | Out-Null } catch { $invalidEnvironmentFailed = $true }
+Assert-True $invalidEnvironmentFailed 'Invalid session IDs must be rejected by the AppHost environment contract.'
+
+$secretEnvironment = New-NervFullStackSecretEnvironment -SessionId $sessionId
+foreach ($requiredName in @(
+    'Parameters__iam-jwt-signing-key-id',
+    'Parameters__iam-jwt-private-key-pem',
+    'Parameters__iam-jwt-jwks-json',
+    'Parameters__iam-secrets-pepper',
+    'Parameters__internal-service-bearer-token',
+    'Parameters__redis-password',
+    'Parameters__minio-root-user',
+    'Parameters__minio-root-password',
+    'Parameters__iam-seed-admin-password',
+    'Parameters__iam-seed-connector-host-secret',
+    'Parameters__connector-ingestion-token-signing-key'
+)) {
+    Assert-True $secretEnvironment.Environment.ContainsKey($requiredName) "Missing session secret '$requiredName'."
+    Assert-True (-not [string]::IsNullOrWhiteSpace($secretEnvironment.Environment[$requiredName])) "Session secret '$requiredName' is empty."
+}
+Assert-True `
+    ($secretEnvironment.AdminPassword -ceq $secretEnvironment.Environment['Parameters__iam-seed-admin-password']) `
+    'The browser password must match the AppHost seed password.'
+$jwks = $secretEnvironment.Environment['Parameters__iam-jwt-jwks-json'] | ConvertFrom-Json
+Assert-True ($jwks.keys.Count -eq 1) 'A session JWKS must contain one signing key.'
+Assert-True `
+    ($jwks.keys[0].kid -ceq $secretEnvironment.Environment['Parameters__iam-jwt-signing-key-id']) `
+    'The session JWKS key ID must match the private signing key ID.'
+$secretEnvironment.Environment.Clear()
+$secretEnvironment = $null
 
 Write-Host 'Full-stack session runtime tests passed.'
