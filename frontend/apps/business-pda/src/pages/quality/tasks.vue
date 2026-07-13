@@ -20,6 +20,7 @@ import {
   NvBottomSheet,
   NvListRow,
   NvMobileButton,
+  NvMobileInput,
   NvMobileResult,
   NvMobileTag,
   NvNumberKeyboard,
@@ -150,6 +151,7 @@ const rows = reactive<DraftRow[]>([])
 function resetRows() {
   rows.splice(0, rows.length)
   nextRowId = 1
+  dispositionReason.value = ''
 }
 function removeRow(id: number) {
   const index = rows.findIndex((r) => r.id === id)
@@ -183,6 +185,13 @@ function addAllCharacteristics() {
 
 const allValid = computed(() => qualityCharacteristicRowsValid(rows))
 const overallVerdict = computed(() => qualityInspectionOverallVerdict(rows))
+
+// 处置原因：结果不合格时后端必填（`InspectionRecord` 领域校验）；合格时不需要。
+const dispositionReason = ref('')
+const dispositionRequired = computed(() => overallVerdict.value === 'fail')
+const canSubmit = computed(
+  () => allValid.value && (!dispositionRequired.value || dispositionReason.value.trim() !== ''),
+)
 
 // StepFlow 进度：由实时状态派生（选任务 → 录到至少一条有效结果 → 提交成功）。
 const liveCtx = computed<QualityInspectionTaskCtx>(() => ({
@@ -299,12 +308,12 @@ function setCountResult(row: DraftRow, value: 'pass' | 'fail') {
 // --- 提交 -----------------------------------------------------------------------
 async function submit() {
   const task = selectedTask.value
-  if (!task?.inspectionTaskId || !allValid.value || submitPending.value) return
+  if (!task?.inspectionTaskId || !canSubmit.value || submitPending.value) return
   keyboard.show = false
   const lines = toQualityCharacteristicResultLines(rows)
   const verdict = overallVerdict.value
   try {
-    await submitInspection(task.inspectionTaskId, lines)
+    await submitInspection(task.inspectionTaskId, lines, dispositionReason.value)
     result.value = { phase: 'success', verdict }
   } catch (e) {
     // 端点按任务生命周期天然幂等（重试返回同一记录），故失败可安全重试。
@@ -774,10 +783,20 @@ function taskSubtitle(task: Task) {
         </template>
       </section>
 
+      <!-- 处置原因（判不合格时必填，供后端记录处置 / 触发 NCR）-->
+      <label v-if="dispositionRequired && rows.length > 0" class="block space-y-1">
+        <span class="text-sm font-medium text-destructive">处置原因（不合格必填）</span>
+        <NvMobileInput
+          v-model="dispositionReason"
+          data-testid="disposition-reason"
+          placeholder="如 外径超差且外观不良，判退"
+        />
+      </label>
+
       <button
         type="button"
         data-testid="submit"
-        :disabled="!allValid || submitPending"
+        :disabled="!canSubmit || submitPending"
         class="min-h-touch w-full rounded-lg text-base font-medium text-primary-foreground disabled:opacity-60"
         :class="overallVerdict === 'fail' ? 'bg-destructive' : 'bg-primary'"
         @click="submit"
