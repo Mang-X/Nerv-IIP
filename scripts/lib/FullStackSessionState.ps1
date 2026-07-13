@@ -286,6 +286,28 @@ function Renew-NervFullStackSessionLease {
     }
 }
 
+function Update-NervFullStackManifest {
+    param(
+        [Parameter(Mandatory)] [string] $SessionId,
+        [Parameter(Mandatory)] [string[]] $AllowedStates,
+        [Parameter(Mandatory)] [scriptblock] $UpdateAction,
+        [string] $StateRoot = (Get-NervFullStackStateRoot),
+        [switch] $ReturnUnchangedOnStateMismatch
+    )
+
+    return Invoke-WithNervFullStackSessionLock -StateRoot $StateRoot -ScriptBlock {
+        $manifest = Read-NervFullStackManifest -SessionId $SessionId -StateRoot $StateRoot
+        if ($AllowedStates -cnotcontains "$($manifest.state)") {
+            if ($ReturnUnchangedOnStateMismatch) { return $manifest }
+            throw "Session '$SessionId' is '$($manifest.state)'; expected one of: $($AllowedStates -join ', ')."
+        }
+        $updated = & $UpdateAction $manifest
+        if ($null -eq $updated) { $updated = $manifest }
+        Write-NervFullStackManifest -Manifest $updated -StateRoot $StateRoot
+        return $updated
+    }
+}
+
 function Test-NervProcessIdentity {
     param(
         [Parameter(Mandatory)] [int] $ProcessId,

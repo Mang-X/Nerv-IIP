@@ -156,15 +156,14 @@ function Start-NervFullStackSession {
         $sessionEnvironment['ASPIRE_CLI_START_TIMEOUT'] = '300'
         $sessionEnvironment['MSBUILDDISABLENODEREUSE'] = '1'
         $sessionEnvironment['DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'
-        $manifest = Invoke-WithNervFullStackSessionLock -ScriptBlock {
-            $latest = Read-NervFullStackManifest -SessionId $newSessionId
+        $manifest = Update-NervFullStackManifest -SessionId $newSessionId -AllowedStates @('Creating') -UpdateAction {
+            param($latest)
             $latest.runtime.volumeNames = @(
                 $sessionEnvironment.NERV_IIP_POSTGRES_VOLUME,
                 $sessionEnvironment.NERV_IIP_REDIS_VOLUME,
                 $sessionEnvironment.NERV_IIP_MINIO_VOLUME,
                 $sessionEnvironment.NERV_IIP_VICTORIA_LOGS_VOLUME
             )
-            Write-NervFullStackManifest -Manifest $latest
             return $latest
         }
         $secretSet = New-NervFullStackSecretEnvironment -SessionId $newSessionId
@@ -215,20 +214,25 @@ function Start-NervFullStackSession {
             $startObject = Read-NervAspireJson -Text "$($startResult.Stdout)"
             $identity = Get-NervAspireStartIdentity -StartObject $startObject
 
-            $manifest.aspire.appHostId = $identity.AppHostId
-            $manifest.aspire.dcpId = $null
             $appHostProcess = Get-Process -Id $identity.AppHostPid -ErrorAction Stop
             $cliProcess = Get-Process -Id $identity.CliPid -ErrorAction Stop
-            $manifest.aspire.appHostPath = $identity.AppHostPath
-            $manifest.aspire.appHostPid = $identity.AppHostPid
-            $manifest.aspire.appHostProcessStartTimeUtc = $appHostProcess.StartTime.ToUniversalTime().ToString('O')
-            $manifest.aspire.cliPid = $identity.CliPid
-            $manifest.aspire.cliProcessStartTimeUtc = $cliProcess.StartTime.ToUniversalTime().ToString('O')
-            $manifest.aspire.logFile = $identity.LogFile
-            $manifest.coordinator.pid = $identity.AppHostPid
-            $manifest.coordinator.processStartTimeUtc = $manifest.aspire.appHostProcessStartTimeUtc
-            $manifest.runtime.processIds = @($identity.AppHostPid, $identity.CliPid)
-            Write-NervFullStackManifest -Manifest $manifest
+            $appHostStartedAt = $appHostProcess.StartTime.ToUniversalTime().ToString('O')
+            $cliStartedAt = $cliProcess.StartTime.ToUniversalTime().ToString('O')
+            $manifest = Update-NervFullStackManifest -SessionId $newSessionId -AllowedStates @('Creating') -UpdateAction {
+                param($latest)
+                $latest.aspire.appHostId = $identity.AppHostId
+                $latest.aspire.dcpId = $null
+                $latest.aspire.appHostPath = $identity.AppHostPath
+                $latest.aspire.appHostPid = $identity.AppHostPid
+                $latest.aspire.appHostProcessStartTimeUtc = $appHostStartedAt
+                $latest.aspire.cliPid = $identity.CliPid
+                $latest.aspire.cliProcessStartTimeUtc = $cliStartedAt
+                $latest.aspire.logFile = $identity.LogFile
+                $latest.coordinator.pid = $identity.AppHostPid
+                $latest.coordinator.processStartTimeUtc = $appHostStartedAt
+                $latest.runtime.processIds = @($identity.AppHostPid, $identity.CliPid)
+                return $latest
+            }
 
             foreach ($resourceName in @('iam', 'business-master-data', 'gateway', 'business-gateway', 'console', 'business-console', 'screen')) {
                 Wait-NervAspireResource `
@@ -236,38 +240,61 @@ function Start-NervFullStackSession {
                     -ResourceName $resourceName `
                     -WorkingDirectory $repoRoot
             }
-            $manifest.runtime.containers = @(Get-NervFullStackContainerRecords -OwnedSessionId $newSessionId)
-            $manifest.runtime.containerIds = @($manifest.runtime.containers | ForEach-Object { "$($_.id)" })
+            $containerRecords = @(Get-NervFullStackContainerRecords -OwnedSessionId $newSessionId)
             $describe = Get-NervAspireDescribeObject -AppHostProject $appHostProject -WorkingDirectory $repoRoot
-            $manifest = Save-NervFullStackEndpoints -Manifest $manifest -DescribeObject $describe
-            $manifest = Move-NervFullStackSessionState -Manifest $manifest -State Running
-            $manifest = Renew-NervFullStackLease -Manifest $manifest -LeaseMinutes (Get-NervFullStackLeaseMinutes)
-            Write-NervFullStackManifest -Manifest $manifest
+            $manifest = Update-NervFullStackManifest -SessionId $newSessionId -AllowedStates @('Creating') -UpdateAction {
+                param($latest)
+                $latest.runtime.containers = @($containerRecords)
+                $latest.runtime.containerIds = @($containerRecords | ForEach-Object { "$($_.id)" })
+                $latest = Save-NervFullStackEndpoints -Manifest $latest -DescribeObject $describe
+                $latest = Move-NervFullStackSessionState -Manifest $latest -State Running
+                $latest = Renew-NervFullStackLease -Manifest $latest -LeaseMinutes (Get-NervFullStackLeaseMinutes)
+                return $latest
+            }
+            $guardianIdentity = $null
             $guardianIdentity = Start-NervFullStackGuardian `
                 -Manifest $manifest `
                 -Mode $GuardianMode `
                 -CoordinatorPid $CoordinatorPid `
                 -CoordinatorStartTimeUtc $CoordinatorStartTimeUtc
-            $manifest.guardian = [ordered]@{
-                pid = $guardianIdentity.Pid
-                processStartTimeUtc = $guardianIdentity.ProcessStartTimeUtc
-                mode = $GuardianMode
+            try {
+                $manifest = Update-NervFullStackManifest -SessionId $newSessionId -AllowedStates @('Running') -UpdateAction {
+                    param($latest)
+                    $latest.guardian = [ordered]@{
+                        pid = $guardianIdentity.Pid
+                        processStartTimeUtc = $guardianIdentity.ProcessStartTimeUtc
+                        mode = $GuardianMode
+                    }
+                    $latest.coordinator = if ($GuardianMode -eq 'Automated') {
+                        [ordered]@{ pid = $CoordinatorPid; processStartTimeUtc = $CoordinatorStartTimeUtc }
+                    }
+                    else {
+                        [ordered]@{ pid = $guardianIdentity.Pid; processStartTimeUtc = $guardianIdentity.ProcessStartTimeUtc }
+                    }
+                    return $latest
+                }
             }
-            $manifest.coordinator = if ($GuardianMode -eq 'Automated') {
-                [ordered]@{ pid = $CoordinatorPid; processStartTimeUtc = $CoordinatorStartTimeUtc }
+            catch {
+                if ($null -ne $guardianIdentity -and (Test-NervProcessIdentity -ProcessId $guardianIdentity.Pid -ProcessStartTimeUtc $guardianIdentity.ProcessStartTimeUtc)) {
+                    try { Stop-ProcessTree -ProcessId $guardianIdentity.Pid -Reason "Unregistered guardian cleanup for $newSessionId" | Out-Null } catch { }
+                }
+                throw
             }
-            else {
-                [ordered]@{ pid = $guardianIdentity.Pid; processStartTimeUtc = $guardianIdentity.ProcessStartTimeUtc }
-            }
-            Write-NervFullStackManifest -Manifest $manifest
         }
         catch {
-            if ("$($manifest.state)" -eq 'Creating') {
-                $manifest = Move-NervFullStackSessionState -Manifest $manifest -State Failed
-            }
             $safeError = Protect-ScriptAutomationText -Text "$($_.Exception.Message)"
-            $manifest.failure = [ordered]@{ atUtc = [DateTimeOffset]::UtcNow.ToString('O'); message = $safeError }
-            Write-NervFullStackManifest -Manifest $manifest
+            $manifest = Update-NervFullStackManifest `
+                -SessionId $newSessionId `
+                -AllowedStates @('Creating', 'Running', 'Collecting', 'Failed') `
+                -ReturnUnchangedOnStateMismatch `
+                -UpdateAction {
+                    param($latest)
+                    if ("$($latest.state)" -ne 'Failed') {
+                        $latest = Move-NervFullStackSessionState -Manifest $latest -State Failed
+                    }
+                    $latest.failure = [ordered]@{ atUtc = [DateTimeOffset]::UtcNow.ToString('O'); message = $safeError }
+                    return $latest
+                }
             try {
                 $cleanupResult = Stop-NervFullStackSession -SessionId $newSessionId
                 if (-not $cleanupResult.Complete) {
@@ -372,29 +399,47 @@ try {
                     } `
                     -FailureAction {
                         param($InputManifest, $FailureRecord)
-                        $latest = Read-NervFullStackManifest -SessionId "$($InputManifest.sessionId)"
-                        $latest.failure = [ordered]@{
-                            atUtc = [DateTimeOffset]::UtcNow.ToString('O')
-                            category = 'ScenarioOrStartup'
-                            message = Protect-NervFullStackDiagnosticText -Text "$($FailureRecord.Exception.Message)" -SensitiveValues @($sessionAdminPassword)
-                        }
-                        Write-NervFullStackManifest -Manifest $latest
+                        $failureMessage = Protect-NervFullStackDiagnosticText -Text "$($FailureRecord.Exception.Message)" -SensitiveValues @($sessionAdminPassword)
+                        Update-NervFullStackManifest `
+                            -SessionId "$($InputManifest.sessionId)" `
+                            -AllowedStates @('Creating', 'Running', 'Collecting', 'Failed') `
+                            -ReturnUnchangedOnStateMismatch `
+                            -UpdateAction {
+                                param($latest)
+                                $latest.failure = [ordered]@{
+                                    atUtc = [DateTimeOffset]::UtcNow.ToString('O')
+                                    category = 'ScenarioOrStartup'
+                                    message = $failureMessage
+                                }
+                                return $latest
+                            } | Out-Null
                     } `
                     -CollectAction {
                         param($InputManifest)
-                        $latest = Read-NervFullStackManifest -SessionId "$($InputManifest.sessionId)"
-                        if ("$($latest.state)" -eq 'Running') {
-                            $latest = Move-NervFullStackSessionState -Manifest $latest -State Collecting
-                            Write-NervFullStackManifest -Manifest $latest
+                        $latest = Update-NervFullStackManifest `
+                            -SessionId "$($InputManifest.sessionId)" `
+                            -AllowedStates @('Running') `
+                            -ReturnUnchangedOnStateMismatch `
+                            -UpdateAction {
+                                param($current)
+                                return (Move-NervFullStackSessionState -Manifest $current -State Collecting)
+                            }
+                        if ("$($latest.state)" -eq 'Collecting') {
+                            Collect-NervFullStackDiagnostics -Manifest $latest -SensitiveValues @($sessionAdminPassword) | Out-Null
                         }
-                        Collect-NervFullStackDiagnostics -Manifest $latest -SensitiveValues @($sessionAdminPassword) | Out-Null
                     } `
                     -CollectionFailureAction {
                         param($InputManifest, $FailureRecord)
-                        $latest = Read-NervFullStackManifest -SessionId "$($InputManifest.sessionId)"
                         $safeError = Protect-NervFullStackDiagnosticText -Text "$($FailureRecord.Exception.Message)" -SensitiveValues @($sessionAdminPassword)
-                        $latest.cleanup.errors = @($latest.cleanup.errors) + @($safeError)
-                        Write-NervFullStackManifest -Manifest $latest
+                        Update-NervFullStackManifest `
+                            -SessionId "$($InputManifest.sessionId)" `
+                            -AllowedStates @('Collecting', 'Failed') `
+                            -ReturnUnchangedOnStateMismatch `
+                            -UpdateAction {
+                                param($latest)
+                                $latest.cleanup.errors = @($latest.cleanup.errors) + @($safeError)
+                                return $latest
+                            } | Out-Null
                     } `
                     -StopAction {
                         param($InputManifest)

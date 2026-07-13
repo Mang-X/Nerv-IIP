@@ -71,7 +71,23 @@ try {
     $renewAfterClaim = Renew-NervFullStackSessionLease -SessionId $sessionId -StateRoot $testRoot -LeaseMinutes 30
     Assert-True ($renewAfterClaim.state -eq 'Stopping') 'Lease renewal must never overwrite a GC or user stop claim.'
 
-    $reloaded = Read-NervFullStackManifest -SessionId $sessionId -StateRoot $testRoot
+    $claimedManifest = Read-NervFullStackManifest -SessionId $sessionId -StateRoot $testRoot
+    $claimedManifest = Move-NervFullStackSessionState -Manifest $claimedManifest -State Stopped
+    Write-NervFullStackManifest -Manifest $claimedManifest -StateRoot $testRoot
+    $staleStartupWriteRejected = $false
+    try {
+        Update-NervFullStackManifest `
+            -SessionId $sessionId `
+            -StateRoot $testRoot `
+            -AllowedStates @('Creating') `
+            -UpdateAction { param($latest) $latest.runtime.processIds = @(999); $latest } | Out-Null
+    }
+    catch { $staleStartupWriteRejected = $true }
+    Assert-True $staleStartupWriteRejected 'A stale startup writer must not overwrite a session already claimed and stopped.'
+    $afterRejectedWrite = Read-NervFullStackManifest -SessionId $sessionId -StateRoot $testRoot
+    Assert-True ($afterRejectedWrite.state -eq 'Stopped' -and @($afterRejectedWrite.runtime.processIds).Count -eq 0) 'Rejected stale writes must leave the stopped manifest unchanged.'
+
+    $reloaded = $afterRejectedWrite
     $reloaded.state = 'Stopped'
     Assert-True (-not (Test-NervFullStackSessionStale -Manifest $reloaded)) 'A stopped session must not be stale.'
 

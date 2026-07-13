@@ -119,7 +119,9 @@ function Wait-AcceptanceSessions([object[]] $Records, [int] $TimeoutSeconds = 90
     throw "Timed out waiting for $($Records.Count) parallel full-stack sessions."
 }
 
-if ($IsWindows -and [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULLSTACK_STATE_ROOT)) {
+$stateRootWasSet = Test-Path Env:NERV_IIP_FULLSTACK_STATE_ROOT
+$stateRootOriginal = [Environment]::GetEnvironmentVariable('NERV_IIP_FULLSTACK_STATE_ROOT', 'Process')
+if ($IsWindows -and [string]::IsNullOrWhiteSpace($stateRootOriginal)) {
     $env:NERV_IIP_FULLSTACK_STATE_ROOT = 'C:\nfs'
 }
 $stateRoot = Get-NervFullStackStateRoot
@@ -307,6 +309,12 @@ finally {
             Remove-AcceptanceWorktree -WorktreePath $record.WorktreePath -WorktreeParent $worktreeParent -Index $record.Index
         }
         catch { $cleanupFailures.Add("worktree $($record.Index): $($_.Exception.Message)") }
+    }
+    if ($stateRootWasSet) {
+        Set-Item Env:NERV_IIP_FULLSTACK_STATE_ROOT $stateRootOriginal
+    }
+    else {
+        Remove-Item Env:NERV_IIP_FULLSTACK_STATE_ROOT -ErrorAction SilentlyContinue
     }
 }
 
