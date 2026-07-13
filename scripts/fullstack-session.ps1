@@ -143,7 +143,7 @@ function Start-NervFullStackSession {
         [void] (Stop-NervFullStackSession -SessionId $staleSessionId)
     }
 
-    $createdManifest = Invoke-WithNervFullStackSessionLock -TimeoutSeconds 600 -ScriptBlock {
+    $createdManifest = Invoke-WithNervFullStackSessionLock -TimeoutSeconds 300 -ScriptBlock {
         $admission = Test-NervFullStackAdmission -WorktreeRoot $repoRoot
         if (-not $admission.Allowed) {
             throw "Full-stack session admission denied: $($admission.Reason) ($($admission.ActiveCount)/$($admission.MaximumSessions))."

@@ -42,7 +42,16 @@ function Wait-AcceptanceSessions([object[]] $Records, [int] $TimeoutSeconds = 90
         $pending = 0
         foreach ($record in $Records) {
             $manifestPath = Get-NervFullStackManifestPath -SessionId $record.SessionId
-            if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { $pending++; continue }
+            if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+                if ($null -ne $record.StartIdentity -and -not (Test-NervProcessIdentity -ProcessId $record.StartIdentity.Pid -ProcessStartTimeUtc $record.StartIdentity.ProcessStartTimeUtc)) {
+                    $stderr = if (Test-Path -LiteralPath $record.StderrPath -PathType Leaf) { Get-Content -LiteralPath $record.StderrPath -Raw } else { '' }
+                    $safeStderr = Protect-ScriptAutomationText -Text $stderr
+                    if ($safeStderr.Length -gt 2000) { $safeStderr = $safeStderr.Substring($safeStderr.Length - 2000) }
+                    throw "Acceptance start process for '$($record.SessionId)' exited before creating a manifest. $safeStderr"
+                }
+                $pending++
+                continue
+            }
             $manifest = Read-NervFullStackManifest -SessionId $record.SessionId
             if ("$($manifest.state)" -eq 'Failed' -or "$($manifest.state)" -eq 'CleanupFailed') {
                 throw "Acceptance session '$($record.SessionId)' entered $($manifest.state)."
@@ -87,6 +96,7 @@ try {
             SessionId = New-NervFullStackSessionId -WorktreeRoot $worktreePath
             AdminPassword = $null
             StartIdentity = $null
+            StderrPath = $null
             Manifest = $null
         }
         $records.Add($record)
@@ -122,6 +132,7 @@ try {
         finally { Remove-Item Env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD -ErrorAction SilentlyContinue }
         $record.AdminPassword = $adminPassword
         $record.StartIdentity = $startIdentity
+        $record.StderrPath = $stderrPath
     }
 
     Wait-AcceptanceSessions -Records @($records)
