@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -18,9 +17,6 @@ public static class CollectionHealthUniqueConflictDetector
             ICollectionHealthUniqueConstraintViolation => true,
             PostgresException postgres => postgres.SqlState == PostgresErrorCodes.UniqueViolation
                 && IsCollectionHealthConstraint(postgres.ConstraintName),
-            SqliteException sqlite => sqlite.SqliteErrorCode == 19
-                && (sqlite.Message.Contains(InstanceConstraint, StringComparison.Ordinal)
-                    || sqlite.Message.Contains(ScopeConstraint, StringComparison.Ordinal)),
             _ => false
         };
     }
