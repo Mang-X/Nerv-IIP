@@ -109,12 +109,16 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
     private IQueryable<SchedulePlan> QueryPlans(RecordSchedulePlanInvalidationsCommand request)
     {
         var normalizedScopeValue = Normalize(request.ScopeValue);
+        // Inline the invalidatable-status predicate: a custom method call (IsInvalidatableStatus) inside a
+        // Where cannot be translated to SQL and throws on relational providers (EF InMemory client-evaluates
+        // it, which is why unit tests missed this). Keep it as a translatable boolean expression.
         var query = dbContext.SchedulePlans
             .Include(x => x.Assignments)
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                IsInvalidatableStatus(x.Status));
+                (x.Status == SchedulePlanLifecycleStatus.Generated ||
+                    x.Status == SchedulePlanLifecycleStatus.Released));
 
         return request.Scope switch
         {
@@ -178,11 +182,6 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
 
         var selected = assignments.ToArray();
         return selected.Length == 0 ? plan.Assignments.ToArray() : selected;
-    }
-
-    private static bool IsInvalidatableStatus(SchedulePlanLifecycleStatus status)
-    {
-        return status is SchedulePlanLifecycleStatus.Generated or SchedulePlanLifecycleStatus.Released;
     }
 
     private static string Normalize(string? value)
