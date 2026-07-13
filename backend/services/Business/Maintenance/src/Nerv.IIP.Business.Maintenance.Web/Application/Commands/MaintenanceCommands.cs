@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -8,6 +7,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspection
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Domain;
+using Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Application.Commands;
@@ -265,16 +265,46 @@ public sealed class MarkMaintenanceWorkOrderAlarmClearedCommandHandler(Applicati
     }
 }
 
-public sealed record PauseMaintenancePlansForDeviceCommand(
+public sealed record ApplyMaintenanceDeviceStateCommand(
     string OrganizationId,
     string EnvironmentId,
-    string DeviceAssetId) : ICommand;
+    string DeviceAssetId,
+    bool Disabled,
+    DateTimeOffset ChangedAtUtc,
+    string SourceEventId) : ICommand;
 
-public sealed class PauseMaintenancePlansForDeviceCommandHandler(ApplicationDbContext dbContext)
-    : ICommandHandler<PauseMaintenancePlansForDeviceCommand>
+public sealed class ApplyMaintenanceDeviceStateCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<ApplyMaintenanceDeviceStateCommand>
 {
-    public async Task Handle(PauseMaintenancePlansForDeviceCommand request, CancellationToken cancellationToken)
+    public async Task Handle(ApplyMaintenanceDeviceStateCommand request, CancellationToken cancellationToken)
     {
+        var state = await dbContext.MaintenanceDeviceStates.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId,
+            cancellationToken);
+        var applied = state is null;
+        if (state is null)
+        {
+            state = MaintenanceDeviceState.Create(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.DeviceAssetId,
+                request.Disabled,
+                request.ChangedAtUtc,
+                request.SourceEventId);
+            dbContext.MaintenanceDeviceStates.Add(state);
+        }
+        else
+        {
+            applied = state.Apply(request.Disabled, request.ChangedAtUtc, request.SourceEventId);
+        }
+
+        if (!applied || !state.Disabled)
+        {
+            return;
+        }
+
         var plans = await dbContext.MaintenancePlans
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
@@ -289,6 +319,32 @@ public sealed class PauseMaintenancePlansForDeviceCommandHandler(ApplicationDbCo
     }
 }
 
+internal static class MaintenancePmCommandLockKeys
+{
+    public static string For(string organizationId, string environmentId)
+    {
+        return string.Join(':',
+            "business-maintenance",
+            "pm-generation",
+            Normalize(organizationId),
+            Normalize(environmentId));
+    }
+
+    private static string Normalize(string value)
+    {
+        return Uri.EscapeDataString(value.Trim().ToLowerInvariant());
+    }
+}
+
+public sealed class ApplyMaintenanceDeviceStateCommandLock : ICommandLock<ApplyMaintenanceDeviceStateCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(ApplyMaintenanceDeviceStateCommand command, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        return Task.FromResult(new CommandLockSettings(MaintenancePmCommandLockKeys.For(command.OrganizationId, command.EnvironmentId), 30));
+    }
+}
+
 public sealed record GenerateDueMaintenanceWorkOrdersCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -300,18 +356,8 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandLock : ICommandLock<G
     public Task<CommandLockSettings> GetLockKeysAsync(GenerateDueMaintenanceWorkOrdersCommand command, CancellationToken cancellationToken)
     {
         _ = cancellationToken;
-        var lockKey = string.Join(':',
-            "business-maintenance",
-            "pm-generation",
-            Normalize(command.OrganizationId),
-            Normalize(command.EnvironmentId),
-            command.BusinessDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture));
+        var lockKey = MaintenancePmCommandLockKeys.For(command.OrganizationId, command.EnvironmentId);
         return Task.FromResult(new CommandLockSettings(lockKey, 30));
-    }
-
-    private static string Normalize(string value)
-    {
-        return Uri.EscapeDataString(value.Trim().ToLowerInvariant());
     }
 }
 
@@ -341,6 +387,11 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => !x.Paused)
+            .Where(x => !dbContext.MaintenanceDeviceStates.Any(state =>
+                state.OrganizationId == x.OrganizationId
+                && state.EnvironmentId == x.EnvironmentId
+                && state.DeviceAssetId == x.DeviceAssetId
+                && state.Disabled))
             .Where(x => x.NextDueOn <= request.BusinessDate || x.RuntimeHourInterval != null)
             .OrderBy(x => x.DeviceAssetId)
             .ThenBy(x => x.PlanCode)
@@ -536,9 +587,29 @@ public sealed class CreateMaintenancePlanCommandHandler(
         var windowStartUtc = request.WindowStartUtc?.ToUniversalTime();
         var windowEndUtc = request.WindowEndUtc?.ToUniversalTime();
         var plan = MaintenancePlan.Create(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, allocation.Code, request.Interval, request.StartsOn, request.Owner, windowStartUtc, windowEndUtc, request.RuntimeHourInterval);
+        var deviceDisabled = await dbContext.MaintenanceDeviceStates.AnyAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId
+                && x.Disabled,
+            cancellationToken);
+        if (deviceDisabled)
+        {
+            plan.Pause();
+        }
+
         dbContext.MaintenancePlans.Add(plan);
         await Task.CompletedTask;
         return plan.Id;
+    }
+}
+
+public sealed class CreateMaintenancePlanCommandLock : ICommandLock<CreateMaintenancePlanCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(CreateMaintenancePlanCommand command, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        return Task.FromResult(new CommandLockSettings(MaintenancePmCommandLockKeys.For(command.OrganizationId, command.EnvironmentId), 30));
     }
 }
 

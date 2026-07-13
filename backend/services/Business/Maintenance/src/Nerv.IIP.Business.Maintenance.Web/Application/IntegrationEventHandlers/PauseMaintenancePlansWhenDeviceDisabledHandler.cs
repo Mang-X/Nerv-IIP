@@ -39,8 +39,14 @@ public sealed class PauseMaintenancePlansWhenDeviceDisabledHandler(
 
     private async Task HandleValidEventAsync(DeviceAssetChangedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
-        if (!string.Equals(integrationEvent.Payload.ResourceType, "device-asset", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(integrationEvent.Payload.Status, "disabled", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(integrationEvent.Payload.ResourceType, "device-asset", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var disabled = string.Equals(integrationEvent.Payload.Status, "disabled", StringComparison.OrdinalIgnoreCase);
+        var active = string.Equals(integrationEvent.Payload.Status, "active", StringComparison.OrdinalIgnoreCase);
+        if (!disabled && !active)
         {
             return;
         }
@@ -51,10 +57,13 @@ public sealed class PauseMaintenancePlansWhenDeviceDisabledHandler(
         }
 
         await sender.Send(
-            new PauseMaintenancePlansForDeviceCommand(
+            new ApplyMaintenanceDeviceStateCommand(
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
-                integrationEvent.Payload.Code),
+                integrationEvent.Payload.Code,
+                disabled,
+                integrationEvent.Payload.ChangedAtUtc,
+                integrationEvent.EventId),
             cancellationToken);
     }
 }

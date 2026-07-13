@@ -3,9 +3,11 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
+using Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
+using Nerv.IIP.Business.Maintenance.Web.Infrastructure;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.MasterData;
@@ -35,15 +37,17 @@ public sealed class MaintenanceIntegrationEventHandlerTests
 
         Assert.True(matching.Paused);
         Assert.False(otherDevice.Paused);
-        Assert.Equal(1, sender.PausePlansCommandCount);
+        Assert.Equal(1, sender.ApplyDeviceStateCommandCount);
         Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync());
+        Assert.True((await dbContext.MaintenanceDeviceStates.SingleAsync()).Disabled);
     }
 
     [Fact]
-    public async Task Device_changed_consumer_ignores_active_status()
+    public async Task Device_changed_consumer_projects_active_status_without_resuming_paused_plans()
     {
         await using var dbContext = CreateDbContext();
         var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-ACTIVE", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+        plan.Pause();
         dbContext.MaintenancePlans.Add(plan);
         await dbContext.SaveChangesAsync();
         var sender = new CommandOnlySender(dbContext);
@@ -51,9 +55,27 @@ public sealed class MaintenanceIntegrationEventHandlerTests
 
         await handler.HandleAsync(CreateDeviceAssetChangedEvent("active"), CancellationToken.None);
 
-        Assert.False(plan.Paused);
-        Assert.Equal(0, sender.PausePlansCommandCount);
-        Assert.Empty(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+        Assert.True(plan.Paused);
+        Assert.Equal(1, sender.ApplyDeviceStateCommandCount);
+        Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync());
+        Assert.False((await dbContext.MaintenanceDeviceStates.SingleAsync()).Disabled);
+    }
+
+    [Fact]
+    public async Task Device_changed_consumer_does_not_apply_older_active_event_after_disable()
+    {
+        await using var dbContext = CreateDbContext();
+        var sender = new CommandOnlySender(dbContext);
+        var handler = new PauseMaintenancePlansWhenDeviceDisabledHandler(sender, dbContext, new InMemoryIntegrationEventDeadLetterStore());
+        var disabledAtUtc = new DateTimeOffset(2026, 7, 13, 8, 0, 0, TimeSpan.Zero);
+
+        await handler.HandleAsync(CreateDeviceAssetChangedEvent("disabled", changedAtUtc: disabledAtUtc), CancellationToken.None);
+        await handler.HandleAsync(CreateDeviceAssetChangedEvent("active", eventId: "evt-device-older", changedAtUtc: disabledAtUtc.AddMinutes(-1)), CancellationToken.None);
+
+        var state = await dbContext.MaintenanceDeviceStates.SingleAsync();
+        Assert.True(state.Disabled);
+        Assert.Equal("evt-device-001", state.SourceEventId);
+        Assert.Equal(2, await dbContext.ProcessedIntegrationEvents.CountAsync());
     }
 
     [Fact]
@@ -65,8 +87,17 @@ public sealed class MaintenanceIntegrationEventHandlerTests
 
         await handler.HandleAsync(CreateDeviceAssetChangedEvent("disabled"), CancellationToken.None);
 
-        Assert.Equal(1, sender.PausePlansCommandCount);
+        Assert.Equal(1, sender.ApplyDeviceStateCommandCount);
         Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync());
+
+        var planId = await new CreateMaintenancePlanCommandHandler(dbContext).Handle(
+            new CreateMaintenancePlanCommand(
+                "org-001", "env-dev", "DEV-CNC-01", "PM-LATE", "P7D", new DateOnly(2026, 6, 1), "maintenance", null, null),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var latePlan = await dbContext.MaintenancePlans.SingleAsync(x => x.Id == planId);
+        Assert.True(latePlan.Paused);
     }
 
     [Fact]
@@ -116,6 +147,59 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         Assert.Equal(0, generation.GeneratedCount);
         Assert.Empty(await assertionContext.MaintenanceWorkOrders.ToArrayAsync());
         Assert.Equal(new DateOnly(2026, 6, 1), persistedPlan.NextDueOn);
+
+        assertionContext.MaintenancePlans.Add(MaintenancePlan.Create(
+            "org-001", "env-dev", "DEV-CNC-02", "PM-POSTGRES-RACE", "P7D", new DateOnly(2026, 6, 1), "maintenance"));
+        await assertionContext.SaveChangesAsync();
+
+        var applyCommand = new ApplyMaintenanceDeviceStateCommand(
+            "org-001", "env-dev", "DEV-CNC-02", true, DateTimeOffset.UtcNow, "evt-device-postgres-race");
+        var generateCommand = new GenerateDueMaintenanceWorkOrdersCommand(
+            "org-001", "env-dev", new DateOnly(2026, 6, 8), "system:pm");
+        var applyLock = await new ApplyMaintenanceDeviceStateCommandLock().GetLockKeysAsync(applyCommand, CancellationToken.None);
+        var generateLock = await new GenerateDueMaintenanceWorkOrdersCommandLock().GetLockKeysAsync(generateCommand, CancellationToken.None);
+        var sharedLockKey = applyLock.LockKey ?? throw new InvalidOperationException("Device-state command lock key is required.");
+        Assert.Equal(sharedLockKey, generateLock.LockKey);
+        var distributedLock = new RedisMaintenanceDistributedLock(new InMemoryRedisCommandLockStore(), TimeProvider.System);
+        var applyHasLock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowApplyCommit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var generationAttempted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var applyTask = Task.Run(async () =>
+        {
+            await using var handle = await distributedLock.AcquireAsync(sharedLockKey, TimeSpan.FromSeconds(5), CancellationToken.None);
+            applyHasLock.SetResult();
+            await allowApplyCommit.Task;
+            await using var applyContext = CreatePostgresDbContext(database.ConnectionString);
+            await new ApplyMaintenanceDeviceStateCommandHandler(applyContext).Handle(applyCommand, CancellationToken.None);
+            await applyContext.SaveChangesAsync();
+        });
+        await applyHasLock.Task;
+
+        var generateTask = Task.Run(async () =>
+        {
+            generationAttempted.SetResult();
+            await using var handle = await distributedLock.AcquireAsync(sharedLockKey, TimeSpan.FromSeconds(5), CancellationToken.None);
+            await using var generationContext = CreatePostgresDbContext(database.ConnectionString);
+            var result = await new GenerateDueMaintenanceWorkOrdersCommandHandler(generationContext).Handle(generateCommand, CancellationToken.None);
+            await generationContext.SaveChangesAsync();
+            return result;
+        });
+        await generationAttempted.Task;
+        await using (var blockedProbe = await distributedLock.TryAcquireAsync(sharedLockKey, TimeSpan.Zero, CancellationToken.None))
+        {
+            Assert.Null(blockedProbe);
+        }
+
+        allowApplyCommit.SetResult();
+        await applyTask;
+        var concurrentGeneration = await generateTask;
+
+        Assert.Equal(0, concurrentGeneration.GeneratedCount);
+        await using var raceAssertionContext = CreatePostgresDbContext(database.ConnectionString);
+        Assert.True((await raceAssertionContext.MaintenancePlans.SingleAsync(x => x.PlanCode == "PM-POSTGRES-RACE")).Paused);
+        Assert.True((await raceAssertionContext.MaintenanceDeviceStates.SingleAsync(x => x.DeviceAssetId == "DEV-CNC-02")).Disabled);
+        Assert.Empty(await raceAssertionContext.MaintenanceWorkOrders.ToArrayAsync());
     }
 
     [Fact]
@@ -324,10 +408,15 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         return CreateAlarmRaisedEvent("evt-alarm-001", "alarm-001", DateTimeOffset.UtcNow, eventVersion);
     }
 
-    private static DeviceAssetChangedIntegrationEvent CreateDeviceAssetChangedEvent(string status, int eventVersion = 1)
+    private static DeviceAssetChangedIntegrationEvent CreateDeviceAssetChangedEvent(
+        string status,
+        int eventVersion = 1,
+        string eventId = "evt-device-001",
+        DateTimeOffset? changedAtUtc = null)
     {
+        var effectiveChangedAtUtc = changedAtUtc ?? new DateTimeOffset(2026, 7, 13, 8, 0, 0, TimeSpan.Zero);
         return new DeviceAssetChangedIntegrationEvent(
-            "evt-device-001",
+            eventId,
             MasterDataIntegrationEventTypes.DeviceAssetChanged,
             eventVersion,
             new DateTimeOffset(2026, 7, 13, 8, 0, 0, TimeSpan.Zero),
@@ -337,8 +426,8 @@ public sealed class MaintenanceIntegrationEventHandlerTests
             "org-001",
             "env-dev",
             "user:masterdata-admin",
-            "masterdata:device-asset-changed:org-001:env-dev:DEV-CNC-01:evt-device-001",
-            new MasterDataChangedPayload("device-asset", "DEV-CNC-01", status, new DateTimeOffset(2026, 7, 13, 8, 0, 0, TimeSpan.Zero)));
+            $"masterdata:device-asset-changed:org-001:env-dev:DEV-CNC-01:{eventId}",
+            new MasterDataChangedPayload("device-asset", "DEV-CNC-01", status, effectiveChangedAtUtc));
     }
 
     private static AlarmRaisedIntegrationEvent CreateAlarmRaisedEvent(
@@ -412,7 +501,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     {
         public int CreateWorkOrderCommandCount { get; private set; }
         public int ClearAlarmCommandCount { get; private set; }
-        public int PausePlansCommandCount { get; private set; }
+        public int ApplyDeviceStateCommandCount { get; private set; }
 
         public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
@@ -438,9 +527,9 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
             where TRequest : IRequest
         {
-            if (request is PauseMaintenancePlansForDeviceCommand pauseCommand)
+            if (request is ApplyMaintenanceDeviceStateCommand deviceStateCommand)
             {
-                return SendPauseAsync(pauseCommand, cancellationToken);
+                return SendDeviceStateAsync(deviceStateCommand, cancellationToken);
             }
 
             if (request is MarkMaintenanceWorkOrderAlarmClearedCommand clearCommand)
@@ -451,10 +540,10 @@ public sealed class MaintenanceIntegrationEventHandlerTests
             throw new NotSupportedException($"Unsupported request type {request.GetType().Name}.");
         }
 
-        private async Task SendPauseAsync(PauseMaintenancePlansForDeviceCommand command, CancellationToken cancellationToken)
+        private async Task SendDeviceStateAsync(ApplyMaintenanceDeviceStateCommand command, CancellationToken cancellationToken)
         {
-            PausePlansCommandCount++;
-            var handler = new PauseMaintenancePlansForDeviceCommandHandler(dbContext);
+            ApplyDeviceStateCommandCount++;
+            var handler = new ApplyMaintenanceDeviceStateCommandHandler(dbContext);
             await handler.Handle(command, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
         }

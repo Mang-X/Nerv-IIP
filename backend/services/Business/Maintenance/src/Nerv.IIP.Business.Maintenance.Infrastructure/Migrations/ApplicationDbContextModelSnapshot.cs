@@ -664,6 +664,53 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents.MaintenanceDeviceState", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization boundary from the MasterData device event.");
+
+                    b.Property<string>("EnvironmentId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment boundary from the MasterData device event.");
+
+                    b.Property<string>("DeviceAssetId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("device_asset_id")
+                        .HasComment("MasterData device asset code referenced by Maintenance plans.");
+
+                    b.Property<DateTimeOffset>("ChangedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("changed_at_utc")
+                        .HasComment("UTC time of the latest accepted MasterData device status change.");
+
+                    b.Property<bool>("Disabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("disabled")
+                        .HasComment("Whether the latest accepted MasterData event marks the device disabled.");
+
+                    b.Property<string>("SourceEventId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("source_event_id")
+                        .HasComment("Latest accepted MasterData integration event identifier for traceability.");
+
+                    b.HasKey("OrganizationId", "EnvironmentId", "DeviceAssetId");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Disabled");
+
+                    b.ToTable("maintenance_device_states", "maintenance", t =>
+                        {
+                            t.HasComment("Latest MasterData device status projected for Maintenance scheduling gates.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents.ProcessedIntegrationEvent", b =>
                 {
                     b.Property<Guid>("Id")

@@ -13,14 +13,21 @@ namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 public sealed class MaintenanceCommandLockTests
 {
     [Fact]
-    public async Task Generate_due_pm_command_declares_org_env_business_date_lock_key()
+    public async Task Device_state_plan_creation_and_pm_generation_share_org_environment_lock_key()
     {
-        var command = new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 8), "system:pm");
-        var commandLock = new GenerateDueMaintenanceWorkOrdersCommandLock();
+        var generateSettings = await new GenerateDueMaintenanceWorkOrdersCommandLock().GetLockKeysAsync(
+            new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 8), "system:pm"),
+            CancellationToken.None);
+        var stateSettings = await new ApplyMaintenanceDeviceStateCommandLock().GetLockKeysAsync(
+            new ApplyMaintenanceDeviceStateCommand("org-001", "env-dev", "DEV-CNC-01", true, DateTimeOffset.UtcNow, "evt-device-001"),
+            CancellationToken.None);
+        var createSettings = await new CreateMaintenancePlanCommandLock().GetLockKeysAsync(
+            new CreateMaintenancePlanCommand("org-001", "env-dev", "DEV-CNC-01", "PM-001", "P7D", new DateOnly(2026, 6, 1), "maintenance", null, null),
+            CancellationToken.None);
 
-        var settings = await commandLock.GetLockKeysAsync(command, CancellationToken.None);
-
-        Assert.Equal("business-maintenance:pm-generation:org-001:env-dev:20260608", settings.LockKey);
+        Assert.Equal("business-maintenance:pm-generation:org-001:env-dev", generateSettings.LockKey);
+        Assert.Equal(generateSettings.LockKey, stateSettings.LockKey);
+        Assert.Equal(generateSettings.LockKey, createSettings.LockKey);
     }
 
     [Fact]
