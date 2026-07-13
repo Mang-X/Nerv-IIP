@@ -23,6 +23,26 @@ $inspectObjects = @(Get-Content -LiteralPath $fixturePath -Raw | ConvertFrom-Jso
 $recordedContainerIds = @('owned-container-id', 'unlabeled-container-id')
 $startFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-start.json'
 $describeFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-describe.json'
+$parallelAcceptanceScript = Join-Path $repoRoot 'scripts/verify-parallel-fullstack-isolation.ps1'
+Assert-True (Test-Path -LiteralPath $parallelAcceptanceScript -PathType Leaf) 'Parallel full-stack acceptance entrypoint is missing.'
+$parallelAcceptanceText = Get-Content -LiteralPath $parallelAcceptanceScript -Raw
+foreach ($requiredText in @(
+    '# Script-Governance:',
+    '[ValidateRange(2, 3)]',
+    'Get-NervFullStackStateRoot',
+    'fullstack-worktrees',
+    'scripts/setup-worktree.ps1',
+    'Invoke-PwshScript',
+    'finally',
+    'git',
+    'worktree',
+    'remove'
+)) {
+    Assert-True ($parallelAcceptanceText.Contains($requiredText)) "Parallel acceptance script is missing '$requiredText'."
+}
+$parseErrors = $null
+[void] [System.Management.Automation.Language.Parser]::ParseFile($parallelAcceptanceScript, [ref] $null, [ref] $parseErrors)
+Assert-True (@($parseErrors).Count -eq 0) 'Parallel acceptance script must parse successfully.'
 
 $start = Read-NervAspireJson -Text (Get-Content -LiteralPath $startFixture -Raw)
 $describe = Read-NervAspireJson -Text (Get-Content -LiteralPath $describeFixture -Raw)

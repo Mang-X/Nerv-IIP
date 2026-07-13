@@ -78,10 +78,15 @@ function Get-NervFullStackContainerRecords {
         -WorkingDirectory $repoRoot `
         -Name "fullstack-$OwnedSessionId-container-discovery-inspect")
     return @($objects | ForEach-Object {
+        $containerName = "$($_.Name)".TrimStart('/')
+        $resourceName = @('postgres', 'redis', 'minio', 'victoria-logs') |
+            Where-Object { $containerName.StartsWith("$_-", [StringComparison]::Ordinal) } |
+            Select-Object -First 1
+        if ([string]::IsNullOrWhiteSpace($resourceName)) { $resourceName = $containerName }
         [ordered]@{
-            resourceName = "$($_.Name)".TrimStart('/')
+            resourceName = $resourceName
             id = "$($_.Id)"
-            name = "$($_.Name)".TrimStart('/')
+            name = $containerName
         }
     })
 }
