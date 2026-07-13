@@ -274,6 +274,11 @@ public interface IBusinessQualityClient
         BusinessConsoleCreateInspectionRecordFromTaskRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleQualityInspectionPlanCharacteristicListResponse> GetInspectionPlanCharacteristicsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityInspectionPlanCharacteristicsRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleOpenNcrFromInspectionResponse> OpenNcrFromInspectionAsync(
         string internalBearerToken,
         string inspectionRecordId,
@@ -2526,6 +2531,46 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 request.DispositionAttachmentFileIds),
             cancellationToken);
 
+    public async Task<BusinessConsoleQualityInspectionPlanCharacteristicListResponse> GetInspectionPlanCharacteristicsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityInspectionPlanCharacteristicsRequest request,
+        CancellationToken cancellationToken)
+    {
+        // The Quality inspection-plans list already resolves a single plan (with characteristics)
+        // by id via its keyword filter; no dedicated detail endpoint is needed.
+        var response = await SendAsync<DownstreamInspectionPlanListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/quality/inspection-plans?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("keyword", request.InspectionPlanId),
+                ("skip", 0),
+                ("take", 1)),
+            null,
+            cancellationToken);
+        var plan = response.Items.FirstOrDefault(x =>
+                string.Equals(x.InspectionPlanId, request.InspectionPlanId, StringComparison.OrdinalIgnoreCase))
+            ?? response.Items.FirstOrDefault();
+        var items = (plan?.Characteristics ?? [])
+            .Select(c => new BusinessConsoleInspectionPlanCharacteristicItem(
+                c.CharacteristicCode,
+                c.Name,
+                c.CharacteristicType,
+                c.Required,
+                c.NominalValue,
+                c.LowerSpecLimit,
+                c.UpperSpecLimit,
+                c.UnitCode))
+            .ToArray();
+        return new BusinessConsoleQualityInspectionPlanCharacteristicListResponse(
+            request.InspectionPlanId,
+            plan?.PlanCode,
+            plan?.Category,
+            plan?.SkuCode,
+            items);
+    }
+
     public async Task<BusinessConsoleQualityListResponse> ListInspectionRecordsAsync(
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,
@@ -2911,7 +2956,18 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string? DeviceAssetId,
         string? DocumentType,
         int Version,
-        string Status);
+        string Status,
+        IReadOnlyCollection<DownstreamInspectionPlanCharacteristic>? Characteristics);
+
+    private sealed record DownstreamInspectionPlanCharacteristic(
+        string CharacteristicCode,
+        string Name,
+        string CharacteristicType,
+        bool Required,
+        decimal? NominalValue,
+        decimal? LowerSpecLimit,
+        decimal? UpperSpecLimit,
+        string? UnitCode);
 
     private sealed record DownstreamInspectionRecordItem(
         string InspectionRecordId,

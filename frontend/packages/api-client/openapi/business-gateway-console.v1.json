@@ -3975,6 +3975,74 @@
         ]
       }
     },
+    "/api/business-console/v1/quality/inspection-plans/{inspectionPlanId}/characteristics": {
+      "get": {
+        "tags": [
+          "Business Console Quality",
+          "Api"
+        ],
+        "operationId": "listBusinessConsoleQualityInspectionPlanCharacteristics",
+        "parameters": [
+          {
+            "name": "inspectionPlanId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityInspectionPlanCharacteristicListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/quality/ncrs": {
       "get": {
         "tags": [
@@ -27165,6 +27233,95 @@
             }
           }
         }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityInspectionPlanCharacteristicListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanCharacteristicListResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanCharacteristicListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inspectionPlanId": {
+            "type": "string"
+          },
+          "planCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "category": {
+            "type": "string",
+            "nullable": true
+          },
+          "skuCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionPlanCharacteristicItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionPlanCharacteristicItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "characteristicCode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "characteristicType": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "nominalValue": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "lowerSpecLimit": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "upperSpecLimit": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "unitCode": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanCharacteristicsRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualitySpcControlChartResponse": {
         "allOf": [

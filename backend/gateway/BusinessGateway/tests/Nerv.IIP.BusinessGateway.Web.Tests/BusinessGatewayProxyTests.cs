@@ -6388,6 +6388,28 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         return Task.FromResult(new BusinessConsoleCreateInspectionRecordResponse("inspection-from-task-001"));
     }
 
+    public BusinessConsoleQualityInspectionPlanCharacteristicsRequest? LastInspectionPlanCharacteristicsRequest { get; private set; }
+
+    public Task<BusinessConsoleQualityInspectionPlanCharacteristicListResponse> GetInspectionPlanCharacteristicsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityInspectionPlanCharacteristicsRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastInspectionPlanCharacteristicsRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityInspectionPlanCharacteristicListResponse(
+            request.InspectionPlanId,
+            "QP-RM-1000",
+            "receiving",
+            "SKU-RM-1000",
+            [
+                new BusinessConsoleInspectionPlanCharacteristicItem(
+                    "od", "外径", "variable", true, 10.0m, 9.9m, 10.1m, "mm"),
+                new BusinessConsoleInspectionPlanCharacteristicItem(
+                    "appearance", "外观", "attribute", true, null, null, null, null),
+            ]));
+    }
+
     public Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,

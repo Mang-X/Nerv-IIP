@@ -1,15 +1,17 @@
 import {
   createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions,
+  listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions,
   listBusinessConsoleQualityInspectionTasksQueryOptions,
   listBusinessConsoleQualityReasonCodesQueryOptions,
   type BusinessConsoleInspectionCharacteristicResult,
+  type BusinessConsoleInspectionPlanCharacteristicItem,
   type BusinessConsoleQualityInspectionTaskItem,
   type BusinessConsoleQualityReasonItem,
 } from '@nerv-iip/api-client'
 import type { QualityCharacteristicResultLine as ResultLine } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 
 const DEFAULT_TAKE = 100
 
@@ -163,5 +165,45 @@ export function useBusinessQualityInspectionTasks() {
     submitInspection,
     submitPending: submitMutation.isLoading,
     scopeReady,
+  }
+}
+
+/**
+ * 选中任务后按其 `inspectionPlanId` 懒加载检验计划特性（MAN-457 反馈：检验特性「可选可搜」、
+ * 单位「直接匹配特性」）。特性来自计划本身（code/name/类型 variable-attribute/公差/单位），
+ * 因此录入端选到的特性码必然与计划匹配（提交不会漏特性），超差也用计划的权威公差判定。
+ *
+ * facade：`GET /quality/inspection-plans/{id}/characteristics`。planId 为空时不发请求。
+ */
+export function useInspectionPlanCharacteristics(planId: MaybeRefOrGetter<string | undefined>) {
+  const auth = useAuthStore()
+  const organizationId = computed(() => auth.principal?.organizationId ?? '')
+  const environmentId = computed(() => auth.principal?.environmentId ?? '')
+  const resolvedPlanId = computed(() => (toValue(planId) ?? '').trim())
+  const enabled = computed(() =>
+    Boolean(organizationId.value && environmentId.value && resolvedPlanId.value),
+  )
+
+  const query = useQuery(() => ({
+    ...listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions({
+      path: { inspectionPlanId: resolvedPlanId.value },
+      query: {
+        organizationId: organizationId.value,
+        environmentId: environmentId.value,
+      },
+    }),
+    enabled: enabled.value,
+  }))
+
+  const characteristics = computed<BusinessConsoleInspectionPlanCharacteristicItem[]>(() => {
+    const envelope = query.data.value
+    if (!envelope?.success) return []
+    return envelope.data?.items ?? []
+  })
+
+  return {
+    characteristics,
+    pending: query.isLoading,
+    error: query.error,
   }
 }

@@ -1159,6 +1159,28 @@ public sealed record BusinessConsoleCreateInspectionRecordFromTaskRequest(
     string? DispositionReason,
     IReadOnlyCollection<string>? DispositionAttachmentFileIds);
 
+public sealed record BusinessConsoleQualityInspectionPlanCharacteristicsRequest(
+    [property: RouteParam] string InspectionPlanId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleInspectionPlanCharacteristicItem(
+    string CharacteristicCode,
+    string Name,
+    string CharacteristicType,
+    bool Required,
+    decimal? NominalValue,
+    decimal? LowerSpecLimit,
+    decimal? UpperSpecLimit,
+    string? UnitCode);
+
+public sealed record BusinessConsoleQualityInspectionPlanCharacteristicListResponse(
+    string InspectionPlanId,
+    string? PlanCode,
+    string? Category,
+    string? SkuCode,
+    IReadOnlyCollection<BusinessConsoleInspectionPlanCharacteristicItem> Items);
+
 public sealed record BusinessConsoleOpenNcrFromInspectionRequest(
     [property: RouteParam] string InspectionRecordId,
     [property: QueryParam] string OrganizationId,

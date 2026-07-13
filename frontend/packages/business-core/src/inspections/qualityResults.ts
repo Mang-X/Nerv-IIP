@@ -17,8 +17,18 @@ import { parseOptionalNumber, parseRequiredNumber } from './measurements'
 
 export type CharacteristicResultKind = 'measured' | 'count'
 
-/** 检验结果 code（对齐 Quality `InspectionCharacteristicResult.Result`）。 */
+/** 录入端内部结果口径（UI 逻辑/判定用）。 */
 export type CharacteristicResult = 'pass' | 'fail'
+
+/**
+ * 提交到后端的检验行结果 code——**对齐 Quality 领域 `InspectionLineResults`
+ * （`passed` / `failed`）**，与录入端内部的 `pass` / `fail` 不同，提交前经 {@link toResultCode} 归一。
+ */
+export type InspectionLineResultCode = 'passed' | 'failed'
+
+function toResultCode(result: CharacteristicResult): InspectionLineResultCode {
+  return result === 'pass' ? 'passed' : 'failed'
+}
 
 /** 表单编辑中的特性结果行（数值字段以字符串/数字承载，便于 <input>/NumberKeyboard 双向绑定）。 */
 export interface QualityCharacteristicDraftRow {
@@ -40,7 +50,7 @@ export interface QualityCharacteristicResultLine {
   characteristicCode: string
   observedValue: string
   unitCode: string | null
-  result: CharacteristicResult
+  result: InspectionLineResultCode
   defectReason: string | null
   defectQuantity: number | null
   measuredValue: number | null
@@ -143,6 +153,8 @@ export function toQualityCharacteristicResultLines(
   return rows.map((row) => {
     const characteristicCode = String(row.characteristicCode).trim()
     const result = characteristicRowResult(row) ?? 'pass'
+    // 提交 code 用后端 InspectionLineResults 口径（passed/failed），不是内部 pass/fail。
+    const resultCode = toResultCode(result)
     if (row.kind === 'measured') {
       const measured = parseRequiredNumber(row.measuredValue).value
       const uom = String(row.uomCode).trim()
@@ -150,7 +162,7 @@ export function toQualityCharacteristicResultLines(
         characteristicCode,
         observedValue: measured === null ? '' : String(measured),
         unitCode: uom === '' ? null : uom,
-        result,
+        result: resultCode,
         defectReason: null,
         defectQuantity: null,
         measuredValue: measured,
@@ -161,7 +173,7 @@ export function toQualityCharacteristicResultLines(
       characteristicCode,
       observedValue: result === 'pass' ? '合格' : '不合格',
       unitCode: null,
-      result,
+      result: resultCode,
       defectReason: result === 'fail' && defectReason !== '' ? defectReason : null,
       defectQuantity: result === 'fail' ? parseOptionalNumber(row.defectQuantity).value : null,
       measuredValue: null,

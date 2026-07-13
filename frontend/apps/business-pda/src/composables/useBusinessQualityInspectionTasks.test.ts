@@ -22,6 +22,10 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleQualityReasonCodes' }],
     query: vi.fn(),
   })),
+  listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleQualityInspectionPlanCharacteristics' }],
+    query: vi.fn(),
+  })),
   createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions: vi.fn(() => ({
     mutation: vi.fn(),
   })),
@@ -71,7 +75,7 @@ const LINES = [
     characteristicCode: '外径',
     observedValue: '10.5',
     unitCode: 'mm',
-    result: 'fail' as const,
+    result: 'failed' as const,
     defectReason: null,
     defectQuantity: null,
     measuredValue: 10.5,

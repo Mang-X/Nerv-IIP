@@ -1347,6 +1347,33 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     dispositionAttachmentFileIds?: Array<string> | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityInspectionPlanCharacteristicListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanCharacteristicListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanCharacteristicListResponse = {
+    inspectionPlanId?: string;
+    planCode?: string | null;
+    category?: string | null;
+    skuCode?: string | null;
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionPlanCharacteristicItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionPlanCharacteristicItem = {
+    characteristicCode?: string;
+    name?: string;
+    characteristicType?: string;
+    required?: boolean;
+    nominalValue?: number | null;
+    lowerSpecLimit?: number | null;
+    upperSpecLimit?: number | null;
+    unitCode?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionPlanCharacteristicsRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualitySpcControlChartResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcControlChartResponse | null;
 };
@@ -7740,6 +7767,44 @@ export type CreateBusinessConsoleQualityInspectionRecordFromTaskResponses = {
 };
 
 export type CreateBusinessConsoleQualityInspectionRecordFromTaskResponse = CreateBusinessConsoleQualityInspectionRecordFromTaskResponses[keyof CreateBusinessConsoleQualityInspectionRecordFromTaskResponses];
+
+export type ListBusinessConsoleQualityInspectionPlanCharacteristicsData = {
+    body?: never;
+    path: {
+        inspectionPlanId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/quality/inspection-plans/{inspectionPlanId}/characteristics';
+};
+
+export type ListBusinessConsoleQualityInspectionPlanCharacteristicsErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleQualityInspectionPlanCharacteristicsError = ListBusinessConsoleQualityInspectionPlanCharacteristicsErrors[keyof ListBusinessConsoleQualityInspectionPlanCharacteristicsErrors];
+
+export type ListBusinessConsoleQualityInspectionPlanCharacteristicsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityInspectionPlanCharacteristicListResponse;
+};
+
+export type ListBusinessConsoleQualityInspectionPlanCharacteristicsResponse = ListBusinessConsoleQualityInspectionPlanCharacteristicsResponses[keyof ListBusinessConsoleQualityInspectionPlanCharacteristicsResponses];
 
 export type ListBusinessConsoleQualityNcrsData = {
     body?: never;

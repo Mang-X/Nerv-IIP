@@ -3519,7 +3519,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "listBusinessConsoleQualityInspectionPlans"
+        "listBusinessConsoleQualityInspectionPlans",
+        "listBusinessConsoleQualityInspectionPlanCharacteristics"
       ]
     },
     {

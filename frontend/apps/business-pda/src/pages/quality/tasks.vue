@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
+import type {
+  BusinessConsoleInspectionPlanCharacteristicItem,
+  BusinessConsoleQualityInspectionTaskItem,
+} from '@nerv-iip/api-client'
 import {
   characteristicRowOutOfTolerance,
   createQualityCharacteristicDraft,
@@ -9,26 +12,31 @@ import {
   qualityInspectionOverallVerdict,
   qualityInspectionTaskFlow,
   toQualityCharacteristicResultLines,
-  type CharacteristicResultKind,
   type QualityCharacteristicDraftRow,
   type QualityInspectionTaskCtx,
 } from '@nerv-iip/business-core'
 import {
   NvAppShellMobile,
+  NvBottomSheet,
   NvListRow,
   NvMobileButton,
-  NvMobileInput,
   NvMobileResult,
   NvMobileTag,
   NvNumberKeyboard,
   NvPicker,
   NvScanBar,
+  NvSearchBar,
   type PickerOption,
 } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import RetryableListError from '@/components/RetryableListError.vue'
-import { useBusinessQualityInspectionTasks } from '@/composables/useBusinessQualityInspectionTasks'
+import {
+  useBusinessQualityInspectionTasks,
+  useInspectionPlanCharacteristics,
+} from '@/composables/useBusinessQualityInspectionTasks'
+
+type PlanCharacteristic = BusinessConsoleInspectionPlanCharacteristicItem
 
 definePage({
   meta: {
@@ -40,6 +48,8 @@ definePage({
 type Task = BusinessConsoleQualityInspectionTaskItem
 interface DraftRow extends QualityCharacteristicDraftRow {
   id: number
+  /** 特性中文名（来自计划，仅展示）。 */
+  name: string
 }
 
 const router = useRouter()
@@ -68,6 +78,10 @@ const result = ref<ResultState | null>(null)
 const selectedTask = ref<Task | null>(null)
 const scanKeyword = ref('')
 const sourceTypeFilter = ref<string | null>(null)
+
+// 选中任务的检验计划特性（「可选可搜」的数据源；单位/公差/类型由此直接匹配特性）。
+const { characteristics: planCharacteristics, pending: planCharacteristicsPending } =
+  useInspectionPlanCharacteristics(computed(() => selectedTask.value?.inspectionPlanId))
 
 // 当前处于列表步（无选中任务、无结果浮层）：ScanBar 抢焦点仅在此。
 const inListStep = computed(() => selectedTask.value === null && result.value === null)
@@ -129,7 +143,7 @@ function pickSourceType(type: string | null) {
   sourceTypeFilter.value = type
 }
 
-// --- 逐特性录结果 ---------------------------------------------------------------
+// --- 逐特性录结果（特性来自检验计划，可选可搜；单位/公差/类别自动匹配特性）---------
 let nextRowId = 1
 const rows = reactive<DraftRow[]>([])
 
@@ -137,12 +151,34 @@ function resetRows() {
   rows.splice(0, rows.length)
   nextRowId = 1
 }
-function addRow(kind: CharacteristicResultKind) {
-  rows.push({ id: nextRowId++, ...createQualityCharacteristicDraft(kind) })
-}
 function removeRow(id: number) {
   const index = rows.findIndex((r) => r.id === id)
   if (index >= 0) rows.splice(index, 1)
+}
+
+// 计划特性类型 → 录入行类别（variable 计量 / attribute 计数）。
+function kindOfCharacteristic(c: PlanCharacteristic) {
+  return c.characteristicType === 'attribute' ? 'count' : 'measured'
+}
+// 从计划特性构造一行：特性码/名/单位/公差/类别全部来自计划（不手输），超差用计划公差判定。
+function rowFromCharacteristic(c: PlanCharacteristic): DraftRow {
+  return {
+    id: nextRowId++,
+    ...createQualityCharacteristicDraft(kindOfCharacteristic(c)),
+    characteristicCode: c.characteristicCode ?? '',
+    name: c.name ?? c.characteristicCode ?? '',
+    uomCode: c.unitCode ?? '',
+    lowerSpecLimit: c.lowerSpecLimit ?? '',
+    upperSpecLimit: c.upperSpecLimit ?? '',
+  }
+}
+function addCharacteristic(c: PlanCharacteristic) {
+  const code = c.characteristicCode ?? ''
+  if (!code || rows.some((r) => r.characteristicCode === code)) return
+  rows.push(rowFromCharacteristic(c))
+}
+function addAllCharacteristics() {
+  for (const c of planCharacteristics.value) addCharacteristic(c)
 }
 
 const allValid = computed(() => qualityCharacteristicRowsValid(rows))
@@ -159,12 +195,42 @@ const progress = computed(() => qualityInspectionTaskFlow.progress(liveCtx.value
 function selectTask(task: Task) {
   selectedTask.value = task
   resetRows()
-  // 默认给一行计量特性，减少空态点击成本。
-  addRow('measured')
+  // 特性由计划驱动，随计划特性加载后再选；不预置空行。
 }
 function backToList() {
   selectedTask.value = null
   resetRows()
+}
+
+// --- 检验特性选择器（可选可搜，数据源=计划特性，排除已添加）------------------------
+const charPicker = reactive<{ open: boolean }>({ open: false })
+const charSearch = ref('')
+const availableCharacteristics = computed<PlanCharacteristic[]>(() => {
+  const added = new Set(rows.map((r) => r.characteristicCode))
+  const kw = charSearch.value.trim().toLowerCase()
+  return planCharacteristics.value.filter((c) => {
+    const code = c.characteristicCode ?? ''
+    if (!code || added.has(code)) return false
+    if (!kw) return true
+    return (c.name ?? '').toLowerCase().includes(kw) || code.toLowerCase().includes(kw)
+  })
+})
+function openCharPicker() {
+  charSearch.value = ''
+  charPicker.open = true
+}
+function pickCharacteristic(c: PlanCharacteristic) {
+  addCharacteristic(c)
+  charPicker.open = false
+}
+
+// 计量特性的规格范围展示（来自计划，只读）。
+function specRangeText(row: DraftRow) {
+  const lo = row.lowerSpecLimit === '' ? null : row.lowerSpecLimit
+  const hi = row.upperSpecLimit === '' ? null : row.upperSpecLimit
+  const unit = row.uomCode ? ` ${row.uomCode}` : ''
+  if (lo === null && hi === null) return `不限${unit}`
+  return `${lo ?? '-∞'} ~ ${hi ?? '+∞'}${unit}`
 }
 
 // --- 数字键盘（计量测量值 / 计数不良数共用一个实例）-------------------------------
@@ -566,78 +632,50 @@ function taskSubtitle(task: Task) {
           "
         >
           <div class="flex items-center justify-between gap-2">
-            <NvMobileTag :variant="row.kind === 'measured' ? 'default' : 'warning'">
-              {{ row.kind === 'measured' ? '计量' : '计数' }}
-            </NvMobileTag>
+            <div class="flex min-w-0 items-center gap-2">
+              <NvMobileTag :variant="row.kind === 'measured' ? 'default' : 'warning'">
+                {{ row.kind === 'measured' ? '计量' : '计数' }}
+              </NvMobileTag>
+              <span data-testid="char-name" class="truncate text-base font-medium text-foreground">
+                {{ row.name || row.characteristicCode }}
+              </span>
+            </div>
             <button
               type="button"
               data-testid="remove-char"
-              class="text-sm text-muted-foreground"
+              class="shrink-0 text-sm text-muted-foreground"
               @click="removeRow(row.id)"
             >
               移除
             </button>
           </div>
 
-          <label class="block space-y-1">
-            <span class="text-xs text-muted-foreground">检验特性</span>
-            <NvMobileInput
-              v-model="row.characteristicCode"
-              data-testid="char-code"
-              placeholder="如 外径 / 外观"
-            />
-          </label>
-
-          <!-- 计量特性：测量值（数字键盘）+ 单位 + 上下限 → 超差即时红警示 -->
+          <!-- 计量特性：测量值（数字键盘）；单位/规格公差来自计划（只读）→ 超差即时红警示 -->
           <template v-if="row.kind === 'measured'">
-            <div class="grid grid-cols-2 gap-2">
-              <label class="space-y-1">
-                <span class="text-xs text-muted-foreground">测量值</span>
-                <button
-                  type="button"
-                  data-testid="measured-value"
-                  class="min-h-touch flex w-full items-center rounded-lg border bg-background px-3 text-base text-foreground"
-                  :class="
-                    characteristicRowOutOfTolerance(row) ? 'border-destructive' : 'border-border'
-                  "
-                  @click="openKeyboard(row.id, 'measuredValue')"
-                >
-                  {{ row.measuredValue === '' ? '点击录入' : row.measuredValue }}
-                </button>
-              </label>
-              <label class="space-y-1">
-                <span class="text-xs text-muted-foreground">单位</span>
-                <NvMobileInput v-model="row.uomCode" data-testid="uom" placeholder="如 mm" />
-              </label>
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-              <label class="space-y-1">
-                <span class="text-xs text-muted-foreground">下限</span>
-                <NvMobileInput
-                  v-model="row.lowerSpecLimit"
-                  data-testid="lower"
-                  type="number"
-                  inputmode="decimal"
-                  placeholder="可选"
-                />
-              </label>
-              <label class="space-y-1">
-                <span class="text-xs text-muted-foreground">上限</span>
-                <NvMobileInput
-                  v-model="row.upperSpecLimit"
-                  data-testid="upper"
-                  type="number"
-                  inputmode="decimal"
-                  placeholder="可选"
-                />
-              </label>
+            <label class="block space-y-1">
+              <span class="text-xs text-muted-foreground">测量值{{ row.uomCode ? `（${row.uomCode}）` : '' }}</span>
+              <button
+                type="button"
+                data-testid="measured-value"
+                class="min-h-touch flex w-full items-center rounded-lg border bg-background px-3 text-base text-foreground"
+                :class="
+                  characteristicRowOutOfTolerance(row) ? 'border-destructive' : 'border-border'
+                "
+                @click="openKeyboard(row.id, 'measuredValue')"
+              >
+                {{ row.measuredValue === '' ? '点击录入' : row.measuredValue }}
+              </button>
+            </label>
+            <div class="flex items-center justify-between text-xs text-muted-foreground">
+              <span>规格公差</span>
+              <span data-testid="spec-range" class="text-foreground">{{ specRangeText(row) }}</span>
             </div>
             <p
               v-if="characteristicRowOutOfTolerance(row)"
               data-testid="out-of-tolerance"
               class="text-sm font-medium text-destructive"
             >
-              超差：测量值越出规格限
+              超差：测量值越出规格公差
             </p>
           </template>
 
@@ -698,18 +736,42 @@ function taskSubtitle(task: Task) {
           </template>
         </div>
 
-        <div class="grid grid-cols-2 gap-2">
-          <NvMobileButton variant="outline" data-testid="add-measured" @click="addRow('measured')">
-            + 计量特性
-          </NvMobileButton>
-          <NvMobileButton variant="outline" data-testid="add-count" @click="addRow('count')">
-            + 计数特性
-          </NvMobileButton>
+        <div
+          v-if="planCharacteristicsPending"
+          class="px-4 py-4 text-center text-sm text-muted-foreground"
+        >
+          加载检验计划特性中…
         </div>
-
-        <p v-if="rows.length === 0" class="text-sm text-muted-foreground">
-          请添加至少一条检验特性并录入结果。
-        </p>
+        <div
+          v-else-if="planCharacteristics.length === 0"
+          data-testid="no-plan-characteristics"
+          class="rounded-lg border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground"
+        >
+          该检验计划未配置检验特性。
+        </div>
+        <template v-else>
+          <div class="grid grid-cols-2 gap-2">
+            <NvMobileButton
+              variant="primary"
+              data-testid="add-characteristic"
+              :disabled="availableCharacteristics.length === 0"
+              @click="openCharPicker"
+            >
+              + 添加检验特性
+            </NvMobileButton>
+            <NvMobileButton
+              variant="outline"
+              data-testid="add-all-characteristics"
+              :disabled="availableCharacteristics.length === 0"
+              @click="addAllCharacteristics"
+            >
+              全部添加
+            </NvMobileButton>
+          </div>
+          <p v-if="rows.length === 0" class="text-sm text-muted-foreground">
+            从检验计划中选择检验特性并录入结果。
+          </p>
+        </template>
       </section>
 
       <button
@@ -740,5 +802,42 @@ function taskSubtitle(task: Task) {
 
     <!-- 原因码 Picker -->
     <NvPicker v-model="reasonPickerValue" v-model:open="reasonPicker.open" :options="reasonOptions" title="选择原因码" />
+
+    <!-- 检验特性选择器（可选可搜，来自检验计划）-->
+    <NvBottomSheet :open="charPicker.open" title="选择检验特性" @update:open="charPicker.open = $event">
+      <div class="space-y-3 pb-2">
+        <NvSearchBar v-model="charSearch" placeholder="搜索特性名 / 编码" />
+        <div
+          v-if="availableCharacteristics.length === 0"
+          class="px-4 py-6 text-center text-sm text-muted-foreground"
+        >
+          无匹配的检验特性
+        </div>
+        <div v-else class="max-h-[50vh] overflow-y-auto rounded-lg border border-border">
+          <button
+            v-for="c in availableCharacteristics"
+            :key="c.characteristicCode"
+            type="button"
+            data-testid="char-option"
+            class="flex min-h-touch w-full items-center justify-between gap-3 border-b border-border px-4 py-3 text-left last:border-b-0 active:bg-accent"
+            @click="pickCharacteristic(c)"
+          >
+            <span class="min-w-0">
+              <span class="block truncate text-base font-medium text-foreground">
+                {{ c.name || c.characteristicCode }}
+              </span>
+              <span class="block truncate text-xs text-muted-foreground">
+                {{ c.characteristicCode }} ·
+                {{ c.characteristicType === 'attribute' ? '计数' : '计量' }}
+                <template v-if="c.unitCode">· {{ c.unitCode }}</template>
+              </span>
+            </span>
+            <NvMobileTag :variant="c.characteristicType === 'attribute' ? 'warning' : 'default'">
+              {{ c.characteristicType === 'attribute' ? '计数' : '计量' }}
+            </NvMobileTag>
+          </button>
+        </div>
+      </div>
+    </NvBottomSheet>
   </NvAppShellMobile>
 </template>

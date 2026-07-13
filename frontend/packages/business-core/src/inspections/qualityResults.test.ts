@@ -144,7 +144,7 @@ describe('toQualityCharacteristicResultLines', () => {
       characteristicCode: '外径',
       observedValue: '10.5',
       unitCode: 'mm',
-      result: 'fail',
+      result: 'failed',
       defectReason: null,
       defectQuantity: null,
       measuredValue: 10.5,
@@ -157,7 +157,7 @@ describe('toQualityCharacteristicResultLines', () => {
     ])
     expect(line).toMatchObject({
       characteristicCode: '外观',
-      result: 'pass',
+      result: 'passed',
       observedValue: '合格',
       defectReason: null,
       defectQuantity: null,
@@ -171,7 +171,7 @@ describe('toQualityCharacteristicResultLines', () => {
     ])
     expect(line).toMatchObject({
       characteristicCode: '外观',
-      result: 'fail',
+      result: 'failed',
       observedValue: '不合格',
       defectReason: 'SCRATCH',
       defectQuantity: 3,
