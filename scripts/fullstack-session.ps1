@@ -168,6 +168,7 @@ function Start-NervFullStackSession {
         Write-NervFullStackManifest -Manifest $manifest
 
         $sessionEnvironment = Get-NervFullStackEnvironment -SessionId $newSessionId
+        $sessionEnvironment['ASPIRE_CLI_START_TIMEOUT'] = '300'
         $secretSet = New-NervFullStackSecretEnvironment -SessionId $newSessionId
         $suppliedAdminPassword = if (-not [string]::IsNullOrWhiteSpace($SessionAdminPassword)) {
             $SessionAdminPassword

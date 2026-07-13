@@ -36,6 +36,16 @@ function Test-PathBelow([string] $Path, [string] $Parent) {
     return $resolvedPath.StartsWith($resolvedParent, $comparison)
 }
 
+function Stop-AcceptanceStartProcess([object] $Record) {
+    if ($null -eq $Record.StartIdentity) { return }
+    if (-not (Test-NervProcessIdentity -ProcessId $Record.StartIdentity.Pid -ProcessStartTimeUtc $Record.StartIdentity.ProcessStartTimeUtc)) { return }
+
+    $process = Get-Process -Id $Record.StartIdentity.Pid -ErrorAction SilentlyContinue
+    if ($null -eq $process) { return }
+    Stop-Process -Id $Record.StartIdentity.Pid -Force
+    [void] $process.WaitForExit(10000)
+}
+
 function Wait-AcceptanceSessions([object[]] $Records, [int] $TimeoutSeconds = 900) {
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
     while ([DateTimeOffset]::UtcNow -lt $deadline) {
@@ -207,6 +217,8 @@ catch {
 finally {
     foreach ($record in $records) {
         try {
+            $record.AdminPassword = $null
+            Stop-AcceptanceStartProcess -Record $record
             $manifestPath = Get-NervFullStackManifestPath -SessionId $record.SessionId
             if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
                 Invoke-PwshScript `

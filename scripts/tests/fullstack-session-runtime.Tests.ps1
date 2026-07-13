@@ -26,6 +26,8 @@ $describeFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-describe.j
 $parallelAcceptanceScript = Join-Path $repoRoot 'scripts/verify-parallel-fullstack-isolation.ps1'
 Assert-True (Test-Path -LiteralPath $parallelAcceptanceScript -PathType Leaf) 'Parallel full-stack acceptance entrypoint is missing.'
 $parallelAcceptanceText = Get-Content -LiteralPath $parallelAcceptanceScript -Raw
+$fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
+Assert-True ($fullStackSessionText.Contains("ASPIRE_CLI_START_TIMEOUT'] = '300'")) 'Full-stack startup must extend the Aspire CLI handshake timeout.'
 foreach ($requiredText in @(
     '# Script-Governance:',
     '[ValidateRange(2, 3)]',
@@ -33,6 +35,8 @@ foreach ($requiredText in @(
     'fullstack-worktrees',
     'scripts/setup-worktree.ps1',
     'Invoke-PwshScript',
+    'Stop-AcceptanceStartProcess',
+    'Test-NervProcessIdentity',
     'finally',
     'git',
     'worktree',
