@@ -55,10 +55,13 @@ function Wait-AcceptanceSessions([object[]] $Records, [int] $TimeoutSeconds = 90
     throw "Timed out waiting for $($Records.Count) parallel full-stack sessions."
 }
 
+if ($IsWindows -and [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULLSTACK_STATE_ROOT)) {
+    $env:NERV_IIP_FULLSTACK_STATE_ROOT = 'C:\nfs'
+}
 $stateRoot = Get-NervFullStackStateRoot
-$runId = [DateTimeOffset]::UtcNow.ToString('yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+$runId = [guid]::NewGuid().ToString('N').Substring(0, 8)
 $runRoot = Join-Path $stateRoot "fullstack-worktrees/$runId"
-$worktreeParent = Join-Path $runRoot 'worktrees'
+$worktreeParent = $runRoot
 $archiveRoot = Join-Path $runRoot 'artifacts'
 [System.IO.Directory]::CreateDirectory($worktreeParent) | Out-Null
 [System.IO.Directory]::CreateDirectory($archiveRoot) | Out-Null
@@ -70,7 +73,7 @@ $cleanupFailures = [System.Collections.Generic.List[string]]::new()
 $injectedFailureObserved = $false
 try {
     for ($index = 1; $index -le $Sessions; $index++) {
-        $worktreePath = Join-Path $worktreeParent "session-$index"
+        $worktreePath = Join-Path $worktreeParent "s$index"
         Assert-Acceptance (Test-PathBelow -Path $worktreePath -Parent $worktreeParent) "Unsafe worktree path '$worktreePath'."
         Invoke-NativeCommandWithTimeout `
             -Command 'git' `
