@@ -148,9 +148,10 @@ public sealed class DeviceAssetChangedIntegrationEventConverter(IMasterDataInteg
     public DeviceAssetChangedIntegrationEvent Convert(DeviceAssetChangedDomainEvent domainEvent)
     {
         var occurredAtUtc = DateTimeOffset.UtcNow;
+        var eventId = EventIds.New();
         var context = contextAccessor.GetContext();
         return new DeviceAssetChangedIntegrationEvent(
-            EventIds.New(),
+            eventId,
             MasterDataIntegrationEventTypes.DeviceAssetChanged,
             MasterDataIntegrationEventVersions.V1,
             occurredAtUtc,
@@ -160,8 +161,8 @@ public sealed class DeviceAssetChangedIntegrationEventConverter(IMasterDataInteg
             domainEvent.OrganizationId,
             domainEvent.EnvironmentId,
             context.Actor,
-            EventIds.Idempotency("device-asset-changed", domainEvent.OrganizationId, domainEvent.EnvironmentId, domainEvent.Code),
-            new MasterDataChangedPayload("device-asset", domainEvent.Code, "active", occurredAtUtc));
+            EventIds.Idempotency("device-asset-changed", domainEvent.OrganizationId, domainEvent.EnvironmentId, domainEvent.Code, eventId),
+            new MasterDataChangedPayload("device-asset", domainEvent.Code, domainEvent.Status, occurredAtUtc));
     }
 }
 

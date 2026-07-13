@@ -31,6 +31,6 @@ public record ResourceChangedDomainEvent(string ResourceType, string Organizatio
 
 public record WorkCalendarChangedDomainEvent(string OrganizationId, string EnvironmentId, string Code) : IDomainEvent;
 
-public record DeviceAssetChangedDomainEvent(string OrganizationId, string EnvironmentId, string Code) : IDomainEvent;
+public record DeviceAssetChangedDomainEvent(string OrganizationId, string EnvironmentId, string Code, string Status = "active") : IDomainEvent;
 
 public record ReferenceDataCodeChangedDomainEvent(string OrganizationId, string EnvironmentId, string CodeSet, string Code) : IDomainEvent;

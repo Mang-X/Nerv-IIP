@@ -74,6 +74,7 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
     public decimal? RuntimeHourInterval { get; private set; }
     public decimal LastGeneratedRuntimeHours { get; private set; }
     public decimal? NextDueRuntimeHours { get; private set; }
+    public bool Paused { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
     public static MaintenancePlan Create(
@@ -93,7 +94,12 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
 
     public bool IsDueOn(DateOnly businessDate)
     {
-        return NextDueOn <= businessDate;
+        return !Paused && NextDueOn <= businessDate;
+    }
+
+    public void Pause()
+    {
+        Paused = true;
     }
 
     public void MarkGenerated(DateOnly generatedOn)
@@ -103,6 +109,11 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
 
     public IReadOnlyCollection<DateOnly> ConsumeDueDates(DateOnly businessDate)
     {
+        if (Paused)
+        {
+            return [];
+        }
+
         var dueDates = new List<DateOnly>();
         var intervalDays = ParseIsoDayInterval(Interval);
         while (NextDueOn <= businessDate && dueDates.Count < MaxCatchUpOccurrencesPerRun)
@@ -117,7 +128,7 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
 
     public IReadOnlyCollection<decimal> ConsumeRuntimeDue(decimal runtimeHours)
     {
-        if (RuntimeHourInterval is null || NextDueRuntimeHours is null || runtimeHours < NextDueRuntimeHours)
+        if (Paused || RuntimeHourInterval is null || NextDueRuntimeHours is null || runtimeHours < NextDueRuntimeHours)
         {
             return [];
         }

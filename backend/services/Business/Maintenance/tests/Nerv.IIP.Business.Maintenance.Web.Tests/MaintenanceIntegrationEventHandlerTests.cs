@@ -1,18 +1,123 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
+using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
+using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Messaging.CAP;
+using Npgsql;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 
 public sealed class MaintenanceIntegrationEventHandlerTests
 {
+    private const string PostgresConnectionStringEnvironmentVariable = "NERV_IIP_TEST_POSTGRES";
+
+    [Fact]
+    public async Task Device_disabled_consumer_pauses_matching_plans_once_on_replay()
+    {
+        await using var dbContext = CreateDbContext();
+        var matching = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-MATCH", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+        var otherDevice = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-02", "PM-OTHER", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+        dbContext.MaintenancePlans.AddRange(matching, otherDevice);
+        await dbContext.SaveChangesAsync();
+        var sender = new CommandOnlySender(dbContext);
+        var handler = new PauseMaintenancePlansWhenDeviceDisabledHandler(sender, dbContext, new InMemoryIntegrationEventDeadLetterStore());
+        var disabled = CreateDeviceAssetChangedEvent("disabled");
+
+        await handler.HandleAsync(disabled, CancellationToken.None);
+        await handler.HandleAsync(disabled, CancellationToken.None);
+
+        Assert.True(matching.Paused);
+        Assert.False(otherDevice.Paused);
+        Assert.Equal(1, sender.PausePlansCommandCount);
+        Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Device_changed_consumer_ignores_active_status()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-ACTIVE", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+        dbContext.MaintenancePlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+        var sender = new CommandOnlySender(dbContext);
+        var handler = new PauseMaintenancePlansWhenDeviceDisabledHandler(sender, dbContext, new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(CreateDeviceAssetChangedEvent("active"), CancellationToken.None);
+
+        Assert.False(plan.Paused);
+        Assert.Equal(0, sender.PausePlansCommandCount);
+        Assert.Empty(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Device_disabled_consumer_accepts_missing_plan_without_poison_message()
+    {
+        await using var dbContext = CreateDbContext();
+        var sender = new CommandOnlySender(dbContext);
+        var handler = new PauseMaintenancePlansWhenDeviceDisabledHandler(sender, dbContext, new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(CreateDeviceAssetChangedEvent("disabled"), CancellationToken.None);
+
+        Assert.Equal(1, sender.PausePlansCommandCount);
+        Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Device_changed_consumer_dead_letters_unsupported_version()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetterStore = new MaintenanceIntegrationEventDeadLetterStore(dbContext);
+        var handler = new PauseMaintenancePlansWhenDeviceDisabledHandler(new CommandOnlySender(dbContext), dbContext, deadLetterStore);
+
+        await handler.HandleAsync(CreateDeviceAssetChangedEvent("disabled", eventVersion: 2), CancellationToken.None);
+
+        Assert.Empty(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+        var deadLetter = Assert.Single(await dbContext.IntegrationEventDeadLetters.ToArrayAsync());
+        Assert.Equal("unsupported-version", deadLetter.FailureCode);
+    }
+
+    [MaintenanceRealPostgresFact]
+    public async Task Device_disabled_consumer_durably_blocks_pm_generation_on_postgres()
+    {
+        var baseConnectionString = Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
+        await using var database = await TemporaryPostgresDatabase.CreateAsync(baseConnectionString, "maintenance_device_pause");
+        await using (var dbContext = CreatePostgresDbContext(database.ConnectionString))
+        {
+            await dbContext.Database.MigrateAsync();
+            dbContext.MaintenancePlans.Add(MaintenancePlan.Create(
+                "org-001", "env-dev", "DEV-CNC-01", "PM-POSTGRES", "P7D", new DateOnly(2026, 6, 1), "maintenance"));
+            await dbContext.SaveChangesAsync();
+
+            var handler = new PauseMaintenancePlansWhenDeviceDisabledHandler(
+                new CommandOnlySender(dbContext),
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            var disabled = CreateDeviceAssetChangedEvent("disabled");
+            await handler.HandleAsync(disabled, CancellationToken.None);
+            await handler.HandleAsync(disabled, CancellationToken.None);
+        }
+
+        await using var assertionContext = CreatePostgresDbContext(database.ConnectionString);
+        var persistedPlan = await assertionContext.MaintenancePlans.SingleAsync();
+        Assert.True(persistedPlan.Paused);
+        Assert.Equal(1, await assertionContext.ProcessedIntegrationEvents.CountAsync());
+
+        var generation = await new GenerateDueMaintenanceWorkOrdersCommandHandler(assertionContext).Handle(
+            new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 8), "system:pm"),
+            CancellationToken.None);
+        await assertionContext.SaveChangesAsync();
+        Assert.Equal(0, generation.GeneratedCount);
+        Assert.Empty(await assertionContext.MaintenanceWorkOrders.ToArrayAsync());
+        Assert.Equal(new DateOnly(2026, 6, 1), persistedPlan.NextDueOn);
+    }
+
     [Fact]
     public async Task Alarm_consumer_creates_one_work_order_per_source_alarm_id()
     {
@@ -206,9 +311,34 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
+    private static ApplicationDbContext CreatePostgresDbContext(string connectionString)
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "maintenance"))
+            .Options;
+        return new ApplicationDbContext(options, new NoopMediator());
+    }
+
     private static AlarmRaisedIntegrationEvent CreateAlarmRaisedEvent(int eventVersion = 1)
     {
         return CreateAlarmRaisedEvent("evt-alarm-001", "alarm-001", DateTimeOffset.UtcNow, eventVersion);
+    }
+
+    private static DeviceAssetChangedIntegrationEvent CreateDeviceAssetChangedEvent(string status, int eventVersion = 1)
+    {
+        return new DeviceAssetChangedIntegrationEvent(
+            "evt-device-001",
+            MasterDataIntegrationEventTypes.DeviceAssetChanged,
+            eventVersion,
+            new DateTimeOffset(2026, 7, 13, 8, 0, 0, TimeSpan.Zero),
+            MasterDataIntegrationEventSources.BusinessMasterData,
+            "corr-device-001",
+            "cause-device-001",
+            "org-001",
+            "env-dev",
+            "user:masterdata-admin",
+            "masterdata:device-asset-changed:org-001:env-dev:DEV-CNC-01:evt-device-001",
+            new MasterDataChangedPayload("device-asset", "DEV-CNC-01", status, new DateTimeOffset(2026, 7, 13, 8, 0, 0, TimeSpan.Zero)));
     }
 
     private static AlarmRaisedIntegrationEvent CreateAlarmRaisedEvent(
@@ -282,6 +412,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     {
         public int CreateWorkOrderCommandCount { get; private set; }
         public int ClearAlarmCommandCount { get; private set; }
+        public int PausePlansCommandCount { get; private set; }
 
         public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
@@ -307,12 +438,25 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
             where TRequest : IRequest
         {
+            if (request is PauseMaintenancePlansForDeviceCommand pauseCommand)
+            {
+                return SendPauseAsync(pauseCommand, cancellationToken);
+            }
+
             if (request is MarkMaintenanceWorkOrderAlarmClearedCommand clearCommand)
             {
                 return SendClearAsync(clearCommand, cancellationToken);
             }
 
             throw new NotSupportedException($"Unsupported request type {request.GetType().Name}.");
+        }
+
+        private async Task SendPauseAsync(PauseMaintenancePlansForDeviceCommand command, CancellationToken cancellationToken)
+        {
+            PausePlansCommandCount++;
+            var handler = new PauseMaintenancePlansForDeviceCommandHandler(dbContext);
+            await handler.Handle(command, cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
         }
 
         private async Task SendClearAsync(MarkMaintenanceWorkOrderAlarmClearedCommand command, CancellationToken cancellationToken)
@@ -386,6 +530,69 @@ public sealed class MaintenanceIntegrationEventHandlerTests
             _ = request;
             _ = cancellationToken;
             throw new NotSupportedException("Noop mediator cannot stream requests.");
+        }
+    }
+
+    private sealed class TemporaryPostgresDatabase : IAsyncDisposable
+    {
+        private readonly string adminConnectionString;
+        private readonly string databaseName;
+
+        private TemporaryPostgresDatabase(string adminConnectionString, string connectionString, string databaseName)
+        {
+            this.adminConnectionString = adminConnectionString;
+            ConnectionString = connectionString;
+            this.databaseName = databaseName;
+        }
+
+        public string ConnectionString { get; }
+
+        public static async Task<TemporaryPostgresDatabase> CreateAsync(string baseConnectionString, string prefix)
+        {
+            var baseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString);
+            var adminBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
+            {
+                Database = string.IsNullOrWhiteSpace(baseBuilder.Database) ? "postgres" : baseBuilder.Database,
+            };
+            var databaseName = $"nerv_iip_{prefix}_{Guid.CreateVersion7():N}";
+            var databaseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
+            {
+                Database = databaseName,
+            };
+
+            await using var connection = new NpgsqlConnection(adminBuilder.ConnectionString);
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand($"""CREATE DATABASE "{databaseName}";""", connection);
+            await command.ExecuteNonQueryAsync();
+            return new TemporaryPostgresDatabase(adminBuilder.ConnectionString, databaseBuilder.ConnectionString, databaseName);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            NpgsqlConnection.ClearAllPools();
+            await using var connection = new NpgsqlConnection(adminConnectionString);
+            await connection.OpenAsync();
+            await using (var terminate = new NpgsqlCommand(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = @databaseName AND pid <> pg_backend_pid();",
+                connection))
+            {
+                terminate.Parameters.AddWithValue("databaseName", databaseName);
+                await terminate.ExecuteNonQueryAsync();
+            }
+
+            await using var drop = new NpgsqlCommand($"""DROP DATABASE IF EXISTS "{databaseName}";""", connection);
+            await drop.ExecuteNonQueryAsync();
+        }
+    }
+
+    private sealed class MaintenanceRealPostgresFactAttribute : FactAttribute
+    {
+        public MaintenanceRealPostgresFactAttribute()
+        {
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)))
+            {
+                Skip = $"Set {PostgresConnectionStringEnvironmentVariable} to run the real PostgreSQL Maintenance device-pause acceptance test.";
+            }
         }
     }
 }

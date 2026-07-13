@@ -265,6 +265,30 @@ public sealed class MarkMaintenanceWorkOrderAlarmClearedCommandHandler(Applicati
     }
 }
 
+public sealed record PauseMaintenancePlansForDeviceCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId) : ICommand;
+
+public sealed class PauseMaintenancePlansForDeviceCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<PauseMaintenancePlansForDeviceCommand>
+{
+    public async Task Handle(PauseMaintenancePlansForDeviceCommand request, CancellationToken cancellationToken)
+    {
+        var plans = await dbContext.MaintenancePlans
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => !x.Paused)
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var plan in plans)
+        {
+            plan.Pause();
+        }
+    }
+}
+
 public sealed record GenerateDueMaintenanceWorkOrdersCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -316,6 +340,7 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
         var plans = await dbContext.MaintenancePlans
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => !x.Paused)
             .Where(x => x.NextDueOn <= request.BusinessDate || x.RuntimeHourInterval != null)
             .OrderBy(x => x.DeviceAssetId)
             .ThenBy(x => x.PlanCode)

@@ -67,6 +67,7 @@ try
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, MaintenanceIntegrationEventDeadLetterStore>();
     builder.Services.AddScoped<OpenWorkOrderWhenAlarmRaisedHandler>();
     builder.Services.AddScoped<MarkWorkOrderAlarmClearedHandler>();
+    builder.Services.AddScoped<PauseMaintenancePlansWhenDeviceDisabledHandler>();
     builder.Services.AddScoped<ICommandLock<GenerateDueMaintenanceWorkOrdersCommand>, GenerateDueMaintenanceWorkOrdersCommandLock>();
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddHostedService<MaintenancePlanDueScheduler>();
