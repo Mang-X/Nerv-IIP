@@ -11911,6 +11911,64 @@
         ]
       }
     },
+    "/api/business-console/v1/mes/production-reports/{reportNo}": {
+      "get": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleMesProductionReport",
+        "parameters": [
+          {
+            "name": "reportNo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionReportDetailResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/mes/telemetry-production-report-candidates": {
       "get": {
         "tags": [
@@ -33795,6 +33853,155 @@
         }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListWithoutStatusRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionReportDetailResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetailResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetailResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "report": {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetail"
+          },
+          "consumedMaterialLots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "productionReportId": {
+            "type": "string"
+          },
+          "reportNo": {
+            "type": "string"
+          },
+          "workOrderId": {
+            "type": "string"
+          },
+          "operationTaskId": {
+            "type": "string"
+          },
+          "goodQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "scrapQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "reworkQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "reportedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workOrderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "operationTaskNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "scrapReasonCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "defectRecordNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "producedLotNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "reversedReportNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "reversalReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "inventoryPostingFailureCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "inventoryPostingFailureMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "inventoryPostingFailedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "workOrderStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "reversalReportNo": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "materialId": {
+            "type": "string"
+          },
+          "materialLotId": {
+            "type": "string"
+          },
+          "consumedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "materialIssueRequestNo": {
+            "type": "string"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetailRequest": {
         "type": "object",
         "additionalProperties": false
       },

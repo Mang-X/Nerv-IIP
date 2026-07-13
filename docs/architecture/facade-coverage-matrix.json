@@ -2670,6 +2670,19 @@
     },
     {
       "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/production-reports/{reportNo}",
+      "operationId": "getBusinessMesProductionReport",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesProductionReport"
+      ]
+    },
+    {
+      "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/production-reports",
       "operationId": "recordBusinessMesProductionReport",

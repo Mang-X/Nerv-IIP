@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
@@ -43,6 +44,111 @@ public sealed record ProductionReportFact(
     // 冲销本报工的负向记录单号(服务端逐行反查,若本报工已被冲销则非空)。供 Console「已冲销」判定与
     // 原单→冲销单互链**跨服务端分页稳定**,避免前端只从当前页推断已冲销状态(MAN-444/#798 review)。
     string? ReversalReportNo = null);
+
+public sealed record GetProductionReportQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string ReportNo) : IQuery<GetProductionReportResponse>;
+
+public sealed record GetProductionReportResponse(
+    ProductionReportFact Report,
+    IReadOnlyCollection<ConsumedMaterialLotFact> ConsumedMaterialLots);
+
+public sealed record ConsumedMaterialLotFact(
+    string MaterialId,
+    string MaterialLotId,
+    decimal ConsumedQuantity,
+    string UomCode,
+    string MaterialIssueRequestNo);
+
+internal static class ProductionReportFactProjection
+{
+    public static IQueryable<ProductionReportFact> SelectFacts(
+        this IQueryable<ProductionReport> query,
+        ApplicationDbContext dbContext) =>
+        query.Select(x => new ProductionReportFact(
+            x.Id.ToString(),
+            x.ReportNo,
+            x.WorkOrderId,
+            x.OperationTaskId,
+            x.GoodQuantity,
+            x.ScrapQuantity,
+            x.ReworkQuantity,
+            x.ReportedAtUtc,
+            x.WorkOrderId,
+            x.OperationTaskId,
+            x.ScrapReasonCode,
+            x.DefectRecordNo,
+            x.ProducedLotNo,
+            x.SerialNo,
+            x.ReversedReportNo,
+            x.ReversalReason,
+            dbContext.ProductionReportMaterialConsumptions
+                .Where(consumption => consumption.OrganizationId == x.OrganizationId
+                    && consumption.EnvironmentId == x.EnvironmentId
+                    && consumption.ReportNo == x.ReportNo
+                    && consumption.InventoryPostingFailureCode != null)
+                .OrderByDescending(consumption => consumption.InventoryPostingFailedAtUtc)
+                .Select(consumption => consumption.InventoryPostingFailureCode)
+                .FirstOrDefault(),
+            dbContext.ProductionReportMaterialConsumptions
+                .Where(consumption => consumption.OrganizationId == x.OrganizationId
+                    && consumption.EnvironmentId == x.EnvironmentId
+                    && consumption.ReportNo == x.ReportNo
+                    && consumption.InventoryPostingFailureCode != null)
+                .OrderByDescending(consumption => consumption.InventoryPostingFailedAtUtc)
+                .Select(consumption => consumption.InventoryPostingFailureMessage)
+                .FirstOrDefault(),
+            dbContext.ProductionReportMaterialConsumptions
+                .Where(consumption => consumption.OrganizationId == x.OrganizationId
+                    && consumption.EnvironmentId == x.EnvironmentId
+                    && consumption.ReportNo == x.ReportNo
+                    && consumption.InventoryPostingFailureCode != null)
+                .OrderByDescending(consumption => consumption.InventoryPostingFailedAtUtc)
+                .Select(consumption => consumption.InventoryPostingFailedAtUtc)
+                .FirstOrDefault(),
+            dbContext.WorkOrders
+                .Where(workOrder => workOrder.OrganizationId == x.OrganizationId
+                    && workOrder.EnvironmentId == x.EnvironmentId
+                    && workOrder.WorkOrderIdValue == x.WorkOrderId)
+                .Select(workOrder => workOrder.Status)
+                .FirstOrDefault(),
+            dbContext.ProductionReports
+                .Where(reversal => reversal.OrganizationId == x.OrganizationId
+                    && reversal.EnvironmentId == x.EnvironmentId
+                    && reversal.ReversedReportNo == x.ReportNo)
+                .Select(reversal => reversal.ReportNo)
+                .FirstOrDefault()));
+}
+
+public sealed class GetProductionReportQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetProductionReportQuery, GetProductionReportResponse>
+{
+    public async Task<GetProductionReportResponse> Handle(GetProductionReportQuery request, CancellationToken cancellationToken)
+    {
+        var report = await dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.ReportNo == request.ReportNo)
+            .SelectFacts(dbContext)
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new KnownException($"Production report was not found. ReportNo = {request.ReportNo}");
+
+        var consumedMaterialLots = await dbContext.ProductionReportMaterialConsumptions
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.ReportNo == request.ReportNo)
+            .OrderBy(x => x.MaterialId)
+            .ThenBy(x => x.MaterialLotId)
+            .Select(x => new ConsumedMaterialLotFact(
+                x.MaterialId, x.MaterialLotId, x.ConsumedQuantity, x.UomCode, x.MaterialIssueRequestNo))
+            .ToArrayAsync(cancellationToken);
+
+        return new GetProductionReportResponse(report, consumedMaterialLots);
+    }
+}
 
 public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListProductionReportsQuery, ListProductionReportsResponse>
@@ -90,59 +196,7 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
             .OrderByDescending(x => x.ReportedAtUtc)
             .Skip(Math.Max(0, request.Skip))
             .Take(take)
-            .Select(x => new ProductionReportFact(
-                x.Id.ToString(),
-                x.ReportNo,
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.GoodQuantity,
-                x.ScrapQuantity,
-                x.ReworkQuantity,
-                x.ReportedAtUtc,
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.ScrapReasonCode,
-                x.DefectRecordNo,
-                x.ProducedLotNo,
-                x.SerialNo,
-                x.ReversedReportNo,
-                x.ReversalReason,
-                dbContext.ProductionReportMaterialConsumptions
-                    .Where(consumption => consumption.OrganizationId == x.OrganizationId
-                        && consumption.EnvironmentId == x.EnvironmentId
-                        && consumption.ReportNo == x.ReportNo
-                        && consumption.InventoryPostingFailureCode != null)
-                    .OrderByDescending(consumption => consumption.InventoryPostingFailedAtUtc)
-                    .Select(consumption => consumption.InventoryPostingFailureCode)
-                    .FirstOrDefault(),
-                dbContext.ProductionReportMaterialConsumptions
-                    .Where(consumption => consumption.OrganizationId == x.OrganizationId
-                        && consumption.EnvironmentId == x.EnvironmentId
-                        && consumption.ReportNo == x.ReportNo
-                        && consumption.InventoryPostingFailureCode != null)
-                    .OrderByDescending(consumption => consumption.InventoryPostingFailedAtUtc)
-                    .Select(consumption => consumption.InventoryPostingFailureMessage)
-                    .FirstOrDefault(),
-                dbContext.ProductionReportMaterialConsumptions
-                    .Where(consumption => consumption.OrganizationId == x.OrganizationId
-                        && consumption.EnvironmentId == x.EnvironmentId
-                        && consumption.ReportNo == x.ReportNo
-                        && consumption.InventoryPostingFailureCode != null)
-                    .OrderByDescending(consumption => consumption.InventoryPostingFailedAtUtc)
-                    .Select(consumption => consumption.InventoryPostingFailedAtUtc)
-                    .FirstOrDefault(),
-                dbContext.WorkOrders
-                    .Where(workOrder => workOrder.OrganizationId == x.OrganizationId
-                        && workOrder.EnvironmentId == x.EnvironmentId
-                        && workOrder.WorkOrderIdValue == x.WorkOrderId)
-                    .Select(workOrder => workOrder.Status)
-                    .FirstOrDefault(),
-                dbContext.ProductionReports
-                    .Where(reversal => reversal.OrganizationId == x.OrganizationId
-                        && reversal.EnvironmentId == x.EnvironmentId
-                        && reversal.ReversedReportNo == x.ReportNo)
-                    .Select(reversal => reversal.ReportNo)
-                    .FirstOrDefault()))
+            .SelectFacts(dbContext)
             .ToArrayAsync(cancellationToken);
         return new ListProductionReportsResponse(items, total);
     }
