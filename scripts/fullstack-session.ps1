@@ -251,15 +251,17 @@ function Start-NervFullStackSession {
                 $latest = Renew-NervFullStackLease -Manifest $latest -LeaseMinutes (Get-NervFullStackLeaseMinutes)
                 return $latest
             }
-            $guardianIdentity = $null
-            $guardianIdentity = Start-NervFullStackGuardian `
-                -Manifest $manifest `
-                -Mode $GuardianMode `
-                -CoordinatorPid $CoordinatorPid `
-                -CoordinatorStartTimeUtc $CoordinatorStartTimeUtc
-            try {
-                $manifest = Update-NervFullStackManifest -SessionId $newSessionId -AllowedStates @('Running') -UpdateAction {
-                    param($latest)
+            $manifest = Invoke-WithNervFullStackSessionLock -ScriptBlock {
+                $latest = Read-NervFullStackManifest -SessionId $newSessionId
+                if ("$($latest.state)" -ne 'Running') {
+                    throw "Session '$newSessionId' is '$($latest.state)'; guardian registration requires Running."
+                }
+                $guardianIdentity = Start-NervFullStackGuardian `
+                    -Manifest $latest `
+                    -Mode $GuardianMode `
+                    -CoordinatorPid $CoordinatorPid `
+                    -CoordinatorStartTimeUtc $CoordinatorStartTimeUtc
+                try {
                     $latest.guardian = [ordered]@{
                         pid = $guardianIdentity.Pid
                         processStartTimeUtc = $guardianIdentity.ProcessStartTimeUtc
@@ -271,14 +273,16 @@ function Start-NervFullStackSession {
                     else {
                         [ordered]@{ pid = $guardianIdentity.Pid; processStartTimeUtc = $guardianIdentity.ProcessStartTimeUtc }
                     }
+                    Write-NervFullStackManifest -Manifest $latest
                     return $latest
                 }
-            }
-            catch {
-                if ($null -ne $guardianIdentity -and (Test-NervProcessIdentity -ProcessId $guardianIdentity.Pid -ProcessStartTimeUtc $guardianIdentity.ProcessStartTimeUtc)) {
-                    try { Stop-ProcessTree -ProcessId $guardianIdentity.Pid -Reason "Unregistered guardian cleanup for $newSessionId" | Out-Null } catch { }
+                catch {
+                    Stop-ProcessTree -ProcessId $guardianIdentity.Pid -Reason "Failed guardian registration cleanup for $newSessionId" | Out-Null
+                    if (Test-NervProcessIdentity -ProcessId $guardianIdentity.Pid -ProcessStartTimeUtc $guardianIdentity.ProcessStartTimeUtc) {
+                        throw "Guardian registration failed and guardian process $($guardianIdentity.Pid) could not be stopped."
+                    }
+                    throw
                 }
-                throw
             }
         }
         catch {

@@ -121,10 +121,12 @@ function Wait-AcceptanceSessions([object[]] $Records, [int] $TimeoutSeconds = 90
 
 $stateRootWasSet = Test-Path Env:NERV_IIP_FULLSTACK_STATE_ROOT
 $stateRootOriginal = [Environment]::GetEnvironmentVariable('NERV_IIP_FULLSTACK_STATE_ROOT', 'Process')
-if ($IsWindows -and [string]::IsNullOrWhiteSpace($stateRootOriginal)) {
-    $env:NERV_IIP_FULLSTACK_STATE_ROOT = 'C:\nfs'
+$stateRoot = if ($IsWindows -and [string]::IsNullOrWhiteSpace($stateRootOriginal)) {
+    'C:\nfs'
 }
-$stateRoot = Get-NervFullStackStateRoot
+else {
+    Get-NervFullStackStateRoot
+}
 $runId = [guid]::NewGuid().ToString('N').Substring(0, 8)
 $runRoot = Join-Path $stateRoot "fullstack-worktrees/$runId"
 $worktreeParent = $runRoot
@@ -132,6 +134,7 @@ $archiveRoot = Join-Path $runRoot 'artifacts'
 [System.IO.Directory]::CreateDirectory($worktreeParent) | Out-Null
 [System.IO.Directory]::CreateDirectory($archiveRoot) | Out-Null
 Assert-Acceptance (Test-PathBelow -Path $worktreeParent -Parent (Join-Path $stateRoot 'fullstack-worktrees')) 'Acceptance worktrees escaped the machine-state root.'
+$env:NERV_IIP_FULLSTACK_STATE_ROOT = $stateRoot
 
 $records = [System.Collections.Generic.List[object]]::new()
 $primaryFailure = $null
