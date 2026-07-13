@@ -210,8 +210,15 @@ export function useInspectionPlanCharacteristics(planId: MaybeRefOrGetter<string
     return envelope.data?.items ?? []
   })
 
+  // 计划编号（人读，优于任务上携带的计划 GUID）；未加载时为空。
+  const planCode = computed(() => {
+    const envelope = query.data.value
+    return envelope?.success ? (envelope.data?.planCode ?? '') : ''
+  })
+
   return {
     characteristics,
+    planCode,
     pending: query.isLoading,
     error: query.error,
   }

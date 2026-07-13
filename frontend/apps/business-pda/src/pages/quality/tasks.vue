@@ -81,8 +81,14 @@ const scanKeyword = ref('')
 const sourceTypeFilter = ref<string | null>(null)
 
 // 选中任务的检验计划特性（「可选可搜」的数据源；单位/公差/类型由此直接匹配特性）。
-const { characteristics: planCharacteristics, pending: planCharacteristicsPending } =
-  useInspectionPlanCharacteristics(computed(() => selectedTask.value?.inspectionPlanId))
+const {
+  characteristics: planCharacteristics,
+  planCode: planCode,
+  pending: planCharacteristicsPending,
+} = useInspectionPlanCharacteristics(computed(() => selectedTask.value?.inspectionPlanId))
+
+// 计划展示：优先人读的 planCode，未加载时回退任务上的计划 GUID。
+const planLabel = computed(() => planCode.value || selectedTask.value?.inspectionPlanId || '')
 
 // 当前处于列表步（无选中任务、无结果浮层）：ScanBar 抢焦点仅在此。
 const inListStep = computed(() => selectedTask.value === null && result.value === null)
@@ -590,33 +596,35 @@ function taskSubtitle(task: Task) {
         <p class="text-base font-semibold text-foreground">
           {{ selectedTask.skuCode ?? '未知物料' }}
         </p>
-        <dl class="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
-          <div v-if="selectedTask.sourceDocumentId" class="col-span-2 flex justify-between gap-3">
-            <dt class="text-muted-foreground">来源单据</dt>
-            <dd class="truncate text-foreground">{{ selectedTask.sourceDocumentId }}</dd>
+        <dl class="space-y-1 text-sm">
+          <div v-if="selectedTask.sourceDocumentId" class="flex items-baseline justify-between gap-4">
+            <dt class="shrink-0 whitespace-nowrap text-muted-foreground">来源单据</dt>
+            <dd class="min-w-0 truncate text-right text-foreground">
+              {{ selectedTask.sourceDocumentId }}
+            </dd>
           </div>
-          <div v-if="selectedTask.quantity != null" class="flex justify-between gap-3">
-            <dt class="text-muted-foreground">数量</dt>
-            <dd class="text-foreground">
+          <div v-if="selectedTask.quantity != null" class="flex items-baseline justify-between gap-4">
+            <dt class="shrink-0 whitespace-nowrap text-muted-foreground">数量</dt>
+            <dd class="min-w-0 truncate text-right text-foreground">
               {{ selectedTask.quantity }}{{ selectedTask.uomCode ?? '' }}
             </dd>
           </div>
-          <div v-if="selectedTask.inspectionPlanId" class="flex justify-between gap-3">
-            <dt class="text-muted-foreground">检验计划</dt>
-            <dd class="truncate text-foreground">{{ selectedTask.inspectionPlanId }}</dd>
+          <div v-if="planLabel" class="flex items-baseline justify-between gap-4">
+            <dt class="shrink-0 whitespace-nowrap text-muted-foreground">检验计划</dt>
+            <dd class="min-w-0 truncate text-right text-foreground">{{ planLabel }}</dd>
           </div>
-          <div v-if="selectedTask.batchNo" class="flex justify-between gap-3">
-            <dt class="text-muted-foreground">批次</dt>
-            <dd class="truncate text-foreground">{{ selectedTask.batchNo }}</dd>
+          <div v-if="selectedTask.batchNo" class="flex items-baseline justify-between gap-4">
+            <dt class="shrink-0 whitespace-nowrap text-muted-foreground">批次</dt>
+            <dd class="min-w-0 truncate text-right text-foreground">{{ selectedTask.batchNo }}</dd>
           </div>
-          <div v-if="selectedTask.serialNo" class="flex justify-between gap-3">
-            <dt class="text-muted-foreground">序列号</dt>
-            <dd class="truncate text-foreground">{{ selectedTask.serialNo }}</dd>
+          <div v-if="selectedTask.serialNo" class="flex items-baseline justify-between gap-4">
+            <dt class="shrink-0 whitespace-nowrap text-muted-foreground">序列号</dt>
+            <dd class="min-w-0 truncate text-right text-foreground">{{ selectedTask.serialNo }}</dd>
           </div>
-          <div v-if="selectedTask.dueAtUtc" class="col-span-2 flex justify-between gap-3">
-            <dt class="text-muted-foreground">应检至</dt>
+          <div v-if="selectedTask.dueAtUtc" class="flex items-baseline justify-between gap-4">
+            <dt class="shrink-0 whitespace-nowrap text-muted-foreground">应检至</dt>
             <dd
-              class="text-foreground"
+              class="min-w-0 truncate text-right text-foreground"
               :class="isOverdue(selectedTask) ? 'text-destructive' : undefined"
             >
               {{ dueText(selectedTask.dueAtUtc) }}
