@@ -49,6 +49,25 @@ AppHost, or DCP processes:
 .\nerv.ps1 stop
 ```
 
+## Isolated full-stack verification sessions
+
+`dev` is the persistent operator-owned development environment. Agent-owned or automated real full-stack verification uses an ephemeral session instead:
+
+```powershell
+.\nerv.ps1 fullstack run -Scenario smoke
+.\nerv.ps1 fullstack start
+.\nerv.ps1 fullstack url business-console
+.\nerv.ps1 fullstack status
+.\nerv.ps1 fullstack logs gateway
+.\nerv.ps1 fullstack stop
+.\nerv.ps1 fullstack list
+.\nerv.ps1 fullstack gc
+```
+
+Each session gets a validated ID, dynamically allocated public ports, session-specific PostgreSQL/Redis/MinIO/VictoriaLogs volumes, generated Development-only secrets, and container ownership labels. URLs are discovered from the session manifest rather than the canonical port matrix. Aspire/DCP provides the per-session proxy; there is no shared Nginx configuration to coordinate between worktrees. The default admission ceiling is three active sessions and there is no minimum-free-memory rule.
+
+`fullstack run` always attempts exact cleanup on success and failure while preserving `artifacts/fullstack/<sessionId>/`. Interactive `fullstack start` is diagnostic-only and must be paired with `fullstack stop`; `fullstack gc` reconciles abandoned or expired sessions without pruning unrelated Docker or Aspire resources. Ephemeral PostgreSQL uses a higher connection ceiling for the complete platform topology, but persistent `dev` image tags, volume names, and database settings remain unchanged.
+
 ## Local observability
 
 For normal local development, `.\nerv.ps1 dev` lets the Aspire AppHost inject the
