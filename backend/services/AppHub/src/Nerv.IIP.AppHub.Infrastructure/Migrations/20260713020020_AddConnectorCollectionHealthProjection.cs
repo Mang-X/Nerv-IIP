@@ -130,14 +130,14 @@ namespace Nerv.IIP.AppHub.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_connector_collection_health_ApplicationInstanceId",
+                name: "ux_connector_collection_health_instance",
                 schema: "apphub",
                 table: "connector_collection_health",
                 column: "ApplicationInstanceId",
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_connector_collection_health_OrganizationId_EnvironmentId_Co~",
+                name: "ux_connector_collection_health_scope",
                 schema: "apphub",
                 table: "connector_collection_health",
                 columns: new[] { "OrganizationId", "EnvironmentId", "ConnectorId" },

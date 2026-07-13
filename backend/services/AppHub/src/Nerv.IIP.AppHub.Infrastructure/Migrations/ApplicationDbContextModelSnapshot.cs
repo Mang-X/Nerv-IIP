@@ -266,10 +266,12 @@ namespace Nerv.IIP.AppHub.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ApplicationInstanceId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("ux_connector_collection_health_instance");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "ConnectorId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("ux_connector_collection_health_scope");
 
                     b.ToTable("connector_collection_health", "apphub", t =>
                         {

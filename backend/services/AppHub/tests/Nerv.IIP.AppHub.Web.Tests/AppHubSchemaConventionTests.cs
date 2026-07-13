@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
@@ -82,6 +83,24 @@ public sealed class AppHubSchemaConventionTests
         Assert.Equal(2, addedScopeColumns.Length);
         Assert.All(addedScopeColumns, column => { Assert.True(column.IsNullable); Assert.Null(column.DefaultValue); });
         Assert.Contains(builder.Operations.OfType<SqlOperation>(), operation => operation.Sql.Contains("FROM apphub.application_instances", StringComparison.Ordinal) && operation.Sql.Contains("RAISE EXCEPTION", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Current_model_matches_the_latest_migration_snapshot()
+    {
+        using var fixture = CreateFixture();
+        var snapshot = Assert.IsAssignableFrom<ModelSnapshot>(
+            fixture.DbContext.GetService<IMigrationsAssembly>().ModelSnapshot);
+        var snapshotModel = fixture.DbContext.GetService<IModelRuntimeInitializer>()
+            .Initialize(snapshot.Model, designTime: true);
+        var currentModel = fixture.DbContext.GetService<IDesignTimeModel>().Model;
+        var modelDiffer = fixture.DbContext.GetService<IMigrationsModelDiffer>();
+
+        var differences = modelDiffer.GetDifferences(
+            snapshotModel.GetRelationalModel(),
+            currentModel.GetRelationalModel());
+
+        Assert.Empty(differences);
     }
 
     private static IReadOnlyCollection<string> ProcessedIntegrationEventHasUniqueInboxIndex(IModel model)

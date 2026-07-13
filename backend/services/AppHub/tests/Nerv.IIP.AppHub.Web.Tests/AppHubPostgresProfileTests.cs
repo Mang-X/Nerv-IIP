@@ -3,12 +3,15 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using Nerv.IIP.AppHub.Domain;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
 using Nerv.IIP.AppHub.Infrastructure;
 using Nerv.IIP.AppHub.Infrastructure.Repositories;
+using Nerv.IIP.AppHub.Web.Application.Connectors;
 using Nerv.IIP.AppHub.Web.Application.Commands;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
 using Nerv.IIP.AppHub.Web.Application.Queries;
@@ -252,10 +255,20 @@ public sealed class AppHubPostgresProfileTests
             })
             .Build();
         services.AddAppHubPersistence(configuration);
+        services.AddSingleton<IConnectorIngestionTokenService>(
+            new ConnectorIngestionTokenService(configuration, new TestHostEnvironment(), TimeProvider.System));
         if (interceptor is not null)
         {
             services.AddDbContext<ApplicationDbContext>(options => options.AddInterceptors(interceptor));
         }
+    }
+
+    private sealed class TestHostEnvironment : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = Environments.Development;
+        public string ApplicationName { get; set; } = "Nerv.IIP.AppHub.Web.Tests";
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
     private static async Task AssertMigrationsHistoryTableInSchemaAsync(ApplicationDbContext db, string schema)
