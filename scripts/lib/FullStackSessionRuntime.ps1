@@ -579,6 +579,35 @@ function Get-NervDockerInspectObjects {
     return @($result.Stdout | ConvertFrom-Json -Depth 30)
 }
 
+function Get-NervFullStackContainerRecords {
+    param(
+        [Parameter(Mandatory)] [string] $OwnedSessionId,
+        [string] $WorkingDirectory = (Get-Location).Path
+    )
+
+    $ids = @(Get-NervDockerListedValues `
+        -Arguments @('container', 'ls', '-a', '--no-trunc', '--filter', "label=com.nerv-iip.session=$OwnedSessionId", '--format', '{{.ID}}') `
+        -WorkingDirectory $WorkingDirectory `
+        -Name "fullstack-$OwnedSessionId-container-discovery")
+    $objects = @(Get-NervDockerInspectObjects `
+        -Kind container `
+        -Identifiers $ids `
+        -WorkingDirectory $WorkingDirectory `
+        -Name "fullstack-$OwnedSessionId-container-discovery-inspect")
+    return @($objects | ForEach-Object {
+        $containerName = "$($_.Name)".TrimStart('/')
+        $resourceName = @('postgres', 'redis', 'minio', 'victoria-logs') |
+            Where-Object { $containerName.StartsWith("$_-", [StringComparison]::Ordinal) } |
+            Select-Object -First 1
+        if ([string]::IsNullOrWhiteSpace($resourceName)) { $resourceName = $containerName }
+        [ordered]@{
+            resourceName = $resourceName
+            id = "$($_.Id)"
+            name = $containerName
+        }
+    })
+}
+
 function Get-NervSessionDockerResources {
     param(
         [Parameter(Mandatory)] [object] $Manifest,

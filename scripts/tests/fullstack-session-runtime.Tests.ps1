@@ -17,6 +17,8 @@ function Assert-True([bool] $Condition, [string] $Message) {
     if (-not $Condition) { throw $Message }
 }
 
+Assert-True ($null -ne (Get-Command Get-NervFullStackContainerRecords -ErrorAction SilentlyContinue)) 'Shared runtime must expose current session container discovery.'
+
 $sessionId = 'nerv-abcd-123456'
 $fixturePath = Join-Path $PSScriptRoot 'fixtures/fullstack/docker-resources.json'
 $inspectObjects = @(Get-Content -LiteralPath $fixturePath -Raw | ConvertFrom-Json)

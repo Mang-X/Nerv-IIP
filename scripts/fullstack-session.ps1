@@ -65,32 +65,6 @@ function Resolve-NervFullStackSessionId {
     return "$($matches[0].sessionId)"
 }
 
-function Get-NervFullStackContainerRecords {
-    param([Parameter(Mandatory)] [string] $OwnedSessionId)
-
-    $ids = @(Get-NervDockerListedValues `
-        -Arguments @('container', 'ls', '-a', '--no-trunc', '--filter', "label=com.nerv-iip.session=$OwnedSessionId", '--format', '{{.ID}}') `
-        -WorkingDirectory $repoRoot `
-        -Name "fullstack-$OwnedSessionId-container-discovery")
-    $objects = @(Get-NervDockerInspectObjects `
-        -Kind container `
-        -Identifiers $ids `
-        -WorkingDirectory $repoRoot `
-        -Name "fullstack-$OwnedSessionId-container-discovery-inspect")
-    return @($objects | ForEach-Object {
-        $containerName = "$($_.Name)".TrimStart('/')
-        $resourceName = @('postgres', 'redis', 'minio', 'victoria-logs') |
-            Where-Object { $containerName.StartsWith("$_-", [StringComparison]::Ordinal) } |
-            Select-Object -First 1
-        if ([string]::IsNullOrWhiteSpace($resourceName)) { $resourceName = $containerName }
-        [ordered]@{
-            resourceName = $resourceName
-            id = "$($_.Id)"
-            name = $containerName
-        }
-    })
-}
-
 function Get-NervFullStackGuardianIntervalSeconds {
     if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULLSTACK_GUARDIAN_INTERVAL_SECONDS)) { return 60 }
     $seconds = 0

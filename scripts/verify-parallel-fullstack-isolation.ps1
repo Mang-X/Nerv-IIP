@@ -183,8 +183,8 @@ try {
         }
     }
 
-    $firstPostgres = @(Get-NervFullStackContainerRecords -OwnedSessionId $records[0].SessionId | Where-Object { "$($_.resourceName)" -eq 'postgres' })
-    $secondPostgres = @(Get-NervFullStackContainerRecords -OwnedSessionId $records[1].SessionId | Where-Object { "$($_.resourceName)" -eq 'postgres' })
+    $firstPostgres = @(Get-NervFullStackContainerRecords -OwnedSessionId $records[0].SessionId -WorkingDirectory $records[0].WorktreePath | Where-Object { "$($_.resourceName)" -eq 'postgres' })
+    $secondPostgres = @(Get-NervFullStackContainerRecords -OwnedSessionId $records[1].SessionId -WorkingDirectory $records[1].WorktreePath | Where-Object { "$($_.resourceName)" -eq 'postgres' })
     Assert-Acceptance ($firstPostgres.Count -eq 1 -and $secondPostgres.Count -eq 1) 'Each running session must own one canonical postgres container.'
     Invoke-NativeCommandOutput `
         -Command 'docker' `
