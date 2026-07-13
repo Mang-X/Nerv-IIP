@@ -77,6 +77,9 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
     }
 
     protected string RequireAuthorizedPrincipalRecipientRef()
+        => RequireAuthorizedPrincipalActorReference();
+
+    protected string RequireAuthorizedPrincipalActorReference()
     {
         var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
         return BusinessGatewayPrincipalReferences.ToRecipientRef(actorType, actorRef);

@@ -80,7 +80,7 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("Engineering concession approved", quality.LastCloseNcrRequest!.Reason);
-        Assert.Equal("user-admin", quality.LastCloseNcrActor);
+        Assert.Equal("user:user-admin", quality.LastCloseNcrActor);
         Assert.NotEqual("user:forged-client-actor", quality.LastCloseNcrActor);
     }
 

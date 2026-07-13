@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
@@ -897,10 +898,23 @@ public sealed class QualityInspectionEndpointContractTests
             CancellationToken.None);
         dbContext.CorrectiveActions.Add(NewEffectiveCapa(ncr, "CAPA-SCRAP-CLOSE-RECORDED-001"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        var httpContext = new DefaultHttpContext
+        {
+            User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
+                [
+                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "internal-service"),
+                    new System.Security.Claims.Claim("token_type", "internal_service"),
+                ],
+                InternalServiceAuthentication.SchemeName)),
+        };
+        httpContext.Request.Headers["X-Actor"] = "user:qa-manager-001";
         var closeHandler = new CloseNonconformanceReportCommandHandler(
             new NonconformanceReportRepository(dbContext),
             new CorrectiveActionRepository(dbContext),
-            new FixedQualityIntegrationEventContextAccessor("user:qa-manager-001"));
+            new HttpQualityIntegrationEventContextAccessor(new HttpContextAccessor
+            {
+                HttpContext = httpContext,
+            }));
 
         await closeHandler.Handle(
             new CloseNonconformanceReportCommand(ncr.Id, null, null, null, "Disposition completed"),
