@@ -136,7 +136,10 @@ public sealed class FastEndpointsArchitectureTests
         var root = FindRepositoryRoot();
         var programText = File.ReadAllText(Path.Combine(root, projectDirectory, "Program.cs"));
 
-        Assert.Contains("AddCommandLockBehavior", programText);
+        Assert.True(
+            programText.Contains("AddCommandLockBehavior", StringComparison.Ordinal)
+                || programText.Contains("AddOpenBehavior(typeof(MaintenanceCommandLockBehavior<,>))", StringComparison.Ordinal),
+            "Command-lock services must register the built-in command-lock behavior or the Maintenance lock-loss-aware behavior.");
         Assert.Contains("AddInMemoryDistributedLock", programText);
     }
 
