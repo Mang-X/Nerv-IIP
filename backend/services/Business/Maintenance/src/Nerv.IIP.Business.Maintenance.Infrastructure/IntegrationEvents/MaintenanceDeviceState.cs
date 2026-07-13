@@ -43,7 +43,8 @@ public sealed class MaintenanceDeviceState
     public bool Apply(bool disabled, DateTimeOffset changedAtUtc, string sourceEventId)
     {
         changedAtUtc = changedAtUtc.ToUniversalTime();
-        if (changedAtUtc < ChangedAtUtc)
+        if (changedAtUtc < ChangedAtUtc
+            || (changedAtUtc == ChangedAtUtc && (Disabled || !disabled)))
         {
             return false;
         }

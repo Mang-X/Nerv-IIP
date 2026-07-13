@@ -61,8 +61,10 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         Assert.False((await dbContext.MaintenanceDeviceStates.SingleAsync()).Disabled);
     }
 
-    [Fact]
-    public async Task Device_changed_consumer_does_not_apply_older_active_event_after_disable()
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    public async Task Device_changed_consumer_keeps_disabled_state_when_active_event_is_not_newer(int activeOffsetMinutes)
     {
         await using var dbContext = CreateDbContext();
         var sender = new CommandOnlySender(dbContext);
@@ -70,7 +72,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         var disabledAtUtc = new DateTimeOffset(2026, 7, 13, 8, 0, 0, TimeSpan.Zero);
 
         await handler.HandleAsync(CreateDeviceAssetChangedEvent("disabled", changedAtUtc: disabledAtUtc), CancellationToken.None);
-        await handler.HandleAsync(CreateDeviceAssetChangedEvent("active", eventId: "evt-device-older", changedAtUtc: disabledAtUtc.AddMinutes(-1)), CancellationToken.None);
+        await handler.HandleAsync(CreateDeviceAssetChangedEvent("active", eventId: "evt-device-delayed-active", changedAtUtc: disabledAtUtc.AddMinutes(activeOffsetMinutes)), CancellationToken.None);
 
         var state = await dbContext.MaintenanceDeviceStates.SingleAsync();
         Assert.True(state.Disabled);
