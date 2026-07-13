@@ -206,6 +206,246 @@ function Save-NervFullStackEndpoints {
     return $Manifest
 }
 
+function Get-NervFullStackEndpointValue {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $ResourceName
+    )
+
+    $value = if ($Manifest.endpoints -is [System.Collections.IDictionary]) {
+        $Manifest.endpoints[$ResourceName]
+    }
+    else {
+        $property = $Manifest.endpoints.PSObject.Properties[$ResourceName]
+        if ($null -ne $property) { $property.Value } else { $null }
+    }
+    if ([string]::IsNullOrWhiteSpace("$value")) {
+        throw "Manifest '$($Manifest.sessionId)' has no endpoint named '$ResourceName'."
+    }
+    return "$value"
+}
+
+function Protect-NervFullStackDiagnosticText {
+    param(
+        [AllowNull()] [string] $Text,
+        [string[]] $SensitiveValues = @()
+    )
+
+    $safe = Protect-ScriptAutomationText -Text $Text
+    foreach ($sensitiveValue in $SensitiveValues) {
+        if (-not [string]::IsNullOrEmpty($sensitiveValue)) {
+            $safe = $safe.Replace($sensitiveValue, '<redacted>')
+        }
+    }
+    return $safe
+}
+
+function Invoke-NervFullStackSmokeScenario {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [scriptblock] $WaitAction,
+        [scriptblock] $HttpCheckAction,
+        [scriptblock] $AspireSnapshotAction,
+        [scriptblock] $BrowserAction
+    )
+
+    if ($null -eq $WaitAction) {
+        $WaitAction = {
+            param($Name, $InputManifest)
+            Wait-NervAspireResource `
+                -AppHostProject "$($InputManifest.appHostProject)" `
+                -ResourceName $Name `
+                -WorkingDirectory "$($InputManifest.worktreeRoot)"
+        }
+    }
+    if ($null -eq $HttpCheckAction) {
+        $HttpCheckAction = {
+            param($Name, $Url)
+            try {
+                Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec 30 -UseBasicParsing | Out-Null
+            }
+            catch {
+                $statusCode = if ($null -ne $_.Exception.Response) { [int] $_.Exception.Response.StatusCode } else { 0 }
+                if ($statusCode -le 0 -or $statusCode -ge 500) { throw "HTTP check failed for '$Name' at '$Url': $($_.Exception.Message)" }
+            }
+        }
+    }
+    if ($null -eq $AspireSnapshotAction) {
+        $AspireSnapshotAction = {
+            param($InputManifest)
+            Get-NervAspireDescribeObject -AppHostProject "$($InputManifest.appHostProject)" -WorkingDirectory "$($InputManifest.worktreeRoot)"
+        }
+    }
+    if ($null -eq $BrowserAction) {
+        $BrowserAction = {
+            param($Environment, $InputManifest)
+            try {
+                foreach ($entry in $Environment.GetEnumerator()) { Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value }
+                Invoke-Pnpm `
+                    -Arguments @(
+                        '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
+                        'e2e/fullstack-proxy.spec.ts', '--project=desktop', '--reporter=line',
+                        '--output', (Join-Path "$($InputManifest.artifactPath)" 'test-results')
+                    ) `
+                    -WorkingDirectory "$($InputManifest.worktreeRoot)" `
+                    -TimeoutSeconds 300 `
+                    -Name "fullstack-$($InputManifest.sessionId)-playwright" | Out-Null
+            }
+            finally {
+                foreach ($key in $Environment.Keys) { Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue }
+            }
+        }
+    }
+
+    $resourceNames = @('gateway', 'business-gateway', 'console', 'business-console', 'screen')
+    foreach ($resourceName in $resourceNames) {
+        & $WaitAction $resourceName $Manifest | Out-Null
+        $url = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName $resourceName
+        & $HttpCheckAction $resourceName $url | Out-Null
+    }
+
+    $snapshot = & $AspireSnapshotAction $Manifest
+    $finishedProjects = @($snapshot.resources | Where-Object {
+        "$($_.resourceType)" -like 'Project*' -and "$($_.state)" -eq 'Finished'
+    })
+    if ($finishedProjects.Count -gt 0) {
+        throw "Aspire project resources finished unexpectedly: $($finishedProjects.displayName -join ', ')."
+    }
+
+    $childEnvironment = @{
+        NERV_IIP_GATEWAY_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'gateway'
+        NERV_IIP_BUSINESS_GATEWAY_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-gateway'
+        PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-console'
+        NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $SessionAdminPassword
+    }
+    & $BrowserAction $childEnvironment $Manifest | Out-Null
+    return [pscustomobject]@{ ExitCode = 0; ChildEnvironment = $childEnvironment; CheckedResources = $resourceNames }
+}
+
+function Get-NervFullStackCollectTimeoutSeconds {
+    if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULLSTACK_COLLECT_TIMEOUT_SECONDS)) { return 120 }
+    $seconds = 0
+    if (-not [int]::TryParse($env:NERV_IIP_FULLSTACK_COLLECT_TIMEOUT_SECONDS, [ref] $seconds) -or $seconds -lt 1 -or $seconds -gt 600) {
+        throw 'NERV_IIP_FULLSTACK_COLLECT_TIMEOUT_SECONDS must be an integer from 1 through 600.'
+    }
+    return $seconds
+}
+
+function Collect-NervFullStackDiagnostics {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [string[]] $SensitiveValues = @(),
+        [scriptblock] $LogAction,
+        [int] $TimeoutSeconds = (Get-NervFullStackCollectTimeoutSeconds)
+    )
+
+    if ($null -eq $LogAction) {
+        $LogAction = {
+            param($ResourceName, $InputManifest, $BoundedTimeoutSeconds)
+            $result = Invoke-AspireOutput `
+                -Arguments @('logs', $ResourceName, '--tail', '500', '--format', 'Json', '--apphost', "$($InputManifest.appHostProject)", '--non-interactive', '--nologo') `
+                -WorkingDirectory "$($InputManifest.worktreeRoot)" `
+                -TimeoutSeconds $BoundedTimeoutSeconds `
+                -Name "fullstack-$($InputManifest.sessionId)-collect-$ResourceName"
+            return "$($result.Stdout)"
+        }
+    }
+
+    $artifactPath = [System.IO.Path]::GetFullPath("$($Manifest.artifactPath)")
+    $logDirectory = Join-Path $artifactPath 'aspire-logs'
+    [System.IO.Directory]::CreateDirectory($logDirectory) | Out-Null
+    $collectionErrors = [System.Collections.Generic.List[string]]::new()
+    foreach ($resourceName in @('gateway', 'business-gateway', 'console', 'business-console', 'screen', 'postgres', 'redis', 'minio')) {
+        try {
+            $raw = (& $LogAction $resourceName $Manifest $TimeoutSeconds) -join "`n"
+            $safe = Protect-NervFullStackDiagnosticText -Text $raw -SensitiveValues $SensitiveValues
+            [System.IO.File]::WriteAllText(
+                (Join-Path $logDirectory "$resourceName.ndjson"),
+                $safe,
+                [System.Text.UTF8Encoding]::new($false)
+            )
+        }
+        catch {
+            $collectionErrors.Add((Protect-NervFullStackDiagnosticText -Text "$($_.Exception.Message)" -SensitiveValues $SensitiveValues))
+        }
+    }
+
+    $existingCleanupErrors = if ($null -ne $Manifest.cleanup) { @($Manifest.cleanup.errors) } else { @() }
+    $summary = [ordered]@{
+        schemaVersion = 1
+        sessionId = "$($Manifest.sessionId)"
+        state = "$($Manifest.state)"
+        collectedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+        endpoints = $Manifest.endpoints
+        cleanupErrors = @($existingCleanupErrors | ForEach-Object {
+            Protect-NervFullStackDiagnosticText -Text "$_" -SensitiveValues $SensitiveValues
+        })
+        collectionErrors = @($collectionErrors)
+    }
+    $summaryJson = Protect-NervFullStackDiagnosticText `
+        -Text ($summary | ConvertTo-Json -Depth 20) `
+        -SensitiveValues $SensitiveValues
+    [System.IO.File]::WriteAllText(
+        (Join-Path $artifactPath 'summary.json'),
+        $summaryJson,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    return [pscustomobject]@{ Complete = $collectionErrors.Count -eq 0; Errors = @($collectionErrors) }
+}
+
+function Invoke-NervManagedFullStackRun {
+    param(
+        [Parameter(Mandatory)] [scriptblock] $StartAction,
+        [Parameter(Mandatory)] [scriptblock] $ScenarioAction,
+        [Parameter(Mandatory)] [scriptblock] $CollectAction,
+        [Parameter(Mandatory)] [scriptblock] $StopAction,
+        [scriptblock] $ResolveFailedManifestAction,
+        [scriptblock] $FailureAction,
+        [scriptblock] $CollectionFailureAction
+    )
+
+    $manifest = $null
+    $scenarioFailure = $null
+    $cleanupFailure = $null
+    $collectionFailures = [System.Collections.Generic.List[string]]::new()
+    try {
+        $manifest = & $StartAction
+        & $ScenarioAction $manifest | Out-Null
+    }
+    catch {
+        $scenarioFailure = $_
+        if ($null -eq $manifest -and $null -ne $ResolveFailedManifestAction) {
+            try { $manifest = & $ResolveFailedManifestAction } catch { }
+        }
+        if ($null -ne $manifest -and $null -ne $FailureAction) {
+            try { & $FailureAction $manifest $scenarioFailure | Out-Null } catch { }
+        }
+    }
+    finally {
+        if ($null -ne $manifest) {
+            try { & $CollectAction $manifest | Out-Null }
+            catch {
+                $collectionFailures.Add("$($_.Exception.Message)")
+                if ($null -ne $CollectionFailureAction) {
+                    try { & $CollectionFailureAction $manifest $_ | Out-Null } catch { }
+                }
+            }
+            try {
+                $stopResult = & $StopAction $manifest
+                if ($null -eq $stopResult -or -not [bool] $stopResult.Complete) {
+                    throw 'Managed full-stack stop did not report complete cleanup.'
+                }
+                if ($null -ne $stopResult.Manifest) { $manifest = $stopResult.Manifest }
+            }
+            catch { $cleanupFailure = $_ }
+        }
+    }
+    if ($cleanupFailure) { throw $cleanupFailure }
+    if ($scenarioFailure) { throw $scenarioFailure }
+    return [pscustomobject]@{ Manifest = $manifest; CollectionFailures = @($collectionFailures) }
+}
+
 function Get-NervFullStackEnvironment {
     param(
         [Parameter(Mandatory)]

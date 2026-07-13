@@ -123,6 +123,14 @@ function Start-NervFullStackGuardian {
 }
 
 function Start-NervFullStackSession {
+    param(
+        [ValidateSet('Automated', 'Interactive')] [string] $GuardianMode = 'Interactive',
+        [int] $CoordinatorPid,
+        [string] $CoordinatorStartTimeUtc,
+        [string] $SessionAdminPassword,
+        [switch] $PassThru
+    )
+
     $staleSessionIds = @(Invoke-WithNervFullStackSessionLock -ScriptBlock {
         return @(Get-NervStaleFullStackSessions | ForEach-Object { "$($_.sessionId)" })
     })
@@ -156,7 +164,12 @@ function Start-NervFullStackSession {
 
         $sessionEnvironment = Get-NervFullStackEnvironment -SessionId $newSessionId
         $secretSet = New-NervFullStackSecretEnvironment -SessionId $newSessionId
-        $suppliedAdminPassword = $env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD
+        $suppliedAdminPassword = if (-not [string]::IsNullOrWhiteSpace($SessionAdminPassword)) {
+            $SessionAdminPassword
+        }
+        else {
+            $env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD
+        }
         Remove-Item Env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD -ErrorAction SilentlyContinue
         if (-not [string]::IsNullOrWhiteSpace($suppliedAdminPassword)) {
             $secretSet.Environment['Parameters__iam-seed-admin-password'] = $suppliedAdminPassword
@@ -210,15 +223,21 @@ function Start-NervFullStackSession {
             $manifest = Move-NervFullStackSessionState -Manifest $manifest -State Running
             $manifest = Renew-NervFullStackLease -Manifest $manifest -LeaseMinutes (Get-NervFullStackLeaseMinutes)
             Write-NervFullStackManifest -Manifest $manifest
-            $guardianIdentity = Start-NervFullStackGuardian -Manifest $manifest -Mode Interactive
+            $guardianIdentity = Start-NervFullStackGuardian `
+                -Manifest $manifest `
+                -Mode $GuardianMode `
+                -CoordinatorPid $CoordinatorPid `
+                -CoordinatorStartTimeUtc $CoordinatorStartTimeUtc
             $manifest.guardian = [ordered]@{
                 pid = $guardianIdentity.Pid
                 processStartTimeUtc = $guardianIdentity.ProcessStartTimeUtc
-                mode = 'Interactive'
+                mode = $GuardianMode
             }
-            $manifest.coordinator = [ordered]@{
-                pid = $guardianIdentity.Pid
-                processStartTimeUtc = $guardianIdentity.ProcessStartTimeUtc
+            $manifest.coordinator = if ($GuardianMode -eq 'Automated') {
+                [ordered]@{ pid = $CoordinatorPid; processStartTimeUtc = $CoordinatorStartTimeUtc }
+            }
+            else {
+                [ordered]@{ pid = $guardianIdentity.Pid; processStartTimeUtc = $guardianIdentity.ProcessStartTimeUtc }
             }
             Write-NervFullStackManifest -Manifest $manifest
         }
@@ -247,6 +266,8 @@ function Start-NervFullStackSession {
         }
         return $manifest
     }
+
+    if ($PassThru) { return $createdManifest }
 
     Write-Output "$($createdManifest.sessionId)"
     $endpointEntries = if ($createdManifest.endpoints -is [System.Collections.IDictionary]) {
@@ -300,7 +321,70 @@ try {
             if ($Follow) { $arguments += '--follow' }
             Invoke-AspireInteractive -Arguments $arguments -WorkingDirectory "$($manifest.worktreeRoot)" -Name "fullstack-$resolvedSessionId-logs"
         }
-        'run' { throw "fullstack run scenario=$Scenario noBuild=$NoBuild is not available until the managed-run task is installed." }
+        'run' {
+            if ([string]::IsNullOrWhiteSpace($SessionId)) { $SessionId = New-NervFullStackSessionId -WorktreeRoot $repoRoot }
+            $runProcess = Get-Process -Id $PID
+            $sessionAdminPassword = New-NervFullStackSecretValue -Bytes 24
+            try {
+                $runResult = Invoke-NervManagedFullStackRun `
+                    -StartAction {
+                        Start-NervFullStackSession `
+                            -GuardianMode Automated `
+                            -CoordinatorPid $PID `
+                            -CoordinatorStartTimeUtc $runProcess.StartTime.ToUniversalTime().ToString('O') `
+                            -SessionAdminPassword $sessionAdminPassword `
+                            -PassThru
+                    } `
+                    -ScenarioAction {
+                        param($InputManifest)
+                        switch ($Scenario) {
+                            'smoke' {
+                                Invoke-NervFullStackSmokeScenario `
+                                    -Manifest $InputManifest `
+                                    -SessionAdminPassword $sessionAdminPassword | Out-Null
+                            }
+                        }
+                    } `
+                    -ResolveFailedManifestAction {
+                        Read-NervFullStackManifest -SessionId $SessionId
+                    } `
+                    -FailureAction {
+                        param($InputManifest, $FailureRecord)
+                        $latest = Read-NervFullStackManifest -SessionId "$($InputManifest.sessionId)"
+                        $latest.failure = [ordered]@{
+                            atUtc = [DateTimeOffset]::UtcNow.ToString('O')
+                            category = 'ScenarioOrStartup'
+                            message = Protect-NervFullStackDiagnosticText -Text "$($FailureRecord.Exception.Message)" -SensitiveValues @($sessionAdminPassword)
+                        }
+                        Write-NervFullStackManifest -Manifest $latest
+                    } `
+                    -CollectAction {
+                        param($InputManifest)
+                        $latest = Read-NervFullStackManifest -SessionId "$($InputManifest.sessionId)"
+                        if ("$($latest.state)" -eq 'Running') {
+                            $latest = Move-NervFullStackSessionState -Manifest $latest -State Collecting
+                            Write-NervFullStackManifest -Manifest $latest
+                        }
+                        Collect-NervFullStackDiagnostics -Manifest $latest -SensitiveValues @($sessionAdminPassword) | Out-Null
+                    } `
+                    -CollectionFailureAction {
+                        param($InputManifest, $FailureRecord)
+                        $latest = Read-NervFullStackManifest -SessionId "$($InputManifest.sessionId)"
+                        $safeError = Protect-NervFullStackDiagnosticText -Text "$($FailureRecord.Exception.Message)" -SensitiveValues @($sessionAdminPassword)
+                        $latest.cleanup.errors = @($latest.cleanup.errors) + @($safeError)
+                        Write-NervFullStackManifest -Manifest $latest
+                    } `
+                    -StopAction {
+                        param($InputManifest)
+                        Stop-NervFullStackSession -SessionId "$($InputManifest.sessionId)"
+                    }
+                $manifest = $runResult.Manifest
+            }
+            finally {
+                $sessionAdminPassword = $null
+            }
+            Write-Output "$($manifest.sessionId) state=$($manifest.state) artifacts=$($manifest.artifactPath)"
+        }
         'stop' {
             $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
             $result = Stop-NervFullStackSession -SessionId $resolvedSessionId

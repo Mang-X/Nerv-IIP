@@ -17,10 +17,11 @@ $nerv = Join-Path $repoRoot 'nerv.ps1'
 function Invoke-Nerv {
     param(
         [Parameter(Mandatory)]
-        [string[]] $Arguments
+        [string[]] $Arguments,
+        [string] $ScriptPath = $nerv
     )
 
-    $output = & pwsh -NoProfile -ExecutionPolicy Bypass -File $nerv @Arguments 2>&1
+    $output = & pwsh -NoProfile -ExecutionPolicy Bypass -File $ScriptPath @Arguments 2>&1
     return [pscustomobject]@{
         ExitCode = $LASTEXITCODE
         Output = ($output | Out-String)
@@ -60,20 +61,46 @@ foreach ($expected in @('run', 'start', 'url', 'status', 'logs', 'stop', 'list',
     }
 }
 
-$fullStackRun = Invoke-Nerv -Arguments @('fullstack', 'run', '-Scenario', 'smoke', '-NoBuild')
-if ($fullStackRun.ExitCode -eq 0 -or -not $fullStackRun.Output.Contains('scenario=smoke') -or -not $fullStackRun.Output.Contains('noBuild=True')) {
-    throw "Named full-stack run options were not forwarded. Output: $($fullStackRun.Output)"
-}
+$dispatchRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-entrypoint-dispatch-$([guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory((Join-Path $dispatchRoot 'scripts')) | Out-Null
+    $dispatchNerv = Join-Path $dispatchRoot 'nerv.ps1'
+    Copy-Item -LiteralPath $nerv -Destination $dispatchNerv
+    $captureScript = @'
+param(
+    [Parameter(Position=0)][string]$Action,
+    [Parameter(Position=1)][string]$Target,
+    [string]$Scenario,
+    [string]$SessionId,
+    [switch]$NoBuild,
+    [int]$Tail,
+    [switch]$Follow
+)
+[pscustomobject]@{ action=$Action; target=$Target; scenario=$Scenario; sessionId=$SessionId; noBuild=[bool]$NoBuild; tail=$Tail; follow=[bool]$Follow } | ConvertTo-Json -Compress
+'@
+    [IO.File]::WriteAllText((Join-Path $dispatchRoot 'scripts/fullstack-session.ps1'), $captureScript, [Text.UTF8Encoding]::new($false))
 
-$forwardedSessionId = 'nerv-abcd-123456'
-$fullStackStop = Invoke-Nerv -Arguments @('fullstack', 'stop', '-SessionId', $forwardedSessionId)
-if ($fullStackStop.ExitCode -eq 0 -or -not $fullStackStop.Output.Contains($forwardedSessionId)) {
-    throw "Named full-stack session ID was not forwarded. Output: $($fullStackStop.Output)"
-}
+    $fullStackRun = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('fullstack', 'run', '-Scenario', 'smoke', '-NoBuild')
+    $runCapture = $fullStackRun.Output | ConvertFrom-Json
+    if ($fullStackRun.ExitCode -ne 0 -or $runCapture.action -ne 'run' -or $runCapture.scenario -ne 'smoke' -or -not $runCapture.noBuild) {
+        throw "Named full-stack run options were not forwarded. Output: $($fullStackRun.Output)"
+    }
 
-$fullStackUrl = Invoke-Nerv -Arguments @('fullstack', 'url', 'business-console')
-if ($fullStackUrl.ExitCode -eq 0 -or -not $fullStackUrl.Output.Contains('business-console')) {
-    throw "Positional full-stack URL target was not forwarded. Output: $($fullStackUrl.Output)"
+    $forwardedSessionId = 'nerv-abcd-123456'
+    $fullStackStop = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('fullstack', 'stop', '-SessionId', $forwardedSessionId)
+    $stopCapture = $fullStackStop.Output | ConvertFrom-Json
+    if ($fullStackStop.ExitCode -ne 0 -or $stopCapture.action -ne 'stop' -or $stopCapture.sessionId -ne $forwardedSessionId) {
+        throw "Named full-stack session ID was not forwarded. Output: $($fullStackStop.Output)"
+    }
+
+    $fullStackUrl = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('fullstack', 'url', 'business-console')
+    $urlCapture = $fullStackUrl.Output | ConvertFrom-Json
+    if ($fullStackUrl.ExitCode -ne 0 -or $urlCapture.action -ne 'url' -or $urlCapture.target -ne 'business-console') {
+        throw "Positional full-stack URL target was not forwarded. Output: $($fullStackUrl.Output)"
+    }
+}
+finally {
+    Remove-Item -LiteralPath $dispatchRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 $ports = Invoke-Nerv -Arguments @('ports')
