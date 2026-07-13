@@ -10,7 +10,7 @@ Independent Codex sessions already work in separate git worktrees. `scripts/dev.
 2. AppHost container resources use fixed persistent volume names such as `nerv-iip-postgres-18`, `nerv-iip-redis`, `nerv-iip-minio` and `nerv-iip-victoria-logs`; concurrent isolated AppHosts must not share those writable volumes.
 3. `scripts/aspire-control.ps1` has a fallback that finds Aspire development containers by generic resource-name prefixes such as `postgres-*` and `redis-*`. In parallel runs, one session can therefore remove another session's containers.
 4. A successful `aspire start` leaves the full topology running until an explicit stop. Failed, interrupted or abandoned agent sessions can accumulate Aspire, Node.js, .NET and Docker resources.
-5. Full-stack runs are relatively expensive. The machine normally needs only two or three concurrent stacks, but admission must consider current free memory instead of assuming unlimited capacity.
+5. Full-stack runs are relatively expensive. The machine normally needs only two or three concurrent stacks, so admission uses a configurable concurrent-session ceiling.
 
 The design governs only real full-stack verification. Unit tests, contract tests, frontend type checks, Vitest suites and existing focused infrastructure tests remain unchanged.
 
@@ -196,17 +196,15 @@ Creating -> Running -> Collecting -> Stopping -> Stopped
 
 Allowed transitions are explicit and test-protected. `stop` and `gc` are idempotent for `Stopped` sessions. A cleanup failure preserves the manifest and diagnostic details so a later `gc` can retry.
 
-## Admission And Resource Budget
+## Admission And Concurrency Limit
 
-Full-stack admission is resource-aware:
+Full-stack admission is count-based:
 
 1. The default safety ceiling is three active sessions.
-2. A new session requires at least 4 GiB of free physical memory after stale manifests are reconciled. The governed helper reads this through Windows CIM or Linux `/proc/meminfo`; inability to measure memory fails admission with a clear diagnostic rather than silently overcommitting.
-3. Both values are configurable through non-secret local settings:
+2. The ceiling is configurable through non-secret local settings. Admission does not inspect or enforce available physical memory:
 
 ```text
 NERV_IIP_FULLSTACK_MAX_SESSIONS=3
-NERV_IIP_FULLSTACK_MIN_FREE_GB=4
 NERV_IIP_FULLSTACK_LEASE_MINUTES=90
 NERV_IIP_FULLSTACK_CAPACITY_WAIT_MINUTES=10
 NERV_IIP_FULLSTACK_GUARDIAN_INTERVAL_SECONDS=60
@@ -215,11 +213,11 @@ NERV_IIP_FULLSTACK_COLLECT_TIMEOUT_SECONDS=120
 NERV_IIP_FULLSTACK_STOP_TIMEOUT_SECONDS=120
 ```
 
-4. `fullstack run` may wait for capacity with a bounded timeout and report the active session IDs occupying capacity.
-5. Interactive `fullstack start` fails fast when admission is denied and prints the same bounded diagnostic summary.
-6. The admission decision and initial manifest creation happen under the cross-process session lock.
+3. `fullstack run` may wait for a session slot with a bounded timeout and report the active session IDs occupying the configured ceiling.
+4. Interactive `fullstack start` fails fast when all session slots are occupied and prints the same bounded diagnostic summary.
+5. The admission decision and initial manifest creation happen under the cross-process session lock.
 
-The ceiling is a safety guard, not a promise that three stacks will always fit. The free-memory gate can allow two stacks and reject a third when other applications consume the remaining capacity.
+The ceiling is a concurrency guard, not a machine-resource guarantee. Operators may lower it when a machine cannot comfortably run three stacks; the tooling does not guess from available memory.
 
 ## Lease And Stale-Session Recovery
 
@@ -292,7 +290,7 @@ Fast tests use fixtures or mocks rather than starting Docker. They prove:
 1. Session IDs and Docker resource names are valid and bounded.
 2. Manifest writes are atomic and schema-versioned.
 3. State transitions reject invalid movement and allow idempotent stop.
-4. Admission is serialized across processes and honors capacity plus memory settings.
+4. Admission is serialized across processes and honors the configured active-session ceiling.
 5. Lease renewal and stale detection use both PID and process start time, avoiding PID-reuse mistakes.
 6. The guardian cleans an expired or abandoned session and exits without touching a live session.
 7. Cleanup filters require exact session ownership and never accept a generic resource-name prefix.
@@ -320,7 +318,7 @@ Real acceptance proves:
 6. A deliberately failed scenario still removes its processes, containers, networks and volumes.
 7. A synthetic stale manifest is reclaimed without affecting a live session.
 8. Repeated stop and GC remain idempotent.
-9. Three sessions either pass when capacity permits or are rejected/queued cleanly without partial leaked resources.
+9. Three sessions can run concurrently when no existing session occupies one of the configured slots; otherwise excess requests are rejected or queued cleanly without partial leaked resources.
 
 ### Required Repository Gates
 
@@ -331,7 +329,7 @@ scripts/check-script-governance.ps1
 dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj
 ```
 
-It must also run the new fast script tests and the real two-session isolation acceptance. The three-session acceptance is required before changing the default safety ceiling above three, but remains optional for ordinary changes when local capacity is insufficient.
+It must also run the new fast script tests and the real two-session isolation acceptance. The three-session acceptance is required before changing the default safety ceiling above three, but remains optional for ordinary changes because it is resource-intensive.
 
 ## Rollout Sequence
 
@@ -341,7 +339,7 @@ It must also run the new fast script tests and the real two-session isolation ac
 4. Add root full-stack commands and machine-readable endpoint handoff.
 5. Add the `smoke` managed scenario and real two-session isolation acceptance.
 6. Add lease expiry, stale GC and failure-injection acceptance.
-7. Validate the optional three-session capacity path and document local tuning settings.
+7. Validate the optional three-session concurrency path and document local ceiling tuning.
 
 Each rollout step must remain recoverable through the existing `nerv.ps1 stop` path or the new session-specific stop command. No step may require a global Docker prune or machine restart.
 
@@ -373,6 +371,6 @@ Historical plans remain unchanged unless they are presented as current operation
 1. No unresolved marker or deferred decision is required to begin implementation planning.
 2. The design preserves one canonical AppHost and does not introduce a competing topology.
 3. Dynamic endpoint discovery, ephemeral storage, process ownership and cleanup use the same session ID boundary.
-4. Full-stack concurrency is bounded by both a configurable ceiling and live memory capacity.
+4. Full-stack concurrency is bounded only by a configurable active-session ceiling; no minimum-memory admission rule is imposed.
 5. Failure handling preserves diagnostics but never keeps a failed stack alive for debugging.
 6. The scope is limited to full-stack session conflicts and does not expand into unrelated test-framework migration.
