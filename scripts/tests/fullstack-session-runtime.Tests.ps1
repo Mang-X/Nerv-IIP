@@ -307,6 +307,21 @@ Assert-True ($aspireRetryResult -eq 'started') 'Aspire startup retry must return
 Assert-True ($script:aspireRetryCalls -eq 2) 'Aspire startup must retry one transient MSBuild resource failure.'
 Assert-True ($script:aspireRetryCleanupCalls -eq 1) 'Aspire startup retry must clean the failed attempt first.'
 
+$script:worktreeStoppedPids = [System.Collections.Generic.List[int]]::new()
+$worktreeProcessResult = Stop-NervWorktreeProcesses `
+    -WorktreeRoot 'C:\nfs\fullstack-worktrees\abcd1234\s2' `
+    -ExcludedProcessIds @(102) `
+    -ProcessQueryAction {
+        @(
+            [pscustomobject]@{ ProcessId = 101; CommandLine = 'dotnet run --project C:\nfs\fullstack-worktrees\abcd1234\s2\backend\service.csproj' },
+            [pscustomobject]@{ ProcessId = 102; CommandLine = 'node C:\nfs\fullstack-worktrees\abcd1234\s2\frontend\vite.js' },
+            [pscustomobject]@{ ProcessId = 103; CommandLine = 'dotnet run --project C:\other\service.csproj' }
+        )
+    } `
+    -StopAction { param($ProcessId, $Reason) $script:worktreeStoppedPids.Add($ProcessId) }
+Assert-True ($worktreeProcessResult.StoppedProcessIds.Count -eq 1) 'Worktree cleanup must select only exact owned process command lines.'
+Assert-True ($script:worktreeStoppedPids[0] -eq 101) 'Worktree cleanup stopped the wrong process.'
+
 $stopStateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-stop-$([guid]::NewGuid().ToString('N'))"
 try {
     $stopSessionId = 'nerv-dead-000001'

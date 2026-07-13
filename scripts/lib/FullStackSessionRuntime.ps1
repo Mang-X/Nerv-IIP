@@ -779,6 +779,42 @@ function Invoke-NervAspireStartWithRetry {
     }
 }
 
+function Stop-NervWorktreeProcesses {
+    param(
+        [Parameter(Mandatory)] [string] $WorktreeRoot,
+        [int[]] $ExcludedProcessIds = @(),
+        [scriptblock] $ProcessQueryAction,
+        [scriptblock] $StopAction
+    )
+
+    if ($null -eq $ProcessQueryAction) {
+        $ProcessQueryAction = {
+            if (-not $IsWindows) { return @() }
+            return @(Get-CimInstance Win32_Process | Select-Object ProcessId, CommandLine)
+        }
+    }
+    if ($null -eq $StopAction) {
+        $StopAction = {
+            param($ProcessId, $Reason)
+            Stop-ProcessTree -ProcessId $ProcessId -Reason $Reason | Out-Null
+        }
+    }
+
+    $normalizedRoot = [System.IO.Path]::GetFullPath($WorktreeRoot).Replace('/', '\').TrimEnd('\') + '\'
+    $excluded = @($ExcludedProcessIds | ForEach-Object { [int] $_ })
+    $stopped = [System.Collections.Generic.List[int]]::new()
+    foreach ($process in @(& $ProcessQueryAction)) {
+        $processId = [int] $process.ProcessId
+        if ($processId -le 0 -or $excluded -contains $processId) { continue }
+        $commandLine = "$($process.CommandLine)".Replace('/', '\')
+        if ([string]::IsNullOrWhiteSpace($commandLine) -or -not $commandLine.Contains($normalizedRoot, [StringComparison]::OrdinalIgnoreCase)) { continue }
+        & $StopAction $processId "Exact worktree process cleanup for $normalizedRoot"
+        $stopped.Add($processId)
+    }
+
+    return [pscustomobject]@{ StoppedProcessIds = @($stopped) }
+}
+
 function Stop-NervFullStackSession {
     param(
         [Parameter(Mandatory)] [string] $SessionId,
@@ -818,6 +854,9 @@ function Stop-NervFullStackSession {
                     Stop-ProcessTree -ProcessId $processId -Reason "Exact full-stack session stop for $($Manifest.sessionId)" | Out-Null
                 }
             }
+            Stop-NervWorktreeProcesses `
+                -WorktreeRoot "$($Manifest.worktreeRoot)" `
+                -ExcludedProcessIds @($PID, $callerGuardianPid) | Out-Null
         }
     }
     if ($null -eq $DockerRemoveAction) {
