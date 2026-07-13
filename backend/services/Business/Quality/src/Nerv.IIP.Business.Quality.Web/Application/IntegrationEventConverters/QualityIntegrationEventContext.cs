@@ -33,6 +33,14 @@ public sealed class HttpQualityIntegrationEventContextAccessor(IHttpContextAcces
 
     private static string ResolveActor(ClaimsPrincipal? user, IHeaderDictionary? headers)
     {
+        var headerActor = ReadHeader(headers, "X-Actor");
+        var tokenType = user?.FindFirstValue("token_type");
+        if (string.Equals(tokenType, "internal_service", StringComparison.Ordinal)
+            && IsCanonicalActor(headerActor))
+        {
+            return headerActor!;
+        }
+
         var subject = user?.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? user?.FindFirstValue("sub");
         if (!string.IsNullOrWhiteSpace(subject))
@@ -40,7 +48,6 @@ public sealed class HttpQualityIntegrationEventContextAccessor(IHttpContextAcces
             return $"user:{subject}";
         }
 
-        var headerActor = ReadHeader(headers, "X-Actor");
         if (!string.IsNullOrWhiteSpace(headerActor))
         {
             return headerActor;
@@ -50,6 +57,17 @@ public sealed class HttpQualityIntegrationEventContextAccessor(IHttpContextAcces
         return string.IsNullOrWhiteSpace(name)
             ? $"system:{QualityIntegrationEventSources.BusinessQuality}"
             : $"user:{name}";
+    }
+
+    private static bool IsCanonicalActor(string? actor)
+    {
+        if (string.IsNullOrWhiteSpace(actor))
+        {
+            return false;
+        }
+
+        var separator = actor.IndexOf(':', StringComparison.Ordinal);
+        return separator > 0 && separator < actor.Length - 1;
     }
 
     private static string? ReadHeader(IHeaderDictionary? headers, string name)

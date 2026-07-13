@@ -43,6 +43,19 @@ public sealed class QualityOpenApiTests
                 contract.OperationId,
                 GetOperationId(document, contract.Route, contract.HttpMethod.ToLowerInvariant()));
         }
+
+        AssertRequiredReason(document, "/api/business/v1/quality/ncrs/{ncrId}/close");
+    }
+
+    private static void AssertRequiredReason(JsonDocument document, string route)
+    {
+        var operation = document.RootElement.GetProperty("paths").GetProperty(route).GetProperty("post");
+        var schemaRef = operation.GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!;
+        var schema = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty(schemaRef.Split('/')[^1]);
+        Assert.Contains("reason", schema.GetProperty("required").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal(500, schema.GetProperty("properties").GetProperty("reason").GetProperty("maxLength").GetInt32());
     }
 
     private static async Task<JsonDocument> GetOpenApiDocumentAsync(HttpClient client)

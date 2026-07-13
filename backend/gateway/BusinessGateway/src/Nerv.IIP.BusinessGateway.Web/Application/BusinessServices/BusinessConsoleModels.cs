@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using FastEndpoints;
 using Nerv.IIP.Contracts.Coding;
 
@@ -801,6 +802,12 @@ public sealed record BusinessConsoleNotificationListRequest(
     string? Status,
     int Take = 20);
 
+public sealed record BusinessConsoleMarkNotificationMessageReadRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string MessageId,
+    string? RecipientRef = null);
+
 public sealed record BusinessConsoleInventoryAvailabilityRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1189,7 +1196,8 @@ public sealed record BusinessConsoleNcrCloseRequest(
     [property: QueryParam] string EnvironmentId,
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
-    string? ReturnDocumentId);
+    string? ReturnDocumentId,
+    [property: Required, MaxLength(500)] string Reason);
 
 public sealed record BusinessConsoleAcceptedResponse(
     bool Accepted,

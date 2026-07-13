@@ -47,7 +47,8 @@ public sealed class MasterDataIntegrationEventTests
     [Fact]
     public void Sku_disabled_event_carries_reason_without_sensitive_payload()
     {
-        var converter = new SkuDisabledIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor());
+        var converter = new SkuDisabledIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor(
+            new MasterDataIntegrationEventContext("corr-disable-001", "cause-disable-001", "user:masterdata-admin")));
         var domainEvent = new SkuDisabledDomainEvent("org-001", "env-dev", "SKU-OLD", "duplicate registration");
 
         var integrationEvent = converter.Convert(domainEvent);
@@ -55,6 +56,7 @@ public sealed class MasterDataIntegrationEventTests
         Assert.Equal("masterData.SkuDisabled", integrationEvent.EventType);
         Assert.Equal("disabled", integrationEvent.Payload.Status);
         Assert.Equal("duplicate registration", integrationEvent.Payload.DisabledReason);
+        Assert.Equal("user:masterdata-admin", integrationEvent.Actor);
         Assert.DoesNotContain("secret", JsonSerializer.Serialize(integrationEvent, new JsonSerializerOptions(JsonSerializerDefaults.Web)), StringComparison.OrdinalIgnoreCase);
     }
 

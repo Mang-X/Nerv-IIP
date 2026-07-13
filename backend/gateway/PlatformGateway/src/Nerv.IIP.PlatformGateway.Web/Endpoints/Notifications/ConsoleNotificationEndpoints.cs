@@ -32,7 +32,7 @@ public sealed class ListConsoleNotificationMessagesEndpoint(
             HttpContext,
             auth,
             GatewayPermissions.NotificationMessagesRead,
-            GatewayNotificationEndpointContext.WithQueryString(HttpContext, "/api/notifications/v1/messages"),
+            GatewayNotificationEndpointContext.WithPrincipalQueryString(HttpContext, "/api/notifications/v1/messages"),
             "notification-message",
             null,
             ct);
@@ -71,7 +71,7 @@ public sealed class ListConsoleNotificationTasksEndpoint(
             HttpContext,
             auth,
             GatewayPermissions.NotificationTasksRead,
-            GatewayNotificationEndpointContext.WithQueryString(HttpContext, "/api/notifications/v1/tasks"),
+            GatewayNotificationEndpointContext.WithPrincipalQueryString(HttpContext, "/api/notifications/v1/tasks"),
             "notification-task",
             null,
             ct);
@@ -573,6 +573,9 @@ internal static class GatewayNotificationEndpointContext
     public static string WithQueryString(HttpContext context, string path) =>
         path + context.Request.QueryString.Value;
 
+    public static string WithPrincipalQueryString(HttpContext context, string path)
+        => path;
+
     public static async Task<GatewayNotificationRequestContext?> AuthorizeAsync(
         HttpContext context,
         IGatewayAuthorizationClient auth,
@@ -607,14 +610,28 @@ internal static class GatewayNotificationEndpointContext
         }
 
         var bearerToken = await context.GetTokenAsync("access_token");
+        var principalType = string.IsNullOrWhiteSpace(principal.PrincipalType)
+            ? "user"
+            : principal.PrincipalType.Trim().ToLowerInvariant();
+        var recipientRef = $"{principalType}:{principal.PrincipalId!.Trim()}";
+        var recipientSeparator = downstreamRequestUri.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+        var scopedRequestUri = resourceType is "notification-message" or "notification-task"
+            ? $"{downstreamRequestUri}{recipientSeparator}recipientRef={Uri.EscapeDataString(recipientRef)}"
+            : downstreamRequestUri;
+        var status = context.Request.Query["status"].ToString();
+        if (!string.IsNullOrWhiteSpace(status) && resourceId is null && resourceType is "notification-message" or "notification-task")
+        {
+            scopedRequestUri += $"&status={Uri.EscapeDataString(status)}";
+        }
         return new GatewayNotificationRequestContext(
-            downstreamRequestUri,
+            scopedRequestUri,
             organizationId,
             environmentId,
             bearerToken!,
             HeaderOrNull(context, "X-Correlation-Id"),
             HeaderOrNull(context, "Idempotency-Key") ?? HeaderOrNull(context, "X-Idempotency-Key"),
-            requirement);
+            requirement,
+            recipientRef);
     }
 
     private static string? HeaderOrNull(HttpContext context, string name)

@@ -333,6 +333,7 @@ public interface IBusinessQualityClient
         string internalBearerToken,
         string ncrId,
         BusinessConsoleNcrCloseRequest request,
+        string actor,
         CancellationToken cancellationToken);
 }
 
@@ -975,6 +976,8 @@ public interface IBusinessIndustrialTelemetryClient
         BusinessConsoleEquipmentAvailabilityRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleTelemetryRuntimeHoursResponse> QueryRuntimeHoursAsync(string internalBearerToken, BusinessConsoleTelemetryRuntimeHoursRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+
     Task<EquipmentRuntimeAvailabilityResponse> GetDeviceRuntimeAvailabilityAsync(
         string internalBearerToken,
         string deviceAssetId,
@@ -1201,6 +1204,11 @@ public interface IBusinessNotificationClient
         string internalBearerToken,
         BusinessConsoleNotificationListRequest request,
         CancellationToken cancellationToken);
+
+    Task<MarkNotificationMessageReadResponse> MarkMessageReadAsync(
+        string internalBearerToken,
+        BusinessConsoleMarkNotificationMessageReadRequest request,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
 }
 
 public interface IBusinessMesClient
@@ -1873,15 +1881,36 @@ public sealed class HttpBusinessNotificationClient(HttpClient httpClient) : Busi
             cancellationToken,
             configureRequest: notificationRequest => AddNotificationScopeHeaders(notificationRequest, request));
 
+    public Task<MarkNotificationMessageReadResponse> MarkMessageReadAsync(
+        string internalBearerToken,
+        BusinessConsoleMarkNotificationMessageReadRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<MarkNotificationMessageReadResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/notifications/v1/messages/{Uri.EscapeDataString(request.MessageId)}/read?" + Query(("recipientRef", request.RecipientRef)),
+            null,
+            cancellationToken,
+            configureRequest: notificationRequest => AddNotificationScopeHeaders(
+                notificationRequest,
+                request.OrganizationId,
+                request.EnvironmentId));
+
     private static string NotificationQuery(BusinessConsoleNotificationListRequest request) =>
         Query(
             ("recipientRef", request.RecipientRef),
             ("status", request.Status));
 
     private static void AddNotificationScopeHeaders(HttpRequestMessage httpRequest, BusinessConsoleNotificationListRequest request)
+        => AddNotificationScopeHeaders(httpRequest, request.OrganizationId, request.EnvironmentId);
+
+    private static void AddNotificationScopeHeaders(
+        HttpRequestMessage httpRequest,
+        string organizationId,
+        string environmentId)
     {
-        httpRequest.Headers.TryAddWithoutValidation("X-Organization-Id", request.OrganizationId);
-        httpRequest.Headers.TryAddWithoutValidation("X-Environment-Id", request.EnvironmentId);
+        httpRequest.Headers.TryAddWithoutValidation("X-Organization-Id", organizationId);
+        httpRequest.Headers.TryAddWithoutValidation("X-Environment-Id", environmentId);
     }
 }
 
@@ -2721,6 +2750,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string internalBearerToken,
         string ncrId,
         BusinessConsoleNcrCloseRequest request,
+        string actor,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleAcceptedResponse>(
             internalBearerToken,
@@ -2730,8 +2760,10 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ncrId,
                 request.ReworkWorkOrderId,
                 request.ScrapMovementId,
-                request.ReturnDocumentId),
-            cancellationToken);
+                request.ReturnDocumentId,
+                request.Reason),
+            cancellationToken,
+            configureRequest: message => message.Headers.TryAddWithoutValidation("X-Actor", actor));
 
     private static BusinessConsoleQualityItem ToQualityItem(DownstreamInspectionPlanItem item) =>
         new(
@@ -2963,7 +2995,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string NcrId,
         string? ReworkWorkOrderId,
         string? ScrapMovementId,
-        string? ReturnDocumentId);
+        string? ReturnDocumentId,
+        string Reason);
 
     private sealed record DownstreamOpenNcrFromInspectionRequest(
         string InspectionRecordId,
@@ -4492,6 +4525,11 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             null,
             cancellationToken,
             EquipmentRuntimeJson.Options);
+
+    public Task<BusinessConsoleTelemetryRuntimeHoursResponse> QueryRuntimeHoursAsync(string internalBearerToken, BusinessConsoleTelemetryRuntimeHoursRequest request, CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleTelemetryRuntimeHoursResponse>(internalBearerToken, HttpMethod.Get,
+            "/api/business/v1/iiot/runtime-hours?" + Query(("organizationId", request.OrganizationId), ("environmentId", request.EnvironmentId), ("deviceAssetId", request.DeviceAssetId), ("windowStartUtc", request.WindowStartUtc), ("windowEndUtc", request.WindowEndUtc)),
+            null, cancellationToken);
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetDeviceRuntimeAvailabilityAsync(
         string internalBearerToken,
