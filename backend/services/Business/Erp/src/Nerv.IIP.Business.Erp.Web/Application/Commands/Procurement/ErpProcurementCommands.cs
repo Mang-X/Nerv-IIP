@@ -255,8 +255,7 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             ? StableIdempotencyKey("pr-to-po", supplierCode, request.CurrencyCode, requisitionNos)
             : request.IdempotencyKey;
         var fingerprint = ErpCodingService.Fingerprint(supplierCode, request.CurrencyCode, requisitionNos);
-        var replay = await ErpCodingService.FindPersistedReplayAsync(
-            dbContext,
+        var replay = await _codingService.TryPeekReplayAsync(
             request.OrganizationId,
             request.EnvironmentId,
             "purchase-order",
@@ -265,16 +264,19 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             cancellationToken);
         if (replay is not null)
         {
-            var replayedOrder = await dbContext.PurchaseOrders.SingleAsync(x =>
+            var replayedOrder = await dbContext.PurchaseOrders.SingleOrDefaultAsync(x =>
                 x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
                 && x.PurchaseOrderNo == replay.Code,
                 cancellationToken);
-            return new ConvertPurchaseRequisitionsToPurchaseOrderResult(
-                PurchaseRequisitionConversionStatus.AlreadyConverted,
-                replayedOrder.Id,
-                replayedOrder.PurchaseOrderNo,
-                SupplierCode: replayedOrder.SupplierCode);
+            if (replayedOrder is not null)
+            {
+                return new ConvertPurchaseRequisitionsToPurchaseOrderResult(
+                    PurchaseRequisitionConversionStatus.AlreadyConverted,
+                    replayedOrder.Id,
+                    replayedOrder.PurchaseOrderNo,
+                    SupplierCode: replayedOrder.SupplierCode);
+            }
         }
 
         await BusinessPartnerAvailabilityGate.EnsureActiveAsync(
@@ -700,8 +702,7 @@ public sealed class CreatePurchaseOrderCommandHandler(
     public async Task<PurchaseOrderId> Handle(CreatePurchaseOrderCommand request, CancellationToken cancellationToken)
     {
         var fingerprint = ErpCodingService.Fingerprint(request.SupplierCode, request.SiteCode, request.CurrencyCode, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.PromisedDate}"));
-        var replay = await ErpCodingService.FindPersistedReplayAsync(
-            dbContext,
+        var replay = await _codingService.TryPeekReplayAsync(
             request.OrganizationId,
             request.EnvironmentId,
             "purchase-order",

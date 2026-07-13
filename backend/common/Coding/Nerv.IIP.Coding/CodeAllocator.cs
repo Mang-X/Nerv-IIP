@@ -59,22 +59,10 @@ public sealed class CodeAllocator(
             return AllocateInMemory(request, normalizedRequestedCode, normalizedIdempotencyKey);
         }
 
-        var idempotencyRecord = normalizedIdempotencyKey is null
-            ? null
-            : await _store.FindIdempotencyRecordAsync(
-                request.OrganizationId,
-                request.EnvironmentId,
-                request.Rule.RuleKey,
-                normalizedIdempotencyKey,
-                cancellationToken);
-        if (idempotencyRecord is not null)
+        var replay = await TryPeekReplayCoreAsync(request, normalizedIdempotencyKey, cancellationToken);
+        if (replay is not null)
         {
-            if (!string.Equals(idempotencyRecord.PayloadFingerprint, request.PayloadFingerprint, StringComparison.Ordinal))
-            {
-                throw IdempotencyConflict(normalizedIdempotencyKey!, request.ConflictResourceLabel);
-            }
-
-            return new CodeAllocation(idempotencyRecord.Code, true);
+            return replay;
         }
 
         var code = normalizedRequestedCode ?? await NextCodeAsync(request, cancellationToken);
@@ -91,6 +79,18 @@ public sealed class CodeAllocator(
         }
 
         return new CodeAllocation(code, false);
+    }
+
+    public Task<CodeAllocation?> TryPeekReplayAsync(CodeAllocationRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        request.Rule.Validate();
+        if (!request.Rule.IsActive)
+        {
+            throw new KnownException($"Code rule '{request.Rule.RuleKey}' is inactive.");
+        }
+
+        return TryPeekReplayCoreAsync(request, Normalize(request.IdempotencyKey), cancellationToken);
     }
 
     public static string Fingerprint(params object?[] parts)
@@ -195,14 +195,12 @@ public sealed class CodeAllocator(
             var idempotencyRecord = normalizedIdempotencyKey is null
                 ? null
                 : FindIdempotencyRecordInMemory(request, normalizedIdempotencyKey);
-            if (idempotencyRecord is not null)
+            var replay = normalizedIdempotencyKey is null
+                ? null
+                : ToReplay(request, normalizedIdempotencyKey, idempotencyRecord);
+            if (replay is not null)
             {
-                if (!string.Equals(idempotencyRecord.PayloadFingerprint, request.PayloadFingerprint, StringComparison.Ordinal))
-                {
-                    throw IdempotencyConflict(normalizedIdempotencyKey!, request.ConflictResourceLabel);
-                }
-
-                return new CodeAllocation(idempotencyRecord.Code, true);
+                return replay;
             }
         }
 
@@ -212,14 +210,10 @@ public sealed class CodeAllocator(
             if (normalizedIdempotencyKey is not null)
             {
                 var existingRecord = FindIdempotencyRecordInMemory(request, normalizedIdempotencyKey);
-                if (existingRecord is not null)
+                var replay = ToReplay(request, normalizedIdempotencyKey, existingRecord);
+                if (replay is not null)
                 {
-                    if (!string.Equals(existingRecord.PayloadFingerprint, request.PayloadFingerprint, StringComparison.Ordinal))
-                    {
-                        throw IdempotencyConflict(normalizedIdempotencyKey, request.ConflictResourceLabel);
-                    }
-
-                    return new CodeAllocation(existingRecord.Code, true);
+                    return replay;
                 }
 
                 var idempotencyKey = new CodeIdempotencyKey(
@@ -237,6 +231,54 @@ public sealed class CodeAllocator(
         }
 
         return new CodeAllocation(code, false);
+    }
+
+    private async Task<CodeAllocation?> TryPeekReplayCoreAsync(
+        CodeAllocationRequest request,
+        string? normalizedIdempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        if (normalizedIdempotencyKey is null)
+        {
+            return null;
+        }
+
+        if (_store is null)
+        {
+            lock (_lock)
+            {
+                return ToReplay(
+                    request,
+                    normalizedIdempotencyKey,
+                    FindIdempotencyRecordInMemory(request, normalizedIdempotencyKey));
+            }
+        }
+
+        var record = await _store.FindIdempotencyRecordAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.Rule.RuleKey,
+            normalizedIdempotencyKey,
+            cancellationToken);
+        return ToReplay(request, normalizedIdempotencyKey, record);
+    }
+
+    private static CodeAllocation? ToReplay(
+        CodeAllocationRequest request,
+        string normalizedIdempotencyKey,
+        CodeIdempotencyKey? record)
+    {
+        if (record is null)
+        {
+            return null;
+        }
+
+        if (!string.Equals(record.PayloadFingerprint, request.PayloadFingerprint, StringComparison.Ordinal))
+        {
+            throw IdempotencyConflict(normalizedIdempotencyKey, request.ConflictResourceLabel);
+        }
+
+        return new CodeAllocation(record.Code, true);
     }
 
     private CodeIdempotencyKey? FindIdempotencyRecordInMemory(CodeAllocationRequest request, string idempotencyKey)

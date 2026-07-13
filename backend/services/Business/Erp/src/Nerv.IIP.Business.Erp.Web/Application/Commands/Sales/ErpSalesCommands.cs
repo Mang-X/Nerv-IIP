@@ -152,8 +152,7 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
     public async Task<SalesOrderId> Handle(CreateSalesOrderCommand request, CancellationToken cancellationToken)
     {
         var fingerprint = ErpCodingService.Fingerprint(request.QuotationNo);
-        var replay = await ErpCodingService.FindPersistedReplayAsync(
-            dbContext,
+        var replay = await _codingService.TryPeekReplayAsync(
             request.OrganizationId,
             request.EnvironmentId,
             "sales-order",

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Infrastructure.MasterData;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.MasterData;
 
@@ -16,7 +17,7 @@ public static class BusinessPartnerAvailabilityGate
             x.OrganizationId == organizationId
             && x.EnvironmentId == environmentId
             && x.PartnerCode == partnerCode
-            && x.Status == "disabled",
+            && x.Status == BusinessPartnerAvailabilityStatuses.Disabled,
             cancellationToken);
 
         if (isDisabled)

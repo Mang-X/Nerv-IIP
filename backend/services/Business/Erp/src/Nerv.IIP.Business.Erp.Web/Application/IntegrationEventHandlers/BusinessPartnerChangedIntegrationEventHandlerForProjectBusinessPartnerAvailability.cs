@@ -54,7 +54,7 @@ public sealed class BusinessPartnerChangedIntegrationEventHandlerForProjectBusin
         }
 
         var status = integrationEvent.Payload.Status?.Trim().ToLowerInvariant();
-        if (status is not ("active" or "disabled"))
+        if (status is not (BusinessPartnerAvailabilityStatuses.Active or BusinessPartnerAvailabilityStatuses.Disabled))
         {
             await AddDeadLetterAsync(integrationEvent, "unsupported-partner-status", $"Business partner status '{integrationEvent.Payload.Status ?? "<missing>"}' is not supported.", cancellationToken);
             return;

@@ -33,7 +33,7 @@ public sealed class BusinessPartnerAvailability : Entity<BusinessPartnerAvailabi
     public string Status { get; private set; } = string.Empty;
     public DateTimeOffset ChangedAtUtc { get; private set; }
     public string SourceEventId { get; private set; } = string.Empty;
-    public bool IsDisabled => string.Equals(Status, "disabled", StringComparison.Ordinal);
+    public bool IsDisabled => string.Equals(Status, BusinessPartnerAvailabilityStatuses.Disabled, StringComparison.Ordinal);
 
     public static BusinessPartnerAvailability Create(
         string organizationId,

@@ -1,9 +1,7 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Contracts.Coding;
 using Nerv.IIP.Business.Erp.Infrastructure;
-using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands;
 
@@ -50,8 +48,7 @@ public sealed class ErpCodingService
         return new ErpCodeAllocation(allocation.Code, allocation.IsIdempotentReplay);
     }
 
-    public static async Task<ErpCodeAllocation?> FindPersistedReplayAsync(
-        ApplicationDbContext dbContext,
+    public async Task<ErpCodeAllocation?> TryPeekReplayAsync(
         string organizationId,
         string environmentId,
         string ruleKey,
@@ -59,29 +56,18 @@ public sealed class ErpCodingService
         string payloadFingerprint,
         CancellationToken cancellationToken)
     {
-        var normalizedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey.Trim();
-        if (normalizedKey is null)
-        {
-            return null;
-        }
-
-        var record = await dbContext.CodeIdempotencyKeys.SingleOrDefaultAsync(x =>
-            x.OrganizationId == organizationId
-            && x.EnvironmentId == environmentId
-            && x.RuleKey == ruleKey
-            && x.IdempotencyKey == normalizedKey,
+        var replay = await _allocator.TryPeekReplayAsync(
+            new CodeAllocationRequest(
+                organizationId,
+                environmentId,
+                StandardCodeRules.Get(ruleKey),
+                Fields: null,
+                RequestedCode: null,
+                idempotencyKey,
+                payloadFingerprint,
+                "ERP"),
             cancellationToken);
-        if (record is null)
-        {
-            return null;
-        }
-
-        if (!string.Equals(record.PayloadFingerprint, payloadFingerprint, StringComparison.Ordinal))
-        {
-            throw new KnownException($"Idempotency key '{normalizedKey}' has already been used with different ERP create data.");
-        }
-
-        return new ErpCodeAllocation(record.Code, true);
+        return replay is null ? null : new ErpCodeAllocation(replay.Code, replay.IsIdempotentReplay);
     }
 
     public static string Fingerprint(params object?[] parts)
