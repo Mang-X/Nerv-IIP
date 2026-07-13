@@ -57,6 +57,21 @@ try {
     Assert-True (-not (Test-NervFullStackSessionStale -Manifest $reloaded)) 'A live coordinator with a valid lease must not be stale.'
     Write-NervFullStackManifest -Manifest $reloaded -StateRoot $testRoot
     Assert-True (@(Get-NervStaleFullStackSessions -StateRoot $testRoot).Count -eq 0) 'A live session must never be selected for GC.'
+
+    $reloaded.leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O')
+    Write-NervFullStackManifest -Manifest $reloaded -StateRoot $testRoot
+    $renewed = Renew-NervFullStackSessionLease -SessionId $sessionId -StateRoot $testRoot -LeaseMinutes 30
+    Assert-True ($renewed.state -eq 'Running') 'Atomic renewal must keep a running session active.'
+    Assert-True (@(Claim-NervStaleFullStackSessions -StateRoot $testRoot).Count -eq 0) 'GC must not claim a session renewed before its stale recheck.'
+
+    $renewed.leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O')
+    Write-NervFullStackManifest -Manifest $renewed -StateRoot $testRoot
+    $claimed = @(Claim-NervStaleFullStackSessions -StateRoot $testRoot)
+    Assert-True ($claimed.Count -eq 1 -and $claimed[0] -eq $sessionId) 'GC must atomically claim an actually stale session.'
+    $renewAfterClaim = Renew-NervFullStackSessionLease -SessionId $sessionId -StateRoot $testRoot -LeaseMinutes 30
+    Assert-True ($renewAfterClaim.state -eq 'Stopping') 'Lease renewal must never overwrite a GC or user stop claim.'
+
+    $reloaded = Read-NervFullStackManifest -SessionId $sessionId -StateRoot $testRoot
     $reloaded.state = 'Stopped'
     Assert-True (-not (Test-NervFullStackSessionStale -Manifest $reloaded)) 'A stopped session must not be stale.'
 

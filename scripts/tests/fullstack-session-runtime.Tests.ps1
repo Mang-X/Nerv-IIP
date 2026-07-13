@@ -45,6 +45,9 @@ Assert-True ($fullStackSessionText.Contains("ASPIRE_CLI_START_TIMEOUT'] = '300'"
 Assert-True ($fullStackSessionText.Contains("MSBUILDDISABLENODEREUSE'] = '1'")) 'Full-stack startup must prevent reusable MSBuild worker accumulation.'
 Assert-True ($fullStackSessionText.Contains("DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'")) 'Full-stack startup must disable the persistent .NET build server.'
 Assert-True ($fullStackSessionText.Contains("'business-master-data'")) 'Full-stack startup must wait for the business service used by the browser smoke test.'
+$volumeRegistrationIndex = $fullStackSessionText.IndexOf('.runtime.volumeNames = @(', [StringComparison]::Ordinal)
+$aspireStartIndex = $fullStackSessionText.IndexOf('Invoke-NervAspireStartWithRetry', [StringComparison]::Ordinal)
+Assert-True ($volumeRegistrationIndex -ge 0 -and $volumeRegistrationIndex -lt $aspireStartIndex) 'Deterministic session volume names must be persisted before Aspire can create resources.'
 foreach ($requiredText in @(
     '# Script-Governance:',
     '[ValidateRange(2, 3)]',

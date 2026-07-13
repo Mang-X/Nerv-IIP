@@ -110,9 +110,7 @@ function Start-NervFullStackSession {
         [switch] $PassThru
     )
 
-    $staleSessionIds = @(Invoke-WithNervFullStackSessionLock -TimeoutSeconds 300 -ScriptBlock {
-        return @(Get-NervStaleFullStackSessions | ForEach-Object { "$($_.sessionId)" })
-    })
+    $staleSessionIds = @(Claim-NervStaleFullStackSessions -TimeoutSeconds 300)
     foreach ($staleSessionId in $staleSessionIds) {
         [void] (Stop-NervFullStackSession -SessionId $staleSessionId)
     }
@@ -158,6 +156,17 @@ function Start-NervFullStackSession {
         $sessionEnvironment['ASPIRE_CLI_START_TIMEOUT'] = '300'
         $sessionEnvironment['MSBUILDDISABLENODEREUSE'] = '1'
         $sessionEnvironment['DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'
+        $manifest = Invoke-WithNervFullStackSessionLock -ScriptBlock {
+            $latest = Read-NervFullStackManifest -SessionId $newSessionId
+            $latest.runtime.volumeNames = @(
+                $sessionEnvironment.NERV_IIP_POSTGRES_VOLUME,
+                $sessionEnvironment.NERV_IIP_REDIS_VOLUME,
+                $sessionEnvironment.NERV_IIP_MINIO_VOLUME,
+                $sessionEnvironment.NERV_IIP_VICTORIA_LOGS_VOLUME
+            )
+            Write-NervFullStackManifest -Manifest $latest
+            return $latest
+        }
         $secretSet = New-NervFullStackSecretEnvironment -SessionId $newSessionId
         $suppliedAdminPassword = if (-not [string]::IsNullOrWhiteSpace($SessionAdminPassword)) {
             $SessionAdminPassword
@@ -219,12 +228,6 @@ function Start-NervFullStackSession {
             $manifest.coordinator.pid = $identity.AppHostPid
             $manifest.coordinator.processStartTimeUtc = $manifest.aspire.appHostProcessStartTimeUtc
             $manifest.runtime.processIds = @($identity.AppHostPid, $identity.CliPid)
-            $manifest.runtime.volumeNames = @(
-                $sessionEnvironment.NERV_IIP_POSTGRES_VOLUME,
-                $sessionEnvironment.NERV_IIP_REDIS_VOLUME,
-                $sessionEnvironment.NERV_IIP_MINIO_VOLUME,
-                $sessionEnvironment.NERV_IIP_VICTORIA_LOGS_VOLUME
-            )
             Write-NervFullStackManifest -Manifest $manifest
 
             foreach ($resourceName in @('iam', 'business-master-data', 'gateway', 'business-gateway', 'console', 'business-console', 'screen')) {
@@ -319,27 +322,21 @@ try {
         }
         'status' {
             $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
-            $manifest = Read-NervFullStackManifest -SessionId $resolvedSessionId
-            $manifest = Renew-NervFullStackLease -Manifest $manifest -LeaseMinutes (Get-NervFullStackLeaseMinutes)
-            Write-NervFullStackManifest -Manifest $manifest
+            $manifest = Renew-NervFullStackSessionLease -SessionId $resolvedSessionId -LeaseMinutes (Get-NervFullStackLeaseMinutes)
             Write-Output "$resolvedSessionId state=$($manifest.state) containers=$(@($manifest.runtime.containerIds).Count)"
         }
         'url' {
             if ([string]::IsNullOrWhiteSpace($Target)) { throw 'fullstack url requires a resource target.' }
             try { $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId }
             catch { throw "Cannot resolve URL target '$Target': $($_.Exception.Message)" }
-            $manifest = Read-NervFullStackManifest -SessionId $resolvedSessionId
+            $manifest = Renew-NervFullStackSessionLease -SessionId $resolvedSessionId -LeaseMinutes (Get-NervFullStackLeaseMinutes)
             $endpoint = $manifest.endpoints.PSObject.Properties[$Target]
             if ($null -eq $endpoint) { throw "Session '$resolvedSessionId' has no endpoint named '$Target'." }
-            $manifest = Renew-NervFullStackLease -Manifest $manifest -LeaseMinutes (Get-NervFullStackLeaseMinutes)
-            Write-NervFullStackManifest -Manifest $manifest
             Write-Output "$($endpoint.Value)"
         }
         'logs' {
             $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
-            $manifest = Read-NervFullStackManifest -SessionId $resolvedSessionId
-            $manifest = Renew-NervFullStackLease -Manifest $manifest -LeaseMinutes (Get-NervFullStackLeaseMinutes)
-            Write-NervFullStackManifest -Manifest $manifest
+            $manifest = Renew-NervFullStackSessionLease -SessionId $resolvedSessionId -LeaseMinutes (Get-NervFullStackLeaseMinutes)
             $arguments = @('logs')
             if (-not [string]::IsNullOrWhiteSpace($Target)) { $arguments += $Target }
             $arguments += @('--tail', "$Tail", '--apphost', "$($manifest.appHostProject)", '--non-interactive', '--nologo')
@@ -417,9 +414,7 @@ try {
             if (-not $result.Complete) { throw "Session '$resolvedSessionId' cleanup remains incomplete: $($result.Remaining -join ', ')." }
         }
         'gc' {
-            $staleSessionIds = @(Invoke-WithNervFullStackSessionLock -ScriptBlock {
-                return @(Get-NervStaleFullStackSessions | ForEach-Object { "$($_.sessionId)" })
-            })
+            $staleSessionIds = @(Claim-NervStaleFullStackSessions)
             $failures = [System.Collections.Generic.List[string]]::new()
             foreach ($staleSessionId in $staleSessionIds) {
                 try {

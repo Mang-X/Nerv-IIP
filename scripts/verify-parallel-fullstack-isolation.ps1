@@ -155,15 +155,13 @@ try {
             Manifest = $null
         }
         $records.Add($record)
-        $env:CI = 'true'
-        try {
+        Invoke-WithScopedEnvironment -Variables @{ CI = 'true' } -ScriptBlock {
             Invoke-PwshScript `
                 -ScriptPath (Join-Path $worktreePath 'scripts/setup-worktree.ps1') `
                 -WorkingDirectory $worktreePath `
                 -TimeoutSeconds 900 `
                 -Name "parallel-fullstack-setup-$index" | Out-Null
         }
-        finally { Remove-Item Env:CI -ErrorAction SilentlyContinue }
         Assert-Acceptance (Test-Path -LiteralPath (Join-Path $worktreePath 'frontend/node_modules') -PathType Container) "Worktree $index frontend dependencies were not installed."
 
         $sessionId = $record.SessionId
@@ -175,16 +173,15 @@ try {
             'start', '-SessionId', $sessionId
         )
         if ($NoBuild) { $startArguments += '-NoBuild' }
-        $env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $adminPassword
-        try {
+        $startIdentity = Invoke-WithScopedEnvironment -Variables @{ NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $adminPassword } -ScriptBlock {
             $startIdentity = Start-DetachedManagedProcess `
                 -Command (Get-Process -Id $PID).Path `
                 -Arguments $startArguments `
                 -WorkingDirectory $worktreePath `
                 -StdoutPath $stdoutPath `
                 -StderrPath $stderrPath
+            return $startIdentity
         }
-        finally { Remove-Item Env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD -ErrorAction SilentlyContinue }
         $record.AdminPassword = $adminPassword
         $record.StartIdentity = $startIdentity
         $record.StderrPath = $stderrPath
@@ -216,15 +213,15 @@ try {
             NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $record.AdminPassword
         }
         try {
-            foreach ($entry in $browserEnvironment.GetEnumerator()) { Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value }
+            Invoke-WithScopedEnvironment -Variables $browserEnvironment -ScriptBlock {
             Invoke-Pnpm `
                 -Arguments @('-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test', 'e2e/fullstack-proxy.spec.ts', '--project=desktop', '--reporter=line', '--output', (Join-Path "$($record.Manifest.artifactPath)" 'test-results')) `
                 -WorkingDirectory $record.WorktreePath `
                 -TimeoutSeconds 300 `
                 -Name "parallel-fullstack-browser-$($record.Index)" | Out-Null
+            }
         }
         finally {
-            foreach ($key in $browserEnvironment.Keys) { Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue }
             $record.AdminPassword = $null
         }
     }

@@ -269,6 +269,23 @@ function Renew-NervFullStackLease {
     return $Manifest
 }
 
+function Renew-NervFullStackSessionLease {
+    param(
+        [Parameter(Mandatory)] [string] $SessionId,
+        [string] $StateRoot = (Get-NervFullStackStateRoot),
+        [ValidateRange(1, 1440)] [int] $LeaseMinutes = 90
+    )
+
+    return Invoke-WithNervFullStackSessionLock -StateRoot $StateRoot -ScriptBlock {
+        $manifest = Read-NervFullStackManifest -SessionId $SessionId -StateRoot $StateRoot
+        if ("$($manifest.state)" -eq 'Running') {
+            $manifest = Renew-NervFullStackLease -Manifest $manifest -LeaseMinutes $LeaseMinutes
+            Write-NervFullStackManifest -Manifest $manifest -StateRoot $StateRoot
+        }
+        return $manifest
+    }
+}
+
 function Test-NervProcessIdentity {
     param(
         [Parameter(Mandatory)] [int] $ProcessId,
@@ -332,6 +349,27 @@ function Get-NervStaleFullStackSessions {
 
     return @(Get-NervFullStackManifests -StateRoot $StateRoot | Where-Object {
         Test-NervFullStackSessionStale -Manifest $_ -Now $Now
+    })
+}
+
+function Claim-NervStaleFullStackSessions {
+    param(
+        [string] $StateRoot = (Get-NervFullStackStateRoot),
+        [DateTimeOffset] $Now = [DateTimeOffset]::UtcNow,
+        [ValidateRange(1, 300)] [int] $TimeoutSeconds = 30
+    )
+
+    return @(Invoke-WithNervFullStackSessionLock -StateRoot $StateRoot -TimeoutSeconds $TimeoutSeconds -ScriptBlock {
+        $claimed = [System.Collections.Generic.List[string]]::new()
+        foreach ($manifest in @(Get-NervFullStackManifests -StateRoot $StateRoot)) {
+            if ("$($manifest.state)" -eq 'Stopping' -or -not (Test-NervFullStackSessionStale -Manifest $manifest -Now $Now)) {
+                continue
+            }
+            $manifest = Move-NervFullStackSessionState -Manifest $manifest -State Stopping
+            Write-NervFullStackManifest -Manifest $manifest -StateRoot $StateRoot
+            $claimed.Add("$($manifest.sessionId)")
+        }
+        return @($claimed)
     })
 }
 
