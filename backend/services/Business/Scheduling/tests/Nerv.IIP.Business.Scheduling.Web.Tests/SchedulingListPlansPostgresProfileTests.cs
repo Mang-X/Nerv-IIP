@@ -8,10 +8,11 @@ using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
-// Real-provider coverage for the bounded latest-invalidation anti-join. SQLite cannot host
-// ListSchedulePlansQueryHandler at all (its plans query ORDER BYs GeneratedAtUtc, a DateTimeOffset that
-// SQLite refuses to sort), so translation is verified against Postgres. Gated on NERV_IIP_TEST_POSTGRES
-// like the other *PostgresProfileTests; skipped (returns) when no Postgres is configured.
+// Real-provider coverage for the DB-side bounded latest-invalidation projection (GROUP BY plan +
+// ordered-First over the strict total order). SQLite cannot host ListSchedulePlansQueryHandler at all
+// (its plans query ORDER BYs GeneratedAtUtc, a DateTimeOffset that SQLite refuses to sort), so both the
+// translation and the exact-timestamp-tie determinism are verified against Postgres. Gated on
+// NERV_IIP_TEST_POSTGRES like the other *PostgresProfileTests; skipped (returns) when no Postgres is configured.
 public sealed class SchedulingListPlansPostgresProfileTests
 {
     [Fact]
