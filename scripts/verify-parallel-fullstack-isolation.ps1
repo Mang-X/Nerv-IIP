@@ -188,13 +188,21 @@ try {
     Assert-Acceptance ($firstPostgres.Count -eq 1 -and $secondPostgres.Count -eq 1) 'Each running session must own one canonical postgres container.'
     Invoke-NativeCommandOutput `
         -Command 'docker' `
-        -Arguments @('exec', '--user', 'postgres', "$($firstPostgres[0].id)", 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "create table nerv_fullstack_isolation_probe(value text); insert into nerv_fullstack_isolation_probe values ('session-one');") `
+        -Arguments @(
+            'exec', '--user', 'postgres', "$($firstPostgres[0].id)", 'sh', '-c',
+            'PGPASSWORD="$POSTGRES_PASSWORD" exec psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "$1"',
+            'sh', "create table nerv_fullstack_isolation_probe(value text); insert into nerv_fullstack_isolation_probe values ('session-one');"
+        ) `
         -WorkingDirectory $repoRoot `
         -TimeoutSeconds 30 `
         -Name 'parallel-fullstack-postgres-write' | Out-Null
     $isolationRead = Invoke-NativeCommandOutput `
         -Command 'docker' `
-        -Arguments @('exec', '--user', 'postgres', "$($secondPostgres[0].id)", 'psql', '-U', 'postgres', '-d', 'postgres', '-Atc', "select to_regclass('public.nerv_fullstack_isolation_probe');") `
+        -Arguments @(
+            'exec', '--user', 'postgres', "$($secondPostgres[0].id)", 'sh', '-c',
+            'PGPASSWORD="$POSTGRES_PASSWORD" exec psql -U postgres -d postgres -Atc "$1"',
+            'sh', "select to_regclass('public.nerv_fullstack_isolation_probe');"
+        ) `
         -WorkingDirectory $repoRoot `
         -TimeoutSeconds 30 `
         -Name 'parallel-fullstack-postgres-isolation-read'

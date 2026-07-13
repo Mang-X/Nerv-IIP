@@ -43,6 +43,7 @@ foreach ($requiredText in @(
     'Stop-AcceptanceStartProcess',
     'Test-NervProcessIdentity',
     'Primary failure:',
+    'PGPASSWORD="$POSTGRES_PASSWORD"',
     "-TimeoutSeconds 300 ``",
     'finally',
     'git',
