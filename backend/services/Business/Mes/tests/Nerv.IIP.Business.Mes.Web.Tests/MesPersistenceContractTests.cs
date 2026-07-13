@@ -886,8 +886,61 @@ public sealed class MesPersistenceContractTests
                 Assert.Equal("idem-force-release-1", released.IdempotencyKey);
                 Assert.Equal("QI-QH-FORCE-REJECTED", released.SourceInspectionRecordId);
                 Assert.Equal("PLAN-QH-001", released.SourceInspectionDocumentId);
+            },
+            noOp =>
+            {
+                Assert.Equal("manual-force-release-noop", noOp.EventKind);
+                Assert.Equal("manual", noOp.Origin);
+                Assert.Equal("supervisor-002", noOp.Actor);
+                Assert.Equal("second release should be idempotent", noOp.Reason);
+                Assert.Equal("idem-force-release-2", noOp.IdempotencyKey);
             });
         Assert.Equal(transitions[0].HoldCycleId, transitions[1].HoldCycleId);
+        Assert.Equal(transitions[0].HoldCycleId, transitions[2].HoldCycleId);
+
+        await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-qh-force-rejected-cycle-2",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-QH-FORCE-REJECTED-CYCLE-2",
+            "WO-QH-FORCE",
+            now.AddMinutes(3).AddSeconds(30)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        await handler.Handle(
+            new ForceReleaseQualityHoldCommand(
+                "org-001",
+                "env-dev",
+                QualityIntegrationEventSources.BusinessMes,
+                "WO-QH-FORCE",
+                "second release should be idempotent",
+                "supervisor-002",
+                "corr-force-release-2",
+                "idem-force-release-2",
+                now.AddMinutes(4)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.True(hold.Active);
+        Assert.Equal("QI-QH-FORCE-REJECTED-CYCLE-2", hold.HeldInspectionRecordId);
+        var noOp = await dbContext.QualityHoldTransitions.SingleAsync(x =>
+            x.IdempotencyKey == "idem-force-release-2");
+        Assert.Equal("manual-force-release-noop", noOp.EventKind);
+
+        var conflict = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ForceReleaseQualityHoldCommand(
+                "org-001",
+                "env-dev",
+                QualityIntegrationEventSources.BusinessMes,
+                "WO-QH-FORCE",
+                "different replay payload",
+                "another-supervisor",
+                "corr-force-release-conflict",
+                "idem-force-release-2",
+                now.AddMinutes(5)),
+            CancellationToken.None));
+        Assert.Contains("different payload", conflict.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(hold.Active);
 
     }
 

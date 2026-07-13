@@ -3873,6 +3873,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSetMasterDataResourceEnabledRequest = {
     organizationId: string;
     environmentId: string;
+    idempotencyKey: string;
     codeSet?: string | null;
     reason?: string;
     effectiveFrom?: string | null;

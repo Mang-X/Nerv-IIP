@@ -62,7 +62,7 @@ public sealed class ConnectorCollectionHealthProjectionEntityTypeConfiguration :
         builder.Property(x => x.DroppedCount).HasComment("Actual source samples intentionally dropped or rejected in this epoch; null means unknown");
         builder.Property(x => x.ErrorCount).HasComment("Actual collection or processing failures in this epoch; null means unknown");
         builder.Property(x => x.LastSampleAtUtc).HasComment("Most recent actual source sample time; null means unknown");
-        builder.Property(x => x.RetiredCounterEpochs).IsRequired().HasMaxLength(600).HasComment("Bounded set of the 16 most recently retired counter epoch identities, preventing delayed reports from reviving reset counters");
+        builder.Property(x => x.RetiredCounterEpochs).IsRequired().HasColumnType("text").HasComment("Complete set of retired counter epoch identities, preventing delayed reports from reviving reset counters");
         builder.HasIndex(x => x.ApplicationInstanceId).IsUnique().HasDatabaseName("ux_connector_collection_health_instance");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ConnectorId }).IsUnique().HasDatabaseName("ux_connector_collection_health_scope");
     }

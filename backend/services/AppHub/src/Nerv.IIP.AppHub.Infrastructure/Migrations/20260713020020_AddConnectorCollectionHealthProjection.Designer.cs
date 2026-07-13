@@ -257,9 +257,8 @@ namespace Nerv.IIP.AppHub.Infrastructure.Migrations
 
                     b.Property<string>("RetiredCounterEpochs")
                         .IsRequired()
-                        .HasMaxLength(600)
-                        .HasColumnType("character varying(600)")
-                        .HasComment("Bounded set of the 16 most recently retired counter epoch identities, preventing delayed reports from reviving reset counters");
+                        .HasColumnType("text")
+                        .HasComment("Complete set of retired counter epoch identities, preventing delayed reports from reviving reset counters");
 
                     b.Property<string>("SourceSystem")
                         .IsRequired()

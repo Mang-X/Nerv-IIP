@@ -60,6 +60,39 @@ public sealed class ConnectorCollectionHealthProjectionTests
     }
 
     [Fact]
+    public void Previously_unseen_epoch_with_an_older_report_cannot_replace_current_epoch()
+    {
+        var instance = CreateInstance();
+        var currentEpoch = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var unseenOldEpoch = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        instance.RecordCollectionHealth(new ConnectorCollectionHealth("opc-main", "opcua", currentEpoch, DateTimeOffset.Parse("2026-07-13T01:05:00Z"), 3, 0, 0, null));
+
+        instance.RecordCollectionHealth(new ConnectorCollectionHealth("opc-main", "opcua", unseenOldEpoch, DateTimeOffset.Parse("2026-07-13T01:02:00Z"), 120, 5, 3, null));
+
+        Assert.Equal(currentEpoch, instance.CollectionHealth!.CounterEpoch);
+        Assert.Equal(3, instance.CollectionHealth.ReceivedCount);
+    }
+
+    [Fact]
+    public void Retired_epoch_cannot_return_after_more_than_sixteen_resets()
+    {
+        var instance = CreateInstance();
+        var firstEpoch = Guid.Parse("00000001-0000-0000-0000-000000000000");
+        var start = DateTimeOffset.Parse("2026-07-13T01:00:00Z");
+        instance.RecordCollectionHealth(new ConnectorCollectionHealth("opc-main", "opcua", firstEpoch, start, 1, 0, 0, null));
+        for (var index = 2; index <= 20; index++)
+        {
+            var epoch = Guid.Parse($"{index:x8}-0000-0000-0000-000000000000");
+            instance.RecordCollectionHealth(new ConnectorCollectionHealth("opc-main", "opcua", epoch, start.AddMinutes(index), index, 0, 0, null));
+        }
+
+        instance.RecordCollectionHealth(new ConnectorCollectionHealth("opc-main", "opcua", firstEpoch, start.AddHours(2), 999, 9, 9, null));
+
+        Assert.NotEqual(firstEpoch, instance.CollectionHealth!.CounterEpoch);
+        Assert.Equal(20, instance.CollectionHealth.ReceivedCount);
+    }
+
+    [Fact]
     public void Same_epoch_partial_unknown_report_preserves_known_facts()
     {
         var instance = CreateInstance();

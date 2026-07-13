@@ -257,9 +257,9 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         string reason,
         string actor)
     {
+        EnsureNotClosed();
         var validReason = Required(reason);
         var validActor = Required(actor);
-        EnsureNotClosed();
         if (string.IsNullOrWhiteSpace(DispositionType))
         {
             throw new InvalidOperationException("NCR cannot be closed before disposition is decided.");

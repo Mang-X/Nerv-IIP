@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
@@ -246,6 +247,29 @@ public sealed class QualityEndpointContractTests
         Assert.False(string.IsNullOrWhiteSpace(context.CorrelationId));
         Assert.False(string.IsNullOrWhiteSpace(context.CausationId));
         Assert.Equal($"system:{QualityIntegrationEventSources.BusinessQuality}", context.Actor);
+    }
+
+    [Fact]
+    public void Integration_event_context_accessor_uses_forwarded_actor_for_authenticated_internal_service()
+    {
+        var httpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [
+                    new Claim(ClaimTypes.NameIdentifier, "internal-service"),
+                    new Claim("token_type", "internal_service"),
+                ],
+                InternalServiceAuthentication.SchemeName)),
+        };
+        httpContext.Request.Headers["X-Actor"] = "user:qa-manager-001";
+        var accessor = new HttpQualityIntegrationEventContextAccessor(new HttpContextAccessor
+        {
+            HttpContext = httpContext,
+        });
+
+        var context = accessor.GetContext();
+
+        Assert.Equal("user:qa-manager-001", context.Actor);
     }
 
     private static bool HasInternalServicePolicy(IEnumerable<RouteEndpoint> endpoints, string route)

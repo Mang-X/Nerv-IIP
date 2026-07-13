@@ -216,8 +216,8 @@ describe('business quality composables', () => {
       dispositionApprovalChainId: 'chain-1',
     })
     await closeNcr('ncr-1', {
-      reason: '处置已完成',
       reworkWorkOrderId: 'wo-1',
+      reason: '返工处理已完成',
     })
 
     expect(submitBusinessConsoleQualityNcrDispositionMutationOptions).toHaveBeenCalled()
@@ -249,8 +249,8 @@ describe('business quality composables', () => {
         environmentId: 'env-dev',
       },
       body: {
-        reason: '处置已完成',
         reworkWorkOrderId: 'wo-1',
+        reason: '返工处理已完成',
       },
     })
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(2)

@@ -36970,7 +36970,8 @@
         "additionalProperties": false,
         "required": [
           "organizationId",
-          "environmentId"
+          "environmentId",
+          "idempotencyKey"
         ],
         "properties": {
           "organizationId": {
@@ -36982,6 +36983,12 @@
           "environmentId": {
             "type": "string",
             "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 512,
             "minLength": 0,
             "nullable": false
           },

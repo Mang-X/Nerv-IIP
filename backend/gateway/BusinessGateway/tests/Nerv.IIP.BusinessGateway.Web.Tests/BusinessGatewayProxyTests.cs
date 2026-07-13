@@ -286,22 +286,30 @@ public sealed class BusinessGatewayProxyTests
             category = "raw-material",
             materialType = "powder",
         });
-        var disable = await client.PostAsJsonAsync("/api/business-console/v1/master-data/resources/sku/SKU-001/disable", new
+        using var disableMessage = new HttpRequestMessage(HttpMethod.Post, "/api/business-console/v1/master-data/resources/sku/SKU-001/disable");
+        disableMessage.Headers.Add("X-Correlation-Id", "corr-master-disable");
+        disableMessage.Content = JsonContent.Create(new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
             resourceType = "sku",
             code = "SKU-001",
+            idempotencyKey = "idem-master-disable",
             reason = "duplicate",
         });
-        var enable = await client.PostAsJsonAsync("/api/business-console/v1/master-data/resources/sku/SKU-001/enable", new
+        var disable = await client.SendAsync(disableMessage);
+        using var enableMessage = new HttpRequestMessage(HttpMethod.Post, "/api/business-console/v1/master-data/resources/sku/SKU-001/enable");
+        enableMessage.Headers.Add("X-Correlation-Id", "corr-master-enable");
+        enableMessage.Content = JsonContent.Create(new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
             resourceType = "sku",
             code = "SKU-001",
+            idempotencyKey = "idem-master-enable",
             reason = "reactivated",
         });
+        var enable = await client.SendAsync(enableMessage);
 
         Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
         Assert.Equal(HttpStatusCode.OK, update.StatusCode);
@@ -313,6 +321,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Contains(false, masterData.SetResourceEnabledCalls);
         Assert.Contains(masterData.SetResourceEnabledRequests, request => request.Reason == "duplicate");
         Assert.Contains(true, masterData.SetResourceEnabledCalls);
+        Assert.All(masterData.SetResourceEnabledActors, actor => Assert.Equal("user:user-admin", actor));
+        Assert.Equal(["corr-master-disable", "corr-master-enable"], masterData.SetResourceEnabledCorrelationIds);
+        Assert.Equal(["idem-master-disable", "idem-master-enable"], masterData.SetResourceEnabledIdempotencyKeys);
     }
 
     [Fact]
@@ -3780,13 +3791,19 @@ public sealed class BusinessGatewayProxyTests
             CancellationToken.None);
         await client.SetResourceEnabledAsync(
             "internal-token-001",
-            new BusinessConsoleSetMasterDataResourceEnabledRequest("org-001", "env-dev", "sku", "SKU-001", Reason: "duplicate"),
+            new BusinessConsoleSetMasterDataResourceEnabledRequest("org-001", "env-dev", "sku", "SKU-001", "idem-master-http", Reason: "duplicate"),
             false,
+            "user:trusted",
+            "corr-master-http",
+            "idem-master-http",
             CancellationToken.None);
 
         AssertRequest(handler.Requests[0], HttpMethod.Get, "/api/business/v1/master-data/resources/reference-data/powder?organizationId=org-001&environmentId=env-dev&codeSet=material-type");
         AssertRequest(handler.Requests[1], HttpMethod.Patch, "/api/business/v1/master-data/resources/sku/SKU-001");
         AssertRequest(handler.Requests[2], HttpMethod.Post, "/api/business/v1/master-data/resources/sku/SKU-001/disable");
+        Assert.Equal("user:trusted", handler.Requests[2].Headers.GetValues("X-Authenticated-Actor").Single());
+        Assert.Equal("corr-master-http", handler.Requests[2].Headers.GetValues("X-Correlation-Id").Single());
+        Assert.Equal("idem-master-http", handler.Requests[2].Headers.GetValues("X-Idempotency-Key").Single());
     }
 
     [Fact]
@@ -5912,6 +5929,12 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public List<bool> SetResourceEnabledCalls { get; } = [];
 
+    public List<string> SetResourceEnabledActors { get; } = [];
+
+    public List<string> SetResourceEnabledCorrelationIds { get; } = [];
+
+    public List<string> SetResourceEnabledIdempotencyKeys { get; } = [];
+
     public List<BusinessConsoleSetMasterDataResourceEnabledRequest> SetResourceEnabledRequests { get; } = [];
 
     public BusinessConsoleListProductCategoriesRequest? LastProductCategoryListRequest { get; private set; }
@@ -6021,6 +6044,9 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         string internalBearerToken,
         BusinessConsoleSetMasterDataResourceEnabledRequest request,
         bool enabled,
+        string actor,
+        string correlationId,
+        string idempotencyKey,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
@@ -6028,6 +6054,9 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         LastSetEnabled = enabled;
         SetResourceEnabledCalls.Add(enabled);
         SetResourceEnabledRequests.Add(request);
+        SetResourceEnabledActors.Add(actor);
+        SetResourceEnabledCorrelationIds.Add(correlationId);
+        SetResourceEnabledIdempotencyKeys.Add(idempotencyKey);
         return Task.FromResult(ResourceDetail(request.ResourceType, request.Code, request.CodeSet, enabled));
     }
 

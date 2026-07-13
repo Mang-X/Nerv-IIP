@@ -68,6 +68,39 @@ public sealed class MasterDataLifecycleAuditTests
         Assert.Equal(2, await db.LifecycleAuditEntries.CountAsync());
     }
 
+    [Theory]
+    [InlineData("sku", "SKU-NOOP")]
+    [InlineData("site", "SITE-NOOP")]
+    public async Task FirstNoOpOperation_IsDurablyConsumedAndCannotMutateAfterStateReversal(string resourceType, string code)
+    {
+        await using var provider = CreateProvider($"masterdata-noop-operation-{Guid.NewGuid():N}");
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        if (resourceType == "sku")
+        {
+            db.Skus.Add(Sku.Create("org", "env", code, "No-op SKU", "pcs", "finished-goods"));
+        }
+        else
+        {
+            db.Sites.Add(Domain.AggregatesModel.SiteAggregate.Site.Create("org", "env", code, "No-op site", "UTC"));
+        }
+        await db.SaveChangesAsync();
+        var handler = new SetMasterDataResourceEnabledCommandHandler(db);
+        var firstNoOp = new SetMasterDataResourceEnabledCommand("org", "env", resourceType, code, true, "user:trusted", "K-NOOP", Reason: "confirm active");
+
+        await handler.Handle(firstNoOp, CancellationToken.None);
+        await db.SaveChangesAsync();
+        await handler.Handle(firstNoOp with { Enabled = false, OperationId = "K-DISABLE", Reason = "retired" }, CancellationToken.None);
+        await db.SaveChangesAsync();
+        await handler.Handle(firstNoOp, CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        Assert.Equal(2, await db.LifecycleAuditEntries.CountAsync());
+        Assert.True(resourceType == "sku"
+            ? (await db.Skus.SingleAsync(x => x.Code == code)).Disabled
+            : (await db.Sites.SingleAsync(x => x.Code == code)).Disabled);
+    }
+
     [Fact]
     public async Task ReusingOperationForDifferentResourceOrPayload_ThrowsKnownConflictBeforeMutation()
     {
@@ -235,6 +268,7 @@ public sealed class MasterDataLifecycleAuditTests
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "audit-test-token");
         client.DefaultRequestHeaders.Add("X-Correlation-Id", "corr-disable-endpoint");
         client.DefaultRequestHeaders.Add("X-Idempotency-Key", "idem-disable-endpoint");
+        client.DefaultRequestHeaders.Add("X-Authenticated-Actor", "user:admin-001");
         var body = new { organizationId = "org-001", environmentId = "env-dev", resourceType = "sku", code = "SKU-ENDPOINT", reason = " retired ", actorId = "user:spoofed" };
 
         var first = await client.PostAsJsonAsync("/api/business/v1/master-data/resources/sku/SKU-ENDPOINT/disable", body);
@@ -249,10 +283,12 @@ public sealed class MasterDataLifecycleAuditTests
         using var observerScope = factory.Services.CreateScope();
         var observer = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.True((await observer.Skus.AsNoTracking().SingleAsync(x => x.Code == "SKU-ENDPOINT")).Disabled);
-        var audit = await observer.LifecycleAuditEntries.AsNoTracking().SingleAsync();
-        Assert.Equal("user:internal-service", audit.ActorId);
-        Assert.Equal("idem-disable-endpoint", audit.OperationId);
-        Assert.Equal("retired", audit.Reason);
+        var audits = await observer.LifecycleAuditEntries.AsNoTracking().OrderBy(x => x.OccurredAtUtc).ToArrayAsync();
+        Assert.Equal(2, audits.Length);
+        Assert.All(audits, audit => Assert.Equal("user:admin-001", audit.ActorId));
+        Assert.Equal("idem-disable-endpoint", audits[0].OperationId);
+        Assert.Equal("idem-disable-endpoint-new-operation", audits[1].OperationId);
+        Assert.All(audits, audit => Assert.Equal("retired", audit.Reason));
     }
 
     [Fact]

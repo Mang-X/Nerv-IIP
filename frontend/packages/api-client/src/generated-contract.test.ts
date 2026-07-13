@@ -35,6 +35,7 @@ import type {
   BusinessConsoleRescheduleEngineeringChangeRequest,
   BusinessConsoleSchedulingPlanSummaryResponse,
   BusinessConsoleSearchResponse,
+  BusinessConsoleSetMasterDataResourceEnabledRequest,
   BusinessConsoleTelemetryOeeEnvelope,
   BusinessConsoleWorkbenchSummaryResponse,
   CancelBusinessConsolePlanningDemandData,
@@ -468,6 +469,9 @@ describe('generated API client contract', () => {
     expectTypeOf<BusinessConsoleMesQualityHoldTimelineRequest>().toBeObject()
     expectTypeOf<BusinessConsoleMesQualityHoldTimelineResponse>().toBeObject()
     expectTypeOf<BusinessConsoleMesQualityHoldTimelineItem>().toBeObject()
+    expectTypeOf<
+      Pick<BusinessConsoleSetMasterDataResourceEnabledRequest, 'idempotencyKey'>
+    >().toEqualTypeOf<{ idempotencyKey: string }>()
   })
 
   it('exports wave2 refreshed Business Console request-payload Data types', () => {

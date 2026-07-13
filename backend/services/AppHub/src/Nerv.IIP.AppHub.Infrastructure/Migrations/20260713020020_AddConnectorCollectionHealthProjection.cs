@@ -100,7 +100,7 @@ namespace Nerv.IIP.AppHub.Infrastructure.Migrations
                     DroppedCount = table.Column<long>(type: "bigint", nullable: true, comment: "Actual source samples intentionally dropped or rejected in this epoch; null means unknown"),
                     ErrorCount = table.Column<long>(type: "bigint", nullable: true, comment: "Actual collection or processing failures in this epoch; null means unknown"),
                     LastSampleAtUtc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true, comment: "Most recent actual source sample time; null means unknown"),
-                    RetiredCounterEpochs = table.Column<string>(type: "character varying(600)", maxLength: 600, nullable: false, comment: "Bounded set of the 16 most recently retired counter epoch identities, preventing delayed reports from reviving reset counters")
+                    RetiredCounterEpochs = table.Column<string>(type: "text", nullable: false, comment: "Complete set of retired counter epoch identities, preventing delayed reports from reviving reset counters")
                 },
                 constraints: table =>
                 {

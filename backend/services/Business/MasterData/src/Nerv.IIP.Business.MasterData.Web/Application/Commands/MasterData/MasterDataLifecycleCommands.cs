@@ -681,13 +681,15 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
         {
             case "sku":
                 var sku = await FindAsync(dbContext.Skus, request, cancellationToken);
-                if (isReplay || sku.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(sku);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(sku);
+                if (sku.Disabled == !request.Enabled) { AddAudit(request, type, sku.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(sku); }
                 if (request.Enabled) sku.Enable(reason); else sku.Disable(reason, request.OperationId);
                 AddAudit(request, type, sku.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(sku);
             case "unit-of-measure":
                 var uom = await FindAsync(dbContext.UnitsOfMeasure, request, cancellationToken);
-                if (isReplay || uom.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(uom);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(uom);
+                if (uom.Disabled == !request.Enabled) { AddAudit(request, type, uom.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(uom); }
                 if (!request.Enabled)
                 {
                     await EnsureUnitOfMeasureIsNotReferencedAsync(request, cancellationToken);
@@ -697,13 +699,15 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                 return UpdateMasterDataResourceCommandHandler.Detail(uom);
             case "uom-conversion":
                 var conversion = await FindUomConversionAsync(dbContext, request, cancellationToken);
-                if (isReplay || conversion.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(conversion);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(conversion);
+                if (conversion.Disabled == !request.Enabled) { AddAudit(request, type, conversion.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(conversion); }
                 if (request.Enabled) conversion.Enable(reason); else conversion.Disable(reason);
                 AddAudit(request, type, conversion.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(conversion);
             case "business-partner":
                 var partner = await FindAsync(dbContext.BusinessPartners, request, cancellationToken);
-                if (isReplay || partner.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(partner);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(partner);
+                if (partner.Disabled == !request.Enabled) { AddAudit(request, type, partner.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(partner); }
                 if (!request.Enabled)
                 {
                     await EnsureBusinessPartnerIsNotReferencedAsync(request, cancellationToken);
@@ -713,49 +717,57 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                 return UpdateMasterDataResourceCommandHandler.Detail(partner);
             case "site":
                 var site = await FindAsync(dbContext.Sites, request, cancellationToken);
-                if (isReplay || site.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(site);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(site);
+                if (site.Disabled == !request.Enabled) { AddAudit(request, type, site.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(site); }
                 if (request.Enabled) site.Enable(reason); else site.Disable(reason);
                 AddAudit(request, type, site.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(site);
             case "workshop":
                 var workshop = await FindAsync(dbContext.Workshops, request, cancellationToken);
-                if (isReplay || workshop.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(workshop);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(workshop);
+                if (workshop.Disabled == !request.Enabled) { AddAudit(request, type, workshop.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(workshop); }
                 if (request.Enabled) workshop.Enable(reason); else workshop.Disable(reason);
                 AddAudit(request, type, workshop.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(workshop);
             case "department":
                 var department = await FindAsync(dbContext.Departments, request, cancellationToken);
-                if (isReplay || department.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(department);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(department);
+                if (department.Disabled == !request.Enabled) { AddAudit(request, type, department.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(department); }
                 if (request.Enabled) department.Enable(reason); else department.Disable(reason);
                 AddAudit(request, type, department.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(department);
             case "team":
                 var team = await FindAsync(dbContext.Teams, request, cancellationToken);
-                if (isReplay || team.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(team);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(team);
+                if (team.Disabled == !request.Enabled) { AddAudit(request, type, team.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(team); }
                 if (request.Enabled) team.Enable(reason); else team.Disable(reason);
                 AddAudit(request, type, team.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(team);
             case "shift":
                 var shift = await FindAsync(dbContext.Shifts, request, cancellationToken);
-                if (isReplay || shift.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(shift);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(shift);
+                if (shift.Disabled == !request.Enabled) { AddAudit(request, type, shift.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(shift); }
                 if (request.Enabled) shift.Enable(reason); else shift.Disable(reason);
                 AddAudit(request, type, shift.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(shift);
             case "work-calendar":
                 var calendar = await FindAsync(dbContext.WorkCalendars, request, cancellationToken);
-                if (isReplay || calendar.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(calendar);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(calendar);
+                if (calendar.Disabled == !request.Enabled) { AddAudit(request, type, calendar.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(calendar); }
                 if (request.Enabled) calendar.Enable(reason); else calendar.Disable(reason);
                 AddAudit(request, type, calendar.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(calendar);
             case "production-line":
                 var line = await FindAsync(dbContext.ProductionLines, request, cancellationToken);
-                if (isReplay || line.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(line);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(line);
+                if (line.Disabled == !request.Enabled) { AddAudit(request, type, line.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(line); }
                 if (request.Enabled) line.Enable(reason); else line.Disable(reason);
                 AddAudit(request, type, line.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(line);
             case "work-center":
                 var workCenter = await FindAsync(dbContext.WorkCenters, request, cancellationToken);
-                if (isReplay || workCenter.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(workCenter);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(workCenter);
+                if (workCenter.Disabled == !request.Enabled) { AddAudit(request, type, workCenter.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(workCenter); }
                 if (!request.Enabled)
                 {
                     await EnsureWorkCenterIsNotReferencedAsync(request, cancellationToken);
@@ -765,7 +777,8 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                 return UpdateMasterDataResourceCommandHandler.Detail(workCenter);
             case "device-asset":
                 var device = await FindAsync(dbContext.DeviceAssets, request, cancellationToken);
-                if (isReplay || device.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(device);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(device);
+                if (device.Disabled == !request.Enabled) { AddAudit(request, type, device.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(device); }
                 if (!request.Enabled)
                 {
                     await EnsureDeviceAssetIsNotReferencedAsync(request, device.Id.ToString(), cancellationToken);
@@ -782,7 +795,8 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                     x.Code == request.Code,
                     cancellationToken)
                     ?? throw UpdateMasterDataResourceCommandHandler.NotFound(request.ResourceType, request.Code);
-                if (isReplay || referenceData.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(referenceData);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(referenceData);
+                if (referenceData.Disabled == !request.Enabled) { AddAudit(request, type, referenceData.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(referenceData); }
                 if (request.Enabled) referenceData.Enable(reason); else referenceData.Disable(reason);
                 AddAudit(request, type, referenceData.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(referenceData);

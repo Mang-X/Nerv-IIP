@@ -599,6 +599,7 @@ public sealed record BusinessConsoleSetMasterDataResourceEnabledRequest(
     string EnvironmentId,
     string ResourceType,
     string Code,
+    string IdempotencyKey,
     string? CodeSet = null,
     string Reason = "",
     DateOnly? EffectiveFrom = null);

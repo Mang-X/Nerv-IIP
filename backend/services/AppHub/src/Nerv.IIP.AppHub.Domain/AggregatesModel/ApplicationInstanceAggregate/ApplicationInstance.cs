@@ -327,8 +327,9 @@ public class ConnectorCollectionHealthProjection : Entity<ConnectorCollectionHea
         {
             var retired = RetiredCounterEpochs.Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
             if (retired.Contains(report.CounterEpoch.ToString("N"))) return;
+            if (report.ReportedAtUtc <= ReportedAtUtc) return;
             retired.Add(CounterEpoch.ToString("N"));
-            RetiredCounterEpochs = string.Join(',', retired.TakeLast(16));
+            RetiredCounterEpochs = string.Join(',', retired);
         }
         else if (ReportedAtUtc >= report.ReportedAtUtc) return;
         if (CounterEpoch == report.CounterEpoch &&

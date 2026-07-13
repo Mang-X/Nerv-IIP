@@ -160,6 +160,26 @@ public sealed class ForceReleaseQualityHoldCommandHandler(ApplicationDbContext d
             throw new KnownException($"未找到质量保留上下文，SourceDocumentId = {request.SourceDocumentId}");
         }
 
+        var replayed = await dbContext.QualityHoldTransitions.AsNoTracking().SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.SourceService == request.SourceService &&
+                x.SourceDocumentId == request.SourceDocumentId &&
+                x.Origin == "manual" &&
+                x.IdempotencyKey == request.IdempotencyKey,
+            cancellationToken);
+        if (replayed is not null)
+        {
+            if (replayed.CorrelationId != request.CorrelationId ||
+                replayed.Actor != request.Actor ||
+                replayed.OccurredAtUtc != request.ReleasedAtUtc ||
+                replayed.Reason != request.Reason)
+            {
+                throw new KnownException("Quality hold transition idempotency key was reused with a different payload.");
+            }
+            return new MesAcceptedResponse("Accepted", request.SourceDocumentId, request.ReleasedAtUtc);
+        }
+
         if (hold.ForceRelease(request.Reason, request.Actor, request.ReleasedAtUtc))
         {
             dbContext.QualityHoldTransitions.Add(QualityHoldTransition.Record(
@@ -167,6 +187,16 @@ public sealed class ForceReleaseQualityHoldCommandHandler(ApplicationDbContext d
                 hold.HeldInspectionRecordId!, request.CorrelationId,
                 "manual-force-released", request.Actor, request.ReleasedAtUtc, request.Reason,
                 hold.HeldInspectionRecordId, hold.HeldInspectionDocumentId, "manual", request.IdempotencyKey));
+        }
+        else
+        {
+            dbContext.QualityHoldTransitions.Add(QualityHoldTransition.Record(
+                request.OrganizationId, request.EnvironmentId, request.SourceService, request.SourceDocumentId,
+                hold.HeldInspectionRecordId ?? hold.InspectionRecordId, request.CorrelationId,
+                "manual-force-release-noop", request.Actor, request.ReleasedAtUtc, request.Reason,
+                hold.HeldInspectionRecordId ?? hold.InspectionRecordId,
+                hold.HeldInspectionDocumentId ?? hold.InspectionPlanId,
+                "manual", request.IdempotencyKey));
         }
         return new MesAcceptedResponse("Accepted", request.SourceDocumentId, request.ReleasedAtUtc);
     }

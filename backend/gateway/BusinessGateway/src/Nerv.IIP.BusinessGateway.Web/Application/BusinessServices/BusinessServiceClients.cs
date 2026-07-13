@@ -34,6 +34,9 @@ public interface IBusinessMasterDataClient
         string internalBearerToken,
         BusinessConsoleSetMasterDataResourceEnabledRequest request,
         bool enabled,
+        string actor,
+        string correlationId,
+        string idempotencyKey,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleResourceItem> CreateSkuAsync(
@@ -1995,13 +1998,22 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         string internalBearerToken,
         BusinessConsoleSetMasterDataResourceEnabledRequest request,
         bool enabled,
+        string actor,
+        string correlationId,
+        string idempotencyKey,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMasterDataResourceDetail>(
             internalBearerToken,
             HttpMethod.Post,
             ResourcePath(request.ResourceType, request.Code) + (enabled ? "/enable" : "/disable"),
             request,
-            cancellationToken);
+            cancellationToken,
+            configureRequest: message =>
+            {
+                message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor);
+                message.Headers.TryAddWithoutValidation("X-Correlation-Id", correlationId);
+                message.Headers.TryAddWithoutValidation("X-Idempotency-Key", idempotencyKey);
+            });
 
     public Task<BusinessConsoleResourceItem> CreateSkuAsync(
         string internalBearerToken,
