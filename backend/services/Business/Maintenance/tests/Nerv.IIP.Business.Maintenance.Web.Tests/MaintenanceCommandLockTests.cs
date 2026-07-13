@@ -105,6 +105,26 @@ public sealed class MaintenanceCommandLockTests
     }
 
     [Fact]
+    public async Task Maintenance_command_lock_behavior_cancels_handler_when_lease_is_lost()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IDistributedLock>(new RedisMaintenanceDistributedLock(
+            new FailingRenewalStore(),
+            TimeProvider.System,
+            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromMilliseconds(20)));
+        services.AddScoped<ICommandLock<CancellableLockedCommand>, CancellableLockedCommandLock>();
+        services.AddScoped<IRequestHandler<CancellableLockedCommand>, CancellableLockedCommandHandler>();
+        services.AddMediatR(configuration => configuration
+            .RegisterServicesFromAssemblyContaining<MaintenanceCommandLockTests>()
+            .AddOpenBehavior(typeof(MaintenanceCommandLockBehavior<,>)));
+        await using var provider = services.BuildServiceProvider();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            provider.GetRequiredService<ISender>().Send(new CancellableLockedCommand(), CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Generate_due_pm_handler_remains_idempotent_for_repeated_tick()
     {
         await using var dbContext = MaintenanceEndpointContractTests.CreateTestDbContext();
@@ -122,6 +142,24 @@ public sealed class MaintenanceCommandLockTests
     }
 
     public sealed record ThrowingLockedCommand(string LockKey) : ICommand;
+
+    public sealed record CancellableLockedCommand : ICommand;
+
+    public sealed class CancellableLockedCommandLock : ICommandLock<CancellableLockedCommand>
+    {
+        public Task<CommandLockSettings> GetLockKeysAsync(CancellableLockedCommand command, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new CommandLockSettings("pm-cancellable-lock", 1));
+        }
+    }
+
+    public sealed class CancellableLockedCommandHandler : IRequestHandler<CancellableLockedCommand>
+    {
+        public async Task Handle(CancellableLockedCommand request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+    }
 
     public sealed class ThrowingLockedCommandLock : ICommandLock<ThrowingLockedCommand>
     {

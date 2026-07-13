@@ -400,8 +400,10 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
         var workOrderIds = new List<MaintenanceWorkOrderId>();
         foreach (var plan in plans)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             foreach (var dueDate in plan.ConsumeDueDates(request.BusinessDate))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 AddPlanWorkOrder(plan, request.OpenedBy, $"date:{dueDate:yyyyMMdd}", workOrderIds);
             }
 
@@ -427,6 +429,7 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
                 new DateTimeOffset(plan.StartsOn.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
                 new DateTimeOffset(request.BusinessDate.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
                 cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (!runtime.HasRuntimeSamples)
             {
                 logger.LogWarning(
