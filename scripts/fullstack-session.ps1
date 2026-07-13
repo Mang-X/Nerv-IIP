@@ -136,7 +136,7 @@ function Start-NervFullStackSession {
         [switch] $PassThru
     )
 
-    $staleSessionIds = @(Invoke-WithNervFullStackSessionLock -ScriptBlock {
+    $staleSessionIds = @(Invoke-WithNervFullStackSessionLock -TimeoutSeconds 300 -ScriptBlock {
         return @(Get-NervStaleFullStackSessions | ForEach-Object { "$($_.sessionId)" })
     })
     foreach ($staleSessionId in $staleSessionIds) {
