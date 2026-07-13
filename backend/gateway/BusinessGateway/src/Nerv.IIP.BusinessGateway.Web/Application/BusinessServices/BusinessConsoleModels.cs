@@ -3402,6 +3402,8 @@ public sealed record BusinessConsoleMesQualityHoldTimelineItem(
 public sealed record BusinessConsoleMesQualityHoldTimelineResponse(
     IReadOnlyCollection<BusinessConsoleMesQualityHoldTimelineItem> Items);
 
+// Actor is intentionally omitted: the gateway binds the downstream reversal actor to the
+// authenticated principal and ignores caller-supplied actor-like JSON properties.
 public sealed record BusinessConsoleMesReverseProductionReportRequest(
     [property: RouteParam] string ReportNo,
     [property: QueryParam] string OrganizationId,
@@ -3572,6 +3574,45 @@ public sealed record BusinessConsoleMesWipSummaryRow(
 public sealed record BusinessConsoleMesProductionReportListResponse(
     IReadOnlyCollection<BusinessConsoleMesProductionReportRow> Items,
     int Total);
+
+public sealed record BusinessConsoleMesProductionReportDetailRequest(
+    [property: RouteParam] string ReportNo,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleMesProductionReportDetailResponse(
+    BusinessConsoleMesProductionReportDetail Report,
+    IReadOnlyCollection<BusinessConsoleMesConsumedMaterialLot> ConsumedMaterialLots);
+
+public sealed record BusinessConsoleMesProductionReportDetail(
+    string ProductionReportId,
+    string ReportNo,
+    string WorkOrderId,
+    string OperationTaskId,
+    decimal GoodQuantity,
+    decimal ScrapQuantity,
+    decimal ReworkQuantity,
+    DateTimeOffset ReportedAtUtc,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? ScrapReasonCode = null,
+    string? DefectRecordNo = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null,
+    string? ReversedReportNo = null,
+    string? ReversalReason = null,
+    string? InventoryPostingFailureCode = null,
+    string? InventoryPostingFailureMessage = null,
+    DateTimeOffset? InventoryPostingFailedAtUtc = null,
+    string? WorkOrderStatus = null,
+    string? ReversalReportNo = null);
+
+public sealed record BusinessConsoleMesConsumedMaterialLot(
+    string MaterialId,
+    string MaterialLotId,
+    decimal ConsumedQuantity,
+    string UomCode,
+    string MaterialIssueRequestNo);
 
 public sealed record BusinessConsoleMesTelemetryCandidateListRequest(string OrganizationId, string EnvironmentId, string? Status = null,
     string? WorkCenterId = null, string? DeviceAssetId = null, DateTimeOffset? FromUtc = null, DateTimeOffset? ToUtc = null, int Skip = 0, int Take = 50);

@@ -12,6 +12,7 @@ import {
   getBusinessConsoleMesFoundationReadinessQueryOptions,
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
+  getBusinessConsoleMesProductionReportQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
   listBusinessConsoleMesCapacityImpactsQueryOptions,
@@ -160,6 +161,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   getBusinessConsoleMesOverviewQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesOverview' }],
+    query: vi.fn(),
+  })),
+  getBusinessConsoleMesProductionReportQueryOptions: vi.fn(({ path, query }) => ({
+    key: [{ _id: 'getBusinessConsoleMesProductionReport', path, query }],
     query: vi.fn(),
   })),
   getBusinessConsoleMesProductionPlanReadinessQueryOptions: vi.fn(() => ({
@@ -803,6 +808,39 @@ describe('business MES composables', () => {
     // 冲销回退工单累计并新增负向记录:本域 7 键(报工列表/工单详情/工单列表/概览/在制/工序任务/完工入库),
     // 不失效库存(冲销不发布库存过账事件)。
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(7)
+  })
+
+  it('requests production report detail only while the reversal dialog has complete scope', () => {
+    const reports = useMesProductionReports()
+
+    expect(
+      coladaState.queryFactoriesById.get('getBusinessConsoleMesProductionReport')?.(),
+    ).toMatchObject({ enabled: false })
+
+    reports.activateReverseDetail('PR-2001')
+    coladaState.queryFactoriesById.get('getBusinessConsoleMesProductionReport')?.()
+    expect(getBusinessConsoleMesProductionReportQueryOptions).toHaveBeenLastCalledWith({
+      path: { reportNo: 'PR-2001' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+    })
+    expect(
+      coladaState.queryFactoriesById.get('getBusinessConsoleMesProductionReport')?.(),
+    ).toMatchObject({ enabled: true })
+
+    reports.deactivateReverseDetail()
+    expect(
+      coladaState.queryFactoriesById.get('getBusinessConsoleMesProductionReport')?.(),
+    ).toMatchObject({ enabled: false })
+  })
+
+  it('suppresses production report detail when organization or environment scope is empty', () => {
+    const reports = useMesProductionReports()
+    reports.activateReverseDetail('PR-2001')
+    reports.filters.organizationId = ''
+
+    expect(
+      coladaState.queryFactoriesById.get('getBusinessConsoleMesProductionReport')?.(),
+    ).toMatchObject({ enabled: false })
   })
 
   it('runs schedule mutations through the generated option', async () => {

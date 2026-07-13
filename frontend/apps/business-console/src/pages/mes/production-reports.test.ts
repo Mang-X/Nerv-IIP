@@ -95,6 +95,11 @@ const mesState = vi.hoisted(() => ({
   ),
   filters: undefined as unknown as Record<string, string | number>,
   pending: undefined as unknown as { value: boolean },
+  detail: undefined as unknown as { value: unknown },
+  detailPending: undefined as unknown as { value: boolean },
+  detailError: undefined as unknown as { value: unknown },
+  activateReverseDetail: vi.fn(),
+  deactivateReverseDetail: vi.fn(),
 }))
 
 const routerState = vi.hoisted(() => ({ push: vi.fn() }))
@@ -110,6 +115,9 @@ vi.mock('@/composables/useBusinessMes', async () => {
     keyword: '',
   })
   mesState.pending = shallowRef(false)
+  mesState.detail = shallowRef()
+  mesState.detailPending = shallowRef(false)
+  mesState.detailError = shallowRef()
   return {
     useMesProductionReports: () => ({
       filters: mesState.filters,
@@ -125,6 +133,11 @@ vi.mock('@/composables/useBusinessMes', async () => {
       refreshProductionReports: vi.fn(),
       reverseProductionReport: mesState.reverseProductionReport,
       reverseProductionReportPending: mesState.pending,
+      reverseProductionReportDetail: mesState.detail,
+      reverseProductionReportDetailPending: mesState.detailPending,
+      reverseProductionReportDetailError: mesState.detailError,
+      activateReverseDetail: mesState.activateReverseDetail,
+      deactivateReverseDetail: mesState.deactivateReverseDetail,
     }),
     // main 上并行合入的遥测报工候选队列(同页):这些冲销相关用例不驱动它,给个空队列桩即可。
     useMesTelemetryProductionReportCandidates: () => ({
@@ -201,7 +214,15 @@ function mountReports(permissionCodes: string[]) {
         NvTooltipContent: { template: '<div><slot /></div>' },
         // 冲销确认框内容不渲染(否则 reka Dialog 内层需 DialogRoot context);key 复用/关闭路径测试
         // 直接驱动 setup 方法(openReverse/submitReverse/onReverseOpenChange),不依赖弹窗 DOM。
-        NvAlertDialog: { props: ['open'], template: '<div />' },
+        NvAlertDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
+        NvAlertDialogContent: { template: '<div><slot /></div>' },
+        NvAlertDialogHeader: { template: '<div><slot /></div>' },
+        NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
+        NvAlertDialogDescription: { template: '<p><slot /></p>' },
+        NvAlertDialogFooter: { template: '<footer><slot /></footer>' },
+        NvFieldGroup: { template: '<div><slot /></div>' },
+        NvField: { template: '<div><slot /></div>' },
+        NvFieldLabel: { template: '<label><slot /></label>' },
         // main 合入的候选队列 section 在主模板直接用 Select/Input,需 stub 避免缺 context 破坏整页渲染
         NvSelect: { template: '<div><slot /></div>' },
         NvSelectTrigger: { template: '<div><slot /></div>' },
@@ -223,6 +244,16 @@ beforeEach(() => {
     mesState.filters.skip = 0
   }
   if (mesState.pending) mesState.pending.value = false
+  if (mesState.detail) mesState.detail.value = undefined
+  if (mesState.detailPending) mesState.detailPending.value = false
+  if (mesState.detailError) mesState.detailError.value = undefined
+  mesState.activateReverseDetail.mockClear()
+  mesState.activateReverseDetail.mockImplementation((reportNo: string) => {
+    if ((mesState.detail.value as { report?: { reportNo?: string } } | undefined)?.report?.reportNo === reportNo) return
+    const report = rows.find((row) => row.reportNo === reportNo) ?? { ...rows[0], reportNo }
+    mesState.detail.value = { report, consumedMaterialLots: [] }
+  })
+  mesState.deactivateReverseDetail.mockClear()
   // jsdom 未实现 scrollIntoView,定义为可断言的 mock(跨页定位滚动)
   Element.prototype.scrollIntoView = vi.fn()
   // attachTo 会把上一个 wrapper 的 DOM 留在 body,清掉避免跨用例串扰
@@ -230,6 +261,68 @@ beforeEach(() => {
 })
 
 describe('production reports page — reversal permission & cross-page interlink', () => {
+  it('shows every consumed material lot in the reversal dialog and preserves quantity summary', async () => {
+    mesState.detail.value = {
+      report: rows[0],
+      consumedMaterialLots: [
+        { materialId: 'MAT-1', materialLotId: 'LOT-1', consumedQuantity: 2.5, uomCode: 'KG', materialIssueRequestNo: 'MIR-1' },
+        { materialId: 'MAT-2', materialLotId: 'LOT-2', consumedQuantity: 3, uomCode: 'EA', materialIssueRequestNo: 'MIR-2' },
+      ],
+    }
+    const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
+    ;(wrapper.vm as unknown as { openReverse: (row: (typeof rows)[number]) => void }).openReverse(rows[0])
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('良品')
+    expect(wrapper.text()).toContain('12')
+    expect(wrapper.text()).toContain('MAT-1')
+    expect(wrapper.text()).toContain('LOT-1')
+    expect(wrapper.text()).toContain('2.5 KG')
+    expect(wrapper.text()).toContain('MIR-1')
+    expect(wrapper.text()).toContain('MAT-2')
+    expect(wrapper.text()).toContain('LOT-2')
+    expect(wrapper.text()).toContain('3 EA')
+    expect(wrapper.text()).toContain('MIR-2')
+    expect(mesState.activateReverseDetail).toHaveBeenCalledWith('PRPT-000001')
+  })
+
+  it('renders explicit loading, empty and failure states and locks confirmation until detail is ready', async () => {
+    const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
+    const vm = wrapper.vm as unknown as { openReverse: (row: (typeof rows)[number]) => void; reverseForm: { reasonCode: string } }
+    vm.openReverse(rows[0])
+    vm.reverseForm.reasonCode = 'mis-report'
+
+    mesState.detailPending.value = true
+    await flushPromises()
+    expect(wrapper.text()).toContain('正在加载物料消耗明细')
+    expect(wrapper.findAll('button').find((button) => button.text().includes('确认冲销'))?.attributes('disabled')).toBeDefined()
+
+    mesState.detailPending.value = false
+    mesState.detail.value = { report: rows[0], consumedMaterialLots: [] }
+    await flushPromises()
+    expect(wrapper.text()).toContain('本次报工没有物料批次消耗')
+
+    mesState.detail.value = undefined
+    mesState.detailError.value = new Error('detail unavailable')
+    await flushPromises()
+    expect(wrapper.text()).toContain('物料消耗明细加载失败')
+    expect(wrapper.findAll('button').find((button) => button.text().includes('确认冲销'))?.attributes('disabled')).toBeDefined()
+  })
+
+  it('clears prior detail when closing or switching reversal reports', async () => {
+    const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
+    const vm = wrapper.vm as unknown as {
+      openReverse: (row: (typeof rows)[number]) => void
+      onReverseOpenChange: (next: boolean) => void
+    }
+    vm.openReverse(rows[0])
+    vm.onReverseOpenChange(false)
+    expect(mesState.deactivateReverseDetail).toHaveBeenCalled()
+
+    vm.openReverse({ ...rows[0], productionReportId: 'pr-d', reportNo: 'PRPT-000004' })
+    expect(mesState.activateReverseDetail).toHaveBeenLastCalledWith('PRPT-000004')
+  })
+
   it('shows the inline reverse action for a reversible report when the user has reporting write', async () => {
     const wrapper = mountReports(['business.mes.reporting.read', 'business.mes.reporting.write'])
     await flushPromises()

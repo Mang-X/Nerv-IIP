@@ -48,7 +48,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(51, MesEndpointContracts.All.Count);
+        Assert.Equal(52, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -205,6 +205,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/production-reports"
             && x.PermissionCode == MesPermissionCodes.ReportingRead
             && x.OperationId == "listBusinessMesProductionReports");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/mes/production-reports/{reportNo}"
+            && x.PermissionCode == MesPermissionCodes.ReportingRead
+            && x.OperationId == "getBusinessMesProductionReport");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/mes/production-reports/{reportNo}/reverse"
@@ -1306,6 +1311,28 @@ public sealed class MesEndpointContractTests
         Assert.Contains("Reason", body, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task Reverse_production_report_endpoint_propagates_actor_ref_to_command()
+    {
+        var sender = new CapturingReverseProductionReportSender();
+        var endpoint = new ReverseProductionReportEndpoint(sender, TimeProvider.System);
+        var request = new ReverseProductionReportRequest(
+            "org-001",
+            "env-dev",
+            "RPT-001",
+            "correction",
+            DateTimeOffset.Parse("2026-07-12T08:00:00Z"),
+            "principal:user-42",
+            "reverse-001");
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            endpoint.HandleAsync(request, CancellationToken.None));
+
+        Assert.Equal("command captured", exception.Message);
+        Assert.NotNull(sender.Command);
+        Assert.Equal("principal:user-42", sender.Command.ActorRef);
+    }
+
     [Theory]
     [MemberData(nameof(EndpointTypes))]
     public void Mes_endpoints_route_through_mediator(Type endpointType)
@@ -1427,6 +1454,50 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Production_report_detail_projects_all_consumed_lots_with_tenant_isolation()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-07-12T08:00:00Z");
+        dbContext.ProductionReports.AddRange(
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-001", "env-dev", "PRPT-DETAIL", "WO-001", "OP-10", 8m, 1m, false, now),
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-002", "env-dev", "PRPT-DETAIL", "WO-OTHER", "OP-20", 2m, 0m, false, now));
+        dbContext.ProductionReportMaterialConsumptions.AddRange(
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReportMaterialConsumption.Record("org-001", "env-dev", "PRPT-DETAIL", "WO-001", "OP-10", "MAT-001", "LOT-B", "KG", 3.5m, "MIR-002"),
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReportMaterialConsumption.Record("org-001", "env-dev", "PRPT-DETAIL", "WO-001", "OP-10", "MAT-001", "LOT-A", "KG", 2.5m, "MIR-001"),
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReportMaterialConsumption.Record("org-002", "env-dev", "PRPT-DETAIL", "WO-OTHER", "OP-20", "MAT-OTHER", "LOT-OTHER", "PCS", 1m, "MIR-OTHER"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var detail = await new GetProductionReportQueryHandler(dbContext).Handle(
+            new GetProductionReportQuery("org-001", "env-dev", "PRPT-DETAIL"),
+            CancellationToken.None);
+
+        Assert.Equal("PRPT-DETAIL", detail.Report.ReportNo);
+        Assert.Equal("WO-001", detail.Report.WorkOrderId);
+        Assert.Collection(detail.ConsumedMaterialLots,
+            first => Assert.Equal(new ConsumedMaterialLotFact("MAT-001", "LOT-A", 2.5m, "KG", "MIR-001"), first),
+            second => Assert.Equal(new ConsumedMaterialLotFact("MAT-001", "LOT-B", 3.5m, "KG", "MIR-002"), second));
+    }
+
+    [Fact]
+    public async Task Production_report_detail_rejects_missing_or_cross_tenant_report()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        dbContext.ProductionReports.Add(
+            Domain.AggregatesModel.ProductionReportAggregate.ProductionReport.Record("org-002", "env-dev", "PRPT-HIDDEN", "WO-OTHER", "OP-20", 1m, 0m, false, DateTimeOffset.Parse("2026-07-12T08:00:00Z")));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new GetProductionReportQueryHandler(dbContext);
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new GetProductionReportQuery("org-001", "env-dev", "PRPT-MISSING"), CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new GetProductionReportQuery("org-001", "env-dev", "PRPT-HIDDEN"), CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Mes_endpoints_require_internal_service_authentication()
     {
         var factory = new WebApplicationFactory<Program>();
@@ -1493,6 +1564,30 @@ public sealed class MesEndpointContractTests
     public static IEnumerable<object[]> EndpointTypes()
     {
         return MesEndpointContracts.All.Select(x => new object[] { x.EndpointType });
+    }
+
+    private sealed class CapturingReverseProductionReportSender : ISender
+    {
+        public ReverseProductionReportCommand? Command { get; private set; }
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            Command = Assert.IsType<ReverseProductionReportCommand>(request);
+            return Task.FromException<TResponse>(new InvalidOperationException("command captured"));
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private static IReadOnlyCollection<ConsumedMaterialLotInput> SeedReceivedMaterialIssue(

@@ -135,6 +135,24 @@ public sealed class MesSchemaConventionTests
         Assert.True(hasUniqueReversalIndex, $"{MesFacts.Schema}: reversal migration must create a unique original-report index.");
     }
 
+    [Fact]
+    public void Production_report_reversal_audit_migration_adds_nullable_bounded_actor_column()
+    {
+        var migration = new AddProductionReportReversalAudit();
+        var migrationBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddProductionReportReversalAudit)
+            .GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [migrationBuilder]);
+
+        var column = Assert.IsType<AddColumnOperation>(Assert.Single(migrationBuilder.Operations));
+        Assert.Equal(MesFacts.Schema, column.Schema);
+        Assert.Equal("production_reports", column.Table);
+        Assert.Equal("reversed_by", column.Name);
+        Assert.Equal(100, column.MaxLength);
+        Assert.True(column.IsNullable);
+        Assert.False(string.IsNullOrWhiteSpace(column.Comment));
+    }
+
     private static IReadOnlyCollection<string> ProcessedIntegrationEventHasUniqueInboxIndex(IModel model)
     {
         var entity = model.FindEntityType(typeof(ProcessedIntegrationEvent));

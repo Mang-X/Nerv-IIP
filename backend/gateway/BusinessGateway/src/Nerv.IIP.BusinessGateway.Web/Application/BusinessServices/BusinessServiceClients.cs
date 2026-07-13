@@ -1296,6 +1296,7 @@ public interface IBusinessMesClient
         string internalBearerToken,
         string reportNo,
         BusinessConsoleMesReverseProductionReportRequest request,
+        string actor,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesCreateReceiptResponse> RetryFinishedGoodsReceiptInventoryPostingAsync(
@@ -1380,6 +1381,12 @@ public interface IBusinessMesClient
     Task<BusinessConsoleMesProductionReportListResponse> ListProductionReportsAsync(
         string internalBearerToken,
         BusinessConsoleMesListWithoutStatusRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesProductionReportDetailResponse> GetProductionReportAsync(
+        string internalBearerToken,
+        string reportNo,
+        BusinessConsoleMesContextRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesTelemetryCandidateListResponse> ListTelemetryCandidatesAsync(string internalBearerToken, BusinessConsoleMesTelemetryCandidateListRequest request, CancellationToken cancellationToken);
@@ -6046,12 +6053,19 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string internalBearerToken,
         string reportNo,
         BusinessConsoleMesReverseProductionReportRequest request,
+        string actor,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMesReverseProductionReportResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/mes/production-reports/{Uri.EscapeDataString(reportNo)}/reverse",
-            request,
+            new DownstreamReverseProductionReportRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.Reason,
+                actor,
+                request.ReversedAtUtc,
+                request.IdempotencyKey),
             cancellationToken);
 
     public Task<BusinessConsoleMesCreateReceiptResponse> RetryFinishedGoodsReceiptInventoryPostingAsync(
@@ -6200,6 +6214,18 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/mes/production-reports?" + ListQueryWithoutStatus(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesProductionReportDetailResponse> GetProductionReportAsync(
+        string internalBearerToken,
+        string reportNo,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesProductionReportDetailResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/production-reports/{Uri.EscapeDataString(reportNo)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
             cancellationToken);
 
@@ -6534,6 +6560,14 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string Reason,
         string? SourceService,
         DateTimeOffset? ReleasedAtUtc);
+
+    private sealed record DownstreamReverseProductionReportRequest(
+        string OrganizationId,
+        string EnvironmentId,
+        string Reason,
+        string ActorRef,
+        DateTimeOffset? ReversedAtUtc,
+        string? IdempotencyKey);
 
     private static string FormatTrigger(JsonElement trigger) => trigger.ValueKind switch
     {
