@@ -8,6 +8,7 @@ public partial record InstanceHeartbeatId : IGuidStronglyTypedId;
 public partial record InstanceStateHistoryId : IGuidStronglyTypedId;
 public partial record InstanceStatusChangeId : IGuidStronglyTypedId;
 public partial record RegistrationIdempotencyId : IGuidStronglyTypedId;
+public partial record ConnectorCollectionHealthProjectionId : IGuidStronglyTypedId;
 
 public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
 {
@@ -77,6 +78,7 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
     public Dictionary<string, string> Metadata { get; private set; } = [];
     public List<CapabilityDescriptor> Capabilities { get; private set; } = [];
     public InstanceHeartbeat? Heartbeat { get; private set; }
+    public ConnectorCollectionHealthProjection? CollectionHealth { get; private set; }
     public ICollection<InstanceStateHistory> StateHistory { get; private set; } = [];
     public ICollection<InstanceStatusChange> StatusChanges { get; private set; } = [];
     public Deleted Deleted { get; private set; } = new();
@@ -196,6 +198,22 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
         this.AddDomainEvent(new InstanceStateSnapshotRecordedDomainEvent(InstanceKey, observedAtUtc, reportedStatus, healthStatus));
     }
 
+    public void RecordCollectionHealth(ConnectorCollectionHealth report)
+    {
+        if (!string.Equals(report.ConnectorId, InstanceKey, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Collection health connector identity must match the registered instance.", nameof(report));
+        }
+
+        if (CollectionHealth is null)
+        {
+            CollectionHealth = new ConnectorCollectionHealthProjection(Id, OrganizationId, EnvironmentId, report);
+            return;
+        }
+
+        CollectionHealth.Record(report);
+    }
+
     public bool RecordOperationTaskCompletedRefresh(
         string idempotencyKey,
         string operationTaskId,
@@ -276,6 +294,58 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
     }
 }
 
+public class ConnectorCollectionHealthProjection : Entity<ConnectorCollectionHealthProjectionId>
+{
+    protected ConnectorCollectionHealthProjection() { }
+
+    public ConnectorCollectionHealthProjection(ApplicationInstanceId applicationInstanceId, string organizationId, string environmentId, ConnectorCollectionHealth report)
+    {
+        ApplicationInstanceId = applicationInstanceId;
+        OrganizationId = organizationId;
+        EnvironmentId = environmentId;
+        ConnectorId = report.ConnectorId;
+        Record(report);
+    }
+
+    public ApplicationInstanceId ApplicationInstanceId { get; private set; } = null!;
+    public string OrganizationId { get; private set; } = string.Empty;
+    public string EnvironmentId { get; private set; } = string.Empty;
+    public string ConnectorId { get; private set; } = string.Empty;
+    public string SourceSystem { get; private set; } = string.Empty;
+    public Guid CounterEpoch { get; private set; }
+    public DateTimeOffset ReportedAtUtc { get; private set; }
+    public long? ReceivedCount { get; private set; }
+    public long? DroppedCount { get; private set; }
+    public long? ErrorCount { get; private set; }
+    public DateTimeOffset? LastSampleAtUtc { get; private set; }
+    public string RetiredCounterEpochs { get; private set; } = string.Empty;
+
+    public void Record(ConnectorCollectionHealth report)
+    {
+        var isNewEpoch = CounterEpoch != Guid.Empty && report.CounterEpoch != CounterEpoch;
+        if (isNewEpoch)
+        {
+            var retired = RetiredCounterEpochs.Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
+            if (retired.Contains(report.CounterEpoch.ToString("N"))) return;
+            retired.Add(CounterEpoch.ToString("N"));
+            RetiredCounterEpochs = string.Join(',', retired.TakeLast(16));
+        }
+        else if (ReportedAtUtc >= report.ReportedAtUtc) return;
+        if (CounterEpoch == report.CounterEpoch &&
+            (IsDecrease(ReceivedCount, report.ReceivedCount) || IsDecrease(DroppedCount, report.DroppedCount) || IsDecrease(ErrorCount, report.ErrorCount))) return;
+        ConnectorId = report.ConnectorId;
+        SourceSystem = report.SourceSystem;
+        CounterEpoch = report.CounterEpoch;
+        ReportedAtUtc = report.ReportedAtUtc;
+        ReceivedCount = isNewEpoch ? report.ReceivedCount : report.ReceivedCount ?? ReceivedCount;
+        DroppedCount = isNewEpoch ? report.DroppedCount : report.DroppedCount ?? DroppedCount;
+        ErrorCount = isNewEpoch ? report.ErrorCount : report.ErrorCount ?? ErrorCount;
+        LastSampleAtUtc = isNewEpoch ? report.LastSampleAtUtc : report.LastSampleAtUtc ?? LastSampleAtUtc;
+    }
+
+    private static bool IsDecrease(long? previous, long? current) => previous.HasValue && current.HasValue && current < previous;
+}
+
 public class InstanceHeartbeat : Entity<InstanceHeartbeatId>
 {
     protected InstanceHeartbeat()
@@ -354,13 +424,17 @@ public class RegistrationIdempotency : Entity<RegistrationIdempotencyId>, IAggre
     {
     }
 
-    public RegistrationIdempotency(string idempotencyKey, string registrationId, string instanceKey)
+    public RegistrationIdempotency(string organizationId, string environmentId, string idempotencyKey, string registrationId, string instanceKey)
     {
+        OrganizationId = organizationId;
+        EnvironmentId = environmentId;
         IdempotencyKey = idempotencyKey;
         RegistrationId = registrationId;
         InstanceKey = instanceKey;
     }
 
+    public string OrganizationId { get; private set; } = string.Empty;
+    public string EnvironmentId { get; private set; } = string.Empty;
     public string IdempotencyKey { get; private set; } = string.Empty;
     public string RegistrationId { get; private set; } = string.Empty;
     public string InstanceKey { get; private set; } = string.Empty;

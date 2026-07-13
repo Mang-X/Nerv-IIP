@@ -1170,10 +1170,13 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.PostAsJsonAsync(
-            "/api/business-console/v1/mes/quality-holds/QH-001/force-release?organizationId=org-001&environmentId=env-dev",
+        using var forceRequest = new HttpRequestMessage(HttpMethod.Post,
+            "/api/business-console/v1/mes/quality-holds/QH-001/force-release?organizationId=org-001&environmentId=env-dev");
+        forceRequest.Headers.TryAddWithoutValidation("X-Correlation-Id", "corr-gateway-1");
+        forceRequest.Content = JsonContent.Create(
             // A caller-supplied actor must never be trusted; the gateway overrides it with the principal.
-            new { reason = "quality-override", actor = "supervisor-1", sourceService = "BusinessMes", releasedAtUtc = (DateTimeOffset?)null });
+            new { reason = "quality-override", actor = "supervisor-1", sourceService = "BusinessMes", releasedAtUtc = (DateTimeOffset?)null, idempotencyKey = "idem-force-1" });
+        var response = await client.SendAsync(forceRequest);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         // Facade forwards the internal service token, never the caller bearer.
@@ -1184,11 +1187,34 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("org-001", mes.LastForceReleaseQualityHoldRequest.OrganizationId);
         Assert.Equal("env-dev", mes.LastForceReleaseQualityHoldRequest.EnvironmentId);
         Assert.Equal("quality-override", mes.LastForceReleaseQualityHoldRequest.Reason);
+        Assert.Equal("idem-force-1", mes.LastForceReleaseQualityHoldRequest.IdempotencyKey);
+        Assert.Equal("corr-gateway-1", mes.LastForceReleaseQualityHoldCorrelationId);
         // The releaser identity is bound to the authenticated principal; the request-body actor is ignored.
         Assert.Equal("user-admin", mes.LastForceReleaseQualityHoldActor);
         Assert.NotEqual("supervisor-1", mes.LastForceReleaseQualityHoldActor);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.True(document.RootElement.GetProperty("data").GetProperty("accepted").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Mes_quality_hold_timeline_requires_quality_read_and_returns_full_lineage()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/mes/quality-holds/DOC-1/timeline?organizationId=org-001&environmentId=env-dev&sourceService=source");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = json.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("event-idem", item.GetProperty("idempotencyKey").GetString());
+        Assert.Equal("PLAN-1", item.GetProperty("sourceInspectionDocumentId").GetString());
     }
 
     [Fact]
@@ -8918,6 +8944,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public BusinessConsoleMesForceReleaseQualityHoldRequest? LastForceReleaseQualityHoldRequest { get; private set; }
 
     public string? LastForceReleaseQualityHoldActor { get; private set; }
+    public string? LastForceReleaseQualityHoldCorrelationId { get; private set; }
 
     public int ReverseProductionReportCallCount { get; private set; }
 
@@ -9080,6 +9107,33 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         LastForceReleaseQualityHoldRequest = request;
         LastForceReleaseQualityHoldActor = actor;
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> ForceReleaseQualityHoldAsync(
+        string internalBearerToken,
+        string sourceDocumentId,
+        BusinessConsoleMesForceReleaseQualityHoldRequest request,
+        string actor,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        LastForceReleaseQualityHoldCorrelationId = correlationId;
+        return ForceReleaseQualityHoldAsync(internalBearerToken, sourceDocumentId, request, actor, cancellationToken);
+    }
+
+    public Task<BusinessConsoleMesQualityHoldTimelineResponse> GetQualityHoldTimelineAsync(
+        string internalBearerToken,
+        string sourceDocumentId,
+        BusinessConsoleMesQualityHoldTimelineRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMesQualityHoldTimelineResponse([
+            new BusinessConsoleMesQualityHoldTimelineItem(
+                Guid.Parse("019f0000-0000-7000-8000-000000000001"), "source", sourceDocumentId,
+                "cycle-1", "corr-1", "hold-applied", "quality", DateTimeOffset.Parse("2026-07-13T08:00:00Z"),
+                "defect", "QI-1", "PLAN-1", "automatic", "event-idem")
+        ]));
     }
 
     public Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(

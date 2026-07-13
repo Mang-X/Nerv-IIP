@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
 using Nerv.IIP.AppHub.Infrastructure;
+using Nerv.IIP.AppHub.Infrastructure.Repositories;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
@@ -23,6 +24,88 @@ namespace Nerv.IIP.AppHub.Web.Tests;
 
 public sealed class AppHubIntegrationEventTests
 {
+    [Fact]
+    public void Non_collection_health_update_error_is_not_classified_as_retryable()
+    {
+        var error = new DbUpdateException("foreign key violation", new InvalidOperationException("FK_state_history"));
+
+        Assert.False(RecordInstanceStateSnapshotCommandHandler.IsCollectionHealthUniqueConflict(error));
+    }
+    [Fact]
+    public async Task Concurrent_first_collection_health_insert_reloads_and_monotonically_merges()
+    {
+        var root = new InMemoryDatabaseRoot();
+        var databaseName = $"apphub-concurrent-health-{Guid.CreateVersion7():N}";
+        var options = CreateDbContextOptions(databaseName, root);
+        await using (var seed = CreateDbContext(options))
+        {
+            seed.ApplicationInstances.Add(new ApplicationInstance("org", "env", "host", "collector", "1", "node", "opcua-main", "OPC", new Dictionary<string, string>(), []));
+            await seed.SaveChangesAsync();
+        }
+
+        var competing = new ConnectorCollectionHealth("opcua-main", "opcua", Guid.Parse("11111111-1111-1111-1111-111111111111"), DateTimeOffset.Parse("2026-07-13T01:00:00Z"), 5, 1, 0, null);
+        var interceptor = new ConflictOnceSaveChangesInterceptor(async () =>
+        {
+            await using var other = CreateDbContext(options);
+            var instance = await other.ApplicationInstances.Include(x => x.CollectionHealth).SingleAsync();
+            instance.RecordCollectionHealth(competing);
+            await other.SaveChangesAsync();
+        });
+        var conflictOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName, root)
+            .AddInterceptors(interceptor)
+            .Options;
+        await using var conflictDb = CreateDbContext(conflictOptions);
+        using var services = new ServiceCollection()
+            .AddSingleton<ApplicationDbContext>(conflictDb)
+            .AddSingleton<IApplicationInstanceRepository, ApplicationInstanceRepository>()
+            .BuildServiceProvider();
+        var incoming = competing with { ReportedAtUtc = DateTimeOffset.Parse("2026-07-13T01:01:00Z"), ReceivedCount = 8 };
+        var snapshot = new InstanceStateSnapshot(new ConnectorRequestContext("1", "1", "corr", incoming.ReportedAtUtc, "org", "env", "host"), "opcua-main", incoming.ReportedAtUtc, "running", "healthy", "ok", new Dictionary<string, string>(), new Dictionary<string, decimal>(), new Dictionary<string, string>(), incoming);
+
+        await new RecordInstanceStateSnapshotCommandHandler(services).Handle(new RecordInstanceStateSnapshotCommand(snapshot), CancellationToken.None);
+
+        await using var verify = CreateDbContext(options);
+        var saved = await verify.ConnectorCollectionHealth.SingleAsync();
+        Assert.Equal(8, saved.ReceivedCount);
+        Assert.Equal(incoming.ReportedAtUtc, saved.ReportedAtUtc);
+    }
+    [Fact]
+    public async Task Same_connector_identity_is_independent_across_organization_environment_scopes()
+    {
+        await using var db = CreateDbContext();
+        var first = new ApplicationInstance("org-a", "env", "host", "collector", "1", "node", "opcua-main", "OPC A", new Dictionary<string, string>(), []);
+        var second = new ApplicationInstance("org-b", "env", "host", "collector", "1", "node", "opcua-main", "OPC B", new Dictionary<string, string>(), []);
+        first.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-main", "opcua", Guid.CreateVersion7(), DateTimeOffset.Parse("2026-07-13T01:00:00Z"), 1, 0, 0, null));
+        second.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-main", "opcua", Guid.CreateVersion7(), DateTimeOffset.Parse("2026-07-13T01:00:00Z"), 2, 0, 0, null));
+        db.ApplicationInstances.AddRange(first, second);
+
+        await db.SaveChangesAsync();
+
+        Assert.Equal(2, await db.ConnectorCollectionHealth.CountAsync());
+    }
+    [Fact]
+    public async Task Collection_health_projection_survives_db_context_reload()
+    {
+        var root = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"apphub-health-{Guid.CreateVersion7():N}", root);
+        var epoch = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        await using (var writer = CreateDbContext(options))
+        {
+            var instance = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "opcua-main", "OPC", new Dictionary<string, string>(), []);
+            instance.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-main", "opcua", epoch, DateTimeOffset.Parse("2026-07-13T01:00:00Z"), 12, 2, 1, DateTimeOffset.Parse("2026-07-13T00:59:59Z")));
+            writer.ApplicationInstances.Add(instance);
+            await writer.SaveChangesAsync();
+        }
+
+        await using var reader = CreateDbContext(options);
+        var reloaded = await reader.ApplicationInstances.Include(x => x.CollectionHealth).SingleAsync(x => x.InstanceKey == "opcua-main");
+
+        Assert.Equal(epoch, reloaded.CollectionHealth!.CounterEpoch);
+        Assert.Equal(12, reloaded.CollectionHealth.ReceivedCount);
+        Assert.Equal(2, reloaded.CollectionHealth.DroppedCount);
+        Assert.Equal(1, reloaded.CollectionHealth.ErrorCount);
+    }
     [Fact]
     public void Application_registered_converter_maps_domain_event_to_apphub_integration_event()
     {
@@ -768,6 +851,26 @@ public sealed class AppHubIntegrationEventTests
             _ = request;
             _ = cancellationToken;
             throw new NotSupportedException("Noop mediator cannot stream requests.");
+        }
+    }
+
+    private sealed class ConflictOnceSaveChangesInterceptor(Func<Task> createCompetingProjection) : SaveChangesInterceptor
+    {
+        private bool _thrown;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_thrown && eventData.Context!.ChangeTracker.Entries<ConnectorCollectionHealthProjection>().Any(x => x.State == EntityState.Added))
+            {
+                _thrown = true;
+                await createCompetingProjection();
+                throw new DbUpdateException("simulated unique insert conflict", new RecordInstanceStateSnapshotCommandHandler.CollectionHealthUniqueConstraintException());
+            }
+
+            return await base.SavingChangesAsync(eventData, result, cancellationToken);
         }
     }
 

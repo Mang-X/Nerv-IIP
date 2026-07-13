@@ -3375,7 +3375,32 @@ public sealed record BusinessConsoleMesForceReleaseQualityHoldRequest(
     [property: QueryParam] string EnvironmentId,
     string Reason,
     string? SourceService,
-    DateTimeOffset? ReleasedAtUtc);
+    DateTimeOffset? ReleasedAtUtc,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesQualityHoldTimelineRequest(
+    [property: RouteParam] string SourceDocumentId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string SourceService);
+
+public sealed record BusinessConsoleMesQualityHoldTimelineItem(
+    Guid TransitionId,
+    string SourceService,
+    string SourceDocumentId,
+    string HoldCycleId,
+    string CorrelationId,
+    string EventKind,
+    string Actor,
+    DateTimeOffset OccurredAtUtc,
+    string? Reason,
+    string? SourceInspectionRecordId,
+    string? SourceInspectionDocumentId,
+    string Origin,
+    string? IdempotencyKey);
+
+public sealed record BusinessConsoleMesQualityHoldTimelineResponse(
+    IReadOnlyCollection<BusinessConsoleMesQualityHoldTimelineItem> Items);
 
 public sealed record BusinessConsoleMesReverseProductionReportRequest(
     [property: RouteParam] string ReportNo,

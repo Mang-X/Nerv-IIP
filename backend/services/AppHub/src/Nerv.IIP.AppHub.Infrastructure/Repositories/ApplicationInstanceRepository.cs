@@ -36,6 +36,7 @@ public class ApplicationInstanceRepository(ApplicationDbContext context)
     {
         return _context.ApplicationInstances
             .Include(x => x.Heartbeat)
+            .Include(x => x.CollectionHealth)
             .Include(x => x.StateHistory)
             .Include(x => x.StatusChanges);
     }

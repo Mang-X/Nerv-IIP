@@ -187,16 +187,94 @@ namespace Nerv.IIP.AppHub.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("InstanceKey")
-                        .IsUnique();
-
                     b.HasIndex("OrganizationId", "EnvironmentId", "ApplicationKey");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "ConnectorHostId");
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "InstanceKey")
+                        .IsUnique();
+
                     b.ToTable("application_instances", "apphub", t =>
                         {
                             t.HasComment("AppHub managed application instance aggregate roots reported by connector hosts.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate.ConnectorCollectionHealthProjection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Collection health projection id");
+
+                    b.Property<Guid>("ApplicationInstanceId")
+                        .HasColumnType("uuid")
+                        .HasComment("Owning application instance aggregate id");
+
+                    b.Property<string>("ConnectorId")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasComment("Stable connector identity within organization and environment scope");
+
+                    b.Property<Guid>("CounterEpoch")
+                        .HasColumnType("uuid")
+                        .HasComment("Process or counter epoch that makes resets explicit");
+
+                    b.Property<long?>("DroppedCount")
+                        .HasColumnType("bigint")
+                        .HasComment("Actual source samples intentionally dropped or rejected in this epoch; null means unknown");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasComment("Environment scope for the connector identity");
+
+                    b.Property<long?>("ErrorCount")
+                        .HasColumnType("bigint")
+                        .HasComment("Actual collection or processing failures in this epoch; null means unknown");
+
+                    b.Property<DateTimeOffset?>("LastSampleAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("Most recent actual source sample time; null means unknown");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasComment("Organization scope for the connector identity");
+
+                    b.Property<long?>("ReceivedCount")
+                        .HasColumnType("bigint")
+                        .HasComment("Raw source messages or sample attempts observed exactly once in this epoch before validation; null means unknown");
+
+                    b.Property<DateTimeOffset>("ReportedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("Time at which Connector Host reported these metrics");
+
+                    b.Property<string>("RetiredCounterEpochs")
+                        .IsRequired()
+                        .HasMaxLength(600)
+                        .HasColumnType("character varying(600)")
+                        .HasComment("Bounded set of the 16 most recently retired counter epoch identities, preventing delayed reports from reviving reset counters");
+
+                    b.Property<string>("SourceSystem")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasComment("Source protocol or system, such as opcua, modbus, or mqtt");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApplicationInstanceId")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ConnectorId")
+                        .IsUnique();
+
+                    b.ToTable("connector_collection_health", "apphub", t =>
+                        {
+                            t.HasComment("Latest recoverable collection health counters reported by each Connector Host connector/source.");
                         });
                 });
 
@@ -321,6 +399,12 @@ namespace Nerv.IIP.AppHub.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasComment("Soft delete flag");
 
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasComment("Environment scope for the registration idempotency key");
+
                     b.Property<string>("IdempotencyKey")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -332,6 +416,12 @@ namespace Nerv.IIP.AppHub.Infrastructure.Migrations
                         .HasMaxLength(160)
                         .HasColumnType("character varying(160)")
                         .HasComment("Instance protocol key");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasComment("Organization scope for the registration idempotency key");
 
                     b.Property<string>("RegistrationId")
                         .IsRequired()
@@ -346,7 +436,7 @@ namespace Nerv.IIP.AppHub.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("IdempotencyKey")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "IdempotencyKey")
                         .IsUnique();
 
                     b.ToTable("registration_idempotency", "apphub", t =>
@@ -674,6 +764,15 @@ namespace Nerv.IIP.AppHub.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate.ConnectorCollectionHealthProjection", b =>
+                {
+                    b.HasOne("Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate.ApplicationInstance", null)
+                        .WithOne("CollectionHealth")
+                        .HasForeignKey("Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate.ConnectorCollectionHealthProjection", "ApplicationInstanceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate.InstanceHeartbeat", b =>
                 {
                     b.HasOne("Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate.ApplicationInstance", null)
@@ -708,6 +807,8 @@ namespace Nerv.IIP.AppHub.Infrastructure.Migrations
 
             modelBuilder.Entity("Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate.ApplicationInstance", b =>
                 {
+                    b.Navigation("CollectionHealth");
+
                     b.Navigation("Heartbeat");
 
                     b.Navigation("StateHistory");

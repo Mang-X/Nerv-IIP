@@ -75,7 +75,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
             cancellationToken);
         if (existing is null)
         {
-            dbContext.QualityHoldContexts.Add(QualityHoldContext.Capture(
+            var hold = QualityHoldContext.Capture(
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
                 source.WorkOrderId,
@@ -88,18 +88,42 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
                 integrationEvent.EventType,
                 payload.DispositionReason,
                 payload.RecordedAtUtc,
-                integrationEvent.Actor));
+                integrationEvent.Actor);
+            dbContext.QualityHoldContexts.Add(hold);
+            if (hold.Active)
+            {
+                AddTransition(integrationEvent, "hold-applied", payload.InspectionRecordId);
+            }
             return;
         }
 
-        existing.ApplyInspectionResult(
+        var wasActive = existing.Active;
+        if (!existing.ApplyInspectionResult(
             payload.InspectionRecordId,
             payload.InspectionPlanId,
             payload.Result,
             integrationEvent.EventType,
             payload.DispositionReason,
             payload.RecordedAtUtc,
-            integrationEvent.Actor);
+            integrationEvent.Actor))
+        {
+            return;
+        }
+
+        AddTransition(
+            integrationEvent,
+            wasActive ? "inspection-released" : "hold-applied",
+            wasActive ? existing.HeldInspectionRecordId! : payload.InspectionRecordId);
+    }
+
+    private void AddTransition(InspectionResultIntegrationEvent integrationEvent, string eventKind, string holdCycleId)
+    {
+        var payload = integrationEvent.Payload;
+        dbContext.QualityHoldTransitions.Add(QualityHoldTransition.Record(
+            integrationEvent.OrganizationId, integrationEvent.EnvironmentId, payload.SourceService,
+            payload.SourceDocumentId.Trim(), holdCycleId, integrationEvent.CorrelationId, eventKind,
+            integrationEvent.Actor, payload.RecordedAtUtc, payload.DispositionReason, payload.InspectionRecordId,
+            payload.InspectionPlanId, "automatic", integrationEvent.IdempotencyKey));
     }
 
     private async Task<MesInspectionSource?> ResolveMesSourceAsync(

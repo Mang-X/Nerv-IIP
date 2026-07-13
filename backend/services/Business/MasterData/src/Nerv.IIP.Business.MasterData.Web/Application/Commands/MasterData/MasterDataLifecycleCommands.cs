@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.LifecycleAuditAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
@@ -133,6 +134,8 @@ public sealed record SetMasterDataResourceEnabledCommand(
     string ResourceType,
     string Code,
     bool Enabled,
+    string ActorId,
+    string OperationId,
     string? CodeSet = null,
     string Reason = "",
     DateOnly? EffectiveFrom = null) : ICommand<MasterDataResourceDetail>;
@@ -666,81 +669,109 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
 
     public async Task<MasterDataResourceDetail> Handle(SetMasterDataResourceEnabledCommand request, CancellationToken cancellationToken)
     {
-        var reason = request.Reason;
-        if (string.IsNullOrWhiteSpace(reason))
-        {
-            reason = request.Enabled ? "enabled" : "disabled";
-        }
+        var reason = request.Reason.Trim();
+        if (string.IsNullOrWhiteSpace(reason)) throw new KnownException("A lifecycle change reason is required.");
+        if (reason.Length > 500) throw new KnownException("Lifecycle change reason cannot exceed 500 characters.");
+        if (string.IsNullOrWhiteSpace(request.ActorId)) throw new KnownException("A trusted lifecycle actor is required.");
+        if (string.IsNullOrWhiteSpace(request.OperationId)) throw new KnownException("A governed lifecycle operation identity is required.");
         var type = GetMasterDataResourceDetailQueryHandler.NormalizeType(request.ResourceType);
+        var resourceIdentity = await ResolveLifecycleIdentityAsync(request, type, cancellationToken);
+        var isReplay = await IsReplayAsync(request, type, resourceIdentity, reason, cancellationToken);
         switch (type)
         {
             case "sku":
                 var sku = await FindAsync(dbContext.Skus, request, cancellationToken);
-                if (request.Enabled) sku.Enable(reason); else sku.Disable(reason);
+                if (isReplay || sku.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(sku);
+                if (request.Enabled) sku.Enable(reason); else sku.Disable(reason, request.OperationId);
+                AddAudit(request, type, sku.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(sku);
             case "unit-of-measure":
                 var uom = await FindAsync(dbContext.UnitsOfMeasure, request, cancellationToken);
+                if (isReplay || uom.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(uom);
                 if (!request.Enabled)
                 {
                     await EnsureUnitOfMeasureIsNotReferencedAsync(request, cancellationToken);
                 }
                 if (request.Enabled) uom.Enable(reason); else uom.Disable(reason);
+                AddAudit(request, type, uom.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(uom);
             case "uom-conversion":
                 var conversion = await FindUomConversionAsync(dbContext, request, cancellationToken);
+                if (isReplay || conversion.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(conversion);
                 if (request.Enabled) conversion.Enable(reason); else conversion.Disable(reason);
+                AddAudit(request, type, conversion.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(conversion);
             case "business-partner":
                 var partner = await FindAsync(dbContext.BusinessPartners, request, cancellationToken);
+                if (isReplay || partner.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(partner);
                 if (!request.Enabled)
                 {
                     await EnsureBusinessPartnerIsNotReferencedAsync(request, cancellationToken);
                 }
                 if (request.Enabled) partner.Enable(reason); else partner.Disable(reason);
+                AddAudit(request, type, partner.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(partner);
             case "site":
                 var site = await FindAsync(dbContext.Sites, request, cancellationToken);
+                if (isReplay || site.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(site);
                 if (request.Enabled) site.Enable(reason); else site.Disable(reason);
+                AddAudit(request, type, site.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(site);
             case "workshop":
                 var workshop = await FindAsync(dbContext.Workshops, request, cancellationToken);
+                if (isReplay || workshop.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(workshop);
                 if (request.Enabled) workshop.Enable(reason); else workshop.Disable(reason);
+                AddAudit(request, type, workshop.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(workshop);
             case "department":
                 var department = await FindAsync(dbContext.Departments, request, cancellationToken);
+                if (isReplay || department.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(department);
                 if (request.Enabled) department.Enable(reason); else department.Disable(reason);
+                AddAudit(request, type, department.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(department);
             case "team":
                 var team = await FindAsync(dbContext.Teams, request, cancellationToken);
+                if (isReplay || team.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(team);
                 if (request.Enabled) team.Enable(reason); else team.Disable(reason);
+                AddAudit(request, type, team.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(team);
             case "shift":
                 var shift = await FindAsync(dbContext.Shifts, request, cancellationToken);
+                if (isReplay || shift.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(shift);
                 if (request.Enabled) shift.Enable(reason); else shift.Disable(reason);
+                AddAudit(request, type, shift.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(shift);
             case "work-calendar":
                 var calendar = await FindAsync(dbContext.WorkCalendars, request, cancellationToken);
+                if (isReplay || calendar.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(calendar);
                 if (request.Enabled) calendar.Enable(reason); else calendar.Disable(reason);
+                AddAudit(request, type, calendar.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(calendar);
             case "production-line":
                 var line = await FindAsync(dbContext.ProductionLines, request, cancellationToken);
+                if (isReplay || line.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(line);
                 if (request.Enabled) line.Enable(reason); else line.Disable(reason);
+                AddAudit(request, type, line.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(line);
             case "work-center":
                 var workCenter = await FindAsync(dbContext.WorkCenters, request, cancellationToken);
+                if (isReplay || workCenter.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(workCenter);
                 if (!request.Enabled)
                 {
                     await EnsureWorkCenterIsNotReferencedAsync(request, cancellationToken);
                 }
                 if (request.Enabled) workCenter.Enable(reason); else workCenter.Disable(reason);
+                AddAudit(request, type, workCenter.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(workCenter);
             case "device-asset":
                 var device = await FindAsync(dbContext.DeviceAssets, request, cancellationToken);
+                if (isReplay || device.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(device);
                 if (!request.Enabled)
                 {
                     await EnsureDeviceAssetIsNotReferencedAsync(request, device.Id.ToString(), cancellationToken);
                 }
                 if (request.Enabled) device.Enable(reason); else device.Disable(reason);
+                AddAudit(request, type, device.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(device);
             case "reference-data":
                 var codeSet = GetMasterDataResourceDetailQueryHandler.RequireReferenceDataCodeSet(request.CodeSet);
@@ -751,11 +782,71 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                     x.Code == request.Code,
                     cancellationToken)
                     ?? throw UpdateMasterDataResourceCommandHandler.NotFound(request.ResourceType, request.Code);
+                if (isReplay || referenceData.Disabled == !request.Enabled) return UpdateMasterDataResourceCommandHandler.Detail(referenceData);
                 if (request.Enabled) referenceData.Enable(reason); else referenceData.Disable(reason);
+                AddAudit(request, type, referenceData.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(referenceData);
             default:
                 throw new KnownException($"Unsupported master data resource type '{request.ResourceType}'.");
         }
+    }
+
+    private async Task<bool> IsReplayAsync(SetMasterDataResourceEnabledCommand request, string resourceType, string resourceIdentity, string reason, CancellationToken cancellationToken)
+    {
+        var operationId = request.OperationId.Trim();
+        if (string.IsNullOrWhiteSpace(operationId)) throw new KnownException("A governed lifecycle operation identity is required.");
+        var existing = await dbContext.LifecycleAuditEntries.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId &&
+            x.OperationId == operationId, cancellationToken);
+        if (existing is null) return false;
+        var actor = request.ActorId.Trim();
+        if (!string.Equals(existing.ResourceType, resourceType, StringComparison.Ordinal) ||
+            !string.Equals(existing.ResourceIdentity, resourceIdentity, StringComparison.Ordinal) ||
+            existing.TargetEnabled != request.Enabled ||
+            !string.Equals(existing.Reason, reason, StringComparison.Ordinal) ||
+            !string.Equals(existing.ActorId, actor, StringComparison.Ordinal))
+        {
+            throw new KnownException($"Lifecycle operation '{operationId}' conflicts with its previously persisted payload.");
+        }
+        return true;
+    }
+
+    public static string LifecycleIdentity(SetMasterDataResourceEnabledCommand request, string resourceType) => resourceType switch
+    {
+        "reference-data" => $"{GetMasterDataResourceDetailQueryHandler.RequireReferenceDataCodeSet(request.CodeSet)}:{request.Code}",
+        "uom-conversion" => $"{NormalizeConversionCode(request.Code)}:{request.EffectiveFrom?.ToString("yyyy-MM-dd") ?? "latest"}",
+        _ => request.Code,
+    };
+
+    private async Task<string> ResolveLifecycleIdentityAsync(SetMasterDataResourceEnabledCommand request, string resourceType, CancellationToken cancellationToken)
+    {
+        if (resourceType != "uom-conversion" || request.EffectiveFrom.HasValue)
+        {
+            return LifecycleIdentity(request, resourceType);
+        }
+        var (from, to) = GetMasterDataResourceDetailQueryHandler.ParseConversionCode(request.Code);
+        var effectiveFrom = await dbContext.UomConversions
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.FromUomCode == from && x.ToUomCode == to)
+            .OrderByDescending(x => x.EffectiveFrom)
+            .Select(x => (DateOnly?)x.EffectiveFrom)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw UpdateMasterDataResourceCommandHandler.NotFound(request.ResourceType, request.Code);
+        return LifecycleIdentity(request with { EffectiveFrom = effectiveFrom }, resourceType);
+    }
+
+    private static string NormalizeConversionCode(string code)
+    {
+        var (from, to) = GetMasterDataResourceDetailQueryHandler.ParseConversionCode(code);
+        return $"{from}->{to}";
+    }
+
+    private void AddAudit(SetMasterDataResourceEnabledCommand request, string resourceType, string resourceId, string resourceIdentity, string reason)
+    {
+        var actor = request.ActorId.Trim();
+        var operationId = request.OperationId.Trim();
+        dbContext.LifecycleAuditEntries.Add(new MasterDataLifecycleAuditEntry(
+            request.OrganizationId, request.EnvironmentId, resourceType, resourceId, request.Code, resourceIdentity, request.Enabled, actor, reason, operationId, DateTimeOffset.UtcNow));
     }
 
     private static async Task<T> FindAsync<T>(IQueryable<T> query, SetMasterDataResourceEnabledCommand request, CancellationToken cancellationToken)

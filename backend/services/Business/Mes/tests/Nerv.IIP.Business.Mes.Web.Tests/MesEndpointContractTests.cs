@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Reflection;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,9 +26,29 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesEndpointContractTests
 {
     [Fact]
+    public void Force_release_request_uses_authenticated_principal_and_governed_headers()
+    {
+        Assert.Null(typeof(ForceReleaseQualityHoldRequest).GetProperty("Actor"));
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, "supervisor-007")],
+                "test")),
+        };
+        context.Request.Headers["X-Correlation-Id"] = "corr-force-007";
+        context.Request.Headers["X-Idempotency-Key"] = "idem-force-007";
+
+        var governed = MesQualityHoldRequestContext.Resolve(context);
+
+        Assert.Equal("user:supervisor-007", governed.Actor);
+        Assert.Equal("corr-force-007", governed.CorrelationId);
+        Assert.Equal("idem-force-007", governed.IdempotencyKey);
+    }
+
+    [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(50, MesEndpointContracts.All.Count);
+        Assert.Equal(51, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -103,6 +125,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release"
             && x.PermissionCode == MesPermissionCodes.QualityWrite
             && x.OperationId == "forceReleaseBusinessMesQualityHold");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/mes/quality-holds/{sourceDocumentId}/timeline"
+            && x.PermissionCode == MesPermissionCodes.QualityRead
+            && x.OperationId == "getBusinessMesQualityHoldTimeline");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness"

@@ -8,7 +8,8 @@ namespace Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverter
 public sealed record MasterDataIntegrationEventContext(
     string CorrelationId,
     string CausationId,
-    string Actor);
+    string Actor,
+    string? IdempotencyKey = null);
 
 public interface IMasterDataIntegrationEventContextAccessor
 {
@@ -28,22 +29,17 @@ public sealed class HttpMasterDataIntegrationEventContextAccessor(IHttpContextAc
                 ?? Activity.Current?.GetTagItem("correlationId")?.ToString()
                 ?? Guid.NewGuid().ToString("n"),
             ReadHeader(headers, "X-Causation-Id") ?? Guid.NewGuid().ToString("n"),
-            ResolveActor(httpContext?.User, headers));
+            ResolveActor(httpContext?.User),
+            ReadHeader(headers, "X-Idempotency-Key"));
     }
 
-    private static string ResolveActor(ClaimsPrincipal? user, IHeaderDictionary? headers)
+    private static string ResolveActor(ClaimsPrincipal? user)
     {
         var subject = user?.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? user?.FindFirstValue("sub");
         if (!string.IsNullOrWhiteSpace(subject))
         {
             return $"user:{subject}";
-        }
-
-        var headerActor = ReadHeader(headers, "X-Actor");
-        if (!string.IsNullOrWhiteSpace(headerActor))
-        {
-            return headerActor;
         }
 
         var name = user?.Identity?.Name;

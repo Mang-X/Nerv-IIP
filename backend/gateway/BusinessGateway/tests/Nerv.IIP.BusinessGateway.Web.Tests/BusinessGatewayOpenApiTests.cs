@@ -151,6 +151,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/equipment/alarms/{alarmEventId}/shelve", "post", "shelveBusinessConsoleEquipmentAlarm");
         AssertOperationId(paths, "/api/business-console/v1/equipment/alarms/{alarmEventId}/unshelve", "post", "unshelveBusinessConsoleEquipmentAlarm");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/tags", "get", "listBusinessConsoleTelemetryTags");
+        AssertOperationId(paths, "/api/business-console/v1/telemetry/connectors/{connectorId}/collection-health", "get", "queryBusinessConsoleTelemetryConnectorCollectionHealth");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/tags/current-value", "get", "getBusinessConsoleTelemetryTagCurrentValue");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "get", "listBusinessConsoleTelemetryAlarmRules");
         AssertOperationId(paths, "/api/business-console/v1/telemetry/alarm-rules", "post", "createOrUpdateBusinessConsoleTelemetryAlarmRule");
@@ -387,6 +388,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/hold", "post", "holdBusinessConsoleMesWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/{workOrderId}/cancel", "post", "cancelBusinessConsoleMesWorkOrder");
         AssertOperationId(paths, "/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/force-release", "post", "forceReleaseBusinessConsoleMesQualityHold");
+        AssertOperationId(paths, "/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/timeline", "get", "getBusinessConsoleMesQualityHoldTimeline");
         AssertOperationId(paths, "/api/business-console/v1/mes/production-reports/{reportNo}/reverse", "post", "reverseBusinessConsoleMesProductionReport");
         AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-posting/retry", "post", "retryBusinessConsoleMesFinishedGoodsReceiptInventoryPosting");
         AssertOperationId(paths, "/api/business-console/v1/mes/work-orders/rush", "post", "createBusinessConsoleMesRushWorkOrder");

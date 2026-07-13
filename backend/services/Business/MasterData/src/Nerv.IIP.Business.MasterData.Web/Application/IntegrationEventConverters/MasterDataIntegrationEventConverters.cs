@@ -44,7 +44,7 @@ public sealed class SkuDisabledIntegrationEventConverter(IMasterDataIntegrationE
             domainEvent.OrganizationId,
             domainEvent.EnvironmentId,
             context.Actor,
-            EventIds.Idempotency("sku-disabled", domainEvent.OrganizationId, domainEvent.EnvironmentId, domainEvent.Code),
+            EventIds.Idempotency("sku-disabled", domainEvent.OrganizationId, domainEvent.EnvironmentId, domainEvent.Code, domainEvent.OperationId ?? context.IdempotencyKey ?? context.CorrelationId),
             new MasterDataDisabledPayload("sku", domainEvent.Code, "disabled", domainEvent.Reason, occurredAtUtc));
     }
 }

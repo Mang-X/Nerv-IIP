@@ -124,6 +124,8 @@ public sealed record ForceReleaseQualityHoldCommand(
     string SourceDocumentId,
     string Reason,
     string Actor,
+    string CorrelationId,
+    string IdempotencyKey,
     DateTimeOffset ReleasedAtUtc) : ICommand<MesAcceptedResponse>;
 
 public sealed class ForceReleaseQualityHoldCommandValidator : AbstractValidator<ForceReleaseQualityHoldCommand>
@@ -136,6 +138,8 @@ public sealed class ForceReleaseQualityHoldCommandValidator : AbstractValidator<
         RuleFor(x => x.SourceDocumentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
         RuleFor(x => x.Actor).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CorrelationId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(512);
     }
 }
 
@@ -156,7 +160,14 @@ public sealed class ForceReleaseQualityHoldCommandHandler(ApplicationDbContext d
             throw new KnownException($"未找到质量保留上下文，SourceDocumentId = {request.SourceDocumentId}");
         }
 
-        hold.ForceRelease(request.Reason, request.Actor, request.ReleasedAtUtc);
+        if (hold.ForceRelease(request.Reason, request.Actor, request.ReleasedAtUtc))
+        {
+            dbContext.QualityHoldTransitions.Add(QualityHoldTransition.Record(
+                request.OrganizationId, request.EnvironmentId, request.SourceService, request.SourceDocumentId,
+                hold.HeldInspectionRecordId!, request.CorrelationId,
+                "manual-force-released", request.Actor, request.ReleasedAtUtc, request.Reason,
+                hold.HeldInspectionRecordId, hold.HeldInspectionDocumentId, "manual", request.IdempotencyKey));
+        }
         return new MesAcceptedResponse("Accepted", request.SourceDocumentId, request.ReleasedAtUtc);
     }
 }

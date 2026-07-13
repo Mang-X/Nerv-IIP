@@ -16,11 +16,141 @@ using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
+using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.DistributedTransactions.CAP;
+using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.DependencyInjection;
+using NetCorePal.Extensions.Primitives;
+using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
+using Savorboard.CAP.InMemoryMessageQueue;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
 public sealed class MasterDataPostgresProfileTests
 {
+    [PostgresFact]
+    public async Task Postgres_disable_endpoint_transaction_fact_persists_audit_and_cap_outbox_with_operation_identity()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddConsole());
+        services.AddHttpContextAccessor();
+        services.AddScoped<IMasterDataIntegrationEventContextAccessor, HttpMasterDataIntegrationEventContextAccessor>();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddMasterDataPostgreSqlPersistence(connectionString);
+        services.AddIntegrationEvents(typeof(Program)).UseCap<ApplicationDbContext>(builder =>
+            builder.RegisterServicesFromAssemblies(typeof(Program)));
+        services.AddCap(options =>
+        {
+            options.UseEntityFramework<ApplicationDbContext>();
+            options.UseInMemoryMessageQueue();
+        });
+        await using var provider = services.BuildServiceProvider();
+
+        using (var scope = provider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await DropMasterDataSchemaAsync(db);
+            await db.Database.MigrateAsync();
+            db.Skus.Add(Sku.Create("org-001", "env-dev", "SKU-AUDIT", "Audited SKU", "pcs", "finished-goods"));
+            await db.SaveChangesAsync();
+
+            var handler = new SetMasterDataResourceEnabledCommandHandler(db);
+            await handler.Handle(new SetMasterDataResourceEnabledCommand(
+                "org-001", "env-dev", "sku", "SKU-AUDIT", false,
+                "user:postgres-auditor", "disable-op-001", Reason: "obsolete"), CancellationToken.None);
+            await db.SaveChangesAsync();
+        }
+
+        using var observerScope = provider.CreateScope();
+        var observer = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var audit = await observer.LifecycleAuditEntries.AsNoTracking().SingleAsync();
+        Assert.Equal("disable-op-001", audit.OperationId);
+        Assert.Equal("user:postgres-auditor", audit.ActorId);
+        var outbox = await observer.Set<PublishedMessage>().AsNoTracking().ToArrayAsync();
+        Assert.Contains(outbox, message => message.Content?.Contains("masterdata:sku-disabled:org-001:env-dev:SKU-AUDIT:disable-op-001", StringComparison.Ordinal) == true);
+    }
+
+    [PostgresFact]
+    public async Task Postgres_cap_concurrent_operation_recovers_loser_and_persists_exactly_one_audit_and_outbox()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        var services = CreateCapServices(connectionString);
+        await using var provider = services.BuildServiceProvider();
+        using (var seedScope = provider.CreateScope())
+        {
+            var seed = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await DropMasterDataSchemaAsync(seed);
+            await seed.Database.MigrateAsync();
+            seed.Skus.AddRange(
+                Sku.Create("org", "env", "SKU-RACE-PG", "Race", "pcs", "finished-goods"),
+                Sku.Create("org", "env", "SKU-COLLISION-PG", "Collision", "pcs", "finished-goods"));
+            await seed.SaveChangesAsync();
+        }
+
+        using var winnerScope = provider.CreateScope();
+        using var loserScope = provider.CreateScope();
+        var winner = winnerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var loser = loserScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var race = new SetMasterDataResourceEnabledCommand("org", "env", "sku", "SKU-RACE-PG", false, "user:pg", "K-RACE-PG", Reason: "obsolete");
+        await new SetMasterDataResourceEnabledCommandHandler(winner).Handle(race, CancellationToken.None);
+        await new SetMasterDataResourceEnabledCommandHandler(loser).Handle(race, CancellationToken.None);
+        await winner.SaveChangesAsync();
+        await using (var loserTransaction = await loser.Database.BeginTransactionAsync())
+        {
+            await loser.SaveChangesAsync();
+            await loserTransaction.CommitAsync();
+        }
+
+        using var conflictWinnerScope = provider.CreateScope();
+        using var conflictLoserScope = provider.CreateScope();
+        var conflictWinner = conflictWinnerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var conflictLoser = conflictLoserScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var collision = race with { Code = "SKU-COLLISION-PG", OperationId = "K-COLLISION-PG", Reason = "winner reason" };
+        await new SetMasterDataResourceEnabledCommandHandler(conflictWinner).Handle(collision, CancellationToken.None);
+        await new SetMasterDataResourceEnabledCommandHandler(conflictLoser).Handle(collision with { Reason = "loser reason" }, CancellationToken.None);
+        await conflictWinner.SaveChangesAsync();
+        await using (var conflictTransaction = await conflictLoser.Database.BeginTransactionAsync())
+        {
+            await Assert.ThrowsAsync<KnownException>(() => conflictLoser.SaveChangesAsync());
+            await conflictTransaction.RollbackAsync();
+        }
+
+        using var observerScope = provider.CreateScope();
+        var observer = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.True((await observer.Skus.AsNoTracking().SingleAsync(x => x.Code == "SKU-RACE-PG")).Disabled);
+        Assert.True((await observer.Skus.AsNoTracking().SingleAsync(x => x.Code == "SKU-COLLISION-PG")).Disabled);
+        var raceAudit = await observer.LifecycleAuditEntries.SingleAsync(x => x.OperationId == "K-RACE-PG");
+        var collisionAudit = await observer.LifecycleAuditEntries.SingleAsync(x => x.OperationId == "K-COLLISION-PG");
+        Assert.Equal("obsolete", raceAudit.Reason);
+        Assert.Equal("winner reason", collisionAudit.Reason);
+        Assert.NotEqual("loser reason", collisionAudit.Reason);
+        var outbox = await observer.Set<PublishedMessage>().AsNoTracking().ToArrayAsync();
+        Assert.Single(outbox, x => x.Content?.Contains("masterdata:sku-disabled:org:env:SKU-RACE-PG:K-RACE-PG", StringComparison.Ordinal) == true);
+        Assert.Single(outbox, x => x.Content?.Contains("masterdata:sku-disabled:org:env:SKU-COLLISION-PG:K-COLLISION-PG", StringComparison.Ordinal) == true);
+        Assert.DoesNotContain(outbox, x => x.Content?.Contains("loser reason", StringComparison.Ordinal) == true);
+    }
+
+    private static ServiceCollection CreateCapServices(string connectionString)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddConsole());
+        services.AddHttpContextAccessor();
+        services.AddScoped<IMasterDataIntegrationEventContextAccessor, HttpMasterDataIntegrationEventContextAccessor>();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddMasterDataPostgreSqlPersistence(connectionString);
+        services.AddIntegrationEvents(typeof(Program)).UseCap<ApplicationDbContext>(builder => builder.RegisterServicesFromAssemblies(typeof(Program)));
+        services.AddCap(options =>
+        {
+            options.UseEntityFramework<ApplicationDbContext>();
+            options.UseInMemoryMessageQueue();
+        });
+        return services;
+    }
+
     [PostgresFact]
     public async Task Postgres_store_persists_master_data_aggregates()
     {

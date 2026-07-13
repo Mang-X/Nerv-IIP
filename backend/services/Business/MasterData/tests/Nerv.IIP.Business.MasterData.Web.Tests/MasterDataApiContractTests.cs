@@ -873,7 +873,7 @@ public sealed class MasterDataApiContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var disabled = await new SetMasterDataResourceEnabledCommandHandler(dbContext).Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "sku", "RM-001", false, Reason: "duplicate"),
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "sku", "RM-001", false, "test:actor", "op-sku-disable", Reason: "duplicate"),
             CancellationToken.None);
         Assert.False(disabled.Active);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -890,7 +890,7 @@ public sealed class MasterDataApiContractTests
         Assert.Equal("g", detail.BaseUomCode);
 
         var enabled = await new SetMasterDataResourceEnabledCommandHandler(dbContext).Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "sku", "RM-001", true, Reason: "reactivated"),
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "sku", "RM-001", true, "test:actor", "op-sku-enable", Reason: "reactivated"),
             CancellationToken.None);
         Assert.True(enabled.Active);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -924,12 +924,12 @@ public sealed class MasterDataApiContractTests
 
         var handler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
         var uomReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "unit-of-measure", "ea", false, Reason: "retired"),
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "unit-of-measure", "ea", false, "test:actor", "op-uom-ea", Reason: "retired"),
             CancellationToken.None));
         Assert.Contains("active SKU", uomReference.Message, StringComparison.OrdinalIgnoreCase);
 
         var workCenterReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-center", "WC-ASSY", false, Reason: "retired"),
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-center", "WC-ASSY", false, "test:actor", "op-wc-assy", Reason: "retired"),
             CancellationToken.None));
         Assert.Contains("active device asset", workCenterReference.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -957,7 +957,7 @@ public sealed class MasterDataApiContractTests
 
         var handler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "unit-of-measure", "kg", false, Reason: "retired"),
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "unit-of-measure", "kg", false, "test:actor", "op-uom-kg", Reason: "retired"),
             CancellationToken.None));
 
         Assert.Contains("UOM conversion", exception.Message, StringComparison.OrdinalIgnoreCase);
@@ -983,12 +983,12 @@ public sealed class MasterDataApiContractTests
 
         var handler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
         var supplierReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "business-partner", "SUP-ACME", false, Reason: "retired"),
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "business-partner", "SUP-ACME", false, "test:actor", "op-partner", Reason: "retired"),
             CancellationToken.None));
         Assert.Contains("active device asset", supplierReference.Message, StringComparison.OrdinalIgnoreCase);
 
         var parentReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "device-asset", "DEV-PARENT", false, Reason: "retired"),
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "device-asset", "DEV-PARENT", false, "test:actor", "op-device", Reason: "retired"),
             CancellationToken.None));
         Assert.Contains("active child device asset", parentReference.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -1050,7 +1050,7 @@ public sealed class MasterDataApiContractTests
             new FixedDownstreamReferenceChecker(new MasterDataDownstreamReferenceUsage(true, ["routing:ROUTE-MIX:A"])));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-center", "WC-MIX", false, Reason: "retired"),
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-center", "WC-MIX", false, "test:actor", "op-wc-mix", Reason: "retired"),
             CancellationToken.None));
 
         Assert.Contains("ProductEngineering", exception.Message, StringComparison.Ordinal);
@@ -1113,11 +1113,11 @@ public sealed class MasterDataApiContractTests
 
         var enabledHandler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
         var disabled = await enabledHandler.Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "shift", "SHIFT-DAY", false, Reason: "retired"),
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "shift", "SHIFT-DAY", false, "test:actor", "op-shift", Reason: "retired"),
             CancellationToken.None);
         Assert.False(disabled.Active);
         var disabledAgain = await enabledHandler.Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "shift", "SHIFT-DAY", false, Reason: "duplicate click"),
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "shift", "SHIFT-DAY", false, "test:actor", "op-shift-retry", Reason: "duplicate click"),
             CancellationToken.None);
         Assert.False(disabledAgain.Active);
     }
@@ -1209,20 +1209,20 @@ public sealed class MasterDataApiContractTests
 
         var enabledHandler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
         var disabled = await enabledHandler.Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "uom-conversion", "kg->g", false, Reason: "superseded", EffectiveFrom: new DateOnly(2026, 1, 1)),
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "uom-conversion", "kg->g", false, "test:actor", "op-conversion", Reason: "superseded", EffectiveFrom: new DateOnly(2026, 1, 1)),
             CancellationToken.None);
         Assert.False(disabled.Active);
         var disabledAgain = await enabledHandler.Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "uom-conversion", "kg->g", false, Reason: "duplicate click", EffectiveFrom: new DateOnly(2026, 1, 1)),
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "uom-conversion", "kg->g", false, "test:actor", "op-conversion-retry", Reason: "duplicate click", EffectiveFrom: new DateOnly(2026, 1, 1)),
             CancellationToken.None);
         Assert.False(disabledAgain.Active);
 
         var disabledCalendar = await enabledHandler.Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-calendar", "CAL-001", false, Reason: "retired"),
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-calendar", "CAL-001", false, "test:actor", "op-calendar", Reason: "retired"),
             CancellationToken.None);
         Assert.False(disabledCalendar.Active);
         var disabledCalendarAgain = await enabledHandler.Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-calendar", "CAL-001", false, Reason: "duplicate click"),
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-calendar", "CAL-001", false, "test:actor", "op-calendar-retry", Reason: "duplicate click"),
             CancellationToken.None);
         Assert.False(disabledCalendarAgain.Active);
     }
@@ -1330,7 +1330,7 @@ public sealed class MasterDataApiContractTests
             new UpdateMasterDataResourceCommand("org-001", "env-dev", "reference-data", "none", Name: "Updated"),
             CancellationToken.None));
         await Assert.ThrowsAsync<KnownException>(() => enabledHandler.Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "reference-data", "none", false, Reason: "disabled"),
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "reference-data", "none", false, "test:actor", "op-reference", Reason: "disabled"),
             CancellationToken.None));
 
         var detail = await detailHandler.Handle(

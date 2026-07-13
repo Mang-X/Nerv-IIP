@@ -1794,6 +1794,64 @@
         ]
       }
     },
+    "/api/business-console/v1/telemetry/connectors/{connectorId}/collection-health": {
+      "get": {
+        "tags": [
+          "Business Console Telemetry",
+          "Api"
+        ],
+        "operationId": "queryBusinessConsoleTelemetryConnectorCollectionHealth",
+        "parameters": [
+          {
+            "name": "connectorId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorCollectionHealthResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/telemetry/tags": {
       "get": {
         "tags": [
@@ -10327,6 +10385,72 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/timeline": {
+      "get": {
+        "tags": [
+          "Business Console MES",
+          "Api"
+        ],
+        "operationId": "getBusinessConsoleMesQualityHoldTimeline",
+        "parameters": [
+          {
+            "name": "sourceDocumentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sourceService",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesQualityHoldTimelineResponse"
                 }
               }
             }
@@ -24381,6 +24505,77 @@
           }
         }
       },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorCollectionHealthResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "connectorId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "lastHeartbeatAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "metricsReportedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastSampleAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "receivedCount": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "droppedCount": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "errorCount": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "sourceSystem": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryTagListResponse": {
         "allOf": [
           {
@@ -32818,8 +33013,99 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string"
           }
         }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesQualityHoldTimelineResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesQualityHoldTimelineResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesQualityHoldTimelineResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesQualityHoldTimelineItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesQualityHoldTimelineItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "transitionId": {
+            "type": "string",
+            "format": "guid"
+          },
+          "sourceService": {
+            "type": "string"
+          },
+          "sourceDocumentId": {
+            "type": "string"
+          },
+          "holdCycleId": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "eventKind": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "occurredAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceInspectionRecordId": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceInspectionDocumentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "origin": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesQualityHoldTimelineRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesReverseProductionReportResponse": {
         "allOf": [

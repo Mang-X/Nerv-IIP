@@ -6,6 +6,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggrega
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.CodeRuleAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.LifecycleAuditAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
@@ -78,6 +79,7 @@ public sealed class MasterDataSchemaConventionTests
             typeof(CodeRuleVersion),
             typeof(CodeCounter),
             typeof(CodeIdempotencyKey),
+            typeof(MasterDataLifecycleAuditEntry),
         };
 
         var failures = new List<string>();

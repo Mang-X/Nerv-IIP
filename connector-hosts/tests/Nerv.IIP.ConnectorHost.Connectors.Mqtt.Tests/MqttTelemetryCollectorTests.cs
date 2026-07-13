@@ -6,6 +6,25 @@ namespace Nerv.IIP.ConnectorHost.Connectors.Mqtt.Tests;
 public sealed class MqttTelemetryCollectorTests
 {
     [Fact]
+    public async Task One_inbound_message_is_received_once_even_when_multiple_mappings_accept_it()
+    {
+        var message = new MqttInboundMessage("factory/line-1/temperature", """{"temperature":10}""", new DateTimeOffset(2026, 7, 5, 9, 0, 10, TimeSpan.Zero));
+        var connector = new MqttConnector(
+            new MqttConnectorOptions("mqtt-line-1", "host", "org", "env", "tcp://mqtt", "client", null,
+            [
+                new MqttTopicMapping("device-1", "temperature-a", "factory/line-1/temperature", "$.temperature", 60),
+                new MqttTopicMapping("device-1", "temperature-b", "factory/line-1/temperature", "$.temperature", 60)
+            ]),
+            new FakeMqttSubscriptionClient(message),
+            new RecordingIndustrialTelemetrySamplesClient(),
+            () => new DateTimeOffset(2026, 7, 5, 9, 1, 1, TimeSpan.Zero));
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        Assert.Equal(1, connector.CurrentState.ReceivedSamples);
+        Assert.Equal(0, connector.CurrentState.DroppedSamples);
+    }
+    [Fact]
     public async Task Run_cycle_subscribes_topics_maps_json_path_payload_and_posts_bucketed_sample()
     {
         var now = new DateTimeOffset(2026, 7, 5, 9, 1, 1, TimeSpan.Zero);
@@ -14,6 +33,11 @@ public sealed class MqttTelemetryCollectorTests
             new MqttInboundMessage("factory/line-1/temperature", """{"temperature":20,"state":"running"}""", new DateTimeOffset(2026, 7, 5, 9, 0, 40, TimeSpan.Zero)));
         var samples = new RecordingIndustrialTelemetrySamplesClient();
         var connector = CreateConnector(mqtt, samples, () => now);
+        var initialHealth = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!;
+        Assert.Null(initialHealth.ReceivedCount);
+        Assert.Null(initialHealth.DroppedCount);
+        Assert.Null(initialHealth.ErrorCount);
+        Assert.Null(initialHealth.LastSampleAtUtc);
 
         await connector.RunCollectionCycleAsync(CancellationToken.None);
 
@@ -29,6 +53,15 @@ public sealed class MqttTelemetryCollectorTests
         Assert.Equal("mqtt:mqtt-line-1:temperature:1783242000000", request.SourceSequence);
         Assert.Equal("mqtt", request.SourceSystem);
         Assert.Equal("connector-host-001/mqtt-line-1", request.SourceConnector);
+        var health = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth;
+        Assert.NotNull(health);
+        Assert.Equal("mqtt-mqtt-line-1", health.ConnectorId);
+        Assert.Equal("mqtt", health.SourceSystem);
+        Assert.NotEqual(Guid.Empty, health.CounterEpoch);
+        Assert.Equal(2, health.ReceivedCount);
+        Assert.Equal(0, health.DroppedCount);
+        Assert.Equal(0, health.ErrorCount);
+        Assert.Equal(new DateTimeOffset(2026, 7, 5, 9, 0, 40, TimeSpan.Zero), health.LastSampleAtUtc);
     }
 
     [Fact]
@@ -63,6 +96,7 @@ public sealed class MqttTelemetryCollectorTests
         var request = Assert.Single(samples.Requests);
         Assert.Equal("mqtt:mqtt-line-1:temperature:1783242000000", request.SourceSequence);
         Assert.Equal(2, samples.WriteAttempts);
+        Assert.Equal(1, connector.CurrentState.ErrorCount);
     }
 
     [Fact]

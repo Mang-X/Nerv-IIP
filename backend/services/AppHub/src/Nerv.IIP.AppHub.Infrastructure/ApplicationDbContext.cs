@@ -19,6 +19,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<ManagedNode> ManagedNodes => Set<ManagedNode>();
     public DbSet<ApplicationInstance> ApplicationInstances => Set<ApplicationInstance>();
     public DbSet<InstanceHeartbeat> InstanceHeartbeats => Set<InstanceHeartbeat>();
+    public DbSet<ConnectorCollectionHealthProjection> ConnectorCollectionHealth => Set<ConnectorCollectionHealthProjection>();
     public DbSet<InstanceStateHistory> InstanceStateHistory => Set<InstanceStateHistory>();
     public DbSet<InstanceStatusChange> InstanceStatusChanges => Set<InstanceStatusChange>();
     public DbSet<RegistrationIdempotency> RegistrationIdempotency => Set<RegistrationIdempotency>();

@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
+using System.Security.Claims;
 
 namespace Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 
@@ -239,7 +240,6 @@ public sealed record ForceReleaseQualityHoldRequest(
     string EnvironmentId,
     [property: RouteParam] string SourceDocumentId,
     string Reason,
-    string Actor,
     string? SourceService,
     DateTimeOffset? ReleasedAtUtc);
 
@@ -412,6 +412,12 @@ public sealed record TraceabilityMaterialLotRequest(
     string EnvironmentId,
     [property: RouteParam] string MaterialLotId);
 
+public sealed record GetQualityHoldTimelineRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SourceService,
+    [property: RouteParam] string SourceDocumentId);
+
 public abstract class MesEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
     where TRequest : notnull
 {
@@ -450,6 +456,21 @@ public sealed class RunScheduleEndpoint(ISender sender, TimeProvider timeProvide
             req.Trigger,
             timeProvider.GetUtcNow()), ct);
         await Send.OkAsync(result, ct);
+    }
+}
+
+public sealed class GetQualityHoldTimelineEndpoint(ISender sender)
+    : MesEndpoint<GetQualityHoldTimelineRequest, QualityHoldTimelineResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetQualityHoldTimelineEndpoint>());
+
+    public override async Task HandleAsync(GetQualityHoldTimelineRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetQualityHoldTimelineQuery(
+            req.OrganizationId, req.EnvironmentId,
+            string.IsNullOrWhiteSpace(req.SourceService) ? QualityIntegrationEventSources.BusinessMes : req.SourceService,
+            req.SourceDocumentId), ct);
+        await Send.OkAsync(response, ct);
     }
 }
 
@@ -641,15 +662,37 @@ public sealed class ForceReleaseQualityHoldEndpoint(ISender sender, TimeProvider
 
     public override async Task HandleAsync(ForceReleaseQualityHoldRequest req, CancellationToken ct)
     {
+        var governed = MesQualityHoldRequestContext.Resolve(HttpContext);
         var response = await sender.Send(new ForceReleaseQualityHoldCommand(
             req.OrganizationId,
             req.EnvironmentId,
             string.IsNullOrWhiteSpace(req.SourceService) ? QualityIntegrationEventSources.BusinessMes : req.SourceService,
             req.SourceDocumentId,
             req.Reason,
-            req.Actor,
+            governed.Actor,
+            governed.CorrelationId,
+            governed.IdempotencyKey,
             req.ReleasedAtUtc ?? timeProvider.GetUtcNow()), ct);
         await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed record MesQualityHoldRequestContext(string Actor, string CorrelationId, string IdempotencyKey)
+{
+    public static MesQualityHoldRequestContext Resolve(HttpContext context)
+    {
+        var subject = context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? context.User.FindFirstValue("sub");
+        var forwardedActor = context.Request.Headers["X-Authenticated-Actor"].FirstOrDefault();
+        var actor = !string.IsNullOrWhiteSpace(subject) && !string.Equals(subject, "internal-service", StringComparison.Ordinal)
+            ? $"user:{subject}"
+            : !string.IsNullOrWhiteSpace(forwardedActor) ? forwardedActor.Trim() : throw new KnownException("Authenticated actor is required.");
+        var correlationId = context.Request.Headers["X-Correlation-Id"].FirstOrDefault();
+        var idempotencyKey = context.Request.Headers["X-Idempotency-Key"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(correlationId) || string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            throw new KnownException("X-Correlation-Id and X-Idempotency-Key are required.");
+        }
+        return new(actor, correlationId.Trim(), idempotencyKey.Trim());
     }
 }
 
@@ -1341,6 +1384,7 @@ public static class MesEndpointContracts
         new(typeof(CancelWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/cancel", MesPermissionCodes.WorkOrdersManage, "cancelBusinessMesWorkOrder"),
         new(typeof(RecordEngineeringChangeDecisionEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions", MesPermissionCodes.WorkOrdersManage, "recordBusinessMesEngineeringChangeDecision"),
         new(typeof(ForceReleaseQualityHoldEndpoint), "POST", "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release", MesPermissionCodes.QualityWrite, "forceReleaseBusinessMesQualityHold"),
+        new(typeof(GetQualityHoldTimelineEndpoint), "GET", "/api/business/v1/mes/quality-holds/{sourceDocumentId}/timeline", MesPermissionCodes.QualityRead, "getBusinessMesQualityHoldTimeline"),
         new(typeof(GetMaterialReadinessEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialReadiness"),
         new(typeof(CreateMaterialIssueRequestEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/material-issue-requests", MesPermissionCodes.MaterialsManage, "createBusinessMesMaterialIssueRequest"),
         new(typeof(ListMaterialIssueRequestsEndpoint), "GET", "/api/business/v1/mes/material-issue-requests", MesPermissionCodes.MaterialsRead, "listBusinessMesMaterialIssueRequests"),

@@ -50,6 +50,7 @@ public sealed class MesSchemaConventionTests
             typeof(OutputLotGenealogy),
             typeof(DefectRecord),
             typeof(QualityHoldContext),
+            typeof(QualityHoldTransition),
             typeof(MaterialRequirement),
             typeof(MaterialIssueRequest),
             typeof(ScheduleResult),
@@ -79,8 +80,27 @@ public sealed class MesSchemaConventionTests
         failures.AddRange(MaterialConsumptionHasIdempotencyIndex(fixture.DbContext));
         failures.AddRange(ProductionReportReversalHasUniqueOriginalReportIndex(fixture.DbContext.Model));
         failures.AddRange(ProcessedIntegrationEventHasUniqueInboxIndex(fixture.DbContext.Model));
+        failures.AddRange(QualityHoldTransitionHasGovernedIdempotencyIndex(fixture.DbContext.Model));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    private static IReadOnlyCollection<string> QualityHoldTransitionHasGovernedIdempotencyIndex(IModel model)
+    {
+        var entity = model.FindEntityType(typeof(QualityHoldTransition));
+        var found = entity?.GetIndexes().Any(index =>
+            index.IsUnique &&
+            index.GetDatabaseName() == "ux_quality_hold_transitions_scope_idempotency_kind" &&
+            index.Properties.Select(x => x.Name).SequenceEqual([
+                nameof(QualityHoldTransition.OrganizationId),
+                nameof(QualityHoldTransition.EnvironmentId),
+                nameof(QualityHoldTransition.SourceService),
+                nameof(QualityHoldTransition.SourceDocumentId),
+                nameof(QualityHoldTransition.HoldCycleId),
+                nameof(QualityHoldTransition.IdempotencyKey),
+                nameof(QualityHoldTransition.EventKind),
+            ])) == true;
+        return found ? [] : ["MES: QualityHoldTransition governed idempotency unique index is missing."];
     }
 
     [Fact]

@@ -67,6 +67,7 @@ var mesBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.En
 var schedulingBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Scheduling:BaseUrl", "http://localhost:5120");
 var industrialTelemetryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
 var maintenanceBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Maintenance:BaseUrl", "http://localhost:5117");
+var appHubBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "AppHub:BaseUrl", "http://localhost:5101");
 builder.Services.AddHttpClient<IBusinessGatewayAuthorizationClient, HttpBusinessGatewayAuthorizationClient>(client =>
 {
     client.BaseAddress = iamBaseAddress;
@@ -135,6 +136,8 @@ builder.Services.AddHttpClient<IBusinessMaintenanceClient, HttpBusinessMaintenan
 {
     client.BaseAddress = maintenanceBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessAppHubClient, HttpBusinessAppHubClient>(client => client.BaseAddress = appHubBaseAddress)
+    .AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddBusinessGatewayAuthentication(builder.Configuration, builder.Environment);
 var allowedCorsOrigins = ResolveGatewayCorsOrigins(builder.Configuration, builder.Environment);
 builder.Services.AddCors(options =>

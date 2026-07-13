@@ -21,6 +21,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage
 {
     private const string ProductionReportReversalUniqueIndexName = "ux_production_reports_scope_reversed_report_no";
+    private const string QualityHoldTransitionIdempotencyIndexName = "ux_quality_hold_transitions_scope_idempotency_kind";
 
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
 
@@ -40,6 +41,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<DefectRecord> DefectRecords => Set<DefectRecord>();
 
     public DbSet<QualityHoldContext> QualityHoldContexts => Set<QualityHoldContext>();
+    public DbSet<QualityHoldTransition> QualityHoldTransitions => Set<QualityHoldTransition>();
 
     public DbSet<MaterialRequirement> MaterialRequirements => Set<MaterialRequirement>();
 
@@ -92,11 +94,71 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
                 token => base.SaveChangesAsync(acceptAllChangesOnSuccess, token),
                 cancellationToken);
         }
+        catch (DbUpdateException exception) when (IsDuplicateQualityHoldTransition(exception))
+        {
+            return await RecoverQualityHoldTransitionReplayAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
         catch (DbUpdateException exception) when (IsDuplicateProductionReportReversal(exception))
         {
             ChangeTracker.Clear();
             throw DuplicateProductionReportReversal(exception);
         }
+    }
+
+    private bool IsDuplicateQualityHoldTransition(DbUpdateException exception)
+    {
+        return ProcessedIntegrationEventInbox.IsUniqueConflict(exception, this, QualityHoldTransitionIdempotencyIndexName) ||
+            ((Database.ProviderName ?? string.Empty).Contains("Sqlite", StringComparison.OrdinalIgnoreCase) &&
+             EnumerateExceptions(exception).Any(inner =>
+                 inner.Message.Contains("quality_hold_transitions.idempotency_key", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private async Task<int> RecoverQualityHoldTransitionReplayAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken)
+    {
+        var pending = ChangeTracker.Entries<QualityHoldTransition>()
+            .Where(x => x.State == EntityState.Added && !string.IsNullOrWhiteSpace(x.Entity.IdempotencyKey))
+            .Select(x => x.Entity)
+            .Single();
+        var existing = await QualityHoldTransitions.AsNoTracking().SingleAsync(x =>
+            x.OrganizationId == pending.OrganizationId &&
+            x.EnvironmentId == pending.EnvironmentId &&
+            x.SourceService == pending.SourceService &&
+            x.SourceDocumentId == pending.SourceDocumentId &&
+            x.HoldCycleId == pending.HoldCycleId &&
+            x.IdempotencyKey == pending.IdempotencyKey &&
+            x.EventKind == pending.EventKind,
+            cancellationToken);
+
+        if (!QualityHoldTransitionPayloadEquals(existing, pending))
+        {
+            throw new KnownException("Quality hold transition idempotency key was reused with a different payload.");
+        }
+
+        Entry(pending).State = EntityState.Detached;
+        foreach (var staleProjection in ChangeTracker.Entries<QualityHoldContext>()
+            .Where(entry => entry.State == EntityState.Modified &&
+                entry.Entity.OrganizationId == pending.OrganizationId &&
+                entry.Entity.EnvironmentId == pending.EnvironmentId &&
+                entry.Entity.SourceService == pending.SourceService &&
+                entry.Entity.SourceDocumentId == pending.SourceDocumentId)
+            .ToList())
+        {
+            staleProjection.State = EntityState.Detached;
+        }
+        return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private static bool QualityHoldTransitionPayloadEquals(QualityHoldTransition left, QualityHoldTransition right)
+    {
+        return left.CorrelationId == right.CorrelationId &&
+            left.Actor == right.Actor &&
+            left.OccurredAtUtc == right.OccurredAtUtc &&
+            left.Reason == right.Reason &&
+            left.SourceInspectionRecordId == right.SourceInspectionRecordId &&
+            left.SourceInspectionDocumentId == right.SourceInspectionDocumentId &&
+            left.Origin == right.Origin;
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)

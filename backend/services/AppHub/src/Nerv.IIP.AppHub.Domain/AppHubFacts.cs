@@ -43,13 +43,14 @@ public sealed class InMemoryAppHubStateStore : IAppHubStateStore
     {
         lock (_gate)
         {
-            if (_idempotency.TryGetValue(registration.IdempotencyKey, out var existing))
+            var scopedIdempotencyKey = $"{registration.Context.OrganizationId}\u001f{registration.Context.EnvironmentId}\u001f{registration.IdempotencyKey}";
+            if (_idempotency.TryGetValue(scopedIdempotencyKey, out var existing))
             {
                 return new RegistrationResult(existing, registration.InstanceKey);
             }
 
             var registrationId = $"reg-{_idempotency.Count + 1:000000}";
-            _idempotency[registration.IdempotencyKey] = registrationId;
+            _idempotency[scopedIdempotencyKey] = registrationId;
 
             var app = Applications.FirstOrDefault(x => x.OrganizationId == registration.Context.OrganizationId && x.EnvironmentId == registration.Context.EnvironmentId && x.ApplicationKey == registration.ApplicationKey);
             if (app is null)
@@ -64,7 +65,7 @@ public sealed class InMemoryAppHubStateStore : IAppHubStateStore
             }
 
             Upsert(Nodes, x => x.OrganizationId == registration.Context.OrganizationId && x.EnvironmentId == registration.Context.EnvironmentId && x.NodeKey == registration.NodeKey, new ManagedNodeFact(registration.Context.OrganizationId, registration.Context.EnvironmentId, registration.NodeKey, registration.NodeName, registration.DeploymentKind));
-            Upsert(Instances, x => x.InstanceKey == registration.InstanceKey, new ApplicationInstanceFact(registration.Context.OrganizationId, registration.Context.EnvironmentId, registration.ApplicationKey, registration.Version, registration.NodeKey, registration.InstanceKey, registration.InstanceName, "unknown", "unknown", registration.Metadata));
+            Upsert(Instances, x => x.OrganizationId == registration.Context.OrganizationId && x.EnvironmentId == registration.Context.EnvironmentId && x.InstanceKey == registration.InstanceKey, new ApplicationInstanceFact(registration.Context.OrganizationId, registration.Context.EnvironmentId, registration.ApplicationKey, registration.Version, registration.NodeKey, registration.InstanceKey, registration.InstanceName, "unknown", "unknown", registration.Metadata));
             Upsert(CapabilityManifests, x => x.InstanceKey == registration.InstanceKey, new CapabilityManifestFact(registration.InstanceKey, registration.Capabilities));
             return new RegistrationResult(registrationId, registration.InstanceKey);
         }

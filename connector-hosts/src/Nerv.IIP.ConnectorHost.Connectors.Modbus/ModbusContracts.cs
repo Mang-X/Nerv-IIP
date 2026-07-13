@@ -63,6 +63,7 @@ public sealed record ModbusConnectorState(
     long ReceivedSamples,
     long PostedBuckets,
     long DroppedSamples,
+    long ErrorCount,
     long ReconnectCount,
     DateTimeOffset? LastSampleAtUtc,
     DateTimeOffset? LastPostedBucketEndUtc)
@@ -72,6 +73,7 @@ public sealed record ModbusConnectorState(
         ["receivedSamples"] = ReceivedSamples,
         ["postedBuckets"] = PostedBuckets,
         ["droppedSamples"] = DroppedSamples,
+        ["errorCount"] = ErrorCount,
         ["reconnectCount"] = ReconnectCount
     };
 }
