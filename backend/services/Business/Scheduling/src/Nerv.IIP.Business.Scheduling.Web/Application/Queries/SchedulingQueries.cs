@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Queries;
@@ -57,44 +56,38 @@ public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext
         }
 
         // Invalidation is a separate append-only projection keyed by plan id (no navigation from SchedulePlan).
-        // The DB anti-join keeps only rows for which no strictly later (RecordedAtUtc, OccurredAtUtc) row exists,
-        // so list latency/memory stay bounded as invalidation events accumulate (not the whole history). It uses
-        // only value comparisons (translatable on both SQLite and Postgres, unlike ORDER BY over DateTimeOffset on
-        // SQLite) — a strongly-typed id has no relational > operator, so the timestamp anti-join only *bounds* the
-        // candidate set (an exact tie on both timestamps yields the handful of tied rows for that plan). The
-        // in-memory group then applies a strict total order (RecordedAtUtc, OccurredAtUtc, Id) — the id is the
-        // unique tie-breaker — so exactly one deterministic row is chosen per plan even on an exact timestamp tie.
-        // Real translation is verified by the conditional PostgreSQL profile test (the InMemory handler test
-        // cannot sort DateTimeOffset on SQLite, so it stays on EF InMemory).
+        // Select exactly one row per in-page plan at the database with GROUP BY plan + the newest row under a
+        // strict total order (RecordedAtUtc, OccurredAtUtc, SourceEventType, SourceEventId). Within a plan group
+        // (org/env/plan fixed) the (SourceEventType, SourceEventId) pair is unique — it is the rest of the
+        // ux_schedule_plan_invalidations_source_event index — so the order is a true total order and even events
+        // sharing an identical (RecordedAtUtc, OccurredAtUtc) collapse to a single deterministic DB row instead of
+        // paging the whole tied history into memory (the candidate set stays strictly bounded to the plan count as
+        // the append-only history grows). The tie-break columns are string/timestamp (translatable + IComparable on
+        // every provider), avoiding the strongly-typed-id/uuid-vs-Guid ordering mismatch. EF translates the ordered
+        // group-First to a window/lateral subquery on a relational provider; the InMemory handler test
+        // client-evaluates it (SQLite cannot sort DateTimeOffset), and the conditional PostgreSQL profile test
+        // verifies the real translation + the exact-timestamp-tie determinism.
         var planIds = plans.Select(x => x.PlanId).ToArray();
-        var newest = await dbContext.SchedulePlanInvalidations.AsNoTracking()
+        var latest = await dbContext.SchedulePlanInvalidations.AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 planIds.Contains(x.PlanId))
-            .Where(x => !dbContext.SchedulePlanInvalidations.Any(later =>
-                later.OrganizationId == x.OrganizationId &&
-                later.EnvironmentId == x.EnvironmentId &&
-                later.PlanId == x.PlanId &&
-                (later.RecordedAtUtc > x.RecordedAtUtc ||
-                    (later.RecordedAtUtc == x.RecordedAtUtc && later.OccurredAtUtc > x.OccurredAtUtc))))
-            .Select(x => new LatestInvalidation(x.PlanId, x.ReasonCode, x.OccurredAtUtc, x.RecordedAtUtc, x.Id))
+            .GroupBy(x => x.PlanId)
+            .Select(group => group
+                .OrderByDescending(x => x.RecordedAtUtc)
+                .ThenByDescending(x => x.OccurredAtUtc)
+                .ThenByDescending(x => x.SourceEventType)
+                .ThenByDescending(x => x.SourceEventId)
+                .Select(x => new LatestInvalidation(x.PlanId, x.ReasonCode, x.OccurredAtUtc))
+                .First())
             .ToListAsync(cancellationToken);
-        if (newest.Count == 0)
+        if (latest.Count == 0)
         {
             return plans;
         }
 
-        var latestByPlan = newest
-            .GroupBy(x => x.PlanId, StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group => group
-                    .OrderByDescending(x => x.RecordedAtUtc)
-                    .ThenByDescending(x => x.OccurredAtUtc)
-                    .ThenByDescending(x => x.Id.Id)
-                    .First(),
-                StringComparer.Ordinal);
+        var latestByPlan = latest.ToDictionary(x => x.PlanId, StringComparer.Ordinal);
 
         return plans
             .Select(plan => latestByPlan.TryGetValue(plan.PlanId, out var invalidation)
@@ -111,9 +104,7 @@ public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext
     private sealed record LatestInvalidation(
         string PlanId,
         string ReasonCode,
-        DateTimeOffset OccurredAtUtc,
-        DateTimeOffset RecordedAtUtc,
-        SchedulePlanInvalidationId Id);
+        DateTimeOffset OccurredAtUtc);
 }
 
 public sealed record GetSchedulePlanDetailQuery(string PlanId, string OrganizationId, string EnvironmentId) : IQuery<SchedulePlanContract>;

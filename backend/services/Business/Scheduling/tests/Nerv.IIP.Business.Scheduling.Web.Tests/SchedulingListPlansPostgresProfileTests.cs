@@ -80,28 +80,24 @@ public sealed class SchedulingListPlansPostgresProfileTests
         await dbContext.Database.MigrateAsync();
 
         dbContext.SchedulePlans.Add(CreatePlan("plan-tie"));
-        // Two invalidations with identical RecordedAtUtc AND OccurredAtUtc: neither is "later" than the other,
-        // so the anti-join returns both and only the id tie-break yields a single deterministic winner.
+        // Two invalidations with identical RecordedAtUtc AND OccurredAtUtc: the timestamps tie, so only the
+        // (SourceEventType, SourceEventId) tail of the strict total order decides. Same SourceEventType, so the
+        // greater SourceEventId ("evt-tie-b" > "evt-tie-a" in every collation) must win — exactly one row, and the
+        // same one on every run.
         var tieRecordedAtUtc = new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
         var tieOccurredAtUtc = new DateTimeOffset(2026, 6, 1, 11, 59, 0, TimeSpan.Zero);
-        var first = CreateInvalidation("plan-tie", SchedulingPlanInvalidationReasons.MaterialReadinessChanged, tieOccurredAtUtc, tieRecordedAtUtc, sourceEventId: "evt-tie-a");
-        var second = CreateInvalidation("plan-tie", SchedulingPlanInvalidationReasons.EquipmentUnavailable, tieOccurredAtUtc, tieRecordedAtUtc, sourceEventId: "evt-tie-b");
-        dbContext.SchedulePlanInvalidations.Add(first);
-        dbContext.SchedulePlanInvalidations.Add(second);
+        dbContext.SchedulePlanInvalidations.Add(CreateInvalidation("plan-tie", SchedulingPlanInvalidationReasons.MaterialReadinessChanged, tieOccurredAtUtc, tieRecordedAtUtc, sourceEventId: "evt-tie-a"));
+        dbContext.SchedulePlanInvalidations.Add(CreateInvalidation("plan-tie", SchedulingPlanInvalidationReasons.EquipmentUnavailable, tieOccurredAtUtc, tieRecordedAtUtc, sourceEventId: "evt-tie-b"));
         await dbContext.SaveChangesAsync();
 
-        var expectedReason = first.Id.Id.CompareTo(second.Id.Id) > 0
-            ? first.ReasonCode
-            : second.ReasonCode;
-
         var handler = new ListSchedulePlansQueryHandler(dbContext);
-        // Run twice: the same higher-id row must win every time (no non-determinism on the exact tie).
+        // Run twice: exactly one deterministic row (the greater SourceEventId) wins every time.
         for (var run = 0; run < 2; run++)
         {
             var results = await handler.Handle(new ListSchedulePlansQuery("org-001", "env-dev"), CancellationToken.None);
             var tie = Assert.Single(results, x => x.PlanId == "plan-tie");
             Assert.True(tie.IsInvalidated);
-            Assert.Equal(expectedReason, tie.LatestInvalidationReasonCode);
+            Assert.Equal(SchedulingPlanInvalidationReasons.EquipmentUnavailable, tie.LatestInvalidationReasonCode);
         }
     }
 

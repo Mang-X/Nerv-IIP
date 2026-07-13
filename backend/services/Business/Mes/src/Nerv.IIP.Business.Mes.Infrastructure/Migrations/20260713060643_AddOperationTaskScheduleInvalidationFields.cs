@@ -28,18 +28,18 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 nullable: true,
                 comment: "UTC time when a released APS schedule last placed this task; set only by schedule assignment (not manual dispatch) and used to derive the 已排程/未排程 schedule state.");
 
-            // Backfill scheduled_at_utc for existing rows that a released APS schedule had already placed, so
-            // they don't regress to "未排程" after upgrade. Only ApplyScheduleAssignment writes assigned_at_utc
-            // without an operator (assigned_user_id), while manual dispatch (Assign) always sets assigned_user_id
-            // and overwrites assigned_at_utc with the dispatch time. So `assigned_at_utc IS NOT NULL AND
-            // assigned_user_id IS NULL` selects exactly the APS-scheduled-not-yet-dispatched rows where
-            // assigned_at_utc is the schedule time — an auditable, non-lossy backfill. Rows already dispatched
-            // carry a dispatch timestamp (not a schedule time) and no recoverable schedule instant, so they are
-            // intentionally left null and re-populated by the next released schedule / event replay rather than
-            // copied from the ambiguous assigned_at_utc.
-            migrationBuilder.Sql(
-                "UPDATE mes.operation_tasks SET scheduled_at_utc = assigned_at_utc " +
-                "WHERE assigned_at_utc IS NOT NULL AND assigned_user_id IS NULL;");
+            // Explicit legacy-unknown strategy: existing rows keep scheduled_at_utc = NULL and are NOT backfilled.
+            // The pre-migration schema has no reliable way to tell an APS placement from a manual dispatch —
+            // assigned_at_utc is written by both ApplyScheduleAssignment (schedule time) and Assign (dispatch time,
+            // which also overwrites it), Assign can be called with a null operator (so assigned_user_id IS NULL is
+            // not APS-specific), and ApplyScheduleAssignment does not clear a prior assigned_user_id (so a
+            // dispatch→reschedule row keeps a user). Any assigned_at_utc-based backfill would therefore both
+            // mislabel manual dispatches as scheduled and miss genuinely-scheduled dispatched rows. Rather than
+            // guess wrong, legacy rows are treated as "no recorded APS placement" (rendered 未排程) and reconciled
+            // to their true schedule state the next time a released schedule places them (ApplyScheduleAssignment
+            // sets scheduled_at_utc) or the schedule stream is replayed. The forward guarantee — only
+            // ApplyScheduleAssignment, never manual dispatch, writes scheduled_at_utc — is covered by
+            // OperationTaskScheduledAtTests.
         }
 
         /// <inheritdoc />
