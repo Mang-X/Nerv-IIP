@@ -37,6 +37,8 @@ foreach ($requiredText in @(
     'Invoke-PwshScript',
     'Stop-AcceptanceStartProcess',
     'Test-NervProcessIdentity',
+    'Primary failure:',
+    "-TimeoutSeconds 300 ``",
     'finally',
     'git',
     'worktree',

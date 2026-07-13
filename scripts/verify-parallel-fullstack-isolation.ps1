@@ -183,18 +183,18 @@ try {
         }
     }
 
-    $firstPostgres = @($records[0].Manifest.runtime.containers | Where-Object { "$($_.resourceName)" -eq 'postgres' })
-    $secondPostgres = @($records[1].Manifest.runtime.containers | Where-Object { "$($_.resourceName)" -eq 'postgres' })
-    Assert-Acceptance ($firstPostgres.Count -eq 1 -and $secondPostgres.Count -eq 1) 'Each manifest must record one canonical postgres container.'
+    $firstPostgres = @(Get-NervFullStackContainerRecords -OwnedSessionId $records[0].SessionId | Where-Object { "$($_.resourceName)" -eq 'postgres' })
+    $secondPostgres = @(Get-NervFullStackContainerRecords -OwnedSessionId $records[1].SessionId | Where-Object { "$($_.resourceName)" -eq 'postgres' })
+    Assert-Acceptance ($firstPostgres.Count -eq 1 -and $secondPostgres.Count -eq 1) 'Each running session must own one canonical postgres container.'
     Invoke-NativeCommandOutput `
         -Command 'docker' `
-        -Arguments @('exec', '--user', 'postgres', "$($firstPostgres[0].id)", 'psql', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "create table nerv_fullstack_isolation_probe(value text); insert into nerv_fullstack_isolation_probe values ('session-one');") `
+        -Arguments @('exec', '--user', 'postgres', "$($firstPostgres[0].id)", 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', "create table nerv_fullstack_isolation_probe(value text); insert into nerv_fullstack_isolation_probe values ('session-one');") `
         -WorkingDirectory $repoRoot `
         -TimeoutSeconds 30 `
         -Name 'parallel-fullstack-postgres-write' | Out-Null
     $isolationRead = Invoke-NativeCommandOutput `
         -Command 'docker' `
-        -Arguments @('exec', '--user', 'postgres', "$($secondPostgres[0].id)", 'psql', '-d', 'postgres', '-Atc', "select to_regclass('public.nerv_fullstack_isolation_probe');") `
+        -Arguments @('exec', '--user', 'postgres', "$($secondPostgres[0].id)", 'psql', '-U', 'postgres', '-d', 'postgres', '-Atc', "select to_regclass('public.nerv_fullstack_isolation_probe');") `
         -WorkingDirectory $repoRoot `
         -TimeoutSeconds 30 `
         -Name 'parallel-fullstack-postgres-isolation-read'
@@ -250,14 +250,18 @@ finally {
                 -Command 'git' `
                 -Arguments @('worktree', 'remove', '--force', $record.WorktreePath) `
                 -WorkingDirectory $repoRoot `
-                -TimeoutSeconds 120 `
+                -TimeoutSeconds 300 `
                 -Name "parallel-fullstack-worktree-remove-$($record.Index)" | Out-Null
         }
         catch { $cleanupFailures.Add("worktree $($record.Index): $($_.Exception.Message)") }
     }
 }
 
-if ($cleanupFailures.Count -gt 0) { throw "Parallel acceptance cleanup failed: $($cleanupFailures -join ' | ')" }
+if ($cleanupFailures.Count -gt 0) {
+    $primaryMessage = if ($primaryFailure) { Protect-ScriptAutomationText -Text "$($primaryFailure.Exception.Message)" } else { 'none' }
+    if ($primaryMessage.Length -gt 4000) { $primaryMessage = $primaryMessage.Substring(0, 4000) }
+    throw "Parallel acceptance failed. Primary failure: $primaryMessage Cleanup failures: $($cleanupFailures -join ' | ')"
+}
 if ($InjectFailure) {
     Assert-Acceptance $injectedFailureObserved 'Injected failure was not observed.'
     Write-Host 'Parallel full-stack injected-failure cleanup acceptance passed.'
