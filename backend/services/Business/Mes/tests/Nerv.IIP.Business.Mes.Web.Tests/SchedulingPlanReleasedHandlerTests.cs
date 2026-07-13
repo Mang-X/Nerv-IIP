@@ -53,6 +53,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
         Assert.Equal(DateTimeOffset.Parse("2026-06-01T12:00:00Z"), task.EarliestStartUtc);
         Assert.Equal(TimeSpan.FromMinutes(90), task.Duration);
         Assert.Equal(DateTimeOffset.Parse("2026-06-01T07:30:00Z"), task.AssignedAtUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-06-01T07:30:00Z"), task.ScheduledAtUtc);
         Assert.Equal("STD-OIL", task.OperationCode);
     }
 
@@ -471,7 +472,57 @@ public sealed class SchedulingPlanReleasedHandlerTests
         await using var assertionDbContext = CreateDbContext(options);
         var task = await assertionDbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-10");
         Assert.Equal(OperationTaskLifecycleStatus.ScheduleInvalidated, task.Status);
+        Assert.Equal("equipmentUnavailable", task.ScheduleInvalidationReasonCode);
         Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task SchedulePlanReleasedHandler_ClearsScheduleInvalidationReasonWhenRescheduled()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"mes-scheduling-reschedule-clears-reason-{Guid.CreateVersion7():N}", databaseRoot);
+        await using (var dbContext = CreateDbContext(options))
+        {
+            dbContext.WorkOrders.Add(WorkOrder.Create(
+                "org-001",
+                "env-dev",
+                "WO-APS-001",
+                "FG-APS",
+                "PV-001",
+                1m,
+                10,
+                DateTimeOffset.Parse("2026-06-02T16:00:00Z"),
+                "PCS",
+                null));
+            var task = OperationTask.Queue(
+                "org-001",
+                "env-dev",
+                "WO-APS-001",
+                "OP-10",
+                10,
+                "WC-OIL",
+                [],
+                DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
+                TimeSpan.FromMinutes(90));
+            task.MarkScheduleInvalidated("equipmentUnavailable");
+            dbContext.OperationTasks.Add(task);
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(CreateReleasedEvent(), CancellationToken.None);
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using var assertionDbContext = CreateDbContext(options);
+        var rescheduled = await assertionDbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-10");
+        Assert.Equal(OperationTaskLifecycleStatus.Queued, rescheduled.Status);
+        Assert.Null(rescheduled.ScheduleInvalidationReasonCode);
+        Assert.Equal("DEV-OIL-01", rescheduled.DeviceAssetId);
     }
 
     [Theory]

@@ -27279,6 +27279,18 @@
           "unscheduledOperationCount": {
             "type": "integer",
             "format": "int32"
+          },
+          "isInvalidated": {
+            "type": "boolean"
+          },
+          "latestInvalidationReasonCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "latestInvalidatedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -33004,6 +33016,15 @@
           "operationCode": {
             "type": "string",
             "nullable": true
+          },
+          "scheduledAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "scheduleInvalidationReasonCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -33812,6 +33833,15 @@
             "nullable": true
           },
           "operationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "scheduledAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "scheduleInvalidationReasonCode": {
             "type": "string",
             "nullable": true
           }

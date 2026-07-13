@@ -1244,6 +1244,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     assignmentCount?: number;
     conflictCount?: number;
     unscheduledOperationCount?: number;
+    isInvalidated?: boolean;
+    latestInvalidationReasonCode?: string | null;
+    latestInvalidatedAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingContextRequest = {
@@ -2822,6 +2825,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetCode?: string | null;
     deviceAssetName?: string | null;
     operationCode?: string | null;
+    scheduledAtUtc?: string | null;
+    scheduleInvalidationReasonCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference = {
@@ -3051,6 +3056,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetCode?: string | null;
     deviceAssetName?: string | null;
     operationCode?: string | null;
+    scheduledAtUtc?: string | null;
+    scheduleInvalidationReasonCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAssignDispatchTaskRequest = {

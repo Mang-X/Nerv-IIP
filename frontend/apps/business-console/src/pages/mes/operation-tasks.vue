@@ -14,6 +14,10 @@ import {
   useMesCurrentOperationSops,
   useMesOperationTasks,
 } from '@/composables/useBusinessMes'
+import {
+  resolveScheduleStatus,
+  scheduleInvalidationHint,
+} from '@/composables/useScheduleInvalidation'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -38,6 +42,7 @@ import {
   FileTextIcon,
   RefreshCwIcon,
   ShieldCheckIcon,
+  TriangleAlertIcon,
   WrenchIcon,
 } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
@@ -147,6 +152,7 @@ const columns: NvDataTableColumn<Row>[] = [
   },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'scheduleStatus', header: '排程状态', width: 'w-28' },
   {
     key: 'operationSequence',
     header: '序号',
@@ -187,6 +193,12 @@ function resetFilters() {
   statusFilter.value = 'all'
   workCenterFilter.value = 'all'
   shiftFilter.value = 'all'
+}
+
+// 「排程已失效」快捷项：一键把状态筛选切到失效任务，再点一次取消。
+const invalidatedFilterActive = computed(() => statusFilter.value === 'scheduleInvalidated')
+function toggleInvalidatedFilter() {
+  statusFilter.value = invalidatedFilterActive.value ? 'all' : 'scheduleInvalidated'
 }
 
 function openWorkOrder(workOrderId?: string | null) {
@@ -347,6 +359,16 @@ function formatError(error: unknown) {
             >
           </NvSelectContent>
         </NvSelect>
+        <NvButton
+          type="button"
+          size="sm"
+          :variant="invalidatedFilterActive ? 'default' : 'outline'"
+          :aria-pressed="invalidatedFilterActive"
+          @click="toggleInvalidatedFilter"
+        >
+          <TriangleAlertIcon aria-hidden="true" />
+          排程已失效
+        </NvButton>
       </template>
       <template #actions>
         <NvButton type="button" variant="ghost" size="sm" @click="resetFilters">重置</NvButton>
@@ -388,6 +410,20 @@ function formatError(error: unknown) {
       </template>
       <template #cell-status="{ row }">
         <NvStatusBadge :value="row.status" />
+      </template>
+      <template #cell-scheduleStatus="{ row }">
+        <span
+          v-if="resolveScheduleStatus(row).key === 'invalidated'"
+          class="inline-flex"
+          :title="scheduleInvalidationHint(row.scheduleInvalidationReasonCode)"
+        >
+          <NvStatusBadge label="已失效" tone="warning" />
+        </span>
+        <NvStatusBadge
+          v-else
+          :label="resolveScheduleStatus(row).label"
+          :tone="resolveScheduleStatus(row).tone"
+        />
       </template>
       <template #cell-plannedStartUtc="{ row }">
         {{ formatDateTime(row.plannedStartUtc) }}

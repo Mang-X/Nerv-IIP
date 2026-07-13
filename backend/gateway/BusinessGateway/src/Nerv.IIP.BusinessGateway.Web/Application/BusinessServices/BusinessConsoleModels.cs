@@ -2078,7 +2078,10 @@ public sealed record BusinessConsoleSchedulePlanSummaryResponse(
     DateTimeOffset? ReleasedAtUtc,
     int AssignmentCount,
     int ConflictCount,
-    int UnscheduledOperationCount);
+    int UnscheduledOperationCount,
+    bool IsInvalidated = false,
+    string? LatestInvalidationReasonCode = null,
+    DateTimeOffset? LatestInvalidatedAtUtc = null);
 
 public sealed record BusinessConsoleReleaseSchedulePlanResponse(
     string PlanId,
@@ -3507,7 +3510,9 @@ public sealed record BusinessConsoleMesDispatchTaskRow(
     string? WorkCenterName = null,
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null,
-    string? OperationCode = null);
+    string? OperationCode = null,
+    DateTimeOffset? ScheduledAtUtc = null,
+    string? ScheduleInvalidationReasonCode = null);
 
 public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     [property: RouteParam] string OperationTaskId,
@@ -3540,7 +3545,9 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     string? WorkCenterName = null,
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null,
-    string? OperationCode = null);
+    string? OperationCode = null,
+    DateTimeOffset? ScheduledAtUtc = null,
+    string? ScheduleInvalidationReasonCode = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: RouteParam] string OperationTaskId,

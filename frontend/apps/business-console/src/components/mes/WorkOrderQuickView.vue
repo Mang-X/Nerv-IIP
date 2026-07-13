@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
 import {
+  isScheduleInvalidated,
+  scheduleInvalidationHint,
+} from '@/composables/useScheduleInvalidation'
+import {
   NvButton,
   NvDialog,
   NvDialogContent,
@@ -123,7 +127,16 @@ function openFull() {
               class="flex items-center justify-between gap-3 border-b px-3 py-2 text-sm last:border-b-0"
             >
               <span class="font-medium">工序 {{ op.operationSequence ?? '—' }}</span>
-              <NvStatusBadge :value="op.status" />
+              <span
+                class="inline-flex"
+                :title="
+                  isScheduleInvalidated(op.status)
+                    ? scheduleInvalidationHint(op.scheduleInvalidationReasonCode)
+                    : undefined
+                "
+              >
+                <NvStatusBadge :value="op.status" />
+              </span>
             </div>
           </div>
           <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">

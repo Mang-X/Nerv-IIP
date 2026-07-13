@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
+import {
+  resolveScheduleStatus,
+  scheduleInvalidationHint,
+} from '@/composables/useScheduleInvalidation'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
@@ -100,6 +104,7 @@ const taskColumns: NvDataTableColumn<TaskRow>[] = [
     accessor: (r) => r.operationTaskId ?? '无',
   },
   { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'scheduleStatus', header: '排程状态', width: 'w-28' },
   {
     key: 'operationSequence',
     header: '序号',
@@ -231,7 +236,9 @@ const cancelReasonLabel = computed(
 )
 const finalReasonLength = computed(() => {
   const remark = cancelForm.remark.trim()
-  return remark ? cancelReasonLabel.value.length + 1 + remark.length : cancelReasonLabel.value.length
+  return remark
+    ? cancelReasonLabel.value.length + 1 + remark.length
+    : cancelReasonLabel.value.length
 })
 const remarkMaxLength = computed(() =>
   Math.max(0, REASON_MAX_LENGTH - cancelReasonLabel.value.length - 1),
@@ -435,6 +442,20 @@ function formatError(error: unknown) {
         :column-settings="false"
       >
         <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+        <template #cell-scheduleStatus="{ row }">
+          <span
+            v-if="resolveScheduleStatus(row).key === 'invalidated'"
+            class="inline-flex"
+            :title="scheduleInvalidationHint(row.scheduleInvalidationReasonCode)"
+          >
+            <NvStatusBadge label="已失效" tone="warning" />
+          </span>
+          <NvStatusBadge
+            v-else
+            :label="resolveScheduleStatus(row).label"
+            :tone="resolveScheduleStatus(row).tone"
+          />
+        </template>
         <template #cell-operationSequence="{ row }"
           ><span class="tabular-nums">{{ row.operationSequence ?? 0 }}</span></template
         >
@@ -495,7 +516,9 @@ function formatError(error: unknown) {
             v-else-if="cancelPreviewError"
             class="grid gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2"
           >
-            <p class="text-destructive">补偿预览加载失败，为避免误操作已禁用确认。请重试后再确认取消。</p>
+            <p class="text-destructive">
+              补偿预览加载失败，为避免误操作已禁用确认。请重试后再确认取消。
+            </p>
             <NvButton
               type="button"
               variant="outline"
@@ -507,99 +530,99 @@ function formatError(error: unknown) {
             </NvButton>
           </div>
           <template v-else>
-          <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div class="rounded-md border bg-background p-2">
-              <p class="text-xs text-muted-foreground">预留释放</p>
-              <p class="text-lg font-semibold tabular-nums text-foreground">
-                {{ reservationRows.length }}
-              </p>
+            <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div class="rounded-md border bg-background p-2">
+                <p class="text-xs text-muted-foreground">预留释放</p>
+                <p class="text-lg font-semibold tabular-nums text-foreground">
+                  {{ reservationRows.length }}
+                </p>
+              </div>
+              <div class="rounded-md border bg-background p-2">
+                <p class="text-xs text-muted-foreground">退料指引</p>
+                <p class="text-lg font-semibold tabular-nums text-foreground">
+                  {{ lineSideReturnRows.length }}
+                </p>
+              </div>
+              <div class="rounded-md border bg-background p-2">
+                <p class="text-xs text-muted-foreground">完工入库请求</p>
+                <p class="text-lg font-semibold tabular-nums text-foreground">
+                  {{ cancellableReceiptCount }}
+                </p>
+              </div>
+              <div class="rounded-md border bg-background p-2">
+                <p class="text-xs text-muted-foreground">工序任务</p>
+                <p class="text-lg font-semibold tabular-nums text-foreground">
+                  {{ cancellableTaskCount }}
+                </p>
+              </div>
             </div>
-            <div class="rounded-md border bg-background p-2">
-              <p class="text-xs text-muted-foreground">退料指引</p>
-              <p class="text-lg font-semibold tabular-nums text-foreground">
-                {{ lineSideReturnRows.length }}
-              </p>
-            </div>
-            <div class="rounded-md border bg-background p-2">
-              <p class="text-xs text-muted-foreground">完工入库请求</p>
-              <p class="text-lg font-semibold tabular-nums text-foreground">
-                {{ cancellableReceiptCount }}
-              </p>
-            </div>
-            <div class="rounded-md border bg-background p-2">
-              <p class="text-xs text-muted-foreground">工序任务</p>
-              <p class="text-lg font-semibold tabular-nums text-foreground">
-                {{ cancellableTaskCount }}
-              </p>
-            </div>
-          </div>
 
-          <div
-            v-if="unreturnableNoLotRows.length"
-            class="grid gap-1 rounded-md border border-destructive/40 bg-destructive/5 p-2"
-          >
-            <p class="text-xs font-medium text-destructive">
-              以下已收料申请缺少物料批次，无法退料，直接取消整单会被后端拒绝。请先补录批次或消耗后再取消。
+            <div
+              v-if="unreturnableNoLotRows.length"
+              class="grid gap-1 rounded-md border border-destructive/40 bg-destructive/5 p-2"
+            >
+              <p class="text-xs font-medium text-destructive">
+                以下已收料申请缺少物料批次，无法退料，直接取消整单会被后端拒绝。请先补录批次或消耗后再取消。
+              </p>
+              <ul class="max-h-24 divide-y overflow-y-auto rounded-md border bg-background">
+                <li
+                  v-for="row in unreturnableNoLotRows"
+                  :key="`nolot-${row.requestId}`"
+                  class="flex items-center justify-between gap-2 px-2 py-1"
+                >
+                  <span class="truncate">{{ row.materialCode ?? row.materialId }}</span>
+                  <span class="shrink-0 tabular-nums">{{
+                    formatQuantity(returnableQuantityOf(row))
+                  }}</span>
+                </li>
+              </ul>
+            </div>
+
+            <div v-if="reservationRows.length" class="grid gap-1">
+              <p class="text-xs font-medium text-muted-foreground">将释放的预留（物料 / 数量）</p>
+              <ul class="max-h-28 divide-y overflow-y-auto rounded-md border bg-background">
+                <li
+                  v-for="row in reservationRows"
+                  :key="`res-${row.requestId}`"
+                  class="flex items-center justify-between gap-2 px-2 py-1"
+                >
+                  <span class="truncate"
+                    >{{ row.materialCode ?? row.materialId
+                    }}<span v-if="row.materialLotId" class="text-muted-foreground">
+                      · {{ row.materialLotId }}</span
+                    ></span
+                  >
+                  <span class="shrink-0 tabular-nums">{{
+                    formatQuantity(row.requestedQuantity)
+                  }}</span>
+                </li>
+              </ul>
+            </div>
+
+            <div v-if="lineSideReturnRows.length" class="grid gap-1">
+              <p class="text-xs font-medium text-muted-foreground">待退回线边物料（物料 / 数量）</p>
+              <ul class="max-h-28 divide-y overflow-y-auto rounded-md border bg-background">
+                <li
+                  v-for="row in lineSideReturnRows"
+                  :key="`ret-${row.requestId}`"
+                  class="flex items-center justify-between gap-2 px-2 py-1"
+                >
+                  <span class="truncate"
+                    >{{ row.materialCode ?? row.materialId
+                    }}<span v-if="row.materialLotId" class="text-muted-foreground">
+                      · {{ row.materialLotId }}</span
+                    ></span
+                  >
+                  <span class="shrink-0 tabular-nums">{{
+                    formatQuantity(returnableQuantityOf(row))
+                  }}</span>
+                </li>
+              </ul>
+            </div>
+
+            <p v-if="!hasCompensation" class="text-muted-foreground">
+              该工单当前无可释放的预留或待退回线边物料，取消仅流转工单状态。
             </p>
-            <ul class="max-h-24 divide-y overflow-y-auto rounded-md border bg-background">
-              <li
-                v-for="row in unreturnableNoLotRows"
-                :key="`nolot-${row.requestId}`"
-                class="flex items-center justify-between gap-2 px-2 py-1"
-              >
-                <span class="truncate">{{ row.materialCode ?? row.materialId }}</span>
-                <span class="shrink-0 tabular-nums">{{
-                  formatQuantity(returnableQuantityOf(row))
-                }}</span>
-              </li>
-            </ul>
-          </div>
-
-          <div v-if="reservationRows.length" class="grid gap-1">
-            <p class="text-xs font-medium text-muted-foreground">将释放的预留（物料 / 数量）</p>
-            <ul class="max-h-28 divide-y overflow-y-auto rounded-md border bg-background">
-              <li
-                v-for="row in reservationRows"
-                :key="`res-${row.requestId}`"
-                class="flex items-center justify-between gap-2 px-2 py-1"
-              >
-                <span class="truncate"
-                  >{{ row.materialCode ?? row.materialId
-                  }}<span v-if="row.materialLotId" class="text-muted-foreground">
-                    · {{ row.materialLotId }}</span
-                  ></span
-                >
-                <span class="shrink-0 tabular-nums">{{
-                  formatQuantity(row.requestedQuantity)
-                }}</span>
-              </li>
-            </ul>
-          </div>
-
-          <div v-if="lineSideReturnRows.length" class="grid gap-1">
-            <p class="text-xs font-medium text-muted-foreground">待退回线边物料（物料 / 数量）</p>
-            <ul class="max-h-28 divide-y overflow-y-auto rounded-md border bg-background">
-              <li
-                v-for="row in lineSideReturnRows"
-                :key="`ret-${row.requestId}`"
-                class="flex items-center justify-between gap-2 px-2 py-1"
-              >
-                <span class="truncate"
-                  >{{ row.materialCode ?? row.materialId
-                  }}<span v-if="row.materialLotId" class="text-muted-foreground">
-                    · {{ row.materialLotId }}</span
-                  ></span
-                >
-                <span class="shrink-0 tabular-nums">{{
-                  formatQuantity(returnableQuantityOf(row))
-                }}</span>
-              </li>
-            </ul>
-          </div>
-
-          <p v-if="!hasCompensation" class="text-muted-foreground">
-            该工单当前无可释放的预留或待退回线边物料，取消仅流转工单状态。
-          </p>
           </template>
         </section>
 
@@ -635,7 +658,9 @@ function formatError(error: unknown) {
             />
             <p
               class="text-xs"
-              :class="finalReasonLength > REASON_MAX_LENGTH ? 'text-destructive' : 'text-muted-foreground'"
+              :class="
+                finalReasonLength > REASON_MAX_LENGTH ? 'text-destructive' : 'text-muted-foreground'
+              "
             >
               取消原因（含标签）共 {{ finalReasonLength }} / {{ REASON_MAX_LENGTH }} 字符
             </p>

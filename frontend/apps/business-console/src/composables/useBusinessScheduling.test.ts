@@ -26,7 +26,10 @@ vi.mock('@nerv-iip/api-client', () => ({
     query: vi.fn(),
   })),
   releaseBusinessConsoleSchedulingPlanMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({ success: true, data: { planId: vars.path.planId, status: 'released' } })),
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: { planId: vars.path.planId, status: 'released' },
+    })),
   })),
 }))
 
@@ -72,25 +75,30 @@ describe('business scheduling composable', () => {
     context.patchContext({ organizationId: 'org-002', environmentId: 'prod' })
     coladaState.queryDataById.set('listBusinessConsoleSchedulingPlans', {
       success: true,
-      data: [{
-        planId: 'plan-001',
-        status: 'generated',
-        assignmentCount: 8,
-        conflictCount: 1,
-        unscheduledOperationCount: 2,
-      }],
+      data: [
+        {
+          planId: 'plan-001',
+          status: 'generated',
+          assignmentCount: 8,
+          conflictCount: 1,
+          unscheduledOperationCount: 2,
+        },
+      ],
     })
 
     const { detailSelection, planDetail, plans } = useBusinessScheduling()
 
+    // 0-based pageIndex contract: UI page 1 → API pageIndex 0 (else the first 100 plans are skipped).
     expect(listBusinessConsoleSchedulingPlansQueryOptions).toHaveBeenCalledWith({
-      query: { organizationId: 'org-002', environmentId: 'prod', pageIndex: 1, pageSize: 100 },
+      query: { organizationId: 'org-002', environmentId: 'prod', pageIndex: 0, pageSize: 100 },
     })
     expect(getBusinessConsoleSchedulingPlanQueryOptions).toHaveBeenCalledWith({
       path: { planId: '' },
       query: { organizationId: 'org-002', environmentId: 'prod' },
     })
-    expect(coladaState.queryOptionsById.get('getBusinessConsoleSchedulingPlan')?.enabled).toBe(false)
+    expect(coladaState.queryOptionsById.get('getBusinessConsoleSchedulingPlan')?.enabled).toBe(
+      false,
+    )
     expect(detailSelection.planId).toBe('')
     expect(plans.value[0]?.planId).toBe('plan-001')
     expect(planDetail.value).toBeUndefined()
@@ -106,7 +114,8 @@ describe('business scheduling composable', () => {
 
     expect(releaseBusinessConsoleSchedulingPlanMutationOptions).toHaveBeenCalled()
     expect(
-      vi.mocked(releaseBusinessConsoleSchedulingPlanMutationOptions).mock.results[0]?.value.mutation,
+      vi.mocked(releaseBusinessConsoleSchedulingPlanMutationOptions).mock.results[0]?.value
+        .mutation,
     ).toHaveBeenCalledWith({
       path: { planId: 'plan-001' },
       query: { organizationId: 'org-001', environmentId: 'env-dev' },
