@@ -165,6 +165,12 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
                 && x.QuotationNo == request.QuotationNo,
                 cancellationToken)
             ?? throw new KnownException($"Quotation '{request.QuotationNo}' was not found.");
+        await BusinessPartnerAvailabilityGate.EnsureActiveAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            quotation.CustomerCode,
+            cancellationToken);
         var creditProfile = await creditProfileReader.GetAsync(request.OrganizationId, request.EnvironmentId, quotation.CustomerCode, cancellationToken)
             ?? throw new KnownException($"Customer '{quotation.CustomerCode}' credit limit master data is required before creating a sales order.");
         var openReceivables = await dbContext.AccountReceivables

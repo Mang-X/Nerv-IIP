@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
+using Nerv.IIP.Business.Erp.Web.Application.MasterData;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
@@ -683,6 +684,13 @@ public sealed class CreatePurchaseOrderCommandHandler(
                 && x.PurchaseOrderNo == allocation.Code,
                 cancellationToken)).Id;
         }
+
+        await BusinessPartnerAvailabilityGate.EnsureActiveAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SupplierCode,
+            cancellationToken);
 
         var order = PurchaseOrder.Create(
             request.OrganizationId,

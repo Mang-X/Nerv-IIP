@@ -60,6 +60,34 @@ public sealed class MasterDataIntegrationEventTests
         Assert.DoesNotContain("secret", JsonSerializer.Serialize(integrationEvent, new JsonSerializerOptions(JsonSerializerDefaults.Web)), StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("active")]
+    [InlineData("disabled")]
+    public void Business_partner_changed_event_carries_current_partner_status(string status)
+    {
+        var converter = new BusinessPartnerChangedIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor());
+        var domainEvent = new BusinessPartnerChangedDomainEvent("org-001", "env-dev", "BP-001", status);
+
+        var integrationEvent = converter.Convert(domainEvent);
+
+        Assert.Equal("masterData.BusinessPartnerChanged", integrationEvent.EventType);
+        Assert.Equal("business-partner", integrationEvent.Payload.ResourceType);
+        Assert.Equal("BP-001", integrationEvent.Payload.Code);
+        Assert.Equal(status, integrationEvent.Payload.Status);
+    }
+
+    [Fact]
+    public void Separate_business_partner_changes_have_distinct_idempotency_keys()
+    {
+        var converter = new BusinessPartnerChangedIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor());
+
+        var active = converter.Convert(new BusinessPartnerChangedDomainEvent("org-001", "env-dev", "BP-001", "active"));
+        var disabled = converter.Convert(new BusinessPartnerChangedDomainEvent("org-001", "env-dev", "BP-001", "disabled"));
+
+        Assert.NotEqual(active.EventId, disabled.EventId);
+        Assert.NotEqual(active.IdempotencyKey, disabled.IdempotencyKey);
+    }
+
     [Fact]
     public void Reference_data_event_uses_code_set_in_payload_and_idempotency_key()
     {
