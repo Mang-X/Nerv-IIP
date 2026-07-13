@@ -706,7 +706,12 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("pending", firstItem.GetProperty("status").GetString());
         Assert.Equal(1, listDocument.RootElement.GetProperty("data").GetProperty("total").GetInt32());
         using var createDocument = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
-        Assert.Equal("inspection-from-task-001", createDocument.RootElement.GetProperty("data").GetProperty("inspectionRecordId").GetString());
+        var createData = createDocument.RootElement.GetProperty("data");
+        Assert.Equal("inspection-from-task-001", createData.GetProperty("inspectionRecordId").GetString());
+        // 权威结论 + NCR 业务编号透传到客户端（供结果页互查）。
+        Assert.Equal("rejected", createData.GetProperty("result").GetString());
+        Assert.Equal("ncr-from-task-001", createData.GetProperty("nonconformanceReportId").GetString());
+        Assert.Equal("NCR-2026-0001", createData.GetProperty("nonconformanceReportCode").GetString());
     }
 
     [Fact]
@@ -4499,6 +4504,7 @@ public sealed class BusinessGatewayProxyTests
                     inspectionRecordId = "inspection-from-task-001",
                     result = "rejected",
                     nonconformanceReportId = "ncr-from-task-001",
+                    nonconformanceReportCode = "NCR-2026-0001",
                 },
                 success = true,
                 message = string.Empty,
@@ -4533,6 +4539,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("inspection-from-task-001", response.InspectionRecordId);
         Assert.Equal("rejected", response.Result);
         Assert.Equal("ncr-from-task-001", response.NonconformanceReportId);
+        Assert.Equal("NCR-2026-0001", response.NonconformanceReportCode);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal("/api/business/v1/quality/inspection-tasks/inspection-task-001/inspection-record", request.RequestUri!.PathAndQuery);
@@ -6390,7 +6397,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         LastCreateInspectionRecordFromTaskTaskId = inspectionTaskId;
         LastCreateInspectionRecordFromTaskRequest = request;
         return Task.FromResult(new BusinessConsoleCreateInspectionRecordFromTaskResponse(
-            "inspection-from-task-001", "rejected", "ncr-from-task-001"));
+            "inspection-from-task-001", "rejected", "ncr-from-task-001", "NCR-2026-0001"));
     }
 
     public BusinessConsoleQualityInspectionPlanCharacteristicsRequest? LastInspectionPlanCharacteristicsRequest { get; private set; }

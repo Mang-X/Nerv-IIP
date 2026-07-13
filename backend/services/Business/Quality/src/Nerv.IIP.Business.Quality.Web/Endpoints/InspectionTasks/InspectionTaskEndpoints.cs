@@ -26,11 +26,12 @@ public sealed record CreateInspectionRecordFromTaskRequest(
     string? DispositionReason,
     IReadOnlyCollection<string>? DispositionAttachmentFileIds);
 
-/// <summary>权威检验结论：记录 id、后端计算的 result，以及不合格时自动开出并回链的 NCR id。</summary>
+/// <summary>权威检验结论：记录 id、后端计算的 result，以及不合格时自动开出并回链的 NCR id 与业务编号。</summary>
 public sealed record CreateInspectionRecordFromTaskEndpointResponse(
     InspectionRecordId InspectionRecordId,
     string Result,
-    string? NonconformanceReportId);
+    string? NonconformanceReportId,
+    string? NonconformanceReportCode);
 
 public sealed class ListInspectionTasksEndpoint(ISender sender)
     : QualityEndpoint<ListInspectionTasksRequest, ResponseData<ListInspectionTasksEndpointResponse>>
@@ -73,7 +74,8 @@ public sealed class CreateInspectionRecordFromTaskEndpoint(ISender sender)
             new CreateInspectionRecordFromTaskEndpointResponse(
                 result.InspectionRecordId,
                 result.Result,
-                result.NonconformanceReportId).AsResponseData(),
+                result.NonconformanceReportId,
+                result.NonconformanceReportCode).AsResponseData(),
             cancellation: ct);
     }
 }

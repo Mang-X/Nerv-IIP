@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleInspectionPlanCharacteristicItem } from '@nerv-iip/api-client'
-import { NvBottomSheet, NvMobileTag, NvSearchBar } from '@nerv-iip/ui-mobile'
+import { NvBottomSheet, NvListRow, NvMobileTag, NvSearchBar } from '@nerv-iip/ui-mobile'
 import { computed, ref, watch } from 'vue'
 
 type PlanCharacteristic = BusinessConsoleInspectionPlanCharacteristicItem
@@ -43,28 +43,20 @@ function pick(c: PlanCharacteristic) {
         无匹配的检验特性
       </div>
       <div v-else class="max-h-[50vh] overflow-y-auto rounded-lg border border-border">
-        <button
+        <NvListRow
           v-for="c in filtered"
           :key="c.characteristicCode"
-          type="button"
           data-testid="char-option"
-          class="flex min-h-touch w-full items-center justify-between gap-3 border-b border-border px-4 py-3 text-left last:border-b-0 active:bg-accent"
-          @click="pick(c)"
+          :title="c.name || c.characteristicCode || ''"
+          :subtitle="`${c.characteristicCode}${c.characteristicType === 'attribute' ? ' · 计数' : ' · 计量'}${c.unitCode ? ` · ${c.unitCode}` : ''}`"
+          @select="pick(c)"
         >
-          <span class="min-w-0">
-            <span class="block truncate text-base font-medium text-foreground">
-              {{ c.name || c.characteristicCode }}
-            </span>
-            <span class="block truncate text-xs text-muted-foreground">
-              {{ c.characteristicCode }} ·
+          <template #trailing>
+            <NvMobileTag :variant="c.characteristicType === 'attribute' ? 'warning' : 'default'">
               {{ c.characteristicType === 'attribute' ? '计数' : '计量' }}
-              <template v-if="c.unitCode">· {{ c.unitCode }}</template>
-            </span>
-          </span>
-          <NvMobileTag :variant="c.characteristicType === 'attribute' ? 'warning' : 'default'">
-            {{ c.characteristicType === 'attribute' ? '计数' : '计量' }}
-          </NvMobileTag>
-        </button>
+            </NvMobileTag>
+          </template>
+        </NvListRow>
       </div>
     </div>
   </NvBottomSheet>

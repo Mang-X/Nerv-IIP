@@ -101,7 +101,12 @@ describe('useInspectionExecution', () => {
   it('returns the backend authoritative result + ncr id (not the client verdict)', async () => {
     const chars = ref<Char[]>([APPEARANCE])
     const submitInspection = vi.fn().mockResolvedValue({
-      data: { inspectionRecordId: 'rec-1', result: 'rejected', nonconformanceReportId: 'ncr-9' },
+      data: {
+        inspectionRecordId: 'rec-1',
+        result: 'rejected',
+        nonconformanceReportId: 'ncr-9',
+        nonconformanceReportCode: 'NCR-2026-0007',
+      },
     })
     const { value: exec, stop } = runInScope(() =>
       useInspectionExecution({ planCharacteristics: chars as never, submitInspection }),
@@ -118,7 +123,11 @@ describe('useInspectionExecution', () => {
     expect(disposition).toBe('判退')
     expect(lines[0].result).toBe('failed') // 提交口径 passed/failed
     // 权威结论来自后端响应，而非客户端 verdict。
-    expect(result).toEqual({ result: 'rejected', nonconformanceReportId: 'ncr-9' })
+    expect(result).toEqual({
+      result: 'rejected',
+      nonconformanceReportId: 'ncr-9',
+      nonconformanceReportCode: 'NCR-2026-0007',
+    })
     stop()
   })
 })

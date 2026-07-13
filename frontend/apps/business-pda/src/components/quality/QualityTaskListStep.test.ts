@@ -1,7 +1,7 @@
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
 import { NvScanBar } from '@nerv-iip/ui-mobile'
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
 import QualityTaskListStep from './QualityTaskListStep.vue'
 
 type Task = BusinessConsoleQualityInspectionTaskItem
@@ -38,6 +38,20 @@ describe('QualityTaskListStep', () => {
     ])
     await wrapper.findComponent(NvScanBar).vm.$emit('scan', 'RCV-1001')
     expect(wrapper.emitted('select')?.[0]?.[0]).toMatchObject({ inspectionTaskId: 'T1' })
+  })
+
+  it('scan direct: cross-page hit loads all then auto-selects the task', async () => {
+    // 目标任务在未加载分页（loaded 集合无命中，hasMore=true）→ loadAll 后跨页直达。
+    const target = task({ inspectionTaskId: 'T99', sourceDocumentId: 'RCV-9999', skuCode: 'SKU-Z', dueAtUtc: FUTURE })
+    const loaded = [task({ inspectionTaskId: 'T1', sourceDocumentId: 'RCV-1', dueAtUtc: FUTURE })]
+    const loadAll = vi.fn().mockResolvedValue([...loaded, target])
+    const wrapper = mount(QualityTaskListStep, {
+      props: { tasks: loaded, total: 2, loaded: 1, hasMore: true, pending: false, error: null, loadAll },
+    })
+    await wrapper.findComponent(NvScanBar).vm.$emit('scan', 'RCV-9999')
+    await flushPromises()
+    expect(loadAll).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('select')?.[0]?.[0]).toMatchObject({ inspectionTaskId: 'T99' })
   })
 
   it('scan without a unique hit filters instead of navigating', async () => {

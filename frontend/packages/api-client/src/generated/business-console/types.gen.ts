@@ -1348,6 +1348,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     inspectionRecordId?: string;
     result?: string;
     nonconformanceReportId?: string | null;
+    nonconformanceReportCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionRecordFromTaskRequest = {

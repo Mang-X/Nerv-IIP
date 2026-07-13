@@ -11,7 +11,7 @@ import {
   useInspectionPlanCharacteristics,
 } from '@/composables/useBusinessQualityInspectionTasks'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
-import { NvAppShellMobile } from '@nerv-iip/ui-mobile'
+import { NvAppShellMobile, NvMobileButton } from '@nerv-iip/ui-mobile'
 import { computed, ref, useTemplateRef } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -33,6 +33,7 @@ const {
   loaded,
   hasMore,
   loadMore,
+  ensureAllLoaded,
   pending,
   error,
   refresh,
@@ -91,15 +92,15 @@ function goBack() {
   <NvAppShellMobile>
     <template #header>
       <div class="flex items-center gap-3 px-4 py-3">
-        <button
+        <NvMobileButton
           v-if="!inListStep && !result"
-          type="button"
+          variant="text"
+          size="sm"
           aria-label="返回列表"
-          class="text-sm text-muted-foreground"
           @click="backToList"
         >
           返回
-        </button>
+        </NvMobileButton>
         <h1 class="text-lg font-semibold text-foreground">检验任务</h1>
         <span v-if="!result" class="ml-auto text-xs text-muted-foreground">
           第 {{ stepNumber }}/3 步
@@ -116,6 +117,7 @@ function goBack() {
       :has-more="hasMore"
       :pending="pending"
       :error="error"
+      :load-all="ensureAllLoaded"
       @select="selectTask"
       @load-more="loadMore"
       @refresh="() => refresh()"

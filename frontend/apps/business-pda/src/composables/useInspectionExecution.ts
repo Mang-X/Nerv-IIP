@@ -24,6 +24,8 @@ export interface AuthoritativeInspectionResult {
   result: string
   /** 不合格时后端自动开出并回链的 NCR id；合格为空。 */
   nonconformanceReportId: string | null
+  /** NCR 业务编号（人读单号，供结果页展示与互查）；无 NCR 为空。 */
+  nonconformanceReportCode: string | null
 }
 
 /** 结果页状态：提交成功（权威结论）或操作失败（网络等）。 */
@@ -126,11 +128,18 @@ export function useInspectionExecution(options: {
   async function submit(inspectionTaskId: string): Promise<AuthoritativeInspectionResult> {
     const lines = toQualityCharacteristicResultLines(rows)
     const response = (await submitInspection(inspectionTaskId, lines, dispositionReason.value)) as
-      | { data?: { result?: string; nonconformanceReportId?: string | null } }
+      | {
+          data?: {
+            result?: string
+            nonconformanceReportId?: string | null
+            nonconformanceReportCode?: string | null
+          }
+        }
       | undefined
     return {
       result: response?.data?.result ?? '',
       nonconformanceReportId: response?.data?.nonconformanceReportId ?? null,
+      nonconformanceReportCode: response?.data?.nonconformanceReportCode ?? null,
     }
   }
 

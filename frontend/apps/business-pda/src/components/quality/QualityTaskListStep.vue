@@ -15,6 +15,8 @@ const props = defineProps<{
   hasMore: boolean
   pending: boolean
   error: unknown
+  /** 加载全部待检任务并返回最新集合（扫码跨页直达用）。 */
+  loadAll?: () => Promise<Task[]>
 }>()
 const emit = defineEmits<{ select: [task: Task]; loadMore: []; refresh: [] }>()
 
@@ -67,17 +69,27 @@ const sourceChips = computed(() =>
   })),
 )
 
-// 扫码直达：精确 / 唯一命中已加载集合时自动进入执行；否则退化为筛选（跨页命中提示加载更多）。
-function onScan(value: string) {
-  const kw = value.trim().toLowerCase()
-  scanKeyword.value = value
-  if (!kw) return
-  const exact = props.tasks.filter(
+// 优先来源单据 / SKU 精确命中，退而求关键字唯一命中；否则返回 null（仍走筛选）。
+function pickScanHit(list: Task[], kw: string): Task | null {
+  const exact = list.filter(
     (t) =>
       (t.sourceDocumentId ?? '').toLowerCase() === kw || (t.skuCode ?? '').toLowerCase() === kw,
   )
-  const hits = exact.length > 0 ? exact : props.tasks.filter((t) => matchesKeyword(t, kw))
-  if (hits.length === 1) emit('select', hits[0])
+  const hits = exact.length > 0 ? exact : list.filter((t) => matchesKeyword(t, kw))
+  return hits.length === 1 ? hits[0] : null
+}
+
+// 扫码直达：先在已加载集合唯一命中即进入执行；未命中且有未加载分页时，加载全部再匹配（跨页直达），
+// 仍无唯一命中则退化为筛选。
+async function onScan(value: string) {
+  const kw = value.trim().toLowerCase()
+  scanKeyword.value = value
+  if (!kw) return
+  let hit = pickScanHit(props.tasks, kw)
+  if (!hit && props.hasMore && props.loadAll) {
+    hit = pickScanHit(await props.loadAll(), kw)
+  }
+  if (hit) emit('select', hit)
 }
 
 function clearScan() {

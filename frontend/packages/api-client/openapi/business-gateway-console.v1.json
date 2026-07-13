@@ -27235,6 +27235,10 @@
           "nonconformanceReportId": {
             "type": "string",
             "nullable": true
+          },
+          "nonconformanceReportCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

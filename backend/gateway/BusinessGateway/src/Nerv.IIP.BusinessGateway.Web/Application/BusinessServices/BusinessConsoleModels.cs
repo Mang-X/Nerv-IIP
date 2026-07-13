@@ -1162,7 +1162,8 @@ public sealed record BusinessConsoleCreateInspectionRecordFromTaskRequest(
 public sealed record BusinessConsoleCreateInspectionRecordFromTaskResponse(
     string InspectionRecordId,
     string Result,
-    string? NonconformanceReportId);
+    string? NonconformanceReportId,
+    string? NonconformanceReportCode);
 
 public sealed record BusinessConsoleQualityInspectionPlanCharacteristicsRequest(
     [property: RouteParam] string InspectionPlanId,

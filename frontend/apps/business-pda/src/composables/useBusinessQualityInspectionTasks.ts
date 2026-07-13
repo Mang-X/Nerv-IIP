@@ -130,6 +130,19 @@ export function useBusinessQualityInspectionTasks() {
   }
 
   /**
+   * 加载全部待检任务后返回最新集合。扫码直达用：facade 无 sourceDocumentId/关键字服务端过滤，
+   * 目标任务可能落在未加载分页；扫码在已加载集合未唯一命中时据 `total` 一次性扩 `take` 覆盖全部
+   * 再匹配，从而跨页直达（而非停在"页内未命中"）。
+   */
+  async function ensureAllLoaded() {
+    if (scopeReady.value && total.value > 0 && filters.take < total.value) {
+      filters.take = total.value
+      await listQuery.refetch()
+    }
+    return tasks.value
+  }
+
+  /**
    * 提交检验结果。`resultLines` 由 `@nerv-iip/business-core` 归一（业务口径），此处仅注入
    * org/env（query）与 `inspectorUserId`（body）——调用方不可覆盖检验员身份。
    *
@@ -167,6 +180,7 @@ export function useBusinessQualityInspectionTasks() {
     loaded,
     hasMore,
     loadMore,
+    ensureAllLoaded,
     pending: listQuery.isLoading,
     error: listQuery.error,
     refresh: () => (scopeReady.value ? listQuery.refetch() : Promise.resolve()),

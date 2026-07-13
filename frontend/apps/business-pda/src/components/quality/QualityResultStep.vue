@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { QualityResultState } from '@/composables/useInspectionExecution'
-import { NvMobileButton, NvMobileResult } from '@nerv-iip/ui-mobile'
-import { computed } from 'vue'
+import { NvCell, NvMobileButton, NvMobileResult } from '@nerv-iip/ui-mobile'
+import { computed, ref } from 'vue'
 
 const props = defineProps<{ state: QualityResultState }>()
 const emit = defineEmits<{ next: []; back: []; retry: [] }>()
@@ -13,6 +13,24 @@ const passed = computed(
 const ncrId = computed(() =>
   props.state.phase === 'submitted' ? props.state.authoritative.nonconformanceReportId : null,
 )
+// 互查用人读单号（后端 NcrCode）；仅有 id 无 code 时回退展示 id。
+const ncrCode = computed(() =>
+  props.state.phase === 'submitted' ? props.state.authoritative.nonconformanceReportCode : null,
+)
+const ncrDisplay = computed(() => ncrCode.value || ncrId.value || '')
+
+// PDA 无 NCR 详情页（互查台账在控制台 /quality/ncrs）；结果页提供「复制单号」作为互查取号入口。
+const copied = ref(false)
+async function copyNcr() {
+  if (!ncrDisplay.value) return
+  try {
+    await navigator.clipboard?.writeText(ncrDisplay.value)
+    copied.value = true
+    window.setTimeout(() => (copied.value = false), 2000)
+  } catch {
+    copied.value = false
+  }
+}
 const resultTitle = computed(() => {
   if (props.state.phase !== 'submitted') return '提交失败'
   switch (props.state.authoritative.result) {
@@ -44,13 +62,20 @@ const resultDescription = computed(() => {
     :description="resultDescription"
   >
     <template #actions>
-      <p
-        v-if="state.phase === 'submitted' && ncrId"
+      <!-- NCR 互查取号入口：展示人读单号（NcrCode），点按复制供在 NCR 台账中查询。 -->
+      <NvCell
+        v-if="state.phase === 'submitted' && ncrDisplay"
         data-testid="ncr-link"
-        class="w-full break-all rounded-lg border border-border bg-card px-3 py-2 text-center text-xs text-muted-foreground"
+        class="w-full overflow-hidden rounded-lg border border-border"
+        arrow
+        title="不合格报告单号"
+        :note="copied ? '已复制，可在质量台账中查询' : '点按复制单号'"
+        @click="copyNcr"
       >
-        NCR 单号：{{ ncrId }}
-      </p>
+        <template #value>
+          <span class="max-w-[9rem] truncate font-medium text-foreground">{{ ncrDisplay }}</span>
+        </template>
+      </NvCell>
 
       <NvMobileButton
         v-if="state.phase === 'submitted'"

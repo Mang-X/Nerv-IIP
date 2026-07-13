@@ -195,15 +195,169 @@ public sealed class QualityInspectionTaskWorkflowTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
-        // 权威结论 rejected → 后端同事务内自动开出 NCR 并回链到记录。
+        // 权威结论 rejected → 后端同事务内自动开出 NCR 并回链到记录，返回业务编号供结果页互查。
         Assert.Equal(InspectionRecordResults.Rejected, result.Result);
         Assert.NotNull(result.NonconformanceReportId);
         var record = await dbContext.InspectionRecords.SingleAsync(x => x.Id == result.InspectionRecordId);
         Assert.Equal(result.NonconformanceReportId, record.NonconformanceReportId);
         var ncr = await dbContext.NonconformanceReports.SingleAsync();
         Assert.Equal(record.NonconformanceReportId, ncr.Id.ToString());
+        Assert.Equal(ncr.NcrCode, result.NonconformanceReportCode);
         var completedTask = await dbContext.InspectionTasks.SingleAsync(x => x.Id == task.Id);
         Assert.Equal(InspectionTaskStatuses.Completed, completedTask.Status);
+    }
+
+    [Fact]
+    public async Task Create_record_from_task_backfills_ncr_for_existing_rejected_record_without_ncr()
+    {
+        // 回归：既有 rejected 检验记录经常规检验流程建出、未开 NCR；随后任务命中 existing 分支
+        // 完成时应补开并回链 NCR（否则端点会永久返回 NonconformanceReportId=null）。
+        await using var dbContext = CreateDbContext(nameof(Create_record_from_task_backfills_ncr_for_existing_rejected_record_without_ncr));
+        var plan = ActivePlan("PLAN-RCV-2100", "receiving", "SKU-RM-2100");
+        dbContext.InspectionPlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+
+        // 常规检验流程先建出一条 rejected 记录（此路径不开 NCR），此时尚无匹配任务。
+        var regularRecordId = await new CreateInspectionRecordCommandHandler(
+                new InspectionRecordRepository(dbContext),
+                new InspectionPlanRepository(dbContext),
+                new InspectionTaskRepository(dbContext))
+            .Handle(
+                new CreateInspectionRecordCommand(
+                    "org-001",
+                    "env-dev",
+                    plan.Id,
+                    "receiving",
+                    "wms",
+                    "IN-950",
+                    "SKU-RM-2100",
+                    10m,
+                    null,
+                    null,
+                    [new InspectionResultLineCommandInput("appearance", "scratch", null, InspectionLineResults.Failed, "SCRATCH", 2m, [])],
+                    "外观不良，判退",
+                    []),
+                CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        Assert.Empty(await dbContext.NonconformanceReports.ToArrayAsync());
+
+        // 事后到达同来源单的待检任务，从任务提交命中既有记录。
+        var task = InspectionTask.CreatePending(
+            "org-001",
+            "env-dev",
+            plan.Id,
+            "receiving",
+            "wms",
+            "IN-950",
+            "LINE-001",
+            "SKU-RM-2100",
+            10m,
+            "kg",
+            null,
+            null,
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+            "wms:inbound-completed:org-001:env-dev:IN-950:LINE-001");
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new CreateInspectionRecordFromTaskCommandHandler(
+            new InspectionTaskRepository(dbContext),
+            new InspectionRecordRepository(dbContext),
+            new InspectionPlanRepository(dbContext),
+            new NonconformanceReportRepository(dbContext),
+            new NonconformanceReportCodeGenerator());
+        var result = await handler.Handle(
+            new CreateInspectionRecordFromTaskCommand(task.Id, "qa-user-001", [], null, []),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(regularRecordId, result.InspectionRecordId);
+        Assert.Equal(InspectionRecordResults.Rejected, result.Result);
+        Assert.NotNull(result.NonconformanceReportId);
+        var ncr = await dbContext.NonconformanceReports.SingleAsync();
+        Assert.Equal(ncr.Id.ToString(), result.NonconformanceReportId);
+        Assert.Equal(ncr.NcrCode, result.NonconformanceReportCode);
+        var record = await dbContext.InspectionRecords.SingleAsync(x => x.Id == regularRecordId);
+        Assert.Equal(ncr.Id.ToString(), record.NonconformanceReportId);
+    }
+
+    [Fact]
+    public async Task Create_record_from_task_backfills_ncr_on_completed_replay_without_ncr()
+    {
+        // 回归：任务已完成（记录 rejected 但无 NCR）时的幂等重放应补开并回链 NCR，且不重复开单。
+        await using var dbContext = CreateDbContext(nameof(Create_record_from_task_backfills_ncr_on_completed_replay_without_ncr));
+        var plan = ActivePlan("PLAN-RCV-2200", "receiving", "SKU-RM-2200");
+        var task = InspectionTask.CreatePending(
+            "org-001",
+            "env-dev",
+            plan.Id,
+            "receiving",
+            "wms",
+            "IN-960",
+            "LINE-001",
+            "SKU-RM-2200",
+            10m,
+            "kg",
+            null,
+            null,
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+            "wms:inbound-completed:org-001:env-dev:IN-960:LINE-001");
+        dbContext.InspectionPlans.Add(plan);
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        // 常规检验流程建 rejected 记录并顺带完成匹配任务（此路径不开 NCR）。
+        var recordId = await new CreateInspectionRecordCommandHandler(
+                new InspectionRecordRepository(dbContext),
+                new InspectionPlanRepository(dbContext),
+                new InspectionTaskRepository(dbContext))
+            .Handle(
+                new CreateInspectionRecordCommand(
+                    "org-001",
+                    "env-dev",
+                    plan.Id,
+                    "receiving",
+                    "wms",
+                    "IN-960",
+                    "SKU-RM-2200",
+                    10m,
+                    null,
+                    null,
+                    [new InspectionResultLineCommandInput("appearance", "scratch", null, InspectionLineResults.Failed, "SCRATCH", 2m, [])],
+                    "外观不良，判退",
+                    []),
+                CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        Assert.Equal(InspectionTaskStatuses.Completed, (await dbContext.InspectionTasks.SingleAsync(x => x.Id == task.Id)).Status);
+        Assert.Empty(await dbContext.NonconformanceReports.ToArrayAsync());
+
+        var handler = new CreateInspectionRecordFromTaskCommandHandler(
+            new InspectionTaskRepository(dbContext),
+            new InspectionRecordRepository(dbContext),
+            new InspectionPlanRepository(dbContext),
+            new NonconformanceReportRepository(dbContext),
+            new NonconformanceReportCodeGenerator());
+        var result = await handler.Handle(
+            new CreateInspectionRecordFromTaskCommand(task.Id, "qa-user-001", [], null, []),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(recordId, result.InspectionRecordId);
+        Assert.Equal(InspectionRecordResults.Rejected, result.Result);
+        Assert.NotNull(result.NonconformanceReportId);
+        var ncr = await dbContext.NonconformanceReports.SingleAsync();
+        Assert.Equal(ncr.NcrCode, result.NonconformanceReportCode);
+
+        // 再次重放：读同一 NCR，不重复开单（幂等）。
+        var replay = await handler.Handle(
+            new CreateInspectionRecordFromTaskCommand(task.Id, "qa-user-001", [], null, []),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        Assert.Equal(result.NonconformanceReportId, replay.NonconformanceReportId);
+        Assert.Equal(ncr.NcrCode, replay.NonconformanceReportCode);
+        Assert.Single(await dbContext.NonconformanceReports.ToArrayAsync());
     }
 
     [Fact]

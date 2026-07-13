@@ -2534,7 +2534,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         return new BusinessConsoleCreateInspectionRecordFromTaskResponse(
             response.InspectionRecordId,
             response.Result,
-            response.NonconformanceReportId);
+            response.NonconformanceReportId,
+            response.NonconformanceReportCode);
     }
 
     public async Task<BusinessConsoleQualityInspectionPlanCharacteristicListResponse> GetInspectionPlanCharacteristicsAsync(
@@ -2849,7 +2850,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
     private sealed record DownstreamCreateInspectionRecordFromTaskResponse(
         string InspectionRecordId,
         string Result,
-        string? NonconformanceReportId);
+        string? NonconformanceReportId,
+        string? NonconformanceReportCode);
 
     private sealed record DownstreamInspectionTaskItem(
         string InspectionTaskId,
