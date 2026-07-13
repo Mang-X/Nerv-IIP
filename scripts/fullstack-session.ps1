@@ -216,7 +216,7 @@ function Start-NervFullStackSession {
             )
             Write-NervFullStackManifest -Manifest $manifest
 
-            foreach ($resourceName in @('gateway', 'business-gateway', 'console', 'business-console', 'screen')) {
+            foreach ($resourceName in @('iam', 'business-master-data', 'gateway', 'business-gateway', 'console', 'business-console', 'screen')) {
                 Wait-NervAspireResource `
                     -AppHostProject $appHostProject `
                     -ResourceName $resourceName `

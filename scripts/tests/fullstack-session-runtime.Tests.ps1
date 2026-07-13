@@ -28,6 +28,7 @@ Assert-True (Test-Path -LiteralPath $parallelAcceptanceScript -PathType Leaf) 'P
 $parallelAcceptanceText = Get-Content -LiteralPath $parallelAcceptanceScript -Raw
 $fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
 Assert-True ($fullStackSessionText.Contains("ASPIRE_CLI_START_TIMEOUT'] = '300'")) 'Full-stack startup must extend the Aspire CLI handshake timeout.'
+Assert-True ($fullStackSessionText.Contains("'business-master-data'")) 'Full-stack startup must wait for the business service used by the browser smoke test.'
 foreach ($requiredText in @(
     '# Script-Governance:',
     '[ValidateRange(2, 3)]',
@@ -270,6 +271,19 @@ try {
 }
 catch { $managedCleanupFailure = $_.Exception.Message }
 Assert-True ($managedCleanupFailure -eq 'cleanup failure wins') 'Cleanup failure must take precedence after cleanup was attempted.'
+
+$script:dockerRetryCalls = 0
+$dockerRetryResult = Invoke-NervDockerCleanupWithRetry `
+    -Manifest ([pscustomobject]@{ sessionId = $sessionId }) `
+    -RemoveAction {
+        param($Manifest)
+        $script:dockerRetryCalls++
+        if ($script:dockerRetryCalls -lt 2) { return [pscustomobject]@{ Complete = $false; Remaining = @('container:stopping') } }
+        return [pscustomobject]@{ Complete = $true; Remaining = @() }
+    } `
+    -DelayAction { param($Attempt) }
+Assert-True $dockerRetryResult.Complete 'Docker cleanup retry must return the successful result.'
+Assert-True ($script:dockerRetryCalls -eq 2) 'Docker cleanup must retry a transient incomplete result.'
 
 $stopStateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-stop-$([guid]::NewGuid().ToString('N'))"
 try {

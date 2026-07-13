@@ -703,6 +703,29 @@ function Remove-NervSessionDockerResources {
     }
 }
 
+function Invoke-NervDockerCleanupWithRetry {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [scriptblock] $RemoveAction,
+        [ValidateRange(1, 10)] [int] $MaximumAttempts = 5,
+        [scriptblock] $DelayAction
+    )
+
+    if ($null -eq $DelayAction) {
+        $DelayAction = { param($Attempt) Start-Sleep -Seconds 3 }
+    }
+
+    $result = $null
+    for ($attempt = 1; $attempt -le $MaximumAttempts; $attempt++) {
+        $result = & $RemoveAction $Manifest
+        if ($null -eq $result) { throw 'Docker cleanup action returned no result.' }
+        $remaining = @($result.Remaining)
+        if ([bool] $result.Complete -and $remaining.Count -eq 0) { return $result }
+        if ($attempt -lt $MaximumAttempts) { & $DelayAction $attempt }
+    }
+    return $result
+}
+
 function Stop-NervFullStackSession {
     param(
         [Parameter(Mandatory)] [string] $SessionId,
@@ -772,8 +795,7 @@ function Stop-NervFullStackSession {
     }
 
     try {
-        $dockerResult = & $DockerRemoveAction $manifest
-        if ($null -eq $dockerResult) { throw 'Docker cleanup action returned no result.' }
+        $dockerResult = Invoke-NervDockerCleanupWithRetry -Manifest $manifest -RemoveAction $DockerRemoveAction
     }
     catch {
         $errors.Add((Protect-ScriptAutomationText -Text "$($_.Exception.Message)"))
