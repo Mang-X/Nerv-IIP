@@ -15,7 +15,8 @@ public sealed record GatewayNotificationRequestContext(
     string BearerToken,
     string? CorrelationId,
     string? IdempotencyKey,
-    GatewayPermissionRequirement PermissionRequirement);
+    GatewayPermissionRequirement PermissionRequirement,
+    string RecipientRef = "");
 
 public sealed class GatewayNotificationException(
     HttpStatusCode statusCode,

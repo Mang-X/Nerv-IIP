@@ -1389,8 +1389,13 @@
       "method": "GET",
       "route": "/api/business/v1/iiot/runtime-hours",
       "operationId": "queryBusinessIiotRuntimeHours",
-      "classification": "internal",
-      "rationale": "By-design internal API consumed by Maintenance PM day-interval generation (#688). Canonical internal precedent - never a Console facade."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "queryBusinessConsoleTelemetryRuntimeHours"
+      ]
     },
     {
       "service": "IndustrialTelemetry",
@@ -2665,6 +2670,19 @@
     },
     {
       "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/production-reports/{reportNo}",
+      "operationId": "getBusinessMesProductionReport",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesProductionReport"
+      ]
+    },
+    {
+      "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/production-reports",
       "operationId": "recordBusinessMesProductionReport",
@@ -2736,6 +2754,19 @@
       ],
       "gatewayOperationIds": [
         "forceReleaseBusinessConsoleMesQualityHold"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/quality-holds/{sourceDocumentId}/timeline",
+      "operationId": "getBusinessMesQualityHoldTimeline",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesQualityHoldTimeline"
       ]
     },
     {

@@ -8,6 +8,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
 {
     public const string ManualSource = "manual";
     public const string TelemetrySource = "telemetry";
+    public const int ReversedByMaxLength = 100;
 
     private ProductionReport()
     {
@@ -30,6 +31,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         string? serialNo,
         string? reversedReportNo,
         string? reversalReason,
+        string? reversedBy,
         ProductionReportOeeProjection? oeeProjection,
         string source,
         int materialMovementCount)
@@ -55,6 +57,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         SerialNo = string.IsNullOrWhiteSpace(serialNo) ? null : serialNo.Trim();
         ReversedReportNo = string.IsNullOrWhiteSpace(reversedReportNo) ? null : reversedReportNo.Trim();
         ReversalReason = string.IsNullOrWhiteSpace(reversalReason) ? null : reversalReason.Trim();
+        ReversedBy = string.IsNullOrWhiteSpace(reversedBy) ? null : reversedBy.Trim();
         OeeWorkCenterId = string.IsNullOrWhiteSpace(oeeProjection?.WorkCenterId) ? null : oeeProjection.WorkCenterId.Trim();
         OeeDeviceAssetId = string.IsNullOrWhiteSpace(oeeProjection?.DeviceAssetId) ? null : oeeProjection.DeviceAssetId.Trim();
         OeeUomCode = string.IsNullOrWhiteSpace(oeeProjection?.UomCode) ? null : oeeProjection.UomCode.Trim();
@@ -77,6 +80,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     public string? SerialNo { get; private set; }
     public string? ReversedReportNo { get; private set; }
     public string? ReversalReason { get; private set; }
+    public string? ReversedBy { get; private set; }
     public string? OeeWorkCenterId { get; private set; }
     public string? OeeDeviceAssetId { get; private set; }
     public string? OeeUomCode { get; private set; }
@@ -139,6 +143,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             serialNo,
             null,
             null,
+            null,
             oeeProjection,
             source,
             materialMovementCount);
@@ -150,9 +155,16 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         ProductionReport original,
         string reportNo,
         DateTimeOffset reportedAtUtc,
-        string reason)
+        string reason,
+        string actorRef)
     {
         ArgumentNullException.ThrowIfNull(original);
+        var normalizedActorRef = DomainGuard.Required(actorRef, nameof(actorRef));
+        if (normalizedActorRef.Length > ReversedByMaxLength)
+        {
+            throw new ArgumentOutOfRangeException(nameof(actorRef), $"Actor reference cannot exceed {ReversedByMaxLength} characters.");
+        }
+
         if (original.IsReversal)
         {
             throw new InvalidOperationException("Reversal production reports cannot be reversed.");
@@ -176,6 +188,7 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             original.SerialNo,
             original.ReportNo,
             reason,
+            normalizedActorRef,
             originalOeeProjection,
             original.Source,
             original.MaterialMovementCount);

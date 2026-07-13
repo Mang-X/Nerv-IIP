@@ -530,6 +530,7 @@ else
 
 var businessGateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>("business-gateway")))
     .WithHttpEndpoint(port: 5119, name: "http")
+    .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
     .WithEnvironment("Iam__Jwt__JwksJson", iamJwtJwksJson)
     .WithEnvironment("Iam__Jwt__Issuer", "nerv-iip-iam")
@@ -550,6 +551,7 @@ var businessGateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(build
     .WithEnvironment("IndustrialTelemetry__BaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
     .WithEnvironment("Maintenance__BaseUrl", businessMaintenance.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
+    .WithReference(apphub)
     .WithReference(iam)
     .WithReference(businessMasterData)
     .WithReference(businessInventory)
@@ -566,6 +568,7 @@ var businessGateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(build
     .WithReference(businessIndustrialTelemetry)
     .WithReference(businessMaintenance)
     .WithReference(redis)
+    .WaitFor(apphub)
     .WaitFor(iam)
     .WaitFor(businessMasterData)
     .WaitFor(businessInventory)

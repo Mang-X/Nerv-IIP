@@ -19,6 +19,7 @@ public sealed class MarkNotificationMessageReadEndpoint(IMediator mediator)
             NotificationEndpointContext.RequiredHeader(HttpContext, "X-Organization-Id"),
             NotificationEndpointContext.RequiredHeader(HttpContext, "X-Environment-Id"),
             Route<string>("messageId")!,
+            Query<string>("recipientRef", isRequired: true)!,
             DateTimeOffset.UtcNow), ct);
         await Send.OkAsync(response.AsResponseData(), ct);
     }

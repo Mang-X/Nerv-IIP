@@ -513,14 +513,43 @@ public sealed class ForceReleaseBusinessConsoleMesQualityHoldEndpoint(
     {
         // Bind the force-release audit actor to the authenticated principal so a caller holding
         // MesQualityWrite cannot forge the releaser identity via a request-body field.
-        var (_, actorRef) = RequireAuthorizedPrincipalActor();
+        var actorRef = RequireAuthorizedPrincipalActorReference();
+        if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
+        {
+            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, "idempotency-key-required");
+        }
+        var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
+        correlationId = string.IsNullOrWhiteSpace(correlationId)
+            ? Guid.CreateVersion7().ToString("N")
+            : correlationId.Trim();
         return mes.ForceReleaseQualityHoldAsync(
             tokenProvider.BearerToken,
             request.SourceDocumentId,
             request,
             actorRef,
+            correlationId,
             cancellationToken);
     }
+}
+
+[Tags("Business Console MES")]
+[HttpGet("/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/timeline")]
+[BusinessGatewayOperationId("getBusinessConsoleMesQualityHoldTimeline")]
+public sealed class GetBusinessConsoleMesQualityHoldTimelineEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesQualityHoldTimelineRequest, BusinessConsoleMesQualityHoldTimelineResponse>(
+        auth,
+        BusinessGatewayPermissions.MesQualityRead)
+{
+    protected override string OrganizationId(BusinessConsoleMesQualityHoldTimelineRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleMesQualityHoldTimelineRequest request) => request.EnvironmentId;
+    protected override Task<BusinessConsoleMesQualityHoldTimelineResponse> ForwardAsync(
+        BusinessConsoleMesQualityHoldTimelineRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        mes.GetQualityHoldTimelineAsync(tokenProvider.BearerToken, request.SourceDocumentId, request, cancellationToken);
 }
 
 [Tags("Business Console MES")]
@@ -542,7 +571,12 @@ public sealed class ReverseBusinessConsoleMesProductionReportEndpoint(
         BusinessConsoleMesReverseProductionReportRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        mes.ReverseProductionReportAsync(tokenProvider.BearerToken, request.ReportNo, request, cancellationToken);
+        mes.ReverseProductionReportAsync(
+            tokenProvider.BearerToken,
+            request.ReportNo,
+            request,
+            RequireAuthorizedPrincipalActor().ActorRef,
+            cancellationToken);
 }
 
 [Tags("Business Console MES")]
@@ -898,6 +932,32 @@ public sealed class ListBusinessConsoleMesProductionReportsEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.ListProductionReportsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
+[HttpGet("/api/business-console/v1/mes/production-reports/{reportNo}")]
+[BusinessGatewayOperationId("getBusinessConsoleMesProductionReport")]
+public sealed class GetBusinessConsoleMesProductionReportEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesProductionReportDetailRequest, BusinessConsoleMesProductionReportDetailResponse>(
+        auth,
+        BusinessGatewayPermissions.MesReportingRead)
+{
+    protected override string OrganizationId(BusinessConsoleMesProductionReportDetailRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesProductionReportDetailRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleMesProductionReportDetailResponse> ForwardAsync(
+        BusinessConsoleMesProductionReportDetailRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        mes.GetProductionReportAsync(
+            tokenProvider.BearerToken,
+            request.ReportNo,
+            new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
+            cancellationToken);
 }
 
 [Tags("Business Console MES")]

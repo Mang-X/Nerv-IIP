@@ -339,3 +339,7 @@ public sealed record BusinessConsoleTelemetryOeeResponse(
     decimal? OeeRate,
     bool IsDegraded,
     IReadOnlyCollection<string> DegradedReasons);
+
+public sealed record BusinessConsoleTelemetryRuntimeHoursRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
+public sealed record BusinessConsoleTelemetryRuntimeHoursDailyItem(string BusinessDate, decimal RuntimeHours, decimal LoadingHours, int StateSampleCount);
+public sealed record BusinessConsoleTelemetryRuntimeHoursResponse(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc, int StateSampleCount, decimal TotalRuntimeHours, decimal TotalLoadingHours, bool HasRuntimeSamples, IReadOnlyCollection<BusinessConsoleTelemetryRuntimeHoursDailyItem> Daily);

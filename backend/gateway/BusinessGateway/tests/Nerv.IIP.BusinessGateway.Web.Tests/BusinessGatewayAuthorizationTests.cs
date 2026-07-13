@@ -252,6 +252,23 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
+    public async Task Runtime_hours_facade_returns_forbidden_scoped_to_the_device_when_iam_denies()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/telemetry/runtime-hours?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01&windowStartUtc=2026-07-01T00:00:00Z&windowEndUtc=2026-07-02T00:00:00Z");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Equal(BusinessGatewayPermissions.IiotTelemetryRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("device-asset", auth.LastRequirement.ResourceType);
+        Assert.Equal("DEV-CNC-01", auth.LastRequirement.ResourceId);
+    }
+
+    [Fact]
     public async Task Business_console_endpoint_rejects_context_mismatch_before_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -438,6 +455,16 @@ public sealed class BusinessGatewayAuthorizationTests
 
         return path switch
         {
+        "/api/business-console/v1/master-data/resources/sku/SKU-001/disable" or
+        "/api/business-console/v1/master-data/resources/sku/SKU-001/enable" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            resourceType = "sku",
+            code = "SKU-001",
+            idempotencyKey = "idem-master-data-lifecycle-authz",
+            reason = "authorization test",
+        },
         "/api/business-console/v1/inventory/count-tasks/count-001/adjustments" => new
         {
             organizationId = "org-001",
@@ -1109,6 +1136,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/operation-sops/current?operationCode=STD-MIX", BusinessGatewayPermissions.MesOperationsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/schedules/run", BusinessGatewayPermissions.MesSchedulesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/production-reports", BusinessGatewayPermissions.MesReportingWrite);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/production-reports/PR-001", BusinessGatewayPermissions.MesReportingRead);
         return routes;
     }
 

@@ -6,6 +6,9 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
+using Nerv.IIP.AppHub.Infrastructure;
 using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 
@@ -16,6 +19,120 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
     private const string InternalServiceBearerToken = "local-internal-service-token";
 
     [Fact]
+    public async Task Authorized_collection_health_query_returns_unknown_for_missing_connector()
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
+
+        using var response = await client.GetAsync("/internal/apphub/v1/connectors/missing/collection-health?organizationId=org&environmentId=env");
+        var body = await ReadResponseDataAsync<ConnectorCollectionHealthResponse>(response);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("unknown", body.Status);
+        Assert.Null(body.LastHeartbeatAtUtc);
+        Assert.Null(body.ReceivedCount);
+    }
+
+    [Fact]
+    public async Task Authorized_collection_health_query_marks_old_heartbeat_stale_and_returns_persisted_metrics()
+    {
+        var clock = new MutableTimeProvider(DateTimeOffset.Parse("2026-07-13T01:10:00Z"));
+        var databaseName = $"health-endpoint-{Guid.CreateVersion7():N}";
+        var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ApplicationDbContext>();
+            services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+            services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(clock);
+        }));
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var instance = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "opcua-main", "OPC", new Dictionary<string, string>(), []);
+        instance.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:00:00Z"), true, 3);
+        instance.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-main", "opcua", Guid.Parse("11111111-1111-1111-1111-111111111111"), DateTimeOffset.Parse("2026-07-13T01:01:00Z"), 12, 2, 1, DateTimeOffset.Parse("2026-07-13T01:00:59Z")));
+        db.ApplicationInstances.Add(instance);
+        await db.SaveChangesAsync();
+
+        var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
+        using var response = await client.GetAsync("/internal/apphub/v1/connectors/opcua-main/collection-health?organizationId=org&environmentId=env");
+        var body = await ReadResponseDataAsync<ConnectorCollectionHealthResponse>(response);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("stale", body.Status);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:00:00Z"), body.LastHeartbeatAtUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:01:00Z"), body.MetricsReportedAtUtc);
+        Assert.Equal(12, body.ReceivedCount);
+        Assert.Equal(2, body.DroppedCount);
+        Assert.Equal(1, body.ErrorCount);
+        Assert.Equal("opcua", body.SourceSystem);
+    }
+
+    [Fact]
+    public async Task Authorized_collection_health_query_marks_old_metrics_stale_while_heartbeat_remains_current()
+    {
+        var clock = new MutableTimeProvider(DateTimeOffset.Parse("2026-07-13T01:10:00Z"));
+        var databaseName = $"health-endpoint-{Guid.CreateVersion7():N}";
+        var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ApplicationDbContext>();
+            services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+            services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(clock);
+        }));
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var instance = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "opcua-main", "OPC", new Dictionary<string, string>(), []);
+        instance.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:00Z"), true, 3);
+        instance.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-main", "opcua", Guid.Parse("11111111-1111-1111-1111-111111111111"), DateTimeOffset.Parse("2026-07-13T01:01:00Z"), 12, 2, 1, DateTimeOffset.Parse("2026-07-13T01:00:59Z")));
+        db.ApplicationInstances.Add(instance);
+        await db.SaveChangesAsync();
+
+        var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
+        using var response = await client.GetAsync("/internal/apphub/v1/connectors/opcua-main/collection-health?organizationId=org&environmentId=env");
+        var body = await ReadResponseDataAsync<ConnectorCollectionHealthResponse>(response);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("stale", body.Status);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:09:00Z"), body.LastHeartbeatAtUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:01:00Z"), body.MetricsReportedAtUtc);
+    }
+
+    [Fact]
+    public async Task Authorized_collection_health_query_returns_unknown_when_heartbeat_exists_without_metrics()
+    {
+        var clock = new MutableTimeProvider(DateTimeOffset.Parse("2026-07-13T01:10:00Z"));
+        var scenario = CreateScenario("heartbeat-without-metrics");
+        var client = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(clock);
+        })).CreateClient();
+        client.DefaultRequestHeaders.Add("X-Connector-Host-Id", scenario.ConnectorHostId);
+        client.DefaultRequestHeaders.Add("X-Connector-Secret", "local-connector-secret");
+        client.DefaultRequestHeaders.Add("X-Organization-Id", scenario.OrganizationId);
+        client.DefaultRequestHeaders.Add("X-Environment-Id", scenario.EnvironmentId);
+
+        using var registration = await client.PostAsJsonAsync("/api/connectors/v1/registrations", CreateRegistration(scenario));
+        var ingestionToken = await ReadRegistrationIngestionTokenAsync(registration);
+        client.DefaultRequestHeaders.Remove("X-Connector-Secret");
+        client.DefaultRequestHeaders.Add("X-Connector-Ingestion-Token", ingestionToken);
+        using var heartbeat = await client.PostAsJsonAsync("/api/connectors/v1/heartbeats", CreateHeartbeat(scenario));
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
+
+        using var response = await client.GetAsync($"/internal/apphub/v1/connectors/{scenario.InstanceKey}/collection-health?organizationId={scenario.OrganizationId}&environmentId={scenario.EnvironmentId}");
+        var body = await ReadResponseDataAsync<ConnectorCollectionHealthResponse>(response);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("unknown", body.Status);
+        Assert.Equal(DateTimeOffset.Parse("2026-05-15T00:00:05Z"), body.LastHeartbeatAtUtc);
+        Assert.Null(body.MetricsReportedAtUtc);
+    }
+
+    [Fact]
     public async Task Instance_query_endpoints_require_internal_service_authorization()
     {
         var client = factory.CreateClient();
@@ -23,9 +140,11 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
 
         using var list = await client.PostAsJsonAsync("/internal/apphub/v1/instances/query", query);
         using var detail = await client.GetAsync("/internal/apphub/v1/instances/instance-missing?organizationId=org-unauthorized&environmentId=env-dev");
+        using var collectionHealth = await client.GetAsync("/internal/apphub/v1/connectors/connector-missing/collection-health?organizationId=org-unauthorized&environmentId=env-dev");
 
         Assert.Equal(HttpStatusCode.Unauthorized, list.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, detail.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, collectionHealth.StatusCode);
     }
 
     [Fact]

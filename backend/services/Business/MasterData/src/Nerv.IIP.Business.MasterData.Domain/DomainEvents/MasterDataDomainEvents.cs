@@ -21,11 +21,11 @@ public record MasterDataAggregateDisabledDomainEvent(
 
 public record SkuChangedDomainEvent(string OrganizationId, string EnvironmentId, string Code) : IDomainEvent;
 
-public record SkuDisabledDomainEvent(string OrganizationId, string EnvironmentId, string Code, string Reason) : IDomainEvent;
+public record SkuDisabledDomainEvent(string OrganizationId, string EnvironmentId, string Code, string Reason, string? OperationId = null) : IDomainEvent;
 
 public record UnitOfMeasureChangedDomainEvent(string OrganizationId, string EnvironmentId, string Code) : IDomainEvent;
 
-public record BusinessPartnerChangedDomainEvent(string OrganizationId, string EnvironmentId, string Code) : IDomainEvent;
+public record BusinessPartnerChangedDomainEvent(string OrganizationId, string EnvironmentId, string Code, string Status) : IDomainEvent;
 
 public record ResourceChangedDomainEvent(string ResourceType, string OrganizationId, string EnvironmentId, string Code) : IDomainEvent;
 

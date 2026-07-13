@@ -14,6 +14,11 @@ public sealed class ModbusTelemetryCollectorTests
             new ModbusRegisterSample(1, ModbusRegisterTable.HoldingRegisters, 40001, 20m, new DateTimeOffset(2026, 7, 5, 8, 0, 40, TimeSpan.Zero)));
         var samples = new RecordingIndustrialTelemetrySamplesClient();
         var connector = CreateConnector(modbus, samples, () => now);
+        var initialHealth = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!;
+        Assert.Null(initialHealth.ReceivedCount);
+        Assert.Null(initialHealth.DroppedCount);
+        Assert.Null(initialHealth.ErrorCount);
+        Assert.Null(initialHealth.LastSampleAtUtc);
 
         await connector.RunCollectionCycleAsync(CancellationToken.None);
 
@@ -33,6 +38,15 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Equal("modbus:modbus-line-1:temperature:1783238400000", request.SourceSequence);
         Assert.Equal("modbus", request.SourceSystem);
         Assert.Equal("connector-host-001/modbus-line-1", request.SourceConnector);
+        var health = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth;
+        Assert.NotNull(health);
+        Assert.Equal("modbus-modbus-line-1", health.ConnectorId);
+        Assert.Equal("modbus", health.SourceSystem);
+        Assert.NotEqual(Guid.Empty, health.CounterEpoch);
+        Assert.Equal(2, health.ReceivedCount);
+        Assert.Equal(0, health.DroppedCount);
+        Assert.Equal(0, health.ErrorCount);
+        Assert.Equal(new DateTimeOffset(2026, 7, 5, 8, 0, 40, TimeSpan.Zero), health.LastSampleAtUtc);
     }
 
     [Fact]
@@ -52,6 +66,7 @@ public sealed class ModbusTelemetryCollectorTests
         var request = Assert.Single(samples.Requests);
         Assert.Equal("modbus:modbus-line-1:temperature:1783238400000", request.SourceSequence);
         Assert.Equal(2, samples.WriteAttempts);
+        Assert.Equal(1, connector.CurrentState.ErrorCount);
     }
 
     [Fact]
@@ -79,7 +94,7 @@ public sealed class ModbusTelemetryCollectorTests
     }
 
     [Fact]
-    public async Task Run_cycle_marks_empty_register_read_as_dropped_without_reconnect()
+    public async Task Run_cycle_keeps_empty_register_read_unknown_without_fabricating_received_or_dropped()
     {
         var modbus = new SequencedModbusTcpClient([[]]);
         var connector = CreateConnector(modbus, new RecordingIndustrialTelemetrySamplesClient());
@@ -88,9 +103,23 @@ public sealed class ModbusTelemetryCollectorTests
 
         var target = Assert.Single(await connector.DiscoverAsync(CancellationToken.None));
         Assert.Equal("running", target.ReportedStatus);
-        Assert.Equal("degraded", target.HealthStatus);
-        Assert.Equal("1", target.Metadata["droppedSamples"]);
+        Assert.Equal("healthy", target.HealthStatus);
+        Assert.Null(target.CollectionHealth!.ReceivedCount);
+        Assert.Null(target.CollectionHealth.DroppedCount);
         Assert.Equal("0", target.Metadata["reconnectCount"]);
+    }
+
+    [Fact]
+    public async Task Invalid_raw_register_sample_counts_received_once_and_dropped_once()
+    {
+        var connector = CreateConnector(
+            new FakeModbusTcpClient(new ModbusRegisterSample(2, ModbusRegisterTable.HoldingRegisters, 40001, 10m, DateTimeOffset.Parse("2026-07-05T08:00:10Z"))),
+            new RecordingIndustrialTelemetrySamplesClient());
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        Assert.Equal(1, connector.CurrentState.ReceivedSamples);
+        Assert.Equal(1, connector.CurrentState.DroppedSamples);
     }
 
     private static ModbusConnector CreateConnector(

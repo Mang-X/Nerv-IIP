@@ -19,7 +19,7 @@ public sealed record NonconformanceReportDispositionDecidedDomainEvent(Nonconfor
 
 public sealed record NonconformanceReportInventoryDispositionRequestedDomainEvent(NonconformanceReport NonconformanceReport) : IDomainEvent;
 
-public sealed record NonconformanceReportClosedDomainEvent(NonconformanceReport NonconformanceReport) : IDomainEvent;
+public sealed record NonconformanceReportClosedDomainEvent(NonconformanceReport NonconformanceReport, string Reason) : IDomainEvent;
 
 public sealed record CorrectiveActionOpenedDomainEvent(CorrectiveAction CorrectiveAction) : IDomainEvent;
 

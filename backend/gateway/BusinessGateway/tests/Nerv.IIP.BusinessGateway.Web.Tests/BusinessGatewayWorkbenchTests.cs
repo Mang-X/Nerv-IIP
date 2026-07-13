@@ -109,8 +109,8 @@ public sealed class BusinessGatewayWorkbenchTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(new BusinessConsoleApprovalTaskListRequest("org-001", "env-dev", "user", "user-admin"), approval.LastRequest);
-        Assert.Equal(new BusinessConsoleNotificationListRequest("org-001", "env-dev", "user-admin", "unread", 20), notification.LastMessagesRequest);
-        Assert.Equal(new BusinessConsoleNotificationListRequest("org-001", "env-dev", "user-admin", "open", 20), notification.LastTasksRequest);
+        Assert.Equal(new BusinessConsoleNotificationListRequest("org-001", "env-dev", "user:user-admin", "unread", 20), notification.LastMessagesRequest);
+        Assert.Equal(new BusinessConsoleNotificationListRequest("org-001", "env-dev", "user:user-admin", "open", 20), notification.LastTasksRequest);
     }
 
     [Fact]

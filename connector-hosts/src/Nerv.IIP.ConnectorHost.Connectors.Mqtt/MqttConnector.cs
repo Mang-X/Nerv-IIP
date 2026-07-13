@@ -16,11 +16,13 @@ public sealed class MqttConnector(
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Func<DateTimeOffset> _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     private readonly TimeSpan _sealedBucketRetention = CalculateSealedBucketRetention(options.TopicMappings);
+    private readonly Guid _counterEpoch = Guid.CreateVersion7();
 
     public MqttConnectorState CurrentState { get; private set; } = new(
         "stopped",
         "unknown",
         "MQTT collector has not run yet.",
+        0,
         0,
         0,
         0,
@@ -66,6 +68,7 @@ public sealed class MqttConnector(
                 {
                     HealthStatus = "degraded",
                     Summary = "MQTT subscription failed; reconnecting.",
+                    ErrorCount = state.ErrorCount + 1,
                     ReconnectCount = state.ReconnectCount + 1
                 }, cancellationToken);
             }
@@ -75,6 +78,7 @@ public sealed class MqttConnector(
                 {
                     ReportedStatus = "stopped",
                     HealthStatus = "unhealthy",
+                    ErrorCount = state.ErrorCount + 1,
                     Summary = $"MQTT collection failed: {ex.Message}"
                 }, cancellationToken);
                 throw;
@@ -114,13 +118,22 @@ public sealed class MqttConnector(
                     new ConnectorCapability("runtime.status", "1.0", "runtime", ["inspect"]),
                     new ConnectorCapability("industrial-telemetry.ingest", "1.0", "telemetry", ["subscribe", "sample"])
                 ],
-                metadata)
+                metadata,
+                CreateCollectionHealth(state))
         ];
         return targets;
     }
 
+    private ConnectorCollectionHealthSnapshot CreateCollectionHealth(MqttConnectorState state)
+    {
+        var known = state.ReceivedSamples > 0 || state.DroppedSamples > 0 || state.ErrorCount > 0 || state.LastSampleAtUtc is not null;
+        return new($"mqtt-{options.ConnectorId}", "mqtt", _counterEpoch,
+            known ? state.ReceivedSamples : null, known ? state.DroppedSamples : null, known ? state.ErrorCount : null, state.LastSampleAtUtc);
+    }
+
     private async Task HandleMessageAsync(MqttInboundMessage message, CancellationToken cancellationToken)
     {
+        await RecordReceivedMessageAsync(message.ObservedAtUtc, cancellationToken);
         var matchedMappings = options.TopicMappings
             .Where(x => TopicMatches(x.TopicFilter, message.Topic))
             .ToArray();
@@ -130,19 +143,24 @@ public sealed class MqttConnector(
             return;
         }
 
+        var accepted = false;
         foreach (var mapping in matchedMappings)
         {
             if (!TryExtractDecimal(message.Payload, mapping.ValueJsonPath, out var value))
             {
-                await MarkDroppedSampleAsync(cancellationToken);
                 continue;
             }
 
-            await AddSampleAsync(mapping, value, message.ObservedAtUtc, cancellationToken);
+            accepted |= await AddSampleAsync(mapping, value, message.ObservedAtUtc, cancellationToken);
+        }
+
+        if (!accepted)
+        {
+            await MarkDroppedSampleAsync(cancellationToken);
         }
     }
 
-    private async Task AddSampleAsync(MqttTopicMapping mapping, decimal value, DateTimeOffset observedAtUtc, CancellationToken cancellationToken)
+    private async Task<bool> AddSampleAsync(MqttTopicMapping mapping, decimal value, DateTimeOffset observedAtUtc, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken);
         try
@@ -152,8 +170,7 @@ public sealed class MqttConnector(
             var bucketEndUtc = bucketStartUtc.AddSeconds(mapping.BucketSeconds);
             if (bucketEndUtc < _utcNow() - _sealedBucketRetention || _sealedBucketKeys.ContainsKey(bucketKey))
             {
-                MarkDroppedSample();
-                return;
+                return false;
             }
 
             if (!_buckets.TryGetValue(bucketKey, out var bucket))
@@ -163,16 +180,21 @@ public sealed class MqttConnector(
             }
 
             bucket.Add(value);
-            CurrentState = CurrentState with
-            {
-                ReceivedSamples = CurrentState.ReceivedSamples + 1,
-                LastSampleAtUtc = observedAtUtc
-            };
+            return true;
         }
         finally
         {
             _gate.Release();
         }
+    }
+
+    private async Task RecordReceivedMessageAsync(DateTimeOffset observedAtUtc, CancellationToken cancellationToken)
+    {
+        await UpdateStateAsync(state => state with
+        {
+            ReceivedSamples = state.ReceivedSamples + 1,
+            LastSampleAtUtc = observedAtUtc
+        }, cancellationToken);
     }
 
     private async Task FlushClosedBucketsAsync(DateTimeOffset nowUtc, CancellationToken cancellationToken)
