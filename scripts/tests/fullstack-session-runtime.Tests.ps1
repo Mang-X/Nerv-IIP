@@ -30,6 +30,8 @@ Assert-True (Test-Path -LiteralPath $parallelAcceptanceScript -PathType Leaf) 'P
 $parallelAcceptanceText = Get-Content -LiteralPath $parallelAcceptanceScript -Raw
 $fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
 Assert-True ($fullStackSessionText.Contains("ASPIRE_CLI_START_TIMEOUT'] = '300'")) 'Full-stack startup must extend the Aspire CLI handshake timeout.'
+Assert-True ($fullStackSessionText.Contains("MSBUILDDISABLENODEREUSE'] = '1'")) 'Full-stack startup must prevent reusable MSBuild worker accumulation.'
+Assert-True ($fullStackSessionText.Contains("DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'")) 'Full-stack startup must disable the persistent .NET build server.'
 Assert-True ($fullStackSessionText.Contains("'business-master-data'")) 'Full-stack startup must wait for the business service used by the browser smoke test.'
 foreach ($requiredText in @(
     '# Script-Governance:',
@@ -286,6 +288,20 @@ $dockerRetryResult = Invoke-NervDockerCleanupWithRetry `
     -DelayAction { param($Attempt) }
 Assert-True $dockerRetryResult.Complete 'Docker cleanup retry must return the successful result.'
 Assert-True ($script:dockerRetryCalls -eq 2) 'Docker cleanup must retry a transient incomplete result.'
+
+$script:aspireRetryCalls = 0
+$script:aspireRetryCleanupCalls = 0
+$aspireRetryResult = Invoke-NervAspireStartWithRetry `
+    -StartAction {
+        $script:aspireRetryCalls++
+        if ($script:aspireRetryCalls -eq 1) { throw 'MSB4166 system resource exhaustion' }
+        return 'started'
+    } `
+    -CleanupAction { $script:aspireRetryCleanupCalls++ } `
+    -DelayAction { param($Attempt) }
+Assert-True ($aspireRetryResult -eq 'started') 'Aspire startup retry must return the successful result.'
+Assert-True ($script:aspireRetryCalls -eq 2) 'Aspire startup must retry one transient MSBuild resource failure.'
+Assert-True ($script:aspireRetryCleanupCalls -eq 1) 'Aspire startup retry must clean the failed attempt first.'
 
 $stopStateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-stop-$([guid]::NewGuid().ToString('N'))"
 try {

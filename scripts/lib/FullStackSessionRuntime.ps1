@@ -755,6 +755,30 @@ function Invoke-NervDockerCleanupWithRetry {
     return $result
 }
 
+function Invoke-NervAspireStartWithRetry {
+    param(
+        [Parameter(Mandatory)] [scriptblock] $StartAction,
+        [Parameter(Mandatory)] [scriptblock] $CleanupAction,
+        [ValidateRange(1, 3)] [int] $MaximumAttempts = 2,
+        [scriptblock] $DelayAction
+    )
+
+    if ($null -eq $DelayAction) {
+        $DelayAction = { param($Attempt) Start-Sleep -Seconds 5 }
+    }
+
+    for ($attempt = 1; $attempt -le $MaximumAttempts; $attempt++) {
+        try { return (& $StartAction) }
+        catch {
+            $message = "$($_.Exception.Message)"
+            $isTransientBuildResourceFailure = $message -match 'MSB4166|system resource|系统资源不足'
+            if (-not $isTransientBuildResourceFailure -or $attempt -ge $MaximumAttempts) { throw }
+            & $CleanupAction
+            & $DelayAction $attempt
+        }
+    }
+}
+
 function Stop-NervFullStackSession {
     param(
         [Parameter(Mandatory)] [string] $SessionId,

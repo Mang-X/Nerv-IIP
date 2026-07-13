@@ -143,6 +143,8 @@ function Start-NervFullStackSession {
 
         $sessionEnvironment = Get-NervFullStackEnvironment -SessionId $newSessionId
         $sessionEnvironment['ASPIRE_CLI_START_TIMEOUT'] = '300'
+        $sessionEnvironment['MSBUILDDISABLENODEREUSE'] = '1'
+        $sessionEnvironment['DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'
         $secretSet = New-NervFullStackSecretEnvironment -SessionId $newSessionId
         $suppliedAdminPassword = if (-not [string]::IsNullOrWhiteSpace($SessionAdminPassword)) {
             $SessionAdminPassword
@@ -161,11 +163,24 @@ function Start-NervFullStackSession {
             foreach ($entry in $secretSet.Environment.GetEnumerator()) { Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value }
             $arguments = @('start', '--isolated', '--format', 'Json', '--apphost', $appHostProject, '--non-interactive', '--nologo')
             if ($NoBuild) { $arguments += '--no-build' }
-            $startResult = Invoke-AspireOutput `
-                -Arguments $arguments `
-                -WorkingDirectory $repoRoot `
-                -TimeoutSeconds 660 `
-                -Name "fullstack-$newSessionId-aspire-start"
+            $startResult = Invoke-NervAspireStartWithRetry `
+                -StartAction {
+                    Invoke-AspireOutput `
+                        -Arguments $arguments `
+                        -WorkingDirectory $repoRoot `
+                        -TimeoutSeconds 660 `
+                        -Name "fullstack-$newSessionId-aspire-start"
+                } `
+                -CleanupAction {
+                    try {
+                        Invoke-AspireOutput `
+                            -Arguments @('stop', '--apphost', $appHostProject, '--non-interactive', '--nologo') `
+                            -WorkingDirectory $repoRoot `
+                            -TimeoutSeconds 150 `
+                            -Name "fullstack-$newSessionId-transient-start-stop" | Out-Null
+                    }
+                    catch { }
+                }
             $startObject = Read-NervAspireJson -Text "$($startResult.Stdout)"
             $identity = Get-NervAspireStartIdentity -StartObject $startObject
 
