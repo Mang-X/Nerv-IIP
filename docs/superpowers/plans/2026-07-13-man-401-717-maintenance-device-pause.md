@@ -68,5 +68,5 @@
 
 - [x] Run MasterData and Maintenance focused test projects and schema gates; run the necessary backend solution gate before publishing.
 - [x] Inspect `git diff` and confirm Scheduling, MES, generated OpenAPI, and public contract files are untouched.
-- [ ] Invoke `verification-before-completion` and request an independent code review; resolve all critical/important findings.
-- [ ] Commit, push, and create a PR titled with `MAN-401 #717`, using `Refs #717` and the required Fix/Tests/Risk/OpenAPI or schema impact sections.
+- [x] Invoke `verification-before-completion` and request an independent code review; resolve all critical/important findings.
+- [ ] After PR #904 leaves the open write set, rebase onto refreshed `origin/main`, re-run final verification, then push and create a PR titled with `MAN-401 #717`, using `Refs #717` and the required Fix/Tests/Risk/OpenAPI or schema impact sections.
