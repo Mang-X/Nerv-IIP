@@ -18,11 +18,21 @@ function Assert-True([bool] $Condition, [string] $Message) {
 }
 
 Assert-True ($null -ne (Get-Command Get-NervFullStackContainerRecords -ErrorAction SilentlyContinue)) 'Shared runtime must expose current session container discovery.'
+Assert-True ($null -ne (Get-Command Merge-NervSessionContainerIds -ErrorAction SilentlyContinue)) 'Cleanup must merge recorded and label-discovered containers.'
 
 $sessionId = 'nerv-abcd-123456'
 $fixturePath = Join-Path $PSScriptRoot 'fixtures/fullstack/docker-resources.json'
 $inspectObjects = @(Get-Content -LiteralPath $fixturePath -Raw | ConvertFrom-Json)
 $recordedContainerIds = @('owned-container-id', 'unlabeled-container-id')
+$mergedContainerIds = @(Merge-NervSessionContainerIds `
+    -RecordedIds @('recorded') `
+    -DiscoveredRecords @([pscustomobject]@{ id = 'discovered' }, [pscustomobject]@{ id = 'recorded' }))
+Assert-True ($mergedContainerIds.Count -eq 2) 'Container cleanup candidates must include recorded and label-discovered IDs without duplicates.'
+Assert-True ($mergedContainerIds -ccontains 'discovered') 'A partially started label-discovered container must be recoverable.'
+$discoveredNetworkIds = @(Get-NervContainerNetworkIds -Containers @(
+    [pscustomobject]@{ NetworkSettings = [pscustomobject]@{ Networks = [pscustomobject]@{ session = [pscustomobject]@{ NetworkID = 'network-from-owned-container' } } } }
+))
+Assert-True ($discoveredNetworkIds -ccontains 'network-from-owned-container') 'Networks attached to label-owned containers must be recoverable after partial startup.'
 $startFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-start.json'
 $describeFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-describe.json'
 $parallelAcceptanceScript = Join-Path $repoRoot 'scripts/verify-parallel-fullstack-isolation.ps1'
@@ -313,9 +323,10 @@ $worktreeProcessResult = Stop-NervWorktreeProcesses `
     -ExcludedProcessIds @(102) `
     -ProcessQueryAction {
         @(
-            [pscustomobject]@{ ProcessId = 101; CommandLine = 'dotnet run --project C:\nfs\fullstack-worktrees\abcd1234\s2\backend\service.csproj' },
-            [pscustomobject]@{ ProcessId = 102; CommandLine = 'node C:\nfs\fullstack-worktrees\abcd1234\s2\frontend\vite.js' },
-            [pscustomobject]@{ ProcessId = 103; CommandLine = 'dotnet run --project C:\other\service.csproj' }
+            [pscustomobject]@{ ProcessId = 101; Name = 'dotnet.exe'; CommandLine = 'dotnet run --project C:\nfs\fullstack-worktrees\abcd1234\s2\backend\service.csproj' },
+            [pscustomobject]@{ ProcessId = 102; Name = 'node.exe'; CommandLine = 'node C:\nfs\fullstack-worktrees\abcd1234\s2\frontend\vite.js' },
+            [pscustomobject]@{ ProcessId = 103; Name = 'dotnet.exe'; CommandLine = 'dotnet run --project C:\other\service.csproj' },
+            [pscustomobject]@{ ProcessId = 104; Name = 'pwsh.exe'; CommandLine = 'pwsh -File C:\nfs\fullstack-worktrees\abcd1234\s2\scripts\operator.ps1' }
         )
     } `
     -StopAction { param($ProcessId, $Reason) $script:worktreeStoppedPids.Add($ProcessId) }
@@ -353,6 +364,26 @@ try {
     Assert-True ($script:dockerStopCalls -eq 2) 'Repeated stop must still verify exact recorded Docker resources.'
     $stoppedManifest = Read-NervFullStackManifest -SessionId $stopSessionId -StateRoot $stopStateRoot
     Assert-True ($stoppedManifest.state -eq 'Stopped') 'A complete stop must persist Stopped.'
+
+    $failedStopSessionId = 'nerv-dead-000004'
+    $failedStopManifest = New-NervFullStackManifest `
+        -SessionId $failedStopSessionId `
+        -WorktreeRoot $repoRoot `
+        -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
+        -ArtifactPath (Join-Path $repoRoot "artifacts/fullstack/$failedStopSessionId") `
+        -StateRoot $stopStateRoot
+    $failedStopManifest = Move-NervFullStackSessionState -Manifest $failedStopManifest -State Running
+    Write-NervFullStackManifest -Manifest $failedStopManifest -StateRoot $stopStateRoot
+    $failedStop = Stop-NervFullStackSession `
+        -SessionId $failedStopSessionId `
+        -StateRoot $stopStateRoot `
+        -AspireStopAction { param($Manifest) throw 'aspire stop failed' } `
+        -ProcessStopAction { param($Manifest) throw 'process stop failed' } `
+        -DockerRemoveAction { param($Manifest) [pscustomobject]@{ Complete = $true; Remaining = @() } }
+    Assert-True (-not $failedStop.Complete) 'Aspire or process cleanup errors must prevent a successful stop result.'
+    Assert-True ($failedStop.Manifest.state -eq 'CleanupFailed') 'Aspire or process cleanup errors must persist CleanupFailed.'
+    Assert-True ($failedStop.Remaining -ccontains 'aspire:stop-failed') 'Aspire cleanup failure must be explicit.'
+    Assert-True ($failedStop.Remaining -ccontains 'process:stop-failed') 'Process cleanup failure must be explicit.'
 }
 finally {
     Remove-Item -LiteralPath $stopStateRoot -Recurse -Force -ErrorAction SilentlyContinue

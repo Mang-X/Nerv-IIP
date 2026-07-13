@@ -124,10 +124,16 @@ function Start-NervFullStackSession {
         }
 
         $newSessionId = if ([string]::IsNullOrWhiteSpace($SessionId)) {
-            New-NervFullStackSessionId -WorktreeRoot $repoRoot
+            do {
+                $candidateSessionId = New-NervFullStackSessionId -WorktreeRoot $repoRoot
+            } while (-not (Test-NervFullStackSessionIdAvailable -SessionId $candidateSessionId))
+            $candidateSessionId
         }
         else {
             [void] (Get-NervFullStackManifestPath -SessionId $SessionId)
+            if (-not (Test-NervFullStackSessionIdAvailable -SessionId $SessionId)) {
+                throw "Full-stack session ID '$SessionId' already exists and cannot be overwritten."
+            }
             $SessionId
         }
         $appHostProject = Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
@@ -141,7 +147,14 @@ function Start-NervFullStackSession {
             -LeaseMinutes (Get-NervFullStackLeaseMinutes)
         Write-NervFullStackManifest -Manifest $manifest
 
-        $sessionEnvironment = Get-NervFullStackEnvironment -SessionId $newSessionId
+        return $manifest
+    }
+
+    $manifest = $createdManifest
+    $newSessionId = "$($manifest.sessionId)"
+    $appHostProject = "$($manifest.appHostProject)"
+
+    $sessionEnvironment = Get-NervFullStackEnvironment -SessionId $newSessionId
         $sessionEnvironment['ASPIRE_CLI_START_TIMEOUT'] = '300'
         $sessionEnvironment['MSBUILDDISABLENODEREUSE'] = '1'
         $sessionEnvironment['DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'
@@ -152,12 +165,21 @@ function Start-NervFullStackSession {
         else {
             $env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD
         }
+        $childEnvironmentKeys = @(
+            @($sessionEnvironment.Keys) + @($secretSet.Environment.Keys) + @('NERV_IIP_FULLSTACK_ADMIN_PASSWORD') |
+                Select-Object -Unique
+        )
+        $originalEnvironment = @{}
+        foreach ($key in $childEnvironmentKeys) {
+            $originalEnvironment[$key] = [pscustomobject]@{
+                HadValue = Test-Path -LiteralPath "Env:$key"
+                Value = [Environment]::GetEnvironmentVariable($key, 'Process')
+            }
+        }
         Remove-Item Env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD -ErrorAction SilentlyContinue
         if (-not [string]::IsNullOrWhiteSpace($suppliedAdminPassword)) {
             $secretSet.Environment['Parameters__iam-seed-admin-password'] = $suppliedAdminPassword
         }
-        $childEnvironmentKeys = @($sessionEnvironment.Keys) + @($secretSet.Environment.Keys)
-
         try {
             foreach ($entry in $sessionEnvironment.GetEnumerator()) { Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value }
             foreach ($entry in $secretSet.Environment.GetEnumerator()) { Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value }
@@ -244,23 +266,31 @@ function Start-NervFullStackSession {
             $manifest.failure = [ordered]@{ atUtc = [DateTimeOffset]::UtcNow.ToString('O'); message = $safeError }
             Write-NervFullStackManifest -Manifest $manifest
             try {
-                Invoke-AspireOutput `
-                    -Arguments @('stop', '--apphost', $appHostProject, '--non-interactive', '--nologo') `
-                    -WorkingDirectory $repoRoot `
-                    -TimeoutSeconds 150 `
-                    -Name "fullstack-$newSessionId-start-failure-stop" | Out-Null
+                $cleanupResult = Stop-NervFullStackSession -SessionId $newSessionId
+                if (-not $cleanupResult.Complete) {
+                    throw "Startup cleanup remains incomplete: $($cleanupResult.Remaining -join ', ')."
+                }
             }
-            catch { }
+            catch {
+                $cleanupError = Protect-ScriptAutomationText -Text "$($_.Exception.Message)"
+                throw "$safeError Startup cleanup failed: $cleanupError"
+            }
             throw $safeError
         }
         finally {
-            foreach ($key in $childEnvironmentKeys) { Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue }
+            foreach ($key in $childEnvironmentKeys) {
+                if ($originalEnvironment[$key].HadValue) {
+                    Set-Item -LiteralPath "Env:$key" -Value $originalEnvironment[$key].Value
+                }
+                else {
+                    Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue
+                }
+            }
             $secretSet.Environment.Clear()
             $suppliedAdminPassword = $null
             $secretSet = $null
         }
-        return $manifest
-    }
+    $createdManifest = $manifest
 
     if ($PassThru) { return $createdManifest }
 

@@ -62,6 +62,16 @@ function Get-NervFullStackManifestPath {
     return (Join-Path ([System.IO.Path]::GetFullPath($StateRoot)) "fullstack-sessions/$SessionId.json")
 }
 
+function Test-NervFullStackSessionIdAvailable {
+    param(
+        [Parameter(Mandatory)] [string] $SessionId,
+        [string] $StateRoot = (Get-NervFullStackStateRoot)
+    )
+
+    $path = Get-NervFullStackManifestPath -SessionId $SessionId -StateRoot $StateRoot
+    return -not (Test-Path -LiteralPath $path)
+}
+
 function New-NervFullStackManifest {
     param(
         [Parameter(Mandatory)] [string] $SessionId,

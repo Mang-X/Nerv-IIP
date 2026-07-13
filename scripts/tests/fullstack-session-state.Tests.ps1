@@ -26,6 +26,8 @@ try {
     Assert-True (-not ($manifest | ConvertTo-Json -Depth 20).Contains('connectionString')) 'Manifest must not contain connection strings.'
 
     Write-NervFullStackManifest -Manifest $manifest -StateRoot $testRoot
+    Assert-True (-not (Test-NervFullStackSessionIdAvailable -SessionId $sessionId -StateRoot $testRoot)) 'An existing session ID must never be available for overwrite.'
+    Assert-True (Test-NervFullStackSessionIdAvailable -SessionId 'nerv-abcd-654321' -StateRoot $testRoot) 'An unused valid session ID must be available.'
     $reloaded = Read-NervFullStackManifest -SessionId $sessionId -StateRoot $testRoot
     Assert-True ($reloaded.sessionId -eq $sessionId) 'Atomic manifest round-trip failed.'
 

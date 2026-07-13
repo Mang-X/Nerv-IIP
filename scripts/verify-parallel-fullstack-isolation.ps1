@@ -46,6 +46,20 @@ function Stop-AcceptanceStartProcess([object] $Record) {
     [void] $process.WaitForExit(10000)
 }
 
+function Get-AcceptanceWorktreeProcessCount([string] $WorktreePath) {
+    if (-not $IsWindows) { return 0 }
+    $normalizedRoot = [System.IO.Path]::GetFullPath($WorktreePath).Replace('/', '\').TrimEnd('\') + '\'
+    $allowedNames = @('dotnet.exe', 'node.exe', 'aspire.exe', 'dcp.exe')
+    return @(
+        Get-CimInstance Win32_Process |
+            Where-Object {
+                $allowedNames -ccontains "$($_.Name)".ToLowerInvariant() -and
+                -not [string]::IsNullOrWhiteSpace("$($_.CommandLine)") -and
+                "$($_.CommandLine)".Replace('/', '\').Contains($normalizedRoot, [StringComparison]::OrdinalIgnoreCase)
+            }
+    ).Count
+}
+
 function Remove-AcceptanceWorktree([string] $WorktreePath, [string] $WorktreeParent, [int] $Index) {
     Assert-Acceptance (Test-PathBelow -Path $WorktreePath -Parent $WorktreeParent) "Refusing unsafe worktree removal '$WorktreePath'."
     try {
@@ -178,6 +192,7 @@ try {
 
     Wait-AcceptanceSessions -Records @($records)
     foreach ($record in $records) { $record.Manifest = Read-NervFullStackManifest -SessionId $record.SessionId }
+    Assert-Acceptance (@($records.AdminPassword | Select-Object -Unique).Count -eq $Sessions) 'Each session must use a unique IAM seed password for cross-proxy isolation proof.'
 
     if ($InjectFailure) {
         $injectedFailureObserved = $true
@@ -268,6 +283,14 @@ finally {
                     -Name "parallel-fullstack-final-stop-$($record.Index)" | Out-Null
                 $manifest = Read-NervFullStackManifest -SessionId $record.SessionId
                 Assert-Acceptance ("$($manifest.state)" -eq 'Stopped') "Session '$($record.SessionId)' did not stop."
+                $remainingResources = Get-NervSessionDockerResources -Manifest $manifest -WorkingDirectory $record.WorktreePath
+                Assert-Acceptance (
+                    @($remainingResources.Containers).Count -eq 0 -and
+                    @($remainingResources.Networks).Count -eq 0 -and
+                    @($remainingResources.Volumes).Count -eq 0 -and
+                    @($remainingResources.Unresolved).Count -eq 0
+                ) "Session '$($record.SessionId)' retained Docker resources after cleanup."
+                Assert-Acceptance ((Get-AcceptanceWorktreeProcessCount -WorktreePath $record.WorktreePath) -eq 0) "Session '$($record.SessionId)' retained Aspire, node, or dotnet processes after cleanup."
                 $archivePath = Join-Path $archiveRoot $record.SessionId
                 if (Test-Path -LiteralPath "$($manifest.artifactPath)" -PathType Container) {
                     Copy-Item -LiteralPath "$($manifest.artifactPath)" -Destination $archivePath -Recurse -Force

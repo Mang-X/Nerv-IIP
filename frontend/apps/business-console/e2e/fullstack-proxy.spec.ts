@@ -23,6 +23,10 @@ test('dynamic origin uses both same-origin gateway proxies @smoke', async ({ pag
   const login = await loginResponse
   expect(login.status()).toBeGreaterThanOrEqual(200)
   expect(login.status()).toBeLessThan(300)
+  // Each full-stack session has a unique admin password and JWT signing key. A platform
+  // proxy routed to another session fails this login; a business proxy routed to another
+  // session rejects the resulting bearer token. The two successful responses therefore
+  // prove both proxy targets belong to this session, not only that they are same-origin.
   await expect(page).toHaveURL(new URL('/', baseURL!).toString())
 
   const skuResponse = page.waitForResponse(

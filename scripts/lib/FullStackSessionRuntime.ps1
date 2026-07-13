@@ -608,6 +608,35 @@ function Get-NervFullStackContainerRecords {
     })
 }
 
+function Merge-NervSessionContainerIds {
+    param(
+        [object[]] $RecordedIds = @(),
+        [object[]] $DiscoveredRecords = @()
+    )
+
+    return @(
+        @($RecordedIds | ForEach-Object { "$_" }) +
+            @($DiscoveredRecords | ForEach-Object { "$($_.id)" }) |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            Select-Object -Unique
+    )
+}
+
+function Get-NervContainerNetworkIds {
+    param([object[]] $Containers = @())
+
+    return @(
+        foreach ($container in $Containers) {
+            $networks = $container.NetworkSettings.Networks
+            if ($null -eq $networks) { continue }
+            foreach ($property in $networks.PSObject.Properties) {
+                $networkId = "$($property.Value.NetworkID)"
+                if (-not [string]::IsNullOrWhiteSpace($networkId)) { $networkId }
+            }
+        }
+    ) | Select-Object -Unique
+}
+
 function Get-NervSessionDockerResources {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
@@ -623,17 +652,21 @@ function Get-NervSessionDockerResources {
     $recordedNetworkIds = @($Manifest.runtime.networkIds | ForEach-Object { "$_" })
     $recordedVolumeNames = @($Manifest.runtime.volumeNames | ForEach-Object { "$_" })
     $unresolved = [System.Collections.Generic.List[string]]::new()
+    $discoveredNetworkIds = @()
 
     try {
+        $discoveredContainers = @(Get-NervFullStackContainerRecords -OwnedSessionId $sessionId -WorkingDirectory $WorkingDirectory)
+        $candidateContainerIds = @(Merge-NervSessionContainerIds -RecordedIds $recordedContainerIds -DiscoveredRecords $discoveredContainers)
         $listedContainerIds = Get-NervDockerListedValues -Arguments @('container', 'ls', '-a', '--no-trunc', '--format', '{{.ID}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-container-list"
-        $presentContainerIds = @($recordedContainerIds | Where-Object { $listedContainerIds -ccontains $_ })
+        $presentContainerIds = @($candidateContainerIds | Where-Object { $listedContainerIds -ccontains $_ })
         $containerInspect = if ($presentContainerIds.Count -gt 0) {
             @(Get-NervDockerInspectObjects -Kind container -Identifiers $presentContainerIds -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-container-inspect")
         }
         else { @() }
         $containers = @($containerInspect | Where-Object {
-            Test-NervDockerResourceOwnership -InspectObject $_ -SessionId $sessionId -RecordedIds $recordedContainerIds
+            Test-NervDockerResourceOwnership -InspectObject $_ -SessionId $sessionId -RecordedIds $candidateContainerIds
         })
+        $discoveredNetworkIds = @(Get-NervContainerNetworkIds -Containers $containers)
         $ownedContainerIds = @($containers | ForEach-Object { "$($_.Id)" })
         foreach ($id in $presentContainerIds) {
             if ($ownedContainerIds -cnotcontains $id) { $unresolved.Add("container:$id") }
@@ -645,14 +678,16 @@ function Get-NervSessionDockerResources {
     }
 
     try {
+        $candidateNetworkIds = @($recordedNetworkIds + $discoveredNetworkIds | Select-Object -Unique)
         $listedNetworkIds = Get-NervDockerListedValues -Arguments @('network', 'ls', '--no-trunc', '--format', '{{.ID}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-network-list"
-        $presentNetworkIds = @($recordedNetworkIds | Where-Object { $listedNetworkIds -ccontains $_ })
+        $presentNetworkIds = @($candidateNetworkIds | Where-Object { $listedNetworkIds -ccontains $_ })
         $networkInspect = if ($presentNetworkIds.Count -gt 0) {
             @(Get-NervDockerInspectObjects -Kind network -Identifiers $presentNetworkIds -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-network-inspect")
         }
         else { @() }
         $networks = @($networkInspect | Where-Object {
-            Test-NervDockerResourceOwnership -InspectObject $_ -SessionId $sessionId -RecordedIds $recordedNetworkIds
+            $candidateNetworkIds -ccontains "$($_.Id)" -and
+                (Test-NervDockerOptionalSessionLabel -Labels $_.Labels -SessionId $sessionId)
         })
         $ownedNetworkIds = @($networks | ForEach-Object { "$($_.Id)" })
         foreach ($id in $presentNetworkIds) {
@@ -790,7 +825,7 @@ function Stop-NervWorktreeProcesses {
     if ($null -eq $ProcessQueryAction) {
         $ProcessQueryAction = {
             if (-not $IsWindows) { return @() }
-            return @(Get-CimInstance Win32_Process | Select-Object ProcessId, CommandLine)
+            return @(Get-CimInstance Win32_Process | Select-Object ProcessId, Name, CommandLine)
         }
     }
     if ($null -eq $StopAction) {
@@ -802,10 +837,12 @@ function Stop-NervWorktreeProcesses {
 
     $normalizedRoot = [System.IO.Path]::GetFullPath($WorktreeRoot).Replace('/', '\').TrimEnd('\') + '\'
     $excluded = @($ExcludedProcessIds | ForEach-Object { [int] $_ })
+    $allowedProcessNames = @('dotnet', 'dotnet.exe', 'node', 'node.exe', 'aspire', 'aspire.exe', 'dcp', 'dcp.exe')
     $stopped = [System.Collections.Generic.List[int]]::new()
     foreach ($process in @(& $ProcessQueryAction)) {
         $processId = [int] $process.ProcessId
         if ($processId -le 0 -or $excluded -contains $processId) { continue }
+        if ($allowedProcessNames -cnotcontains "$($process.Name)".ToLowerInvariant()) { continue }
         $commandLine = "$($process.CommandLine)".Replace('/', '\')
         if ([string]::IsNullOrWhiteSpace($commandLine) -or -not $commandLine.Contains($normalizedRoot, [StringComparison]::OrdinalIgnoreCase)) { continue }
         & $StopAction $processId "Exact worktree process cleanup for $normalizedRoot"
@@ -881,9 +918,16 @@ function Stop-NervFullStackSession {
     }
 
     $errors = [System.Collections.Generic.List[string]]::new()
+    $cleanupFailures = [System.Collections.Generic.List[string]]::new()
     if (-not $wasStopped) {
-        try { & $AspireStopAction $manifest } catch { $errors.Add((Protect-ScriptAutomationText -Text "$($_.Exception.Message)")) }
-        try { & $ProcessStopAction $manifest } catch { $errors.Add((Protect-ScriptAutomationText -Text "$($_.Exception.Message)")) }
+        try { & $AspireStopAction $manifest } catch {
+            $errors.Add((Protect-ScriptAutomationText -Text "$($_.Exception.Message)"))
+            $cleanupFailures.Add('aspire:stop-failed')
+        }
+        try { & $ProcessStopAction $manifest } catch {
+            $errors.Add((Protect-ScriptAutomationText -Text "$($_.Exception.Message)"))
+            $cleanupFailures.Add('process:stop-failed')
+        }
     }
 
     try {
@@ -893,8 +937,11 @@ function Stop-NervFullStackSession {
         $errors.Add((Protect-ScriptAutomationText -Text "$($_.Exception.Message)"))
         $dockerResult = [pscustomobject]@{ Complete = $false; Remaining = @('docker:inspection-failed') }
     }
-    $remaining = @($dockerResult.Remaining | ForEach-Object { "$_" } | Select-Object -Unique)
-    $complete = [bool] $dockerResult.Complete -and $remaining.Count -eq 0
+    $remaining = @(
+        @($cleanupFailures) + @($dockerResult.Remaining | ForEach-Object { "$_" }) |
+            Select-Object -Unique
+    )
+    $complete = $errors.Count -eq 0 -and [bool] $dockerResult.Complete -and $remaining.Count -eq 0
 
     $manifest = Invoke-WithNervFullStackSessionLock -StateRoot $StateRoot -ScriptBlock {
         $lockedManifest = Read-NervFullStackManifest -SessionId $SessionId -StateRoot $StateRoot
