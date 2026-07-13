@@ -33,4 +33,3 @@ The MasterData domain event carries the status already known by the aggregate (`
 - ERP focused tests drive a real event through the handler, persist the projection, replay the event, verify stale-event protection, and prove subsequent PO/SO creation is rejected while re-enable permits creation.
 - A PostgreSQL-gated acceptance test migrates a disposable ERP schema and proves event consumption changes both order behaviors against the real provider when `NERV_IIP_TEST_POSTGRES` is set.
 - ERP schema convention tests, affected service suites, and backend solution gates remain required.
-
