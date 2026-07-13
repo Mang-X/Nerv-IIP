@@ -42,6 +42,22 @@ try {
     $reloaded.leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O')
     Assert-True (Test-NervFullStackSessionStale -Manifest $reloaded -Now ([DateTimeOffset]::UtcNow)) 'Expired lease must be stale.'
 
+    $reloaded.leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(30).ToString('O')
+    $reloaded.coordinator = $null
+    Assert-True (Test-NervFullStackSessionStale -Manifest $reloaded) 'A missing coordinator must be stale.'
+    $currentProcess = Get-Process -Id $PID
+    $reloaded.coordinator = [pscustomobject]@{
+        pid = $PID
+        processStartTimeUtc = $currentProcess.StartTime.ToUniversalTime().AddMinutes(-1).ToString('O')
+    }
+    Assert-True (Test-NervFullStackSessionStale -Manifest $reloaded) 'A reused PID with another start time must be stale.'
+    $reloaded.coordinator.processStartTimeUtc = $currentProcess.StartTime.ToUniversalTime().ToString('O')
+    Assert-True (-not (Test-NervFullStackSessionStale -Manifest $reloaded)) 'A live coordinator with a valid lease must not be stale.'
+    Write-NervFullStackManifest -Manifest $reloaded -StateRoot $testRoot
+    Assert-True (@(Get-NervStaleFullStackSessions -StateRoot $testRoot).Count -eq 0) 'A live session must never be selected for GC.'
+    $reloaded.state = 'Stopped'
+    Assert-True (-not (Test-NervFullStackSessionStale -Manifest $reloaded)) 'A stopped session must not be stale.'
+
     $script:lockCount = 0
     Invoke-WithNervFullStackSessionLock -StateRoot $testRoot -ScriptBlock { $script:lockCount++ }
     Assert-True ($script:lockCount -eq 1) 'Session lock must execute its body once.'

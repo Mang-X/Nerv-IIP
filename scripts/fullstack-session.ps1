@@ -86,7 +86,50 @@ function Get-NervFullStackContainerRecords {
     })
 }
 
+function Get-NervFullStackGuardianIntervalSeconds {
+    if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULLSTACK_GUARDIAN_INTERVAL_SECONDS)) { return 60 }
+    $seconds = 0
+    if (-not [int]::TryParse($env:NERV_IIP_FULLSTACK_GUARDIAN_INTERVAL_SECONDS, [ref] $seconds) -or $seconds -lt 1 -or $seconds -gt 3600) {
+        throw 'NERV_IIP_FULLSTACK_GUARDIAN_INTERVAL_SECONDS must be an integer from 1 through 3600.'
+    }
+    return $seconds
+}
+
+function Start-NervFullStackGuardian {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [ValidateSet('Automated', 'Interactive')] [string] $Mode,
+        [int] $CoordinatorPid,
+        [string] $CoordinatorStartTimeUtc
+    )
+
+    $guardianScript = Join-Path $repoRoot 'scripts/fullstack-guardian.ps1'
+    $arguments = @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $guardianScript,
+        '-SessionId', "$($Manifest.sessionId)",
+        '-Mode', $Mode,
+        '-IntervalSeconds', "$(Get-NervFullStackGuardianIntervalSeconds)",
+        '-StateRoot', (Get-NervFullStackStateRoot)
+    )
+    if ($Mode -eq 'Automated') {
+        $arguments += @('-CoordinatorPid', "$CoordinatorPid", '-CoordinatorStartTimeUtc', $CoordinatorStartTimeUtc)
+    }
+    return (Start-DetachedManagedProcess `
+        -Command (Get-Process -Id $PID).Path `
+        -Arguments $arguments `
+        -WorkingDirectory $repoRoot `
+        -StdoutPath (Join-Path "$($Manifest.artifactPath)" 'guardian.stdout.log') `
+        -StderrPath (Join-Path "$($Manifest.artifactPath)" 'guardian.stderr.log'))
+}
+
 function Start-NervFullStackSession {
+    $staleSessionIds = @(Invoke-WithNervFullStackSessionLock -ScriptBlock {
+        return @(Get-NervStaleFullStackSessions | ForEach-Object { "$($_.sessionId)" })
+    })
+    foreach ($staleSessionId in $staleSessionIds) {
+        [void] (Stop-NervFullStackSession -SessionId $staleSessionId)
+    }
+
     $createdManifest = Invoke-WithNervFullStackSessionLock -ScriptBlock {
         $admission = Test-NervFullStackAdmission -WorktreeRoot $repoRoot
         if (-not $admission.Allowed) {
@@ -107,7 +150,8 @@ function Start-NervFullStackSession {
             -SessionId $newSessionId `
             -WorktreeRoot $repoRoot `
             -AppHostProject $appHostProject `
-            -ArtifactPath $artifactPath
+            -ArtifactPath $artifactPath `
+            -LeaseMinutes (Get-NervFullStackLeaseMinutes)
         Write-NervFullStackManifest -Manifest $manifest
 
         $sessionEnvironment = Get-NervFullStackEnvironment -SessionId $newSessionId
@@ -164,7 +208,18 @@ function Start-NervFullStackSession {
             $describe = Get-NervAspireDescribeObject -AppHostProject $appHostProject -WorkingDirectory $repoRoot
             $manifest = Save-NervFullStackEndpoints -Manifest $manifest -DescribeObject $describe
             $manifest = Move-NervFullStackSessionState -Manifest $manifest -State Running
-            $manifest = Renew-NervFullStackLease -Manifest $manifest
+            $manifest = Renew-NervFullStackLease -Manifest $manifest -LeaseMinutes (Get-NervFullStackLeaseMinutes)
+            Write-NervFullStackManifest -Manifest $manifest
+            $guardianIdentity = Start-NervFullStackGuardian -Manifest $manifest -Mode Interactive
+            $manifest.guardian = [ordered]@{
+                pid = $guardianIdentity.Pid
+                processStartTimeUtc = $guardianIdentity.ProcessStartTimeUtc
+                mode = 'Interactive'
+            }
+            $manifest.coordinator = [ordered]@{
+                pid = $guardianIdentity.Pid
+                processStartTimeUtc = $guardianIdentity.ProcessStartTimeUtc
+            }
             Write-NervFullStackManifest -Manifest $manifest
         }
         catch {
@@ -219,7 +274,7 @@ try {
         'status' {
             $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
             $manifest = Read-NervFullStackManifest -SessionId $resolvedSessionId
-            $manifest = Renew-NervFullStackLease -Manifest $manifest
+            $manifest = Renew-NervFullStackLease -Manifest $manifest -LeaseMinutes (Get-NervFullStackLeaseMinutes)
             Write-NervFullStackManifest -Manifest $manifest
             Write-Output "$resolvedSessionId state=$($manifest.state) containers=$(@($manifest.runtime.containerIds).Count)"
         }
@@ -230,22 +285,43 @@ try {
             $manifest = Read-NervFullStackManifest -SessionId $resolvedSessionId
             $endpoint = $manifest.endpoints.PSObject.Properties[$Target]
             if ($null -eq $endpoint) { throw "Session '$resolvedSessionId' has no endpoint named '$Target'." }
-            $manifest = Renew-NervFullStackLease -Manifest $manifest
+            $manifest = Renew-NervFullStackLease -Manifest $manifest -LeaseMinutes (Get-NervFullStackLeaseMinutes)
             Write-NervFullStackManifest -Manifest $manifest
             Write-Output "$($endpoint.Value)"
         }
         'logs' {
             $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
             $manifest = Read-NervFullStackManifest -SessionId $resolvedSessionId
+            $manifest = Renew-NervFullStackLease -Manifest $manifest -LeaseMinutes (Get-NervFullStackLeaseMinutes)
+            Write-NervFullStackManifest -Manifest $manifest
             $arguments = @('logs')
             if (-not [string]::IsNullOrWhiteSpace($Target)) { $arguments += $Target }
             $arguments += @('--tail', "$Tail", '--apphost', "$($manifest.appHostProject)", '--non-interactive', '--nologo')
             if ($Follow) { $arguments += '--follow' }
             Invoke-AspireInteractive -Arguments $arguments -WorkingDirectory "$($manifest.worktreeRoot)" -Name "fullstack-$resolvedSessionId-logs"
         }
-        'run' { throw "fullstack run scenario=$Scenario noBuild=$NoBuild is not available until the lifecycle task is installed." }
-        'stop' { throw "fullstack stop session=$SessionId is not available until the lifecycle task is installed." }
-        'gc' { throw 'fullstack gc is not available until the lifecycle task is installed.' }
+        'run' { throw "fullstack run scenario=$Scenario noBuild=$NoBuild is not available until the managed-run task is installed." }
+        'stop' {
+            $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
+            $result = Stop-NervFullStackSession -SessionId $resolvedSessionId
+            Write-Output "$resolvedSessionId state=$($result.Manifest.state) remaining=$($result.Remaining.Count)"
+            if (-not $result.Complete) { throw "Session '$resolvedSessionId' cleanup remains incomplete: $($result.Remaining -join ', ')." }
+        }
+        'gc' {
+            $staleSessionIds = @(Invoke-WithNervFullStackSessionLock -ScriptBlock {
+                return @(Get-NervStaleFullStackSessions | ForEach-Object { "$($_.sessionId)" })
+            })
+            $failures = [System.Collections.Generic.List[string]]::new()
+            foreach ($staleSessionId in $staleSessionIds) {
+                try {
+                    $result = Stop-NervFullStackSession -SessionId $staleSessionId
+                    Write-Output "$staleSessionId state=$($result.Manifest.state) remaining=$($result.Remaining.Count)"
+                    if (-not $result.Complete) { $failures.Add($staleSessionId) }
+                }
+                catch { $failures.Add($staleSessionId) }
+            }
+            if ($failures.Count -gt 0) { throw "GC could not fully clean sessions: $($failures -join ', ')." }
+        }
     }
 }
 catch {

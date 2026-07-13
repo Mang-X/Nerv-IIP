@@ -262,11 +262,19 @@ function Renew-NervFullStackLease {
 function Test-NervProcessIdentity {
     param(
         [Parameter(Mandatory)] [int] $ProcessId,
-        [Parameter(Mandatory)] [string] $ProcessStartTimeUtc
+        [Parameter(Mandatory)] [object] $ProcessStartTimeUtc
     )
 
     try {
-        $expected = [DateTimeOffset]::Parse($ProcessStartTimeUtc).UtcDateTime
+        $expected = if ($ProcessStartTimeUtc -is [DateTime]) {
+            ([DateTime] $ProcessStartTimeUtc).ToUniversalTime()
+        }
+        elseif ($ProcessStartTimeUtc -is [DateTimeOffset]) {
+            ([DateTimeOffset] $ProcessStartTimeUtc).UtcDateTime
+        }
+        else {
+            [DateTimeOffset]::Parse("$ProcessStartTimeUtc").UtcDateTime
+        }
         $actual = (Get-Process -Id $ProcessId -ErrorAction Stop).StartTime.ToUniversalTime()
         return [Math]::Abs(($actual - $expected).TotalMilliseconds) -lt 1
     }
@@ -287,17 +295,45 @@ function Test-NervFullStackSessionStale {
         return $false
     }
 
-    if ([DateTimeOffset]::Parse("$($Manifest.leaseExpiresAtUtc)") -le $Now) {
+    $leaseExpiry = if ($Manifest.leaseExpiresAtUtc -is [DateTime]) {
+        [DateTimeOffset] ([DateTime] $Manifest.leaseExpiresAtUtc)
+    }
+    else {
+        [DateTimeOffset]::Parse("$($Manifest.leaseExpiresAtUtc)")
+    }
+    if ($leaseExpiry -le $Now) {
         return $true
     }
 
     if ($null -ne $Manifest.coordinator -and $Manifest.coordinator.pid) {
         return -not (Test-NervProcessIdentity `
             -ProcessId ([int] $Manifest.coordinator.pid) `
-            -ProcessStartTimeUtc "$($Manifest.coordinator.processStartTimeUtc)")
+            -ProcessStartTimeUtc $Manifest.coordinator.processStartTimeUtc)
     }
 
     return $true
+}
+
+function Get-NervStaleFullStackSessions {
+    param(
+        [string] $StateRoot = (Get-NervFullStackStateRoot),
+        [DateTimeOffset] $Now = [DateTimeOffset]::UtcNow
+    )
+
+    return @(Get-NervFullStackManifests -StateRoot $StateRoot | Where-Object {
+        Test-NervFullStackSessionStale -Manifest $_ -Now $Now
+    })
+}
+
+function Get-NervFullStackLeaseMinutes {
+    if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULLSTACK_LEASE_MINUTES)) {
+        return 90
+    }
+    $minutes = 0
+    if (-not [int]::TryParse($env:NERV_IIP_FULLSTACK_LEASE_MINUTES, [ref] $minutes) -or $minutes -lt 1 -or $minutes -gt 1440) {
+        throw 'NERV_IIP_FULLSTACK_LEASE_MINUTES must be an integer from 1 through 1440.'
+    }
+    return $minutes
 }
 
 function Test-NervFullStackAdmission {

@@ -31,6 +31,8 @@ $endpoint = Get-NervAspireResourceEndpoint -DescribeObject $describe -ResourceNa
 Assert-True (-not [string]::IsNullOrWhiteSpace($identity.AppHostId)) 'AppHost ID was not parsed.'
 Assert-True ($identity.AppHostPid -eq 4242) 'AppHost PID was not parsed.'
 Assert-True ($endpoint -eq 'http://127.0.0.1:43125') "Unexpected endpoint '$endpoint'."
+$emptyInspect = @(Get-NervDockerInspectObjects -Kind container -Identifiers @() -WorkingDirectory $repoRoot -Name 'empty-inspect-contract')
+Assert-True ($emptyInspect.Count -eq 0) 'Empty recorded Docker resources must not invoke inspect or fail cleanup.'
 $allDescribe = [pscustomobject]@{
     resources = @('gateway', 'business-gateway', 'console', 'business-console', 'screen') | ForEach-Object {
         [pscustomobject]@{
@@ -130,5 +132,41 @@ Assert-True `
     'The session JWKS key ID must match the private signing key ID.'
 $secretEnvironment.Environment.Clear()
 $secretEnvironment = $null
+
+$stopStateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-stop-$([guid]::NewGuid().ToString('N'))"
+try {
+    $stopSessionId = 'nerv-dead-000001'
+    $stopManifest = New-NervFullStackManifest `
+        -SessionId $stopSessionId `
+        -WorktreeRoot $repoRoot `
+        -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
+        -ArtifactPath (Join-Path $repoRoot "artifacts/fullstack/$stopSessionId") `
+        -StateRoot $stopStateRoot
+    $stopManifest = Move-NervFullStackSessionState -Manifest $stopManifest -State Running
+    Write-NervFullStackManifest -Manifest $stopManifest -StateRoot $stopStateRoot
+    $script:aspireStopCalls = 0
+    $script:processStopCalls = 0
+    $script:dockerStopCalls = 0
+    $aspireStop = { param($Manifest) $script:aspireStopCalls++ }
+    $processStop = { param($Manifest) $script:processStopCalls++ }
+    $dockerStop = {
+        param($Manifest)
+        $script:dockerStopCalls++
+        [pscustomobject]@{ Complete = $true; Remaining = @() }
+    }
+
+    $firstStop = Stop-NervFullStackSession -SessionId $stopSessionId -StateRoot $stopStateRoot -AspireStopAction $aspireStop -ProcessStopAction $processStop -DockerRemoveAction $dockerStop
+    $secondStop = Stop-NervFullStackSession -SessionId $stopSessionId -StateRoot $stopStateRoot -AspireStopAction $aspireStop -ProcessStopAction $processStop -DockerRemoveAction $dockerStop
+    Assert-True $firstStop.Complete 'The first exact stop must complete.'
+    Assert-True $secondStop.Complete 'A repeated exact stop must remain complete.'
+    Assert-True ($script:aspireStopCalls -eq 1) 'A stopped session must not invoke Aspire stop twice.'
+    Assert-True ($script:processStopCalls -eq 1) 'A stopped session must not stop recorded processes twice.'
+    Assert-True ($script:dockerStopCalls -eq 2) 'Repeated stop must still verify exact recorded Docker resources.'
+    $stoppedManifest = Read-NervFullStackManifest -SessionId $stopSessionId -StateRoot $stopStateRoot
+    Assert-True ($stoppedManifest.state -eq 'Stopped') 'A complete stop must persist Stopped.'
+}
+finally {
+    Remove-Item -LiteralPath $stopStateRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 Write-Host 'Full-stack session runtime tests passed.'
