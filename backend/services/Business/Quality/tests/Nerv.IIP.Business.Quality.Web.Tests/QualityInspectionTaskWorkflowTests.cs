@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.MeasuringDevices;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
 using Nerv.IIP.Contracts.Erp;
@@ -121,9 +122,11 @@ public sealed class QualityInspectionTaskWorkflowTests
         var handler = new CreateInspectionRecordFromTaskCommandHandler(
             new InspectionTaskRepository(dbContext),
             new InspectionRecordRepository(dbContext),
-            new InspectionPlanRepository(dbContext));
+            new InspectionPlanRepository(dbContext),
+            new NonconformanceReportRepository(dbContext),
+            new NonconformanceReportCodeGenerator());
 
-        var recordId = await handler.Handle(
+        var result = await handler.Handle(
             new CreateInspectionRecordFromTaskCommand(
                 task.Id,
                 "qa-user-001",
@@ -133,8 +136,12 @@ public sealed class QualityInspectionTaskWorkflowTests
                 null,
                 []),
             CancellationToken.None);
+        var recordId = result.InspectionRecordId;
         await dbContext.SaveChangesAsync();
 
+        // 合格：权威结论 passed，不开 NCR。
+        Assert.Equal(InspectionRecordResults.Passed, result.Result);
+        Assert.Null(result.NonconformanceReportId);
         var record = await dbContext.InspectionRecords.SingleAsync(x => x.Id == recordId);
         Assert.Equal("receiving", record.SourceType);
         Assert.Equal("wms", record.SourceService);
@@ -143,6 +150,60 @@ public sealed class QualityInspectionTaskWorkflowTests
         var completedTask = await dbContext.InspectionTasks.SingleAsync();
         Assert.Equal(InspectionTaskStatuses.Completed, completedTask.Status);
         Assert.Equal(recordId, completedTask.InspectionRecordId);
+    }
+
+    [Fact]
+    public async Task Create_record_from_task_opens_and_links_ncr_when_result_is_not_passed()
+    {
+        await using var dbContext = CreateDbContext(nameof(Create_record_from_task_opens_and_links_ncr_when_result_is_not_passed));
+        var plan = ActivePlan("PLAN-RCV-2000", "receiving", "SKU-RM-2000");
+        var task = InspectionTask.CreatePending(
+            "org-001",
+            "env-dev",
+            plan.Id,
+            "receiving",
+            "wms",
+            "IN-900",
+            "LINE-001",
+            "SKU-RM-2000",
+            10m,
+            "kg",
+            null,
+            null,
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+            "wms:inbound-completed:org-001:env-dev:IN-900:LINE-001");
+        dbContext.InspectionPlans.Add(plan);
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+        var handler = new CreateInspectionRecordFromTaskCommandHandler(
+            new InspectionTaskRepository(dbContext),
+            new InspectionRecordRepository(dbContext),
+            new InspectionPlanRepository(dbContext),
+            new NonconformanceReportRepository(dbContext),
+            new NonconformanceReportCodeGenerator());
+
+        var result = await handler.Handle(
+            new CreateInspectionRecordFromTaskCommand(
+                task.Id,
+                "qa-user-001",
+                [
+                    new InspectionResultLineCommandInput("appearance", "scratch", null, InspectionLineResults.Failed, "SCRATCH", 2m, [])
+                ],
+                "外观不良，判退",
+                []),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        // 权威结论 rejected → 后端同事务内自动开出 NCR 并回链到记录。
+        Assert.Equal(InspectionRecordResults.Rejected, result.Result);
+        Assert.NotNull(result.NonconformanceReportId);
+        var record = await dbContext.InspectionRecords.SingleAsync(x => x.Id == result.InspectionRecordId);
+        Assert.Equal(result.NonconformanceReportId, record.NonconformanceReportId);
+        var ncr = await dbContext.NonconformanceReports.SingleAsync();
+        Assert.Equal(record.NonconformanceReportId, ncr.Id.ToString());
+        var completedTask = await dbContext.InspectionTasks.SingleAsync(x => x.Id == task.Id);
+        Assert.Equal(InspectionTaskStatuses.Completed, completedTask.Status);
     }
 
     [Fact]

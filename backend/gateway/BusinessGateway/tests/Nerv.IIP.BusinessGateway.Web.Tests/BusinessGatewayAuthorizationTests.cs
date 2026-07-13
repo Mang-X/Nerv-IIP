@@ -941,7 +941,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records", BusinessGatewayPermissions.QualityInspectionRecordsCreate);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records/inspection-001/failures/ncr", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/ncrs", BusinessGatewayPermissions.QualityNcrRead);
-        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/reason-codes", BusinessGatewayPermissions.QualityNcrRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/reason-codes", BusinessGatewayPermissions.QualityInspectionRecordsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/reason-codes/QR-SCRATCH", BusinessGatewayPermissions.QualityNcrRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/reason-codes", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Put, "/api/business-console/v1/quality/reason-codes/QR-SCRATCH", BusinessGatewayPermissions.QualityNcrManage);

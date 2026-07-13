@@ -221,5 +221,6 @@ export function useInspectionPlanCharacteristics(planId: MaybeRefOrGetter<string
     planCode,
     pending: query.isLoading,
     error: query.error,
+    refresh: () => (enabled.value ? query.refetch() : Promise.resolve()),
   }
 }

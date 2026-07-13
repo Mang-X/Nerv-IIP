@@ -1159,6 +1159,11 @@ public sealed record BusinessConsoleCreateInspectionRecordFromTaskRequest(
     string? DispositionReason,
     IReadOnlyCollection<string>? DispositionAttachmentFileIds);
 
+public sealed record BusinessConsoleCreateInspectionRecordFromTaskResponse(
+    string InspectionRecordId,
+    string Result,
+    string? NonconformanceReportId);
+
 public sealed record BusinessConsoleQualityInspectionPlanCharacteristicsRequest(
     [property: RouteParam] string InspectionPlanId,
     [property: QueryParam] string OrganizationId,

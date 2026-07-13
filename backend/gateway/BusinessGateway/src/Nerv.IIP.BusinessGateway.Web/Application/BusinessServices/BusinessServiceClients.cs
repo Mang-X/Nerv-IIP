@@ -268,7 +268,7 @@ public interface IBusinessQualityClient
         BusinessConsoleQualityInspectionTaskListRequest request,
         CancellationToken cancellationToken);
 
-    Task<BusinessConsoleCreateInspectionRecordResponse> CreateInspectionRecordFromTaskAsync(
+    Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> CreateInspectionRecordFromTaskAsync(
         string internalBearerToken,
         string inspectionTaskId,
         BusinessConsoleCreateInspectionRecordFromTaskRequest request,
@@ -2514,12 +2514,13 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             response.Total);
     }
 
-    public Task<BusinessConsoleCreateInspectionRecordResponse> CreateInspectionRecordFromTaskAsync(
+    public async Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> CreateInspectionRecordFromTaskAsync(
         string internalBearerToken,
         string inspectionTaskId,
         BusinessConsoleCreateInspectionRecordFromTaskRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleCreateInspectionRecordResponse>(
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamCreateInspectionRecordFromTaskResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/quality/inspection-tasks/{Uri.EscapeDataString(inspectionTaskId)}/inspection-record",
@@ -2530,6 +2531,11 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 request.DispositionReason,
                 request.DispositionAttachmentFileIds),
             cancellationToken);
+        return new BusinessConsoleCreateInspectionRecordFromTaskResponse(
+            response.InspectionRecordId,
+            response.Result,
+            response.NonconformanceReportId);
+    }
 
     public async Task<BusinessConsoleQualityInspectionPlanCharacteristicListResponse> GetInspectionPlanCharacteristicsAsync(
         string internalBearerToken,
@@ -2839,6 +2845,11 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
     private sealed record DownstreamInspectionTaskListResponse(
         IReadOnlyCollection<DownstreamInspectionTaskItem> Items,
         int Total);
+
+    private sealed record DownstreamCreateInspectionRecordFromTaskResponse(
+        string InspectionRecordId,
+        string Result,
+        string? NonconformanceReportId);
 
     private sealed record DownstreamInspectionTaskItem(
         string InspectionTaskId,

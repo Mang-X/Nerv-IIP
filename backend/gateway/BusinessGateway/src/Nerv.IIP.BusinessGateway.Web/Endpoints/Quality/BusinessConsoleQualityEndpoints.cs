@@ -326,7 +326,7 @@ public sealed class CreateBusinessConsoleQualityInspectionRecordFromTaskEndpoint
     IBusinessGatewayAuthorizationClient auth,
     IBusinessQualityClient quality,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateInspectionRecordFromTaskRequest, BusinessConsoleCreateInspectionRecordResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateInspectionRecordFromTaskRequest, BusinessConsoleCreateInspectionRecordFromTaskResponse>(
         auth,
         BusinessGatewayPermissions.QualityInspectionRecordsCreate)
 {
@@ -339,7 +339,7 @@ public sealed class CreateBusinessConsoleQualityInspectionRecordFromTaskEndpoint
     protected override string? ResourceId(BusinessConsoleCreateInspectionRecordFromTaskRequest request) =>
         Route<string>("inspectionTaskId") ?? request.InspectionTaskId;
 
-    protected override Task<BusinessConsoleCreateInspectionRecordResponse> ForwardAsync(
+    protected override Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> ForwardAsync(
         BusinessConsoleCreateInspectionRecordFromTaskRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
@@ -461,7 +461,9 @@ public sealed class ListBusinessConsoleQualityReasonCodesEndpoint(
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityReasonListRequest, BusinessConsoleQualityReasonListResponse>(
         auth,
-        BusinessGatewayPermissions.QualityNcrRead)
+        // 原因码是检验执行（不合格特性录原因码）所需的参考目录，故按检验记录读权限放行，
+        // 而非 NCR 读权限——否则只有 inspection-records.read/create 的 PDA 质检角色会 403。
+        BusinessGatewayPermissions.QualityInspectionRecordsRead)
 {
     protected override string OrganizationId(BusinessConsoleQualityReasonListRequest request) => request.OrganizationId;
 

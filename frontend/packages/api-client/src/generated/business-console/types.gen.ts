@@ -1340,6 +1340,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateInspectionRecordFromTaskResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionRecordFromTaskResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionRecordFromTaskResponse = {
+    inspectionRecordId?: string;
+    result?: string;
+    nonconformanceReportId?: string | null;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionRecordFromTaskRequest = {
     inspectorUserId: string;
     resultLines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionCharacteristicResult> | null;
@@ -7763,7 +7773,7 @@ export type CreateBusinessConsoleQualityInspectionRecordFromTaskResponses = {
     /**
      * Success
      */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateInspectionRecordResponse;
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateInspectionRecordFromTaskResponse;
 };
 
 export type CreateBusinessConsoleQualityInspectionRecordFromTaskResponse = CreateBusinessConsoleQualityInspectionRecordFromTaskResponses[keyof CreateBusinessConsoleQualityInspectionRecordFromTaskResponses];

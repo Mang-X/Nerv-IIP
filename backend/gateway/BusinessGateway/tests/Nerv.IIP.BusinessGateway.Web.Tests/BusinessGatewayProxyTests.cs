@@ -4497,6 +4497,8 @@ public sealed class BusinessGatewayProxyTests
                 data = new
                 {
                     inspectionRecordId = "inspection-from-task-001",
+                    result = "rejected",
+                    nonconformanceReportId = "ncr-from-task-001",
                 },
                 success = true,
                 message = string.Empty,
@@ -4529,6 +4531,8 @@ public sealed class BusinessGatewayProxyTests
             CancellationToken.None);
 
         Assert.Equal("inspection-from-task-001", response.InspectionRecordId);
+        Assert.Equal("rejected", response.Result);
+        Assert.Equal("ncr-from-task-001", response.NonconformanceReportId);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal("/api/business/v1/quality/inspection-tasks/inspection-task-001/inspection-record", request.RequestUri!.PathAndQuery);
@@ -6376,7 +6380,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
             1));
     }
 
-    public Task<BusinessConsoleCreateInspectionRecordResponse> CreateInspectionRecordFromTaskAsync(
+    public Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> CreateInspectionRecordFromTaskAsync(
         string internalBearerToken,
         string inspectionTaskId,
         BusinessConsoleCreateInspectionRecordFromTaskRequest request,
@@ -6385,7 +6389,8 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         LastInternalToken = internalBearerToken;
         LastCreateInspectionRecordFromTaskTaskId = inspectionTaskId;
         LastCreateInspectionRecordFromTaskRequest = request;
-        return Task.FromResult(new BusinessConsoleCreateInspectionRecordResponse("inspection-from-task-001"));
+        return Task.FromResult(new BusinessConsoleCreateInspectionRecordFromTaskResponse(
+            "inspection-from-task-001", "rejected", "ncr-from-task-001"));
     }
 
     public BusinessConsoleQualityInspectionPlanCharacteristicsRequest? LastInspectionPlanCharacteristicsRequest { get; private set; }

@@ -3946,7 +3946,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateInspectionRecordResponse"
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateInspectionRecordFromTaskResponse"
                 }
               }
             }
@@ -27200,6 +27200,43 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityInspectionTaskListRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateInspectionRecordFromTaskResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionRecordFromTaskResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionRecordFromTaskResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inspectionRecordId": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "nonconformanceReportId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionRecordFromTaskRequest": {
         "type": "object",
