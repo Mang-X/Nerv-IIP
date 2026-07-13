@@ -1109,6 +1109,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/operation-sops/current?operationCode=STD-MIX", BusinessGatewayPermissions.MesOperationsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/schedules/run", BusinessGatewayPermissions.MesSchedulesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/production-reports", BusinessGatewayPermissions.MesReportingWrite);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/production-reports/PR-001", BusinessGatewayPermissions.MesReportingRead);
         return routes;
     }
 

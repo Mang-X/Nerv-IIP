@@ -2995,6 +2995,51 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionReportDetailResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetailResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetailResponse = {
+    report?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetail;
+    consumedMaterialLots?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetail = {
+    productionReportId?: string;
+    reportNo?: string;
+    workOrderId?: string;
+    operationTaskId?: string;
+    goodQuantity?: number;
+    scrapQuantity?: number;
+    reworkQuantity?: number;
+    reportedAtUtc?: string;
+    workOrderNo?: string | null;
+    operationTaskNo?: string | null;
+    scrapReasonCode?: string | null;
+    defectRecordNo?: string | null;
+    producedLotNo?: string | null;
+    serialNo?: string | null;
+    reversedReportNo?: string | null;
+    reversalReason?: string | null;
+    inventoryPostingFailureCode?: string | null;
+    inventoryPostingFailureMessage?: string | null;
+    inventoryPostingFailedAtUtc?: string | null;
+    workOrderStatus?: string | null;
+    reversalReportNo?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot = {
+    materialId?: string;
+    materialLotId?: string;
+    consumedQuantity?: number;
+    uomCode?: string;
+    materialIssueRequestNo?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetailRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordProductionReportResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordProductionReportResponse | null;
 };
@@ -11122,6 +11167,38 @@ export type RecordBusinessConsoleMesProductionReportResponses = {
 };
 
 export type RecordBusinessConsoleMesProductionReportResponse = RecordBusinessConsoleMesProductionReportResponses[keyof RecordBusinessConsoleMesProductionReportResponses];
+
+export type GetBusinessConsoleMesProductionReportData = {
+    body?: never;
+    path: {
+        reportNo: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/production-reports/{reportNo}';
+};
+
+export type GetBusinessConsoleMesProductionReportErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleMesProductionReportResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionReportDetailResponse;
+};
+
+export type GetBusinessConsoleMesProductionReportResponse = GetBusinessConsoleMesProductionReportResponses[keyof GetBusinessConsoleMesProductionReportResponses];
 
 export type ListBusinessConsoleMesTelemetryProductionReportCandidatesData = {
     body?: never;

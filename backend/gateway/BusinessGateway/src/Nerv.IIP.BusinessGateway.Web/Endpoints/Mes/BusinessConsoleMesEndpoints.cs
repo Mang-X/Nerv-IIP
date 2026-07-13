@@ -542,7 +542,12 @@ public sealed class ReverseBusinessConsoleMesProductionReportEndpoint(
         BusinessConsoleMesReverseProductionReportRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        mes.ReverseProductionReportAsync(tokenProvider.BearerToken, request.ReportNo, request, cancellationToken);
+        mes.ReverseProductionReportAsync(
+            tokenProvider.BearerToken,
+            request.ReportNo,
+            request,
+            RequireAuthorizedPrincipalActor().ActorRef,
+            cancellationToken);
 }
 
 [Tags("Business Console MES")]
@@ -898,6 +903,32 @@ public sealed class ListBusinessConsoleMesProductionReportsEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.ListProductionReportsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
+[HttpGet("/api/business-console/v1/mes/production-reports/{reportNo}")]
+[BusinessGatewayOperationId("getBusinessConsoleMesProductionReport")]
+public sealed class GetBusinessConsoleMesProductionReportEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesProductionReportDetailRequest, BusinessConsoleMesProductionReportDetailResponse>(
+        auth,
+        BusinessGatewayPermissions.MesReportingRead)
+{
+    protected override string OrganizationId(BusinessConsoleMesProductionReportDetailRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesProductionReportDetailRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleMesProductionReportDetailResponse> ForwardAsync(
+        BusinessConsoleMesProductionReportDetailRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        mes.GetProductionReportAsync(
+            tokenProvider.BearerToken,
+            request.ReportNo,
+            new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
+            cancellationToken);
 }
 
 [Tags("Business Console MES")]
