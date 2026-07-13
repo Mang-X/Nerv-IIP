@@ -164,9 +164,10 @@ In ephemeral mode:
 6. The session may delete all session-owned volumes during cleanup because the mode is explicitly ephemeral.
 7. Project resources do not retain their persistent Development target/public port assignments. Aspire allocates both sides of their proxied endpoints dynamically.
 8. Stateful containers retain required internal target ports, but their public host ports are dynamically allocated.
-9. Vite resources receive an Aspire-allocated target port through `PORT`, and their Vite configs use that value instead of the persistent fallback ports. Their existing same-origin `/api` proxies continue to receive dynamic Gateway targets from AppHost, so browser traffic does not require a dynamic CORS wildcard.
+9. Vite resources receive an Aspire-allocated target port through `PORT`, and their Vite configs use that value instead of the persistent fallback ports. Their existing same-origin `/api` proxies continue to receive dynamic Gateway targets from AppHost. Browser API clients retain the repository's empty browser-relative base URL and direct browser-to-Gateway requests are forbidden in ephemeral mode, so the fixed Development CORS allowlist is intentionally not used or widened to a dynamic wildcard.
+10. Each automated run or runtime probe receives a random ephemeral IAM admin seed password for authenticated browser acceptance. It is passed only through temporary sensitive child-process environment and is never stored in the manifest or diagnostics. Interactive `fullstack start` retains the existing AppHost user-secret so its login remains operator-recoverable; persistent Development is unchanged.
 
-Before implementing the remaining session lifecycle, Task 3 must verify the repository-locked Aspire AppHost API and the installed Aspire CLI 13.4.x behavior with a disposable probe. The probe must prove that two AppHost instances obtain distinct target and public ports for `gateway`, `business-gateway`, `console`, `business-console` and `screen`, and that Vite honors the injected `PORT`. The implementation must also verify container-label and session-aware volume APIs rather than guess unsupported builder calls. Failure of this probe blocks Task 4.
+Before implementing the remaining session lifecycle, Task 3 must verify the repository-locked Aspire AppHost API and the installed Aspire CLI 13.4.x behavior with a disposable probe. The probe must run only after ephemeral volume isolation is implemented; starting two current-code AppHosts is prohibited because they can mount the same PostgreSQL/Redis Development volumes. The safe probe must prove that two AppHost instances obtain distinct target and public ports for `gateway`, `business-gateway`, `console`, `business-console` and `screen`, that Vite honors the injected `PORT`, and that an unmocked browser can log in and complete Platform/Business Gateway API calls through each dynamic Business Console origin without directly contacting either Gateway origin. The implementation must also verify container-label and session-aware volume APIs rather than guess unsupported builder calls. Failure of this probe blocks Task 4.
 
 ## Dynamic Endpoint Discovery
 
@@ -186,7 +187,7 @@ NERV_IIP_BUSINESS_GATEWAY_URL
 PLAYWRIGHT_BASE_URL
 ```
 
-HTTP scenarios receive these values from the manifest. Existing Playwright configs must accept `PLAYWRIGHT_BASE_URL` as an override and skip their own `webServer` when that URL is supplied, so full-stack browser scenarios attach to the Aspire-started Vite resource. They do not scan ports, assume `5100`/`5125`, or depend on a global reverse proxy.
+HTTP scenarios receive these values from the manifest. Existing Playwright configs must accept `PLAYWRIGHT_BASE_URL` as an override and skip their own `webServer` when that URL is supplied, so full-stack browser scenarios attach to the Aspire-started Vite resource. A dedicated unmocked acceptance spec signs in through relative `/api/console` and then exercises a relative `/api/business-console` request, asserting both observed request origins equal the dynamic Vite origin. This is the executable proof that the fixed Gateway CORS list is harmless in ephemeral mode. The tests do not scan ports, assume `5100`/`5125`, or depend on a global reverse proxy.
 
 ## Session State Machine
 
@@ -324,6 +325,7 @@ Real acceptance proves:
 7. A synthetic stale manifest is reclaimed without affecting a live session.
 8. Repeated stop and GC remain idempotent.
 9. Three sessions can run concurrently when no existing session occupies one of the configured slots; otherwise excess requests are rejected or queued cleanly without partial leaked resources.
+10. From each dynamic Business Console origin, an unmocked admin login and a real business API request succeed through same-origin Vite proxies, with no browser request sent directly to a Gateway origin.
 
 ### Required Repository Gates
 
@@ -340,12 +342,13 @@ It must also run the new fast script tests and the real two-session isolation ac
 
 1. Replace the unsafe generic orphan cleanup with exact repository/session ownership and add contract tests before enabling parallel session commands.
 2. Add manifest infrastructure, state transitions, locking, admission and idempotent cleanup.
-3. Prove dynamic target/public endpoint allocation with two disposable AppHost instances; do not proceed if any project or Vite target remains pinned.
+3. Record the current fixed endpoints and shared persistent volumes through static inspection only; never start two current-code AppHosts.
 4. Add AppHost ephemeral mode with session-specific volumes, dynamic endpoints and ownership metadata while preserving ordinary persistent development mode.
-5. Add root full-stack commands and machine-readable endpoint handoff.
-6. Add the `smoke` managed scenario and real two-session isolation acceptance.
-7. Add lease expiry, stale GC and failure-injection acceptance.
-8. Validate the optional three-session concurrency path and document local ceiling tuning.
+5. Prove dynamic target/public endpoint allocation, storage isolation and authenticated same-origin proxying with two disposable AppHost instances; do not proceed if any isolation or browser-routing assertion fails.
+6. Add root full-stack commands and machine-readable endpoint handoff.
+7. Add the `smoke` managed scenario and real two-session isolation acceptance.
+8. Add lease expiry, stale GC and failure-injection acceptance.
+9. Validate the optional three-session concurrency path and document local ceiling tuning.
 
 Each rollout step must remain recoverable through the existing `nerv.ps1 stop` path or the new session-specific stop command. No step may require a global Docker prune or machine restart.
 

@@ -24,6 +24,7 @@ Create:
 8. `scripts/tests/fixtures/fullstack/aspire-describe.json` - observed installed Aspire CLI 13.4.x resource JSON fixture with synthetic dynamic URLs.
 9. `scripts/tests/fixtures/fullstack/docker-resources.json` - synthetic Docker inspect fixture containing owned, mismatched, and unlabeled resources.
 10. `scripts/verify-parallel-fullstack-isolation.ps1` - real two- or three-session Docker/Aspire acceptance entrypoint.
+11. `frontend/apps/business-console/e2e/fullstack-proxy.spec.ts` - unmocked dynamic-origin login and same-origin Platform/Business Gateway proxy proof.
 
 Modify:
 
@@ -42,7 +43,7 @@ Modify:
 13. `docs/architecture/implementation-readiness.md` - delivered command surface and verification status after implementation.
 14. `AGENTS.md` - require agent-owned full-stack checks to use `fullstack run` and prohibit leaving interactive sessions alive.
 
-No backend endpoint, Gateway contract, OpenAPI snapshot, generated client, database migration, frontend application behavior/UI, or second Compose topology changes are part of this plan. Frontend changes are limited to development/test port configuration.
+No backend endpoint, Gateway contract, OpenAPI snapshot, generated client, database migration, frontend application behavior/UI, or second Compose topology changes are part of this plan. Frontend changes are limited to development/test port configuration and an unmocked full-stack proxy acceptance spec.
 
 ---
 
@@ -312,13 +313,14 @@ git commit -m "fix: require exact Aspire session ownership for cleanup"
 - Modify: `frontend/apps/screen/vite.config.ts`
 - Modify: `frontend/apps/console/playwright.config.ts`
 - Modify: `frontend/apps/business-console/playwright.config.ts`
+- Create: `frontend/apps/business-console/e2e/fullstack-proxy.spec.ts`
 - Modify: `scripts/tests/fullstack-session-runtime.Tests.ps1`
 
-- [ ] **Step 1: Record the current fixed-port failure with two short-path worktrees**
+- [ ] **Step 1: Record the current fixed-port and shared-volume facts statically**
 
-Create two detached worktrees under `(Get-NervFullStackStateRoot)/endpoint-probe/<runId>/a` and `/b`, run each worktree's `scripts/setup-worktree.ps1` so pnpm uses its global content-addressable store and hard-links dependencies, then start the first AppHost with `aspire start --isolated`. Start the second AppHost with the same command and current code. Always stop both exact AppHost paths and remove only the two validated probe worktrees in `finally`.
+Inspect `Program.cs` and the three Vite configs without starting Docker or Aspire. Record in the task notes the literal project/container endpoint declarations, Vite ports 5105/5125/5128, and persistent volume names `nerv-iip-postgres-18`, `nerv-iip-redis`, `nerv-iip-minio`, and `nerv-iip-victoria-logs`.
 
-Expected before implementation: the second topology cannot keep all three Vite resources up because `console`, `business-console`, and `screen` still bind 5105, 5125, and 5128. Save the redacted failure resource names in the task notes; do not commit machine paths or logs.
+Expected before implementation: the static declarations prove that a second current-code topology would conflict on fixed endpoints and, for containers whose host ports do not fail first, could mount the same writable volumes. Do not launch two current-code AppHosts merely to reproduce the known port failure: concurrent PostgreSQL or Redis writers on those shared Development volumes can corrupt local data. The first permitted two-instance runtime probe is Step 7, after ephemeral volume and endpoint isolation exists.
 
 - [ ] **Step 2: Extend the runtime test with the AppHost environment contract**
 
@@ -420,9 +422,55 @@ export default defineConfig({
 })
 ```
 
+Create `fullstack-proxy.spec.ts` as an explicitly unmocked test: it must not install `page.route` handlers. Require `PLAYWRIGHT_BASE_URL` and a process-only `NERV_IIP_FULLSTACK_ADMIN_PASSWORD`, open the dynamic Business Console `/login`, sign in as `admin`, and then visit `/master-data/skus`. Require 2xx responses from `/api/console/v1/auth/login` and `/api/business-console/v1/master-data/skus`. Assert both request origins exactly equal `new URL(PLAYWRIGHT_BASE_URL).origin`, and fail if any browser `/api/` request targets a Gateway origin directly. This proves both `/api/console` and `/api/business-console` traverse Vite's same-origin proxies; the fixed Gateway CORS allowlist is intentionally not expanded for ephemeral ports.
+
+```typescript
+import { expect, test } from '@playwright/test'
+
+const baseURL = process.env.PLAYWRIGHT_BASE_URL
+const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
+
+test.skip(!baseURL || !adminPassword, 'requires a managed full-stack session')
+
+test('dynamic origin uses both same-origin gateway proxies @smoke', async ({ page }) => {
+  const viteOrigin = new URL(baseURL!).origin
+  const apiRequests: string[] = []
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname.startsWith('/api/')) apiRequests.push(request.url())
+  })
+
+  await page.goto('/login')
+  const loginResponse = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/api/console/v1/auth/login',
+  )
+  await page.getByLabel('登录名').fill('admin')
+  await page.getByLabel('密码').fill(adminPassword!)
+  await page.getByRole('button', { name: '登录' }).click()
+  const login = await loginResponse
+  expect(login.status()).toBeGreaterThanOrEqual(200)
+  expect(login.status()).toBeLessThan(300)
+  await expect(page).toHaveURL(new URL('/', baseURL!).toString())
+
+  const skuResponse = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/api/business-console/v1/master-data/skus',
+  )
+  await page.goto('/master-data/skus')
+  const sku = await skuResponse
+  expect(sku.status()).toBeGreaterThanOrEqual(200)
+  expect(sku.status()).toBeLessThan(300)
+  expect(apiRequests.length).toBeGreaterThanOrEqual(2)
+  expect(apiRequests.every((url) => new URL(url).origin === viteOrigin)).toBe(true)
+})
+```
+
+The acceptance runner must require Playwright to report one passed test and zero skipped tests, so a missing environment variable cannot turn this gate green.
+
 - [ ] **Step 5: Implement the matching PowerShell environment generator**
 
 Add `Get-NervFullStackEnvironment` to `FullStackSessionRuntime.ps1`. Validate the same regex and return a hashtable containing `NERV_IIP_EPHEMERAL`, `NERV_IIP_SESSION_ID`, `ASPNETCORE_ENVIRONMENT`, `DOTNET_ENVIRONMENT`, and the four derived volume names for manifest recording. The AppHost reads the first two; the remaining names are coordinator-owned manifest facts.
+
+For each automated `run` or Task 3 runtime probe, generate a random session-only IAM admin password in coordinator memory and pass it to the AppHost as the sensitive `Parameters__iam-seed-admin-password` child-environment override. Pass the same value to the dedicated Playwright process as `NERV_IIP_FULLSTACK_ADMIN_PASSWORD`. Never assign it to the coordinator's global process environment or write it to the manifest, command display, summary, or diagnostics; remove it from temporary child-environment maps immediately after each launch and drop the local reference after the browser check. Interactive `fullstack start` and persistent Development continue to use the existing AppHost user-secret so an operator is not given an unrecoverable random login.
 
 - [ ] **Step 6: Run fast checks and build both modes**
 
@@ -440,14 +488,14 @@ Expected: runtime tests pass, AppHost build has no warnings/errors, and all thre
 
 - [ ] **Step 7: Prove two-instance dynamic endpoints before Task 4**
 
-Repeat the two-worktree probe from Step 1 with the new ephemeral environment. Use `aspire describe --format Json` for each exact AppHost and assert that `gateway`, `business-gateway`, `console`, `business-console`, and `screen` each have distinct target and public ports across the two instances. HTTP-check all five URLs and verify the three Vite processes report the injected `PORT` rather than their persistent fallback.
+Create two short-path disposable worktrees only after the new ephemeral mode is present, prepare them with `scripts/setup-worktree.ps1`, and start both with distinct validated session IDs and distinct generated session-only IAM admin passwords. Use `aspire describe --format Json` for each exact AppHost and assert that `gateway`, `business-gateway`, `console`, `business-console`, and `screen` each have distinct target and public ports across the two instances. HTTP-check all five URLs and verify the three Vite processes report the injected `PORT` rather than their persistent fallback. Run the dedicated `fullstack-proxy.spec.ts` once against each dynamic Business Console URL and require successful real login plus same-origin Platform/Business Gateway API traffic.
 
-Expected: both topologies remain up simultaneously and all ten endpoint URLs are reachable and pairwise distinct by resource. If any target remains fixed or either topology reports a `Finished` project, stop here and do not begin Task 4.
+Expected: both topologies remain up simultaneously, all ten endpoint URLs are reachable and pairwise distinct by resource, storage is session-scoped, and both dynamic browser origins complete the unmocked proxy proof without a CORS failure. If any target remains fixed, any persistent Development volume is mounted, either topology reports a `Finished` project, or any browser API request bypasses Vite, stop here and do not begin Task 4.
 
 - [ ] **Step 8: Commit ephemeral AppHost mode**
 
 ```powershell
-git add infra/aspire/Nerv.IIP.AppHost/Program.cs frontend/apps/console/vite.config.ts frontend/apps/business-console/vite.config.ts frontend/apps/screen/vite.config.ts frontend/apps/console/playwright.config.ts frontend/apps/business-console/playwright.config.ts scripts/lib/FullStackSessionRuntime.ps1 scripts/tests/fullstack-session-runtime.Tests.ps1
+git add infra/aspire/Nerv.IIP.AppHost/Program.cs frontend/apps/console/vite.config.ts frontend/apps/business-console/vite.config.ts frontend/apps/screen/vite.config.ts frontend/apps/console/playwright.config.ts frontend/apps/business-console/playwright.config.ts frontend/apps/business-console/e2e/fullstack-proxy.spec.ts scripts/lib/FullStackSessionRuntime.ps1 scripts/tests/fullstack-session-runtime.Tests.ps1
 git commit -m "feat: isolate Aspire full-stack ports and storage"
 ```
 
@@ -543,7 +591,7 @@ param(
 )
 ```
 
-Dot-source `ScriptAutomation.ps1`, `FullStackSessionState.ps1`, and `FullStackSessionRuntime.ps1`. Implement `start` under `Invoke-WithNervFullStackSessionLock`: reconcile stale manifests, enforce the active-session ceiling and one-active-session-per-worktree rule, create the manifest/artifact directory, call `Invoke-AspireOutput` with `start --isolated --format Json`, record exact startup identity, discover Docker resources with the exact session label into `manifest.runtime.containers` entries shaped as `{ resourceName, id, name }`, wait for all five public resources (`gateway`, `business-gateway`, `console`, `business-console`, and `screen`), discover endpoints, set `Running`, persist, and print session ID plus URLs. Resolve an omitted `-SessionId` for `url/status/logs/stop` only when exactly one non-stopped session belongs to the current worktree; otherwise require an explicit ID.
+Dot-source `ScriptAutomation.ps1`, `FullStackSessionState.ps1`, and `FullStackSessionRuntime.ps1`. Implement `start` under `Invoke-WithNervFullStackSessionLock`: reconcile stale manifests, enforce the active-session ceiling and one-active-session-per-worktree rule, create the manifest/artifact directory, call `Invoke-AspireOutput` with `start --isolated --format Json`, record exact startup identity, discover Docker resources with the exact session label into `manifest.runtime.containers` entries shaped as `{ resourceName, id, name }`, wait for all five public resources (`gateway`, `business-gateway`, `console`, `business-console`, and `screen`), discover endpoints, set `Running`, persist, and print session ID plus URLs. If an automated parent supplied `NERV_IIP_FULLSTACK_ADMIN_PASSWORD` in this process's environment, copy it only into the AppHost child environment as `Parameters__iam-seed-admin-password`, remove it from the coordinator environment immediately after launch, and never persist or print it; otherwise use normal AppHost user-secret resolution. Resolve an omitted `-SessionId` for `url/status/logs/stop` only when exactly one non-stopped session belongs to the current worktree; otherwise require an explicit ID.
 
 Implement `url` as a manifest read, lease renewal, and one URL written to stdout. Implement `status` and `list` as redacted summaries. Implement `logs` through Aspire CLI and the exact manifest AppHost path. Defer automated `run`, guardian, and GC behavior to Tasks 5 and 6, but make their dispatch branches fail with a clear non-zero `not available until lifecycle task is installed` message during this intermediate commit.
 
@@ -637,10 +685,11 @@ Add fixture-driven tests for `Invoke-NervFullStackSmokeScenario` using injected 
     NERV_IIP_GATEWAY_URL = $manifest.endpoints.gateway
     NERV_IIP_BUSINESS_GATEWAY_URL = $manifest.endpoints.'business-gateway'
     PLAYWRIGHT_BASE_URL = $manifest.endpoints.'business-console'
+    NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $sessionAdminPassword
 }
 ```
 
-Add a redaction test containing `password=secret`, `Authorization: Bearer token`, and a PostgreSQL connection string; assert none survives in `summary.json` or diagnostic text.
+The password is process-only scenario context, not a manifest field. Add a redaction test containing the actual generated session password, `password=secret`, `Authorization: Bearer token`, and a PostgreSQL connection string; assert none survives in `summary.json` or diagnostic text.
 
 - [ ] **Step 2: Implement bounded diagnostic collection**
 
@@ -648,7 +697,7 @@ Add `Collect-NervFullStackDiagnostics`. Before runtime shutdown, write bounded A
 
 - [ ] **Step 3: Implement the governed smoke scenario**
 
-`Invoke-NervFullStackSmokeScenario` must wait for and HTTP-check `gateway`, `business-gateway`, `console`, `business-console`, and `screen`; inspect the complete Aspire JSON snapshot; fail when any project resource is `Finished`; and return a scenario exit code. It must not accept arbitrary commands. The scenario registry is a literal switch with only `smoke` in this implementation.
+`Invoke-NervFullStackSmokeScenario` must wait for and HTTP-check `gateway`, `business-gateway`, `console`, `business-console`, and `screen`; inspect the complete Aspire JSON snapshot; fail when any project resource is `Finished`; run the dedicated unmocked `fullstack-proxy.spec.ts` against the manifest-derived Business Console URL with the process-only session password; and return a scenario exit code. It must not accept arbitrary commands. The scenario registry is a literal switch with only `smoke` in this implementation.
 
 - [ ] **Step 4: Implement `fullstack run` with original-error preservation**
 
@@ -657,9 +706,11 @@ Implement this control shape in `fullstack-session.ps1`:
 ```powershell
 $scenarioFailure = $null
 $cleanupFailure = $null
+$sessionAdminPassword = $null
 try {
-    $manifest = Start-NervFullStackSession -NoBuild:$NoBuild -CoordinatorPid $PID
-    Invoke-NervFullStackScenario -Name $Scenario -Manifest $manifest
+    $sessionAdminPassword = New-NervFullStackSessionSecret
+    $manifest = Start-NervFullStackSession -NoBuild:$NoBuild -CoordinatorPid $PID -SessionAdminPassword $sessionAdminPassword
+    Invoke-NervFullStackScenario -Name $Scenario -Manifest $manifest -SessionAdminPassword $sessionAdminPassword
 }
 catch {
     $scenarioFailure = $_
@@ -673,6 +724,7 @@ finally {
         try { Stop-NervFullStackSession -Manifest $manifest }
         catch { $cleanupFailure = $_ }
     }
+    $sessionAdminPassword = $null
 }
 if ($cleanupFailure) { throw $cleanupFailure }
 if ($scenarioFailure) { throw $scenarioFailure }
@@ -725,6 +777,8 @@ param(
 The script must create disposable linked worktrees under the short machine-state path `(Get-NervFullStackStateRoot)/fullstack-worktrees/<runId>/` from the current commit using `Invoke-NativeCommandWithTimeout -Command 'git' -Arguments @('worktree', 'add', '--detach', <path>, 'HEAD')`. Never nest these worktrees under the repository or its `artifacts/` directory. Validate every resolved worktree path remains below that exact run directory before cleanup.
 
 After each `git worktree add`, invoke that worktree's `scripts/setup-worktree.ps1` before starting Aspire. This reuses pnpm's global content-addressable store and hard-links packages into each worktree; do not copy the primary worktree's `node_modules`. Because the current setup script reports dependency-install failures as warnings, explicitly require `<worktree>/frontend/node_modules` to exist afterward and fail the acceptance setup if it does not. Keep backend restore opt-in because AppHost startup performs the required build unless `-NoBuild` was explicitly requested and valid outputs already exist. Launch `fullstack start` once per prepared worktree through governed background helpers so all stacks remain live during assertions, then collect each session by exact `manifest.worktreeRoot`.
+
+Generate one distinct in-memory IAM admin password per acceptance session. Supply it only in that `fullstack start` child environment as `NERV_IIP_FULLSTACK_ADMIN_PASSWORD`; the start path consumes it as the sensitive AppHost seed override without persisting it. After endpoint discovery, run `frontend/apps/business-console/e2e/fullstack-proxy.spec.ts` against every session's manifest-derived Business Console URL with the matching password, then remove the values from all temporary child-environment maps and local session records before diagnostic collection.
 
 Assert distinct endpoint URLs and distinct PostgreSQL, Redis, MinIO, and VictoriaLogs volume names. Select each PostgreSQL container from `manifest.runtime.containers` by `resourceName = 'postgres'`. Through `Invoke-NativeCommandOutput -Command 'docker'`, run `exec --user postgres <firstContainerId> psql -d postgres -v ON_ERROR_STOP=1 -c 'create table nerv_fullstack_isolation_probe(value text); insert into nerv_fullstack_isolation_probe values (''session-one'');'`, then run `exec --user postgres <secondContainerId> psql -d postgres -Atc 'select to_regclass(''public.nerv_fullstack_isolation_probe'');'` and require empty output. This proves writable database isolation without reading or logging a password.
 
