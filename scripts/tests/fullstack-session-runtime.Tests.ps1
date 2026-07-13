@@ -43,6 +43,7 @@ foreach ($requiredText in @(
     'scripts/setup-worktree.ps1',
     'Invoke-PwshScript',
     'Stop-AcceptanceStartProcess',
+    'Remove-AcceptanceWorktree',
     'Test-NervProcessIdentity',
     'Primary failure:',
     'PGPASSWORD="$POSTGRES_PASSWORD"',

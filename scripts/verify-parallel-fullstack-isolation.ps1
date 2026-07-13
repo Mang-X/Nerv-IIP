@@ -46,6 +46,37 @@ function Stop-AcceptanceStartProcess([object] $Record) {
     [void] $process.WaitForExit(10000)
 }
 
+function Remove-AcceptanceWorktree([string] $WorktreePath, [string] $WorktreeParent, [int] $Index) {
+    Assert-Acceptance (Test-PathBelow -Path $WorktreePath -Parent $WorktreeParent) "Refusing unsafe worktree removal '$WorktreePath'."
+    try {
+        Invoke-NativeCommandWithTimeout `
+            -Command 'git' `
+            -Arguments @('worktree', 'remove', '--force', $WorktreePath) `
+            -WorkingDirectory $repoRoot `
+            -TimeoutSeconds 300 `
+            -Name "parallel-fullstack-worktree-remove-$Index" | Out-Null
+        return
+    }
+    catch { $gitFailure = $_ }
+
+    $worktreeList = Invoke-NativeCommandOutput `
+        -Command 'git' `
+        -Arguments @('worktree', 'list', '--porcelain') `
+        -WorkingDirectory $repoRoot `
+        -TimeoutSeconds 30 `
+        -Name "parallel-fullstack-worktree-list-after-remove-$Index"
+    $comparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    $resolvedTarget = [System.IO.Path]::GetFullPath($WorktreePath)
+    $stillRegistered = @($worktreeList.Stdout -split '\r?\n' | Where-Object { $_.StartsWith('worktree ', [StringComparison]::Ordinal) } | ForEach-Object {
+        [System.IO.Path]::GetFullPath($_.Substring('worktree '.Length))
+    } | Where-Object { [string]::Equals($_, $resolvedTarget, $comparison) }).Count -gt 0
+    if ($stillRegistered) { throw $gitFailure }
+
+    if (Test-Path -LiteralPath $WorktreePath) {
+        Remove-Item -LiteralPath $WorktreePath -Recurse -Force
+    }
+}
+
 function Wait-AcceptanceSessions([object[]] $Records, [int] $TimeoutSeconds = 900) {
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
     while ([DateTimeOffset]::UtcNow -lt $deadline) {
@@ -253,13 +284,7 @@ finally {
     catch { $cleanupFailures.Add("gc: $($_.Exception.Message)") }
     foreach ($record in @($records | Sort-Object Index -Descending)) {
         try {
-            Assert-Acceptance (Test-PathBelow -Path $record.WorktreePath -Parent $worktreeParent) "Refusing unsafe worktree removal '$($record.WorktreePath)'."
-            Invoke-NativeCommandWithTimeout `
-                -Command 'git' `
-                -Arguments @('worktree', 'remove', '--force', $record.WorktreePath) `
-                -WorkingDirectory $repoRoot `
-                -TimeoutSeconds 300 `
-                -Name "parallel-fullstack-worktree-remove-$($record.Index)" | Out-Null
+            Remove-AcceptanceWorktree -WorktreePath $record.WorktreePath -WorktreeParent $worktreeParent -Index $record.Index
         }
         catch { $cleanupFailures.Add("worktree $($record.Index): $($_.Exception.Message)") }
     }
