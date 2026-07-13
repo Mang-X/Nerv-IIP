@@ -91,7 +91,16 @@ function New-NervFullStackManifest {
             processStartTimeUtc = $process.StartTime.ToUniversalTime().ToString('O')
         }
         guardian = $null
-        aspire = [ordered]@{ appHostId = $null; dcpId = $null }
+        aspire = [ordered]@{
+            appHostId = $null
+            dcpId = $null
+            appHostPath = $null
+            appHostPid = $null
+            appHostProcessStartTimeUtc = $null
+            cliPid = $null
+            cliProcessStartTimeUtc = $null
+            logFile = $null
+        }
         runtime = [ordered]@{
             processIds = @()
             containers = @()

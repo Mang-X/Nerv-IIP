@@ -67,6 +67,145 @@ function Test-NervDockerOptionalSessionLabel {
     return $null -eq $sessionLabel -or "$($sessionLabel.Value)" -ceq $SessionId
 }
 
+function Read-NervAspireJson {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Text,
+        [ValidateRange(1, 4194304)] [int] $MaxCharacters = 1048576
+    )
+
+    if ($Text.Length -gt $MaxCharacters) {
+        throw "Aspire output exceeded the $MaxCharacters character parsing limit."
+    }
+
+    $payloads = [System.Collections.Generic.List[object]]::new()
+    for ($start = 0; $start -lt $Text.Length; $start++) {
+        if ($Text[$start] -ne '{') { continue }
+
+        $depth = 0
+        $inString = $false
+        $escaped = $false
+        $end = -1
+        for ($index = $start; $index -lt $Text.Length; $index++) {
+            $character = $Text[$index]
+            if ($inString) {
+                if ($escaped) { $escaped = $false; continue }
+                if ($character -eq '\') { $escaped = $true; continue }
+                if ($character -eq '"') { $inString = $false }
+                continue
+            }
+            if ($character -eq '"') { $inString = $true; continue }
+            if ($character -eq '{') { $depth++ }
+            elseif ($character -eq '}') {
+                $depth--
+                if ($depth -eq 0) { $end = $index; break }
+            }
+        }
+        if ($end -lt $start) { continue }
+
+        $candidate = $Text.Substring($start, $end - $start + 1)
+        try { $payloads.Add(($candidate | ConvertFrom-Json -Depth 40)) } catch { }
+        $start = $end
+    }
+
+    if ($payloads.Count -ne 1) {
+        $safeText = Protect-ScriptAutomationText -Text $Text
+        throw "Expected exactly one Aspire JSON object, found $($payloads.Count); redacted output length was $($safeText.Length)."
+    }
+    return $payloads[0]
+}
+
+function Get-NervAspireStartIdentity {
+    param([Parameter(Mandatory)] [object] $StartObject)
+
+    $appHostPid = [int] $StartObject.appHostPid
+    $cliPid = [int] $StartObject.cliPid
+    if ($appHostPid -le 0 -or $cliPid -le 0 -or [string]::IsNullOrWhiteSpace("$($StartObject.appHostPath)")) {
+        throw 'Aspire detached-start JSON did not contain its AppHost path and process identities.'
+    }
+
+    return [pscustomobject]@{
+        AppHostId = "pid:$appHostPid"
+        AppHostPath = [System.IO.Path]::GetFullPath("$($StartObject.appHostPath)")
+        AppHostPid = $appHostPid
+        CliPid = $cliPid
+        LogFile = "$($StartObject.logFile)"
+    }
+}
+
+function Get-NervAspireResourceSnapshot {
+    param(
+        [Parameter(Mandatory)] [object] $DescribeObject,
+        [Parameter(Mandatory)] [string] $ResourceName
+    )
+
+    $matches = @($DescribeObject.resources | Where-Object { "$($_.displayName)" -ceq $ResourceName })
+    if ($matches.Count -ne 1) {
+        throw "Expected one Aspire resource named '$ResourceName', found $($matches.Count)."
+    }
+    return $matches[0]
+}
+
+function Get-NervAspireResourceEndpoint {
+    param(
+        [Parameter(Mandatory)] [object] $DescribeObject,
+        [Parameter(Mandatory)] [string] $ResourceName,
+        [Parameter(Mandatory)] [string] $EndpointName
+    )
+
+    $resource = Get-NervAspireResourceSnapshot -DescribeObject $DescribeObject -ResourceName $ResourceName
+    $matches = @($resource.urls | Where-Object { "$($_.name)" -ceq $EndpointName })
+    if ($matches.Count -ne 1 -or [string]::IsNullOrWhiteSpace("$($matches[0].url)")) {
+        throw "Expected one '$EndpointName' endpoint for Aspire resource '$ResourceName'."
+    }
+    return "$($matches[0].url)"
+}
+
+function Get-NervAspireDescribeObject {
+    param(
+        [Parameter(Mandatory)] [string] $AppHostProject,
+        [Parameter(Mandatory)] [string] $WorkingDirectory
+    )
+
+    $result = Invoke-AspireOutput `
+        -Arguments @('describe', '--format', 'Json', '--apphost', $AppHostProject, '--non-interactive', '--nologo') `
+        -WorkingDirectory $WorkingDirectory `
+        -TimeoutSeconds 60 `
+        -Name 'fullstack-aspire-describe'
+    return (Read-NervAspireJson -Text "$($result.Stdout)")
+}
+
+function Wait-NervAspireResource {
+    param(
+        [Parameter(Mandatory)] [string] $AppHostProject,
+        [Parameter(Mandatory)] [string] $ResourceName,
+        [Parameter(Mandatory)] [string] $WorkingDirectory,
+        [ValidateRange(1, 1200)] [int] $TimeoutSeconds = 600
+    )
+
+    Invoke-AspireOutput `
+        -Arguments @('wait', $ResourceName, '--status', 'healthy', '--timeout', "$TimeoutSeconds", '--apphost', $AppHostProject, '--non-interactive', '--nologo') `
+        -WorkingDirectory $WorkingDirectory `
+        -TimeoutSeconds ($TimeoutSeconds + 30) `
+        -Name "fullstack-aspire-wait-$ResourceName" | Out-Null
+}
+
+function Save-NervFullStackEndpoints {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [object] $DescribeObject
+    )
+
+    $endpoints = [ordered]@{}
+    foreach ($resourceName in @('gateway', 'business-gateway', 'console', 'business-console', 'screen')) {
+        $endpoints[$resourceName] = Get-NervAspireResourceEndpoint `
+            -DescribeObject $DescribeObject `
+            -ResourceName $resourceName `
+            -EndpointName 'http'
+    }
+    $Manifest.endpoints = $endpoints
+    return $Manifest
+}
+
 function Get-NervFullStackEnvironment {
     param(
         [Parameter(Mandatory)]

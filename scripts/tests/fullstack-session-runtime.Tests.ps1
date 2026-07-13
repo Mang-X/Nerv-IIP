@@ -21,6 +21,35 @@ $sessionId = 'nerv-abcd-123456'
 $fixturePath = Join-Path $PSScriptRoot 'fixtures/fullstack/docker-resources.json'
 $inspectObjects = @(Get-Content -LiteralPath $fixturePath -Raw | ConvertFrom-Json)
 $recordedContainerIds = @('owned-container-id', 'unlabeled-container-id')
+$startFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-start.json'
+$describeFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-describe.json'
+
+$start = Read-NervAspireJson -Text (Get-Content -LiteralPath $startFixture -Raw)
+$describe = Read-NervAspireJson -Text (Get-Content -LiteralPath $describeFixture -Raw)
+$identity = Get-NervAspireStartIdentity -StartObject $start
+$endpoint = Get-NervAspireResourceEndpoint -DescribeObject $describe -ResourceName 'business-console' -EndpointName 'http'
+Assert-True (-not [string]::IsNullOrWhiteSpace($identity.AppHostId)) 'AppHost ID was not parsed.'
+Assert-True ($identity.AppHostPid -eq 4242) 'AppHost PID was not parsed.'
+Assert-True ($endpoint -eq 'http://127.0.0.1:43125') "Unexpected endpoint '$endpoint'."
+$allDescribe = [pscustomobject]@{
+    resources = @('gateway', 'business-gateway', 'console', 'business-console', 'screen') | ForEach-Object {
+        [pscustomobject]@{
+            displayName = $_
+            urls = @([pscustomobject]@{ name = 'http'; url = "http://127.0.0.1/$($_)" })
+        }
+    }
+}
+$endpointManifest = [pscustomobject]@{ endpoints = [ordered]@{} }
+$savedManifest = @(Save-NervFullStackEndpoints -Manifest $endpointManifest -DescribeObject $allDescribe)
+Assert-True ($savedManifest.Count -eq 1) 'Endpoint discovery must return exactly one manifest object.'
+Assert-True ($savedManifest[0].endpoints.'business-console' -eq 'http://127.0.0.1/business-console') 'All public endpoints must be saved.'
+
+$missingPayloadFailed = $false
+try { Read-NervAspireJson -Text 'Aspire emitted no machine payload.' | Out-Null } catch { $missingPayloadFailed = $true }
+Assert-True $missingPayloadFailed 'Aspire JSON parsing must reject missing payloads.'
+$multiplePayloadsFailed = $false
+try { Read-NervAspireJson -Text '{"one":1} trailing {"two":2}' | Out-Null } catch { $multiplePayloadsFailed = $true }
+Assert-True $multiplePayloadsFailed 'Aspire JSON parsing must reject multiple payloads.'
 
 Assert-True `
     (Test-NervDockerResourceOwnership -InspectObject $inspectObjects[0] -SessionId $sessionId -RecordedIds $recordedContainerIds) `

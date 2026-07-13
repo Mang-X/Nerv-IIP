@@ -40,6 +40,7 @@ foreach ($expected in @(
     '.\nerv.ps1 wait',
     '.\nerv.ps1 logs',
     '.\nerv.ps1 describe',
+    '.\nerv.ps1 fullstack run -Scenario smoke',
     '.\nerv.ps1 publish-compose',
     '.\nerv.ps1 ports',
     '.\nerv.ps1 help'
@@ -47,6 +48,32 @@ foreach ($expected in @(
     if (-not $help.Output.Contains($expected)) {
         throw "Help output did not contain '$expected'. Output: $($help.Output)"
     }
+}
+
+$fullStackHelp = Invoke-Nerv -Arguments @('fullstack', 'help')
+if ($fullStackHelp.ExitCode -ne 0) {
+    throw "Expected fullstack help to exit 0, got $($fullStackHelp.ExitCode). Output: $($fullStackHelp.Output)"
+}
+foreach ($expected in @('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc')) {
+    if (-not $fullStackHelp.Output.Contains($expected)) {
+        throw "Full-stack help did not contain '$expected'. Output: $($fullStackHelp.Output)"
+    }
+}
+
+$fullStackRun = Invoke-Nerv -Arguments @('fullstack', 'run', '-Scenario', 'smoke', '-NoBuild')
+if ($fullStackRun.ExitCode -eq 0 -or -not $fullStackRun.Output.Contains('scenario=smoke') -or -not $fullStackRun.Output.Contains('noBuild=True')) {
+    throw "Named full-stack run options were not forwarded. Output: $($fullStackRun.Output)"
+}
+
+$forwardedSessionId = 'nerv-abcd-123456'
+$fullStackStop = Invoke-Nerv -Arguments @('fullstack', 'stop', '-SessionId', $forwardedSessionId)
+if ($fullStackStop.ExitCode -eq 0 -or -not $fullStackStop.Output.Contains($forwardedSessionId)) {
+    throw "Named full-stack session ID was not forwarded. Output: $($fullStackStop.Output)"
+}
+
+$fullStackUrl = Invoke-Nerv -Arguments @('fullstack', 'url', 'business-console')
+if ($fullStackUrl.ExitCode -eq 0 -or -not $fullStackUrl.Output.Contains('business-console')) {
+    throw "Positional full-stack URL target was not forwarded. Output: $($fullStackUrl.Output)"
 }
 
 $ports = Invoke-Nerv -Arguments @('ports')

@@ -1,0 +1,8 @@
+Aspire detached start result follows.
+{
+  "appHostPath": "C:\\synthetic\\Nerv-IIP\\infra\\aspire\\Nerv.IIP.AppHost\\Nerv.IIP.AppHost.csproj",
+  "appHostPid": 4242,
+  "cliPid": 4343,
+  "dashboardUrl": "https://127.0.0.1:18888/login?t=synthetic-redacted",
+  "logFile": "C:\\synthetic\\aspire\\detach-child.log"
+}
