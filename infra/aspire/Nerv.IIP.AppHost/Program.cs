@@ -52,6 +52,10 @@ if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 var postgres = WithFullStackOwnership(builder.AddPostgres("postgres"))
     .WithImageTag("18")
     .WithDataVolume(SessionVolume("nerv-iip-postgres-18"));
+if (fullStackEphemeral)
+{
+    postgres.WithArgs("-c", "max_connections=300");
+}
 var appHubDatabase = postgres.AddDatabase("apphub-db", "nerv_iip_apphub");
 var iamDatabase = postgres.AddDatabase("iam-db", "nerv_iip_iam");
 var opsDatabase = postgres.AddDatabase("ops-db", "nerv_iip_ops");

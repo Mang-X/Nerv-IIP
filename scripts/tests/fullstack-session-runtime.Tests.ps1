@@ -29,6 +29,8 @@ $parallelAcceptanceScript = Join-Path $repoRoot 'scripts/verify-parallel-fullsta
 Assert-True (Test-Path -LiteralPath $parallelAcceptanceScript -PathType Leaf) 'Parallel full-stack acceptance entrypoint is missing.'
 $parallelAcceptanceText = Get-Content -LiteralPath $parallelAcceptanceScript -Raw
 $fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
+$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
+Assert-True ($appHostText.Contains('max_connections=300')) 'Ephemeral AppHost PostgreSQL must leave capacity for full-stack probes and service pools.'
 Assert-True ($fullStackSessionText.Contains("ASPIRE_CLI_START_TIMEOUT'] = '300'")) 'Full-stack startup must extend the Aspire CLI handshake timeout.'
 Assert-True ($fullStackSessionText.Contains("MSBUILDDISABLENODEREUSE'] = '1'")) 'Full-stack startup must prevent reusable MSBuild worker accumulation.'
 Assert-True ($fullStackSessionText.Contains("DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'")) 'Full-stack startup must disable the persistent .NET build server.'
