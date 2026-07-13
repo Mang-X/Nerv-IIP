@@ -1,7 +1,9 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Contracts.Coding;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands;
 
@@ -46,6 +48,40 @@ public sealed class ErpCodingService
             cancellationToken);
 
         return new ErpCodeAllocation(allocation.Code, allocation.IsIdempotentReplay);
+    }
+
+    public static async Task<ErpCodeAllocation?> FindPersistedReplayAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string ruleKey,
+        string? idempotencyKey,
+        string payloadFingerprint,
+        CancellationToken cancellationToken)
+    {
+        var normalizedKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey.Trim();
+        if (normalizedKey is null)
+        {
+            return null;
+        }
+
+        var record = await dbContext.CodeIdempotencyKeys.SingleOrDefaultAsync(x =>
+            x.OrganizationId == organizationId
+            && x.EnvironmentId == environmentId
+            && x.RuleKey == ruleKey
+            && x.IdempotencyKey == normalizedKey,
+            cancellationToken);
+        if (record is null)
+        {
+            return null;
+        }
+
+        if (!string.Equals(record.PayloadFingerprint, payloadFingerprint, StringComparison.Ordinal))
+        {
+            throw new KnownException($"Idempotency key '{normalizedKey}' has already been used with different ERP create data.");
+        }
+
+        return new ErpCodeAllocation(record.Code, true);
     }
 
     public static string Fingerprint(params object?[] parts)

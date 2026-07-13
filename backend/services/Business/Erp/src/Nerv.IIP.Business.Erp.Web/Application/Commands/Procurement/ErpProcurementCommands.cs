@@ -254,13 +254,43 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
         var conversionIdempotencyKey = request.PurchaseOrderNo is null
             ? StableIdempotencyKey("pr-to-po", supplierCode, request.CurrencyCode, requisitionNos)
             : request.IdempotencyKey;
+        var fingerprint = ErpCodingService.Fingerprint(supplierCode, request.CurrencyCode, requisitionNos);
+        var replay = await ErpCodingService.FindPersistedReplayAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "purchase-order",
+            conversionIdempotencyKey,
+            fingerprint,
+            cancellationToken);
+        if (replay is not null)
+        {
+            var replayedOrder = await dbContext.PurchaseOrders.SingleAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PurchaseOrderNo == replay.Code,
+                cancellationToken);
+            return new ConvertPurchaseRequisitionsToPurchaseOrderResult(
+                PurchaseRequisitionConversionStatus.AlreadyConverted,
+                replayedOrder.Id,
+                replayedOrder.PurchaseOrderNo,
+                SupplierCode: replayedOrder.SupplierCode);
+        }
+
+        await BusinessPartnerAvailabilityGate.EnsureActiveAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            supplierCode,
+            cancellationToken);
+
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId,
             "purchase-order",
             request.PurchaseOrderNo,
             conversionIdempotencyKey,
-            ErpCodingService.Fingerprint(supplierCode, request.CurrencyCode, requisitionNos),
+            fingerprint,
             cancellationToken);
         var existingOrder = await dbContext.PurchaseOrders.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
@@ -669,19 +699,21 @@ public sealed class CreatePurchaseOrderCommandHandler(
 
     public async Task<PurchaseOrderId> Handle(CreatePurchaseOrderCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _codingService.AllocateAsync(
+        var fingerprint = ErpCodingService.Fingerprint(request.SupplierCode, request.SiteCode, request.CurrencyCode, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.PromisedDate}"));
+        var replay = await ErpCodingService.FindPersistedReplayAsync(
+            dbContext,
             request.OrganizationId,
-            request.EnvironmentId, "purchase-order",
-            request.PurchaseOrderNo,
+            request.EnvironmentId,
+            "purchase-order",
             request.IdempotencyKey,
-            ErpCodingService.Fingerprint(request.SupplierCode, request.SiteCode, request.CurrencyCode, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.PromisedDate}")),
+            fingerprint,
             cancellationToken);
-        if (allocation.IsIdempotentReplay)
+        if (replay is not null)
         {
             return (await dbContext.PurchaseOrders.SingleAsync(x =>
                 x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && x.PurchaseOrderNo == allocation.Code,
+                && x.PurchaseOrderNo == replay.Code,
                 cancellationToken)).Id;
         }
 
@@ -691,6 +723,22 @@ public sealed class CreatePurchaseOrderCommandHandler(
             request.EnvironmentId,
             request.SupplierCode,
             cancellationToken);
+
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId, "purchase-order",
+            request.PurchaseOrderNo,
+            request.IdempotencyKey,
+            fingerprint,
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return (await dbContext.PurchaseOrders.SingleAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PurchaseOrderNo == allocation.Code,
+                cancellationToken)).Id;
+        }
 
         var order = PurchaseOrder.Create(
             request.OrganizationId,

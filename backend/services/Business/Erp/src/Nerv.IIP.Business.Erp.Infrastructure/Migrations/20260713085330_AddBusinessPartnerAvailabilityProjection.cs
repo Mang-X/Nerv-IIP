@@ -21,7 +21,7 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                     EnvironmentId = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false, comment: "Owning environment identifier."),
                     PartnerCode = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false, comment: "MasterData business-partner code used by ERP orders."),
                     Status = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false, comment: "Latest partner status: active or disabled."),
-                    ChangedAtUtc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "UTC time of the latest applied MasterData partner change."),
+                    ChangedAtUtc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "UTC time of the latest applied MasterData partner change and optimistic concurrency token."),
                     SourceEventId = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false, comment: "Latest applied MasterData integration event identifier.")
                 },
                 constraints: table =>

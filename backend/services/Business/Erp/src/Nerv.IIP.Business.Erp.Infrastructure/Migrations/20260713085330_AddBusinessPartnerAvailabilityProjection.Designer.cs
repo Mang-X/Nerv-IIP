@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260713082208_AddBusinessPartnerAvailabilityProjection")]
+    [Migration("20260713085330_AddBusinessPartnerAvailabilityProjection")]
     partial class AddBusinessPartnerAvailabilityProjection
     {
         /// <inheritdoc />
@@ -3357,8 +3357,9 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasComment("ERP business-partner availability projection identifier.");
 
                     b.Property<DateTimeOffset>("ChangedAtUtc")
+                        .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone")
-                        .HasComment("UTC time of the latest applied MasterData partner change.");
+                        .HasComment("UTC time of the latest applied MasterData partner change and optimistic concurrency token.");
 
                     b.Property<string>("EnvironmentId")
                         .IsRequired()

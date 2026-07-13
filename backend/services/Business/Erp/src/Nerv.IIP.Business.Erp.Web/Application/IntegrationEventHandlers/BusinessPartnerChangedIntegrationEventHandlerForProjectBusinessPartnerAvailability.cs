@@ -10,7 +10,7 @@ using NetCorePal.Extensions.DistributedTransactions;
 namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.MasterData.BusinessPartnerChangedIntegrationEvent", ConsumerName)]
-public sealed class BusinessPartnerChangedIntegrationEventHandlerForProjectAvailability(
+public sealed class BusinessPartnerChangedIntegrationEventHandlerForProjectBusinessPartnerAvailability(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<BusinessPartnerChangedIntegrationEvent>, ICapSubscribe

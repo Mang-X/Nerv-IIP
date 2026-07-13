@@ -3354,8 +3354,9 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasComment("ERP business-partner availability projection identifier.");
 
                     b.Property<DateTimeOffset>("ChangedAtUtc")
+                        .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone")
-                        .HasComment("UTC time of the latest applied MasterData partner change.");
+                        .HasComment("UTC time of the latest applied MasterData partner change and optimistic concurrency token.");
 
                     b.Property<string>("EnvironmentId")
                         .IsRequired()

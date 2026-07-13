@@ -16,7 +16,9 @@ public sealed class BusinessPartnerAvailabilityEntityTypeConfiguration : IEntity
         builder.Property(x => x.EnvironmentId).IsRequired().HasMaxLength(64).HasComment("Owning environment identifier.");
         builder.Property(x => x.PartnerCode).IsRequired().HasMaxLength(100).HasComment("MasterData business-partner code used by ERP orders.");
         builder.Property(x => x.Status).IsRequired().HasMaxLength(32).HasComment("Latest partner status: active or disabled.");
-        builder.Property(x => x.ChangedAtUtc).HasComment("UTC time of the latest applied MasterData partner change.");
+        builder.Property(x => x.ChangedAtUtc)
+            .IsConcurrencyToken()
+            .HasComment("UTC time of the latest applied MasterData partner change and optimistic concurrency token.");
         builder.Property(x => x.SourceEventId).IsRequired().HasMaxLength(256).HasComment("Latest applied MasterData integration event identifier.");
         builder.Ignore(x => x.IsDisabled);
 

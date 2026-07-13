@@ -14,6 +14,7 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
+[Collection("ERP PostgreSQL acceptance")]
 public sealed class BusinessPartnerChangedPostgresAcceptanceTests
 {
     [BusinessPartnerPostgresFact]
@@ -58,7 +59,7 @@ public sealed class BusinessPartnerChangedPostgresAcceptanceTests
             "partner-disabled-pg",
             new MasterDataChangedPayload("business-partner", "BP-PG-001", "disabled", changedAtUtc));
 
-        await new BusinessPartnerChangedIntegrationEventHandlerForProjectAvailability(
+        await new BusinessPartnerChangedIntegrationEventHandlerForProjectBusinessPartnerAvailability(
             dbContext,
             new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(integrationEvent, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);

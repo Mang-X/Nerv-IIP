@@ -151,10 +151,18 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
 
     public async Task<SalesOrderId> Handle(CreateSalesOrderCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "sales-order", request.SalesOrderNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.QuotationNo), cancellationToken);
-        if (allocation.IsIdempotentReplay)
+        var fingerprint = ErpCodingService.Fingerprint(request.QuotationNo);
+        var replay = await ErpCodingService.FindPersistedReplayAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "sales-order",
+            request.IdempotencyKey,
+            fingerprint,
+            cancellationToken);
+        if (replay is not null)
         {
-            return (await dbContext.SalesOrders.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == allocation.Code, cancellationToken)).Id;
+            return (await dbContext.SalesOrders.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == replay.Code, cancellationToken)).Id;
         }
 
         var quotation = await dbContext.Quotations
@@ -171,6 +179,12 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
             request.EnvironmentId,
             quotation.CustomerCode,
             cancellationToken);
+        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "sales-order", request.SalesOrderNo, request.IdempotencyKey, fingerprint, cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return (await dbContext.SalesOrders.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == allocation.Code, cancellationToken)).Id;
+        }
+
         var creditProfile = await creditProfileReader.GetAsync(request.OrganizationId, request.EnvironmentId, quotation.CustomerCode, cancellationToken)
             ?? throw new KnownException($"Customer '{quotation.CustomerCode}' credit limit master data is required before creating a sales order.");
         var openReceivables = await dbContext.AccountReceivables

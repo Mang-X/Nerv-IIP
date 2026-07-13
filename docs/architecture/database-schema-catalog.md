@@ -422,7 +422,7 @@ Source:
 9. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/20260629063800_AddErpLongTailCurrencyTolerance.cs`
 10. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/20260707020237_AddErpPeriodPaymentReceiptClose.cs`
 11. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/20260707121325_AddPurchaseRequisitionConversionToPurchaseOrder.cs`
-12. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/20260713082208_AddBusinessPartnerAvailabilityProjection.cs`
+12. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/20260713085330_AddBusinessPartnerAvailabilityProjection.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |

@@ -29,7 +29,7 @@
 - Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/MasterData/BusinessPartnerAvailability.cs`
 - Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/BusinessPartnerAvailabilityEntityTypeConfiguration.cs`
 - Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventHandlers/BusinessPartnerChangedIntegrationEventHandlerForProjectAvailability.cs`
+- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventHandlers/BusinessPartnerChangedIntegrationEventHandlerForProjectBusinessPartnerAvailability.cs`
 - Test: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/BusinessPartnerChangedConsumerTests.cs`
 
 - [ ] Write focused tests for disabled projection, duplicate replay, stale event ordering, invalid payload dead-lettering, and re-enable.
@@ -70,4 +70,3 @@
 - [ ] Run the test when `NERV_IIP_TEST_POSTGRES` is available; otherwise capture the skipped result and exact reproduction command.
 - [ ] Run MasterData Web tests, ERP Domain/Web tests, ERP schema tests, and the necessary backend solution gate.
 - [ ] Review `git diff` for strict ERP/MasterData/docs scope and no Scheduling/MES/common-contract changes.
-
