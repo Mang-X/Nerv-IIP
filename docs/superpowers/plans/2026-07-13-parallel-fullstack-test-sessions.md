@@ -4,9 +4,9 @@
 
 **Goal:** Add governed, ephemeral Aspire full-stack sessions that allow two or three worktrees to run concurrently with dynamic ports, isolated writable storage, exact ownership cleanup, retained diagnostics, and no minimum-memory admission rule.
 
-**Architecture:** Keep Aspire AppHost as the only topology source. A thin root command dispatches to a PowerShell coordinator; two focused libraries own durable session state and runtime ownership, while AppHost switches volume names and container labels only when validated session environment variables are present. Automated scenarios always collect diagnostics and clean up in `finally`; a lease guardian and stale-session GC recover interrupted runs without touching unrelated resources.
+**Architecture:** Keep Aspire AppHost as the only topology source. A thin root command dispatches to a PowerShell coordinator; two focused libraries own durable session state and runtime ownership, while ephemeral AppHost mode switches writable storage, target/public ports and ownership labels without changing persistent Development defaults. Automated scenarios always collect diagnostics and clean up in `finally`; a detached lease guardian and stale-session GC recover interrupted runs without touching unrelated resources.
 
-**Tech Stack:** PowerShell 7, .NET 10, Aspire CLI/AppHost 13.4.0, Docker, JSON session manifests, existing `ScriptAutomation.ps1` helpers.
+**Tech Stack:** PowerShell 7, .NET 10, installed Aspire CLI 13.4.x, repository-locked Aspire AppHost packages 13.4.0, Docker, Vite, Playwright, JSON session manifests, existing `ScriptAutomation.ps1` helpers.
 
 ---
 
@@ -20,8 +20,8 @@ Create:
 4. `scripts/fullstack-guardian.ps1` - bounded lease monitor that invokes cleanup for one exact session.
 5. `scripts/tests/fullstack-session-state.Tests.ps1` - fast state, locking, admission, transition, and lease contract tests.
 6. `scripts/tests/fullstack-session-runtime.Tests.ps1` - fast Aspire JSON, endpoint, redaction, and ownership contract tests using fixtures only.
-7. `scripts/tests/fixtures/fullstack/aspire-start.json` - observed Aspire 13.4 detached-start JSON fixture with synthetic paths and identifiers.
-8. `scripts/tests/fixtures/fullstack/aspire-describe.json` - observed Aspire 13.4 resource JSON fixture with synthetic dynamic URLs.
+7. `scripts/tests/fixtures/fullstack/aspire-start.json` - observed installed Aspire CLI 13.4.x detached-start JSON fixture with synthetic paths and identifiers.
+8. `scripts/tests/fixtures/fullstack/aspire-describe.json` - observed installed Aspire CLI 13.4.x resource JSON fixture with synthetic dynamic URLs.
 9. `scripts/tests/fixtures/fullstack/docker-resources.json` - synthetic Docker inspect fixture containing owned, mismatched, and unlabeled resources.
 10. `scripts/verify-parallel-fullstack-isolation.ps1` - real two- or three-session Docker/Aspire acceptance entrypoint.
 
@@ -30,15 +30,19 @@ Modify:
 1. `nerv.ps1` - thin `fullstack` command dispatch and help text.
 2. `scripts/tests/dev-entrypoint.Tests.ps1` - root command/help routing checks.
 3. `scripts/aspire-control.ps1` - remove generic prefix-based orphan deletion from ordinary development stop.
-4. `infra/aspire/Nerv.IIP.AppHost/Program.cs` - validated ephemeral session mode, session-specific stateful volume names, and container runtime ownership labels.
-5. `README.md` - persistent development versus ephemeral full-stack usage.
-6. `infra/aspire/README.md` - AppHost session-mode environment contract.
-7. `docs/architecture/deployment-baseline.md` - isolated full-stack topology and temporary storage ownership.
-8. `docs/architecture/script-automation-governance.md` - manifest, lease, exact-ownership, and cleanup rules.
-9. `docs/architecture/implementation-readiness.md` - delivered command surface and verification status after implementation.
-10. `AGENTS.md` - require agent-owned full-stack checks to use `fullstack run` and prohibit leaving interactive sessions alive.
+4. `scripts/lib/ScriptAutomation.ps1` - add a detached managed-process helper whose stdio is redirected directly to files.
+5. `scripts/tests/check-script-governance.Tests.ps1` - detached helper survival and log tests.
+6. `infra/aspire/Nerv.IIP.AppHost/Program.cs` - validated ephemeral session mode, dynamic endpoint definitions, session-specific stateful volume names, and container runtime ownership labels.
+7. `frontend/apps/console/vite.config.ts`, `frontend/apps/business-console/vite.config.ts`, and `frontend/apps/screen/vite.config.ts` - honor Aspire-injected `PORT` with existing fixed ports as fallbacks.
+8. `frontend/apps/console/playwright.config.ts` and `frontend/apps/business-console/playwright.config.ts` - attach to manifest-derived `PLAYWRIGHT_BASE_URL` without starting a second Vite server.
+9. `README.md` - persistent development versus ephemeral full-stack usage.
+10. `infra/aspire/README.md` - AppHost session-mode environment contract.
+11. `docs/architecture/deployment-baseline.md` - isolated full-stack topology and temporary storage ownership.
+12. `docs/architecture/script-automation-governance.md` - manifest, lease, exact-ownership, detached-process, and cleanup rules.
+13. `docs/architecture/implementation-readiness.md` - delivered command surface and verification status after implementation.
+14. `AGENTS.md` - require agent-owned full-stack checks to use `fullstack run` and prohibit leaving interactive sessions alive.
 
-No backend endpoint, Gateway contract, OpenAPI snapshot, generated client, database migration, frontend source, or second Compose topology changes are part of this plan.
+No backend endpoint, Gateway contract, OpenAPI snapshot, generated client, database migration, frontend application behavior/UI, or second Compose topology changes are part of this plan. Frontend changes are limited to development/test port configuration.
 
 ---
 
@@ -97,9 +101,9 @@ try {
     $reloaded.leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O')
     Assert-True (Test-NervFullStackSessionStale -Manifest $reloaded -Now ([DateTimeOffset]::UtcNow)) 'Expired lease must be stale.'
 
-    $lockCount = 0
+    $script:lockCount = 0
     Invoke-WithNervFullStackSessionLock -StateRoot $testRoot -ScriptBlock { $script:lockCount++ }
-    Assert-True ($lockCount -eq 1) 'Session lock must execute its body once.'
+    Assert-True ($script:lockCount -eq 1) 'Session lock must execute its body once.'
 }
 finally {
     Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -227,8 +231,12 @@ if ($owned.Count -ne 1 -or $owned[0].Id -ne 'owned-container-id') {
     throw "Expected only the exact recorded and labeled resource, got $($owned.Id -join ', ')."
 }
 
-foreach ($name in @('postgres-random', 'redis-random', 'minio-random')) {
-    if (Test-NervDockerNameOwnership -Name $name -SessionId 'nerv-abcd-123456') {
+$recordedNames = @('nerv-iip-postgres-18-nerv-abcd-123456')
+if (-not (Test-NervDockerRecordedNameOwnership -Name $recordedNames[0] -SessionId 'nerv-abcd-123456' -RecordedNames $recordedNames)) {
+    throw 'The exact manifest-recorded session volume must pass ownership validation.'
+}
+foreach ($name in @('postgres-random', 'nerv-iip-postgres-18-nerv-dead-654321')) {
+    if (Test-NervDockerRecordedNameOwnership -Name $name -SessionId 'nerv-abcd-123456' -RecordedNames $recordedNames) {
         throw "Generic name '$name' must never prove ownership."
     }
 }
@@ -260,13 +268,15 @@ function Test-NervDockerResourceOwnership {
     return "$($labels.'com.nerv-iip.session')" -ceq $SessionId
 }
 
-function Test-NervDockerNameOwnership {
-    param([string] $Name, [string] $SessionId)
-    return $Name -ceq $SessionId
+function Test-NervDockerRecordedNameOwnership {
+    param([string] $Name, [string] $SessionId, [string[]] $RecordedNames)
+    if ($SessionId -notmatch '^nerv-[a-f0-9]{4}-[a-f0-9]{6}$') { return $false }
+    return ($RecordedNames -ccontains $Name) -and
+        $Name.EndsWith("-$SessionId", [StringComparison]::Ordinal)
 }
 ```
 
-Add `Get-NervSessionDockerResources`, `Remove-NervSessionContainers`, `Remove-NervSessionNetworks`, and `Remove-NervSessionVolumes`. Every list and inspect operation must go through `Invoke-NativeCommandOutput`; every remove operation must go through `Invoke-NativeCommandWithTimeout`. Require both recorded identity and exact session label for containers. For volumes and networks, require an exact recorded name/ID plus the label when Docker exposes it. Return unresolved objects instead of deleting when proof is incomplete.
+Add `Get-NervSessionDockerResources`, `Remove-NervSessionContainers`, `Remove-NervSessionNetworks`, and `Remove-NervSessionVolumes`. Every list and inspect operation must go through `Invoke-NativeCommandOutput`; every remove operation must go through `Invoke-NativeCommandWithTimeout`. Require both recorded identity and exact session label for containers. For named volumes, require `Test-NervDockerRecordedNameOwnership` plus the exact label when Docker exposes it. For networks, require an exact recorded ID plus the label when exposed. Return unresolved objects instead of deleting when proof is incomplete; a suffix or label without a manifest match is never sufficient.
 
 - [ ] **Step 4: Remove generic orphan deletion from ordinary Aspire stop**
 
@@ -297,9 +307,20 @@ git commit -m "fix: require exact Aspire session ownership for cleanup"
 
 **Files:**
 - Modify: `infra/aspire/Nerv.IIP.AppHost/Program.cs`
+- Modify: `frontend/apps/console/vite.config.ts`
+- Modify: `frontend/apps/business-console/vite.config.ts`
+- Modify: `frontend/apps/screen/vite.config.ts`
+- Modify: `frontend/apps/console/playwright.config.ts`
+- Modify: `frontend/apps/business-console/playwright.config.ts`
 - Modify: `scripts/tests/fullstack-session-runtime.Tests.ps1`
 
-- [ ] **Step 1: Extend the runtime test with the AppHost environment contract**
+- [ ] **Step 1: Record the current fixed-port failure with two short-path worktrees**
+
+Create two detached worktrees under `(Get-NervFullStackStateRoot)/endpoint-probe/<runId>/a` and `/b`, run each worktree's `scripts/setup-worktree.ps1` so pnpm uses its global content-addressable store and hard-links dependencies, then start the first AppHost with `aspire start --isolated`. Start the second AppHost with the same command and current code. Always stop both exact AppHost paths and remove only the two validated probe worktrees in `finally`.
+
+Expected before implementation: the second topology cannot keep all three Vite resources up because `console`, `business-console`, and `screen` still bind 5105, 5125, and 5128. Save the redacted failure resource names in the task notes; do not commit machine paths or logs.
+
+- [ ] **Step 2: Extend the runtime test with the AppHost environment contract**
 
 Add assertions for `Get-NervFullStackEnvironment` in the runtime library. The expected values are:
 
@@ -319,7 +340,7 @@ foreach ($expected in @(
 
 Run the test and expect failure because the environment function is absent.
 
-- [ ] **Step 2: Add the validated AppHost mode**
+- [ ] **Step 3: Add validated AppHost storage, ownership, and endpoint modes**
 
 At the top of `Program.cs`, after `CreateBuilder`, add validated configuration and derived volume names:
 
@@ -352,7 +373,7 @@ Replace only the four named writable volumes:
 .WithVolume(SessionVolume("nerv-iip-victoria-logs"), "/victoria-logs-data");
 ```
 
-Add a local generic helper using the Aspire 13.4-supported API:
+Add a local generic helper using the repository-locked Aspire AppHost 13.4.0 API:
 
 ```csharp
 Aspire.Hosting.ApplicationModel.IResourceBuilder<T> WithFullStackOwnership<T>(
@@ -367,26 +388,67 @@ Aspire.Hosting.ApplicationModel.IResourceBuilder<T> WithFullStackOwnership<T>(
 
 Wrap PostgreSQL, Redis, MinIO, VictoriaLogs, and conditionally created RabbitMQ/OTel container builders with `WithFullStackOwnership`. Persistent development mode must retain the existing volume names and receive no session label.
 
-- [ ] **Step 3: Implement the matching PowerShell environment generator**
+For every .NET project resource, preserve the current `.WithHttpEndpoint(port: <fixed>, name: "http")` call in persistent mode, but use `.WithHttpEndpoint(name: "http")` in ephemeral mode so Aspire allocates both target and public ports. For stateful containers, keep the internal `targetPort` but omit public `port` in ephemeral mode. For each Vite app, preserve the current fixed, non-proxied endpoint in persistent mode; in ephemeral mode use `WithEndpoint(targetPort: null, port: null, scheme: "http", name: "http", env: "PORT", isProxied: false)` so DCP allocates and injects a process binding port. Do not rely on `--isolated` to rewrite an explicitly fixed non-proxied target.
+
+- [ ] **Step 4: Make Vite and Playwright consume allocated endpoints**
+
+In each Vite config, replace the literal server port with an environment-aware fallback and retain existing proxies:
+
+```typescript
+const port = Number(process.env.PORT ?? '<existing-port>')
+
+server: {
+  port,
+  strictPort: true,
+  proxy: { /* keep the current proxy map byte-for-byte */ },
+}
+```
+
+Use `5105`, `5125`, and `5128` respectively for `<existing-port>`. The Vite proxies already use AppHost-provided Gateway environment variables, so browser requests remain same-origin and no permissive dynamic CORS policy is added.
+
+In both Playwright configs, use the manifest-provided URL when present and do not launch another Vite server:
+
+```typescript
+const externalBaseURL = process.env.PLAYWRIGHT_BASE_URL
+const baseURL = externalBaseURL ?? `http://127.0.0.1:${port}`
+
+export default defineConfig({
+  use: { baseURL },
+  webServer: externalBaseURL
+    ? undefined
+    : { command: `vp dev --host 127.0.0.1 --port ${port}`, url: baseURL, reuseExistingServer: !process.env.CI, timeout: 120_000 },
+})
+```
+
+- [ ] **Step 5: Implement the matching PowerShell environment generator**
 
 Add `Get-NervFullStackEnvironment` to `FullStackSessionRuntime.ps1`. Validate the same regex and return a hashtable containing `NERV_IIP_EPHEMERAL`, `NERV_IIP_SESSION_ID`, `ASPNETCORE_ENVIRONMENT`, `DOTNET_ENVIRONMENT`, and the four derived volume names for manifest recording. The AppHost reads the first two; the remaining names are coordinator-owned manifest facts.
 
-- [ ] **Step 4: Verify both modes**
+- [ ] **Step 6: Run fast checks and build both modes**
 
 Run:
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/tests/fullstack-session-runtime.Tests.ps1
 dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj
+pnpm -C frontend --filter @nerv-iip/console typecheck
+pnpm -C frontend --filter @nerv-iip/business-console typecheck
+pnpm -C frontend --filter @nerv-iip/screen typecheck
 ```
 
-Expected: runtime tests pass and AppHost build exits 0 with no warnings or errors. Do not start AppHost in this task.
+Expected: runtime tests pass, AppHost build has no warnings/errors, and all three affected frontend typechecks pass.
 
-- [ ] **Step 5: Commit ephemeral AppHost mode**
+- [ ] **Step 7: Prove two-instance dynamic endpoints before Task 4**
+
+Repeat the two-worktree probe from Step 1 with the new ephemeral environment. Use `aspire describe --format Json` for each exact AppHost and assert that `gateway`, `business-gateway`, `console`, `business-console`, and `screen` each have distinct target and public ports across the two instances. HTTP-check all five URLs and verify the three Vite processes report the injected `PORT` rather than their persistent fallback.
+
+Expected: both topologies remain up simultaneously and all ten endpoint URLs are reachable and pairwise distinct by resource. If any target remains fixed or either topology reports a `Finished` project, stop here and do not begin Task 4.
+
+- [ ] **Step 8: Commit ephemeral AppHost mode**
 
 ```powershell
-git add infra/aspire/Nerv.IIP.AppHost/Program.cs scripts/lib/FullStackSessionRuntime.ps1 scripts/tests/fullstack-session-runtime.Tests.ps1
-git commit -m "feat: isolate Aspire full-stack session storage"
+git add infra/aspire/Nerv.IIP.AppHost/Program.cs frontend/apps/console/vite.config.ts frontend/apps/business-console/vite.config.ts frontend/apps/screen/vite.config.ts frontend/apps/console/playwright.config.ts frontend/apps/business-console/playwright.config.ts scripts/lib/FullStackSessionRuntime.ps1 scripts/tests/fullstack-session-runtime.Tests.ps1
+git commit -m "feat: isolate Aspire full-stack ports and storage"
 ```
 
 ---
@@ -402,7 +464,7 @@ git commit -m "feat: isolate Aspire full-stack session storage"
 - Modify: `nerv.ps1`
 - Modify: `scripts/tests/dev-entrypoint.Tests.ps1`
 
-- [ ] **Step 1: Capture synthetic Aspire 13.4 fixtures and write failing parsers**
+- [ ] **Step 1: Capture synthetic installed-Aspire-CLI 13.4.x fixtures and write failing parsers**
 
 Run `aspire start --help`, `aspire describe --help`, and use one disposable manual session only long enough to capture the JSON property names. Replace paths, PIDs, IDs, URLs, and tokens with synthetic values before committing fixtures. The fixtures must contain no user profile paths or secrets.
 
@@ -421,7 +483,7 @@ if ($endpoint -ne 'http://127.0.0.1:43125') { throw "Unexpected endpoint '$endpo
 
 - [ ] **Step 2: Implement Aspire JSON and endpoint helpers**
 
-Add the parser functions above plus `Wait-NervAspireResource`, `Get-NervAspireResourceSnapshot`, and `Save-NervFullStackEndpoints`. Use only `Invoke-AspireOutput` with `--format Json --apphost <exact path> --non-interactive --nologo`; never parse table output or scan ports. Save at least `gateway`, `business-gateway`, `console`, and `business-console` URLs to `manifest.endpoints`.
+Add the parser functions above plus `Wait-NervAspireResource`, `Get-NervAspireResourceSnapshot`, and `Save-NervFullStackEndpoints`. Use only `Invoke-AspireOutput` with `--format Json --apphost <exact path> --non-interactive --nologo`; never parse table output or scan ports. Save `gateway`, `business-gateway`, `console`, `business-console`, and `screen` URLs to `manifest.endpoints`.
 
 - [ ] **Step 3: Write failing root CLI routing tests**
 
@@ -481,7 +543,7 @@ param(
 )
 ```
 
-Dot-source `ScriptAutomation.ps1`, `FullStackSessionState.ps1`, and `FullStackSessionRuntime.ps1`. Implement `start` under `Invoke-WithNervFullStackSessionLock`: reconcile stale manifests, enforce the active-session ceiling and one-active-session-per-worktree rule, create the manifest/artifact directory, call `Invoke-AspireOutput` with `start --isolated --format Json`, record exact startup identity, discover Docker resources with the exact session label into `manifest.runtime.containers` entries shaped as `{ resourceName, id, name }`, wait for the four public resources, discover endpoints, set `Running`, persist, and print session ID plus URLs. Resolve an omitted `-SessionId` for `url/status/logs/stop` only when exactly one non-stopped session belongs to the current worktree; otherwise require an explicit ID.
+Dot-source `ScriptAutomation.ps1`, `FullStackSessionState.ps1`, and `FullStackSessionRuntime.ps1`. Implement `start` under `Invoke-WithNervFullStackSessionLock`: reconcile stale manifests, enforce the active-session ceiling and one-active-session-per-worktree rule, create the manifest/artifact directory, call `Invoke-AspireOutput` with `start --isolated --format Json`, record exact startup identity, discover Docker resources with the exact session label into `manifest.runtime.containers` entries shaped as `{ resourceName, id, name }`, wait for all five public resources (`gateway`, `business-gateway`, `console`, `business-console`, and `screen`), discover endpoints, set `Running`, persist, and print session ID plus URLs. Resolve an omitted `-SessionId` for `url/status/logs/stop` only when exactly one non-stopped session belongs to the current worktree; otherwise require an explicit ID.
 
 Implement `url` as a manifest read, lease renewal, and one URL written to stdout. Implement `status` and `list` as redacted summaries. Implement `logs` through Aspire CLI and the exact manifest AppHost path. Defer automated `run`, guardian, and GC behavior to Tasks 5 and 6, but make their dispatch branches fail with a clear non-zero `not available until lifecycle task is installed` message during this intermediate commit.
 
@@ -511,14 +573,18 @@ git commit -m "feat: add isolated full-stack session commands"
 **Files:**
 - Create: `scripts/fullstack-guardian.ps1`
 - Modify: `scripts/fullstack-session.ps1`
+- Modify: `scripts/lib/ScriptAutomation.ps1`
 - Modify: `scripts/lib/FullStackSessionState.ps1`
 - Modify: `scripts/lib/FullStackSessionRuntime.ps1`
+- Modify: `scripts/tests/check-script-governance.Tests.ps1`
 - Modify: `scripts/tests/fullstack-session-state.Tests.ps1`
 - Modify: `scripts/tests/fullstack-session-runtime.Tests.ps1`
 
 - [ ] **Step 1: Add failing stale-session and repeated-stop tests**
 
 Extend state tests with manifests for expired lease, missing coordinator, reused PID with a different start time, and a stopped session. Extend runtime tests with injected command scriptblocks so that two calls to `Stop-NervFullStackSession` produce zero remaining resources and do not attempt broad Docker removal. Assert a live session is never selected by `Get-NervStaleFullStackSessions`.
+
+Add a governance-helper test for `Start-DetachedManagedProcess`: launch a short fixture process whose stdout and stderr are redirected directly to separate files, let the launching PowerShell process exit, and assert from a second PowerShell process that the child survives long enough to write its completion marker. Also cover arguments containing spaces and quotes. The helper must return only the process identity needed by the manifest and must not retain a `Process` object or parent-side stream-copy task.
 
 - [ ] **Step 2: Implement bounded stop and GC**
 
@@ -530,7 +596,9 @@ In `fullstack-session.ps1`, implement `stop` and `gc`. `gc` must hold the cross-
 
 Create `scripts/fullstack-guardian.ps1` with Script-Governance category `verify`. Accept `-SessionId`, `-Mode Automated|Interactive`, optional `-CoordinatorPid`, optional `-CoordinatorStartTimeUtc`, and `-IntervalSeconds`. Every interval, read the exact manifest and exit for `Stopped`. In `Automated` mode, invoke the governed full-stack script with `stop -SessionId <id>` when the run coordinator identity disappears or the lease expires. In `Interactive` mode, ignore the short-lived `start` command PID and stop only when the renewable lease expires.
 
-Launch it through `Start-ManagedBackgroundProcess` using the current `pwsh` executable. For `run`, record the run script as coordinator and launch the guardian in `Automated` mode. For interactive `start`, launch in `Interactive` mode and replace `manifest.coordinator` with the guardian PID/start time before returning, so the completed `start` command is not mistaken for a crash. Record the same identity under `manifest.guardian`. Default interval is `NERV_IIP_FULLSTACK_GUARDIAN_INTERVAL_SECONDS` or 60 seconds. `status`, `url`, and `logs` renew the lease; default lease is `NERV_IIP_FULLSTACK_LEASE_MINUTES` or 90 minutes.
+Add `Start-DetachedManagedProcess` to `ScriptAutomation.ps1`. It is the only governed wrapper allowed to use PowerShell's built-in `Start-Process`; pass an argument list without command-string evaluation, use `-WindowStyle Hidden` on Windows, redirect stdout and stderr directly to caller-supplied files, return PID plus start time, and retain no parent-side pipes or copy tasks. Preserve the existing `Start-ManagedBackgroundProcess` behavior for callers that need live output capture.
+
+Launch the guardian through `Start-DetachedManagedProcess` using the current `pwsh` executable and dedicated artifact log files. For `run`, record the run script as coordinator and launch the guardian in `Automated` mode. For interactive `start`, launch in `Interactive` mode and replace `manifest.coordinator` with the guardian PID/start time before returning, so the completed `start` command is not mistaken for a crash. Record the same identity under `manifest.guardian`. Default interval is `NERV_IIP_FULLSTACK_GUARDIAN_INTERVAL_SECONDS` or 60 seconds. `status`, `url`, and `logs` renew the lease; default lease is `NERV_IIP_FULLSTACK_LEASE_MINUTES` or 90 minutes.
 
 - [ ] **Step 4: Run fast lifecycle tests**
 
@@ -547,7 +615,7 @@ Expected: all exit 0 and no live process/container is started by fixtures.
 - [ ] **Step 5: Commit lifecycle recovery**
 
 ```powershell
-git add scripts/fullstack-guardian.ps1 scripts/fullstack-session.ps1 scripts/lib/FullStackSessionState.ps1 scripts/lib/FullStackSessionRuntime.ps1 scripts/tests/fullstack-session-state.Tests.ps1 scripts/tests/fullstack-session-runtime.Tests.ps1
+git add scripts/fullstack-guardian.ps1 scripts/fullstack-session.ps1 scripts/lib/ScriptAutomation.ps1 scripts/lib/FullStackSessionState.ps1 scripts/lib/FullStackSessionRuntime.ps1 scripts/tests/check-script-governance.Tests.ps1 scripts/tests/fullstack-session-state.Tests.ps1 scripts/tests/fullstack-session-runtime.Tests.ps1
 git commit -m "feat: recover abandoned full-stack sessions"
 ```
 
@@ -562,7 +630,7 @@ git commit -m "feat: recover abandoned full-stack sessions"
 
 - [ ] **Step 1: Write failing scenario and redaction tests**
 
-Add fixture-driven tests for `Invoke-NervFullStackSmokeScenario` using injected HTTP and Aspire snapshot callbacks. Prove that all four URLs come from `manifest.endpoints`, a resource state of `Finished` fails, and returned child environment values are exactly:
+Add fixture-driven tests for `Invoke-NervFullStackSmokeScenario` using injected HTTP and Aspire snapshot callbacks. Prove that all five URLs come from `manifest.endpoints`, a resource state of `Finished` fails, and returned child environment values are exactly:
 
 ```powershell
 @{
@@ -580,7 +648,7 @@ Add `Collect-NervFullStackDiagnostics`. Before runtime shutdown, write bounded A
 
 - [ ] **Step 3: Implement the governed smoke scenario**
 
-`Invoke-NervFullStackSmokeScenario` must wait for and HTTP-check `gateway`, `business-gateway`, `console`, and `business-console`; inspect the complete Aspire JSON snapshot; fail when any project resource is `Finished`; and return a scenario exit code. It must not accept arbitrary commands. The scenario registry is a literal switch with only `smoke` in this implementation.
+`Invoke-NervFullStackSmokeScenario` must wait for and HTTP-check `gateway`, `business-gateway`, `console`, `business-console`, and `screen`; inspect the complete Aspire JSON snapshot; fail when any project resource is `Finished`; and return a scenario exit code. It must not accept arbitrary commands. The scenario registry is a literal switch with only `smoke` in this implementation.
 
 - [ ] **Step 4: Implement `fullstack run` with original-error preservation**
 
@@ -640,7 +708,7 @@ git commit -m "feat: run full-stack smoke checks with guaranteed cleanup"
 
 - [ ] **Step 1: Add a failing static acceptance-script contract**
 
-Extend runtime tests to parse the new script AST and assert it declares Script-Governance, accepts `-Sessions` with range 2..3, uses `Invoke-PwshScript`/managed helpers, and contains a `finally` cleanup path for every launched session. Run the test before creating the script and expect failure.
+Extend runtime tests to parse the new script AST and assert it declares Script-Governance, accepts `-Sessions` with range 2..3, roots disposable worktrees below `Get-NervFullStackStateRoot` rather than the repository, invokes each worktree's `scripts/setup-worktree.ps1`, uses `Invoke-PwshScript`/managed helpers, and contains a `finally` cleanup path for every launched session. Run the test before creating the script and expect failure.
 
 - [ ] **Step 2: Implement the real verification entrypoint**
 
@@ -654,11 +722,13 @@ param(
 )
 ```
 
-The script must create disposable linked worktrees under `artifacts/fullstack-worktrees/<runId>/` from the current commit using `Invoke-NativeCommandWithTimeout -Command 'git' -Arguments @('worktree', 'add', '--detach', <path>, 'HEAD')`. Validate every resolved worktree path remains below that exact run directory before cleanup. Launch `fullstack start` once per worktree through governed background helpers so all stacks remain live during assertions, then collect each session by exact `manifest.worktreeRoot`.
+The script must create disposable linked worktrees under the short machine-state path `(Get-NervFullStackStateRoot)/fullstack-worktrees/<runId>/` from the current commit using `Invoke-NativeCommandWithTimeout -Command 'git' -Arguments @('worktree', 'add', '--detach', <path>, 'HEAD')`. Never nest these worktrees under the repository or its `artifacts/` directory. Validate every resolved worktree path remains below that exact run directory before cleanup.
+
+After each `git worktree add`, invoke that worktree's `scripts/setup-worktree.ps1` before starting Aspire. This reuses pnpm's global content-addressable store and hard-links packages into each worktree; do not copy the primary worktree's `node_modules`. Because the current setup script reports dependency-install failures as warnings, explicitly require `<worktree>/frontend/node_modules` to exist afterward and fail the acceptance setup if it does not. Keep backend restore opt-in because AppHost startup performs the required build unless `-NoBuild` was explicitly requested and valid outputs already exist. Launch `fullstack start` once per prepared worktree through governed background helpers so all stacks remain live during assertions, then collect each session by exact `manifest.worktreeRoot`.
 
 Assert distinct endpoint URLs and distinct PostgreSQL, Redis, MinIO, and VictoriaLogs volume names. Select each PostgreSQL container from `manifest.runtime.containers` by `resourceName = 'postgres'`. Through `Invoke-NativeCommandOutput -Command 'docker'`, run `exec --user postgres <firstContainerId> psql -d postgres -v ON_ERROR_STOP=1 -c 'create table nerv_fullstack_isolation_probe(value text); insert into nerv_fullstack_isolation_probe values (''session-one'');'`, then run `exec --user postgres <secondContainerId> psql -d postgres -Atc 'select to_regclass(''public.nerv_fullstack_isolation_probe'');'` and require empty output. This proves writable database isolation without reading or logging a password.
 
-Stop the first session and re-check the second session's discovered gateway URL. With `-InjectFailure`, throw a synthetic failure after both stacks are live; the outer `finally` must still stop every recorded session, run `fullstack gc`, and remove only worktrees created beneath the validated run directory using governed `git worktree remove --force` calls. The expected injected failure is converted to success only after cleanup assertions prove no owned runtime remains.
+Stop the first session and re-check the second session's discovered gateway URL. With `-InjectFailure`, throw a synthetic failure after both stacks are live; the outer `finally` must still stop every recorded session, run `fullstack gc`, and remove only worktrees created beneath the validated short state-root run directory using governed `git worktree remove --force` calls. The expected injected failure is converted to success only after cleanup assertions prove no owned runtime remains.
 
 - [ ] **Step 3: Run static and governance tests**
 

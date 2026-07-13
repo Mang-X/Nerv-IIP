@@ -4,13 +4,14 @@
 
 Nerv-IIP uses one platform-level Aspire AppHost as the canonical local topology. A full-stack run starts the platform services, business services, gateways, frontends and container resources required for realistic cross-service or browser verification.
 
-Independent Codex sessions already work in separate git worktrees. `scripts/dev.ps1` detects linked worktrees and adds `aspire start --isolated`, so Aspire can randomize published ports and isolate user secrets. That solves the first layer of concurrency, but it does not yet provide a complete test-session lifecycle:
+Independent Codex sessions already work in separate git worktrees. `scripts/dev.ps1` detects linked worktrees and adds `aspire start --isolated`, which enables isolated user secrets and permits Aspire-managed dynamic endpoints. That flag alone does not make this AppHost parallel-safe:
 
 1. Full-stack endpoint addresses are not exported through a stable machine-readable session contract.
 2. AppHost container resources use fixed persistent volume names such as `nerv-iip-postgres-18`, `nerv-iip-redis`, `nerv-iip-minio` and `nerv-iip-victoria-logs`; concurrent isolated AppHosts must not share those writable volumes.
 3. `scripts/aspire-control.ps1` has a fallback that finds Aspire development containers by generic resource-name prefixes such as `postgres-*` and `redis-*`. In parallel runs, one session can therefore remove another session's containers.
 4. A successful `aspire start` leaves the full topology running until an explicit stop. Failed, interrupted or abandoned agent sessions can accumulate Aspire, Node.js, .NET and Docker resources.
 5. Full-stack runs are relatively expensive. The machine normally needs only two or three concurrent stacks, so admission uses a configurable concurrent-session ceiling.
+6. The AppHost explicitly assigns ports to every project and container endpoint. The three Vite resources also use `isProxied: false`, and each Vite config fixes `server.port`. Those target processes cannot bind the same host ports in two worktrees, regardless of randomized proxied public ports.
 
 The design governs only real full-stack verification. Unit tests, contract tests, frontend type checks, Vitest suites and existing focused infrastructure tests remain unchanged.
 
@@ -79,7 +80,7 @@ The root CLI adds one command family:
 
 `fullstack start` is reserved for interactive or investigative work. It creates a renewable lease and prints the session ID, expiration time and endpoint-discovery commands.
 
-`run -Scenario` resolves a governed scenario name rather than accepting an arbitrary shell command. The initial `smoke` scenario waits for `gateway`, `business-gateway`, `console` and `business-console`, verifies the discovered HTTP endpoints, and fails if any Aspire project resource is already `Finished`. Later full-stack Playwright scenarios can register through the same controlled dispatch table without changing session ownership rules.
+`run -Scenario` resolves a governed scenario name rather than accepting an arbitrary shell command. The initial `smoke` scenario waits for `gateway`, `business-gateway`, `console`, `business-console`, and `screen`, verifies the discovered HTTP endpoints, and fails if any Aspire project resource is already `Finished`. Later full-stack Playwright scenarios can register through the same controlled dispatch table without changing session ownership rules.
 
 All native execution remains in governed scripts under `scripts/`. The root `nerv.ps1` file only dispatches arguments.
 
@@ -161,12 +162,15 @@ In ephemeral mode:
 4. Volumes and networks use session-scoped names or recorded IDs. They also use ownership labels when the documented Aspire/Docker API supports those labels; cleanup never relies on a generic resource prefix.
 5. Persistent development volume names are never mounted.
 6. The session may delete all session-owned volumes during cleanup because the mode is explicitly ephemeral.
+7. Project resources do not retain their persistent Development target/public port assignments. Aspire allocates both sides of their proxied endpoints dynamically.
+8. Stateful containers retain required internal target ports, but their public host ports are dynamically allocated.
+9. Vite resources receive an Aspire-allocated target port through `PORT`, and their Vite configs use that value instead of the persistent fallback ports. Their existing same-origin `/api` proxies continue to receive dynamic Gateway targets from AppHost, so browser traffic does not require a dynamic CORS wildcard.
 
-The implementation must check the Aspire 13.4 API reference before adding container labels or session-aware volume configuration. It must not guess unsupported builder APIs.
+Before implementing the remaining session lifecycle, Task 3 must verify the repository-locked Aspire AppHost API and the installed Aspire CLI 13.4.x behavior with a disposable probe. The probe must prove that two AppHost instances obtain distinct target and public ports for `gateway`, `business-gateway`, `console`, `business-console` and `screen`, and that Vite honors the injected `PORT`. The implementation must also verify container-label and session-aware volume APIs rather than guess unsupported builder calls. Failure of this probe blocks Task 4.
 
 ## Dynamic Endpoint Discovery
 
-Aspire isolated mode randomizes published ports. Fixed local ports are therefore not part of the full-stack test contract.
+Fixed local ports are not part of the full-stack test contract. Parallel safety requires ephemeral mode to remove fixed target-port bindings as described above; `--isolated` by itself is insufficient for the current AppHost.
 
 After startup, the session script parses the detached start result and uses Aspire's machine-readable describe output to resolve named resources. It waits through Aspire CLI before exposing a URL:
 
@@ -182,7 +186,7 @@ NERV_IIP_BUSINESS_GATEWAY_URL
 PLAYWRIGHT_BASE_URL
 ```
 
-Playwright and HTTP scenarios receive these values from the manifest. They do not scan ports, assume `5100`/`5125`, or depend on a global reverse proxy.
+HTTP scenarios receive these values from the manifest. Existing Playwright configs must accept `PLAYWRIGHT_BASE_URL` as an override and skip their own `webServer` when that URL is supplied, so full-stack browser scenarios attach to the Aspire-started Vite resource. They do not scan ports, assume `5100`/`5125`, or depend on a global reverse proxy.
 
 ## Session State Machine
 
@@ -190,11 +194,11 @@ The lifecycle uses these states:
 
 ```text
 Creating -> Running -> Collecting -> Stopping -> Stopped
-                   \-> Failed -------------------^
-                              \-> CleanupFailed
+    \-----------> Failed -------> Stopping
+                                      \-> CleanupFailed -> Stopping
 ```
 
-Allowed transitions are explicit and test-protected. `stop` and `gc` are idempotent for `Stopped` sessions. A cleanup failure preserves the manifest and diagnostic details so a later `gc` can retry.
+Allowed transitions are explicit and test-protected. `Failed` always passes through `Stopping`; there is no direct `Failed -> Stopped` transition. `stop` and `gc` are idempotent for `Stopped` sessions. A cleanup failure preserves the manifest and diagnostic details so a later `gc` can retry.
 
 ## Admission And Concurrency Limit
 
@@ -223,7 +227,7 @@ The ceiling is a concurrency guard, not a machine-resource guarantee. Operators 
 
 `fullstack run` is owned by its parent script and always enters cleanup through `finally`.
 
-Every running session also has a lightweight lease guardian launched through the governed process helper. The guardian records its PID and process start time in the manifest, checks the coordinator and lease every 60 seconds by default, and invokes session-specific cleanup when the coordinator disappears or the lease expires. It exits after cleanup and is itself included in final process verification. This provides crash recovery without a global daemon or scheduled task.
+Every running session also has a lightweight lease guardian launched through a new governed detached-process helper. Unlike `Start-ManagedBackgroundProcess`, this helper redirects stdout/stderr directly to files owned by the guardian process launch, does not depend on parent-held pipes or copy tasks, and does not inherit the coordinator lifetime. The guardian tolerates diagnostic-output failures, records its PID and process start time in the manifest, checks the coordinator and lease every 60 seconds by default, and invokes session-specific cleanup when the coordinator disappears or the lease expires. It exits after cleanup and is itself included in final process verification. This provides crash recovery without a global daemon or scheduled task.
 
 Interactive `fullstack start` receives a 90-minute lease by default, and its guardian becomes the long-lived coordinator after the start command returns. `status`, `url` and `logs` renew a live session's lease. A session is stale when any of these conditions is true:
 
@@ -257,7 +261,7 @@ The existing generic orphan cleanup in `scripts/aspire-control.ps1` must be repl
 
 ## Error Handling
 
-1. Docker unavailable: fail before creating runtime resources and mark the provisional manifest `Failed` then `Stopped` after reconciliation.
+1. Docker unavailable: fail before creating runtime resources, mark the provisional manifest `Failed`, then reconcile it through `Stopping -> Stopped`.
 2. Aspire start failure: collect bounded startup logs, discover resources carrying the session label, and clean them in `finally`.
 3. Mixed human and JSON output from Aspire: isolate and parse the valid JSON payload; retain redacted raw output in artifacts when parsing fails.
 4. Resource wait failure: report the failed resource and its latest logs, then clean the whole session.
@@ -272,12 +276,13 @@ Implementation is expected to affect these owned surfaces:
 
 1. `nerv.ps1` for thin `fullstack` command dispatch.
 2. `scripts/fullstack-session.ps1` for governed start/run/url/status/logs/stop/list/gc behavior.
-3. A focused helper under `scripts/lib/` for manifest locking, state transitions, ownership checks and cleanup primitives when keeping all logic in one script would make it difficult to test.
+3. Focused helpers under `scripts/lib/` for manifest locking, state transitions, ownership checks, detached guardian launch and cleanup primitives when keeping all logic in one script would make it difficult to test.
 4. `scripts/aspire-control.ps1` to remove unsafe global container cleanup and preserve repository-scoped ordinary development stop behavior.
-5. `infra/aspire/Nerv.IIP.AppHost/Program.cs` for validated ephemeral volume names and session ownership metadata.
-6. `scripts/tests/` for fast command, manifest, lease and ownership contract tests.
-7. A governed real-infrastructure verification script for parallel Aspire session acceptance.
-8. Current architecture and contributor documentation for the new full-stack workflow.
+5. `infra/aspire/Nerv.IIP.AppHost/Program.cs` for validated ephemeral volume names, dynamic endpoint definitions and session ownership metadata.
+6. The three Vite configs and affected Playwright configs for Aspire-injected ports and manifest-derived browser base URLs while retaining persistent Development fallbacks.
+7. `scripts/tests/` for fast command, manifest, lease and ownership contract tests.
+8. A governed real-infrastructure verification script for parallel Aspire session acceptance.
+9. Current architecture and contributor documentation for the new full-stack workflow.
 
 No backend business endpoint, Gateway contract, OpenAPI snapshot, generated API client or database migration changes are expected.
 
@@ -311,7 +316,7 @@ The two-session run is the required acceptance gate. The three-session run is an
 Real acceptance proves:
 
 1. Two worktree sessions can start concurrently.
-2. Public endpoints are distinct and reachable through manifest discovery.
+2. Public endpoints are distinct and reachable through manifest discovery, explicitly including `gateway`, `business-gateway`, `console`, `business-console` and `screen`.
 3. PostgreSQL, Redis, MinIO and VictoriaLogs storage names are distinct.
 4. Session-local data written in one stack is not visible in the other.
 5. Stopping one session leaves the other healthy.
@@ -335,11 +340,12 @@ It must also run the new fast script tests and the real two-session isolation ac
 
 1. Replace the unsafe generic orphan cleanup with exact repository/session ownership and add contract tests before enabling parallel session commands.
 2. Add manifest infrastructure, state transitions, locking, admission and idempotent cleanup.
-3. Add AppHost ephemeral mode with session-specific volumes and ownership metadata while preserving ordinary persistent development mode.
-4. Add root full-stack commands and machine-readable endpoint handoff.
-5. Add the `smoke` managed scenario and real two-session isolation acceptance.
-6. Add lease expiry, stale GC and failure-injection acceptance.
-7. Validate the optional three-session concurrency path and document local ceiling tuning.
+3. Prove dynamic target/public endpoint allocation with two disposable AppHost instances; do not proceed if any project or Vite target remains pinned.
+4. Add AppHost ephemeral mode with session-specific volumes, dynamic endpoints and ownership metadata while preserving ordinary persistent development mode.
+5. Add root full-stack commands and machine-readable endpoint handoff.
+6. Add the `smoke` managed scenario and real two-session isolation acceptance.
+7. Add lease expiry, stale GC and failure-injection acceptance.
+8. Validate the optional three-session concurrency path and document local ceiling tuning.
 
 Each rollout step must remain recoverable through the existing `nerv.ps1 stop` path or the new session-specific stop command. No step may require a global Docker prune or machine restart.
 
