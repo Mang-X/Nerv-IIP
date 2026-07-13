@@ -53,6 +53,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
         Assert.Equal(DateTimeOffset.Parse("2026-06-01T12:00:00Z"), task.EarliestStartUtc);
         Assert.Equal(TimeSpan.FromMinutes(90), task.Duration);
         Assert.Equal(DateTimeOffset.Parse("2026-06-01T07:30:00Z"), task.AssignedAtUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-06-01T07:30:00Z"), task.ScheduledAtUtc);
         Assert.Equal("STD-OIL", task.OperationCode);
     }
 

@@ -32164,7 +32164,7 @@
             "type": "string",
             "nullable": true
           },
-          "assignedAtUtc": {
+          "scheduledAtUtc": {
             "type": "string",
             "format": "date-time",
             "nullable": true
@@ -32892,7 +32892,7 @@
             "type": "string",
             "nullable": true
           },
-          "assignedAtUtc": {
+          "scheduledAtUtc": {
             "type": "string",
             "format": "date-time",
             "nullable": true

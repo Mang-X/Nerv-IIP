@@ -56,23 +56,32 @@ public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext
         }
 
         // Invalidation is a separate append-only projection keyed by plan id (no navigation from SchedulePlan).
-        // Resolve the latest invalidation per plan with a bounded second query + in-memory grouping so the
-        // projection stays translatable on every provider (the query handler tests run on EF InMemory, which
-        // does not translate correlated OrderBy + FirstOrDefault subqueries).
+        // Fetch only the newest invalidation per in-page plan at the database — the rows for which no later row
+        // exists — so list latency/memory stay bounded as invalidation events accumulate (not the whole history).
+        // A "no later row exists" anti-join uses only DateTimeOffset comparisons (translatable on SQLite and
+        // Postgres, unlike ORDER BY over DateTimeOffset on SQLite); the handler test runs on SQLite so the
+        // translation is exercised for real. An exact tie on both timestamps yields at most a couple rows per
+        // plan, which the in-memory group below collapses deterministically.
         var planIds = plans.Select(x => x.PlanId).ToArray();
-        var invalidations = await dbContext.SchedulePlanInvalidations.AsNoTracking()
+        var newest = await dbContext.SchedulePlanInvalidations.AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 planIds.Contains(x.PlanId))
-            .Select(x => new { x.PlanId, x.ReasonCode, x.OccurredAtUtc, x.RecordedAtUtc })
+            .Where(x => !dbContext.SchedulePlanInvalidations.Any(later =>
+                later.OrganizationId == x.OrganizationId &&
+                later.EnvironmentId == x.EnvironmentId &&
+                later.PlanId == x.PlanId &&
+                (later.RecordedAtUtc > x.RecordedAtUtc ||
+                    (later.RecordedAtUtc == x.RecordedAtUtc && later.OccurredAtUtc > x.OccurredAtUtc))))
+            .Select(x => new LatestInvalidation(x.PlanId, x.ReasonCode, x.OccurredAtUtc, x.RecordedAtUtc))
             .ToListAsync(cancellationToken);
-        if (invalidations.Count == 0)
+        if (newest.Count == 0)
         {
             return plans;
         }
 
-        var latestByPlan = invalidations
+        var latestByPlan = newest
             .GroupBy(x => x.PlanId, StringComparer.Ordinal)
             .ToDictionary(
                 group => group.Key,
@@ -83,16 +92,22 @@ public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext
                 StringComparer.Ordinal);
 
         return plans
-            .Select(plan => latestByPlan.TryGetValue(plan.PlanId, out var latest)
+            .Select(plan => latestByPlan.TryGetValue(plan.PlanId, out var invalidation)
                 ? plan with
                 {
                     IsInvalidated = true,
-                    LatestInvalidationReasonCode = latest.ReasonCode,
-                    LatestInvalidatedAtUtc = latest.OccurredAtUtc,
+                    LatestInvalidationReasonCode = invalidation.ReasonCode,
+                    LatestInvalidatedAtUtc = invalidation.OccurredAtUtc,
                 }
                 : plan)
             .ToList();
     }
+
+    private sealed record LatestInvalidation(
+        string PlanId,
+        string ReasonCode,
+        DateTimeOffset OccurredAtUtc,
+        DateTimeOffset RecordedAtUtc);
 }
 
 public sealed record GetSchedulePlanDetailQuery(string PlanId, string OrganizationId, string EnvironmentId) : IQuery<SchedulePlanContract>;

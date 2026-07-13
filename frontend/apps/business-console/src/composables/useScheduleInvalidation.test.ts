@@ -8,35 +8,45 @@ import {
 } from './useScheduleInvalidation'
 
 describe('useScheduleInvalidation', () => {
-  it('marks a schedule-invalidated task regardless of assignment', () => {
-    const display = resolveScheduleStatus({ status: 'scheduleInvalidated', assignedAtUtc: null })
+  it('marks a schedule-invalidated task regardless of scheduling', () => {
+    const display = resolveScheduleStatus({ status: 'scheduleInvalidated', scheduledAtUtc: null })
     expect(display.key).toBe('invalidated')
     expect(display.label).toBe('已失效')
     expect(display.tone).toBe('warning')
     expect(isScheduleInvalidated('scheduleInvalidated')).toBe(true)
   })
 
-  it('treats a queued task without an assignment time as 未排程', () => {
-    const display = resolveScheduleStatus({ status: 'queued', assignedAtUtc: null })
+  it('treats a queued task that was never scheduled as 未排程', () => {
+    const display = resolveScheduleStatus({ status: 'queued', scheduledAtUtc: null })
     expect(display.key).toBe('unscheduled')
     expect(display.label).toBe('未排程')
     expect(display.tone).toBe('neutral')
   })
 
-  it('treats a queued task that already has a schedule assignment as 已排程', () => {
+  it('does not treat a manually-dispatched-but-unscheduled task as 已排程', () => {
+    // Manual dispatch writes assignedAtUtc but not scheduledAtUtc; the row only carries scheduledAtUtc,
+    // so a queued task placed only by an operator stays 未排程 until a released APS plan schedules it.
+    const display = resolveScheduleStatus({ status: 'queued', scheduledAtUtc: null })
+    expect(display.key).toBe('unscheduled')
+  })
+
+  it('treats a task placed by a released schedule as 已排程', () => {
     const display = resolveScheduleStatus({
       status: 'queued',
-      assignedAtUtc: '2026-07-02T08:00:00Z',
+      scheduledAtUtc: '2026-07-02T08:00:00Z',
     })
     expect(display.key).toBe('scheduled')
     expect(display.label).toBe('已排程')
     expect(display.tone).toBe('info')
   })
 
-  it('treats in-progress tasks as 已排程 even without an assignment time', () => {
-    expect(resolveScheduleStatus({ status: 'inProgress', assignedAtUtc: null }).key).toBe(
-      'scheduled',
+  it('treats an unscheduled in-progress task as 未排程 (no APS placement fact)', () => {
+    expect(resolveScheduleStatus({ status: 'inProgress', scheduledAtUtc: null }).key).toBe(
+      'unscheduled',
     )
+    expect(
+      resolveScheduleStatus({ status: 'inProgress', scheduledAtUtc: '2026-07-02T08:00:00Z' }).key,
+    ).toBe('scheduled')
   })
 
   it('localizes known reason codes and falls back for unknown/empty ones', () => {

@@ -238,7 +238,7 @@ function formatError(error: unknown) {
     >
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-scheduleStatus="{ row }">
-        <!-- 失效任务:橙色警示条 + 失效原因 + 计划员已自动收到重排通知(后端 SchedulePlanInvalidated→Notification) -->
+        <!-- 失效任务:橙色警示条 + 失效原因 + 系统已发起(非"已送达")计划员重排通知(后端 SchedulePlanInvalidated→Notification intent) -->
         <div
           v-if="isScheduleInvalidated(row.status)"
           class="grid gap-1 rounded-md border-l-2 border-warning bg-warning/10 px-2 py-1.5"
@@ -247,7 +247,9 @@ function formatError(error: unknown) {
           <p class="text-xs text-foreground">
             {{ describeScheduleInvalidationReason(row.scheduleInvalidationReasonCode) }}
           </p>
-          <p class="text-xs text-muted-foreground">计划员已收到重排通知，待重新排程后可派工。</p>
+          <p class="text-xs text-muted-foreground">
+            系统已自动发起计划员重排通知，待重新排程后可派工。
+          </p>
         </div>
         <NvStatusBadge
           v-else

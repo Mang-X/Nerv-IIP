@@ -3475,7 +3475,7 @@ public sealed record BusinessConsoleMesDispatchTaskRow(
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null,
     string? OperationCode = null,
-    DateTimeOffset? AssignedAtUtc = null,
+    DateTimeOffset? ScheduledAtUtc = null,
     string? ScheduleInvalidationReasonCode = null);
 
 public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
@@ -3510,7 +3510,7 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null,
     string? OperationCode = null,
-    DateTimeOffset? AssignedAtUtc = null,
+    DateTimeOffset? ScheduledAtUtc = null,
     string? ScheduleInvalidationReasonCode = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(

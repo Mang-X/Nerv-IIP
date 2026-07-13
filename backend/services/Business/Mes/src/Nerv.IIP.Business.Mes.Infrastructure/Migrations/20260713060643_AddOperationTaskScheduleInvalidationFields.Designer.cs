@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260712161542_AddOperationTaskScheduleInvalidationReason")]
-    partial class AddOperationTaskScheduleInvalidationReason
+    [Migration("20260713060643_AddOperationTaskScheduleInvalidationFields")]
+    partial class AddOperationTaskScheduleInvalidationFields
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -658,6 +658,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("schedule_invalidation_reason_code")
                         .HasComment("Latest scheduling invalidation reason code when the task is schedule invalidated; cleared when a released schedule re-plans the task.");
+
+                    b.Property<DateTimeOffset?>("ScheduledAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("scheduled_at_utc")
+                        .HasComment("UTC time when a released APS schedule last placed this task; set only by schedule assignment (not manual dispatch) and used to derive the 已排程/未排程 schedule state.");
 
                     b.Property<string>("ShiftId")
                         .HasMaxLength(100)

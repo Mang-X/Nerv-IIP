@@ -46,6 +46,19 @@ public sealed class ReleaseSchedulePlanCommandHandler(ApplicationDbContext dbCon
             throw new KnownException("Schedule plan cannot be released because it contains error conflicts or unscheduled operations.");
         }
 
+        // A plan whose scheduling inputs have since changed (recorded as an invalidation) is stale and
+        // must be regenerated before release — releasing it would dispatch an out-of-date schedule.
+        var isInvalidated = await dbContext.SchedulePlanInvalidations
+            .AnyAsync(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.PlanId == request.PlanId,
+                cancellationToken);
+        if (isInvalidated)
+        {
+            throw new KnownException("Schedule plan cannot be released because it has been invalidated by a scheduling input change; regenerate the plan first.");
+        }
+
         plan.Release(timeProvider.GetUtcNow());
         return new ReleaseSchedulePlanResponse(
             plan.PlanId,

@@ -44,20 +44,21 @@ export function scheduleInvalidationHint(reasonCode?: string | null): string {
 }
 
 /**
- * 由工序任务的生命周期状态 + 排程分配时间派生「排程状态」三态：
+ * 由工序任务的生命周期状态 + 排程专属事实 `scheduledAtUtc` 派生「排程状态」三态：
  * - 已失效：status 为 scheduleInvalidated（最高优先，覆盖其它）
- * - 未排程：仍在 queued 且从未被排程/派工分配（assignedAtUtc 为空）
- * - 已排程：其余（已排程分配、执行中、暂停、完成等）
- * 不用 plannedStartUtc 判定——它取自路由 earliestStartUtc，恒有值。
+ * - 已排程：`scheduledAtUtc` 非空——只有已下达 APS 方案（ApplyScheduleAssignment）才写它
+ * - 未排程：其余（含仅人工派工/未经排程的任务）
+ * 只用 `scheduledAtUtc`：它是后端排程专属字段，人工派工（Assign 写 assignedAtUtc）不会置它，
+ * 因此不会把「人工指派但未排程」误报成已排程；也不用 plannedStartUtc（=路由 earliestStartUtc，恒有值）。
  */
 export function resolveScheduleStatus(row: {
   status?: string | null
-  assignedAtUtc?: string | null
+  scheduledAtUtc?: string | null
 }): ScheduleStatusDisplay {
   const status = (row.status ?? '').trim().toLowerCase()
   if (status === 'scheduleinvalidated') return SCHEDULE_STATUS_DISPLAY.invalidated
-  if (status === 'queued' && !row.assignedAtUtc) return SCHEDULE_STATUS_DISPLAY.unscheduled
-  return SCHEDULE_STATUS_DISPLAY.scheduled
+  if (row.scheduledAtUtc) return SCHEDULE_STATUS_DISPLAY.scheduled
+  return SCHEDULE_STATUS_DISPLAY.unscheduled
 }
 
 export function isScheduleInvalidated(status?: string | null): boolean {

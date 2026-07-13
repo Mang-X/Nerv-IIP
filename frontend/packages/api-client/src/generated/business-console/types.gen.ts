@@ -2711,7 +2711,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetCode?: string | null;
     deviceAssetName?: string | null;
     operationCode?: string | null;
-    assignedAtUtc?: string | null;
+    scheduledAtUtc?: string | null;
     scheduleInvalidationReasonCode?: string | null;
 };
 
@@ -2913,7 +2913,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetCode?: string | null;
     deviceAssetName?: string | null;
     operationCode?: string | null;
-    assignedAtUtc?: string | null;
+    scheduledAtUtc?: string | null;
     scheduleInvalidationReasonCode?: string | null;
 };
 

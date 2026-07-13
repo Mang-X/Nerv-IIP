@@ -443,7 +443,7 @@ public sealed record MesOperationTaskRow(
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null,
     string? OperationCode = null,
-    DateTimeOffset? AssignedAtUtc = null,
+    DateTimeOffset? ScheduledAtUtc = null,
     string? ScheduleInvalidationReasonCode = null);
 
 public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbContext)
@@ -539,7 +539,7 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
                 x.DeviceAssetId,
                 null,
                 x.OperationCode,
-                x.AssignedAtUtc,
+                x.ScheduledAtUtc,
                 x.ScheduleInvalidationReasonCode));
     }
 
@@ -826,7 +826,7 @@ public sealed record MesDispatchTaskRow(
     string? WorkCenterName = null,
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null,
-    DateTimeOffset? AssignedAtUtc = null,
+    DateTimeOffset? ScheduledAtUtc = null,
     string? ScheduleInvalidationReasonCode = null);
 
 public sealed class ListDispatchTasksQueryHandler(ApplicationDbContext dbContext)
@@ -875,7 +875,7 @@ public sealed class ListDispatchTasksQueryHandler(ApplicationDbContext dbContext
                 null,
                 x.DeviceAssetId,
                 null,
-                x.AssignedAtUtc,
+                x.ScheduledAtUtc,
                 x.ScheduleInvalidationReasonCode))
             .ToArrayAsync(cancellationToken);
         return new MesDispatchTaskListResponse(tasks, total);

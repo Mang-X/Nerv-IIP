@@ -363,7 +363,7 @@ function formatError(error: unknown) {
           type="button"
           size="sm"
           :variant="invalidatedFilterActive ? 'default' : 'outline'"
-          aria-pressed="invalidatedFilterActive"
+          :aria-pressed="invalidatedFilterActive"
           @click="toggleInvalidatedFilter"
         >
           <TriangleAlertIcon aria-hidden="true" />
