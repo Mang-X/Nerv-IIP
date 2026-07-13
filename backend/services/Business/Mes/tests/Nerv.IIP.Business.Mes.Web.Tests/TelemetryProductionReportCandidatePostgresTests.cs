@@ -57,6 +57,45 @@ public sealed class TelemetryProductionReportCandidatePostgresTests
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
+    [MesRealPostgresFact]
+    public async Task Scheduled_at_utc_migration_backfill_populates_aps_placed_tasks_only()
+    {
+        await using var database = await TemporaryDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(database.ConnectionString).Options;
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        await db.Database.MigrateAsync();
+
+        var due = DateTimeOffset.Parse("2026-07-20T00:00:00Z");
+        db.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-BF-01", "FG", "PV", 1m, 10, due, "PCS", null));
+        var scheduledAt = DateTimeOffset.Parse("2026-07-10T08:00:00Z");
+        var dispatchAt = DateTimeOffset.Parse("2026-07-10T09:00:00Z");
+
+        // APS-placed, not dispatched: ApplyScheduleAssignment sets assigned_at_utc (the schedule time) and no operator.
+        var apsTask = OperationTask.Queue("org-001", "env-dev", "WO-BF-01", "OP-APS", 10, "WC-1", [], scheduledAt, TimeSpan.FromMinutes(30));
+        apsTask.ApplyScheduleAssignment("WC-1", "DEV-1", scheduledAt, scheduledAt.AddMinutes(30), scheduledAt);
+        // Manually dispatched: Assign sets an operator and overwrites assigned_at_utc with the dispatch time.
+        var dispatchedTask = OperationTask.Queue("org-001", "env-dev", "WO-BF-01", "OP-DISPATCH", 20, "WC-1", [], scheduledAt, TimeSpan.FromMinutes(30));
+        dispatchedTask.Assign("operator-1", "DEV-1", "shift-a", dispatchAt);
+        // Never scheduled or dispatched.
+        var queuedTask = OperationTask.Queue("org-001", "env-dev", "WO-BF-01", "OP-QUEUED", 30, "WC-1", [], scheduledAt, TimeSpan.FromMinutes(30));
+        db.OperationTasks.AddRange(apsTask, dispatchedTask, queuedTask);
+        await db.SaveChangesAsync();
+
+        // Simulate the pre-migration state (the scheduled_at_utc column did not exist) then run the migration's
+        // backfill statement verbatim.
+        await db.Database.ExecuteSqlRawAsync("UPDATE mes.operation_tasks SET scheduled_at_utc = NULL;");
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE mes.operation_tasks SET scheduled_at_utc = assigned_at_utc WHERE assigned_at_utc IS NOT NULL AND assigned_user_id IS NULL;");
+
+        db.ChangeTracker.Clear();
+        var aps = await db.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-APS");
+        var dispatched = await db.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-DISPATCH");
+        var queued = await db.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-QUEUED");
+        Assert.Equal(scheduledAt, aps.ScheduledAtUtc);
+        Assert.Null(dispatched.ScheduledAtUtc);
+        Assert.Null(queued.ScheduledAtUtc);
+    }
+
     private sealed class TemporaryDatabase(string adminConnectionString, string databaseName, string connectionString) : IAsyncDisposable
     {
         public string ConnectionString { get; } = connectionString;

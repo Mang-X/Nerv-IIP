@@ -27,13 +27,13 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
             return;
         }
 
+        await using var database = await SchedulingTemporaryDatabase.CreateAsync(connectionString);
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
-        services.AddSchedulingPostgreSqlPersistence(connectionString);
+        services.AddSchedulingPostgreSqlPersistence(database.ConnectionString);
         await using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await dbContext.Database.EnsureDeletedAsync();
         await dbContext.Database.MigrateAsync();
 
         dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-a", resourceId: "ASSET-CNC-01"));
@@ -61,8 +61,6 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
         var invalidation = await dbContext.SchedulePlanInvalidations.SingleAsync(x => x.PlanId == "plan-a");
         Assert.Equal(SchedulingPlanInvalidationReasons.EquipmentUnavailable, invalidation.ReasonCode);
         Assert.Equal("ASSET-CNC-01", invalidation.AffectedResourceId);
-
-        await dbContext.Database.EnsureDeletedAsync();
     }
 
     private static SchedulePlan CreatePlanWithAssignment(string planId, string resourceId)

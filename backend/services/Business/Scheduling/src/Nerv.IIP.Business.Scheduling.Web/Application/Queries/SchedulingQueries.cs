@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Queries;
@@ -56,12 +57,15 @@ public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext
         }
 
         // Invalidation is a separate append-only projection keyed by plan id (no navigation from SchedulePlan).
-        // Fetch only the newest invalidation per in-page plan at the database — the rows for which no later row
-        // exists — so list latency/memory stay bounded as invalidation events accumulate (not the whole history).
-        // A "no later row exists" anti-join uses only DateTimeOffset comparisons (translatable on SQLite and
-        // Postgres, unlike ORDER BY over DateTimeOffset on SQLite); the handler test runs on SQLite so the
-        // translation is exercised for real. An exact tie on both timestamps yields at most a couple rows per
-        // plan, which the in-memory group below collapses deterministically.
+        // The DB anti-join keeps only rows for which no strictly later (RecordedAtUtc, OccurredAtUtc) row exists,
+        // so list latency/memory stay bounded as invalidation events accumulate (not the whole history). It uses
+        // only value comparisons (translatable on both SQLite and Postgres, unlike ORDER BY over DateTimeOffset on
+        // SQLite) — a strongly-typed id has no relational > operator, so the timestamp anti-join only *bounds* the
+        // candidate set (an exact tie on both timestamps yields the handful of tied rows for that plan). The
+        // in-memory group then applies a strict total order (RecordedAtUtc, OccurredAtUtc, Id) — the id is the
+        // unique tie-breaker — so exactly one deterministic row is chosen per plan even on an exact timestamp tie.
+        // Real translation is verified by the conditional PostgreSQL profile test (the InMemory handler test
+        // cannot sort DateTimeOffset on SQLite, so it stays on EF InMemory).
         var planIds = plans.Select(x => x.PlanId).ToArray();
         var newest = await dbContext.SchedulePlanInvalidations.AsNoTracking()
             .Where(x =>
@@ -74,7 +78,7 @@ public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext
                 later.PlanId == x.PlanId &&
                 (later.RecordedAtUtc > x.RecordedAtUtc ||
                     (later.RecordedAtUtc == x.RecordedAtUtc && later.OccurredAtUtc > x.OccurredAtUtc))))
-            .Select(x => new LatestInvalidation(x.PlanId, x.ReasonCode, x.OccurredAtUtc, x.RecordedAtUtc))
+            .Select(x => new LatestInvalidation(x.PlanId, x.ReasonCode, x.OccurredAtUtc, x.RecordedAtUtc, x.Id))
             .ToListAsync(cancellationToken);
         if (newest.Count == 0)
         {
@@ -88,6 +92,7 @@ public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext
                 group => group
                     .OrderByDescending(x => x.RecordedAtUtc)
                     .ThenByDescending(x => x.OccurredAtUtc)
+                    .ThenByDescending(x => x.Id.Id)
                     .First(),
                 StringComparer.Ordinal);
 
@@ -107,7 +112,8 @@ public sealed class ListSchedulePlansQueryHandler(ApplicationDbContext dbContext
         string PlanId,
         string ReasonCode,
         DateTimeOffset OccurredAtUtc,
-        DateTimeOffset RecordedAtUtc);
+        DateTimeOffset RecordedAtUtc,
+        SchedulePlanInvalidationId Id);
 }
 
 public sealed record GetSchedulePlanDetailQuery(string PlanId, string OrganizationId, string EnvironmentId) : IQuery<SchedulePlanContract>;

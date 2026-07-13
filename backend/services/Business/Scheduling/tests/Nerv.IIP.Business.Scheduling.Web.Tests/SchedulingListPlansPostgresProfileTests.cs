@@ -23,13 +23,13 @@ public sealed class SchedulingListPlansPostgresProfileTests
             return;
         }
 
+        await using var database = await SchedulingTemporaryDatabase.CreateAsync(connectionString);
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
-        services.AddSchedulingPostgreSqlPersistence(connectionString);
+        services.AddSchedulingPostgreSqlPersistence(database.ConnectionString);
         await using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await dbContext.Database.EnsureDeletedAsync();
         await dbContext.Database.MigrateAsync();
 
         dbContext.SchedulePlans.Add(CreatePlan("plan-clean"));
@@ -59,21 +59,64 @@ public sealed class SchedulingListPlansPostgresProfileTests
         Assert.True(invalid.IsInvalidated);
         Assert.Equal(SchedulingPlanInvalidationReasons.EquipmentUnavailable, invalid.LatestInvalidationReasonCode);
         Assert.Equal(new DateTimeOffset(2026, 6, 1, 11, 30, 0, TimeSpan.Zero), invalid.LatestInvalidatedAtUtc);
+    }
 
-        await dbContext.Database.EnsureDeletedAsync();
+    [Fact]
+    public async Task Postgres_list_breaks_exact_timestamp_ties_deterministically_by_id()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        await using var database = await SchedulingTemporaryDatabase.CreateAsync(connectionString);
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddSchedulingPostgreSqlPersistence(database.ConnectionString);
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await dbContext.Database.MigrateAsync();
+
+        dbContext.SchedulePlans.Add(CreatePlan("plan-tie"));
+        // Two invalidations with identical RecordedAtUtc AND OccurredAtUtc: neither is "later" than the other,
+        // so the anti-join returns both and only the id tie-break yields a single deterministic winner.
+        var tieRecordedAtUtc = new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        var tieOccurredAtUtc = new DateTimeOffset(2026, 6, 1, 11, 59, 0, TimeSpan.Zero);
+        var first = CreateInvalidation("plan-tie", SchedulingPlanInvalidationReasons.MaterialReadinessChanged, tieOccurredAtUtc, tieRecordedAtUtc, sourceEventId: "evt-tie-a");
+        var second = CreateInvalidation("plan-tie", SchedulingPlanInvalidationReasons.EquipmentUnavailable, tieOccurredAtUtc, tieRecordedAtUtc, sourceEventId: "evt-tie-b");
+        dbContext.SchedulePlanInvalidations.Add(first);
+        dbContext.SchedulePlanInvalidations.Add(second);
+        await dbContext.SaveChangesAsync();
+
+        var expectedReason = first.Id.Id.CompareTo(second.Id.Id) > 0
+            ? first.ReasonCode
+            : second.ReasonCode;
+
+        var handler = new ListSchedulePlansQueryHandler(dbContext);
+        // Run twice: the same higher-id row must win every time (no non-determinism on the exact tie).
+        for (var run = 0; run < 2; run++)
+        {
+            var results = await handler.Handle(new ListSchedulePlansQuery("org-001", "env-dev"), CancellationToken.None);
+            var tie = Assert.Single(results, x => x.PlanId == "plan-tie");
+            Assert.True(tie.IsInvalidated);
+            Assert.Equal(expectedReason, tie.LatestInvalidationReasonCode);
+        }
     }
 
     private static SchedulePlanInvalidation CreateInvalidation(
         string planId,
         string reasonCode,
         DateTimeOffset occurredAtUtc,
-        DateTimeOffset recordedAtUtc)
+        DateTimeOffset recordedAtUtc,
+        string? sourceEventId = null)
     {
         return SchedulePlanInvalidation.Create(
             "org-001",
             "env-dev",
             planId,
-            sourceEventId: $"evt-{reasonCode}-{recordedAtUtc.Ticks}",
+            sourceEventId: sourceEventId ?? $"evt-{reasonCode}-{recordedAtUtc.Ticks}",
             sourceEventType: "maintenance.AssetUnavailable",
             sourceService: "maintenance",
             reasonCode: reasonCode,
