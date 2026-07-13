@@ -495,6 +495,26 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     createdAtUtc?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorCollectionHealthResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthResponse = {
+    connectorId?: string;
+    status?: string;
+    lastHeartbeatAtUtc?: string | null;
+    metricsReportedAtUtc?: string | null;
+    lastSampleAtUtc?: string | null;
+    receivedCount?: number | null;
+    droppedCount?: number | null;
+    errorCount?: number | null;
+    sourceSystem?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConnectorCollectionHealthRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryTagListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryTagListResponse | null;
 };
@@ -2829,6 +2849,35 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     reason?: string;
     sourceService?: string | null;
     releasedAtUtc?: string | null;
+    idempotencyKey?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesQualityHoldTimelineResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesQualityHoldTimelineResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesQualityHoldTimelineResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesQualityHoldTimelineItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesQualityHoldTimelineItem = {
+    transitionId?: string;
+    sourceService?: string;
+    sourceDocumentId?: string;
+    holdCycleId?: string;
+    correlationId?: string;
+    eventKind?: string;
+    actor?: string;
+    occurredAtUtc?: string;
+    reason?: string | null;
+    sourceInspectionRecordId?: string | null;
+    sourceInspectionDocumentId?: string | null;
+    origin?: string;
+    idempotencyKey?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesQualityHoldTimelineRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesReverseProductionReportResponse = NetCorePalExtensionsDtoResponseData & {
@@ -3824,6 +3873,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSetMasterDataResourceEnabledRequest = {
     organizationId: string;
     environmentId: string;
+    idempotencyKey: string;
     codeSet?: string | null;
     reason?: string;
     effectiveFrom?: string | null;
@@ -6815,6 +6865,38 @@ export type ListBusinessConsoleWmsSupplierReturnRequestsResponses = {
 };
 
 export type ListBusinessConsoleWmsSupplierReturnRequestsResponse = ListBusinessConsoleWmsSupplierReturnRequestsResponses[keyof ListBusinessConsoleWmsSupplierReturnRequestsResponses];
+
+export type QueryBusinessConsoleTelemetryConnectorCollectionHealthData = {
+    body?: never;
+    path: {
+        connectorId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/telemetry/connectors/{connectorId}/collection-health';
+};
+
+export type QueryBusinessConsoleTelemetryConnectorCollectionHealthErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type QueryBusinessConsoleTelemetryConnectorCollectionHealthResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorCollectionHealthResponse;
+};
+
+export type QueryBusinessConsoleTelemetryConnectorCollectionHealthResponse = QueryBusinessConsoleTelemetryConnectorCollectionHealthResponses[keyof QueryBusinessConsoleTelemetryConnectorCollectionHealthResponses];
 
 export type ListBusinessConsoleTelemetryTagsData = {
     body?: never;
@@ -10798,6 +10880,39 @@ export type ForceReleaseBusinessConsoleMesQualityHoldResponses = {
 };
 
 export type ForceReleaseBusinessConsoleMesQualityHoldResponse = ForceReleaseBusinessConsoleMesQualityHoldResponses[keyof ForceReleaseBusinessConsoleMesQualityHoldResponses];
+
+export type GetBusinessConsoleMesQualityHoldTimelineData = {
+    body?: never;
+    path: {
+        sourceDocumentId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        sourceService: string;
+    };
+    url: '/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/timeline';
+};
+
+export type GetBusinessConsoleMesQualityHoldTimelineErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleMesQualityHoldTimelineResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesQualityHoldTimelineResponse;
+};
+
+export type GetBusinessConsoleMesQualityHoldTimelineResponse = GetBusinessConsoleMesQualityHoldTimelineResponses[keyof GetBusinessConsoleMesQualityHoldTimelineResponses];
 
 export type ReverseBusinessConsoleMesProductionReportData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReverseProductionReportRequest;

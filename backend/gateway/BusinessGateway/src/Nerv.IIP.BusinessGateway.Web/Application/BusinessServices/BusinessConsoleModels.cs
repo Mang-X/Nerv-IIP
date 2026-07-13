@@ -599,6 +599,7 @@ public sealed record BusinessConsoleSetMasterDataResourceEnabledRequest(
     string EnvironmentId,
     string ResourceType,
     string Code,
+    string IdempotencyKey,
     string? CodeSet = null,
     string Reason = "",
     DateOnly? EffectiveFrom = null);
@@ -3375,7 +3376,32 @@ public sealed record BusinessConsoleMesForceReleaseQualityHoldRequest(
     [property: QueryParam] string EnvironmentId,
     string Reason,
     string? SourceService,
-    DateTimeOffset? ReleasedAtUtc);
+    DateTimeOffset? ReleasedAtUtc,
+    string IdempotencyKey);
+
+public sealed record BusinessConsoleMesQualityHoldTimelineRequest(
+    [property: RouteParam] string SourceDocumentId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string SourceService);
+
+public sealed record BusinessConsoleMesQualityHoldTimelineItem(
+    Guid TransitionId,
+    string SourceService,
+    string SourceDocumentId,
+    string HoldCycleId,
+    string CorrelationId,
+    string EventKind,
+    string Actor,
+    DateTimeOffset OccurredAtUtc,
+    string? Reason,
+    string? SourceInspectionRecordId,
+    string? SourceInspectionDocumentId,
+    string Origin,
+    string? IdempotencyKey);
+
+public sealed record BusinessConsoleMesQualityHoldTimelineResponse(
+    IReadOnlyCollection<BusinessConsoleMesQualityHoldTimelineItem> Items);
 
 // Actor is intentionally omitted: the gateway binds the downstream reversal actor to the
 // authenticated principal and ignores caller-supplied actor-like JSON properties.

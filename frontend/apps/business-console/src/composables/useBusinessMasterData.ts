@@ -629,11 +629,19 @@ export function useMasterDataResourceActions(resourceType: string) {
     disable: (
       code: string,
       patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {},
-    ) => callPathBody(disableMutation, code, patch),
+    ) =>
+      callPathBody(disableMutation, code, {
+        idempotencyKey: newCreateIdempotencyKey(`disable-${resourceType}-${code}`),
+        ...patch,
+      }),
     enable: (
       code: string,
       patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {},
-    ) => callPathBody(enableMutation, code, patch),
+    ) =>
+      callPathBody(enableMutation, code, {
+        idempotencyKey: newCreateIdempotencyKey(`enable-${resourceType}-${code}`),
+        ...patch,
+      }),
     fetchDetail,
     updatePending: updateMutation.isLoading,
     disablePending: disableMutation.isLoading,

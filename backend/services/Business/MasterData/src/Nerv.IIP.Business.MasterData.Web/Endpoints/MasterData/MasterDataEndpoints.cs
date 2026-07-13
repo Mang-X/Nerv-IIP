@@ -8,6 +8,7 @@ using Nerv.IIP.Contracts.Coding;
 using NetCorePal.Extensions.Dto;
 using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
+using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 using static Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData.MasterDataEndpointMapping;
 
 namespace Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
@@ -415,7 +416,7 @@ public sealed record SetMasterDataResourceEnabledRequest(
     string Reason = "",
     DateOnly? EffectiveFrom = null);
 
-public sealed class DisableMasterDataResourceEndpoint(ISender sender)
+public sealed class DisableMasterDataResourceEndpoint(ISender sender, IMasterDataIntegrationEventContextAccessor operationContextAccessor)
     : MasterDataEndpoint<SetMasterDataResourceEnabledRequest, ResponseData<MasterDataResourceDetail>>
 {
     public override void Configure()
@@ -426,14 +427,16 @@ public sealed class DisableMasterDataResourceEndpoint(ISender sender)
 
     public override async Task HandleAsync(SetMasterDataResourceEnabledRequest req, CancellationToken ct)
     {
+        var operation = operationContextAccessor.GetContext();
+        var operationId = operation.IdempotencyKey ?? operation.CorrelationId;
         var response = await sender.Send(
-            new SetMasterDataResourceEnabledCommand(req.OrganizationId, req.EnvironmentId, req.ResourceType, req.Code, false, req.CodeSet, req.Reason, req.EffectiveFrom),
+            new SetMasterDataResourceEnabledCommand(req.OrganizationId, req.EnvironmentId, req.ResourceType, req.Code, false, operation.Actor, operationId, req.CodeSet, req.Reason, req.EffectiveFrom),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
-public sealed class EnableMasterDataResourceEndpoint(ISender sender)
+public sealed class EnableMasterDataResourceEndpoint(ISender sender, IMasterDataIntegrationEventContextAccessor operationContextAccessor)
     : MasterDataEndpoint<SetMasterDataResourceEnabledRequest, ResponseData<MasterDataResourceDetail>>
 {
     public override void Configure()
@@ -444,8 +447,10 @@ public sealed class EnableMasterDataResourceEndpoint(ISender sender)
 
     public override async Task HandleAsync(SetMasterDataResourceEnabledRequest req, CancellationToken ct)
     {
+        var operation = operationContextAccessor.GetContext();
+        var operationId = operation.IdempotencyKey ?? operation.CorrelationId;
         var response = await sender.Send(
-            new SetMasterDataResourceEnabledCommand(req.OrganizationId, req.EnvironmentId, req.ResourceType, req.Code, true, req.CodeSet, req.Reason, req.EffectiveFrom),
+            new SetMasterDataResourceEnabledCommand(req.OrganizationId, req.EnvironmentId, req.ResourceType, req.Code, true, operation.Actor, operationId, req.CodeSet, req.Reason, req.EffectiveFrom),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }

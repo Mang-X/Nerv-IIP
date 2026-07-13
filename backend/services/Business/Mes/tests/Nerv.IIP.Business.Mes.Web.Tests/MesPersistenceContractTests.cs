@@ -819,6 +819,8 @@ public sealed class MesPersistenceContractTests
             "WO-QH-FORCE",
             "",
             "supervisor-001",
+            "corr-validation",
+            "idem-validation",
             now.AddMinutes(2)));
         Assert.False(validation.IsValid);
 
@@ -831,6 +833,8 @@ public sealed class MesPersistenceContractTests
                 "WO-QH-FORCE",
                 "QA supervisor approved urgent release after recheck.",
                 "supervisor-001",
+                "corr-force-release-1",
+                "idem-force-release-1",
                 now.AddMinutes(3)),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
@@ -843,6 +847,8 @@ public sealed class MesPersistenceContractTests
                 "WO-QH-FORCE",
                 "second release should be idempotent",
                 "supervisor-002",
+                "corr-force-release-2",
+                "idem-force-release-2",
                 now.AddMinutes(4)),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
@@ -856,6 +862,137 @@ public sealed class MesPersistenceContractTests
         Assert.Equal("QA supervisor approved urgent release after recheck.", hold.ReleaseReason);
         Assert.Equal("supervisor-001", hold.ReleasedBy);
         Assert.Equal(now.AddMinutes(3), hold.ReleasedAtUtc);
+
+        var transitions = await dbContext.QualityHoldTransitions
+            .OrderBy(x => x.OccurredAtUtc)
+            .ToListAsync();
+        Assert.Collection(
+            transitions,
+            applied =>
+            {
+                Assert.Equal("hold-applied", applied.EventKind);
+                Assert.Equal("automatic", applied.Origin);
+                Assert.Equal("QI-QH-FORCE-REJECTED", applied.SourceInspectionRecordId);
+                Assert.Equal("PLAN-QH-001", applied.SourceInspectionDocumentId);
+                Assert.Equal("quality:inspection-result:org-001:env-dev:QI-QH-FORCE-REJECTED:quality.InspectionRejected", applied.IdempotencyKey);
+                Assert.Equal("quality", applied.Actor);
+            },
+            released =>
+            {
+                Assert.Equal("manual-force-released", released.EventKind);
+                Assert.Equal("manual", released.Origin);
+                Assert.Equal("supervisor-001", released.Actor);
+                Assert.Equal("QA supervisor approved urgent release after recheck.", released.Reason);
+                Assert.Equal("idem-force-release-1", released.IdempotencyKey);
+                Assert.Equal("QI-QH-FORCE-REJECTED", released.SourceInspectionRecordId);
+                Assert.Equal("PLAN-QH-001", released.SourceInspectionDocumentId);
+            },
+            noOp =>
+            {
+                Assert.Equal("manual-force-release-noop", noOp.EventKind);
+                Assert.Equal("manual", noOp.Origin);
+                Assert.Equal("supervisor-002", noOp.Actor);
+                Assert.Equal("second release should be idempotent", noOp.Reason);
+                Assert.Equal("idem-force-release-2", noOp.IdempotencyKey);
+            });
+        Assert.Equal(transitions[0].HoldCycleId, transitions[1].HoldCycleId);
+        Assert.Equal(transitions[0].HoldCycleId, transitions[2].HoldCycleId);
+
+        await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-qh-force-rejected-cycle-2",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-QH-FORCE-REJECTED-CYCLE-2",
+            "WO-QH-FORCE",
+            now.AddMinutes(3).AddSeconds(30)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        await handler.Handle(
+            new ForceReleaseQualityHoldCommand(
+                "org-001",
+                "env-dev",
+                QualityIntegrationEventSources.BusinessMes,
+                "WO-QH-FORCE",
+                "second release should be idempotent",
+                "supervisor-002",
+                "corr-force-release-2",
+                "idem-force-release-2",
+                now.AddMinutes(4)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.True(hold.Active);
+        Assert.Equal("QI-QH-FORCE-REJECTED-CYCLE-2", hold.HeldInspectionRecordId);
+        var noOp = await dbContext.QualityHoldTransitions.SingleAsync(x =>
+            x.IdempotencyKey == "idem-force-release-2");
+        Assert.Equal("manual-force-release-noop", noOp.EventKind);
+
+        var conflict = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ForceReleaseQualityHoldCommand(
+                "org-001",
+                "env-dev",
+                QualityIntegrationEventSources.BusinessMes,
+                "WO-QH-FORCE",
+                "different replay payload",
+                "another-supervisor",
+                "corr-force-release-conflict",
+                "idem-force-release-2",
+                now.AddMinutes(5)),
+            CancellationToken.None));
+        Assert.Contains("different payload", conflict.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(hold.Active);
+
+    }
+
+    [Fact]
+    public async Task Quality_hold_history_preserves_two_cycles_in_stable_order_and_ignores_event_replay()
+    {
+        var services = CreateServices(nameof(Quality_hold_history_preserves_two_cycles_in_stable_order_and_ignores_event_replay));
+        var now = DateTimeOffset.Parse("2026-07-13T01:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-QH-HISTORY", "FG-A", "PV-A", 10m, 20, now.AddHours(8)));
+        await dbContext.SaveChangesAsync();
+
+        var consumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+        var events = new[]
+        {
+            CreateInspectionResultEvent("evt-history-1", QualityIntegrationEventTypes.InspectionRejected, "QI-HISTORY-1", "WO-QH-HISTORY", now.AddMinutes(1), "cycle one defect"),
+            CreateInspectionResultEvent("evt-history-2", QualityIntegrationEventTypes.InspectionPassed, "QI-HISTORY-2", "WO-QH-HISTORY", now.AddMinutes(2), "cycle one cleared"),
+            CreateInspectionResultEvent("evt-history-3", QualityIntegrationEventTypes.InspectionRejected, "QI-HISTORY-3", "WO-QH-HISTORY", now.AddMinutes(3), "cycle two defect"),
+            CreateInspectionResultEvent("evt-history-4", QualityIntegrationEventTypes.InspectionConditionalReleased, "QI-HISTORY-4", "WO-QH-HISTORY", now.AddMinutes(4), "cycle two conditional release"),
+        };
+
+        foreach (var integrationEvent in events)
+        {
+            await consumer.HandleAsync(integrationEvent, CancellationToken.None);
+            await dbContext.SaveChangesAsync();
+        }
+
+        await consumer.HandleAsync(events[0], CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var transitions = await dbContext.QualityHoldTransitions
+            .Where(x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev" && x.SourceDocumentId == "WO-QH-HISTORY")
+            .OrderBy(x => x.OccurredAtUtc)
+            .ThenBy(x => x.Id)
+            .ToListAsync();
+
+        Assert.Equal(4, transitions.Count);
+        Assert.Equal(new[] { "hold-applied", "inspection-released", "hold-applied", "inspection-released" }, transitions.Select(x => x.EventKind));
+        Assert.Equal(2, transitions.Select(x => x.HoldCycleId).Distinct().Count());
+        Assert.All(transitions, x => Assert.False(string.IsNullOrWhiteSpace(x.Actor)));
+        Assert.All(transitions, x => Assert.NotEqual(default, x.OccurredAtUtc));
+
+        var timeline = await new GetQualityHoldTimelineQueryHandler(dbContext).Handle(
+            new GetQualityHoldTimelineQuery("org-001", "env-dev", QualityIntegrationEventSources.BusinessMes, "WO-QH-HISTORY"),
+            CancellationToken.None);
+        Assert.Equal(4, timeline.Items.Count);
+        Assert.Equal(transitions.Select(x => x.Id), timeline.Items.Select(x => x.TransitionId));
+        Assert.Equal(transitions.Select(x => x.IdempotencyKey), timeline.Items.Select(x => x.IdempotencyKey));
     }
 
     [Fact]

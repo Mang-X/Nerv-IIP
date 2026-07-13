@@ -886,6 +886,7 @@ public sealed class BusinessConsoleSetMasterDataResourceEnabledRequestValidator 
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ResourceType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(512);
         RuleFor(x => x.CodeSet).MaximumLength(100);
         RuleFor(x => x.Reason).MaximumLength(500);
     }
@@ -954,7 +955,25 @@ public sealed class DisableBusinessConsoleMasterDataResourceEndpoint(
         BusinessConsoleSetMasterDataResourceEnabledRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.SetResourceEnabledAsync(tokenProvider.BearerToken, request, false, cancellationToken);
+        ForwardLifecycleAsync(masterData, tokenProvider, request, false, cancellationToken);
+
+    private Task<BusinessConsoleMasterDataResourceDetail> ForwardLifecycleAsync(
+        IBusinessMasterDataClient client,
+        IInternalServiceTokenProvider internalTokenProvider,
+        BusinessConsoleSetMasterDataResourceEnabledRequest request,
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
+        var actor = BusinessGatewayPrincipalReferences.ToRecipientRef(actorType, actorRef);
+        var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
+        correlationId = string.IsNullOrWhiteSpace(correlationId) ? Guid.CreateVersion7().ToString("N") : correlationId.Trim();
+        if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
+        {
+            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, "idempotency-key-required");
+        }
+        return client.SetResourceEnabledAsync(internalTokenProvider.BearerToken, request, enabled, actor, correlationId, request.IdempotencyKey.Trim(), cancellationToken);
+    }
 }
 
 [Tags("Business Console MasterData")]
@@ -975,8 +994,18 @@ public sealed class EnableBusinessConsoleMasterDataResourceEndpoint(
     protected override Task<BusinessConsoleMasterDataResourceDetail> ForwardAsync(
         BusinessConsoleSetMasterDataResourceEnabledRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        masterData.SetResourceEnabledAsync(tokenProvider.BearerToken, request, true, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
+        var actor = BusinessGatewayPrincipalReferences.ToRecipientRef(actorType, actorRef);
+        var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
+        correlationId = string.IsNullOrWhiteSpace(correlationId) ? Guid.CreateVersion7().ToString("N") : correlationId.Trim();
+        if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
+        {
+            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, "idempotency-key-required");
+        }
+        return masterData.SetResourceEnabledAsync(tokenProvider.BearerToken, request, true, actor, correlationId, request.IdempotencyKey.Trim(), cancellationToken);
+    }
 }
 
 [Tags("Business Console MasterData")]

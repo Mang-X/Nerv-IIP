@@ -81,7 +81,7 @@ declaration against what actually shipped (facade + codegen + barrel for
   add `gateways` + `gatewayOperationIds`, drop `followUp`.
 - **New business service** → add its `.Web` project reference and assembly name to
   the gate project (`Nerv.IIP.FacadeCoverage.Tests`) so its endpoints are covered.
-- The `exposed` rows are summarised by count here; the full 353-row registry with
+- The `exposed` rows are summarised by count here; the full 354-row registry with
   per-endpoint facade operation ids lives in the JSON.
 
 ## Summary
@@ -97,15 +97,15 @@ declaration against what actually shipped (facade + codegen + barrel for
 | Inventory | 12 | 5 | 2 | 5 |
 | Maintenance | 20 | 15 | 5 | 0 |
 | MasterData | 46 | 38 | 4 | 4 |
-| Mes | 51 | 48 | 3 | 0 |
+| Mes | 52 | 49 | 3 | 0 |
 | ProductEngineering | 38 | 38 | 0 | 0 |
 | Quality | 31 | 16 | 15 | 0 |
 | Scheduling | 7 | 6 | 1 | 0 |
 | Wms | 30 | 19 | 6 | 5 |
-| **Total** | **353** | **280** | **52** | **21** |
+| **Total** | **354** | **281** | **52** | **21** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-The `exposed` rows (280) — each with its verified facade `gatewayOperationIds` — are
+The `exposed` rows (281) — each with its verified facade `gatewayOperationIds` — are
 enumerated in the JSON registry. The `deferred` and `internal` rows, the actual
 governance decisions, are listed in full below.
 

@@ -14,11 +14,13 @@ public sealed class OpcUaConnector(
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Func<DateTimeOffset> _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     private readonly TimeSpan _sealedBucketRetention = CalculateSealedBucketRetention(options.Tags);
+    private readonly Guid _counterEpoch = Guid.CreateVersion7();
 
     public OpcUaConnectorState CurrentState { get; private set; } = new(
         "stopped",
         "unknown",
         "OPC UA collector has not run yet.",
+        0,
         0,
         0,
         0,
@@ -46,6 +48,7 @@ public sealed class OpcUaConnector(
                 {
                     HealthStatus = "degraded",
                     Summary = "OPC UA subscription disconnected; reconnecting.",
+                    ErrorCount = state.ErrorCount + 1,
                     ReconnectCount = state.ReconnectCount + 1,
                     SubscriptionRecoveries = state.SubscriptionRecoveries + 1
                 }, cancellationToken);
@@ -57,6 +60,7 @@ public sealed class OpcUaConnector(
                 {
                     ReportedStatus = "stopped",
                     HealthStatus = "unhealthy",
+                    ErrorCount = state.ErrorCount + 1,
                     Summary = $"OPC UA collection failed: {ex.Message}"
                 }, cancellationToken);
                 throw;
@@ -96,9 +100,17 @@ public sealed class OpcUaConnector(
                     new ConnectorCapability("runtime.status", "1.0", "runtime", ["inspect"]),
                     new ConnectorCapability("industrial-telemetry.ingest", "1.0", "telemetry", ["browse", "subscribe", "sample"])
                 ],
-                metadata)
+                metadata,
+                CreateCollectionHealth(state))
         ];
         return targets;
+    }
+
+    private ConnectorCollectionHealthSnapshot CreateCollectionHealth(OpcUaConnectorState state)
+    {
+        var known = state.ReceivedSamples > 0 || state.DroppedSamples > 0 || state.ErrorCount > 0 || state.LastSampleAtUtc is not null;
+        return new($"opcua-{options.ConnectorId}", "opcua", _counterEpoch,
+            known ? state.ReceivedSamples : null, known ? state.DroppedSamples : null, known ? state.ErrorCount : null, state.LastSampleAtUtc);
     }
 
     private async Task ConnectBrowseAndSubscribeAsync(CancellationToken cancellationToken)
@@ -131,6 +143,11 @@ public sealed class OpcUaConnector(
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            CurrentState = CurrentState with
+            {
+                ReceivedSamples = CurrentState.ReceivedSamples + 1,
+                LastSampleAtUtc = change.SourceTimestampUtc
+            };
             if (!_tagsByNodeId.TryGetValue(change.NodeId, out var tag)
                 || !string.Equals(change.Status, "Good", StringComparison.OrdinalIgnoreCase)
                 || !OpcUaValueConversion.TryConvertDecimal(change.Value, out var value))
@@ -161,11 +178,6 @@ public sealed class OpcUaConnector(
             }
 
             bucket.Add(value);
-            CurrentState = CurrentState with
-            {
-                ReceivedSamples = CurrentState.ReceivedSamples + 1,
-                LastSampleAtUtc = change.SourceTimestampUtc
-            };
         }
         finally
         {

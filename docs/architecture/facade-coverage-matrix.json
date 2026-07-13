@@ -2759,6 +2759,19 @@
     {
       "service": "Mes",
       "method": "GET",
+      "route": "/api/business/v1/mes/quality-holds/{sourceDocumentId}/timeline",
+      "operationId": "getBusinessMesQualityHoldTimeline",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMesQualityHoldTimeline"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
       "route": "/api/business/v1/mes/related-quality-items",
       "operationId": "listBusinessMesRelatedQualityItems",
       "classification": "exposed",

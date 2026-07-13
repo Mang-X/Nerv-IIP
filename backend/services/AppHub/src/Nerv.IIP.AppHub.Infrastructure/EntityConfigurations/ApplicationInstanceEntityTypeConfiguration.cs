@@ -34,12 +34,37 @@ public sealed class ApplicationInstanceEntityTypeConfiguration : IEntityTypeConf
             .Metadata.SetValueComparer(EntityConfigurationJson.CapabilitiesComparer);
         builder.Property(x => x.Deleted).HasConversion(x => x.Value, x => new Deleted(x)).HasComment("Soft delete flag");
         builder.Property(x => x.RowVersion).HasConversion(x => x.VersionNumber, x => new RowVersion(x)).HasComment("Optimistic row version");
-        builder.HasIndex(x => x.InstanceKey).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.InstanceKey }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ConnectorHostId });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ApplicationKey });
         builder.HasOne(x => x.Heartbeat).WithOne().HasForeignKey<InstanceHeartbeat>(x => x.ApplicationInstanceId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(x => x.CollectionHealth).WithOne().HasForeignKey<ConnectorCollectionHealthProjection>(x => x.ApplicationInstanceId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.StateHistory).WithOne().HasForeignKey(x => x.ApplicationInstanceId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.StatusChanges).WithOne().HasForeignKey(x => x.ApplicationInstanceId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class ConnectorCollectionHealthProjectionEntityTypeConfiguration : IEntityTypeConfiguration<ConnectorCollectionHealthProjection>
+{
+    public void Configure(EntityTypeBuilder<ConnectorCollectionHealthProjection> builder)
+    {
+        builder.ToTable("connector_collection_health", table => table.HasComment("Latest recoverable collection health counters reported by each Connector Host connector/source."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Collection health projection id");
+        builder.Property(x => x.ApplicationInstanceId).HasConversion(id => id.Id, value => new ApplicationInstanceId(value)).IsRequired().HasComment("Owning application instance aggregate id");
+        builder.Property(x => x.OrganizationId).IsRequired().HasMaxLength(100).HasComment("Organization scope for the connector identity");
+        builder.Property(x => x.EnvironmentId).IsRequired().HasMaxLength(100).HasComment("Environment scope for the connector identity");
+        builder.Property(x => x.ConnectorId).IsRequired().HasMaxLength(160).HasComment("Stable connector identity within organization and environment scope");
+        builder.Property(x => x.SourceSystem).IsRequired().HasMaxLength(100).HasComment("Source protocol or system, such as opcua, modbus, or mqtt");
+        builder.Property(x => x.CounterEpoch).IsRequired().HasComment("Process or counter epoch that makes resets explicit");
+        builder.Property(x => x.ReportedAtUtc).IsRequired().HasComment("Time at which Connector Host reported these metrics");
+        builder.Property(x => x.ReceivedCount).HasComment("Raw source messages or sample attempts observed exactly once in this epoch before validation; null means unknown");
+        builder.Property(x => x.DroppedCount).HasComment("Actual source samples intentionally dropped or rejected in this epoch; null means unknown");
+        builder.Property(x => x.ErrorCount).HasComment("Actual collection or processing failures in this epoch; null means unknown");
+        builder.Property(x => x.LastSampleAtUtc).HasComment("Most recent actual source sample time; null means unknown");
+        builder.Property(x => x.RetiredCounterEpochs).IsRequired().HasColumnType("text").HasComment("Complete set of retired counter epoch identities, preventing delayed reports from reviving reset counters");
+        builder.HasIndex(x => x.ApplicationInstanceId).IsUnique().HasDatabaseName("ux_connector_collection_health_instance");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ConnectorId }).IsUnique().HasDatabaseName("ux_connector_collection_health_scope");
     }
 }
 
@@ -100,11 +125,13 @@ public sealed class RegistrationIdempotencyEntityTypeConfiguration : IEntityType
             tableBuilder.HasComment("AppHub registration idempotency records used to deduplicate connector retries."));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).UseGuidVersion7ValueGenerator().HasComment("Registration idempotency id");
+        builder.Property(x => x.OrganizationId).IsRequired().HasMaxLength(100).HasComment("Organization scope for the registration idempotency key");
+        builder.Property(x => x.EnvironmentId).IsRequired().HasMaxLength(100).HasComment("Environment scope for the registration idempotency key");
         builder.Property(x => x.IdempotencyKey).IsRequired().HasMaxLength(200).HasComment("Idempotency key");
         builder.Property(x => x.RegistrationId).IsRequired().HasMaxLength(100).HasComment("Registration id");
         builder.Property(x => x.InstanceKey).IsRequired().HasMaxLength(160).HasComment("Instance protocol key");
         builder.Property(x => x.Deleted).HasConversion(x => x.Value, x => new Deleted(x)).HasComment("Soft delete flag");
         builder.Property(x => x.RowVersion).HasConversion(x => x.VersionNumber, x => new RowVersion(x)).HasComment("Optimistic row version");
-        builder.HasIndex(x => x.IdempotencyKey).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.IdempotencyKey }).IsUnique();
     }
 }

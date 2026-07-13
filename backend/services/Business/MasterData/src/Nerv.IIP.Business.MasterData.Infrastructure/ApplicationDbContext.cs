@@ -3,6 +3,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggrega
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.CodeRuleAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.LifecycleAuditAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
@@ -30,6 +31,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     : AppDbContextBase(options, mediator)
     , IPostgreSqlCapDataStorage
 {
+    private const string LifecycleAuditOperationIndexName = "ux_master_data_lifecycle_audit_operation";
     public DbSet<Sku> Skus => Set<Sku>();
     public DbSet<BusinessPartner> BusinessPartners => Set<BusinessPartner>();
     public DbSet<Department> Departments => Set<Department>();
@@ -54,6 +56,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<CodeRuleVersion> CodeRuleVersions => Set<CodeRuleVersion>();
     public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
     public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
+    public DbSet<MasterDataLifecycleAuditEntry> LifecycleAuditEntries => Set<MasterDataLifecycleAuditEntry>();
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         if (modelBuilder is null)
@@ -80,4 +83,56 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         modelBuilder.Entity<ReceivedMessage>().ToTable("cap_received_messages").HasKey(x => x.Id);
         modelBuilder.Entity<CapLock>().ToTable("cap_locks").HasKey(x => x.Key);
     }
+
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IsDuplicateLifecycleOperation(exception))
+        {
+            return await RecoverLifecycleOperationReplayAsync(cancellationToken);
+        }
+    }
+
+    private bool IsDuplicateLifecycleOperation(Exception exception)
+    {
+        var provider = Database.ProviderName ?? string.Empty;
+        return exception.ToString().Contains(LifecycleAuditOperationIndexName, StringComparison.OrdinalIgnoreCase) ||
+            (provider.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) &&
+             exception.ToString().Contains("master_data_lifecycle_audit.OrganizationId", StringComparison.OrdinalIgnoreCase) &&
+             exception.ToString().Contains("master_data_lifecycle_audit.OperationId", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task<int> RecoverLifecycleOperationReplayAsync(CancellationToken cancellationToken)
+    {
+        var pending = ChangeTracker.Entries<MasterDataLifecycleAuditEntry>()
+            .Where(x => x.State == EntityState.Added)
+            .Select(x => x.Entity)
+            .Single();
+        var existing = await LifecycleAuditEntries.AsNoTracking().SingleAsync(x =>
+            x.OrganizationId == pending.OrganizationId &&
+            x.EnvironmentId == pending.EnvironmentId &&
+            x.OperationId == pending.OperationId, cancellationToken);
+        if (!LifecycleAuditPayloadEquals(existing, pending))
+        {
+            ChangeTracker.Clear();
+            throw new KnownException($"Lifecycle operation '{pending.OperationId}' conflicts with its previously persisted payload.");
+        }
+
+        // The failed transaction included the resource mutation and any outbox rows. The winner already
+        // persisted the canonical operation, so discarding the complete loser graph is the idempotent result.
+        ChangeTracker.Clear();
+        return 0;
+    }
+
+    private static bool LifecycleAuditPayloadEquals(MasterDataLifecycleAuditEntry left, MasterDataLifecycleAuditEntry right) =>
+        left.ResourceType == right.ResourceType &&
+        left.ResourceId == right.ResourceId &&
+        left.ResourceCode == right.ResourceCode &&
+        left.ResourceIdentity == right.ResourceIdentity &&
+        left.TargetEnabled == right.TargetEnabled &&
+        left.ActorId == right.ActorId &&
+        left.Reason == right.Reason;
 }

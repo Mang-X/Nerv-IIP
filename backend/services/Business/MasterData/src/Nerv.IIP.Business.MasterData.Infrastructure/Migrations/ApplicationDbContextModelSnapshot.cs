@@ -673,6 +673,89 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.LifecycleAuditAggregate.MasterDataLifecycleAuditEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Lifecycle audit entry identifier.");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasComment("Trusted authenticated principal that requested the change.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Environment scope.");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("UTC timestamp when the lifecycle change occurred.");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasComment("Correlation or idempotency identity for the operation.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Organization scope.");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasComment("Required normalized lifecycle change reason.");
+
+                    b.Property<string>("ResourceCode")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasComment("Stable resource code or public identifier.");
+
+                    b.Property<string>("ResourceId")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasComment("Persistent resource identifier.");
+
+                    b.Property<string>("ResourceIdentity")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasComment("Canonical resource identity including composite-key qualifiers.");
+
+                    b.Property<string>("ResourceType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Master-data resource type.");
+
+                    b.Property<bool>("TargetEnabled")
+                        .HasColumnType("boolean")
+                        .HasComment("Lifecycle state requested by the operation.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "OperationId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_master_data_lifecycle_audit_operation");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ResourceType", "ResourceCode", "OccurredAtUtc")
+                        .HasDatabaseName("ix_master_data_lifecycle_audit_resource");
+
+                    b.ToTable("master_data_lifecycle_audit", "business_masterdata", t =>
+                        {
+                            t.HasComment("Durable audit trail for master-data lifecycle state changes.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregate.PersonnelSkill", b =>
                 {
                     b.Property<Guid>("Id")

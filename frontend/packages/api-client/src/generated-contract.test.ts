@@ -6,6 +6,8 @@ import type {
   BusinessConsoleApprovalChainResponse,
   BusinessConsoleBarcodePrintBatchResponse,
   BusinessConsoleCancelScheduledEngineeringChangeRequest,
+  BusinessConsoleConnectorCollectionHealthRequest,
+  BusinessConsoleConnectorCollectionHealthResponse,
   BusinessConsoleCreateErpPurchaseRequisitionEnvelope,
   BusinessConsoleCreateErpPurchaseRequisitionResponse,
   BusinessConsoleCreateOrUpdateForecastInputRequest,
@@ -20,6 +22,9 @@ import type {
   BusinessConsoleForecastInputListEnvelope,
   BusinessConsoleForecastInputListResponse,
   BusinessConsoleMaintenanceAssetReliabilityEnvelope,
+  BusinessConsoleMesQualityHoldTimelineItem,
+  BusinessConsoleMesQualityHoldTimelineRequest,
+  BusinessConsoleMesQualityHoldTimelineResponse,
   BusinessConsoleNotificationMessageItem,
   BusinessConsoleNotificationTaskItem,
   BusinessConsoleMarkNotificationMessageReadResponse,
@@ -30,6 +35,7 @@ import type {
   BusinessConsoleRescheduleEngineeringChangeRequest,
   BusinessConsoleSchedulingPlanSummaryResponse,
   BusinessConsoleSearchResponse,
+  BusinessConsoleSetMasterDataResourceEnabledRequest,
   BusinessConsoleTelemetryOeeEnvelope,
   BusinessConsoleWorkbenchSummaryResponse,
   CancelBusinessConsolePlanningDemandData,
@@ -444,6 +450,28 @@ describe('generated API client contract', () => {
     for (const functionName of expectedFunctions) {
       expect(businessConsoleClient[functionName], functionName).toBeTypeOf('function')
     }
+  })
+
+  it('exports collection health and quality hold lifecycle facades through stable api-client entry points', () => {
+    const expectedFunctions = [
+      'queryBusinessConsoleTelemetryConnectorCollectionHealth',
+      'queryBusinessConsoleTelemetryConnectorCollectionHealthQueryOptions',
+      'getBusinessConsoleMesQualityHoldTimeline',
+      'getBusinessConsoleMesQualityHoldTimelineQueryOptions',
+    ] as const
+
+    for (const functionName of expectedFunctions) {
+      expect(businessConsoleClient[functionName], functionName).toBeTypeOf('function')
+    }
+
+    expectTypeOf<BusinessConsoleConnectorCollectionHealthRequest>().toBeObject()
+    expectTypeOf<BusinessConsoleConnectorCollectionHealthResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleMesQualityHoldTimelineRequest>().toBeObject()
+    expectTypeOf<BusinessConsoleMesQualityHoldTimelineResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleMesQualityHoldTimelineItem>().toBeObject()
+    expectTypeOf<
+      Pick<BusinessConsoleSetMasterDataResourceEnabledRequest, 'idempotencyKey'>
+    >().toEqualTypeOf<{ idempotencyKey: string }>()
   })
 
   it('exports wave2 refreshed Business Console request-payload Data types', () => {

@@ -34,6 +34,9 @@ public interface IBusinessMasterDataClient
         string internalBearerToken,
         BusinessConsoleSetMasterDataResourceEnabledRequest request,
         bool enabled,
+        string actor,
+        string correlationId,
+        string idempotencyKey,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleResourceItem> CreateSkuAsync(
@@ -1277,6 +1280,21 @@ public interface IBusinessMesClient
         string actor,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleAcceptedResponse> ForceReleaseQualityHoldAsync(
+        string internalBearerToken,
+        string sourceDocumentId,
+        BusinessConsoleMesForceReleaseQualityHoldRequest request,
+        string actor,
+        string correlationId,
+        CancellationToken cancellationToken) =>
+        ForceReleaseQualityHoldAsync(internalBearerToken, sourceDocumentId, request, actor, cancellationToken);
+
+    Task<BusinessConsoleMesQualityHoldTimelineResponse> GetQualityHoldTimelineAsync(
+        string internalBearerToken,
+        string sourceDocumentId,
+        BusinessConsoleMesQualityHoldTimelineRequest request,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
     Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(
         string internalBearerToken,
         string reportNo,
@@ -1980,13 +1998,22 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         string internalBearerToken,
         BusinessConsoleSetMasterDataResourceEnabledRequest request,
         bool enabled,
+        string actor,
+        string correlationId,
+        string idempotencyKey,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMasterDataResourceDetail>(
             internalBearerToken,
             HttpMethod.Post,
             ResourcePath(request.ResourceType, request.Code) + (enabled ? "/enable" : "/disable"),
             request,
-            cancellationToken);
+            cancellationToken,
+            configureRequest: message =>
+            {
+                message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor);
+                message.Headers.TryAddWithoutValidation("X-Correlation-Id", correlationId);
+                message.Headers.TryAddWithoutValidation("X-Idempotency-Key", idempotencyKey);
+            });
 
     public Task<BusinessConsoleResourceItem> CreateSkuAsync(
         string internalBearerToken,
@@ -5995,6 +6022,15 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         BusinessConsoleMesForceReleaseQualityHoldRequest request,
         string actor,
         CancellationToken cancellationToken) =>
+        ForceReleaseQualityHoldAsync(internalBearerToken, sourceDocumentId, request, actor, Guid.CreateVersion7().ToString("N"), cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> ForceReleaseQualityHoldAsync(
+        string internalBearerToken,
+        string sourceDocumentId,
+        BusinessConsoleMesForceReleaseQualityHoldRequest request,
+        string actor,
+        string correlationId,
+        CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleAcceptedResponse>(
             internalBearerToken,
             HttpMethod.Post,
@@ -6003,9 +6039,26 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.Reason,
-                actor,
                 request.SourceService,
                 request.ReleasedAtUtc),
+            cancellationToken,
+            configureRequest: message =>
+            {
+                message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor);
+                message.Headers.TryAddWithoutValidation("X-Correlation-Id", correlationId);
+                message.Headers.TryAddWithoutValidation("X-Idempotency-Key", request.IdempotencyKey);
+            });
+
+    public Task<BusinessConsoleMesQualityHoldTimelineResponse> GetQualityHoldTimelineAsync(
+        string internalBearerToken,
+        string sourceDocumentId,
+        BusinessConsoleMesQualityHoldTimelineRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesQualityHoldTimelineResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/quality-holds/{Uri.EscapeDataString(sourceDocumentId)}/timeline?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}&sourceService={Uri.EscapeDataString(request.SourceService)}",
+            null,
             cancellationToken);
 
     public Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(
@@ -6517,7 +6570,6 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string OrganizationId,
         string EnvironmentId,
         string Reason,
-        string Actor,
         string? SourceService,
         DateTimeOffset? ReleasedAtUtc);
 

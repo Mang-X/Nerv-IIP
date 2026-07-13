@@ -38,7 +38,7 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
         Active = IsBlockingResult(result, eventType);
         if (Active)
         {
-            RecordHoldAudit(inspectionRecordId, DispositionReason, recordedAtUtc, actor);
+            RecordHoldAudit(inspectionRecordId, InspectionPlanId, DispositionReason, recordedAtUtc, actor);
         }
     }
 
@@ -56,6 +56,7 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
     public DateTimeOffset RecordedAtUtc { get; private set; }
     public bool Active { get; private set; }
     public string? HeldInspectionRecordId { get; private set; }
+    public string? HeldInspectionDocumentId { get; private set; }
     public string? HoldReason { get; private set; }
     public DateTimeOffset? HeldAtUtc { get; private set; }
     public string? HeldBy { get; private set; }
@@ -96,7 +97,7 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
             actor);
     }
 
-    public void ApplyInspectionResult(
+    public bool ApplyInspectionResult(
         string inspectionRecordId,
         string? inspectionPlanId,
         string result,
@@ -107,7 +108,7 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
     {
         if (recordedAtUtc < RecordedAtUtc)
         {
-            return;
+            return false;
         }
 
         var wasActive = Active;
@@ -120,25 +121,34 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
         Active = IsBlockingResult(result, eventType);
         if (Active)
         {
-            RecordHoldAudit(inspectionRecordId, DispositionReason, recordedAtUtc, actor);
-            return;
+            RecordHoldAudit(inspectionRecordId, InspectionPlanId, DispositionReason, recordedAtUtc, actor);
+            return !wasActive;
         }
 
         if (wasActive)
         {
             RecordReleaseAudit(inspectionRecordId, DispositionReason ?? "Quality inspection released the hold.", recordedAtUtc, actor, eventType);
+            return true;
         }
+
+        return false;
     }
 
-    public void ForceRelease(string reason, string actor, DateTimeOffset releasedAtUtc)
+    public bool ForceRelease(string reason, string actor, DateTimeOffset releasedAtUtc)
     {
         if (!Active)
         {
-            return;
+            return false;
+        }
+
+        if (HeldAtUtc.HasValue && releasedAtUtc < HeldAtUtc.Value)
+        {
+            throw new KnownException("Quality hold release time cannot be earlier than the hold time.");
         }
 
         Active = false;
         RecordReleaseAudit(null, reason, releasedAtUtc, actor, "manual-force-release");
+        return true;
     }
 
     private static bool IsBlockingResult(string result, string eventType)
@@ -147,9 +157,10 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
             string.Equals(result, "rejected", StringComparison.OrdinalIgnoreCase);
     }
 
-    private void RecordHoldAudit(string inspectionRecordId, string? reason, DateTimeOffset heldAtUtc, string actor)
+    private void RecordHoldAudit(string inspectionRecordId, string? inspectionDocumentId, string? reason, DateTimeOffset heldAtUtc, string actor)
     {
         HeldInspectionRecordId = DomainGuard.Required(inspectionRecordId, nameof(inspectionRecordId));
+        HeldInspectionDocumentId = string.IsNullOrWhiteSpace(inspectionDocumentId) ? null : inspectionDocumentId.Trim();
         HoldReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
         HeldAtUtc = heldAtUtc;
         HeldBy = DomainGuard.Required(actor, nameof(actor));

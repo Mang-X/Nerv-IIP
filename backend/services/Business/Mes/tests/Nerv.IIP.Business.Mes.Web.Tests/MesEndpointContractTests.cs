@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Reflection;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,9 +26,109 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesEndpointContractTests
 {
     [Fact]
+    public void Force_release_request_uses_authenticated_principal_and_governed_headers()
+    {
+        Assert.Null(typeof(ForceReleaseQualityHoldRequest).GetProperty("Actor"));
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, "supervisor-007")],
+                "test")),
+        };
+        context.Request.Headers["X-Correlation-Id"] = "corr-force-007";
+        context.Request.Headers["X-Idempotency-Key"] = "idem-force-007";
+
+        var governed = MesQualityHoldRequestContext.Resolve(context);
+
+        Assert.Equal("user:supervisor-007", governed.Actor);
+        Assert.Equal("corr-force-007", governed.CorrelationId);
+        Assert.Equal("idem-force-007", governed.IdempotencyKey);
+    }
+
+    [Fact]
+    public void Force_release_internal_service_accepts_canonical_forwarded_actor()
+    {
+        var context = CreateQualityHoldContext(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "internal-service"),
+                new Claim("token_type", "internal_service"),
+            ],
+            "user:supervisor-008");
+
+        var governed = MesQualityHoldRequestContext.Resolve(context);
+
+        Assert.Equal("user:supervisor-008", governed.Actor);
+    }
+
+    [Fact]
+    public void Force_release_user_ignores_forged_forwarded_actor()
+    {
+        var context = CreateQualityHoldContext(
+            [new Claim(ClaimTypes.NameIdentifier, "supervisor-009")],
+            "user:administrator");
+
+        var governed = MesQualityHoldRequestContext.Resolve(context);
+
+        Assert.Equal("user:supervisor-009", governed.Actor);
+    }
+
+    [Fact]
+    public void Force_release_non_internal_token_with_internal_service_subject_ignores_forwarded_actor()
+    {
+        var context = CreateQualityHoldContext(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "internal-service"),
+                new Claim("token_type", "access"),
+            ],
+            "user:administrator");
+
+        var governed = MesQualityHoldRequestContext.Resolve(context);
+
+        Assert.Equal("user:internal-service", governed.Actor);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("administrator")]
+    [InlineData("user:")]
+    [InlineData("user:   ")]
+    [InlineData(":administrator")]
+    [InlineData(" : ")]
+    public void Force_release_internal_service_rejects_missing_or_non_canonical_forwarded_actor(
+        string? forwardedActor)
+    {
+        var context = CreateQualityHoldContext(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "internal-service"),
+                new Claim("token_type", "internal_service"),
+            ],
+            forwardedActor);
+
+        Assert.Throws<KnownException>(() => MesQualityHoldRequestContext.Resolve(context));
+    }
+
+    private static DefaultHttpContext CreateQualityHoldContext(
+        IEnumerable<Claim> claims,
+        string? forwardedActor)
+    {
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(claims, "test")),
+        };
+        if (forwardedActor is not null)
+        {
+            context.Request.Headers["X-Authenticated-Actor"] = forwardedActor;
+        }
+        context.Request.Headers["X-Correlation-Id"] = "corr-force-trust";
+        context.Request.Headers["X-Idempotency-Key"] = "idem-force-trust";
+        return context;
+    }
+
+    [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(51, MesEndpointContracts.All.Count);
+        Assert.Equal(52, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -103,6 +205,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release"
             && x.PermissionCode == MesPermissionCodes.QualityWrite
             && x.OperationId == "forceReleaseBusinessMesQualityHold");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/mes/quality-holds/{sourceDocumentId}/timeline"
+            && x.PermissionCode == MesPermissionCodes.QualityRead
+            && x.OperationId == "getBusinessMesQualityHoldTimeline");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness"

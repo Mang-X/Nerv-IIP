@@ -1447,6 +1447,12 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("held_by")
                         .HasComment("Quality actor or system source that activated the hold.");
 
+                    b.Property<string>("HeldInspectionDocumentId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("held_inspection_document_id")
+                        .HasComment("Quality inspection plan or document durably associated with the current hold cycle when supplied.");
+
                     b.Property<string>("HeldInspectionRecordId")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -1559,6 +1565,124 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.ToTable("quality_hold_contexts", "mes", t =>
                         {
                             t.HasComment("MES quality hold contexts projected from Quality inspection result facts for work order release and start gates.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate.QualityHoldTransition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Stable quality hold transition identifier.");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("actor")
+                        .HasComment("Known actor supplied by the transition source; legacy values are not synthesized.");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("correlation_id")
+                        .HasComment("Source command or integration-event correlation identifier for this transition.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment scope for the transition.");
+
+                    b.Property<string>("EventKind")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("event_kind")
+                        .HasComment("Lifecycle event kind: hold-applied, inspection-released, or manual-force-released.");
+
+                    b.Property<string>("HoldCycleId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("hold_cycle_id")
+                        .HasComment("Stable identifier correlating an applied hold with its release in one lifecycle cycle.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Governed source idempotency key when supplied; unavailable legacy values remain null.");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc")
+                        .HasComment("UTC instant when the lifecycle transition occurred.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization scope for the transition.");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("origin")
+                        .HasComment("Transition origin: automatic or manual.");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason")
+                        .HasComment("Reason supplied by the source transition when available; unknown legacy values remain null.");
+
+                    b.Property<string>("SourceDocumentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_document_id")
+                        .HasComment("Stable MES source document identifier whose hold lifecycle changed.");
+
+                    b.Property<string>("SourceInspectionDocumentId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_inspection_document_id")
+                        .HasComment("Quality inspection plan or document associated with the transition when available.");
+
+                    b.Property<string>("SourceInspectionRecordId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_inspection_record_id")
+                        .HasComment("Quality inspection record that caused the transition when applicable.");
+
+                    b.Property<string>("SourceService")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_service")
+                        .HasComment("Service that owns the held source document.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceDocumentId", "OccurredAtUtc", "Id")
+                        .HasDatabaseName("ix_quality_hold_transitions_scope_source_timeline");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceService", "SourceDocumentId", "HoldCycleId", "CorrelationId", "EventKind")
+                        .IsUnique()
+                        .HasDatabaseName("ux_quality_hold_transitions_scope_correlation_kind");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceService", "SourceDocumentId", "HoldCycleId", "IdempotencyKey", "EventKind")
+                        .IsUnique()
+                        .HasDatabaseName("ux_quality_hold_transitions_scope_idempotency_kind");
+
+                    b.ToTable("quality_hold_transitions", "mes", t =>
+                        {
+                            t.HasComment("Append-only MES quality hold lifecycle transitions; current state remains in quality_hold_contexts.");
                         });
                 });
 

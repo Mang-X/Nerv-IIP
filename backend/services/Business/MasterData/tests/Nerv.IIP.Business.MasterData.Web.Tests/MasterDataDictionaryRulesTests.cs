@@ -255,6 +255,8 @@ public sealed class MasterDataDictionaryRulesTests
                 "reference-data",
                 "raw-material",
                 false,
+                "test:actor",
+                "op-reference-disable",
                 "material-type",
                 "retired"),
             CancellationToken.None);

@@ -286,22 +286,30 @@ public sealed class BusinessGatewayProxyTests
             category = "raw-material",
             materialType = "powder",
         });
-        var disable = await client.PostAsJsonAsync("/api/business-console/v1/master-data/resources/sku/SKU-001/disable", new
+        using var disableMessage = new HttpRequestMessage(HttpMethod.Post, "/api/business-console/v1/master-data/resources/sku/SKU-001/disable");
+        disableMessage.Headers.Add("X-Correlation-Id", "corr-master-disable");
+        disableMessage.Content = JsonContent.Create(new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
             resourceType = "sku",
             code = "SKU-001",
+            idempotencyKey = "idem-master-disable",
             reason = "duplicate",
         });
-        var enable = await client.PostAsJsonAsync("/api/business-console/v1/master-data/resources/sku/SKU-001/enable", new
+        var disable = await client.SendAsync(disableMessage);
+        using var enableMessage = new HttpRequestMessage(HttpMethod.Post, "/api/business-console/v1/master-data/resources/sku/SKU-001/enable");
+        enableMessage.Headers.Add("X-Correlation-Id", "corr-master-enable");
+        enableMessage.Content = JsonContent.Create(new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
             resourceType = "sku",
             code = "SKU-001",
+            idempotencyKey = "idem-master-enable",
             reason = "reactivated",
         });
+        var enable = await client.SendAsync(enableMessage);
 
         Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
         Assert.Equal(HttpStatusCode.OK, update.StatusCode);
@@ -313,6 +321,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Contains(false, masterData.SetResourceEnabledCalls);
         Assert.Contains(masterData.SetResourceEnabledRequests, request => request.Reason == "duplicate");
         Assert.Contains(true, masterData.SetResourceEnabledCalls);
+        Assert.All(masterData.SetResourceEnabledActors, actor => Assert.Equal("user:user-admin", actor));
+        Assert.Equal(["corr-master-disable", "corr-master-enable"], masterData.SetResourceEnabledCorrelationIds);
+        Assert.Equal(["idem-master-disable", "idem-master-enable"], masterData.SetResourceEnabledIdempotencyKeys);
     }
 
     [Fact]
@@ -1170,10 +1181,13 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.PostAsJsonAsync(
-            "/api/business-console/v1/mes/quality-holds/QH-001/force-release?organizationId=org-001&environmentId=env-dev",
+        using var forceRequest = new HttpRequestMessage(HttpMethod.Post,
+            "/api/business-console/v1/mes/quality-holds/QH-001/force-release?organizationId=org-001&environmentId=env-dev");
+        forceRequest.Headers.TryAddWithoutValidation("X-Correlation-Id", "corr-gateway-1");
+        forceRequest.Content = JsonContent.Create(
             // A caller-supplied actor must never be trusted; the gateway overrides it with the principal.
-            new { reason = "quality-override", actor = "supervisor-1", sourceService = "BusinessMes", releasedAtUtc = (DateTimeOffset?)null });
+            new { reason = "quality-override", actor = "supervisor-1", sourceService = "BusinessMes", releasedAtUtc = (DateTimeOffset?)null, idempotencyKey = "idem-force-1" });
+        var response = await client.SendAsync(forceRequest);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         // Facade forwards the internal service token, never the caller bearer.
@@ -1184,11 +1198,34 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("org-001", mes.LastForceReleaseQualityHoldRequest.OrganizationId);
         Assert.Equal("env-dev", mes.LastForceReleaseQualityHoldRequest.EnvironmentId);
         Assert.Equal("quality-override", mes.LastForceReleaseQualityHoldRequest.Reason);
+        Assert.Equal("idem-force-1", mes.LastForceReleaseQualityHoldRequest.IdempotencyKey);
+        Assert.Equal("corr-gateway-1", mes.LastForceReleaseQualityHoldCorrelationId);
         // The releaser identity is bound to the authenticated principal; the request-body actor is ignored.
-        Assert.Equal("user-admin", mes.LastForceReleaseQualityHoldActor);
+        Assert.Equal("user:user-admin", mes.LastForceReleaseQualityHoldActor);
         Assert.NotEqual("supervisor-1", mes.LastForceReleaseQualityHoldActor);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.True(document.RootElement.GetProperty("data").GetProperty("accepted").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Mes_quality_hold_timeline_requires_quality_read_and_returns_full_lineage()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/mes/quality-holds/DOC-1/timeline?organizationId=org-001&environmentId=env-dev&sourceService=source");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = json.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("event-idem", item.GetProperty("idempotencyKey").GetString());
+        Assert.Equal("PLAN-1", item.GetProperty("sourceInspectionDocumentId").GetString());
     }
 
     [Fact]
@@ -3754,13 +3791,19 @@ public sealed class BusinessGatewayProxyTests
             CancellationToken.None);
         await client.SetResourceEnabledAsync(
             "internal-token-001",
-            new BusinessConsoleSetMasterDataResourceEnabledRequest("org-001", "env-dev", "sku", "SKU-001", Reason: "duplicate"),
+            new BusinessConsoleSetMasterDataResourceEnabledRequest("org-001", "env-dev", "sku", "SKU-001", "idem-master-http", Reason: "duplicate"),
             false,
+            "user:trusted",
+            "corr-master-http",
+            "idem-master-http",
             CancellationToken.None);
 
         AssertRequest(handler.Requests[0], HttpMethod.Get, "/api/business/v1/master-data/resources/reference-data/powder?organizationId=org-001&environmentId=env-dev&codeSet=material-type");
         AssertRequest(handler.Requests[1], HttpMethod.Patch, "/api/business/v1/master-data/resources/sku/SKU-001");
         AssertRequest(handler.Requests[2], HttpMethod.Post, "/api/business/v1/master-data/resources/sku/SKU-001/disable");
+        Assert.Equal("user:trusted", handler.Requests[2].Headers.GetValues("X-Authenticated-Actor").Single());
+        Assert.Equal("corr-master-http", handler.Requests[2].Headers.GetValues("X-Correlation-Id").Single());
+        Assert.Equal("idem-master-http", handler.Requests[2].Headers.GetValues("X-Idempotency-Key").Single());
     }
 
     [Fact]
@@ -5886,6 +5929,12 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public List<bool> SetResourceEnabledCalls { get; } = [];
 
+    public List<string> SetResourceEnabledActors { get; } = [];
+
+    public List<string> SetResourceEnabledCorrelationIds { get; } = [];
+
+    public List<string> SetResourceEnabledIdempotencyKeys { get; } = [];
+
     public List<BusinessConsoleSetMasterDataResourceEnabledRequest> SetResourceEnabledRequests { get; } = [];
 
     public BusinessConsoleListProductCategoriesRequest? LastProductCategoryListRequest { get; private set; }
@@ -5995,6 +6044,9 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         string internalBearerToken,
         BusinessConsoleSetMasterDataResourceEnabledRequest request,
         bool enabled,
+        string actor,
+        string correlationId,
+        string idempotencyKey,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
@@ -6002,6 +6054,9 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         LastSetEnabled = enabled;
         SetResourceEnabledCalls.Add(enabled);
         SetResourceEnabledRequests.Add(request);
+        SetResourceEnabledActors.Add(actor);
+        SetResourceEnabledCorrelationIds.Add(correlationId);
+        SetResourceEnabledIdempotencyKeys.Add(idempotencyKey);
         return Task.FromResult(ResourceDetail(request.ResourceType, request.Code, request.CodeSet, enabled));
     }
 
@@ -9072,6 +9127,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public BusinessConsoleMesForceReleaseQualityHoldRequest? LastForceReleaseQualityHoldRequest { get; private set; }
 
     public string? LastForceReleaseQualityHoldActor { get; private set; }
+    public string? LastForceReleaseQualityHoldCorrelationId { get; private set; }
 
     public int ReverseProductionReportCallCount { get; private set; }
 
@@ -9236,6 +9292,33 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         LastForceReleaseQualityHoldRequest = request;
         LastForceReleaseQualityHoldActor = actor;
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> ForceReleaseQualityHoldAsync(
+        string internalBearerToken,
+        string sourceDocumentId,
+        BusinessConsoleMesForceReleaseQualityHoldRequest request,
+        string actor,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        LastForceReleaseQualityHoldCorrelationId = correlationId;
+        return ForceReleaseQualityHoldAsync(internalBearerToken, sourceDocumentId, request, actor, cancellationToken);
+    }
+
+    public Task<BusinessConsoleMesQualityHoldTimelineResponse> GetQualityHoldTimelineAsync(
+        string internalBearerToken,
+        string sourceDocumentId,
+        BusinessConsoleMesQualityHoldTimelineRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMesQualityHoldTimelineResponse([
+            new BusinessConsoleMesQualityHoldTimelineItem(
+                Guid.Parse("019f0000-0000-7000-8000-000000000001"), "source", sourceDocumentId,
+                "cycle-1", "corr-1", "hold-applied", "quality", DateTimeOffset.Parse("2026-07-13T08:00:00Z"),
+                "defect", "QI-1", "PLAN-1", "automatic", "event-idem")
+        ]));
     }
 
     public Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(
