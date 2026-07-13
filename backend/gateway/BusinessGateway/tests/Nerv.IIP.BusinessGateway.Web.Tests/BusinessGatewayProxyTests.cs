@@ -80,7 +80,7 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("Engineering concession approved", quality.LastCloseNcrRequest!.Reason);
-        Assert.Equal("user-admin", quality.LastCloseNcrActor);
+        Assert.Equal("user:user-admin", quality.LastCloseNcrActor);
         Assert.NotEqual("user:forged-client-actor", quality.LastCloseNcrActor);
     }
 
@@ -1201,7 +1201,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("idem-force-1", mes.LastForceReleaseQualityHoldRequest.IdempotencyKey);
         Assert.Equal("corr-gateway-1", mes.LastForceReleaseQualityHoldCorrelationId);
         // The releaser identity is bound to the authenticated principal; the request-body actor is ignored.
-        Assert.Equal("user-admin", mes.LastForceReleaseQualityHoldActor);
+        Assert.Equal("user:user-admin", mes.LastForceReleaseQualityHoldActor);
         Assert.NotEqual("supervisor-1", mes.LastForceReleaseQualityHoldActor);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.True(document.RootElement.GetProperty("data").GetProperty("accepted").GetBoolean());

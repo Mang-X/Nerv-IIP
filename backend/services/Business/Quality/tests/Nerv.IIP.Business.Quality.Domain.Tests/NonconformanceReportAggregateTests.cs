@@ -26,6 +26,23 @@ public sealed class NonconformanceReportAggregateTests
     }
 
     [Fact]
+    public void Reclosing_reports_already_closed_before_revalidating_reason()
+    {
+        var ncr = NewNcr();
+        ncr.SubmitDisposition(
+            "rework",
+            null,
+            [],
+            [MrbReviewInput.Approve("qa-manager-001", "approved", DateTimeOffset.UtcNow)]);
+        ncr.Close("RW-001", null, null, "Rework completed", "user:qa-manager-001");
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ncr.Close("RW-001", null, null, string.Empty, "user:qa-manager-001"));
+
+        Assert.Equal("Closed NCR cannot be changed.", exception.Message);
+    }
+
+    [Fact]
     public void Open_requires_positive_defect_quantity_and_defect_reason()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => NewNcr(defectQuantity: 0));

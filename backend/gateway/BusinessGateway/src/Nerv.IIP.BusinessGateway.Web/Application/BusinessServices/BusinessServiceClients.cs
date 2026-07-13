@@ -2790,7 +2790,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 request.ReturnDocumentId,
                 request.Reason),
             cancellationToken,
-            configureRequest: message => message.Headers.TryAddWithoutValidation("X-Actor", $"user:{actor}"));
+            configureRequest: message => message.Headers.TryAddWithoutValidation("X-Actor", actor));
 
     private static BusinessConsoleQualityItem ToQualityItem(DownstreamInspectionPlanItem item) =>
         new(

@@ -513,7 +513,7 @@ public sealed class ForceReleaseBusinessConsoleMesQualityHoldEndpoint(
     {
         // Bind the force-release audit actor to the authenticated principal so a caller holding
         // MesQualityWrite cannot forge the releaser identity via a request-body field.
-        var (_, actorRef) = RequireAuthorizedPrincipalActor();
+        var actorRef = RequireAuthorizedPrincipalActorReference();
         if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
         {
             throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, "idempotency-key-required");

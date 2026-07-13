@@ -139,8 +139,8 @@ function openNcr(ncr: BusinessConsoleQualityItem) {
   selectedNcr.value = ncr
   dispositionSuccess.value = ''
   closeSuccess.value = ''
-  closeForm.reason = ''
   dispositionForm.dispositionApprovalChainId = ''
+  closeForm.reason = ''
   closeForm.reworkWorkOrderId =
     contextWorkOrderId.value || (isPresent(ncr.sourceDocumentId) ? ncr.sourceDocumentId : '')
   detailOpen.value = true
@@ -346,12 +346,13 @@ watch(
             </p>
             <NvFieldGroup class="grid gap-3">
               <NvField>
-                <NvFieldLabel for="ncr-close-reason">关闭理由</NvFieldLabel>
+                <NvFieldLabel for="ncr-close-reason">关闭原因</NvFieldLabel>
                 <NvInput
                   id="ncr-close-reason"
                   v-model="closeForm.reason"
                   required
                   maxlength="500"
+                  placeholder="请说明关闭依据和处理结果"
                 />
               </NvField>
               <NvField>

@@ -610,7 +610,10 @@ internal static class GatewayNotificationEndpointContext
         }
 
         var bearerToken = await context.GetTokenAsync("access_token");
-        var recipientRef = principal.PrincipalId!;
+        var principalType = string.IsNullOrWhiteSpace(principal.PrincipalType)
+            ? "user"
+            : principal.PrincipalType.Trim().ToLowerInvariant();
+        var recipientRef = $"{principalType}:{principal.PrincipalId!.Trim()}";
         var recipientSeparator = downstreamRequestUri.Contains('?', StringComparison.Ordinal) ? "&" : "?";
         var scopedRequestUri = resourceType is "notification-message" or "notification-task"
             ? $"{downstreamRequestUri}{recipientSeparator}recipientRef={Uri.EscapeDataString(recipientRef)}"

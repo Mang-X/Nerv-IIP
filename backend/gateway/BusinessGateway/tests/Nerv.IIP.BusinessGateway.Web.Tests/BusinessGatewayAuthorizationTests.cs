@@ -455,6 +455,16 @@ public sealed class BusinessGatewayAuthorizationTests
 
         return path switch
         {
+        "/api/business-console/v1/master-data/resources/sku/SKU-001/disable" or
+        "/api/business-console/v1/master-data/resources/sku/SKU-001/enable" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            resourceType = "sku",
+            code = "SKU-001",
+            idempotencyKey = "idem-master-data-lifecycle-authz",
+            reason = "authorization test",
+        },
         "/api/business-console/v1/inventory/count-tasks/count-001/adjustments" => new
         {
             organizationId = "org-001",
