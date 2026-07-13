@@ -2,12 +2,12 @@
 #   Category: verify
 #   SideEffects:
 #     - Inspects, waits for, streams logs from, or stops the Aspire AppHost
-#     - Stops/removes orphaned Aspire usvc-dev containers for this platform when Action=stop
+#     - Warns about Aspire usvc-dev containers whose exact session ownership is unavailable
 #   Writes:
 #     - artifacts/script-logs/** for bounded Aspire helper commands
 #   Cleanup:
 #     - Uses Aspire CLI lifecycle commands
-#     - Stops matching AppHost processes and orphaned Aspire usvc-dev containers after stop
+#     - Stops matching AppHost processes after stop; session-owned Docker cleanup is coordinator-managed
 #   Requires:
 #     - PowerShell 7
 #     - Aspire CLI 13.4
@@ -46,23 +46,8 @@ Set-Location $root
 $appHostProject = Join-Path $root 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
 Get-AspireCliCommand | Out-Null
 
-function Stop-OrphanedAspireDevContainers {
-    $resourceNamePattern = '^(postgres|redis|otel-collector|minio|rabbitmq)-'
-
+function Show-UnownedAspireDevContainersWarning {
     try {
-        $runningContainers = Invoke-NativeCommandOutput `
-            -Command 'docker' `
-            -Arguments @(
-                'ps',
-                '--filter',
-                'label=com.microsoft.developer.usvc-dev.group-version=usvc-dev.developer.microsoft.com/v1',
-                '--format',
-                '{{.ID}}|{{.Names}}'
-            ) `
-            -WorkingDirectory $root `
-            -TimeoutSeconds 30 `
-            -Name 'aspire-orphan-container-list-running'
-
         $allContainers = Invoke-NativeCommandOutput `
             -Command 'docker' `
             -Arguments @(
@@ -75,72 +60,19 @@ function Stop-OrphanedAspireDevContainers {
             ) `
             -WorkingDirectory $root `
             -TimeoutSeconds 30 `
-            -Name 'aspire-orphan-container-list-all'
+            -Name 'aspire-unowned-container-list'
     }
     catch {
-        Write-Diagnostic -Level 'WARN' -Message "Could not inspect Docker for orphaned Aspire containers: $($_.Exception.Message)"
+        Write-Diagnostic -Level 'WARN' -Message "Could not inspect Docker for remaining Aspire containers: $($_.Exception.Message)"
         return
     }
 
-    $runningContainerIds = New-Object System.Collections.Generic.List[string]
-    foreach ($line in ($runningContainers.Stdout -split '\r?\n')) {
-        if ([string]::IsNullOrWhiteSpace($line)) {
-            continue
-        }
-
-        $parts = "$line" -split '\|', 2
-        if ($parts.Count -ne 2) {
-            continue
-        }
-
-        $id = $parts[0]
-        $name = $parts[1]
-        if ($name -match $resourceNamePattern) {
-            $runningContainerIds.Add($id)
-        }
-    }
-
-    if ($runningContainerIds.Count -gt 0) {
-        Invoke-NativeCommandWithTimeout `
-            -Command 'docker' `
-            -Arguments (@('stop') + @($runningContainerIds)) `
-            -WorkingDirectory $root `
-            -TimeoutSeconds 120 `
-            -Name 'aspire-orphan-container-stop' | Out-Null
-
-        Write-Diagnostic "Stopped orphaned Aspire usvc-dev containers: $($runningContainerIds -join ', ')"
-    }
-
-    $allContainerIds = New-Object System.Collections.Generic.List[string]
-    foreach ($line in ($allContainers.Stdout -split '\r?\n')) {
-        if ([string]::IsNullOrWhiteSpace($line)) {
-            continue
-        }
-
-        $parts = "$line" -split '\|', 2
-        if ($parts.Count -ne 2) {
-            continue
-        }
-
-        $id = $parts[0]
-        $name = $parts[1]
-        if ($name -match $resourceNamePattern) {
-            $allContainerIds.Add($id)
-        }
-    }
-
-    if ($allContainerIds.Count -eq 0) {
+    $remaining = @($allContainers.Stdout -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($remaining.Count -eq 0) {
         return
     }
 
-    Invoke-NativeCommandWithTimeout `
-        -Command 'docker' `
-        -Arguments (@('rm', '-f') + @($allContainerIds)) `
-        -WorkingDirectory $root `
-        -TimeoutSeconds 120 `
-        -Name 'aspire-orphan-container-remove' | Out-Null
-
-    Write-Diagnostic "Removed orphaned Aspire usvc-dev containers: $($allContainerIds -join ', ')"
+    Write-Diagnostic -Level 'WARN' -Message "Aspire usvc-dev containers remain, but generic stop cannot prove exact session ownership and will not remove them: $($remaining -join ', ')"
 }
 
 function Stop-ProjectProcessesForCurrentRepo {
@@ -199,7 +131,7 @@ switch ($Action) {
         }
         finally {
             Stop-ProjectProcessesForCurrentRepo
-            Stop-OrphanedAspireDevContainers
+            Show-UnownedAspireDevContainersWarning
         }
 
         if ($stopFailed) {
