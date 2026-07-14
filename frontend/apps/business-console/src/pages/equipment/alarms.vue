@@ -50,6 +50,7 @@ import {
   Undo2Icon,
   WrenchIcon,
 } from 'lucide-vue-next'
+import type { LocationQueryRaw } from 'vue-router'
 import { computed, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
@@ -133,9 +134,22 @@ const VIEW_TABS = [
   { value: 'acknowledged', label: '已确认' },
 ] as const
 type AlarmView = (typeof VIEW_TABS)[number]['value']
-// Init the view from the URL and keep it in the query (§5.3 筛选状态双向同步).
-const queryView = typeof route.query.view === 'string' ? route.query.view : undefined
-const activeView = ref<AlarmView>(VIEW_TABS.find((v) => v.value === queryView)?.value ?? 'all')
+const DEFAULT_PAGE_SIZE = 10
+
+function queryView(): AlarmView {
+  return VIEW_TABS.find((v) => v.value === route.query.view)?.value ?? 'all'
+}
+function queryInt(key: string, fallback: number): number {
+  const raw = route.query[key]
+  const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number.NaN
+  return Number.isInteger(n) && n > 0 ? n : fallback
+}
+
+// View + pagination are the controlled source of truth and round-trip through the URL
+// (§5.3 双向同步:view / page / pageSize).
+const activeView = ref<AlarmView>(queryView())
+const page = ref(queryInt('page', 1))
+const pageSize = ref(queryInt('pageSize', DEFAULT_PAGE_SIZE))
 
 function matchesView(row: Alarm, view: AlarmView): boolean {
   switch (view) {
@@ -164,17 +178,57 @@ const viewCounts = computed<Record<AlarmView, number>>(() => {
   return counts
 })
 const filteredAlarms = computed(() => alarms.value.filter((a) => matchesView(a, activeView.value)))
+const totalItems = computed(() => filteredAlarms.value.length)
+// Slice here (manual pagination) so page/pageSize are parent-owned and URL-syncable.
+const pagedAlarms = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return filteredAlarms.value.slice(start, start + pageSize.value)
+})
 
-// Switching view: write it back to the URL and prune the selection to what is still
-// visible, so bulk actions never touch rows hidden by the current view (误操作 guard).
-watch(activeView, (view) => {
-  const query = { ...route.query }
-  if (view === 'all') delete query.view
-  else query.view = view
-  void router.replace({ query })
+// Explicit view switch (user click): reset to page 1 + prune the selection to the now-visible
+// rows so bulk actions never touch rows hidden by the current view (误操作 guard). Page reset
+// lives here (not in a watcher) so URL-driven view changes keep their own page from the query.
+function selectView(view: AlarmView) {
+  activeView.value = view
+  page.value = 1
+}
+watch(activeView, () => {
   const visible = new Set<string | number>(filteredAlarms.value.map(alarmKey))
   selectedKeys.value = selectedKeys.value.filter((k) => visible.has(k))
 })
+function updatePageSize(size: number) {
+  pageSize.value = size
+  page.value = 1
+}
+// Clamp the page if the filtered set shrank below the current window.
+watch(totalItems, (total) => {
+  const maxPage = Math.max(1, Math.ceil(total / pageSize.value))
+  if (page.value > maxPage) page.value = maxPage
+})
+
+// State → URL (default values are omitted from the query).
+watch([activeView, page, pageSize], () => {
+  const query: LocationQueryRaw = { ...route.query }
+  if (activeView.value === 'all') delete query.view
+  else query.view = activeView.value
+  if (page.value > 1) query.page = String(page.value)
+  else delete query.page
+  if (pageSize.value !== DEFAULT_PAGE_SIZE) query.pageSize = String(pageSize.value)
+  else delete query.pageSize
+  if (JSON.stringify(query) !== JSON.stringify(route.query)) void router.replace({ query })
+})
+// URL → State (external navigation / browser back-forward reflect back into the view).
+watch(
+  () => [route.query.view, route.query.page, route.query.pageSize],
+  () => {
+    const nextView = queryView()
+    if (nextView !== activeView.value) activeView.value = nextView
+    const nextPage = queryInt('page', 1)
+    if (nextPage !== page.value) page.value = nextPage
+    const nextSize = queryInt('pageSize', DEFAULT_PAGE_SIZE)
+    if (nextSize !== pageSize.value) pageSize.value = nextSize
+  },
+)
 
 // De-emphasize resolved rows (已确认 / 已搁置), but never dim escalated ones — they
 // must stay identifiable at a glance (验收: 升级报警 3 秒内可辨识).
@@ -275,7 +329,7 @@ async function handleAcknowledge(row: Alarm) {
   try {
     await acknowledgeAlarm(row.alarmEventId, currentActor.value)
     notifySuccess('报警已确认。')
-    await refreshAlarms()
+    await refreshAlarms().catch(() => {})
   } catch (error) {
     notifyError(error, '报警确认失败，请稍后重试。')
   }
@@ -285,7 +339,7 @@ async function handleUnshelve(row: Alarm) {
   try {
     await unshelveAlarm(row.alarmEventId)
     notifySuccess('报警搁置已解除。')
-    await refreshAlarms()
+    await refreshAlarms().catch(() => {})
   } catch (error) {
     notifyError(error, '解除搁置失败，请稍后重试。')
   }
@@ -305,13 +359,13 @@ async function confirmBatchAck() {
     const results = await Promise.allSettled(
       targets.map((row) => acknowledgeAlarm(row.alarmEventId!, currentActor.value)),
     )
-    summarizeBatch('确认', results)
-    await refreshAlarms()
-    // Keep only the failed rows selected so they stay locatable for a retry (A1 §5.2);
-    // acknowledge is first-write-wins, so re-confirming the batch is safe.
+    // Commit the failed-row retention before the best-effort refresh so a refresh failure
+    // cannot strand it (A1 §5.2); acknowledge is first-write-wins, so re-confirming is safe.
     const failed = targets.filter((_, i) => results[i].status === 'rejected')
     selectedKeys.value = failed.length ? failed.map(alarmKey) : []
     batchAck.open = false
+    summarizeBatch('确认', results)
+    await refreshAlarms().catch(() => {})
   } finally {
     batchAck.submitting = false
   }
@@ -387,12 +441,11 @@ async function confirmShelve() {
         }),
       ),
     )
-    summarizeBatch('搁置', results)
-    await refreshAlarms()
-    // Keep only the failed rows selected + queued so the operator can locate and retry them;
-    // lock the payload (frozen shelvedAtUtc/minutes/reason/key) and block dialog close so a
-    // retry stays an idempotent no-op even if the first attempt actually succeeded on the
-    // backend but the response was lost (A1 §5.2「失败行可定位」+ 稳定重试).
+    // Commit the failed-row / lock state BEFORE refreshing: keep only the failed rows selected
+    // + queued, lock the payload (frozen shelvedAtUtc/minutes/reason/key) and block dialog close
+    // so a retry stays an idempotent no-op even if the first attempt actually succeeded on the
+    // backend but the response was lost (A1 §5.2「失败行可定位」+ 稳定重试). Refresh is a
+    // best-effort last step — its failure must never strand the retry state.
     const failed = targets.filter((_, i) => results[i].status === 'rejected')
     if (failed.length) {
       shelve.targets = failed
@@ -403,6 +456,8 @@ async function confirmShelve() {
       shelve.locked = false
       shelve.open = false
     }
+    summarizeBatch('搁置', results)
+    await refreshAlarms().catch(() => {})
   } finally {
     shelve.submitting = false
   }
@@ -499,7 +554,7 @@ function formatError(error: unknown) {
         role="tab"
         :variant="activeView === view.value ? 'default' : 'ghost'"
         :aria-selected="activeView === view.value"
-        @click="activeView = view.value"
+        @click="selectView(view.value)"
       >
         {{ view.label }}
         <span class="ms-1 text-xs tabular-nums opacity-70">{{ viewCounts[view.value] }}</span>
@@ -507,17 +562,22 @@ function formatError(error: unknown) {
     </div>
 
     <NvDataTable
-      :key="activeView"
       v-model:selected="selectedKeys"
       :columns="columns"
-      :rows="filteredAlarms"
+      :rows="pagedAlarms"
       :row-key="alarmKey"
       :row-class="rowClass"
       :loading="alarmsPending"
       :searchable="false"
       :column-settings="false"
       :selectable="canManageAlarms"
+      manual
+      :page="page"
+      :total-items="totalItems"
+      :page-size="pageSize"
       empty-message="当前没有未解除设备报警。"
+      @update:page="page = $event"
+      @update:page-size="updatePageSize"
     >
       <template #bulk-actions>
         <NvButton

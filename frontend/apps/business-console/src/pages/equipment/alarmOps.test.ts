@@ -40,12 +40,20 @@ vi.mock('@/stores/auth', () => ({
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
+  const { reactive } = await import('vue')
+  // Reactive query so the page's URL→state watcher fires on external navigation / back-forward.
+  routerState.query = reactive(routerState.query)
   return {
     ...actual,
     useRouter: () => ({ push: vi.fn(), replace: routerState.replace }),
     useRoute: () => ({ query: routerState.query }),
   }
 })
+
+function resetQuery(next: Record<string, unknown> = {}) {
+  for (const k of Object.keys(routerState.query)) delete routerState.query[k]
+  Object.assign(routerState.query, next)
+}
 
 const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
@@ -138,7 +146,7 @@ describe('alarm ops depth (MAN-441 #795)', () => {
     alarmState.shelveAlarm.mockReset().mockResolvedValue(undefined)
     alarmState.refreshAlarms.mockReset().mockResolvedValue(undefined)
     routerState.replace.mockReset().mockResolvedValue(undefined)
-    routerState.query = {}
+    resetQuery()
     seedAlarms()
   })
 
@@ -190,7 +198,7 @@ describe('alarm ops — shelve validation + batch retry (attaches to body for te
     alarmState.shelveAlarm.mockReset().mockResolvedValue(undefined)
     alarmState.refreshAlarms.mockReset().mockResolvedValue(undefined)
     routerState.replace.mockReset().mockResolvedValue(undefined)
-    routerState.query = {}
+    resetQuery()
     seedAlarms()
     wrapper = mount(AlarmsPage, { global: { stubs }, attachTo: document.body })
   })
@@ -306,6 +314,26 @@ describe('alarm ops — shelve validation + batch retry (attaches to body for te
     expect(keyOf(run2, 'ALM-2')).toBe(alm2Key1)
   })
 
+  it('commits the locked retry state even when the post-batch refresh fails', async () => {
+    alarmState.shelveAlarm.mockImplementation((...args: unknown[]) =>
+      args[0] === 'ALM-2' ? Promise.reject(new Error('boom')) : Promise.resolve(),
+    )
+    // Refresh rejects — it must not undo the failed-row retention or the locked state.
+    alarmState.refreshAlarms.mockRejectedValue(new Error('refresh down'))
+
+    await openBatchShelve(['ALM-1', 'ALM-2'])
+    await setInput('#shelve-reason', '计划内检修')
+    await nextTick()
+    nativeClick(dialogConfirmBtn() ?? null)
+    await new Promise((r) => setTimeout(r, 0))
+    await nextTick()
+
+    // Dialog still open + locked (fields disabled), failed row retained for retry.
+    expect(q('[data-slot=nv-dialog-content]')).not.toBeNull()
+    expect(q<HTMLInputElement>('#shelve-reason')?.disabled).toBe(true)
+    expect(document.body.textContent).toContain('放弃重试')
+  })
+
   it('exposes aria-invalid + aria-describedby on the native input when the duration is invalid', async () => {
     await openBatchShelve(['ALM-1', 'ALM-2'])
     const customRadio = [...document.body.querySelectorAll('[data-slot=nv-radio-group-item]')].find(
@@ -330,7 +358,7 @@ describe('alarm ops — view filtering (orthogonal, selection prune, URL, page r
     alarmState.shelveAlarm.mockReset().mockResolvedValue(undefined)
     alarmState.refreshAlarms.mockReset().mockResolvedValue(undefined)
     routerState.replace.mockReset().mockResolvedValue(undefined)
-    routerState.query = {}
+    resetQuery()
     seedAlarms()
   })
 
@@ -365,7 +393,7 @@ describe('alarm ops — view filtering (orthogonal, selection prune, URL, page r
   })
 
   it('initializes the active view from the URL query', () => {
-    routerState.query = { view: 'shelved' }
+    resetQuery({ view: 'shelved' })
     const wrapper = mount(AlarmsPage, { global: { stubs } })
     // 已搁置 view → ALM-4 and ALM-6 (shelved), not the raised ALM-2.
     expect(rowByText(wrapper, 'ALM-4')).toBeTruthy()
@@ -405,5 +433,40 @@ describe('alarm ops — view filtering (orthogonal, selection prune, URL, page r
     await clickViewTab(wrapper, '已升级')
     expect(rowByText(wrapper, 'ESC-1')).toBeTruthy()
     expect(wrapper.findAll('tbody tr').length).toBe(1)
+  })
+
+  it('reflects external URL changes back into the view (browser back/forward)', async () => {
+    const wrapper = mount(AlarmsPage, { global: { stubs } })
+    expect(rowByText(wrapper, 'ALM-2')).toBeTruthy() // 全部 initially
+
+    // Simulate navigation to ?view=escalated (external / history) → view updates reactively.
+    routerState.query.view = 'escalated'
+    await nextTick()
+    expect(rowByText(wrapper, 'ALM-1')).toBeTruthy()
+    expect(rowByText(wrapper, 'ALM-2')).toBeUndefined() // raised, not in 已升级
+
+    // Back to 全部 (query cleared) → view resets.
+    delete routerState.query.view
+    await nextTick()
+    expect(rowByText(wrapper, 'ALM-2')).toBeTruthy()
+  })
+
+  it('writes page + pageSize to the URL query (defaults omitted)', async () => {
+    alarmState.alarms = Array.from({ length: 25 }, (_, i) => ({
+      alarmEventId: `P-${i + 1}`,
+      deviceAssetId: 'DEV-Z',
+      alarmCode: `C-${i + 1}`,
+      severity: 'warning',
+      status: 'raised',
+      raisedAtUtc: '2026-07-12T00:00:00Z',
+    }))
+    const wrapper = mount(AlarmsPage, { global: { stubs } })
+
+    const page2 = wrapper.findAll('button').find((b) => b.text().trim() === '2')
+    await page2!.trigger('click')
+    await nextTick()
+    expect(routerState.replace).toHaveBeenCalledWith(
+      expect.objectContaining({ query: expect.objectContaining({ page: '2' }) }),
+    )
   })
 })
