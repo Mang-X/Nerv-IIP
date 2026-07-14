@@ -241,11 +241,16 @@ function Start-NervFullStackSession {
                     -WorkingDirectory $repoRoot
             }
             $containerRecords = @(Get-NervFullStackContainerRecords -OwnedSessionId $newSessionId)
+            $networkIds = @(Get-NervFullStackDcpNetworkIds `
+                -SessionId $newSessionId `
+                -ContainerRecords $containerRecords `
+                -WorkingDirectory $repoRoot)
             $describe = Get-NervAspireDescribeObject -AppHostProject $appHostProject -WorkingDirectory $repoRoot
             $manifest = Update-NervFullStackManifest -SessionId $newSessionId -AllowedStates @('Creating') -UpdateAction {
                 param($latest)
                 $latest.runtime.containers = @($containerRecords)
                 $latest.runtime.containerIds = @($containerRecords | ForEach-Object { "$($_.id)" })
+                $latest.runtime.networkIds = @($networkIds)
                 $latest = Save-NervFullStackEndpoints -Manifest $latest -DescribeObject $describe
                 $latest = Move-NervFullStackSessionState -Manifest $latest -State Running
                 $latest = Renew-NervFullStackLease -Manifest $latest -LeaseMinutes (Get-NervFullStackLeaseMinutes)

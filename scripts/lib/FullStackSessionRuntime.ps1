@@ -770,6 +770,66 @@ function Get-NervContainerNetworkIds {
     ) | Select-Object -Unique
 }
 
+function Get-NervRecordableDcpNetworkIds {
+    param(
+        [object[]] $Networks = @(),
+        [Parameter(Mandatory)] [string[]] $OwnedContainerIds
+    )
+
+    return @(
+        foreach ($network in $Networks) {
+            $name = "$($network.Name)"
+            if (-not $name.StartsWith('aspire-session-network-', [StringComparison]::Ordinal)) { continue }
+
+            $labels = if ($null -ne $network.PSObject.Properties['Labels']) { $network.Labels } else { $null }
+            if ($null -eq $labels) { continue }
+            $creator = $labels.PSObject.Properties['com.microsoft.developer.usvc-dev.creatorProcessId']
+            $persistent = $labels.PSObject.Properties['com.microsoft.developer.usvc-dev.persistent']
+            if ($null -eq $creator -or [string]::IsNullOrWhiteSpace("$($creator.Value)")) { continue }
+            if ($null -eq $persistent -or "$($persistent.Value)" -cne 'false') { continue }
+
+            $attachedIds = @(if ($null -ne $network.PSObject.Properties['Containers'] -and $null -ne $network.Containers) {
+                $network.Containers.PSObject.Properties.Name
+            })
+            if ($attachedIds.Count -eq 0) { continue }
+            if (@($attachedIds | Where-Object { $OwnedContainerIds -cnotcontains $_ }).Count -gt 0) { continue }
+
+            $id = "$($network.Id)"
+            if (-not [string]::IsNullOrWhiteSpace($id)) { $id }
+        }
+    ) | Select-Object -Unique
+}
+
+function Get-NervFullStackDcpNetworkIds {
+    param(
+        [Parameter(Mandatory)] [string] $SessionId,
+        [object[]] $ContainerRecords = @(),
+        [Parameter(Mandatory)] [string] $WorkingDirectory
+    )
+
+    $recordedContainerIds = @($ContainerRecords | ForEach-Object { "$($_.id)" })
+    if ($recordedContainerIds.Count -eq 0) { return @() }
+
+    $containerInspect = @(Get-NervDockerInspectObjects `
+        -Kind container `
+        -Identifiers $recordedContainerIds `
+        -WorkingDirectory $WorkingDirectory `
+        -Name "fullstack-$SessionId-startup-container-inspect")
+    $ownedContainers = @($containerInspect | Where-Object {
+        Test-NervDockerResourceOwnership -InspectObject $_ -SessionId $SessionId -RecordedIds $recordedContainerIds
+    })
+    $ownedContainerIds = @($ownedContainers | ForEach-Object { "$($_.Id)" })
+    $candidateNetworkIds = @(Get-NervContainerNetworkIds -Containers $ownedContainers)
+    if ($candidateNetworkIds.Count -eq 0) { return @() }
+
+    $networkInspect = @(Get-NervDockerInspectObjects `
+        -Kind network `
+        -Identifiers $candidateNetworkIds `
+        -WorkingDirectory $WorkingDirectory `
+        -Name "fullstack-$SessionId-startup-network-inspect")
+    return @(Get-NervRecordableDcpNetworkIds -Networks $networkInspect -OwnedContainerIds $ownedContainerIds)
+}
+
 function Get-NervSessionDockerResources {
     param(
         [Parameter(Mandatory)] [object] $Manifest,

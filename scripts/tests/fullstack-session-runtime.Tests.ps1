@@ -19,6 +19,7 @@ function Assert-True([bool] $Condition, [string] $Message) {
 
 Assert-True ($null -ne (Get-Command Get-NervFullStackContainerRecords -ErrorAction SilentlyContinue)) 'Shared runtime must expose current session container discovery.'
 Assert-True ($null -ne (Get-Command Merge-NervSessionContainerIds -ErrorAction SilentlyContinue)) 'Cleanup must merge recorded and label-discovered containers.'
+Assert-True ($null -ne (Get-Command Get-NervRecordableDcpNetworkIds -ErrorAction SilentlyContinue)) 'Startup must identify manifest-recordable DCP session networks.'
 
 $sessionId = 'nerv-abcd-123456'
 $fixturePath = Join-Path $PSScriptRoot 'fixtures/fullstack/docker-resources.json'
@@ -33,6 +34,27 @@ $discoveredNetworkIds = @(Get-NervContainerNetworkIds -Containers @(
     [pscustomobject]@{ NetworkSettings = [pscustomobject]@{ Networks = [pscustomobject]@{ session = [pscustomobject]@{ NetworkID = 'network-from-owned-container' } } } }
 ))
 Assert-True ($discoveredNetworkIds -ccontains 'network-from-owned-container') 'Networks attached to label-owned containers must be recoverable after partial startup.'
+$recordableDcpNetwork = [pscustomobject]@{
+    Id = 'dcp-session-network'
+    Name = 'aspire-session-network-xgsryykh-Nerv.IIP'
+    Labels = [pscustomobject]@{
+        'com.microsoft.developer.usvc-dev.creatorProcessId' = '120080'
+        'com.microsoft.developer.usvc-dev.persistent' = 'false'
+    }
+    Containers = [pscustomobject]@{
+        'owned-container-id' = [pscustomobject]@{}
+        'owned-container-id-2' = [pscustomobject]@{}
+    }
+}
+$recordableNetworkIds = @(Get-NervRecordableDcpNetworkIds `
+    -Networks @(
+        $recordableDcpNetwork,
+        [pscustomobject]@{ Id = 'shared'; Name = 'shared'; Labels = $null; Containers = [pscustomobject]@{ 'owned-container-id' = [pscustomobject]@{} } },
+        [pscustomobject]@{ Id = 'foreign'; Name = 'aspire-session-network-foreign-Nerv.IIP'; Labels = $recordableDcpNetwork.Labels; Containers = [pscustomobject]@{ 'foreign-container-id' = [pscustomobject]@{} } }
+    ) `
+    -OwnedContainerIds @('owned-container-id', 'owned-container-id-2'))
+Assert-True ($recordableNetworkIds.Count -eq 1) 'Only the ephemeral DCP network exclusively attached to owned containers may become manifest authority.'
+Assert-True ($recordableNetworkIds[0] -ceq 'dcp-session-network') 'The exact DCP session network ID must be recorded.'
 $startFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-start.json'
 $describeFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-describe.json'
 $parallelAcceptanceScript = Join-Path $repoRoot 'scripts/verify-parallel-fullstack-isolation.ps1'
