@@ -26,6 +26,13 @@ public sealed record CreateInspectionRecordFromTaskRequest(
     string? DispositionReason,
     IReadOnlyCollection<string>? DispositionAttachmentFileIds);
 
+/// <summary>权威检验结论：记录 id、后端计算的 result，以及不合格时自动开出并回链的 NCR id 与业务编号。</summary>
+public sealed record CreateInspectionRecordFromTaskEndpointResponse(
+    InspectionRecordId InspectionRecordId,
+    string Result,
+    string? NonconformanceReportId,
+    string? NonconformanceReportCode);
+
 public sealed class ListInspectionTasksEndpoint(ISender sender)
     : QualityEndpoint<ListInspectionTasksRequest, ResponseData<ListInspectionTasksEndpointResponse>>
 {
@@ -48,7 +55,7 @@ public sealed class ListInspectionTasksEndpoint(ISender sender)
 }
 
 public sealed class CreateInspectionRecordFromTaskEndpoint(ISender sender)
-    : QualityEndpoint<CreateInspectionRecordFromTaskRequest, ResponseData<CreateInspectionRecordResponse>>
+    : QualityEndpoint<CreateInspectionRecordFromTaskRequest, ResponseData<CreateInspectionRecordFromTaskEndpointResponse>>
 {
     public override void Configure()
     {
@@ -57,12 +64,18 @@ public sealed class CreateInspectionRecordFromTaskEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateInspectionRecordFromTaskRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateInspectionRecordFromTaskCommand(
+        var result = await sender.Send(new CreateInspectionRecordFromTaskCommand(
             req.InspectionTaskId,
             req.InspectorUserId,
             req.ResultLines ?? [],
             req.DispositionReason,
             req.DispositionAttachmentFileIds ?? []), ct);
-        await Send.OkAsync(new CreateInspectionRecordResponse(id).AsResponseData(), cancellation: ct);
+        await Send.OkAsync(
+            new CreateInspectionRecordFromTaskEndpointResponse(
+                result.InspectionRecordId,
+                result.Result,
+                result.NonconformanceReportId,
+                result.NonconformanceReportCode).AsResponseData(),
+            cancellation: ct);
     }
 }

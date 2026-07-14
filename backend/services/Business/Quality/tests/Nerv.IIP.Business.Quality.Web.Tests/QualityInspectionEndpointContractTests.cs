@@ -46,7 +46,7 @@ public sealed class QualityInspectionEndpointContractTests
     {
         var contracts = QualityInspectionEndpointContracts.All;
 
-        Assert.Equal(16, contracts.Count);
+        Assert.Equal(17, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/quality/measuring-devices"
             && x.PermissionCode == BusinessPermissionCodes.QualityMeasuringDevicesManage
@@ -79,6 +79,10 @@ public sealed class QualityInspectionEndpointContractTests
             && x.Route == "/api/business/v1/quality/inspection-records"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
             && x.OperationId == "listBusinessQualityInspectionRecords");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/inspection-records/{inspectionRecordId}"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
+            && x.OperationId == "getBusinessQualityInspectionRecord");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/quality/inspection-tasks"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead

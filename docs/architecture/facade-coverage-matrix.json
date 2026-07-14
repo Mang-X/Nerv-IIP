@@ -3550,7 +3550,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "listBusinessConsoleQualityInspectionPlans"
+        "listBusinessConsoleQualityInspectionPlans",
+        "listBusinessConsoleQualityInspectionPlanCharacteristics"
       ]
     },
     {
@@ -3568,6 +3569,19 @@
       "operationId": "activateBusinessQualityInspectionPlan",
       "classification": "deferred",
       "followUp": "BusinessGateway facade pending; inspection-plan activation follows the Quality plan-lifecycle menu phase."
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/inspection-records/{inspectionRecordId}",
+      "operationId": "getBusinessQualityInspectionRecord",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleQualityInspectionRecord"
+      ]
     },
     {
       "service": "Quality",
@@ -3692,8 +3706,13 @@
       "method": "GET",
       "route": "/api/business/v1/quality/ncrs/{ncrId}",
       "operationId": "getBusinessQualityNcr",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; NCR list/disposition/close are exposed, single-NCR detail-by-id follows the Quality NCR detail menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleQualityNcr"
+      ]
     },
     {
       "service": "Quality",

@@ -776,7 +776,12 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("pending", firstItem.GetProperty("status").GetString());
         Assert.Equal(1, listDocument.RootElement.GetProperty("data").GetProperty("total").GetInt32());
         using var createDocument = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
-        Assert.Equal("inspection-from-task-001", createDocument.RootElement.GetProperty("data").GetProperty("inspectionRecordId").GetString());
+        var createData = createDocument.RootElement.GetProperty("data");
+        Assert.Equal("inspection-from-task-001", createData.GetProperty("inspectionRecordId").GetString());
+        // 权威结论 + NCR 业务编号透传到客户端（供结果页互查）。
+        Assert.Equal("rejected", createData.GetProperty("result").GetString());
+        Assert.Equal("ncr-from-task-001", createData.GetProperty("nonconformanceReportId").GetString());
+        Assert.Equal("NCR-2026-0001", createData.GetProperty("nonconformanceReportCode").GetString());
     }
 
     [Fact]
@@ -4500,6 +4505,139 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_http_client_get_ncr_proxies_real_detail_endpoint_with_tenant_scope()
+    {
+        // 代理真实详情端点：GET /quality/ncrs/{id}，org/env 随查询下传由服务端做租户过滤。
+        HttpRequestMessage? seen = null;
+        var handler = new RecordingHandler(request =>
+        {
+            seen = request;
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    ncrId = "ncr-77",
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    ncrCode = "NCR-77",
+                    sourceType = "receiving",
+                    sourceDocumentId = "RCV-9",
+                    skuCode = "SKU-Z",
+                    defectQuantity = 2,
+                    defectReason = "appearance",
+                    status = "open",
+                    attachmentFileIds = Array.Empty<string>(),
+                    createdAtUtc = "2026-07-14T01:00:00Z",
+                    updatedAtUtc = "2026-07-14T01:00:00Z",
+                    sourceInspectionRecordId = "rec-77",
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var item = await client.GetNcrAsync(
+            "internal-token-001",
+            new BusinessConsoleQualityNcrDetailRequest("ncr-77", "org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal("ncr-77", item.Id);
+        Assert.Equal("NCR-77", item.Code);
+        Assert.Equal("appearance", item.DefectReason);
+        // 权威业务关系：来源检验记录回链来自服务端，而非客户端 query 参数。
+        Assert.Equal("rec-77", item.SourceInspectionRecordId);
+        Assert.Equal("/api/business/v1/quality/ncrs/ncr-77", seen!.RequestUri!.AbsolutePath);
+        var query = seen.RequestUri!.Query;
+        Assert.Contains("organizationId=org-001", query);
+        Assert.Contains("environmentId=env-dev", query);
+    }
+
+    [Fact]
+    public async Task Quality_http_client_get_ncr_propagates_downstream_not_found()
+    {
+        // 越权/不存在：Quality 按 org/env 过滤后 not found（success=false 业务错误）→ 透传为代理异常，
+        // 不泄露跨租户数据。
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = (object?)null,
+            success = false,
+            message = "NCR 'ncr-other-tenant' was not found.",
+            code = 400,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.GetNcrAsync(
+            "internal-token-001",
+            new BusinessConsoleQualityNcrDetailRequest("ncr-other-tenant", "org-001", "env-dev"),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Quality_http_client_get_inspection_record_proxies_real_detail_endpoint_with_tenant_scope()
+    {
+        // 代理真实详情端点：GET /quality/inspection-records/{id}，org/env 随查询下传由服务端做租户过滤；
+        // 响应含 NCR 回链 id（记录 ↔ NCR 双向互查）。
+        HttpRequestMessage? seen = null;
+        var handler = new RecordingHandler(request =>
+        {
+            seen = request;
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    inspectionRecordId = "rec-77",
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    sourceType = "receiving",
+                    sourceService = "wms",
+                    sourceDocumentId = "IN-970",
+                    skuCode = "SKU-RM-2300",
+                    inspectedQuantity = 10,
+                    result = "rejected",
+                    dispositionReason = "外观不良，判退",
+                    nonconformanceReportId = "ncr-77",
+                    resultLines = new[]
+                    {
+                        new
+                        {
+                            characteristicCode = "appearance",
+                            observedValue = "scratch",
+                            result = "failed",
+                            defectReason = "SCRATCH",
+                            defectQuantity = 2,
+                        },
+                    },
+                    createdAtUtc = "2026-07-14T01:00:00Z",
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var detail = await client.GetInspectionRecordAsync(
+            "internal-token-001",
+            new BusinessConsoleQualityInspectionRecordDetailRequest("rec-77", "org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal("rec-77", detail.InspectionRecordId);
+        Assert.Equal("rejected", detail.Result);
+        Assert.Equal("ncr-77", detail.NonconformanceReportId);
+        var line = Assert.Single(detail.ResultLines);
+        Assert.Equal("appearance", line.CharacteristicCode);
+        Assert.Equal("/api/business/v1/quality/inspection-records/rec-77", seen!.RequestUri!.AbsolutePath);
+        var query = seen.RequestUri!.Query;
+        Assert.Contains("organizationId=org-001", query);
+        Assert.Contains("environmentId=env-dev", query);
+    }
+
+    [Fact]
     public async Task Quality_http_client_maps_inspection_record_to_real_downstream_request_shape()
     {
         string? requestBody = null;
@@ -4645,6 +4783,9 @@ public sealed class BusinessGatewayProxyTests
                 data = new
                 {
                     inspectionRecordId = "inspection-from-task-001",
+                    result = "rejected",
+                    nonconformanceReportId = "ncr-from-task-001",
+                    nonconformanceReportCode = "NCR-2026-0001",
                 },
                 success = true,
                 message = string.Empty,
@@ -4677,6 +4818,9 @@ public sealed class BusinessGatewayProxyTests
             CancellationToken.None);
 
         Assert.Equal("inspection-from-task-001", response.InspectionRecordId);
+        Assert.Equal("rejected", response.Result);
+        Assert.Equal("ncr-from-task-001", response.NonconformanceReportId);
+        Assert.Equal("NCR-2026-0001", response.NonconformanceReportCode);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal("/api/business/v1/quality/inspection-tasks/inspection-task-001/inspection-record", request.RequestUri!.PathAndQuery);
@@ -6673,7 +6817,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
             1));
     }
 
-    public Task<BusinessConsoleCreateInspectionRecordResponse> CreateInspectionRecordFromTaskAsync(
+    public Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> CreateInspectionRecordFromTaskAsync(
         string internalBearerToken,
         string inspectionTaskId,
         BusinessConsoleCreateInspectionRecordFromTaskRequest request,
@@ -6682,7 +6826,30 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         LastInternalToken = internalBearerToken;
         LastCreateInspectionRecordFromTaskTaskId = inspectionTaskId;
         LastCreateInspectionRecordFromTaskRequest = request;
-        return Task.FromResult(new BusinessConsoleCreateInspectionRecordResponse("inspection-from-task-001"));
+        return Task.FromResult(new BusinessConsoleCreateInspectionRecordFromTaskResponse(
+            "inspection-from-task-001", "rejected", "ncr-from-task-001", "NCR-2026-0001"));
+    }
+
+    public BusinessConsoleQualityInspectionPlanCharacteristicsRequest? LastInspectionPlanCharacteristicsRequest { get; private set; }
+
+    public Task<BusinessConsoleQualityInspectionPlanCharacteristicListResponse> GetInspectionPlanCharacteristicsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityInspectionPlanCharacteristicsRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastInspectionPlanCharacteristicsRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityInspectionPlanCharacteristicListResponse(
+            request.InspectionPlanId,
+            "QP-RM-1000",
+            "receiving",
+            "SKU-RM-1000",
+            [
+                new BusinessConsoleInspectionPlanCharacteristicItem(
+                    "od", "外径", "variable", true, 10.0m, 9.9m, 10.1m, "mm"),
+                new BusinessConsoleInspectionPlanCharacteristicItem(
+                    "appearance", "外观", "attribute", true, null, null, null, null),
+            ]));
     }
 
     public Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
@@ -6713,6 +6880,55 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
                     null),
             ],
             NcrTotal ?? 1));
+    }
+
+    public BusinessConsoleQualityNcrDetailRequest? LastNcrDetailRequest { get; private set; }
+
+    public BusinessConsoleQualityInspectionRecordDetailRequest? LastInspectionRecordDetailRequest { get; private set; }
+
+    public Task<BusinessConsoleInspectionRecordDetailResponse> GetInspectionRecordAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityInspectionRecordDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastInspectionRecordDetailRequest = request;
+        return Task.FromResult(new BusinessConsoleInspectionRecordDetailResponse(
+            "inspection-record-001",
+            "receiving",
+            "wms",
+            "IN-001",
+            "SKU-001",
+            10m,
+            "LOT-001",
+            null,
+            "kg",
+            "rejected",
+            "外观不良，判退",
+            "ncr-001",
+            [new BusinessConsoleInspectionRecordResultLine("appearance", "scratch", null, null, "failed", "SCRATCH", 2m)],
+            DateTime.Parse("2026-07-14T01:00:00Z")));
+    }
+
+    public Task<BusinessConsoleQualityNcrDetailResponse> GetNcrAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityNcrDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastNcrDetailRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityNcrDetailResponse(
+            "ncr-001",
+            "NCR-001",
+            "open",
+            "SKU-001",
+            "inspection",
+            "IR-001",
+            1,
+            "Defect",
+            null,
+            null,
+            "inspection-record-001"));
     }
 
     public Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(

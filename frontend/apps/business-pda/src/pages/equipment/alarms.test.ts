@@ -147,7 +147,7 @@ describe('PDA equipment alarms page', () => {
     const wrapper = mount(AlarmsPage, { attachTo: document.body })
     await wrapper.get('[data-testid="ack-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]').trigger('click')
     await flushPromises()
-    const confirmBtn = document.body.querySelector<HTMLElement>('.ds-md-confirm')
+    const confirmBtn = document.body.querySelector<HTMLElement>('.nv-m-md-confirm')
     expect(confirmBtn).toBeTruthy()
     confirmBtn!.click()
     await flushPromises()
@@ -196,7 +196,7 @@ describe('PDA equipment alarms page', () => {
     // 失败对话框出现，含「重试」
     const dialogText = document.body.textContent ?? ''
     expect(dialogText).toContain('操作失败')
-    const retryBtn = document.body.querySelector<HTMLElement>('.ds-md-confirm')
+    const retryBtn = document.body.querySelector<HTMLElement>('.nv-m-md-confirm')
     expect(retryBtn?.textContent).toContain('重试')
     retryBtn!.click()
     await flushPromises()
@@ -215,7 +215,7 @@ describe('PDA equipment alarms page', () => {
     const wrapper = mount(AlarmsPage, { attachTo: document.body })
     await wrapper.get('[data-testid="ack-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]').trigger('click')
     await flushPromises()
-    document.body.querySelector<HTMLElement>('.ds-md-confirm')!.click() // 确认弹层
+    document.body.querySelector<HTMLElement>('.nv-m-md-confirm')!.click() // 确认弹层
     await flushPromises()
 
     expect(acknowledge).toHaveBeenCalledTimes(1)
@@ -223,7 +223,7 @@ describe('PDA equipment alarms page', () => {
     expect(dialogText).toContain('提交结果未知')
     expect(dialogText).toContain('核对')
     // 无「重试」按钮，只有「我知道了」
-    const confirmBtn = document.body.querySelector<HTMLElement>('.ds-md-confirm')
+    const confirmBtn = document.body.querySelector<HTMLElement>('.nv-m-md-confirm')
     expect(confirmBtn?.textContent).toContain('我知道了')
     expect(refresh).toHaveBeenCalled()
 

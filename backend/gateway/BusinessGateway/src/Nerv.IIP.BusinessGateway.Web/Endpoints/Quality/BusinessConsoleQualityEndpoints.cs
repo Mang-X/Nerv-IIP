@@ -174,6 +174,28 @@ public sealed class BusinessConsoleQualityInspectionTaskListRequestValidator
     }
 }
 
+public sealed class BusinessConsoleQualityNcrDetailRequestValidator
+    : Validator<BusinessConsoleQualityNcrDetailRequest>
+{
+    public BusinessConsoleQualityNcrDetailRequestValidator()
+    {
+        RuleFor(x => x.NcrId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleQualityInspectionRecordDetailRequestValidator
+    : Validator<BusinessConsoleQualityInspectionRecordDetailRequest>
+{
+    public BusinessConsoleQualityInspectionRecordDetailRequestValidator()
+    {
+        RuleFor(x => x.InspectionRecordId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+    }
+}
+
 public sealed class BusinessConsoleCreateInspectionRecordFromTaskRequestValidator
     : Validator<BusinessConsoleCreateInspectionRecordFromTaskRequest>
 {
@@ -183,6 +205,17 @@ public sealed class BusinessConsoleCreateInspectionRecordFromTaskRequestValidato
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.InspectorUserId).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsoleQualityInspectionPlanCharacteristicsRequestValidator
+    : Validator<BusinessConsoleQualityInspectionPlanCharacteristicsRequest>
+{
+    public BusinessConsoleQualityInspectionPlanCharacteristicsRequestValidator()
+    {
+        RuleFor(x => x.InspectionPlanId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
     }
 }
 
@@ -315,7 +348,7 @@ public sealed class CreateBusinessConsoleQualityInspectionRecordFromTaskEndpoint
     IBusinessGatewayAuthorizationClient auth,
     IBusinessQualityClient quality,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateInspectionRecordFromTaskRequest, BusinessConsoleCreateInspectionRecordResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateInspectionRecordFromTaskRequest, BusinessConsoleCreateInspectionRecordFromTaskResponse>(
         auth,
         BusinessGatewayPermissions.QualityInspectionRecordsCreate)
 {
@@ -328,7 +361,7 @@ public sealed class CreateBusinessConsoleQualityInspectionRecordFromTaskEndpoint
     protected override string? ResourceId(BusinessConsoleCreateInspectionRecordFromTaskRequest request) =>
         Route<string>("inspectionTaskId") ?? request.InspectionTaskId;
 
-    protected override Task<BusinessConsoleCreateInspectionRecordResponse> ForwardAsync(
+    protected override Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> ForwardAsync(
         BusinessConsoleCreateInspectionRecordFromTaskRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
@@ -338,6 +371,39 @@ public sealed class CreateBusinessConsoleQualityInspectionRecordFromTaskEndpoint
             tokenProvider.BearerToken,
             inspectionTaskId,
             request with { InspectionTaskId = inspectionTaskId },
+            cancellationToken);
+    }
+}
+
+[Tags("Business Console Quality")]
+[HttpGet("/api/business-console/v1/quality/inspection-plans/{inspectionPlanId}/characteristics")]
+[BusinessGatewayOperationId("listBusinessConsoleQualityInspectionPlanCharacteristics")]
+public sealed class ListBusinessConsoleQualityInspectionPlanCharacteristicsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityInspectionPlanCharacteristicsRequest, BusinessConsoleQualityInspectionPlanCharacteristicListResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionRecordsRead)
+{
+    protected override string OrganizationId(BusinessConsoleQualityInspectionPlanCharacteristicsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleQualityInspectionPlanCharacteristicsRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleQualityInspectionPlanCharacteristicsRequest request) => "inspection-plan";
+
+    protected override string? ResourceId(BusinessConsoleQualityInspectionPlanCharacteristicsRequest request) =>
+        Route<string>("inspectionPlanId") ?? request.InspectionPlanId;
+
+    protected override Task<BusinessConsoleQualityInspectionPlanCharacteristicListResponse> ForwardAsync(
+        BusinessConsoleQualityInspectionPlanCharacteristicsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var inspectionPlanId = Route<string>("inspectionPlanId") ?? request.InspectionPlanId;
+        return quality.GetInspectionPlanCharacteristicsAsync(
+            tokenProvider.BearerToken,
+            request with { InspectionPlanId = inspectionPlanId },
             cancellationToken);
     }
 }
@@ -362,6 +428,60 @@ public sealed class ListBusinessConsoleQualityNcrsEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         quality.ListNcrsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+// PDA 检验结果页「已触发 NCR」→ 打开 NCR 详情的互链读端点。按 inspection-records.read 门控（检验员
+// 可读由其检验触发的 NCR，与 reason-codes/SPC 同权限口径）；代理真实详情端点并随查询下传 org/env，
+// 由 Quality 服务端做租户过滤（越权 id 与不存在同为 not found）。
+[Tags("Business Console Quality")]
+[HttpGet("/api/business-console/v1/quality/ncrs/{ncrId}")]
+[BusinessGatewayOperationId("getBusinessConsoleQualityNcr")]
+public sealed class GetBusinessConsoleQualityNcrEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityNcrDetailRequest, BusinessConsoleQualityNcrDetailResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionRecordsRead)
+{
+    protected override string OrganizationId(BusinessConsoleQualityNcrDetailRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleQualityNcrDetailRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleQualityNcrDetailResponse> ForwardAsync(
+        BusinessConsoleQualityNcrDetailRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.GetNcrAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+// PDA NCR 详情「来源检验记录」→ 打开检验记录详情的互链读端点（与 NCR 详情同权限口径）；代理真实
+// 详情端点并随查询下传 org/env，由 Quality 服务端做租户过滤。
+[Tags("Business Console Quality")]
+[HttpGet("/api/business-console/v1/quality/inspection-records/{inspectionRecordId}")]
+[BusinessGatewayOperationId("getBusinessConsoleQualityInspectionRecord")]
+public sealed class GetBusinessConsoleQualityInspectionRecordEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityInspectionRecordDetailRequest, BusinessConsoleInspectionRecordDetailResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionRecordsRead)
+{
+    protected override string OrganizationId(BusinessConsoleQualityInspectionRecordDetailRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleQualityInspectionRecordDetailRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleQualityInspectionRecordDetailRequest request) => "inspection-record";
+
+    protected override string? ResourceId(BusinessConsoleQualityInspectionRecordDetailRequest request) =>
+        request.InspectionRecordId;
+
+    protected override Task<BusinessConsoleInspectionRecordDetailResponse> ForwardAsync(
+        BusinessConsoleQualityInspectionRecordDetailRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.GetInspectionRecordAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console Quality")]
@@ -417,7 +537,9 @@ public sealed class ListBusinessConsoleQualityReasonCodesEndpoint(
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityReasonListRequest, BusinessConsoleQualityReasonListResponse>(
         auth,
-        BusinessGatewayPermissions.QualityNcrRead)
+        // 原因码是检验执行（不合格特性录原因码）所需的参考目录，故按检验记录读权限放行，
+        // 而非 NCR 读权限——否则只有 inspection-records.read/create 的 PDA 质检角色会 403。
+        BusinessGatewayPermissions.QualityInspectionRecordsRead)
 {
     protected override string OrganizationId(BusinessConsoleQualityReasonListRequest request) => request.OrganizationId;
 

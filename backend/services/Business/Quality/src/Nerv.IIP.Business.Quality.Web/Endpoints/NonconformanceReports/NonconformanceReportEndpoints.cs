@@ -35,7 +35,8 @@ internal static class NonconformanceReportEndpointMapping
             response.ReturnDocumentId,
             response.AttachmentFileIds,
             response.CreatedAtUtc,
-            response.UpdatedAtUtc);
+            response.UpdatedAtUtc,
+            response.SourceInspectionRecordId);
     }
 }
 
@@ -88,7 +89,11 @@ public sealed record ListNonconformanceReportsRequest(
     int Skip = 0,
     int Take = 100);
 
-public sealed record GetNonconformanceReportRequest(NonconformanceReportId NcrId);
+/// <summary>org/env 提供时按租户过滤（网关 facade 必传，越权与不存在同为 not found）。</summary>
+public sealed record GetNonconformanceReportRequest(
+    NonconformanceReportId NcrId,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
 
 public sealed record SubmitNonconformanceReportDispositionRequest(
     NonconformanceReportId NcrId,
@@ -126,7 +131,9 @@ public sealed record NonconformanceReportDto(
     string? ReturnDocumentId,
     IReadOnlyCollection<string> AttachmentFileIds,
     DateTime CreatedAtUtc,
-    DateTime UpdatedAtUtc);
+    DateTime UpdatedAtUtc,
+    // 权威业务关系：从检验开出的 NCR 回链其来源检验记录。
+    string? SourceInspectionRecordId = null);
 
 public sealed record ListNonconformanceReportsEndpointResponse(IReadOnlyCollection<NonconformanceReportDto> Items, int Total);
 
@@ -188,7 +195,7 @@ public sealed class GetNonconformanceReportEndpoint(ISender sender)
 
     public override async Task HandleAsync(GetNonconformanceReportRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new GetNonconformanceReportQuery(req.NcrId), ct);
+        var response = await sender.Send(new GetNonconformanceReportQuery(req.NcrId, req.OrganizationId, req.EnvironmentId), ct);
         await Send.OkAsync(ToDto(response).AsResponseData(), cancellation: ct);
     }
 }
