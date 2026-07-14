@@ -124,6 +124,7 @@ describe('useInspectionExecution', () => {
     expect(lines[0].result).toBe('failed') // 提交口径 passed/failed
     // 权威结论来自后端响应，而非客户端 verdict。
     expect(result).toEqual({
+      inspectionRecordId: 'rec-1',
       result: 'rejected',
       nonconformanceReportId: 'ncr-9',
       nonconformanceReportCode: 'NCR-2026-0007',

@@ -6,7 +6,7 @@ import {
   toQualityCharacteristicResultLines,
   type QualityCharacteristicDraftRow,
 } from '@nerv-iip/business-core'
-import { computed, reactive, ref, watch, type Ref } from 'vue'
+import { computed, reactive, shallowRef, watch, type Ref } from 'vue'
 
 type PlanCharacteristic = BusinessConsoleInspectionPlanCharacteristicItem
 
@@ -20,6 +20,8 @@ export interface ExecutionRow extends QualityCharacteristicDraftRow {
 
 /** 提交后端返回的权威检验结论（后端按计划规格 + AQL 计算，含自动开出的 NCR）。 */
 export interface AuthoritativeInspectionResult {
+  /** 本次检验记录 id（供 NCR 详情页回链「来源检验记录」）。 */
+  inspectionRecordId: string | null
   /** passed / rejected / conditional-release（后端口径）。 */
   result: string
   /** 不合格时后端自动开出并回链的 NCR id；合格为空。 */
@@ -60,7 +62,7 @@ export function useInspectionExecution(options: {
 
   let nextRowId = 1
   const rows = reactive<ExecutionRow[]>([])
-  const dispositionReason = ref('')
+  const dispositionReason = shallowRef('')
 
   const requiredCodes = computed(
     () =>
@@ -130,6 +132,7 @@ export function useInspectionExecution(options: {
     const response = (await submitInspection(inspectionTaskId, lines, dispositionReason.value)) as
       | {
           data?: {
+            inspectionRecordId?: string | null
             result?: string
             nonconformanceReportId?: string | null
             nonconformanceReportCode?: string | null
@@ -137,6 +140,7 @@ export function useInspectionExecution(options: {
         }
       | undefined
     return {
+      inspectionRecordId: response?.data?.inspectionRecordId ?? null,
       result: response?.data?.result ?? '',
       nonconformanceReportId: response?.data?.nonconformanceReportId ?? null,
       nonconformanceReportCode: response?.data?.nonconformanceReportCode ?? null,

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import type { QualityResultState } from '@/composables/useInspectionExecution'
 import { NvCell, NvMobileButton, NvMobileResult } from '@nerv-iip/ui-mobile'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 const props = defineProps<{ state: QualityResultState }>()
-const emit = defineEmits<{ next: []; back: []; retry: [] }>()
+const emit = defineEmits<{ next: []; back: []; retry: []; openNcr: [] }>()
 
 // 后端权威结论口径：passed 合格 / rejected 不合格 / conditional-release 条件放行。
 const passed = computed(
@@ -18,19 +18,6 @@ const ncrCode = computed(() =>
   props.state.phase === 'submitted' ? props.state.authoritative.nonconformanceReportCode : null,
 )
 const ncrDisplay = computed(() => ncrCode.value || ncrId.value || '')
-
-// PDA 无 NCR 详情页（互查台账在控制台 /quality/ncrs）；结果页提供「复制单号」作为互查取号入口。
-const copied = ref(false)
-async function copyNcr() {
-  if (!ncrDisplay.value) return
-  try {
-    await navigator.clipboard?.writeText(ncrDisplay.value)
-    copied.value = true
-    window.setTimeout(() => (copied.value = false), 2000)
-  } catch {
-    copied.value = false
-  }
-}
 const resultTitle = computed(() => {
   if (props.state.phase !== 'submitted') return '提交失败'
   switch (props.state.authoritative.result) {
@@ -62,15 +49,15 @@ const resultDescription = computed(() => {
     :description="resultDescription"
   >
     <template #actions>
-      <!-- NCR 互查取号入口：展示人读单号（NcrCode），点按复制供在 NCR 台账中查询。 -->
+      <!-- NCR 互链入口：展示人读单号（NcrCode），点按打开该 NCR 详情。 -->
       <NvCell
         v-if="state.phase === 'submitted' && ncrDisplay"
         data-testid="ncr-link"
         class="w-full overflow-hidden rounded-lg border border-border"
         arrow
         title="不合格报告单号"
-        :note="copied ? '已复制，可在质量台账中查询' : '点按复制单号'"
-        @click="copyNcr"
+        note="点按查看不合格报告"
+        @click="emit('openNcr')"
       >
         <template #value>
           <span class="max-w-[9rem] truncate font-medium text-foreground">{{ ncrDisplay }}</span>

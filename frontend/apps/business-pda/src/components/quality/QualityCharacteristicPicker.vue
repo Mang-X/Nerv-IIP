@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleInspectionPlanCharacteristicItem } from '@nerv-iip/api-client'
 import { NvBottomSheet, NvListRow, NvMobileTag, NvSearchBar } from '@nerv-iip/ui-mobile'
-import { computed, ref, watch } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 
 type PlanCharacteristic = BusinessConsoleInspectionPlanCharacteristicItem
 
@@ -12,7 +12,7 @@ const props = defineProps<{
 const open = defineModel<boolean>('open', { default: false })
 const emit = defineEmits<{ pick: [characteristic: PlanCharacteristic] }>()
 
-const search = ref('')
+const search = shallowRef('')
 watch(open, (isOpen) => {
   if (isOpen) search.value = ''
 })

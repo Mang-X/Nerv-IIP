@@ -4,7 +4,7 @@ import { useNowClock } from '@/composables/useNowClock'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
 import { INSPECTION_TASK_SOURCE_TYPES, inspectionTaskSourceTypeLabel } from '@nerv-iip/business-core'
 import { NvListRow, NvMobileButton, NvMobileTag, NvScanBar } from '@nerv-iip/ui-mobile'
-import { computed, ref } from 'vue'
+import { computed, shallowRef } from 'vue'
 
 type Task = BusinessConsoleQualityInspectionTaskItem
 
@@ -23,8 +23,8 @@ const emit = defineEmits<{ select: [task: Task]; loadMore: []; refresh: [] }>()
 // 受控响应式时钟：任务在页面停留期间跨过 dueAtUtc，超期标记与排序会随时钟自动重算。
 const now = useNowClock()
 
-const scanKeyword = ref('')
-const sourceTypeFilter = ref<string | null>(null)
+const scanKeyword = shallowRef('')
+const sourceTypeFilter = shallowRef<string | null>(null)
 
 function isOverdue(task: Task) {
   if (!task.dueAtUtc) return false
@@ -79,16 +79,14 @@ function pickScanHit(list: Task[], kw: string): Task | null {
   return hits.length === 1 ? hits[0] : null
 }
 
-// 扫码直达：先在已加载集合唯一命中即进入执行；未命中且有未加载分页时，加载全部再匹配（跨页直达），
-// 仍无唯一命中则退化为筛选。
+// 扫码直达：有未加载分页时**先取全量**再判定「全局唯一命中」才进入执行——否则首页的某个命中可能
+// 抢在后续页的命中（或精确命中）之前被误选；无未加载分页则直接在当前集合判定。非唯一则退化为筛选。
 async function onScan(value: string) {
   const kw = value.trim().toLowerCase()
   scanKeyword.value = value
   if (!kw) return
-  let hit = pickScanHit(props.tasks, kw)
-  if (!hit && props.hasMore && props.loadAll) {
-    hit = pickScanHit(await props.loadAll(), kw)
-  }
+  const pool = props.hasMore && props.loadAll ? await props.loadAll() : props.tasks
+  const hit = pickScanHit(pool, kw)
   if (hit) emit('select', hit)
 }
 

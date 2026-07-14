@@ -86,6 +86,18 @@ function retrySubmit() {
 function goBack() {
   router.push('/').catch(() => {})
 }
+function openNcr() {
+  // 结果页「已触发 NCR」→ 打开该 NCR 详情；带上来源检验记录 id 供 NCR 页回链。
+  if (result.value?.phase !== 'submitted') return
+  const { nonconformanceReportId, inspectionRecordId } = result.value.authoritative
+  if (!nonconformanceReportId) return
+  router
+    .push({
+      path: `/quality/ncr/${nonconformanceReportId}`,
+      query: inspectionRecordId ? { from: inspectionRecordId } : undefined,
+    })
+    .catch(() => {})
+}
 </script>
 
 <template>
@@ -147,6 +159,7 @@ function goBack() {
         @next="nextTask"
         @back="goBack"
         @retry="retrySubmit"
+        @open-ncr="openNcr"
       />
     </template>
   </NvAppShellMobile>

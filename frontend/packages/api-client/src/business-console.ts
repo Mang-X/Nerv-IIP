@@ -242,6 +242,7 @@ export {
   listBusinessConsolePlanningSuggestionsQueryOptions,
   listBusinessConsoleQualityInspectionPlansQueryOptions,
   listBusinessConsoleQualityNcrsQueryOptions,
+  getBusinessConsoleQualityNcrQueryOptions,
   listBusinessConsoleQualityReasonCodesQueryOptions,
   getBusinessConsoleQualityReasonCodeQueryOptions,
   queryBusinessConsoleQualityProcessCapabilityQueryOptions,

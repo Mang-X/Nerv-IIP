@@ -1,4 +1,4 @@
-import { onScopeDispose, readonly, ref, type Ref } from 'vue'
+import { onScopeDispose, readonly, shallowRef, type Ref } from 'vue'
 
 /**
  * 受控的响应式当前时间（毫秒）。用于「超期」等**依赖时间流逝**的派生状态：
@@ -8,7 +8,7 @@ import { onScopeDispose, readonly, ref, type Ref } from 'vue'
  * @param intervalMs 刷新间隔，默认 30s——超期是分钟级语义，无需秒级刷新。
  */
 export function useNowClock(intervalMs = 30_000): Readonly<Ref<number>> {
-  const now = ref(Date.now())
+  const now = shallowRef(Date.now())
   const timer = setInterval(() => {
     now.value = Date.now()
   }, intervalMs)

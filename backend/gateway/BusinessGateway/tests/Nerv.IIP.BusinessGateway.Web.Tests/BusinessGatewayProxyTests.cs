@@ -4357,6 +4357,80 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_http_client_get_ncr_reuses_tenant_filtered_list_by_id_keyword()
+    {
+        // 按 id 取详情复用 NCR 列表读：请求带 org/env + keyword=ncrId，返回 id 精确匹配项。
+        HttpRequestMessage? seen = null;
+        var handler = new RecordingHandler(request =>
+        {
+            seen = request;
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    total = 1,
+                    items = new[]
+                    {
+                        new
+                        {
+                            ncrId = "ncr-77",
+                            ncrCode = "NCR-77",
+                            sourceType = "receiving",
+                            sourceDocumentId = "RCV-9",
+                            skuCode = "SKU-Z",
+                            defectQuantity = 2,
+                            defectReason = "appearance",
+                            status = "open",
+                        },
+                    },
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var item = await client.GetNcrAsync(
+            "internal-token-001",
+            new BusinessConsoleQualityNcrDetailRequest("ncr-77", "org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.NotNull(item);
+        Assert.Equal("ncr-77", item!.Id);
+        Assert.Equal("NCR-77", item.Code);
+        Assert.Equal("appearance", item.DefectReason);
+        var query = seen!.RequestUri!.Query;
+        Assert.Contains("organizationId=org-001", query);
+        Assert.Contains("environmentId=env-dev", query);
+        Assert.Contains("keyword=ncr-77", query);
+        Assert.StartsWith("/api/business/v1/quality/ncrs", seen.RequestUri!.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task Quality_http_client_get_ncr_returns_null_when_no_id_match_in_tenant()
+    {
+        // 越权/不存在：列表（已按 org/env 过滤）无 id 匹配 → 返回 null（端点转 404），不泄露跨租户数据。
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new { total = 0, items = Array.Empty<object>() },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var item = await client.GetNcrAsync(
+            "internal-token-001",
+            new BusinessConsoleQualityNcrDetailRequest("ncr-other-tenant", "org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Null(item);
+    }
+
+    [Fact]
     public async Task Quality_http_client_maps_inspection_record_to_real_downstream_request_shape()
     {
         string? requestBody = null;
@@ -6450,6 +6524,36 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
                     null),
             ],
             NcrTotal ?? 1));
+    }
+
+    public BusinessConsoleQualityNcrDetailRequest? LastNcrDetailRequest { get; private set; }
+
+    public Task<BusinessConsoleQualityItem?> GetNcrAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityNcrDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastNcrDetailRequest = request;
+        BusinessConsoleQualityItem? item = request.NcrId == "ncr-001"
+            ? new BusinessConsoleQualityItem(
+                "ncr-001",
+                "NCR-001",
+                "open",
+                null,
+                "SKU-001",
+                null,
+                null,
+                null,
+                null,
+                "inspection",
+                "IR-001",
+                1,
+                "Defect",
+                null,
+                null)
+            : null;
+        return Task.FromResult(item);
     }
 
     public Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(

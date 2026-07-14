@@ -1170,6 +1170,15 @@ public sealed record BusinessConsoleQualityInspectionPlanCharacteristicsRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId);
 
+/// <summary>
+/// 按 id 取单条 NCR 详情（PDA 检验结果页「已触发 NCR」→ 打开 NCR 的互链）。租户隔离由网关按主体
+/// 注入 org/env 并复用 NCR 列表读（列表按 org/env 过滤 + keyword=GUID 命中 x.Id）保证。
+/// </summary>
+public sealed record BusinessConsoleQualityNcrDetailRequest(
+    [property: RouteParam] string NcrId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
 public sealed record BusinessConsoleInspectionPlanCharacteristicItem(
     string CharacteristicCode,
     string Name,

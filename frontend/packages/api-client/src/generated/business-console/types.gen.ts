@@ -1385,6 +1385,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityItem = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityItem | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrDetailRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualitySpcControlChartResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualitySpcControlChartResponse | null;
 };
@@ -7850,6 +7858,38 @@ export type ListBusinessConsoleQualityNcrsResponses = {
 };
 
 export type ListBusinessConsoleQualityNcrsResponse = ListBusinessConsoleQualityNcrsResponses[keyof ListBusinessConsoleQualityNcrsResponses];
+
+export type GetBusinessConsoleQualityNcrData = {
+    body?: never;
+    path: {
+        ncrId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/quality/ncrs/{ncrId}';
+};
+
+export type GetBusinessConsoleQualityNcrErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleQualityNcrResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityItem;
+};
+
+export type GetBusinessConsoleQualityNcrResponse = GetBusinessConsoleQualityNcrResponses[keyof GetBusinessConsoleQualityNcrResponses];
 
 export type QueryBusinessConsoleQualitySpcControlChartData = {
     body?: never;

@@ -54,6 +54,24 @@ describe('QualityTaskListStep', () => {
     expect(wrapper.emitted('select')?.[0]?.[0]).toMatchObject({ inspectionTaskId: 'T99' })
   })
 
+  it('scan direct: a current-page match plus a later-page match is not globally unique → no select', async () => {
+    // 首页已有 1 个同 SKU 命中，后续页还有另一个同 SKU 命中 → 全量下非唯一，不得误选首页任务。
+    const loaded = [task({ inspectionTaskId: 'T1', sourceDocumentId: 'RCV-1', skuCode: 'SKU-DUP' })]
+    const loadAll = vi
+      .fn()
+      .mockResolvedValue([
+        ...loaded,
+        task({ inspectionTaskId: 'T2', sourceDocumentId: 'RCV-2', skuCode: 'SKU-DUP' }),
+      ])
+    const wrapper = mount(QualityTaskListStep, {
+      props: { tasks: loaded, total: 2, loaded: 1, hasMore: true, pending: false, error: null, loadAll },
+    })
+    await wrapper.findComponent(NvScanBar).vm.$emit('scan', 'SKU-DUP')
+    await flushPromises()
+    expect(loadAll).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('select')).toBeUndefined()
+  })
+
   it('scan without a unique hit filters instead of navigating', async () => {
     const wrapper = mountList([
       task({ inspectionTaskId: 'T1', sourceDocumentId: 'RCV-1', skuCode: 'SHARED' }),

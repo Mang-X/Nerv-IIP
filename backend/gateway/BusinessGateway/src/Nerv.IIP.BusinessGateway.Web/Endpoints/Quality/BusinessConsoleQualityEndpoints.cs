@@ -4,6 +4,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 using Nerv.IIP.ServiceAuth;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Quality;
 
@@ -406,6 +407,31 @@ public sealed class ListBusinessConsoleQualityNcrsEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         quality.ListNcrsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+// PDA 检验结果页「已触发 NCR」→ 打开 NCR 详情的互链读端点。按 inspection-records.read 门控（检验员
+// 可读由其检验触发的 NCR，与 reason-codes/SPC 同权限口径）；租户隔离由 GetNcrAsync 复用列表读保证。
+[Tags("Business Console Quality")]
+[HttpGet("/api/business-console/v1/quality/ncrs/{ncrId}")]
+[BusinessGatewayOperationId("getBusinessConsoleQualityNcr")]
+public sealed class GetBusinessConsoleQualityNcrEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityNcrDetailRequest, BusinessConsoleQualityItem>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionRecordsRead)
+{
+    protected override string OrganizationId(BusinessConsoleQualityNcrDetailRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleQualityNcrDetailRequest request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleQualityItem> ForwardAsync(
+        BusinessConsoleQualityNcrDetailRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        await quality.GetNcrAsync(tokenProvider.BearerToken, request, cancellationToken)
+        ?? throw new KnownException($"Nonconformance report '{request.NcrId}' was not found.");
 }
 
 [Tags("Business Console Quality")]

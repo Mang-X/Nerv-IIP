@@ -290,6 +290,11 @@ public interface IBusinessQualityClient
         BusinessConsoleQualityListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleQualityItem?> GetNcrAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityNcrDetailRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(
         string internalBearerToken,
         BusinessConsoleQualitySpcRequest request,
@@ -2640,6 +2645,27 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         return new BusinessConsoleQualityListResponse(
             response.Items.Select(ToQualityItem).ToArray(),
             response.Total);
+    }
+
+    public async Task<BusinessConsoleQualityItem?> GetNcrAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityNcrDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        // 复用 NCR 列表读（按 org/env 过滤 + keyword=GUID 命中 x.Id）做租户安全的按 id 取详情：
+        // 越权访问他租户 NCR id 时列表返回空 → 此处得到 null（端点转 404），不泄露跨租户数据。
+        var response = await SendAsync<DownstreamNcrListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/quality/ncrs?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("keyword", request.NcrId),
+                ("take", 5)),
+            null,
+            cancellationToken);
+        var match = response.Items.FirstOrDefault(x => x.NcrId == request.NcrId);
+        return match is null ? null : ToQualityItem(match);
     }
 
     public Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(
