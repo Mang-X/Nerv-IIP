@@ -170,7 +170,8 @@ MES `OperationTask`, MES emits a versioned integration event containing:
 3. operation sequence,
 4. real `DeviceAssetId` and work center,
 5. the task's current `EarliestStartUtc` and `EarliestStartUtc + Duration`,
-6. assigned timestamp, actor, and normal ADR 0011 envelope identifiers.
+6. assigned timestamp, the authenticated dispatching principal (not the request-body
+   assignee), and normal ADR 0011 envelope identifiers.
 
 MES emits the lock event only when a non-empty device ID and a valid positive-duration
 window exist. A user-only or shift-only dispatch still succeeds in MES but does not

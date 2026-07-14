@@ -35,13 +35,11 @@ public sealed class CreateSchedulePlanCommandHandler(
     TimeProvider timeProvider,
     ISchedulingEquipmentAvailabilityProvider equipmentAvailabilityProvider,
     ISchedulingMaterialReadinessProvider materialReadinessProvider,
-    ISchedulingOperationOverrideOverlay? overrideOverlay = null) : ICommandHandler<CreateSchedulePlanCommand, SchedulePlanContract>
+    ISchedulingOperationOverrideOverlay overrideOverlay) : ICommandHandler<CreateSchedulePlanCommand, SchedulePlanContract>
 {
     public async Task<SchedulePlanContract> Handle(CreateSchedulePlanCommand request, CancellationToken cancellationToken)
     {
-        var overlaidProblem = overrideOverlay is null
-            ? request.Problem
-            : await overrideOverlay.ApplyAsync(request.Problem, cancellationToken);
+        var overlaidProblem = await overrideOverlay.ApplyAsync(request.Problem, cancellationToken);
         var normalizedProblem = SchedulingProblemNormalizer.Normalize(overlaidProblem);
         var problemFingerprint = CalculateProblemFingerprint(normalizedProblem);
         var existingSnapshot = await dbContext.ScheduleProblems.AsNoTracking()

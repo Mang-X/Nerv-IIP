@@ -37,17 +37,17 @@ public sealed class HttpSchedulingIntegrationEventContextAccessor(IHttpContextAc
 
     private static string ResolveActor(ClaimsPrincipal? user, IHeaderDictionary? headers)
     {
+        var headerActor = ReadHeader(headers, "X-Actor");
+        if (!string.IsNullOrWhiteSpace(headerActor))
+        {
+            return headerActor;
+        }
+
         var subject = user?.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? user?.FindFirstValue("sub");
         if (!string.IsNullOrWhiteSpace(subject))
         {
             return $"user:{subject}";
-        }
-
-        var headerActor = ReadHeader(headers, "X-Actor");
-        if (!string.IsNullOrWhiteSpace(headerActor))
-        {
-            return headerActor;
         }
 
         var name = user?.Identity?.Name;

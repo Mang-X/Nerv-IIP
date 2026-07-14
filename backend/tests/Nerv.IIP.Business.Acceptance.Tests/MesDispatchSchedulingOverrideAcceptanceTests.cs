@@ -31,12 +31,14 @@ public sealed class MesDispatchSchedulingOverrideAcceptanceTests
         var dispatchHandler = new AssignDispatchTaskCommandHandler(mesDb);
 
         await dispatchHandler.Handle(new AssignDispatchTaskCommand(
-            "org-1", "env-1", "OP-10", null, "DEVICE-2", "SHIFT-1", start.AddMinutes(-5)),
+            "org-1", "env-1", "OP-10", "operator-1", "DEVICE-2", "SHIFT-1",
+            start.AddMinutes(-5), "user:planner-1"),
             CancellationToken.None);
 
         var persistedTask = await mesDb.OperationTasks.SingleAsync();
         var domainEvent = Assert.IsType<OperationTaskManuallyDispatchedDomainEvent>(persistedTask.GetDomainEvents().Single());
         var integrationEvent = new OperationTaskManuallyDispatchedIntegrationEventConverter().Convert(domainEvent);
+        Assert.Equal("user:planner-1", integrationEvent.Actor);
         await mesDb.SaveChangesAsync();
         mesDb.ChangeTracker.Clear();
         var reloadedTask = await mesDb.OperationTasks.SingleAsync();

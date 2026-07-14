@@ -29,14 +29,12 @@ public sealed class PreviewSchedulePlanCommandHandler(
     TimeProvider timeProvider,
     ISchedulingEquipmentAvailabilityProvider equipmentAvailabilityProvider,
     ISchedulingMaterialReadinessProvider materialReadinessProvider,
-    ISchedulingOperationOverrideOverlay? overrideOverlay = null)
+    ISchedulingOperationOverrideOverlay overrideOverlay)
     : ICommandHandler<PreviewSchedulePlanCommand, SchedulePlanContract>
 {
     public async Task<SchedulePlanContract> Handle(PreviewSchedulePlanCommand request, CancellationToken cancellationToken)
     {
-        var overlaidProblem = overrideOverlay is null
-            ? request.Problem
-            : await overrideOverlay.ApplyAsync(request.Problem, cancellationToken);
+        var overlaidProblem = await overrideOverlay.ApplyAsync(request.Problem, cancellationToken);
         var availability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
         var materialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
         var schedulingProblem = MaterialReadinessSchedulingAdapter.Apply(

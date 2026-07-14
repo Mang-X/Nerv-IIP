@@ -54,9 +54,22 @@ public sealed class UpsertScheduleOperationOverrideCommandHandler(
         {
             problem = JsonSerializer.Deserialize<SchedulingProblemContract>(snapshot.ProblemJson, SchedulingJson.Options)
                 ?? throw new JsonException("The scheduling problem payload is empty.");
+            if (problem.Orders is null || problem.Orders.Count == 0 ||
+                problem.Resources is null || problem.Resources.Count == 0 ||
+                problem.Calendars is null || problem.Calendars.Count == 0 ||
+                problem.UnavailabilityWindows is null || problem.MaterialReadiness is null ||
+                problem.QualityBlocks is null || problem.LockedAssignments is null ||
+                ContainsNull(problem.Orders) || ContainsNull(problem.Resources) ||
+                ContainsNull(problem.Calendars) || ContainsNull(problem.UnavailabilityWindows) ||
+                ContainsNull(problem.MaterialReadiness) || ContainsNull(problem.QualityBlocks) ||
+                ContainsNull(problem.LockedAssignments) ||
+                problem.Orders.Any(order => order.Operations is null || ContainsNull(order.Operations)))
+            {
+                throw new JsonException("The scheduling problem payload is incomplete.");
+            }
             problem = SchedulingProblemNormalizer.Normalize(problem);
         }
-        catch (Exception exception) when (exception is JsonException or ArgumentException or NullReferenceException)
+        catch (Exception exception) when (exception is JsonException or ArgumentException)
         {
             throw new KnownException(
                 $"Schedule problem details are unavailable for manual override, ProblemId = {plan.ProblemId}");
@@ -90,12 +103,15 @@ public sealed class UpsertScheduleOperationOverrideCommandHandler(
         }
         else
         {
-            fact.TryReplace(request.ResourceId, resource.WorkCenterId, request.StartUtc,
-                request.EndUtc, "manual-override", "scheduling-api", null, actor, now, now);
+            fact.ReplaceManually(request.ResourceId, resource.WorkCenterId, request.StartUtc,
+                request.EndUtc, actor, now);
         }
 
         return new ScheduleOperationOverrideResponse(
             fact.OperationId, fact.WorkOrderId, fact.ResourceId, fact.WorkCenterId,
             fact.StartUtc, fact.EndUtc, fact.LockReasonCode);
     }
+
+    private static bool ContainsNull<T>(IEnumerable<T> values) =>
+        values.Cast<object?>().Any(value => value is null);
 }

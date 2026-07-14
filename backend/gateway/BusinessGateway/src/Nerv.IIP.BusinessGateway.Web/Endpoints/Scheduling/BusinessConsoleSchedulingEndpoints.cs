@@ -180,7 +180,11 @@ public sealed class UpsertBusinessConsoleSchedulingOperationOverrideEndpoint(
     protected override string? ResourceId(BusinessConsoleScheduleOperationOverrideRequest request) => request.OperationId;
     protected override Task<BusinessConsoleScheduleOperationOverrideResponse> ForwardAsync(
         BusinessConsoleScheduleOperationOverrideRequest request, string bearerToken, CancellationToken cancellationToken) =>
-        scheduling.UpsertOperationOverrideAsync(tokenProvider.BearerToken, request, cancellationToken);
+        scheduling.UpsertOperationOverrideAsync(
+            tokenProvider.BearerToken,
+            request,
+            RequireAuthorizedPrincipalActorReference(),
+            cancellationToken);
 }
 
 public sealed class BusinessConsoleSchedulingProblemRequestValidator : Validator<BusinessConsoleSchedulingProblemRequest>

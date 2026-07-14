@@ -158,6 +158,10 @@ public sealed class SchedulingIntegrationEventTests
     public void Http_context_accessor_reads_correlation_causation_and_actor_headers()
     {
         var httpContext = new DefaultHttpContext();
+        httpContext.User = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+                [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "internal-service")],
+                "InternalService"));
         httpContext.Request.Headers["X-Correlation-Id"] = "corr-http-001";
         httpContext.Request.Headers["X-Causation-Id"] = "cmd-http-001";
         httpContext.Request.Headers["X-Actor"] = "user:planner-001";

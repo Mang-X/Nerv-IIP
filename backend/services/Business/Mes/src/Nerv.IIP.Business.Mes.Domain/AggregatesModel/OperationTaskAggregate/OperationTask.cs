@@ -265,7 +265,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         string? assignedUserId,
         string? deviceAssetId,
         string? shiftId,
-        DateTimeOffset assignedAtUtc)
+        DateTimeOffset assignedAtUtc,
+        string actor = "system:mes")
     {
         if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
         {
@@ -283,7 +284,12 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         AssignedAtUtc = assignedAtUtc;
         if (DeviceAssetId is not null && Duration > TimeSpan.Zero)
         {
-            AddDomainEvent(new OperationTaskManuallyDispatchedDomainEvent(this));
+            if (string.IsNullOrWhiteSpace(actor))
+            {
+                throw new ArgumentException("Dispatch actor is required.", nameof(actor));
+            }
+
+            AddDomainEvent(new OperationTaskManuallyDispatchedDomainEvent(this, actor.Trim()));
         }
     }
 

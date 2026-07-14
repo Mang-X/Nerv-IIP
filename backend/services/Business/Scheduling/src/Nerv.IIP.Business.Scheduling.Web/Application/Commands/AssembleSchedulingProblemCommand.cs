@@ -29,8 +29,8 @@ public sealed class AssembleSchedulingProblemCommandValidator : AbstractValidato
 
 public sealed class AssembleSchedulingProblemCommandHandler(
     ISchedulingProblemProducer producer,
-    ApplicationDbContext? dbContext = null,
-    ISchedulingOperationOverrideOverlay? overrideOverlay = null)
+    ApplicationDbContext dbContext,
+    ISchedulingOperationOverrideOverlay overrideOverlay)
     : ICommandHandler<AssembleSchedulingProblemCommand, SchedulingProblemContract>
 {
     public async Task<SchedulingProblemContract> Handle(AssembleSchedulingProblemCommand request, CancellationToken cancellationToken)
@@ -44,10 +44,6 @@ public sealed class AssembleSchedulingProblemCommandHandler(
         var resolvedLocks = new Dictionary<(string OrderId, string OperationId), SchedulingLockedAssignmentContract>();
         if (!string.IsNullOrWhiteSpace(source.BasePlanId))
         {
-            if (dbContext is null)
-            {
-                throw new InvalidOperationException("Scheduling persistence is required to resolve base-plan locks.");
-            }
             var plan = await dbContext.SchedulePlans.AsNoTracking().Include(x => x.Assignments)
                 .SingleOrDefaultAsync(x => x.OrganizationId == source.OrganizationId &&
                     x.EnvironmentId == source.EnvironmentId && x.PlanId == source.BasePlanId, cancellationToken)
@@ -70,6 +66,6 @@ public sealed class AssembleSchedulingProblemCommandHandler(
 
         var problem = await producer.AssembleAsync(
             source with { LockedAssignments = resolvedLocks.Values.ToArray() }, cancellationToken);
-        return overrideOverlay is null ? problem : await overrideOverlay.ApplyAsync(problem, cancellationToken);
+        return await overrideOverlay.ApplyAsync(problem, cancellationToken);
     }
 }

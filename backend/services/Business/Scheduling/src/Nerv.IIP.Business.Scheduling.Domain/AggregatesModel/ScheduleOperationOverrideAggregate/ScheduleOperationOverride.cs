@@ -65,6 +65,14 @@ public sealed class ScheduleOperationOverride : Entity<ScheduleOperationOverride
         return true;
     }
 
+    public void ReplaceManually(
+        string resourceId, string workCenterId, DateTimeOffset startUtc, DateTimeOffset endUtc,
+        string actor, DateTimeOffset occurredAtUtc)
+    {
+        SetMutableFacts(resourceId, workCenterId, startUtc, endUtc, "manual-override",
+            "scheduling-api", null, actor, occurredAtUtc, occurredAtUtc);
+    }
+
     private void SetMutableFacts(
         string resourceId, string workCenterId, DateTimeOffset startUtc, DateTimeOffset endUtc,
         string lockReasonCode, string sourceType, string? sourceEventId, string actor,

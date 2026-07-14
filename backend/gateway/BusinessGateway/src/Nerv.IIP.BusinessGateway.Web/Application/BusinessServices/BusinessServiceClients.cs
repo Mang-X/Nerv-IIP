@@ -697,6 +697,7 @@ public interface IBusinessSchedulingClient
     Task<BusinessConsoleScheduleOperationOverrideResponse> UpsertOperationOverrideAsync(
         string internalBearerToken,
         BusinessConsoleScheduleOperationOverrideRequest request,
+        string actor,
         CancellationToken cancellationToken);
 }
 
@@ -1365,6 +1366,7 @@ public interface IBusinessMesClient
         string internalBearerToken,
         string operationTaskId,
         BusinessConsoleMesAssignDispatchTaskRequest request,
+        string actor,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesOperationTaskListResponse> ListOperationTasksAsync(
@@ -4381,6 +4383,7 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
     public Task<BusinessConsoleScheduleOperationOverrideResponse> UpsertOperationOverrideAsync(
         string internalBearerToken,
         BusinessConsoleScheduleOperationOverrideRequest request,
+        string actor,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleScheduleOperationOverrideResponse>(
             internalBearerToken,
@@ -4388,7 +4391,8 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
             $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/operations/{Uri.EscapeDataString(request.OperationId)}/override",
             request,
             cancellationToken,
-            SchedulingJson.Options);
+            SchedulingJson.Options,
+            message => message.Headers.TryAddWithoutValidation("X-Actor", actor));
 
     private sealed record SchedulingProblemRequest(SchedulingProblemContract Problem);
 
@@ -6349,13 +6353,16 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string internalBearerToken,
         string operationTaskId,
         BusinessConsoleMesAssignDispatchTaskRequest request,
+        string actor,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleAcceptedResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/mes/dispatch-tasks/{Uri.EscapeDataString(operationTaskId)}/assign",
             request,
-            cancellationToken);
+            cancellationToken,
+            configureRequest: message =>
+                message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor));
 
     public Task<BusinessConsoleMesOperationTaskListResponse> ListOperationTasksAsync(
         string internalBearerToken,

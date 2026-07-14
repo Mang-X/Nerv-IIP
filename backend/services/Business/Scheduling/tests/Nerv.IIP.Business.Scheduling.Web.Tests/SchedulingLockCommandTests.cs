@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
@@ -13,6 +14,50 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
 public sealed class SchedulingLockCommandTests
 {
+    [Fact]
+    public async Task Manual_override_replaces_a_mes_override_even_when_its_source_timestamp_is_in_the_future()
+    {
+        await using var db = CreateDbContext();
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var plan = new FiniteCapacityScheduler().Schedule(
+            problem, "plan-manual-wins", problem.HorizonStartUtc.AddMinutes(-1));
+        var assignment = plan.Assignments.First();
+        db.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(
+            problem.OrganizationId, problem.EnvironmentId,
+            SchedulePlanContractMapper.ToDomainSnapshot(plan)));
+        db.ScheduleProblems.Add(new ScheduleProblemSnapshot(
+            problem.ProblemId, 1, problem.OrganizationId, problem.EnvironmentId,
+            "fingerprint", System.Text.Json.JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            problem.HorizonStartUtc, problem.HorizonEndUtc, problem.HorizonStartUtc));
+        var futureSourceTime = problem.HorizonStartUtc.AddDays(1);
+        db.ScheduleOperationOverrides.Add(ScheduleOperationOverride.Create(
+            problem.OrganizationId, problem.EnvironmentId, assignment.OrderId,
+            assignment.OperationId, assignment.OperationSequence, assignment.ResourceId,
+            assignment.WorkCenterId, assignment.StartUtc, assignment.EndUtc,
+            "mes-manual-dispatch", "mes-operation-task", "event-future", "user:mes",
+            futureSourceTime, futureSourceTime));
+        await db.SaveChangesAsync();
+        var requestedStart = assignment.StartUtc.AddMinutes(20);
+        var requestedEnd = assignment.EndUtc.AddMinutes(20);
+        var handler = new UpsertScheduleOperationOverrideCommandHandler(
+            db, new FixedTimeProvider(problem.HorizonStartUtc), new StubContextAccessor());
+
+        var result = await handler.Handle(
+            new UpsertScheduleOperationOverrideCommand(
+                problem.OrganizationId, problem.EnvironmentId, plan.PlanId,
+                assignment.OperationId, assignment.ResourceId, requestedStart, requestedEnd),
+            CancellationToken.None);
+
+        Assert.Equal(requestedStart, result.StartUtc);
+        Assert.Equal(requestedEnd, result.EndUtc);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var persisted = await db.ScheduleOperationOverrides.SingleAsync();
+        Assert.Equal("scheduling-api", persisted.SourceType);
+        Assert.Equal("user:planner", persisted.Actor);
+        Assert.Equal(problem.HorizonStartUtc, persisted.SourceOccurredAtUtc);
+    }
+
     [Fact]
     public async Task Assemble_resolves_base_plan_locks_and_explicit_lock_wins_for_the_same_operation()
     {
@@ -43,7 +88,8 @@ public sealed class SchedulingLockCommandTests
                 baseProblem.HorizonStartUtc, "routing")],
             LockedAssignments: [explicitLock], BasePlanId: "plan-base",
             LockedOperationIds: baseAssignments.Select(x => x.OperationId).ToArray());
-        var handler = new AssembleSchedulingProblemCommandHandler(new CapturingProducer(baseProblem), db);
+        var handler = new AssembleSchedulingProblemCommandHandler(
+            new CapturingProducer(baseProblem), db, new SchedulingOperationOverrideOverlay(db));
 
         var result = await handler.Handle(new AssembleSchedulingProblemCommand(request), CancellationToken.None);
 
@@ -106,6 +152,11 @@ public sealed class SchedulingLockCommandTests
     private sealed class StubContextAccessor : ISchedulingIntegrationEventContextAccessor
     {
         public SchedulingIntegrationEventContext GetContext() => new("corr", "cause", "user:planner");
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
     private sealed class NoopMediator : IMediator

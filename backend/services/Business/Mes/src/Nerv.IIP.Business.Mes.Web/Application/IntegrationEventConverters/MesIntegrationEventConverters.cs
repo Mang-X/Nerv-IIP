@@ -252,7 +252,7 @@ public sealed class OperationTaskManuallyDispatchedIntegrationEventConverter
             $"evt-{Guid.CreateVersion7():N}", MesIntegrationEventTypes.OperationTaskManuallyDispatched,
             MesIntegrationEventVersions.V1, occurredAtUtc, MesIntegrationEventSources.BusinessMes,
             idempotencyKey, task.WorkOrderId, task.OrganizationId, task.EnvironmentId,
-            "system:mes", idempotencyKey,
+            domainEvent.Actor, idempotencyKey,
             new OperationTaskManuallyDispatchedPayload(
                 task.WorkOrderId, task.OperationTaskId, task.OperationSequence, resourceId,
                 task.WorkCenterId, task.EarliestStartUtc, task.EarliestStartUtc + task.Duration,

@@ -19,7 +19,7 @@ public sealed record WorkOrderClosedDomainEvent(WorkOrder WorkOrder, DateTimeOff
 public sealed record MesEngineeringChangeWorkOrderImpactDetectedDomainEvent(MesEngineeringChangeWorkOrderImpact Impact) : IDomainEvent;
 
 public sealed record OperationTaskCompletedDomainEvent(OperationTask OperationTask) : IDomainEvent;
-public sealed record OperationTaskManuallyDispatchedDomainEvent(OperationTask OperationTask) : IDomainEvent;
+public sealed record OperationTaskManuallyDispatchedDomainEvent(OperationTask OperationTask, string Actor) : IDomainEvent;
 
 public sealed record WorkOrderCancelledDomainEvent(
     WorkOrder WorkOrder,

@@ -756,7 +756,12 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
         BusinessConsoleMesAssignDispatchTaskRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        mes.AssignDispatchTaskAsync(tokenProvider.BearerToken, request.OperationTaskId, request, cancellationToken);
+        mes.AssignDispatchTaskAsync(
+            tokenProvider.BearerToken,
+            request.OperationTaskId,
+            request,
+            RequireAuthorizedPrincipalActorReference(),
+            cancellationToken);
 }
 
 [Tags("Business Console MES")]
