@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using FastEndpoints;
 using Nerv.IIP.Contracts.Coding;
 
@@ -598,6 +599,7 @@ public sealed record BusinessConsoleSetMasterDataResourceEnabledRequest(
     string EnvironmentId,
     string ResourceType,
     string Code,
+    string IdempotencyKey,
     string? CodeSet = null,
     string Reason = "",
     DateOnly? EffectiveFrom = null);
@@ -800,6 +802,12 @@ public sealed record BusinessConsoleNotificationListRequest(
     string? RecipientRef,
     string? Status,
     int Take = 20);
+
+public sealed record BusinessConsoleMarkNotificationMessageReadRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string MessageId,
+    string? RecipientRef = null);
 
 public sealed record BusinessConsoleInventoryAvailabilityRequest(
     string OrganizationId,
@@ -1278,7 +1286,8 @@ public sealed record BusinessConsoleNcrCloseRequest(
     [property: QueryParam] string EnvironmentId,
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
-    string? ReturnDocumentId);
+    string? ReturnDocumentId,
+    [property: Required, MaxLength(500)] string Reason);
 
 public sealed record BusinessConsoleAcceptedResponse(
     bool Accepted,
@@ -2158,7 +2167,10 @@ public sealed record BusinessConsoleSchedulePlanSummaryResponse(
     DateTimeOffset? ReleasedAtUtc,
     int AssignmentCount,
     int ConflictCount,
-    int UnscheduledOperationCount);
+    int UnscheduledOperationCount,
+    bool IsInvalidated = false,
+    string? LatestInvalidationReasonCode = null,
+    DateTimeOffset? LatestInvalidatedAtUtc = null);
 
 public sealed record BusinessConsoleReleaseSchedulePlanResponse(
     string PlanId,
@@ -3456,8 +3468,35 @@ public sealed record BusinessConsoleMesForceReleaseQualityHoldRequest(
     [property: QueryParam] string EnvironmentId,
     string Reason,
     string? SourceService,
-    DateTimeOffset? ReleasedAtUtc);
+    DateTimeOffset? ReleasedAtUtc,
+    string IdempotencyKey);
 
+public sealed record BusinessConsoleMesQualityHoldTimelineRequest(
+    [property: RouteParam] string SourceDocumentId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string SourceService);
+
+public sealed record BusinessConsoleMesQualityHoldTimelineItem(
+    Guid TransitionId,
+    string SourceService,
+    string SourceDocumentId,
+    string HoldCycleId,
+    string CorrelationId,
+    string EventKind,
+    string Actor,
+    DateTimeOffset OccurredAtUtc,
+    string? Reason,
+    string? SourceInspectionRecordId,
+    string? SourceInspectionDocumentId,
+    string Origin,
+    string? IdempotencyKey);
+
+public sealed record BusinessConsoleMesQualityHoldTimelineResponse(
+    IReadOnlyCollection<BusinessConsoleMesQualityHoldTimelineItem> Items);
+
+// Actor is intentionally omitted: the gateway binds the downstream reversal actor to the
+// authenticated principal and ignores caller-supplied actor-like JSON properties.
 public sealed record BusinessConsoleMesReverseProductionReportRequest(
     [property: RouteParam] string ReportNo,
     [property: QueryParam] string OrganizationId,
@@ -3560,7 +3599,9 @@ public sealed record BusinessConsoleMesDispatchTaskRow(
     string? WorkCenterName = null,
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null,
-    string? OperationCode = null);
+    string? OperationCode = null,
+    DateTimeOffset? ScheduledAtUtc = null,
+    string? ScheduleInvalidationReasonCode = null);
 
 public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     [property: RouteParam] string OperationTaskId,
@@ -3593,7 +3634,9 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     string? WorkCenterName = null,
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null,
-    string? OperationCode = null);
+    string? OperationCode = null,
+    DateTimeOffset? ScheduledAtUtc = null,
+    string? ScheduleInvalidationReasonCode = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: RouteParam] string OperationTaskId,
@@ -3628,6 +3671,45 @@ public sealed record BusinessConsoleMesWipSummaryRow(
 public sealed record BusinessConsoleMesProductionReportListResponse(
     IReadOnlyCollection<BusinessConsoleMesProductionReportRow> Items,
     int Total);
+
+public sealed record BusinessConsoleMesProductionReportDetailRequest(
+    [property: RouteParam] string ReportNo,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleMesProductionReportDetailResponse(
+    BusinessConsoleMesProductionReportDetail Report,
+    IReadOnlyCollection<BusinessConsoleMesConsumedMaterialLot> ConsumedMaterialLots);
+
+public sealed record BusinessConsoleMesProductionReportDetail(
+    string ProductionReportId,
+    string ReportNo,
+    string WorkOrderId,
+    string OperationTaskId,
+    decimal GoodQuantity,
+    decimal ScrapQuantity,
+    decimal ReworkQuantity,
+    DateTimeOffset ReportedAtUtc,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? ScrapReasonCode = null,
+    string? DefectRecordNo = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null,
+    string? ReversedReportNo = null,
+    string? ReversalReason = null,
+    string? InventoryPostingFailureCode = null,
+    string? InventoryPostingFailureMessage = null,
+    DateTimeOffset? InventoryPostingFailedAtUtc = null,
+    string? WorkOrderStatus = null,
+    string? ReversalReportNo = null);
+
+public sealed record BusinessConsoleMesConsumedMaterialLot(
+    string MaterialId,
+    string MaterialLotId,
+    decimal ConsumedQuantity,
+    string UomCode,
+    string MaterialIssueRequestNo);
 
 public sealed record BusinessConsoleMesTelemetryCandidateListRequest(string OrganizationId, string EnvironmentId, string? Status = null,
     string? WorkCenterId = null, string? DeviceAssetId = null, DateTimeOffset? FromUtc = null, DateTimeOffset? ToUtc = null, int Skip = 0, int Take = 50);

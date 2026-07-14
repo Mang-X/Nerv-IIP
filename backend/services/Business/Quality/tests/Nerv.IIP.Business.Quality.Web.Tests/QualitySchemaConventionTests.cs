@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Quality.Domain;
@@ -62,6 +63,21 @@ public sealed class QualitySchemaConventionTests
         AssertEntityHasIndex<SpcControlChart>(
             fixture.DbContext,
             [nameof(SpcControlChart.OrganizationId), nameof(SpcControlChart.EnvironmentId), nameof(SpcControlChart.SkuCode), nameof(SpcControlChart.CharacteristicCode), nameof(SpcControlChart.WorkCenterId), nameof(SpcControlChart.SubgroupSize)]);
+    }
+
+    [Fact]
+    public void Ncr_closure_audit_facts_have_governed_lengths_and_comments()
+    {
+        using var fixture = CreateFixture();
+        var entity = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(NonconformanceReport))!;
+
+        var reason = entity.FindProperty(nameof(NonconformanceReport.CloseReason))!;
+        Assert.Equal(500, reason.GetMaxLength());
+        Assert.False(string.IsNullOrWhiteSpace(reason.GetComment()));
+
+        var actor = entity.FindProperty(nameof(NonconformanceReport.ClosedByActor))!;
+        Assert.Equal(200, actor.GetMaxLength());
+        Assert.False(string.IsNullOrWhiteSpace(actor.GetComment()));
     }
 
     [Fact]

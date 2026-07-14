@@ -6,7 +6,9 @@ namespace Nerv.IIP.Business.Quality.Web.Application.Seed;
 /// <summary>
 /// Quality 基础目录 seed（仿 MasterDataSeedService）：为全新环境补齐**质量原因码目录**——
 /// 检验执行（PDA/console）里计数特性判不合格时的原因码 Picker 依赖它，目录为空会导致无码可选。
-/// 幂等：按 org/env + reasonCode 存在即更新名称/分组/严重度/默认处置，不重复插入。
+/// 幂等且**只补缺失项**：按 org/env + reasonCode 已存在（含被归档/被租户改名）一律跳过，
+/// 保留租户事实——预置码被操作员归档或修改后，重复 seed 不得复活/覆写，更不能因
+/// `Update()` 的 EnsureEnabled 抛错导致服务无法启动。
 /// </summary>
 public sealed class QualitySeedService(ApplicationDbContext dbContext)
 {
@@ -32,29 +34,29 @@ public sealed class QualitySeedService(ApplicationDbContext dbContext)
 
     public async Task SeedAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default)
     {
+        var existingCodes = await dbContext.QualityReasons
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+            .Select(x => x.ReasonCode)
+            .ToListAsync(cancellationToken);
+        var existing = existingCodes.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         foreach (var seed in Reasons)
         {
-            var existing = await dbContext.QualityReasons.SingleOrDefaultAsync(
-                x => x.OrganizationId == organizationId
-                     && x.EnvironmentId == environmentId
-                     && x.ReasonCode == seed.ReasonCode,
-                cancellationToken);
-            if (existing is null)
+            // 只补缺失项：已存在（包括被归档或被租户维护过的）一律不动，保留租户事实。
+            if (existing.Contains(seed.ReasonCode))
             {
-                dbContext.QualityReasons.Add(QualityReason.Create(
-                    organizationId,
-                    environmentId,
-                    seed.ReasonCode,
-                    seed.ReasonName,
-                    seed.GroupName,
-                    seed.Severity,
-                    seed.DefaultDisposition,
-                    enabled: true));
+                continue;
             }
-            else
-            {
-                existing.Update(seed.ReasonName, seed.GroupName, seed.Severity, seed.DefaultDisposition);
-            }
+
+            dbContext.QualityReasons.Add(QualityReason.Create(
+                organizationId,
+                environmentId,
+                seed.ReasonCode,
+                seed.ReasonName,
+                seed.GroupName,
+                seed.Severity,
+                seed.DefaultDisposition,
+                enabled: true));
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);

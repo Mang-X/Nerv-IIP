@@ -229,4 +229,54 @@ finally {
     }
 }
 
+$detachedRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-detached-$([System.Guid]::NewGuid().ToString('N'))"
+try {
+    [System.IO.Directory]::CreateDirectory($detachedRoot) | Out-Null
+    $detachedChild = Join-Path $detachedRoot 'detached child.ps1'
+    $detachedLauncher = Join-Path $detachedRoot 'launcher.ps1'
+    $detachedMarker = Join-Path $detachedRoot 'completion marker.txt'
+    $detachedIdentity = Join-Path $detachedRoot 'identity.json'
+    $detachedStdout = Join-Path $detachedRoot 'stdout.log'
+    $detachedStderr = Join-Path $detachedRoot 'stderr.log'
+    [System.IO.File]::WriteAllText(
+        $detachedChild,
+        'param($Marker,$First,$Second); Start-Sleep -Seconds 2; [IO.File]::WriteAllText($Marker,"$First|$Second"); Write-Output completed',
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    $quote = { param($Value) "'$($Value.Replace("'", "''"))'" }
+    $launcherText = @"
+. $(& $quote $helper)
+`$identity = Start-DetachedManagedProcess -Command 'pwsh' -Arguments @('-NoProfile','-File',$(& $quote $detachedChild),$(& $quote $detachedMarker),'a b','a "quoted" b') -WorkingDirectory $(& $quote $detachedRoot) -StdoutPath $(& $quote $detachedStdout) -StderrPath $(& $quote $detachedStderr)
+if (`$identity.Pid -le 0 -or [string]::IsNullOrWhiteSpace("`$(`$identity.ProcessStartTimeUtc)")) { throw 'Detached identity missing.' }
+[IO.File]::WriteAllText($(& $quote $detachedIdentity), (`$identity | ConvertTo-Json -Compress))
+"@
+    [System.IO.File]::WriteAllText($detachedLauncher, $launcherText, [System.Text.UTF8Encoding]::new($false))
+    & pwsh -NoProfile -File $detachedLauncher
+    if ($LASTEXITCODE -ne 0) { throw "Detached launcher failed with exit $LASTEXITCODE." }
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds(15)
+    while (-not (Test-Path -LiteralPath $detachedMarker) -and [DateTimeOffset]::UtcNow -lt $deadline) {
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not (Test-Path -LiteralPath $detachedMarker)) { throw 'Detached child did not survive its launcher process.' }
+    $markerText = [System.IO.File]::ReadAllText($detachedMarker)
+    if ($markerText -ne 'a b|a "quoted" b') { throw "Detached arguments were corrupted: $markerText" }
+    $identity = Get-Content -LiteralPath $detachedIdentity -Raw | ConvertFrom-Json
+    Wait-Process -Id ([int] $identity.Pid) -Timeout 10 -ErrorAction SilentlyContinue
+}
+finally {
+    if (Test-Path -LiteralPath $detachedIdentity) {
+        $identity = Get-Content -LiteralPath $detachedIdentity -Raw | ConvertFrom-Json
+        $process = Get-Process -Id ([int] $identity.Pid) -ErrorAction SilentlyContinue
+        if ($process) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+    }
+    $resolvedDetachedRoot = Resolve-Path $detachedRoot -ErrorAction SilentlyContinue
+    if ($resolvedDetachedRoot) {
+        $tempRoot = [System.IO.Path]::GetTempPath()
+        if (-not $resolvedDetachedRoot.Path.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove detached smoke directory outside temp: $($resolvedDetachedRoot.Path)"
+        }
+        Remove-Item -LiteralPath $resolvedDetachedRoot.Path -Recurse -Force
+    }
+}
+
 Write-Host 'Script governance fixture tests passed.'

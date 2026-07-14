@@ -367,7 +367,7 @@ public sealed class QualityInspectionTaskWorkflowTests
     public async Task Quality_seed_populates_reason_catalog_idempotently()
     {
         // 全新环境原因码目录为空会让检验执行的原因码 Picker 无码可选（MAN-457 真机走查发现）。
-        // seed 幂等：重复执行不重复插入；已有码更新名称/分组等而非报错。
+        // seed 幂等：重复执行不重复插入。
         await using var dbContext = CreateDbContext(nameof(Quality_seed_populates_reason_catalog_idempotently));
         var seed = new QualitySeedService(dbContext);
 
@@ -378,6 +378,34 @@ public sealed class QualityInspectionTaskWorkflowTests
 
         await seed.SeedAsync("org-001", "env-dev");
         Assert.Equal(first, await dbContext.QualityReasons.CountAsync());
+    }
+
+    [Fact]
+    public async Task Quality_seed_preserves_tenant_edits_and_archived_preset_codes()
+    {
+        // 回归（审核 P1）：操作员归档/改名预置码后重复 seed 必须不抛（归档项走 Update 会因
+        // EnsureEnabled 让服务启动失败）、不覆写租户维护的名称、也不复活归档项。
+        await using var dbContext = CreateDbContext(nameof(Quality_seed_preserves_tenant_edits_and_archived_preset_codes));
+        var seed = new QualitySeedService(dbContext);
+        await seed.SeedAsync("org-001", "env-dev");
+
+        // 租户事实：归档一条预置码 + 改名另一条。
+        var archived = await dbContext.QualityReasons.SingleAsync(x => x.ReasonCode == "RSN-APPEARANCE");
+        archived.SetEnabled(false);
+        var renamed = await dbContext.QualityReasons.SingleAsync(x => x.ReasonCode == "RSN-DIMENSION");
+        renamed.Update("尺寸不良（现场口径）", "尺寸", "critical", "scrap");
+        await dbContext.SaveChangesAsync();
+        var countBefore = await dbContext.QualityReasons.CountAsync();
+
+        // 重复 seed：不抛、不复活、不覆写、不重插。
+        await seed.SeedAsync("org-001", "env-dev");
+
+        Assert.Equal(countBefore, await dbContext.QualityReasons.CountAsync());
+        var archivedAfter = await dbContext.QualityReasons.SingleAsync(x => x.ReasonCode == "RSN-APPEARANCE");
+        Assert.False(archivedAfter.Enabled);
+        var renamedAfter = await dbContext.QualityReasons.SingleAsync(x => x.ReasonCode == "RSN-DIMENSION");
+        Assert.Equal("尺寸不良（现场口径）", renamedAfter.ReasonName);
+        Assert.Equal("critical", renamedAfter.Severity);
     }
 
     [Fact]

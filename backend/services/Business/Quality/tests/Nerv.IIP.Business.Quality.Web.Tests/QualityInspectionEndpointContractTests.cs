@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
@@ -901,16 +902,35 @@ public sealed class QualityInspectionEndpointContractTests
             CancellationToken.None);
         dbContext.CorrectiveActions.Add(NewEffectiveCapa(ncr, "CAPA-SCRAP-CLOSE-RECORDED-001"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        var httpContext = new DefaultHttpContext
+        {
+            User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
+                [
+                    new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "internal-service"),
+                    new System.Security.Claims.Claim("token_type", "internal_service"),
+                ],
+                InternalServiceAuthentication.SchemeName)),
+        };
+        httpContext.Request.Headers["X-Actor"] = "user:qa-manager-001";
         var closeHandler = new CloseNonconformanceReportCommandHandler(
             new NonconformanceReportRepository(dbContext),
-            new CorrectiveActionRepository(dbContext));
+            new CorrectiveActionRepository(dbContext),
+            new HttpQualityIntegrationEventContextAccessor(new HttpContextAccessor
+            {
+                HttpContext = httpContext,
+            }));
 
         await closeHandler.Handle(
-            new CloseNonconformanceReportCommand(ncr.Id, null, null, null),
+            new CloseNonconformanceReportCommand(ncr.Id, null, null, null, "Disposition completed"),
             CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+        var durableAudit = await dbContext.NonconformanceReports.SingleAsync(x => x.Id == ncr.Id);
 
-        Assert.Equal("closed", ncr.Status);
-        Assert.Equal("SM-FULL-RECORDED-001", ncr.ScrapMovementId);
+        Assert.Equal("closed", durableAudit.Status);
+        Assert.Equal("SM-FULL-RECORDED-001", durableAudit.ScrapMovementId);
+        Assert.Equal("Disposition completed", durableAudit.CloseReason);
+        Assert.Equal("user:qa-manager-001", durableAudit.ClosedByActor);
     }
 
     [Fact]
@@ -1158,14 +1178,16 @@ public sealed class QualityInspectionEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new CloseNonconformanceReportCommandHandler(
             new NonconformanceReportRepository(dbContext),
-            new CorrectiveActionRepository(dbContext));
+            new CorrectiveActionRepository(dbContext),
+            new FixedQualityIntegrationEventContextAccessor("user:qa-manager-001"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CloseNonconformanceReportCommand(
                 ncr.Id,
                 null,
                 "SM-FULL-001",
-                null),
+                null,
+                "Disposition completed"),
             CancellationToken.None));
 
         Assert.Contains("CAPA", exception.Message, StringComparison.OrdinalIgnoreCase);
@@ -1361,14 +1383,14 @@ public sealed class QualityInspectionEndpointContractTests
         }
     }
 
-    private sealed class FixedQualityIntegrationEventContextAccessor : IQualityIntegrationEventContextAccessor
+    private sealed class FixedQualityIntegrationEventContextAccessor(string actor = "system:business-quality") : IQualityIntegrationEventContextAccessor
     {
         public QualityIntegrationEventContext GetContext()
         {
             return new QualityIntegrationEventContext(
                 "corr-capa-redrive-001",
                 "cause-capa-redrive-001",
-                "system:business-quality");
+                actor);
         }
     }
 

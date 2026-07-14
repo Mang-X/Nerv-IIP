@@ -76,6 +76,7 @@ public sealed record OpcUaConnectorState(
     long ReceivedSamples,
     long PostedBuckets,
     long DroppedSamples,
+    long ErrorCount,
     long ReconnectCount,
     long SubscriptionRecoveries,
     DateTimeOffset? LastSampleAtUtc,
@@ -86,6 +87,7 @@ public sealed record OpcUaConnectorState(
         ["receivedSamples"] = ReceivedSamples,
         ["postedBuckets"] = PostedBuckets,
         ["droppedSamples"] = DroppedSamples,
+        ["errorCount"] = ErrorCount,
         ["reconnectCount"] = ReconnectCount,
         ["subscriptionRecoveries"] = SubscriptionRecoveries
     };

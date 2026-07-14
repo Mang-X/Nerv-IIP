@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
+using Nerv.IIP.Business.Erp.Web.Application.MasterData;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
@@ -253,13 +254,45 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
         var conversionIdempotencyKey = request.PurchaseOrderNo is null
             ? StableIdempotencyKey("pr-to-po", supplierCode, request.CurrencyCode, requisitionNos)
             : request.IdempotencyKey;
+        var fingerprint = ErpCodingService.Fingerprint(supplierCode, request.CurrencyCode, requisitionNos);
+        var replay = await _codingService.TryPeekReplayAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "purchase-order",
+            conversionIdempotencyKey,
+            fingerprint,
+            cancellationToken);
+        if (replay is not null)
+        {
+            var replayedOrder = await dbContext.PurchaseOrders.SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PurchaseOrderNo == replay.Code,
+                cancellationToken);
+            if (replayedOrder is not null)
+            {
+                return new ConvertPurchaseRequisitionsToPurchaseOrderResult(
+                    PurchaseRequisitionConversionStatus.AlreadyConverted,
+                    replayedOrder.Id,
+                    replayedOrder.PurchaseOrderNo,
+                    SupplierCode: replayedOrder.SupplierCode);
+            }
+        }
+
+        await BusinessPartnerAvailabilityGate.EnsureActiveAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            supplierCode,
+            cancellationToken);
+
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId,
             "purchase-order",
             request.PurchaseOrderNo,
             conversionIdempotencyKey,
-            ErpCodingService.Fingerprint(supplierCode, request.CurrencyCode, requisitionNos),
+            fingerprint,
             cancellationToken);
         var existingOrder = await dbContext.PurchaseOrders.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
@@ -668,12 +701,36 @@ public sealed class CreatePurchaseOrderCommandHandler(
 
     public async Task<PurchaseOrderId> Handle(CreatePurchaseOrderCommand request, CancellationToken cancellationToken)
     {
+        var fingerprint = ErpCodingService.Fingerprint(request.SupplierCode, request.SiteCode, request.CurrencyCode, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.PromisedDate}"));
+        var replay = await _codingService.TryPeekReplayAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "purchase-order",
+            request.IdempotencyKey,
+            fingerprint,
+            cancellationToken);
+        if (replay is not null)
+        {
+            return (await dbContext.PurchaseOrders.SingleAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PurchaseOrderNo == replay.Code,
+                cancellationToken)).Id;
+        }
+
+        await BusinessPartnerAvailabilityGate.EnsureActiveAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SupplierCode,
+            cancellationToken);
+
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId, "purchase-order",
             request.PurchaseOrderNo,
             request.IdempotencyKey,
-            ErpCodingService.Fingerprint(request.SupplierCode, request.SiteCode, request.CurrencyCode, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.PromisedDate}")),
+            fingerprint,
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {

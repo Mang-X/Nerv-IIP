@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.ComponentModel.DataAnnotations;
 using FastEndpoints;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
@@ -105,7 +106,8 @@ public sealed record CloseNonconformanceReportRequest(
     NonconformanceReportId NcrId,
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
-    string? ReturnDocumentId);
+    string? ReturnDocumentId,
+    [property: Required, MaxLength(500)] string Reason);
 
 public sealed record AcceptedResponse(bool Accepted);
 
@@ -232,7 +234,8 @@ public sealed class CloseNonconformanceReportEndpoint(ISender sender)
             req.NcrId,
             req.ReworkWorkOrderId,
             req.ScrapMovementId,
-            req.ReturnDocumentId), ct);
+            req.ReturnDocumentId,
+            req.Reason), ct);
         await Send.OkAsync(new AcceptedResponse(true).AsResponseData(), cancellation: ct);
     }
 }

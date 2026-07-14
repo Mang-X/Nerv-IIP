@@ -731,6 +731,7 @@ public sealed class CloseBusinessConsoleQualityNcrEndpoint(
             tokenProvider.BearerToken,
             ncrId,
             downstreamRequest,
+            RequireAuthorizedPrincipalActorReference(),
             cancellationToken);
     }
 }

@@ -26,7 +26,12 @@ public interface IAppHubStateStore
     InstanceDetailFact GetInstanceDetail(string organizationId, string environmentId, string instanceKey);
 }
 
-public sealed class InMemoryAppHubStateStore : IAppHubStateStore
+public interface IInstanceStateSnapshotRecorder
+{
+    Task RecordAsync(InstanceStateSnapshot snapshot, CancellationToken cancellationToken = default);
+}
+
+public sealed class InMemoryAppHubStateStore : IAppHubStateStore, IInstanceStateSnapshotRecorder
 {
     private readonly object _gate = new();
     private readonly ConcurrentDictionary<string, string> _idempotency = new();
@@ -43,13 +48,14 @@ public sealed class InMemoryAppHubStateStore : IAppHubStateStore
     {
         lock (_gate)
         {
-            if (_idempotency.TryGetValue(registration.IdempotencyKey, out var existing))
+            var scopedIdempotencyKey = $"{registration.Context.OrganizationId}\u001f{registration.Context.EnvironmentId}\u001f{registration.IdempotencyKey}";
+            if (_idempotency.TryGetValue(scopedIdempotencyKey, out var existing))
             {
                 return new RegistrationResult(existing, registration.InstanceKey);
             }
 
             var registrationId = $"reg-{_idempotency.Count + 1:000000}";
-            _idempotency[registration.IdempotencyKey] = registrationId;
+            _idempotency[scopedIdempotencyKey] = registrationId;
 
             var app = Applications.FirstOrDefault(x => x.OrganizationId == registration.Context.OrganizationId && x.EnvironmentId == registration.Context.EnvironmentId && x.ApplicationKey == registration.ApplicationKey);
             if (app is null)
@@ -64,7 +70,7 @@ public sealed class InMemoryAppHubStateStore : IAppHubStateStore
             }
 
             Upsert(Nodes, x => x.OrganizationId == registration.Context.OrganizationId && x.EnvironmentId == registration.Context.EnvironmentId && x.NodeKey == registration.NodeKey, new ManagedNodeFact(registration.Context.OrganizationId, registration.Context.EnvironmentId, registration.NodeKey, registration.NodeName, registration.DeploymentKind));
-            Upsert(Instances, x => x.InstanceKey == registration.InstanceKey, new ApplicationInstanceFact(registration.Context.OrganizationId, registration.Context.EnvironmentId, registration.ApplicationKey, registration.Version, registration.NodeKey, registration.InstanceKey, registration.InstanceName, "unknown", "unknown", registration.Metadata));
+            Upsert(Instances, x => x.OrganizationId == registration.Context.OrganizationId && x.EnvironmentId == registration.Context.EnvironmentId && x.InstanceKey == registration.InstanceKey, new ApplicationInstanceFact(registration.Context.OrganizationId, registration.Context.EnvironmentId, registration.ApplicationKey, registration.Version, registration.NodeKey, registration.InstanceKey, registration.InstanceName, "unknown", "unknown", registration.Metadata));
             Upsert(CapabilityManifests, x => x.InstanceKey == registration.InstanceKey, new CapabilityManifestFact(registration.InstanceKey, registration.Capabilities));
             return new RegistrationResult(registrationId, registration.InstanceKey);
         }
@@ -92,6 +98,13 @@ public sealed class InMemoryAppHubStateStore : IAppHubStateStore
 
             Upsert(Instances, x => x.InstanceKey == snapshot.InstanceKey, instance with { ReportedStatus = snapshot.ReportedStatus, HealthStatus = snapshot.HealthStatus, Metadata = snapshot.Metadata });
         }
+    }
+
+    public Task RecordAsync(InstanceStateSnapshot snapshot, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        RecordStateSnapshot(snapshot);
+        return Task.CompletedTask;
     }
 
     public InstanceListResult QueryInstances(InstanceListCriteria query)

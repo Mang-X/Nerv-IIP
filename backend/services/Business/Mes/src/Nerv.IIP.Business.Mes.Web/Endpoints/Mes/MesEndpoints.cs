@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
+using System.Security.Claims;
 
 namespace Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 
@@ -90,6 +91,7 @@ public sealed record ReverseProductionReportRequest(
     [property: RouteParam] string ReportNo,
     string Reason,
     DateTimeOffset? ReversedAtUtc,
+    string ActorRef,
     string? IdempotencyKey = null);
 
 public sealed record ReverseProductionReportResponse(
@@ -107,6 +109,11 @@ public sealed record ListProductionReportsRequest(
     string? WorkCenterId = null,
     string? ShiftId = null,
     string? DeviceAssetId = null);
+
+public sealed record GetProductionReportRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string ReportNo);
 
 public sealed record ListTelemetryProductionReportCandidatesRequest(string OrganizationId, string EnvironmentId, string? Status = null,
     string? WorkCenterId = null, string? DeviceAssetId = null, DateTimeOffset? FromUtc = null, DateTimeOffset? ToUtc = null, int Skip = 0, int Take = 50);
@@ -239,7 +246,6 @@ public sealed record ForceReleaseQualityHoldRequest(
     string EnvironmentId,
     [property: RouteParam] string SourceDocumentId,
     string Reason,
-    string Actor,
     string? SourceService,
     DateTimeOffset? ReleasedAtUtc);
 
@@ -412,6 +418,12 @@ public sealed record TraceabilityMaterialLotRequest(
     string EnvironmentId,
     [property: RouteParam] string MaterialLotId);
 
+public sealed record GetQualityHoldTimelineRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SourceService,
+    [property: RouteParam] string SourceDocumentId);
+
 public abstract class MesEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
     where TRequest : notnull
 {
@@ -450,6 +462,21 @@ public sealed class RunScheduleEndpoint(ISender sender, TimeProvider timeProvide
             req.Trigger,
             timeProvider.GetUtcNow()), ct);
         await Send.OkAsync(result, ct);
+    }
+}
+
+public sealed class GetQualityHoldTimelineEndpoint(ISender sender)
+    : MesEndpoint<GetQualityHoldTimelineRequest, QualityHoldTimelineResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetQualityHoldTimelineEndpoint>());
+
+    public override async Task HandleAsync(GetQualityHoldTimelineRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetQualityHoldTimelineQuery(
+            req.OrganizationId, req.EnvironmentId,
+            string.IsNullOrWhiteSpace(req.SourceService) ? QualityIntegrationEventSources.BusinessMes : req.SourceService,
+            req.SourceDocumentId), ct);
+        await Send.OkAsync(response, ct);
     }
 }
 
@@ -641,15 +668,59 @@ public sealed class ForceReleaseQualityHoldEndpoint(ISender sender, TimeProvider
 
     public override async Task HandleAsync(ForceReleaseQualityHoldRequest req, CancellationToken ct)
     {
+        var governed = MesQualityHoldRequestContext.Resolve(HttpContext);
         var response = await sender.Send(new ForceReleaseQualityHoldCommand(
             req.OrganizationId,
             req.EnvironmentId,
             string.IsNullOrWhiteSpace(req.SourceService) ? QualityIntegrationEventSources.BusinessMes : req.SourceService,
             req.SourceDocumentId,
             req.Reason,
-            req.Actor,
+            governed.Actor,
+            governed.CorrelationId,
+            governed.IdempotencyKey,
             req.ReleasedAtUtc ?? timeProvider.GetUtcNow()), ct);
         await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed record MesQualityHoldRequestContext(string Actor, string CorrelationId, string IdempotencyKey)
+{
+    public static MesQualityHoldRequestContext Resolve(HttpContext context)
+    {
+        var subject = context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? context.User.FindFirstValue("sub");
+        var forwardedActor = context.Request.Headers["X-Authenticated-Actor"].FirstOrDefault();
+        var tokenType = context.User.FindFirstValue("token_type");
+        string actor;
+        if (string.Equals(tokenType, "internal_service", StringComparison.Ordinal))
+        {
+            actor = IsCanonicalActor(forwardedActor)
+                ? forwardedActor!.Trim()
+                : throw new KnownException("A canonical X-Authenticated-Actor is required for internal service requests.");
+        }
+        else
+        {
+            actor = !string.IsNullOrWhiteSpace(subject)
+                ? $"user:{subject}"
+                : throw new KnownException("Authenticated actor is required.");
+        }
+        var correlationId = context.Request.Headers["X-Correlation-Id"].FirstOrDefault();
+        var idempotencyKey = context.Request.Headers["X-Idempotency-Key"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(correlationId) || string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            throw new KnownException("X-Correlation-Id and X-Idempotency-Key are required.");
+        }
+        return new(actor, correlationId.Trim(), idempotencyKey.Trim());
+    }
+
+    private static bool IsCanonicalActor(string? actor)
+    {
+        if (string.IsNullOrWhiteSpace(actor)) return false;
+        var trimmed = actor.Trim();
+        var separator = trimmed.IndexOf(':', StringComparison.Ordinal);
+        return separator > 0
+               && separator < trimmed.Length - 1
+               && !string.IsNullOrWhiteSpace(trimmed[..separator])
+               && !string.IsNullOrWhiteSpace(trimmed[(separator + 1)..]);
     }
 }
 
@@ -981,6 +1052,16 @@ public sealed class ListProductionReportsEndpoint(ISender sender)
     }
 }
 
+public sealed class GetProductionReportEndpoint(ISender sender)
+    : MesEndpoint<GetProductionReportRequest, GetProductionReportResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetProductionReportEndpoint>());
+
+    public override async Task HandleAsync(GetProductionReportRequest req, CancellationToken ct) =>
+        await Send.OkAsync(await sender.Send(
+            new GetProductionReportQuery(req.OrganizationId, req.EnvironmentId, req.ReportNo), ct), ct);
+}
+
 public sealed class ReverseProductionReportEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<ReverseProductionReportRequest, ReverseProductionReportResponse>
 {
@@ -994,6 +1075,7 @@ public sealed class ReverseProductionReportEndpoint(ISender sender, TimeProvider
             req.ReportNo,
             req.Reason,
             req.ReversedAtUtc ?? timeProvider.GetUtcNow(),
+            req.ActorRef,
             req.IdempotencyKey), ct);
         await Send.OkAsync(new ReverseProductionReportResponse(result.Id, result.ReportNo, result.OriginalReportNo), ct);
     }
@@ -1341,6 +1423,7 @@ public static class MesEndpointContracts
         new(typeof(CancelWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/cancel", MesPermissionCodes.WorkOrdersManage, "cancelBusinessMesWorkOrder"),
         new(typeof(RecordEngineeringChangeDecisionEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/engineering-change-decisions", MesPermissionCodes.WorkOrdersManage, "recordBusinessMesEngineeringChangeDecision"),
         new(typeof(ForceReleaseQualityHoldEndpoint), "POST", "/api/business/v1/mes/quality-holds/{sourceDocumentId}/force-release", MesPermissionCodes.QualityWrite, "forceReleaseBusinessMesQualityHold"),
+        new(typeof(GetQualityHoldTimelineEndpoint), "GET", "/api/business/v1/mes/quality-holds/{sourceDocumentId}/timeline", MesPermissionCodes.QualityRead, "getBusinessMesQualityHoldTimeline"),
         new(typeof(GetMaterialReadinessEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialReadiness"),
         new(typeof(CreateMaterialIssueRequestEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/material-issue-requests", MesPermissionCodes.MaterialsManage, "createBusinessMesMaterialIssueRequest"),
         new(typeof(ListMaterialIssueRequestsEndpoint), "GET", "/api/business/v1/mes/material-issue-requests", MesPermissionCodes.MaterialsRead, "listBusinessMesMaterialIssueRequests"),
@@ -1356,6 +1439,7 @@ public static class MesEndpointContracts
         new(typeof(GetWipSummaryEndpoint), "GET", "/api/business/v1/mes/wip", MesPermissionCodes.OperationsRead, "getBusinessMesWipSummary"),
         new(typeof(RecordProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingWrite, "recordBusinessMesProductionReport"),
         new(typeof(ListProductionReportsEndpoint), "GET", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingRead, "listBusinessMesProductionReports"),
+        new(typeof(GetProductionReportEndpoint), "GET", "/api/business/v1/mes/production-reports/{reportNo}", MesPermissionCodes.ReportingRead, "getBusinessMesProductionReport"),
         new(typeof(ReverseProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports/{reportNo}/reverse", MesPermissionCodes.ReportingWrite, "reverseBusinessMesProductionReport"),
         new(typeof(ListTelemetryProductionReportCandidatesEndpoint), "GET", "/api/business/v1/mes/telemetry-production-report-candidates", MesPermissionCodes.ReportingRead, "listBusinessMesTelemetryProductionReportCandidates"),
         new(typeof(GetTelemetryProductionReportCandidateEndpoint), "GET", "/api/business/v1/mes/telemetry-production-report-candidates/{candidateId}", MesPermissionCodes.ReportingRead, "getBusinessMesTelemetryProductionReportCandidate"),

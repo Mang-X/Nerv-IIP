@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Nerv.IIP.Contracts.MasterData;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.DomainEvents;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 
@@ -47,7 +48,8 @@ public sealed class MasterDataIntegrationEventTests
     [Fact]
     public void Sku_disabled_event_carries_reason_without_sensitive_payload()
     {
-        var converter = new SkuDisabledIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor());
+        var converter = new SkuDisabledIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor(
+            new MasterDataIntegrationEventContext("corr-disable-001", "cause-disable-001", "user:masterdata-admin")));
         var domainEvent = new SkuDisabledDomainEvent("org-001", "env-dev", "SKU-OLD", "duplicate registration");
 
         var integrationEvent = converter.Convert(domainEvent);
@@ -55,7 +57,36 @@ public sealed class MasterDataIntegrationEventTests
         Assert.Equal("masterData.SkuDisabled", integrationEvent.EventType);
         Assert.Equal("disabled", integrationEvent.Payload.Status);
         Assert.Equal("duplicate registration", integrationEvent.Payload.DisabledReason);
+        Assert.Equal("user:masterdata-admin", integrationEvent.Actor);
         Assert.DoesNotContain("secret", JsonSerializer.Serialize(integrationEvent, new JsonSerializerOptions(JsonSerializerDefaults.Web)), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("active")]
+    [InlineData("disabled")]
+    public void Business_partner_changed_event_carries_current_partner_status(string status)
+    {
+        var converter = new BusinessPartnerChangedIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor());
+        var domainEvent = new BusinessPartnerChangedDomainEvent("org-001", "env-dev", "BP-001", status);
+
+        var integrationEvent = converter.Convert(domainEvent);
+
+        Assert.Equal("masterData.BusinessPartnerChanged", integrationEvent.EventType);
+        Assert.Equal("business-partner", integrationEvent.Payload.ResourceType);
+        Assert.Equal("BP-001", integrationEvent.Payload.Code);
+        Assert.Equal(status, integrationEvent.Payload.Status);
+    }
+
+    [Fact]
+    public void Separate_business_partner_changes_have_distinct_idempotency_keys()
+    {
+        var converter = new BusinessPartnerChangedIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor());
+
+        var active = converter.Convert(new BusinessPartnerChangedDomainEvent("org-001", "env-dev", "BP-001", "active"));
+        var disabled = converter.Convert(new BusinessPartnerChangedDomainEvent("org-001", "env-dev", "BP-001", "disabled"));
+
+        Assert.NotEqual(active.EventId, disabled.EventId);
+        Assert.NotEqual(active.IdempotencyKey, disabled.IdempotencyKey);
     }
 
     [Fact]
@@ -70,6 +101,30 @@ public sealed class MasterDataIntegrationEventTests
         Assert.Equal("quality-reason", integrationEvent.Payload.CodeSet);
         Assert.Equal("scratch", integrationEvent.Payload.Code);
         Assert.Equal("masterdata:reference-data-code-changed:org-001:env-dev:quality-reason:scratch", integrationEvent.IdempotencyKey);
+    }
+
+    [Fact]
+    public void Device_asset_changed_event_carries_disabled_status_from_aggregate_change()
+    {
+        var asset = DeviceAsset.Register("org-001", "env-dev", "DEV-CNC-01", "CNC", "LINE-1", "WC-1");
+        asset.ClearDomainEvents();
+        asset.Disable("retired");
+        var domainEvent = Assert.Single(asset.GetDomainEvents().OfType<DeviceAssetChangedDomainEvent>());
+        var converter = new DeviceAssetChangedIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor());
+
+        var integrationEvent = converter.Convert(domainEvent);
+
+        Assert.Equal("disabled", integrationEvent.Payload.Status);
+    }
+
+    [Fact]
+    public void Device_asset_changed_events_for_distinct_changes_use_distinct_idempotency_keys()
+    {
+        var converter = new DeviceAssetChangedIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor());
+        var first = converter.Convert(new DeviceAssetChangedDomainEvent("org-001", "env-dev", "DEV-CNC-01"));
+        var second = converter.Convert(new DeviceAssetChangedDomainEvent("org-001", "env-dev", "DEV-CNC-01"));
+
+        Assert.NotEqual(first.IdempotencyKey, second.IdempotencyKey);
     }
 
     private sealed class StubMasterDataIntegrationEventContextAccessor(

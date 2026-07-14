@@ -8,7 +8,7 @@ namespace Nerv.IIP.Business.MasterData.Web.Tests;
 public sealed class MasterDataIntegrationEventContextTests
 {
     [Fact]
-    public void Http_context_accessor_reads_correlation_causation_and_actor_headers()
+    public void Http_context_accessor_ignores_untrusted_actor_header()
     {
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Headers["X-Correlation-Id"] = "corr-http-001";
@@ -23,7 +23,7 @@ public sealed class MasterDataIntegrationEventContextTests
 
         Assert.Equal("corr-http-001", context.CorrelationId);
         Assert.Equal("cmd-http-001", context.CausationId);
-        Assert.Equal("user:planner-001", context.Actor);
+        Assert.Equal("system:business-masterdata", context.Actor);
     }
 
     [Fact]

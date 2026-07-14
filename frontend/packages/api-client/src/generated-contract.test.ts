@@ -6,6 +6,8 @@ import type {
   BusinessConsoleApprovalChainResponse,
   BusinessConsoleBarcodePrintBatchResponse,
   BusinessConsoleCancelScheduledEngineeringChangeRequest,
+  BusinessConsoleConnectorCollectionHealthRequest,
+  BusinessConsoleConnectorCollectionHealthResponse,
   BusinessConsoleCreateErpPurchaseRequisitionEnvelope,
   BusinessConsoleCreateErpPurchaseRequisitionResponse,
   BusinessConsoleCreateOrUpdateForecastInputRequest,
@@ -20,6 +22,12 @@ import type {
   BusinessConsoleForecastInputListEnvelope,
   BusinessConsoleForecastInputListResponse,
   BusinessConsoleMaintenanceAssetReliabilityEnvelope,
+  BusinessConsoleMesQualityHoldTimelineItem,
+  BusinessConsoleMesQualityHoldTimelineRequest,
+  BusinessConsoleMesQualityHoldTimelineResponse,
+  BusinessConsoleNotificationMessageItem,
+  BusinessConsoleNotificationTaskItem,
+  BusinessConsoleMarkNotificationMessageReadResponse,
   BusinessConsoleOpenNcrFromInspectionEnvelope,
   BusinessConsoleOpenNcrFromInspectionRequest,
   BusinessConsoleOpenNcrFromInspectionResponse,
@@ -27,6 +35,7 @@ import type {
   BusinessConsoleRescheduleEngineeringChangeRequest,
   BusinessConsoleSchedulingPlanSummaryResponse,
   BusinessConsoleSearchResponse,
+  BusinessConsoleSetMasterDataResourceEnabledRequest,
   BusinessConsoleTelemetryOeeEnvelope,
   BusinessConsoleWorkbenchSummaryResponse,
   CancelBusinessConsolePlanningDemandData,
@@ -83,6 +92,7 @@ import {
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
   getBusinessConsoleMesMaterialReadinessQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
+  getBusinessConsoleMesProductionReportQueryOptions,
   getBusinessConsoleMesProductionPlanReadinessQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
@@ -127,6 +137,24 @@ import {
 } from './iam'
 
 describe('generated API client contract', () => {
+  it('exposes notification message task and read result shapes through the stable boundary', () => {
+    expectTypeOf<BusinessConsoleNotificationMessageItem>().toMatchTypeOf<{
+      messageId?: string
+      recipientRef?: string
+      status?: string
+      readAtUtc?: string | null
+    }>()
+    expectTypeOf<BusinessConsoleNotificationTaskItem>().toMatchTypeOf<{
+      taskId?: string
+      recipientRef?: string
+      status?: string
+    }>()
+    expectTypeOf<BusinessConsoleMarkNotificationMessageReadResponse>().toMatchTypeOf<{
+      messageId?: string
+      status?: string
+      readAtUtc?: string
+    }>()
+  })
   it('defaults to a browser-relative base URL instead of the OpenAPI export server', () => {
     const config = client.getConfig()
 
@@ -205,6 +233,7 @@ describe('generated API client contract', () => {
     expect(completeBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
     expect(getBusinessConsoleMesWipSummaryQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesProductionReportsQueryOptions).toBeTypeOf('function')
+    expect(getBusinessConsoleMesProductionReportQueryOptions).toBeTypeOf('function')
     expect(recordBusinessConsoleMesDefectMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesRelatedQualityItemsQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions).toBeTypeOf('function')
@@ -258,6 +287,10 @@ describe('generated API client contract', () => {
       'queryBusinessConsoleTelemetryDeviceHistoryQueryOptions',
       'queryBusinessConsoleTelemetryOeeQueryOptions',
       'queryBusinessConsoleTelemetryRuntimeAvailabilityQueryOptions',
+      'queryBusinessConsoleTelemetryRuntimeHoursQueryOptions',
+      'listBusinessConsoleNotificationMessagesQueryOptions',
+      'listBusinessConsoleNotificationTasksQueryOptions',
+      'markBusinessConsoleNotificationMessageReadMutationOptions',
       'previewBusinessConsoleSchedulingPlanMutationOptions',
       'listBusinessConsoleSchedulingPlansQueryOptions',
       'createBusinessConsoleSchedulingPlanMutationOptions',
@@ -308,6 +341,10 @@ describe('generated API client contract', () => {
       'queryBusinessConsoleTelemetryDeviceHistory',
       'queryBusinessConsoleTelemetryOee',
       'queryBusinessConsoleTelemetryRuntimeAvailability',
+      'queryBusinessConsoleTelemetryRuntimeHours',
+      'listBusinessConsoleNotificationMessages',
+      'listBusinessConsoleNotificationTasks',
+      'markBusinessConsoleNotificationMessageRead',
       'previewBusinessConsoleSchedulingPlan',
       'listBusinessConsoleSchedulingPlans',
       'createBusinessConsoleSchedulingPlan',
@@ -413,6 +450,28 @@ describe('generated API client contract', () => {
     for (const functionName of expectedFunctions) {
       expect(businessConsoleClient[functionName], functionName).toBeTypeOf('function')
     }
+  })
+
+  it('exports collection health and quality hold lifecycle facades through stable api-client entry points', () => {
+    const expectedFunctions = [
+      'queryBusinessConsoleTelemetryConnectorCollectionHealth',
+      'queryBusinessConsoleTelemetryConnectorCollectionHealthQueryOptions',
+      'getBusinessConsoleMesQualityHoldTimeline',
+      'getBusinessConsoleMesQualityHoldTimelineQueryOptions',
+    ] as const
+
+    for (const functionName of expectedFunctions) {
+      expect(businessConsoleClient[functionName], functionName).toBeTypeOf('function')
+    }
+
+    expectTypeOf<BusinessConsoleConnectorCollectionHealthRequest>().toBeObject()
+    expectTypeOf<BusinessConsoleConnectorCollectionHealthResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleMesQualityHoldTimelineRequest>().toBeObject()
+    expectTypeOf<BusinessConsoleMesQualityHoldTimelineResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleMesQualityHoldTimelineItem>().toBeObject()
+    expectTypeOf<
+      Pick<BusinessConsoleSetMasterDataResourceEnabledRequest, 'idempotencyKey'>
+    >().toEqualTypeOf<{ idempotencyKey: string }>()
   })
 
   it('exports wave2 refreshed Business Console request-payload Data types', () => {

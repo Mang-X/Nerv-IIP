@@ -206,9 +206,12 @@ public sealed class SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalid
                 operationIds.Contains(x.OperationTaskIdValue))
             .ToArrayAsync(cancellationToken);
 
+        var reasonCode = string.IsNullOrWhiteSpace(integrationEvent.Payload.ReasonCode)
+            ? null
+            : integrationEvent.Payload.ReasonCode.Trim();
         foreach (var task in tasks)
         {
-            task.MarkScheduleInvalidated();
+            task.MarkScheduleInvalidated(reasonCode);
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);

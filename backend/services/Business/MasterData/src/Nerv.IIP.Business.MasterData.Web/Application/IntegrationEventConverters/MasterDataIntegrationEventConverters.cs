@@ -44,7 +44,7 @@ public sealed class SkuDisabledIntegrationEventConverter(IMasterDataIntegrationE
             domainEvent.OrganizationId,
             domainEvent.EnvironmentId,
             context.Actor,
-            EventIds.Idempotency("sku-disabled", domainEvent.OrganizationId, domainEvent.EnvironmentId, domainEvent.Code),
+            EventIds.Idempotency("sku-disabled", domainEvent.OrganizationId, domainEvent.EnvironmentId, domainEvent.Code, domainEvent.OperationId ?? context.IdempotencyKey ?? context.CorrelationId),
             new MasterDataDisabledPayload("sku", domainEvent.Code, "disabled", domainEvent.Reason, occurredAtUtc));
     }
 }
@@ -79,8 +79,9 @@ public sealed class BusinessPartnerChangedIntegrationEventConverter(IMasterDataI
     {
         var occurredAtUtc = DateTimeOffset.UtcNow;
         var context = contextAccessor.GetContext();
+        var eventId = EventIds.New();
         return new BusinessPartnerChangedIntegrationEvent(
-            EventIds.New(),
+            eventId,
             MasterDataIntegrationEventTypes.BusinessPartnerChanged,
             MasterDataIntegrationEventVersions.V1,
             occurredAtUtc,
@@ -90,8 +91,8 @@ public sealed class BusinessPartnerChangedIntegrationEventConverter(IMasterDataI
             domainEvent.OrganizationId,
             domainEvent.EnvironmentId,
             context.Actor,
-            EventIds.Idempotency("partner-changed", domainEvent.OrganizationId, domainEvent.EnvironmentId, domainEvent.Code),
-            new MasterDataChangedPayload("business-partner", domainEvent.Code, "active", occurredAtUtc));
+            EventIds.Idempotency("partner-changed", domainEvent.OrganizationId, domainEvent.EnvironmentId, domainEvent.Code, eventId),
+            new MasterDataChangedPayload("business-partner", domainEvent.Code, domainEvent.Status, occurredAtUtc));
     }
 }
 
@@ -147,9 +148,10 @@ public sealed class DeviceAssetChangedIntegrationEventConverter(IMasterDataInteg
     public DeviceAssetChangedIntegrationEvent Convert(DeviceAssetChangedDomainEvent domainEvent)
     {
         var occurredAtUtc = DateTimeOffset.UtcNow;
+        var eventId = EventIds.New();
         var context = contextAccessor.GetContext();
         return new DeviceAssetChangedIntegrationEvent(
-            EventIds.New(),
+            eventId,
             MasterDataIntegrationEventTypes.DeviceAssetChanged,
             MasterDataIntegrationEventVersions.V1,
             occurredAtUtc,
@@ -159,8 +161,8 @@ public sealed class DeviceAssetChangedIntegrationEventConverter(IMasterDataInteg
             domainEvent.OrganizationId,
             domainEvent.EnvironmentId,
             context.Actor,
-            EventIds.Idempotency("device-asset-changed", domainEvent.OrganizationId, domainEvent.EnvironmentId, domainEvent.Code),
-            new MasterDataChangedPayload("device-asset", domainEvent.Code, "active", occurredAtUtc));
+            EventIds.Idempotency("device-asset-changed", domainEvent.OrganizationId, domainEvent.EnvironmentId, domainEvent.Code, eventId),
+            new MasterDataChangedPayload("device-asset", domainEvent.Code, domainEvent.Status, occurredAtUtc));
     }
 }
 

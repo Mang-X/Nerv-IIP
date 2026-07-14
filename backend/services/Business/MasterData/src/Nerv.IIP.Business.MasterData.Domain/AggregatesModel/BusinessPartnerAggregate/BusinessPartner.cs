@@ -46,7 +46,7 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
         this.AddDomainEvent(new MasterDataAggregateCreatedDomainEvent(nameof(BusinessPartner), OrganizationId, EnvironmentId, Code));
-        this.AddDomainEvent(new BusinessPartnerChangedDomainEvent(OrganizationId, EnvironmentId, Code));
+        this.AddDomainEvent(new BusinessPartnerChangedDomainEvent(OrganizationId, EnvironmentId, Code, BusinessPartnerStatuses.Active));
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -204,7 +204,7 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
         Disabled = true;
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateDisabledDomainEvent(nameof(BusinessPartner), OrganizationId, EnvironmentId, Code, validReason));
-        this.AddDomainEvent(new BusinessPartnerChangedDomainEvent(OrganizationId, EnvironmentId, Code));
+        this.AddDomainEvent(new BusinessPartnerChangedDomainEvent(OrganizationId, EnvironmentId, Code, BusinessPartnerStatuses.Disabled));
     }
 
     public void Enable(string reason)
@@ -223,7 +223,7 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
     {
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateUpdatedDomainEvent(nameof(BusinessPartner), OrganizationId, EnvironmentId, Code));
-        this.AddDomainEvent(new BusinessPartnerChangedDomainEvent(OrganizationId, EnvironmentId, Code));
+        this.AddDomainEvent(new BusinessPartnerChangedDomainEvent(OrganizationId, EnvironmentId, Code, BusinessPartnerStatuses.Active));
     }
 
     private void EnsureEnabled()

@@ -436,12 +436,18 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
             return null;
         }
 
-        if (!string.IsNullOrWhiteSpace(authorization.PrincipalId))
+        var actorRef = !string.IsNullOrWhiteSpace(authorization.PrincipalId)
+            ? authorization.PrincipalId
+            : authorization.LoginName;
+        if (string.IsNullOrWhiteSpace(actorRef))
         {
-            return authorization.PrincipalId;
+            return null;
         }
 
-        return string.IsNullOrWhiteSpace(authorization.LoginName) ? null : authorization.LoginName;
+        var actorType = string.IsNullOrWhiteSpace(authorization.PrincipalType)
+            ? "user"
+            : authorization.PrincipalType;
+        return BusinessGatewayPrincipalReferences.ToRecipientRef(actorType, actorRef);
     }
 
     private static string SummaryStatus(

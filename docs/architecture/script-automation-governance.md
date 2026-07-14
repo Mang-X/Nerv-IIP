@@ -12,6 +12,7 @@
 6. `generate` 脚本可以写声明过的生成产物；生成行为不得藏在纯 verify 脚本里。
 7. `release-install` 脚本必须走发布迁移、seed、备份和诊断契约；不得沿用本地验证脚本里的删除数据库、默认密码或隐式 AutoMigrate 习惯。
 8. macOS/Linux 支持必须通过跨平台兼容门禁后才能声明；当前 IAM core verify 已在 Ubuntu 22.04.3 WSL 环境完成兼容门禁，后续脚本仍需按脚本粒度记录证据。
+9. Agent-owned 真实全栈验证必须使用 `.\nerv.ps1 fullstack run -Scenario smoke`；交互 `fullstack start` 只用于诊断，并必须在交接前停止。
 
 ## 分类矩阵
 
@@ -77,6 +78,9 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
 3. 删除或重建 disposable database 前必须打印目标数据库名和 profile；release 脚本不得删除未知库。
 4. Docker Compose 脚本必须声明是否保留共享依赖容器，建议提供 `-Cleanup` 或 `-KeepContainers` 参数。
 5. 后台 Web 服务必须由 helper 启动，并在 finally 中清理进程树。
+6. 并行全栈 session 必须用 session ID 同时绑定 manifest、动态 endpoint、进程身份、容器标签、专属卷和 artifact；不得按通用名称前缀清理，也不得自动执行 `aspire stop --all` 或 Docker prune。
+7. 一次性 full-stack session 默认最多三个活动实例，不设置最低可用内存门槛。端口从 manifest 发现，每个 session 使用自己的 Aspire/DCP 代理，不维护共享 Nginx 路由表。
+8. 自动化 `fullstack run` 无论成功或失败都必须进入 finally 清理运行资源，并保留 `artifacts/fullstack/<sessionId>/`；`fullstack gc` 只回收可以证明陈旧且属于本系统的 session。
 
 ## 日志与诊断
 
@@ -92,7 +96,7 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
 | --- | --- | --- |
 | fast | 快速发现脚本解析、治理和无外部依赖测试问题 | `pwsh scripts/check-script-governance.ps1`、`git diff --check` |
 | infra | 验证 Docker、本地依赖、真实 PostgreSQL profile、disposable database 和 opt-in 发布演练 | `pwsh scripts/verify-fourth-slice-real-infra.ps1`、`pwsh scripts/verify-fifth-slice-persistence-foundation.ps1`、`pwsh scripts/verify-iam-persistent-auth-foundation.ps1`、`pwsh scripts/verify-production-release-rehearsal.ps1 -Profile dependencies` |
-| full | 串联 OpenAPI 导出、api-client 生成、前端质量门禁、后端和 Connector Host 回归 | `pwsh scripts/verify-third-slice-console.ps1`、后续总验收脚本 |
+| full | 串联 OpenAPI 导出、api-client 生成、前端质量门禁、后端和 Connector Host 回归；真实浏览器全栈使用一次性 session | `.\nerv.ps1 fullstack run -Scenario smoke`、`pwsh scripts/verify-parallel-fullstack-isolation.ps1 -Sessions 2`、`pwsh scripts/verify-third-slice-console.ps1` |
 
 ## 跨平台兼容门禁
 

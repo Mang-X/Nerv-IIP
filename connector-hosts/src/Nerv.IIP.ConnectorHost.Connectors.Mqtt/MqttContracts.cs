@@ -40,6 +40,7 @@ public sealed record MqttConnectorState(
     long ReceivedSamples,
     long PostedBuckets,
     long DroppedSamples,
+    long ErrorCount,
     long ReconnectCount,
     DateTimeOffset? LastSampleAtUtc,
     DateTimeOffset? LastPostedBucketEndUtc)
@@ -49,6 +50,7 @@ public sealed record MqttConnectorState(
         ["receivedSamples"] = ReceivedSamples,
         ["postedBuckets"] = PostedBuckets,
         ["droppedSamples"] = DroppedSamples,
+        ["errorCount"] = ErrorCount,
         ["reconnectCount"] = ReconnectCount
     };
 }

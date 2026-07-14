@@ -9,6 +9,7 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useBusinessScheduling } from '@/composables/useBusinessScheduling'
+import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -60,8 +61,9 @@ const columns: NvDataTableColumn<BusinessConsoleSchedulingPlanSummaryResponse>[]
     cellClass: 'font-medium',
     accessor: (row) => row.planId ?? '未命名方案',
   },
-  { key: 'status', header: '状态', width: 'w-28' },
+  { key: 'status', header: '状态', width: 'w-40' },
   { key: 'range', header: '时间范围', accessor: () => '明细中确认' },
+  { key: 'invalidation', header: '失效原因', accessor: invalidationSummary },
   {
     key: 'operationCount',
     header: '工序数',
@@ -102,6 +104,12 @@ function statusTone(status?: string | null) {
   if (status === 'released') return 'success'
   if (status === 'generated') return 'warning'
   return 'neutral'
+}
+
+function invalidationSummary(row: BusinessConsoleSchedulingPlanSummaryResponse) {
+  return row.isInvalidated
+    ? describeScheduleInvalidationReason(row.latestInvalidationReasonCode)
+    : '—'
 }
 
 function conflictSummary(row: BusinessConsoleSchedulingPlanSummaryResponse) {
@@ -157,6 +165,18 @@ function isReleased(
   row: BusinessConsoleSchedulingPlanSummaryResponse | BusinessConsoleSchedulePlan | undefined,
 ) {
   return row?.status === 'released'
+}
+
+// 失效方案禁止发布类操作：排程前提已变化，须先重排再发布，否则会下达一份过期计划。
+function canRelease(row: BusinessConsoleSchedulingPlanSummaryResponse) {
+  return !isReleased(row) && !row.isInvalidated
+}
+
+function releaseDisabledReason(row: BusinessConsoleSchedulingPlanSummaryResponse) {
+  if (isReleased(row)) return '方案已发布'
+  if (row.isInvalidated)
+    return `方案已失效（${describeScheduleInvalidationReason(row.latestInvalidationReasonCode)}），请重排后再发布`
+  return '发布该排程方案'
 }
 
 function loadText(load: BusinessConsoleSchedulingResourceLoad) {
@@ -254,7 +274,16 @@ function reasonLabel(reason?: string | null) {
           empty-message="暂无 APS 排程方案。请先通过排程服务生成方案。"
         >
           <template #cell-status="{ row }">
-            <NvStatusBadge :label="statusLabel(row.status)" :tone="statusTone(row.status)" />
+            <div class="flex flex-wrap items-center gap-1.5">
+              <NvStatusBadge :label="statusLabel(row.status)" :tone="statusTone(row.status)" />
+              <NvStatusBadge v-if="row.isInvalidated" label="已失效" tone="warning" />
+            </div>
+          </template>
+          <template #cell-invalidation="{ row }">
+            <span v-if="row.isInvalidated" class="text-sm text-warning-strong">
+              {{ describeScheduleInvalidationReason(row.latestInvalidationReasonCode) }}
+            </span>
+            <span v-else class="text-muted-foreground">—</span>
           </template>
           <template #cell-generatedAtUtc="{ row }">
             {{ formatDateTime(row.generatedAtUtc) }}
@@ -268,7 +297,8 @@ function reasonLabel(reason?: string | null) {
               <NvButton
                 size="sm"
                 type="button"
-                :disabled="isReleased(row) || releasePlanPending"
+                :disabled="!canRelease(row) || releasePlanPending"
+                :title="releaseDisabledReason(row)"
                 @click="publish(row.planId)"
               >
                 <Spinner v-if="releasePlanPending" aria-hidden="true" />

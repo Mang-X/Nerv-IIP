@@ -6,7 +6,7 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Notification.Web.Application.Commands.Notifications;
 
-public sealed record MarkNotificationMessageReadCommand(string OrganizationId, string EnvironmentId, string MessageId, DateTimeOffset Now)
+public sealed record MarkNotificationMessageReadCommand(string OrganizationId, string EnvironmentId, string MessageId, string RecipientRef, DateTimeOffset Now)
     : ICommand<MarkNotificationMessageReadResponse>;
 
 public sealed class MarkNotificationMessageReadCommandHandler(ApplicationDbContext dbContext)
@@ -20,7 +20,7 @@ public sealed class MarkNotificationMessageReadCommandHandler(ApplicationDbConte
             .FirstOrDefaultAsync(x =>
                 x.OrganizationId == command.OrganizationId
                 && x.EnvironmentId == command.EnvironmentId
-                && x.Messages.Any(message => message.Id == messageId),
+                && x.Messages.Any(message => message.Id == messageId && message.RecipientRef == command.RecipientRef),
                 cancellationToken)
             ?? throw new KnownException($"Notification message was not found: {command.MessageId}");
 

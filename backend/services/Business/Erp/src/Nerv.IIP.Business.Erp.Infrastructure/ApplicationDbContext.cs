@@ -26,6 +26,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Business.Erp.Infrastructure.MasterData;
 using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Erp.Infrastructure;
@@ -61,6 +62,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
     public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
     public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
+    public DbSet<BusinessPartnerAvailability> BusinessPartnerAvailabilities => Set<BusinessPartnerAvailability>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

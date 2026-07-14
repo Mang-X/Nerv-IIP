@@ -81,12 +81,16 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public string? DeviceAssetId { get; private set; }
     public string? ShiftId { get; private set; }
     public DateTimeOffset? AssignedAtUtc { get; private set; }
+    // Set only when a released APS schedule places this task (ApplyScheduleAssignment); never by manual
+    // dispatch (Assign). This is the schedule-specific fact that distinguishes 已排程 from 未排程.
+    public DateTimeOffset? ScheduledAtUtc { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public string SkuCode { get; private set; } = string.Empty;
     public string UomCode { get; private set; } = "pcs";
     public decimal PlannedQuantity { get; private set; }
     public bool RequiresQualityInspection { get; private set; }
     public string? OperationCode { get; private set; }
+    public string? ScheduleInvalidationReasonCode { get; private set; }
 
     public string OperationTaskId => OperationTaskIdValue;
 
@@ -190,7 +194,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         ExistingEndUtc = null;
     }
 
-    public void MarkScheduleInvalidated()
+    public void MarkScheduleInvalidated(string? reasonCode = null)
     {
         if (Status is OperationTaskLifecycleStatus.InProgress or
             OperationTaskLifecycleStatus.Paused or
@@ -201,6 +205,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         }
 
         Status = OperationTaskLifecycleStatus.ScheduleInvalidated;
+        ScheduleInvalidationReasonCode = NormalizeOptional(reasonCode);
     }
 
     public void Pause(DateTimeOffset pausedAtUtc)
@@ -267,6 +272,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             throw new InvalidOperationException("Closed operation task cannot be assigned.");
         }
 
+        if (Status == OperationTaskLifecycleStatus.ScheduleInvalidated)
+        {
+            throw new KnownException("Schedule invalidated operation task cannot be dispatched until it is rescheduled.");
+        }
+
         AssignedUserId = NormalizeOptional(assignedUserId);
         DeviceAssetId = NormalizeOptional(deviceAssetId);
         ShiftId = NormalizeOptional(shiftId);
@@ -318,10 +328,14 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         DeviceAssetId = NormalizeOptional(deviceAssetId);
         OperationCode = NormalizeOptional(operationCode) ?? OperationCode;
         AssignedAtUtc = assignedAtUtc;
+        ScheduledAtUtc = assignedAtUtc;
         if (Status == OperationTaskLifecycleStatus.ScheduleInvalidated)
         {
             Status = OperationTaskLifecycleStatus.Queued;
         }
+
+        // A released schedule assignment re-plans the task, so any prior invalidation reason no longer applies.
+        ScheduleInvalidationReasonCode = null;
     }
 
     private static string NormalizeAlternatives(IReadOnlyCollection<string> values)

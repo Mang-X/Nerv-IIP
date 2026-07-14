@@ -34,20 +34,24 @@ export interface SchedulingPlanSelection extends BusinessContextFields {
 }
 
 function defaultFilters(): SchedulingPlanListFilters {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    pageIndex: 1,
-    pageSize: SINGLE_PAGE_PLAN_LIST_SIZE,
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      pageIndex: 1,
+      pageSize: SINGLE_PAGE_PLAN_LIST_SIZE,
+    }),
+  )
 }
 
 function defaultSelection(): SchedulingPlanSelection {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    planId: '',
-  }))
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      planId: '',
+    }),
+  )
 }
 
 function unwrapPlans(envelope: BusinessConsoleSchedulingPlanSummaryListEnvelope | undefined) {
@@ -71,7 +75,9 @@ function isBusinessQuery(ids: string[]) {
     const keyParts = Array.isArray(entry.key) ? entry.key : [entry.key]
 
     return keyParts.some((part) => {
-      return typeof part === 'object' && part !== null && '_id' in part && ids.includes(String(part._id))
+      return (
+        typeof part === 'object' && part !== null && '_id' in part && ids.includes(String(part._id))
+      )
     })
   }
 }
@@ -86,7 +92,11 @@ export function useBusinessScheduling() {
   const queryCache = useQueryCache()
 
   const plansQuery = useQuery(() => {
-    filters.pageIndex = page.value
+    // Scheduling ListSchedulePlans is a 0-based pageIndex contract (Skip(pageIndex * pageSize),
+    // asserted by SchedulingEndpointContractTests). `page` is the 1-based UI page, so a page of 1
+    // must map to API pageIndex 0 — otherwise the first 100 plans are skipped and the workbench
+    // shows nothing until there are >100 plans.
+    filters.pageIndex = Math.max(0, page.value - 1)
     filters.pageSize = Number(pageSize.value) || SINGLE_PAGE_PLAN_LIST_SIZE
 
     return {
@@ -134,7 +144,9 @@ export function useBusinessScheduling() {
     planDetailError: detailQuery.error,
     planDetailPending: detailQuery.isLoading,
     plans: computed<BusinessConsoleSchedulingPlanSummaryResponse[]>(() =>
-      unwrapPlans(plansQuery.data.value as BusinessConsoleSchedulingPlanSummaryListEnvelope | undefined),
+      unwrapPlans(
+        plansQuery.data.value as BusinessConsoleSchedulingPlanSummaryListEnvelope | undefined,
+      ),
     ),
     plansError: plansQuery.error,
     plansPending: plansQuery.isLoading,

@@ -302,14 +302,14 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         Touch();
     }
 
-    public void Disable(string reason)
+    public void Disable(string reason, string? operationId = null)
     {
         var validReason = Required(reason);
         EnsureEnabled();
         Disabled = true;
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateDisabledDomainEvent(nameof(Sku), OrganizationId, EnvironmentId, Code, validReason));
-        this.AddDomainEvent(new SkuDisabledDomainEvent(OrganizationId, EnvironmentId, Code, validReason));
+        this.AddDomainEvent(new SkuDisabledDomainEvent(OrganizationId, EnvironmentId, Code, validReason, operationId));
     }
 
     public void Enable(string reason)

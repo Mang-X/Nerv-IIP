@@ -2,6 +2,11 @@
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesDispatchTasks } from '@/composables/useBusinessMes'
+import {
+  describeScheduleInvalidationReason,
+  isScheduleInvalidated,
+  resolveScheduleStatus,
+} from '@/composables/useScheduleInvalidation'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
@@ -93,6 +98,7 @@ const columns: NvDataTableColumn<DispatchRow>[] = [
   },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'scheduleStatus', header: '排程状态', width: 'w-56' },
   {
     key: 'workCenterId',
     header: '工作中心',
@@ -115,7 +121,11 @@ const assignOpen = shallowRef(false)
 const assignTarget = shallowRef<DispatchRow | null>(null)
 const assignedUserId = ref('')
 function canDispatch(row: DispatchRow) {
-  return Boolean(row.operationTaskId) && !row.blockingReasons?.length
+  return (
+    Boolean(row.operationTaskId) &&
+    !row.blockingReasons?.length &&
+    !isScheduleInvalidated(row.status)
+  )
 }
 function openAssign(row: DispatchRow) {
   if (!canDispatch(row)) return
@@ -143,6 +153,12 @@ async function confirmAssign() {
   } catch (error) {
     notifyError(error)
   }
+}
+
+function dispatchActionLabel(row: DispatchRow) {
+  if (isScheduleInvalidated(row.status)) return '排程已失效，待重排'
+  if (row.blockingReasons?.length) return '有阻塞，先处理'
+  return '派工（指派操作员）'
 }
 
 function readinessList(reasons?: string[] | null) {
@@ -221,6 +237,26 @@ function formatError(error: unknown) {
       :column-settings="false"
     >
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-scheduleStatus="{ row }">
+        <!-- 失效任务:橙色警示条 + 失效原因 + 系统已发起(非"已送达")计划员重排通知(后端 SchedulePlanInvalidated→Notification intent) -->
+        <div
+          v-if="isScheduleInvalidated(row.status)"
+          class="grid gap-1 rounded-md border-l-2 border-warning bg-warning/10 px-2 py-1.5"
+        >
+          <NvStatusBadge label="排程已失效" tone="warning" />
+          <p class="text-xs text-foreground">
+            {{ describeScheduleInvalidationReason(row.scheduleInvalidationReasonCode) }}
+          </p>
+          <p class="text-xs text-muted-foreground">
+            系统已自动发起计划员重排通知，待重新排程后可派工。
+          </p>
+        </div>
+        <NvStatusBadge
+          v-else
+          :label="resolveScheduleStatus(row).label"
+          :tone="resolveScheduleStatus(row).tone"
+        />
+      </template>
       <template #cell-plannedStartUtc="{ row }">{{ formatDateTime(row.plannedStartUtc) }}</template>
       <template #cell-blockingReasons="{ row }">
         <div v-if="row.blockingReasons?.length" class="grid gap-2">
@@ -239,7 +275,7 @@ function formatError(error: unknown) {
         <NvRowActions :label="`派工操作 ${row.operationTaskId ?? ''}`">
           <NvDropdownMenuItem :disabled="!canDispatch(row)" @click="openAssign(row)">
             <UserCheckIcon aria-hidden="true" />
-            {{ canDispatch(row) ? '派工（指派操作员）' : '有阻塞，先处理' }}
+            {{ dispatchActionLabel(row) }}
           </NvDropdownMenuItem>
         </NvRowActions>
       </template>

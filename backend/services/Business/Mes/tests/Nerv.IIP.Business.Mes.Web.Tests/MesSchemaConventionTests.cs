@@ -50,6 +50,7 @@ public sealed class MesSchemaConventionTests
             typeof(OutputLotGenealogy),
             typeof(DefectRecord),
             typeof(QualityHoldContext),
+            typeof(QualityHoldTransition),
             typeof(MaterialRequirement),
             typeof(MaterialIssueRequest),
             typeof(ScheduleResult),
@@ -79,8 +80,27 @@ public sealed class MesSchemaConventionTests
         failures.AddRange(MaterialConsumptionHasIdempotencyIndex(fixture.DbContext));
         failures.AddRange(ProductionReportReversalHasUniqueOriginalReportIndex(fixture.DbContext.Model));
         failures.AddRange(ProcessedIntegrationEventHasUniqueInboxIndex(fixture.DbContext.Model));
+        failures.AddRange(QualityHoldTransitionHasGovernedIdempotencyIndex(fixture.DbContext.Model));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    private static IReadOnlyCollection<string> QualityHoldTransitionHasGovernedIdempotencyIndex(IModel model)
+    {
+        var entity = model.FindEntityType(typeof(QualityHoldTransition));
+        var found = entity?.GetIndexes().Any(index =>
+            index.IsUnique &&
+            index.GetDatabaseName() == "ux_quality_hold_transitions_scope_idempotency_kind" &&
+            index.Properties.Select(x => x.Name).SequenceEqual([
+                nameof(QualityHoldTransition.OrganizationId),
+                nameof(QualityHoldTransition.EnvironmentId),
+                nameof(QualityHoldTransition.SourceService),
+                nameof(QualityHoldTransition.SourceDocumentId),
+                nameof(QualityHoldTransition.HoldCycleId),
+                nameof(QualityHoldTransition.IdempotencyKey),
+                nameof(QualityHoldTransition.EventKind),
+            ])) == true;
+        return found ? [] : ["MES: QualityHoldTransition governed idempotency unique index is missing."];
     }
 
     [Fact]
@@ -113,6 +133,24 @@ public sealed class MesSchemaConventionTests
             createIndexOperation.Columns.SequenceEqual(["organization_id", "environment_id", "reversed_report_no"]));
 
         Assert.True(hasUniqueReversalIndex, $"{MesFacts.Schema}: reversal migration must create a unique original-report index.");
+    }
+
+    [Fact]
+    public void Production_report_reversal_audit_migration_adds_nullable_bounded_actor_column()
+    {
+        var migration = new AddProductionReportReversalAudit();
+        var migrationBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddProductionReportReversalAudit)
+            .GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [migrationBuilder]);
+
+        var column = Assert.IsType<AddColumnOperation>(Assert.Single(migrationBuilder.Operations));
+        Assert.Equal(MesFacts.Schema, column.Schema);
+        Assert.Equal("production_reports", column.Table);
+        Assert.Equal("reversed_by", column.Name);
+        Assert.Equal(100, column.MaxLength);
+        Assert.True(column.IsNullable);
+        Assert.False(string.IsNullOrWhiteSpace(column.Comment));
     }
 
     private static IReadOnlyCollection<string> ProcessedIntegrationEventHasUniqueInboxIndex(IModel model)
