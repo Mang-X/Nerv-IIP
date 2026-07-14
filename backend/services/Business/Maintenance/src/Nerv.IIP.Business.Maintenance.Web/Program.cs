@@ -67,7 +67,10 @@ try
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, MaintenanceIntegrationEventDeadLetterStore>();
     builder.Services.AddScoped<OpenWorkOrderWhenAlarmRaisedHandler>();
     builder.Services.AddScoped<MarkWorkOrderAlarmClearedHandler>();
+    builder.Services.AddScoped<PauseMaintenancePlansWhenDeviceDisabledHandler>();
     builder.Services.AddScoped<ICommandLock<GenerateDueMaintenanceWorkOrdersCommand>, GenerateDueMaintenanceWorkOrdersCommandLock>();
+    builder.Services.AddScoped<ICommandLock<ApplyMaintenanceDeviceStateCommand>, ApplyMaintenanceDeviceStateCommandLock>();
+    builder.Services.AddScoped<ICommandLock<CreateMaintenancePlanCommand>, CreateMaintenancePlanCommandLock>();
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddHostedService<MaintenancePlanDueScheduler>();
 
@@ -119,7 +122,7 @@ try
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
-            .AddCommandLockBehavior()
+            .AddOpenBehavior(typeof(MaintenanceCommandLockBehavior<,>))
             .AddKnownExceptionValidationBehavior()
             .AddUnitOfWorkBehaviors());
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = MaintenanceFacts.ServiceName)
@@ -216,7 +219,10 @@ static void AddMaintenanceDistributedLock(IServiceCollection services, IConfigur
         return ConnectionMultiplexer.Connect(options);
     });
     services.AddSingleton<IRedisCommandLockStore>(sp => new StackExchangeRedisCommandLockStore(sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase()));
-    services.AddSingleton<IDistributedLock>(sp => new RedisMaintenanceDistributedLock(sp.GetRequiredService<IRedisCommandLockStore>(), sp.GetRequiredService<TimeProvider>()));
+    services.AddSingleton<IDistributedLock>(sp => new RedisMaintenanceDistributedLock(
+        sp.GetRequiredService<IRedisCommandLockStore>(),
+        sp.GetRequiredService<TimeProvider>(),
+        logger: sp.GetRequiredService<ILogger<RedisMaintenanceDistributedLock>>()));
 }
 
 static string? ResolveRedisConnectionString(IConfiguration configuration)

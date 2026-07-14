@@ -93,6 +93,7 @@ public sealed class MaintenancePlanEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.RuntimeHourInterval).HasColumnName("runtime_hour_interval").HasPrecision(18, 6).HasComment("Optional runtime-hour interval for usage-triggered preventive maintenance.");
         builder.Property(x => x.LastGeneratedRuntimeHours).HasColumnName("last_generated_runtime_hours").HasPrecision(18, 6).HasComment("Last cumulative runtime-hour reading used to generate a PM work order.");
         builder.Property(x => x.NextDueRuntimeHours).HasColumnName("next_due_runtime_hours").HasPrecision(18, 6).HasComment("Next cumulative runtime-hour threshold for usage-triggered PM generation.");
+        builder.Property(x => x.Paused).HasColumnName("paused").IsRequired().HasComment("Whether preventive maintenance generation is paused for this plan.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.PlanCode }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.WindowStartUtc, x.WindowEndUtc });
