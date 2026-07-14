@@ -190,7 +190,7 @@ public sealed class FastEndpointsArchitectureTests
         Assert.Contains("Projects.Nerv_IIP_Iam_Web", programText);
         Assert.Contains("Projects.Nerv_IIP_FileStorage_Web", programText);
         Assert.Contains("Projects.Nerv_IIP_Notification_Web", programText);
-        Assert.Contains("WithHttpEndpoint(port: 5106", programText);
+        Assert.Contains("WithHttpEndpoint(port: fullStackEphemeral ? null : 5106", programText);
         Assert.Contains("Notification__BaseUrl", programText);
         Assert.Contains("AddContainer(\"minio\"", programText);
         Assert.Contains("AddContainer(\"victoria-logs\"", programText);
@@ -271,20 +271,32 @@ public sealed class FastEndpointsArchitectureTests
     }
 
     [Fact]
-    public void Aspire_apphost_vite_apps_use_fixed_unproxied_local_ports()
+    public void Aspire_apphost_vite_apps_keep_fixed_persistent_ports_and_use_proxied_ephemeral_ports()
     {
         var root = FindRepositoryRoot();
         var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
         var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
 
-        Assert.Contains("AddViteApp(\"console\", \"../../../frontend/apps/console\")", programText);
-        Assert.Matches(
-            "AddViteApp\\(\"console\", \"../../../frontend/apps/console\"\\)[\\s\\S]*WithHttpEndpoint\\(port: 5105, name: \"http\", isProxied: false\\)",
-            programText);
-        Assert.Contains("AddViteApp(\"business-console\", \"../../../frontend/apps/business-console\")", programText);
-        Assert.Matches(
-            "AddViteApp\\(\"business-console\", \"../../../frontend/apps/business-console\"\\)[\\s\\S]*WithHttpEndpoint\\(port: 5125, name: \"http\", isProxied: false\\)",
-            programText);
+        foreach (var (name, path, port) in new[]
+                 {
+                     ("console", "../../../frontend/apps/console", 5105),
+                     ("business-console", "../../../frontend/apps/business-console", 5125),
+                     ("screen", "../../../frontend/apps/screen", 5128)
+                 })
+        {
+            var marker = $"AddViteApp(\"{name}\", \"{path}\")";
+            var start = programText.IndexOf(marker, StringComparison.Ordinal);
+            Assert.True(start >= 0, $"Missing Aspire Vite resource '{name}'.");
+            var end = programText.IndexOf(".WithPnpm()", start, StringComparison.Ordinal);
+            Assert.True(end > start, $"Missing pnpm registration for Aspire Vite resource '{name}'.");
+            var endpointBlock = programText[start..end];
+
+            Assert.Contains($"targetPort: fullStackEphemeral ? null : {port}", endpointBlock);
+            Assert.Contains($"port: fullStackEphemeral ? null : {port}", endpointBlock);
+            Assert.Contains("env: fullStackEphemeral ? \"NERV_IIP_VITE_PORT\" : null", endpointBlock);
+            Assert.Contains("isProxied: fullStackEphemeral", endpointBlock);
+            Assert.DoesNotContain("env: fullStackEphemeral ? \"PORT\" : null", endpointBlock);
+        }
     }
 
     [Fact]
