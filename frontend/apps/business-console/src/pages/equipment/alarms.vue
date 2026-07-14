@@ -25,6 +25,7 @@ import {
   NvDialogTitle,
   NvDropdownMenuItem,
   NvField,
+  NvFieldError,
   NvFieldLabel,
   NvInput,
   NvPageHeader,
@@ -116,32 +117,51 @@ const columns: NvDataTableColumn<Alarm>[] = [
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'lifecycle', header: '处置', width: 'w-64' },
   { key: 'raisedAtUtc', header: '发生时间', width: 'w-44' },
-  // Hidden view-state column drives the quick-filter tabs (含「已升级」快捷项).
-  {
-    key: 'viewState',
-    header: '视图',
-    accessor: (r) => viewState(r),
-    filter: 'enum',
-    defaultHidden: true,
-    hideable: false,
-  },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
-const viewTabs = [
-  { label: '全部', value: '' },
-  { label: '已升级', value: 'escalated' },
-  { label: '待确认', value: 'raised' },
-  { label: '已搁置', value: 'shelved' },
-  { label: '已确认', value: 'acknowledged' },
-]
+// Quick-filter views. 升级 is ORTHOGONAL to disposition — an escalated alarm may also be
+// acknowledged/shelved, so each view is an independent predicate (a row can match several)
+// rather than one mutually-exclusive bucket. This keeps escalated+acknowledged alarms in
+// 已确认 with their acknowledger visible.
+const VIEW_TABS = [
+  { value: 'all', label: '全部' },
+  { value: 'escalated', label: '已升级' },
+  { value: 'raised', label: '待确认' },
+  { value: 'shelved', label: '已搁置' },
+  { value: 'acknowledged', label: '已确认' },
+] as const
+type AlarmView = (typeof VIEW_TABS)[number]['value']
+const activeView = ref<AlarmView>('all')
 
-function viewState(row: Alarm): string {
-  if (row.escalatedAtUtc) return 'escalated'
-  if (isShelved(row)) return 'shelved'
-  if (row.acknowledgedAtUtc) return 'acknowledged'
-  return 'raised'
+function matchesView(row: Alarm, view: AlarmView): boolean {
+  switch (view) {
+    case 'escalated':
+      return Boolean(row.escalatedAtUtc)
+    case 'shelved':
+      return isShelved(row)
+    case 'acknowledged':
+      return Boolean(row.acknowledgedAtUtc)
+    case 'raised':
+      return !row.acknowledgedAtUtc && !isShelved(row)
+    default:
+      return true
+  }
 }
+const viewCounts = computed<Record<AlarmView, number>>(() => {
+  const counts: Record<AlarmView, number> = {
+    all: 0,
+    escalated: 0,
+    raised: 0,
+    shelved: 0,
+    acknowledged: 0,
+  }
+  for (const view of VIEW_TABS)
+    counts[view.value] = alarms.value.filter((a) => matchesView(a, view.value)).length
+  return counts
+})
+const filteredAlarms = computed(() => alarms.value.filter((a) => matchesView(a, activeView.value)))
+
 // De-emphasize resolved rows (已确认 / 已搁置), but never dim escalated ones — they
 // must stay identifiable at a glance (验收: 升级报警 3 秒内可辨识).
 function rowClass(row: Alarm) {
@@ -202,8 +222,9 @@ function canShelve(row: Alarm) {
 function canUnshelve(row: Alarm) {
   return canManageAlarms.value && Boolean(row.alarmEventId) && isShelved(row)
 }
+// Disposition only. 升级 is surfaced separately by the row icon/tooltip (orthogonal), so an
+// escalated alarm still shows its acknowledger / shelve state here rather than being masked.
 function lifecycleLabel(row: Alarm) {
-  if (row.escalatedAtUtc) return `已升级 ${formatDateTime(row.escalatedAtUtc)}`
   if (isShelved(row)) {
     const by = row.shelvedBy ? ` · ${row.shelvedBy}` : ''
     return `搁置至 ${formatDateTime(row.shelvedUntilUtc)}${by}`
@@ -270,7 +291,10 @@ async function confirmBatchAck() {
     )
     summarizeBatch('确认', results)
     await refreshAlarms()
-    clearSelection()
+    // Keep only the failed rows selected so they stay locatable for a retry (A1 §5.2);
+    // acknowledge is first-write-wins, so re-confirming the batch is safe.
+    const failed = targets.filter((_, i) => results[i].status === 'rejected')
+    selectedKeys.value = failed.length ? failed.map(alarmKey) : []
     batchAck.open = false
   } finally {
     batchAck.submitting = false
@@ -278,6 +302,8 @@ async function confirmBatchAck() {
 }
 
 // ── Shelve dialog (shared by single-row + batch; duration option group) ──
+// Backend clamps DurationMinutes to 1..1440 (ShelveAlarmCommandValidator.InclusiveBetween).
+const MAX_SHELVE_MINUTES = 24 * 60
 const shelve = reactive({
   open: false,
   targets: [] as Alarm[],
@@ -285,6 +311,9 @@ const shelve = reactive({
   customMinutes: 60,
   reason: '',
   submitting: false,
+  // Shelve instant frozen once per batch intent (see openShelve) so a partial-failure
+  // retry reuses the same window + idempotency keys.
+  batchAtUtc: '',
 })
 const resolvedMinutes = computed(() =>
   shelve.duration === 'custom' ? Math.trunc(Number(shelve.customMinutes)) : Number(shelve.duration),
@@ -292,6 +321,21 @@ const resolvedMinutes = computed(() =>
 const shelveIsBatch = computed(() => shelve.targets.length > 1)
 // 批量搁置是「对多行做同一破坏性动作」→ A1 §5.2 要求原因必填;单条搁置保持可选。
 const reasonRequired = computed(() => shelveIsBatch.value)
+// Field-level validation (inline red text, not toast — 见 feedback-and-notifications 规范).
+const customMinutesError = computed(() => {
+  if (shelve.duration !== 'custom') return ''
+  const n = Number(shelve.customMinutes)
+  if (!Number.isInteger(n) || n < 1 || n > MAX_SHELVE_MINUTES) {
+    return `请输入 1–${MAX_SHELVE_MINUTES} 之间的整数分钟。`
+  }
+  return ''
+})
+const reasonError = computed(() =>
+  reasonRequired.value && !shelve.reason.trim() ? '批量搁置需填写搁置原因。' : '',
+)
+const shelveInvalid = computed(
+  () => Boolean(customMinutesError.value) || Boolean(reasonError.value),
+)
 
 function openShelve(rows: Alarm[]) {
   const targets = rows.filter(canShelve)
@@ -300,28 +344,23 @@ function openShelve(rows: Alarm[]) {
   shelve.duration = '30'
   shelve.customMinutes = 60
   shelve.reason = ''
+  // Freeze the shelve instant for the whole batch intent: the backend derives the shelve
+  // window from ShelvedAtUtc and de-dupes on the idempotency key (first-write-wins), so a
+  // retry of the failed rows with the SAME frozen key is a no-op, not a re-shelve.
+  shelve.batchAtUtc = new Date().toISOString()
   shelve.open = true
 }
 async function confirmShelve() {
   const targets = shelve.targets
-  if (!targets.length) return
+  if (!targets.length || shelveInvalid.value) return
   const minutes = resolvedMinutes.value
-  if (!Number.isFinite(minutes) || minutes < 1) {
-    return notifyError('请填写有效的搁置时长（≥ 1 分钟）。')
-  }
-  const reason = shelve.reason.trim()
-  if (reasonRequired.value && !reason) {
-    return notifyError('批量搁置需填写搁置原因。')
-  }
+  const shelvedAtUtc = shelve.batchAtUtc || new Date().toISOString()
+  const reason = shelve.reason.trim() || 'operator-shelved'
   shelve.submitting = true
   try {
-    // Freeze the shelve instant so retrying the same batch reuses one window; per-alarm
-    // idempotency key keeps re-submits a no-op instead of extending the shelve.
-    const shelvedAtUtc = new Date().toISOString()
-    const effectiveReason = reason || 'operator-shelved'
     const results = await Promise.allSettled(
       targets.map((row) =>
-        shelveAlarm(row.alarmEventId!, currentActor.value, minutes, effectiveReason, {
+        shelveAlarm(row.alarmEventId!, currentActor.value, minutes, reason, {
           shelvedAtUtc,
           idempotencyKey: `shelve:${row.alarmEventId}:${shelvedAtUtc}:${minutes}`,
         }),
@@ -329,8 +368,16 @@ async function confirmShelve() {
     )
     summarizeBatch('搁置', results)
     await refreshAlarms()
-    clearSelection()
-    shelve.open = false
+    // Keep only the failed rows selected + queued so the operator can locate and retry them;
+    // the frozen shelvedAtUtc/key makes that retry idempotent (A1 §5.2「失败行可定位」).
+    const failed = targets.filter((_, i) => results[i].status === 'rejected')
+    if (failed.length) {
+      shelve.targets = failed
+      selectedKeys.value = failed.map(alarmKey)
+    } else {
+      clearSelection()
+      shelve.open = false
+    }
   } finally {
     shelve.submitting = false
   }
@@ -403,18 +450,33 @@ function formatError(error: unknown) {
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
+    <!-- 快捷筛选:升级是与处置正交的独立视图(可与已确认/已搁置重叠) -->
+    <div class="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="报警筛选">
+      <NvButton
+        v-for="view in VIEW_TABS"
+        :key="view.value"
+        size="sm"
+        type="button"
+        role="tab"
+        :variant="activeView === view.value ? 'default' : 'ghost'"
+        :aria-selected="activeView === view.value"
+        @click="activeView = view.value"
+      >
+        {{ view.label }}
+        <span class="ms-1 text-xs tabular-nums opacity-70">{{ viewCounts[view.value] }}</span>
+      </NvButton>
+    </div>
+
     <NvDataTable
       v-model:selected="selectedKeys"
       :columns="columns"
-      :rows="alarms"
+      :rows="filteredAlarms"
       :row-key="alarmKey"
       :row-class="rowClass"
       :loading="alarmsPending"
       :searchable="false"
       :column-settings="false"
       :selectable="canManageAlarms"
-      :tabs="viewTabs"
-      tab-key="viewState"
       empty-message="当前没有未解除设备报警。"
     >
       <template #bulk-actions>
@@ -555,16 +617,21 @@ function formatError(error: unknown) {
           </NvField>
 
           <NvField v-if="shelve.duration === 'custom'">
-            <NvFieldLabel for="shelve-custom-minutes">自定义分钟数</NvFieldLabel>
+            <NvFieldLabel for="shelve-custom-minutes"
+              >自定义分钟数（1–{{ MAX_SHELVE_MINUTES }}）</NvFieldLabel
+            >
             <NvInput
               id="shelve-custom-minutes"
               v-model="shelve.customMinutes"
               type="number"
               min="1"
+              :max="MAX_SHELVE_MINUTES"
               step="1"
               class="w-40"
               placeholder="分钟"
+              :invalid="Boolean(customMinutesError)"
             />
+            <NvFieldError v-if="customMinutesError" :errors="[customMinutesError]" />
           </NvField>
 
           <NvField>
@@ -575,13 +642,19 @@ function formatError(error: unknown) {
               id="shelve-reason"
               v-model="shelve.reason"
               placeholder="例如：等待备件到货 / 计划内检修"
+              :invalid="Boolean(reasonError)"
             />
+            <NvFieldError v-if="reasonError" :errors="[reasonError]" />
           </NvField>
         </div>
 
         <NvDialogFooter>
           <NvButton type="button" variant="outline" @click="shelve.open = false">取消</NvButton>
-          <NvButton type="button" :disabled="shelve.submitting" @click="confirmShelve">
+          <NvButton
+            type="button"
+            :disabled="shelve.submitting || shelveInvalid"
+            @click="confirmShelve"
+          >
             {{ shelveIsBatch ? `搁置 ${shelve.targets.length} 条` : '确认搁置' }}
           </NvButton>
         </NvDialogFooter>
