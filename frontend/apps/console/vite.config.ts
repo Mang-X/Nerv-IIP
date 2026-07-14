@@ -4,6 +4,12 @@ import Vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 import VueRouter from 'vue-router/vite'
 
+const configuredPort = process.env.NERV_IIP_VITE_PORT
+const port = Number(configuredPort ?? '5105')
+if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+  throw new Error(`NERV_IIP_VITE_PORT must be an integer from 1 through 65535; received '${configuredPort}'.`)
+}
+
 export default defineConfig({
   plugins: [
     tailwindcss(),
@@ -37,7 +43,8 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5105,
+    port,
+    strictPort: true,
     proxy: {
       '/api': {
         target: process.env.NERV_IIP_GATEWAY_URL ?? 'http://127.0.0.1:5100',

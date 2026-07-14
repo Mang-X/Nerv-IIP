@@ -2,6 +2,10 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema governance hardening 已完成，第七阶段 IAM Persistent Auth Foundation 已落地，Phase 8 IAM Admin Console 与蓝色 Design System 基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## 并行全栈验证基线
+
+真实浏览器全栈验证已提供一次性 session 入口：`.\nerv.ps1 fullstack run -Scenario smoke`。session 使用随机公开端口、独立 Aspire/DCP 代理、专属基础设施卷、进程身份与容器所有权标签；默认最多三个活动 session，不设置最低可用内存门槛。自动化成功或失败均精确回收运行资源并保留 `artifacts/fullstack/<sessionId>/`。持久开发仍使用 `.\nerv.ps1 dev`；交互 `.\nerv.ps1 fullstack start` 只用于诊断，完成后必须 `.\nerv.ps1 fullstack stop`。`scripts/verify-parallel-fullstack-isolation.ps1 -Sessions 2` 已在 Windows Docker Desktop 上验证两套浏览器链路、动态端口、PostgreSQL 写隔离、专属卷、单 session 停止边界和故障注入 cleanup。
+
 ## 当前结论
 
 1. 平台 HTTP 服务命名已经冻结为 .Web、.Domain、.Infrastructure。

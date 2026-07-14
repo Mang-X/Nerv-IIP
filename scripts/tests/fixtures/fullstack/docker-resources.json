@@ -1,0 +1,27 @@
+[
+  {
+    "Id": "owned-container-id",
+    "Name": "/postgres-nerv-abcd-123456",
+    "Config": {
+      "Labels": {
+        "com.nerv-iip.session": "nerv-abcd-123456"
+      }
+    }
+  },
+  {
+    "Id": "other-session-container-id",
+    "Name": "/postgres-nerv-ffff-654321",
+    "Config": {
+      "Labels": {
+        "com.nerv-iip.session": "nerv-ffff-654321"
+      }
+    }
+  },
+  {
+    "Id": "unlabeled-container-id",
+    "Name": "/postgres-nerv-abcd-123456",
+    "Config": {
+      "Labels": {}
+    }
+  }
+]

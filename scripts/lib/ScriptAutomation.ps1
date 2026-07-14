@@ -643,6 +643,80 @@ function Invoke-PwshScript {
     Invoke-NativeCommandWithTimeout -Command 'pwsh' -Arguments $fullArguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
 }
 
+function ConvertTo-ScriptAutomationProcessArgument {
+    param([AllowEmptyString()] [string] $Value)
+
+    if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') {
+        return $Value
+    }
+
+    $builder = [System.Text.StringBuilder]::new()
+    [void] $builder.Append('"')
+    $backslashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq '\') {
+            $backslashes++
+            continue
+        }
+        if ($character -eq '"') {
+            [void] $builder.Append(('\' * (($backslashes * 2) + 1)))
+            [void] $builder.Append('"')
+            $backslashes = 0
+            continue
+        }
+        if ($backslashes -gt 0) {
+            [void] $builder.Append(('\' * $backslashes))
+            $backslashes = 0
+        }
+        [void] $builder.Append($character)
+    }
+    if ($backslashes -gt 0) {
+        [void] $builder.Append(('\' * ($backslashes * 2)))
+    }
+    [void] $builder.Append('"')
+    return $builder.ToString()
+}
+
+function Start-DetachedManagedProcess {
+    param(
+        [Parameter(Mandatory)] [string] $Command,
+        [string[]] $Arguments = @(),
+        [string] $WorkingDirectory = (Get-Location).Path,
+        [Parameter(Mandatory)] [string] $StdoutPath,
+        [Parameter(Mandatory)] [string] $StderrPath
+    )
+
+    $resolvedWorkingDirectory = [System.IO.Path]::GetFullPath($WorkingDirectory)
+    $resolvedStdoutPath = [System.IO.Path]::GetFullPath($StdoutPath)
+    $resolvedStderrPath = [System.IO.Path]::GetFullPath($StderrPath)
+    if ([string]::Equals($resolvedStdoutPath, $resolvedStderrPath, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Detached stdout and stderr paths must be different.'
+    }
+    [System.IO.Directory]::CreateDirectory((Split-Path -Parent $resolvedStdoutPath)) | Out-Null
+    [System.IO.Directory]::CreateDirectory((Split-Path -Parent $resolvedStderrPath)) | Out-Null
+
+    $quotedArguments = @($Arguments | ForEach-Object { ConvertTo-ScriptAutomationProcessArgument -Value "$_" })
+    $startParameters = @{
+        FilePath = $Command
+        ArgumentList = $quotedArguments
+        WorkingDirectory = $resolvedWorkingDirectory
+        RedirectStandardOutput = $resolvedStdoutPath
+        RedirectStandardError = $resolvedStderrPath
+        PassThru = $true
+    }
+    if ($IsWindows) { $startParameters['WindowStyle'] = 'Hidden' }
+    $process = Start-Process @startParameters
+    try {
+        return [pscustomobject]@{
+            Pid = $process.Id
+            ProcessStartTimeUtc = $process.StartTime.ToUniversalTime().ToString('O')
+        }
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
 function Start-ManagedBackgroundProcess {
     param(
         [Parameter(Mandatory)]
