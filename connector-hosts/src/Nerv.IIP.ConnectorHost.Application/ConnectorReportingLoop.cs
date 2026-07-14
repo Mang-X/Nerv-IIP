@@ -64,6 +64,16 @@ public sealed class ConnectorReportingLoop(
 
     private static InstanceStateSnapshot ToStateSnapshot(ConnectorRequestContext context, ConnectorTarget target)
     {
-        return new InstanceStateSnapshot(context, target.InstanceKey, DateTimeOffset.UtcNow, target.ReportedStatus, target.HealthStatus, $"{target.InstanceName} is {target.ReportedStatus}", new Dictionary<string, string>(), new Dictionary<string, decimal>(), target.Metadata);
+        var reportedAtUtc = DateTimeOffset.UtcNow;
+        var health = target.CollectionHealth is null ? null : new ConnectorCollectionHealth(
+            target.CollectionHealth.ConnectorId,
+            target.CollectionHealth.SourceSystem,
+            target.CollectionHealth.CounterEpoch,
+            reportedAtUtc,
+            target.CollectionHealth.ReceivedCount,
+            target.CollectionHealth.DroppedCount,
+            target.CollectionHealth.ErrorCount,
+            target.CollectionHealth.LastSampleAtUtc);
+        return new InstanceStateSnapshot(context, target.InstanceKey, reportedAtUtc, target.ReportedStatus, target.HealthStatus, $"{target.InstanceName} is {target.ReportedStatus}", new Dictionary<string, string>(), new Dictionary<string, decimal>(), target.Metadata, health);
     }
 }

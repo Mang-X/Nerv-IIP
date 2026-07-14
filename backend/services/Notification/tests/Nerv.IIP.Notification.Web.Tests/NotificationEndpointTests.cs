@@ -185,13 +185,29 @@ public sealed class NotificationEndpointTests
         var created = await client.PostAsJsonAsync("/api/notifications/v1/intents", CreateIntent("dedupe-read", "user:admin"));
         var messageId = (await ReadDataAsync<NotificationIntentResponse>(created)).Messages.Single().MessageId;
 
-        var response = await client.PostAsync($"/api/notifications/v1/messages/{messageId}/read", null);
+        var response = await client.PostAsync($"/api/notifications/v1/messages/{messageId}/read?recipientRef=user%3Aadmin", null);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var data = await ReadDataAsync<MarkNotificationMessageReadResponse>(response);
         Assert.Equal(messageId, data.MessageId);
         Assert.Equal("read", data.Status);
         Assert.True(data.ReadAtUtc <= DateTimeOffset.UtcNow);
+    }
+
+    [Fact]
+    public async Task Mark_message_read_rejects_message_owned_by_another_recipient()
+    {
+        using var factory = new NotificationWebApplicationFactory();
+        using var client = factory.CreateNotificationClient();
+        var created = await client.PostAsJsonAsync("/api/notifications/v1/intents", CreateIntent("dedupe-read-owner", "user:operator"));
+        var messageId = (await ReadDataAsync<NotificationIntentResponse>(created)).Messages.Single().MessageId;
+
+        var response = await client.PostAsync($"/api/notifications/v1/messages/{messageId}/read?recipientRef=user%3Aadmin", null);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var unreadResponse = await client.GetAsync("/api/notifications/v1/messages?recipientRef=user:operator&status=unread");
+        var unread = await ReadDataAsync<NotificationMessageListResponse>(unreadResponse);
+        Assert.Contains(unread.Items, message => message.MessageId == messageId);
     }
 
     [Fact]

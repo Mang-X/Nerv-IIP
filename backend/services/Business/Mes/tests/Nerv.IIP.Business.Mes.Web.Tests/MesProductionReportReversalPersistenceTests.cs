@@ -46,8 +46,8 @@ public sealed class MesProductionReportReversalPersistenceTests
             false,
             now.AddMinutes(10));
         dbContext.ProductionReports.Add(original);
-        dbContext.ProductionReports.Add(ProductionReport.Reverse(original, "RPT-REV-1", now.AddMinutes(20), "first correction"));
-        dbContext.ProductionReports.Add(ProductionReport.Reverse(original, "RPT-REV-2", now.AddMinutes(21), "concurrent correction"));
+        dbContext.ProductionReports.Add(ProductionReport.Reverse(original, "RPT-REV-1", now.AddMinutes(20), "first correction", "operator-1"));
+        dbContext.ProductionReports.Add(ProductionReport.Reverse(original, "RPT-REV-2", now.AddMinutes(21), "concurrent correction", "operator-2"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => dbContext.SaveChangesAsync());
 

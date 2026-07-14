@@ -192,6 +192,7 @@ public sealed class NcrClosedIntegrationEventConverter(IQualityIntegrationEventC
                 ncr.ReworkWorkOrderId,
                 ncr.ScrapMovementId,
                 ncr.ReturnDocumentId,
+                domainEvent.Reason,
                 occurredAtUtc));
     }
 }

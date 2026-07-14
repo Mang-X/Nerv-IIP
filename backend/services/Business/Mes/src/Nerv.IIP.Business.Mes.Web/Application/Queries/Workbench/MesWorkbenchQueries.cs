@@ -442,7 +442,9 @@ public sealed record MesOperationTaskRow(
     string? WorkCenterName = null,
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null,
-    string? OperationCode = null);
+    string? OperationCode = null,
+    DateTimeOffset? ScheduledAtUtc = null,
+    string? ScheduleInvalidationReasonCode = null);
 
 public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetMesWorkOrderDetailQuery, MesWorkOrderDetailResponse>
@@ -536,7 +538,9 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
                 null,
                 x.DeviceAssetId,
                 null,
-                x.OperationCode));
+                x.OperationCode,
+                x.ScheduledAtUtc,
+                x.ScheduleInvalidationReasonCode));
     }
 
     internal static IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask> QueryOperationTaskEntities(
@@ -821,7 +825,9 @@ public sealed record MesDispatchTaskRow(
     string? WorkCenterCode = null,
     string? WorkCenterName = null,
     string? DeviceAssetCode = null,
-    string? DeviceAssetName = null);
+    string? DeviceAssetName = null,
+    DateTimeOffset? ScheduledAtUtc = null,
+    string? ScheduleInvalidationReasonCode = null);
 
 public sealed class ListDispatchTasksQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListDispatchTasksQuery, MesDispatchTaskListResponse>
@@ -868,7 +874,9 @@ public sealed class ListDispatchTasksQueryHandler(ApplicationDbContext dbContext
                 x.WorkCenterId,
                 null,
                 x.DeviceAssetId,
-                null))
+                null,
+                x.ScheduledAtUtc,
+                x.ScheduleInvalidationReasonCode))
             .ToArrayAsync(cancellationToken);
         return new MesDispatchTaskListResponse(tasks, total);
     }

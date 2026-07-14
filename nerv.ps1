@@ -3,6 +3,9 @@ param(
     [Parameter(Position = 0)]
     [string] $Command = 'help',
 
+    [Parameter(Position = 1)]
+    [string] $Subcommand,
+
     [switch] $NoBuild,
 
     [switch] $InfraOnly,
@@ -34,16 +37,24 @@ param(
 
     [switch] $All,
 
+    [ValidateSet('smoke')]
+    [string] $Scenario,
+
+    [string] $SessionId,
+
     [string] $EnvironmentName = 'Production',
 
     [string] $OutputPath,
 
-    [Parameter(ValueFromRemainingArguments = $true)]
+    [Parameter(Position = 2)]
     [string[]] $RemainingArguments = @()
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = $PSScriptRoot
+$forwardArguments = [System.Collections.Generic.List[string]]::new()
+if (-not [string]::IsNullOrWhiteSpace($Subcommand)) { $forwardArguments.Add($Subcommand) }
+foreach ($argument in $RemainingArguments) { $forwardArguments.Add($argument) }
 
 function Write-NervHelp {
     Write-Host @'
@@ -57,6 +68,7 @@ Usage:
   .\nerv.ps1 wait <resource> [-Status healthy|up|down] [-TimeoutSeconds 120]
   .\nerv.ps1 logs [resource] [-Tail 120] [-Follow]
   .\nerv.ps1 describe [resource] [-IncludeHidden]
+  .\nerv.ps1 fullstack run -Scenario smoke
   .\nerv.ps1 publish-compose [-EnvironmentName Production] [-OutputPath artifacts/aspire-output/compose]
   .\nerv.ps1 prepare-compose [-EnvironmentName Production]
   .\nerv.ps1 deploy-compose [-EnvironmentName Production]
@@ -71,6 +83,7 @@ Commands:
   wait             Wait for an Aspire resource.
   logs             Show Aspire resource logs.
   describe         Describe Aspire resources.
+  fullstack        Manage isolated full-stack test sessions.
   publish-compose  Generate Aspire Docker Compose artifacts.
   prepare-compose  Generate env-specific Compose artifacts and images through Aspire.
   deploy-compose   Deploy the Aspire Docker Compose target through Aspire.
@@ -121,6 +134,19 @@ Infrastructure services:
 }
 
 switch ($Command.ToLowerInvariant()) {
+    'fullstack' {
+        $fullStackScript = Join-Path $repoRoot 'scripts/fullstack-session.ps1'
+        $fullStackArguments = [System.Collections.Generic.List[string]]::new()
+        foreach ($argument in $forwardArguments) { $fullStackArguments.Add($argument) }
+        $fullStackParameters = @{}
+        if ($PSBoundParameters.ContainsKey('Scenario')) { $fullStackParameters['Scenario'] = $Scenario }
+        if ($PSBoundParameters.ContainsKey('SessionId')) { $fullStackParameters['SessionId'] = $SessionId }
+        if ($PSBoundParameters.ContainsKey('NoBuild')) { $fullStackParameters['NoBuild'] = $true }
+        if ($PSBoundParameters.ContainsKey('Tail')) { $fullStackParameters['Tail'] = $Tail }
+        if ($PSBoundParameters.ContainsKey('Follow')) { $fullStackParameters['Follow'] = $true }
+        & $fullStackScript @fullStackParameters @fullStackArguments
+        exit $LASTEXITCODE
+    }
     'bootstrap' {
         $bootstrapScript = Join-Path $repoRoot 'scripts/bootstrap-online.ps1'
         if (-not (Test-Path -LiteralPath $bootstrapScript -PathType Leaf)) {
@@ -151,7 +177,7 @@ switch ($Command.ToLowerInvariant()) {
             $bootstrapParameters['LocalAdminPassword'] = $LocalAdminPassword
         }
 
-        & $bootstrapScript @bootstrapParameters @RemainingArguments
+        & $bootstrapScript @bootstrapParameters @forwardArguments
         exit $LASTEXITCODE
     }
     'dev' {
@@ -175,7 +201,7 @@ switch ($Command.ToLowerInvariant()) {
             $devParameters['Help'] = $true
         }
 
-        & $devScript @devParameters @RemainingArguments
+        & $devScript @devParameters @forwardArguments
         exit $LASTEXITCODE
     }
     'stop' {
@@ -185,17 +211,17 @@ switch ($Command.ToLowerInvariant()) {
             $controlParameters['All'] = $true
         }
 
-        & $controlScript @controlParameters @RemainingArguments
+        & $controlScript @controlParameters @forwardArguments
         exit $LASTEXITCODE
     }
     'status' {
         $controlScript = Join-Path $repoRoot 'scripts/aspire-control.ps1'
-        & $controlScript -Action status @RemainingArguments
+        & $controlScript -Action status @forwardArguments
         exit $LASTEXITCODE
     }
     'wait' {
         $controlScript = Join-Path $repoRoot 'scripts/aspire-control.ps1'
-        & $controlScript -Action wait -Status $Status -TimeoutSeconds $TimeoutSeconds @RemainingArguments
+        & $controlScript -Action wait -Status $Status -TimeoutSeconds $TimeoutSeconds @forwardArguments
         exit $LASTEXITCODE
     }
     'logs' {
@@ -211,7 +237,7 @@ switch ($Command.ToLowerInvariant()) {
             $controlParameters['IncludeHidden'] = $true
         }
 
-        & $controlScript @controlParameters @RemainingArguments
+        & $controlScript @controlParameters @forwardArguments
         exit $LASTEXITCODE
     }
     'describe' {
@@ -221,7 +247,7 @@ switch ($Command.ToLowerInvariant()) {
             $controlParameters['IncludeHidden'] = $true
         }
 
-        & $controlScript @controlParameters @RemainingArguments
+        & $controlScript @controlParameters @forwardArguments
         exit $LASTEXITCODE
     }
     'publish-compose' {
@@ -237,7 +263,7 @@ switch ($Command.ToLowerInvariant()) {
             $composeParameters['OutputPath'] = $OutputPath
         }
 
-        & $composeScript @composeParameters @RemainingArguments
+        & $composeScript @composeParameters @forwardArguments
         exit $LASTEXITCODE
     }
     'prepare-compose' {
@@ -253,7 +279,7 @@ switch ($Command.ToLowerInvariant()) {
             $composeParameters['OutputPath'] = $OutputPath
         }
 
-        & $composeScript @composeParameters @RemainingArguments
+        & $composeScript @composeParameters @forwardArguments
         exit $LASTEXITCODE
     }
     'deploy-compose' {
@@ -269,7 +295,7 @@ switch ($Command.ToLowerInvariant()) {
             $composeParameters['OutputPath'] = $OutputPath
         }
 
-        & $composeScript @composeParameters @RemainingArguments
+        & $composeScript @composeParameters @forwardArguments
         exit $LASTEXITCODE
     }
     'ports' {

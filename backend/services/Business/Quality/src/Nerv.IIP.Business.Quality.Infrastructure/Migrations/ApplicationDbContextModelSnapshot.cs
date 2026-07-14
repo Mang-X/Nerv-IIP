@@ -1048,6 +1048,18 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("batch_no")
                         .HasComment("Optional batch number reference.");
 
+                    b.Property<string>("CloseReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("close_reason")
+                        .HasComment("Required audited reason captured when the NCR is closed.");
+
+                    b.Property<string>("ClosedByActor")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("closed_by_actor")
+                        .HasComment("Trusted authenticated or system actor that closed the NCR.");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc")

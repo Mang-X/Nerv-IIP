@@ -27,7 +27,7 @@ public class RegisterApplicationCommandHandler(IServiceProvider services)
 
         var context = registration.Context;
         var idempotencyRepository = services.GetRequiredService<IRegistrationIdempotencyRepository>();
-        var existing = await idempotencyRepository.GetByKeyAsync(registration.IdempotencyKey, cancellationToken);
+        var existing = await idempotencyRepository.GetByKeyAsync(registration.Context.OrganizationId, registration.Context.EnvironmentId, registration.IdempotencyKey, cancellationToken);
         if (existing is not null)
         {
             return CreateRegistrationResult(registration, new RegistrationResult(existing.RegistrationId, existing.InstanceKey));
@@ -58,7 +58,11 @@ public class RegisterApplicationCommandHandler(IServiceProvider services)
         }
 
         var instanceRepository = services.GetRequiredService<IApplicationInstanceRepository>();
-        var instance = await instanceRepository.GetByInstanceKeyAsync(registration.InstanceKey, cancellationToken);
+        var instance = await instanceRepository.GetByContextAsync(
+            registration.Context.OrganizationId,
+            registration.Context.EnvironmentId,
+            registration.InstanceKey,
+            cancellationToken);
         if (instance is null)
         {
             instance = new ApplicationInstance(
@@ -89,7 +93,7 @@ public class RegisterApplicationCommandHandler(IServiceProvider services)
         }
 
         var registrationId = $"reg-{Guid.CreateVersion7():N}";
-        await idempotencyRepository.AddAsync(new RegistrationIdempotency(registration.IdempotencyKey, registrationId, registration.InstanceKey), cancellationToken);
+        await idempotencyRepository.AddAsync(new RegistrationIdempotency(registration.Context.OrganizationId, registration.Context.EnvironmentId, registration.IdempotencyKey, registrationId, registration.InstanceKey), cancellationToken);
         return CreateRegistrationResult(registration, new RegistrationResult(registrationId, registration.InstanceKey));
     }
 

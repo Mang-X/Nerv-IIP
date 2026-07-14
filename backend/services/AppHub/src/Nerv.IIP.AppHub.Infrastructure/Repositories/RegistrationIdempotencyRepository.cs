@@ -7,7 +7,7 @@ namespace Nerv.IIP.AppHub.Infrastructure.Repositories;
 
 public interface IRegistrationIdempotencyRepository : IRepository<RegistrationIdempotency, RegistrationIdempotencyId>
 {
-    Task<RegistrationIdempotency?> GetByKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default);
+    Task<RegistrationIdempotency?> GetByKeyAsync(string organizationId, string environmentId, string idempotencyKey, CancellationToken cancellationToken = default);
 }
 
 public class RegistrationIdempotencyRepository(ApplicationDbContext context)
@@ -15,8 +15,8 @@ public class RegistrationIdempotencyRepository(ApplicationDbContext context)
 {
     private readonly ApplicationDbContext _context = context;
 
-    public async Task<RegistrationIdempotency?> GetByKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default)
+    public async Task<RegistrationIdempotency?> GetByKeyAsync(string organizationId, string environmentId, string idempotencyKey, CancellationToken cancellationToken = default)
     {
-        return await _context.RegistrationIdempotency.FirstOrDefaultAsync(x => x.IdempotencyKey == idempotencyKey, cancellationToken);
+        return await _context.RegistrationIdempotency.FirstOrDefaultAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.IdempotencyKey == idempotencyKey, cancellationToken);
     }
 }

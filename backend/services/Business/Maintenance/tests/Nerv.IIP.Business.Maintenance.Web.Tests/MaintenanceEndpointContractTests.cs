@@ -741,6 +741,27 @@ public sealed class MaintenanceEndpointContractTests
     }
 
     [Fact]
+    public async Task Generate_due_maintenance_work_orders_skips_paused_plan_without_advancing_due_state()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-PAUSED", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+        plan.Pause();
+        dbContext.MaintenancePlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+        var handler = new GenerateDueMaintenanceWorkOrdersCommandHandler(dbContext);
+
+        var result = await handler.Handle(
+            new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 8), "system:pm"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(0, result.GeneratedCount);
+        Assert.Empty(await dbContext.MaintenanceWorkOrders.ToArrayAsync());
+        Assert.Equal(new DateOnly(2026, 6, 1), plan.NextDueOn);
+        Assert.Null(plan.LastGeneratedOn);
+    }
+
+    [Fact]
     public async Task Generate_due_maintenance_work_orders_catches_up_missed_periods_and_usage_thresholds()
     {
         await using var dbContext = CreateDbContext();

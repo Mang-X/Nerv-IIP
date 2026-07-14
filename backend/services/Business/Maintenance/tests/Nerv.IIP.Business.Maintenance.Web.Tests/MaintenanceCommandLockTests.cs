@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Infrastructure;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.Primitives;
@@ -13,14 +14,24 @@ namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 public sealed class MaintenanceCommandLockTests
 {
     [Fact]
-    public async Task Generate_due_pm_command_declares_org_env_business_date_lock_key()
+    public async Task Device_state_plan_creation_and_pm_generation_share_org_environment_lock_key()
     {
-        var command = new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 8), "system:pm");
-        var commandLock = new GenerateDueMaintenanceWorkOrdersCommandLock();
+        var generateSettings = await new GenerateDueMaintenanceWorkOrdersCommandLock().GetLockKeysAsync(
+            new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 8), "system:pm"),
+            CancellationToken.None);
+        var stateSettings = await new ApplyMaintenanceDeviceStateCommandLock().GetLockKeysAsync(
+            new ApplyMaintenanceDeviceStateCommand("org-001", "env-dev", "DEV-CNC-01", true, DateTimeOffset.UtcNow, "evt-device-001"),
+            CancellationToken.None);
+        var createSettings = await new CreateMaintenancePlanCommandLock().GetLockKeysAsync(
+            new CreateMaintenancePlanCommand("org-001", "env-dev", "DEV-CNC-01", "PM-001", "P7D", new DateOnly(2026, 6, 1), "maintenance", null, null),
+            CancellationToken.None);
 
-        var settings = await commandLock.GetLockKeysAsync(command, CancellationToken.None);
-
-        Assert.Equal("business-maintenance:pm-generation:org-001:env-dev:20260608", settings.LockKey);
+        Assert.Equal("business-maintenance:pm-generation:org-001:env-dev", generateSettings.LockKey);
+        Assert.Equal(generateSettings.LockKey, stateSettings.LockKey);
+        Assert.Equal(generateSettings.LockKey, createSettings.LockKey);
+        Assert.Equal(TimeSpan.FromSeconds(30), generateSettings.AcquireTimeout);
+        Assert.Equal(generateSettings.AcquireTimeout, stateSettings.AcquireTimeout);
+        Assert.Equal(generateSettings.AcquireTimeout, createSettings.AcquireTimeout);
     }
 
     [Fact]
@@ -36,6 +47,86 @@ public sealed class MaintenanceCommandLockTests
         await using var retry = await retryTask;
 
         Assert.NotNull(retry);
+    }
+
+    [Fact]
+    public async Task Redis_distributed_lock_renews_lease_until_disposed()
+    {
+        var store = new InMemoryRedisCommandLockStore();
+        var distributedLock = new RedisMaintenanceDistributedLock(
+            store,
+            TimeProvider.System,
+            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromMilliseconds(20));
+        await using var held = await distributedLock.AcquireAsync("pm-renewing-lock", TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        await Task.Delay(250);
+        await using var blocked = await distributedLock.TryAcquireAsync("pm-renewing-lock", TimeSpan.Zero, CancellationToken.None);
+
+        Assert.Null(blocked);
+        Assert.False(held.HandleLostToken.IsCancellationRequested);
+        await held.DisposeAsync();
+        await using var retry = await distributedLock.TryAcquireAsync("pm-renewing-lock", TimeSpan.Zero, CancellationToken.None);
+        Assert.NotNull(retry);
+    }
+
+    [Fact]
+    public async Task Redis_distributed_lock_signals_handle_loss_when_renewal_fails()
+    {
+        var distributedLock = new RedisMaintenanceDistributedLock(
+            new FailingRenewalStore(),
+            TimeProvider.System,
+            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromMilliseconds(20));
+        await using var held = await distributedLock.AcquireAsync("pm-lost-lock", TimeSpan.FromSeconds(1), CancellationToken.None);
+        var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = held.HandleLostToken.Register(lostSignal.SetResult);
+
+        await lostSignal.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.True(held.HandleLostToken.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task Redis_distributed_lock_logs_lock_key_when_renewal_is_rejected()
+    {
+        var logger = new TestLogger<RedisMaintenanceDistributedLock>();
+        var distributedLock = new RedisMaintenanceDistributedLock(
+            new FailingRenewalStore(),
+            TimeProvider.System,
+            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromMilliseconds(20),
+            logger);
+        await using var held = await distributedLock.AcquireAsync("pm-rejected-renewal", TimeSpan.FromSeconds(1), CancellationToken.None);
+        var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = held.HandleLostToken.Register(lostSignal.SetResult);
+
+        await lostSignal.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        var warning = Assert.Single(logger.Messages, message => message.LogLevel == LogLevel.Warning);
+        Assert.Contains("pm-rejected-renewal", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("token", warning.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Redis_distributed_lock_logs_exception_when_renewal_throws()
+    {
+        var logger = new TestLogger<RedisMaintenanceDistributedLock>();
+        var distributedLock = new RedisMaintenanceDistributedLock(
+            new ThrowingRenewalStore(),
+            TimeProvider.System,
+            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromMilliseconds(20),
+            logger);
+        await using var held = await distributedLock.AcquireAsync("pm-failed-renewal", TimeSpan.FromSeconds(1), CancellationToken.None);
+        var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = held.HandleLostToken.Register(lostSignal.SetResult);
+
+        await lostSignal.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        var warning = Assert.Single(logger.Messages, message => message.LogLevel == LogLevel.Warning);
+        Assert.Contains("pm-failed-renewal", warning.Message, StringComparison.Ordinal);
+        Assert.IsType<InvalidOperationException>(warning.Exception);
     }
 
     [Fact]
@@ -60,6 +151,26 @@ public sealed class MaintenanceCommandLockTests
     }
 
     [Fact]
+    public async Task Maintenance_command_lock_behavior_cancels_handler_when_lease_is_lost()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IDistributedLock>(new RedisMaintenanceDistributedLock(
+            new FailingRenewalStore(),
+            TimeProvider.System,
+            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromMilliseconds(20)));
+        services.AddScoped<ICommandLock<CancellableLockedCommand>, CancellableLockedCommandLock>();
+        services.AddScoped<IRequestHandler<CancellableLockedCommand>, CancellableLockedCommandHandler>();
+        services.AddMediatR(configuration => configuration
+            .RegisterServicesFromAssemblyContaining<MaintenanceCommandLockTests>()
+            .AddOpenBehavior(typeof(MaintenanceCommandLockBehavior<,>)));
+        await using var provider = services.BuildServiceProvider();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            provider.GetRequiredService<ISender>().Send(new CancellableLockedCommand(), CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Generate_due_pm_handler_remains_idempotent_for_repeated_tick()
     {
         await using var dbContext = MaintenanceEndpointContractTests.CreateTestDbContext();
@@ -77,6 +188,24 @@ public sealed class MaintenanceCommandLockTests
     }
 
     public sealed record ThrowingLockedCommand(string LockKey) : ICommand;
+
+    public sealed record CancellableLockedCommand : ICommand;
+
+    public sealed class CancellableLockedCommandLock : ICommandLock<CancellableLockedCommand>
+    {
+        public Task<CommandLockSettings> GetLockKeysAsync(CancellableLockedCommand command, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new CommandLockSettings("pm-cancellable-lock", 1));
+        }
+    }
+
+    public sealed class CancellableLockedCommandHandler : IRequestHandler<CancellableLockedCommand>
+    {
+        public async Task Handle(CancellableLockedCommand request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+    }
 
     public sealed class ThrowingLockedCommandLock : ICommandLock<ThrowingLockedCommand>
     {
@@ -96,4 +225,71 @@ public sealed class MaintenanceCommandLockTests
             throw new InvalidOperationException("handler failed after command lock acquisition.");
         }
     }
+
+    private sealed class FailingRenewalStore : IRedisCommandLockStore
+    {
+        public Task<bool> TryAcquireAsync(string key, string token, TimeSpan leaseTime, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> RenewAsync(string key, string token, TimeSpan leaseTime, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(false);
+        }
+
+        public Task ReleaseAsync(string key, string token, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingRenewalStore : IRedisCommandLockStore
+    {
+        public Task<bool> TryAcquireAsync(string key, string token, TimeSpan leaseTime, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> RenewAsync(string key, string token, TimeSpan leaseTime, CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("redis renewal unavailable");
+        }
+
+        public Task ReleaseAsync(string key, string token, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TestLogger<T> : ILogger<T>
+    {
+        public List<LogMessage> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Messages.Add(new LogMessage(logLevel, formatter(state, exception), exception));
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+
+            public void Dispose()
+            {
+            }
+        }
+    }
+
+    private sealed record LogMessage(LogLevel LogLevel, string Message, Exception? Exception);
 }

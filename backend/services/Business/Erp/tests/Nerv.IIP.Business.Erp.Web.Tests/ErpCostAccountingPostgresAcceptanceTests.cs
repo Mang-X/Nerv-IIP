@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Erp.Infrastructure;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
+[Collection("ERP PostgreSQL acceptance")]
 public sealed class ErpCostAccountingPostgresAcceptanceTests
 {
     [ErpCostPostgresFact]

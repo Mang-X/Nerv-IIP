@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Commands;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Quality.Web.Application.Seed;
 using Nerv.IIP.Business.Quality.Web.Application.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Scheduling;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
@@ -114,6 +115,7 @@ try
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<QualityCodingService>();
+    builder.Services.AddScoped<QualitySeedService>();
     builder.Services.AddSingleton<IInspectionUomConversionClient>(NullInspectionUomConversionClient.Instance);
     builder.Services.AddScoped<IInspectionSourceDocumentVerifier, ErpPurchaseReceiptInspectionSourceDocumentVerifier>();
     builder.Services.AddScoped<IQualityIntegrationEventContextAccessor, HttpQualityIntegrationEventContextAccessor>();
@@ -181,6 +183,17 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    // 质量基础目录 seed（原因码等）：与 MasterData 同口径——显式开关或本地 autoMigrate 时执行，幂等。
+    var seedEnabled = builder.Configuration.GetValue<bool>("Quality:Seed:Enabled") || autoMigrate;
+    if (seedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        var seed = scope.ServiceProvider.GetRequiredService<QualitySeedService>();
+        await seed.SeedAsync(
+            builder.Configuration["Quality:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Quality:Seed:EnvironmentId"] ?? "env-dev");
     }
 
     app.UseNervIipRequestLocalization();

@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using FastEndpoints;
 using Nerv.IIP.Contracts.Coding;
 
@@ -598,6 +599,7 @@ public sealed record BusinessConsoleSetMasterDataResourceEnabledRequest(
     string EnvironmentId,
     string ResourceType,
     string Code,
+    string IdempotencyKey,
     string? CodeSet = null,
     string Reason = "",
     DateOnly? EffectiveFrom = null);
@@ -800,6 +802,12 @@ public sealed record BusinessConsoleNotificationListRequest(
     string? RecipientRef,
     string? Status,
     int Take = 20);
+
+public sealed record BusinessConsoleMarkNotificationMessageReadRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string MessageId,
+    string? RecipientRef = null);
 
 public sealed record BusinessConsoleInventoryAvailabilityRequest(
     string OrganizationId,
@@ -1159,6 +1167,95 @@ public sealed record BusinessConsoleCreateInspectionRecordFromTaskRequest(
     string? DispositionReason,
     IReadOnlyCollection<string>? DispositionAttachmentFileIds);
 
+public sealed record BusinessConsoleCreateInspectionRecordFromTaskResponse(
+    string InspectionRecordId,
+    string Result,
+    string? NonconformanceReportId,
+    string? NonconformanceReportCode);
+
+public sealed record BusinessConsoleQualityInspectionPlanCharacteristicsRequest(
+    [property: RouteParam] string InspectionPlanId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+/// <summary>
+/// 按 id 取单条 NCR 详情（PDA 检验结果页「已触发 NCR」→ 打开 NCR 的互链）。代理真实详情端点，
+/// org/env 随查询下传由 Quality 服务端做租户过滤（越权 id 与不存在同为 not found）。
+/// </summary>
+public sealed record BusinessConsoleQualityNcrDetailRequest(
+    [property: RouteParam] string NcrId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+/// <summary>
+/// NCR 详情（含权威的来源检验记录回链 <see cref="SourceInspectionRecordId"/>——记录 ↔ NCR 双向互查
+/// 由服务端业务关系驱动，而非客户端 query 参数）。
+/// </summary>
+public sealed record BusinessConsoleQualityNcrDetailResponse(
+    string Id,
+    string Code,
+    string Status,
+    string? SkuCode,
+    string? SourceType,
+    string? SourceDocumentId,
+    decimal? DefectQuantity,
+    string? DefectReason,
+    string? BatchNo,
+    string? SerialNo,
+    string? SourceInspectionRecordId);
+
+/// <summary>
+/// 按 id 取单条检验记录详情（PDA NCR 详情「来源检验记录」→ 打开记录的互链）。代理真实详情端点，
+/// org/env 随查询下传由 Quality 服务端做租户过滤。
+/// </summary>
+public sealed record BusinessConsoleQualityInspectionRecordDetailRequest(
+    [property: RouteParam] string InspectionRecordId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleInspectionRecordResultLine(
+    string CharacteristicCode,
+    string ObservedValue,
+    decimal? MeasuredValue,
+    string? UnitCode,
+    string Result,
+    string? DefectReason,
+    decimal? DefectQuantity);
+
+/// <summary>检验记录详情（含权威结论、处置与回链 NCR id——记录 ↔ NCR 双向互查）。</summary>
+public sealed record BusinessConsoleInspectionRecordDetailResponse(
+    string InspectionRecordId,
+    string SourceType,
+    string SourceService,
+    string SourceDocumentId,
+    string SkuCode,
+    decimal InspectedQuantity,
+    string? BatchNo,
+    string? SerialNo,
+    string? UomCode,
+    string Result,
+    string? DispositionReason,
+    string? NonconformanceReportId,
+    IReadOnlyCollection<BusinessConsoleInspectionRecordResultLine> ResultLines,
+    DateTime CreatedAtUtc);
+
+public sealed record BusinessConsoleInspectionPlanCharacteristicItem(
+    string CharacteristicCode,
+    string Name,
+    string CharacteristicType,
+    bool Required,
+    decimal? NominalValue,
+    decimal? LowerSpecLimit,
+    decimal? UpperSpecLimit,
+    string? UnitCode);
+
+public sealed record BusinessConsoleQualityInspectionPlanCharacteristicListResponse(
+    string InspectionPlanId,
+    string? PlanCode,
+    string? Category,
+    string? SkuCode,
+    IReadOnlyCollection<BusinessConsoleInspectionPlanCharacteristicItem> Items);
+
 public sealed record BusinessConsoleOpenNcrFromInspectionRequest(
     [property: RouteParam] string InspectionRecordId,
     [property: QueryParam] string OrganizationId,
@@ -1189,7 +1286,8 @@ public sealed record BusinessConsoleNcrCloseRequest(
     [property: QueryParam] string EnvironmentId,
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
-    string? ReturnDocumentId);
+    string? ReturnDocumentId,
+    [property: Required, MaxLength(500)] string Reason);
 
 public sealed record BusinessConsoleAcceptedResponse(
     bool Accepted,
@@ -2069,7 +2167,10 @@ public sealed record BusinessConsoleSchedulePlanSummaryResponse(
     DateTimeOffset? ReleasedAtUtc,
     int AssignmentCount,
     int ConflictCount,
-    int UnscheduledOperationCount);
+    int UnscheduledOperationCount,
+    bool IsInvalidated = false,
+    string? LatestInvalidationReasonCode = null,
+    DateTimeOffset? LatestInvalidatedAtUtc = null);
 
 public sealed record BusinessConsoleReleaseSchedulePlanResponse(
     string PlanId,
@@ -3367,8 +3468,35 @@ public sealed record BusinessConsoleMesForceReleaseQualityHoldRequest(
     [property: QueryParam] string EnvironmentId,
     string Reason,
     string? SourceService,
-    DateTimeOffset? ReleasedAtUtc);
+    DateTimeOffset? ReleasedAtUtc,
+    string IdempotencyKey);
 
+public sealed record BusinessConsoleMesQualityHoldTimelineRequest(
+    [property: RouteParam] string SourceDocumentId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string SourceService);
+
+public sealed record BusinessConsoleMesQualityHoldTimelineItem(
+    Guid TransitionId,
+    string SourceService,
+    string SourceDocumentId,
+    string HoldCycleId,
+    string CorrelationId,
+    string EventKind,
+    string Actor,
+    DateTimeOffset OccurredAtUtc,
+    string? Reason,
+    string? SourceInspectionRecordId,
+    string? SourceInspectionDocumentId,
+    string Origin,
+    string? IdempotencyKey);
+
+public sealed record BusinessConsoleMesQualityHoldTimelineResponse(
+    IReadOnlyCollection<BusinessConsoleMesQualityHoldTimelineItem> Items);
+
+// Actor is intentionally omitted: the gateway binds the downstream reversal actor to the
+// authenticated principal and ignores caller-supplied actor-like JSON properties.
 public sealed record BusinessConsoleMesReverseProductionReportRequest(
     [property: RouteParam] string ReportNo,
     [property: QueryParam] string OrganizationId,
@@ -3471,7 +3599,9 @@ public sealed record BusinessConsoleMesDispatchTaskRow(
     string? WorkCenterName = null,
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null,
-    string? OperationCode = null);
+    string? OperationCode = null,
+    DateTimeOffset? ScheduledAtUtc = null,
+    string? ScheduleInvalidationReasonCode = null);
 
 public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     [property: RouteParam] string OperationTaskId,
@@ -3504,7 +3634,9 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     string? WorkCenterName = null,
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null,
-    string? OperationCode = null);
+    string? OperationCode = null,
+    DateTimeOffset? ScheduledAtUtc = null,
+    string? ScheduleInvalidationReasonCode = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: RouteParam] string OperationTaskId,
@@ -3539,6 +3671,45 @@ public sealed record BusinessConsoleMesWipSummaryRow(
 public sealed record BusinessConsoleMesProductionReportListResponse(
     IReadOnlyCollection<BusinessConsoleMesProductionReportRow> Items,
     int Total);
+
+public sealed record BusinessConsoleMesProductionReportDetailRequest(
+    [property: RouteParam] string ReportNo,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleMesProductionReportDetailResponse(
+    BusinessConsoleMesProductionReportDetail Report,
+    IReadOnlyCollection<BusinessConsoleMesConsumedMaterialLot> ConsumedMaterialLots);
+
+public sealed record BusinessConsoleMesProductionReportDetail(
+    string ProductionReportId,
+    string ReportNo,
+    string WorkOrderId,
+    string OperationTaskId,
+    decimal GoodQuantity,
+    decimal ScrapQuantity,
+    decimal ReworkQuantity,
+    DateTimeOffset ReportedAtUtc,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? ScrapReasonCode = null,
+    string? DefectRecordNo = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null,
+    string? ReversedReportNo = null,
+    string? ReversalReason = null,
+    string? InventoryPostingFailureCode = null,
+    string? InventoryPostingFailureMessage = null,
+    DateTimeOffset? InventoryPostingFailedAtUtc = null,
+    string? WorkOrderStatus = null,
+    string? ReversalReportNo = null);
+
+public sealed record BusinessConsoleMesConsumedMaterialLot(
+    string MaterialId,
+    string MaterialLotId,
+    decimal ConsumedQuantity,
+    string UomCode,
+    string MaterialIssueRequestNo);
 
 public sealed record BusinessConsoleMesTelemetryCandidateListRequest(string OrganizationId, string EnvironmentId, string? Status = null,
     string? WorkCenterId = null, string? DeviceAssetId = null, DateTimeOffset? FromUtc = null, DateTimeOffset? ToUtc = null, int Skip = 0, int Take = 50);

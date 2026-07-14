@@ -92,6 +92,7 @@ const dispositionForm = reactive({
   attachmentFileIds: '',
 })
 const closeForm = reactive({
+  reason: '',
   reworkWorkOrderId: '',
   scrapMovementId: '',
   returnDocumentId: '',
@@ -118,7 +119,7 @@ const selectedNcrId = computed(() => selectedNcr.value?.id ?? '')
 const canSubmitDisposition = computed(
   () => isNonEmpty(selectedNcrId.value) && isNonEmpty(dispositionForm.dispositionType),
 )
-const canCloseNcr = computed(() => isNonEmpty(selectedNcrId.value))
+const canCloseNcr = computed(() => isNonEmpty(selectedNcrId.value) && isNonEmpty(closeForm.reason))
 const statusFilter = computed({
   get: () => filters.status || 'all',
   set: (value: string) => {
@@ -139,6 +140,7 @@ function openNcr(ncr: BusinessConsoleQualityItem) {
   dispositionSuccess.value = ''
   closeSuccess.value = ''
   dispositionForm.dispositionApprovalChainId = ''
+  closeForm.reason = ''
   closeForm.reworkWorkOrderId =
     contextWorkOrderId.value || (isPresent(ncr.sourceDocumentId) ? ncr.sourceDocumentId : '')
   detailOpen.value = true
@@ -158,6 +160,7 @@ async function submitNcrDisposition() {
 async function submitCloseNcr() {
   if (!canCloseNcr.value) return
   const body: BusinessConsoleNcrCloseRequest = {
+    reason: closeForm.reason.trim(),
     reworkWorkOrderId: optionalText(closeForm.reworkWorkOrderId),
     scrapMovementId: optionalText(closeForm.scrapMovementId),
     returnDocumentId: optionalText(closeForm.returnDocumentId),
@@ -342,6 +345,16 @@ watch(
               {{ dispositionSuccess }}
             </p>
             <NvFieldGroup class="grid gap-3">
+              <NvField>
+                <NvFieldLabel for="ncr-close-reason">关闭原因</NvFieldLabel>
+                <NvInput
+                  id="ncr-close-reason"
+                  v-model="closeForm.reason"
+                  required
+                  maxlength="500"
+                  placeholder="请说明关闭依据和处理结果"
+                />
+              </NvField>
               <NvField>
                 <NvFieldLabel>处置类型</NvFieldLabel>
                 <NvSelect v-model="dispositionForm.dispositionType">

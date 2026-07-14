@@ -217,6 +217,7 @@ describe('business quality composables', () => {
     })
     await closeNcr('ncr-1', {
       reworkWorkOrderId: 'wo-1',
+      reason: '返工处理已完成',
     })
 
     expect(submitBusinessConsoleQualityNcrDispositionMutationOptions).toHaveBeenCalled()
@@ -249,6 +250,7 @@ describe('business quality composables', () => {
       },
       body: {
         reworkWorkOrderId: 'wo-1',
+        reason: '返工处理已完成',
       },
     })
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(2)

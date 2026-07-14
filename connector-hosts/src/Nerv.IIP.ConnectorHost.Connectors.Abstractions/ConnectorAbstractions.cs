@@ -10,6 +10,15 @@ public interface IIndustrialTelemetryCollectionConnector
     Task RunCollectionCycleAsync(CancellationToken cancellationToken);
 }
 
+public sealed record ConnectorCollectionHealthSnapshot(
+    string ConnectorId,
+    string SourceSystem,
+    Guid CounterEpoch,
+    long? ReceivedCount,
+    long? DroppedCount,
+    long? ErrorCount,
+    DateTimeOffset? LastSampleAtUtc);
+
 public sealed record ConnectorTarget(
     string NodeKey,
     string NodeName,
@@ -22,7 +31,8 @@ public sealed record ConnectorTarget(
     string ReportedStatus,
     string HealthStatus,
     IReadOnlyList<ConnectorCapability> Capabilities,
-    IReadOnlyDictionary<string, string> Metadata);
+    IReadOnlyDictionary<string, string> Metadata,
+    ConnectorCollectionHealthSnapshot? CollectionHealth = null);
 
 public sealed record ConnectorCapability(
     string Code,

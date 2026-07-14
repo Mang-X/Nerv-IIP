@@ -14,11 +14,13 @@ public sealed class ModbusConnector(
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Func<DateTimeOffset> _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     private readonly TimeSpan _sealedBucketRetention = CalculateSealedBucketRetention(options.Registers);
+    private readonly Guid _counterEpoch = Guid.CreateVersion7();
 
     public ModbusConnectorState CurrentState { get; private set; } = new(
         "stopped",
         "unknown",
         "Modbus TCP collector has not run yet.",
+        0,
         0,
         0,
         0,
@@ -53,7 +55,6 @@ public sealed class ModbusConnector(
                     var samples = await modbusClient.ReadRegistersAsync(mapping, observedAtUtc, cancellationToken);
                     if (samples.Count == 0)
                     {
-                        await MarkDroppedSampleAsync(cancellationToken);
                         continue;
                     }
 
@@ -75,6 +76,7 @@ public sealed class ModbusConnector(
                 {
                     HealthStatus = "degraded",
                     Summary = "Modbus TCP polling failed; reconnecting.",
+                    ErrorCount = state.ErrorCount + 1,
                     ReconnectCount = state.ReconnectCount + 1
                 }, cancellationToken);
             }
@@ -84,6 +86,7 @@ public sealed class ModbusConnector(
                 {
                     ReportedStatus = "stopped",
                     HealthStatus = "unhealthy",
+                    ErrorCount = state.ErrorCount + 1,
                     Summary = $"Modbus TCP collection failed: {ex.Message}"
                 }, cancellationToken);
                 throw;
@@ -123,9 +126,17 @@ public sealed class ModbusConnector(
                     new ConnectorCapability("runtime.status", "1.0", "runtime", ["inspect"]),
                     new ConnectorCapability("industrial-telemetry.ingest", "1.0", "telemetry", ["poll", "sample"])
                 ],
-                metadata)
+                metadata,
+                CreateCollectionHealth(state))
         ];
         return targets;
+    }
+
+    private ConnectorCollectionHealthSnapshot CreateCollectionHealth(ModbusConnectorState state)
+    {
+        var known = state.ReceivedSamples > 0 || state.DroppedSamples > 0 || state.ErrorCount > 0 || state.LastSampleAtUtc is not null;
+        return new($"modbus-{options.ConnectorId}", "modbus", _counterEpoch,
+            known ? state.ReceivedSamples : null, known ? state.DroppedSamples : null, known ? state.ErrorCount : null, state.LastSampleAtUtc);
     }
 
     private async Task HandleSampleAsync(ModbusRegisterMapping mapping, ModbusRegisterSample sample, CancellationToken cancellationToken)
@@ -133,6 +144,11 @@ public sealed class ModbusConnector(
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            CurrentState = CurrentState with
+            {
+                ReceivedSamples = CurrentState.ReceivedSamples + 1,
+                LastSampleAtUtc = sample.ObservedAtUtc
+            };
             if (sample.UnitId != mapping.UnitId || sample.Table != mapping.Table || sample.Address != mapping.Address)
             {
                 MarkDroppedSample();
@@ -156,11 +172,6 @@ public sealed class ModbusConnector(
             }
 
             bucket.Add(value);
-            CurrentState = CurrentState with
-            {
-                ReceivedSamples = CurrentState.ReceivedSamples + 1,
-                LastSampleAtUtc = sample.ObservedAtUtc
-            };
         }
         finally
         {
@@ -271,19 +282,6 @@ public sealed class ModbusConnector(
             HealthStatus = "degraded",
             Summary = "Modbus TCP collector dropped one or more invalid or late samples."
         };
-    }
-
-    private async Task MarkDroppedSampleAsync(CancellationToken cancellationToken)
-    {
-        await _gate.WaitAsync(cancellationToken);
-        try
-        {
-            MarkDroppedSample();
-        }
-        finally
-        {
-            _gate.Release();
-        }
     }
 
     private RecordIndustrialTelemetrySampleRequest CreateRequest(ModbusTelemetryBucket bucket)

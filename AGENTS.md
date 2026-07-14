@@ -55,7 +55,12 @@ Nerv-IIP/
 .\nerv.ps1 dev -InfraOnly   # Infra only (PostgreSQL, Redis, RabbitMQ, MinIO, OTel)
 .\nerv.ps1 publish-compose  # Generate Aspire Docker Compose artifacts
 .\nerv.ps1 ports            # Canonical port matrix
+.\nerv.ps1 fullstack run -Scenario smoke  # Agent-owned real full-stack verification
+.\nerv.ps1 fullstack start               # Interactive diagnostics only
+.\nerv.ps1 fullstack stop                # Stop the exact diagnostic session
 ```
+
+Agent-owned real full-stack verification must use `fullstack run`. Interactive `fullstack start` is diagnostic-only and must be stopped before handoff. Ordinary unit and integration test commands are unchanged.
 
 ### Backend (.NET 10)
 ```powershell

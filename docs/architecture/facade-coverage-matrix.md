@@ -81,7 +81,7 @@ declaration against what actually shipped (facade + codegen + barrel for
   add `gateways` + `gatewayOperationIds`, drop `followUp`.
 - **New business service** → add its `.Web` project reference and assembly name to
   the gate project (`Nerv.IIP.FacadeCoverage.Tests`) so its endpoints are covered.
-- The `exposed` rows are summarised by count here; the full 335-row registry with
+- The `exposed` rows are summarised by count here; the full 355-row registry with
   per-endpoint facade operation ids lives in the JSON.
 
 ## Summary
@@ -93,19 +93,19 @@ declaration against what actually shipped (facade + codegen + barrel for
 | BarcodeLabel | 12 | 9 | 0 | 3 |
 | DemandPlanning | 15 | 15 | 0 | 0 |
 | Erp | 51 | 39 | 11 | 1 |
-| IndustrialTelemetry | 24 | 21 | 1 | 2 |
+| IndustrialTelemetry | 24 | 22 | 1 | 1 |
 | Inventory | 12 | 5 | 2 | 5 |
 | Maintenance | 20 | 15 | 5 | 0 |
 | MasterData | 46 | 38 | 4 | 4 |
-| Mes | 50 | 47 | 3 | 0 |
+| Mes | 52 | 49 | 3 | 0 |
 | ProductEngineering | 38 | 38 | 0 | 0 |
-| Quality | 31 | 16 | 15 | 0 |
+| Quality | 32 | 18 | 14 | 0 |
 | Scheduling | 7 | 6 | 1 | 0 |
 | Wms | 30 | 19 | 6 | 5 |
-| **Total** | **343** | **275** | **48** | **20** |
+| **Total** | **355** | **284** | **51** | **20** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-The `exposed` rows (271) — each with its verified facade `gatewayOperationIds` — are
+The `exposed` rows (284) — each with its verified facade `gatewayOperationIds` — are
 enumerated in the JSON registry. The `deferred` and `internal` rows, the actual
 governance decisions, are listed in full below.
 
@@ -147,7 +147,6 @@ governance decisions, are listed in full below.
 | Quality | POST | `/api/business/v1/quality/inspection-plans` | BusinessGateway facade pending; inspection-plan create follows the Quality plan-config menu phase (only plan list GET is exposed today). |
 | Quality | POST | `/api/business/v1/quality/inspection-plans/{inspectionPlanId}/activate` | BusinessGateway facade pending; inspection-plan activation follows the Quality plan-lifecycle menu phase. |
 | Quality | POST | `/api/business/v1/quality/ncrs` | BusinessGateway facade pending; generic NCR create follows the Quality NCR menu phase (only NCR-from-inspection is exposed today via openBusinessConsoleQualityNcrFromInspection). |
-| Quality | GET | `/api/business/v1/quality/ncrs/{ncrId}` | BusinessGateway facade pending; NCR list/disposition/close are exposed, single-NCR detail-by-id follows the Quality NCR detail menu phase. |
 | Quality | POST | `/api/business/v1/quality/spc/control-chart/evaluate` | BusinessGateway facade pending; SPC control-chart read is exposed, evaluate (write) follows the SPC analysis menu phase (#725). |
 | Quality | POST | `/api/business/v1/quality/spc/control-chart/lock` | BusinessGateway facade pending; SPC control-limit lock (write) follows the SPC analysis menu phase (#725). |
 | Quality | POST | `/api/business/v1/quality/measuring-devices` | BusinessGateway measuring-device management facade follows the Quality calibration workbench menu phase. |
@@ -169,7 +168,6 @@ governance decisions, are listed in full below.
 | Approval | POST | `/api/business/v1/approvals/tasks/overdue/check` | Internal server-clock overdue scheduler endpoint invoked by the Approval OverdueCheck background scanner (#488); not a user action. |
 | Erp | GET | `/api/business/v1/erp/purchase-receipts/{purchaseReceiptNo}/source-document` | Service-to-service source-document read contract consumed by Quality to validate receipt line SKU/qty/UOM/lot (#77). |
 | IndustrialTelemetry | POST | `/api/business/v1/iiot/alarms/escalations/run` | Internal alarm-escalation scheduler endpoint (IndustrialTelemetry:AlarmEscalation opt-in scanner, #686); not a user action. |
-| IndustrialTelemetry | GET | `/api/business/v1/iiot/runtime-hours` | By-design internal API consumed by Maintenance PM day-interval generation (#688). Canonical internal precedent - never a Console facade. |
 | Inventory | POST | `/api/inventory/v1/reservations` | Service-to-service reservation API consumed by WMS pick-task creation (#412). |
 | Inventory | POST | `/api/inventory/v1/reservations/fefo` | Service-to-service FEFO reservation API consumed by WMS (#412). |
 | Inventory | POST | `/api/inventory/v1/reservations/{reservationId}/release` | Service-to-service reservation release API consumed by WMS outbound cancel (#412). |

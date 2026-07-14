@@ -1,0 +1,20 @@
+{
+  "resources": [
+    {
+      "name": "business-console-abcdefgh",
+      "displayName": "business-console",
+      "resourceType": "Executable.v0",
+      "state": "Running",
+      "healthStatus": "Healthy",
+      "urls": [
+        {
+          "name": "http",
+          "url": "http://127.0.0.1:43125"
+        }
+      ],
+      "volumes": [],
+      "properties": {}
+    }
+  ]
+}
+Describe completed.

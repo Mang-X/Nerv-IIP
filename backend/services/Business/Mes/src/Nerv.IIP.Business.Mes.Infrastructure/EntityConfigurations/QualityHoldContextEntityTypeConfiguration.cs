@@ -25,6 +25,7 @@ public sealed class QualityHoldContextEntityTypeConfiguration : IEntityTypeConfi
         builder.Property(x => x.RecordedAtUtc).HasColumnName("recorded_at_utc").IsRequired().HasComment("UTC time when the latest Quality inspection result was recorded.");
         builder.Property(x => x.Active).HasColumnName("active").IsRequired().HasComment("Whether this Quality context currently blocks MES release or operation start.");
         builder.Property(x => x.HeldInspectionRecordId).HasColumnName("held_inspection_record_id").HasMaxLength(100).HasComment("Quality inspection record id that originally activated the current or historical hold.");
+        builder.Property(x => x.HeldInspectionDocumentId).HasColumnName("held_inspection_document_id").HasMaxLength(100).HasComment("Quality inspection plan or document durably associated with the current hold cycle when supplied.");
         builder.Property(x => x.HoldReason).HasColumnName("hold_reason").HasMaxLength(500).HasComment("Reason captured when the Quality hold was activated.");
         builder.Property(x => x.HeldAtUtc).HasColumnName("held_at_utc").HasComment("UTC time when the Quality hold was activated.");
         builder.Property(x => x.HeldBy).HasColumnName("held_by").HasMaxLength(100).HasComment("Quality actor or system source that activated the hold.");

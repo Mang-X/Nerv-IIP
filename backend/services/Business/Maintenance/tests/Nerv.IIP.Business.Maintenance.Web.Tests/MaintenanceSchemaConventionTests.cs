@@ -42,6 +42,7 @@ public sealed class MaintenanceSchemaConventionTests
             typeof(MaintenanceInspectionMeasurement),
             typeof(DowntimeReason),
             typeof(ProcessedIntegrationEvent),
+            typeof(MaintenanceDeviceState),
         };
         var failures = new List<string>();
 

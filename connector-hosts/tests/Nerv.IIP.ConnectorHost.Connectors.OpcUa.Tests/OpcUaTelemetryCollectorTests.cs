@@ -23,6 +23,11 @@ public sealed class OpcUaTelemetryCollectorTests
             ]);
         var samples = new RecordingIndustrialTelemetrySamplesClient();
         var connector = CreateConnector(opcUa, samples);
+        var initialHealth = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!;
+        Assert.Null(initialHealth.ReceivedCount);
+        Assert.Null(initialHealth.DroppedCount);
+        Assert.Null(initialHealth.ErrorCount);
+        Assert.Null(initialHealth.LastSampleAtUtc);
 
         await connector.RunCollectionCycleAsync(CancellationToken.None);
 
@@ -42,6 +47,15 @@ public sealed class OpcUaTelemetryCollectorTests
         Assert.Equal("opcua:opcua-line-1:temperature:1783036800000", request.SourceSequence);
         Assert.Equal("opcua", request.SourceSystem);
         Assert.Equal("connector-host-001/opcua-line-1", request.SourceConnector);
+        var health = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth;
+        Assert.NotNull(health);
+        Assert.Equal("opcua-opcua-line-1", health.ConnectorId);
+        Assert.Equal("opcua", health.SourceSystem);
+        Assert.NotEqual(Guid.Empty, health.CounterEpoch);
+        Assert.Equal(2, health.ReceivedCount);
+        Assert.Equal(0, health.DroppedCount);
+        Assert.Equal(0, health.ErrorCount);
+        Assert.Equal(new DateTimeOffset(2026, 7, 3, 0, 0, 5, TimeSpan.Zero), health.LastSampleAtUtc);
     }
 
     [Fact]
@@ -67,6 +81,7 @@ public sealed class OpcUaTelemetryCollectorTests
         Assert.Equal("1", target.Metadata["reconnectCount"]);
         Assert.Equal("1", target.Metadata["subscriptionRecoveries"]);
         Assert.Equal(1m, connector.CurrentState.Metrics["reconnectCount"]);
+        Assert.Equal(1, target.CollectionHealth!.ErrorCount);
     }
 
     [Fact]
@@ -160,6 +175,7 @@ public sealed class OpcUaTelemetryCollectorTests
         Assert.Equal("opcua:opcua-line-1:temperature:1783036800000", request.SourceSequence);
         Assert.Equal(1, samples.AcceptedWriteAttempts);
         Assert.Equal(1, connector.CurrentState.DroppedSamples);
+        Assert.Equal(2, connector.CurrentState.ReceivedSamples);
     }
 
     [Fact]
@@ -190,6 +206,7 @@ public sealed class OpcUaTelemetryCollectorTests
 
         Assert.Single(samples.Requests);
         Assert.Equal(1, connector.CurrentState.DroppedSamples);
+        Assert.Equal(2, connector.CurrentState.ReceivedSamples);
     }
 
     [Fact]
@@ -260,6 +277,7 @@ public sealed class OpcUaTelemetryCollectorTests
 
         Assert.Empty(samples.Requests);
         Assert.Equal(2, connector.CurrentState.DroppedSamples);
+        Assert.Equal(2, connector.CurrentState.ReceivedSamples);
         var targets = await connector.DiscoverAsync(CancellationToken.None);
         Assert.Equal("2", Assert.Single(targets).Metadata["droppedSamples"]);
     }

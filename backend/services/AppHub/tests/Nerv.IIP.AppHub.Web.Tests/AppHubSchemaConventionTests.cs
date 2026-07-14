@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
@@ -30,6 +31,7 @@ public sealed class AppHubSchemaConventionTests
             typeof(ManagedNode),
             typeof(ApplicationInstance),
             typeof(InstanceHeartbeat),
+            typeof(ConnectorCollectionHealthProjection),
             typeof(InstanceStateHistory),
             typeof(InstanceStatusChange),
             typeof(RegistrationIdempotency),
@@ -50,6 +52,12 @@ public sealed class AppHubSchemaConventionTests
         failures.AddRange(ProcessedIntegrationEventHasUniqueInboxIndex(fixture.DbContext.Model));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+        var instance = fixture.DbContext.Model.FindEntityType(typeof(ApplicationInstance))!;
+        Assert.Contains(instance.GetIndexes(), index => index.IsUnique && index.Properties.Select(x => x.Name).SequenceEqual([
+            nameof(ApplicationInstance.OrganizationId), nameof(ApplicationInstance.EnvironmentId), nameof(ApplicationInstance.InstanceKey)]));
+        var idempotency = fixture.DbContext.Model.FindEntityType(typeof(RegistrationIdempotency))!;
+        Assert.Contains(idempotency.GetIndexes(), index => index.IsUnique && index.Properties.Select(x => x.Name).SequenceEqual([
+            nameof(RegistrationIdempotency.OrganizationId), nameof(RegistrationIdempotency.EnvironmentId), nameof(RegistrationIdempotency.IdempotencyKey)]));
     }
 
     [Fact]
@@ -62,6 +70,37 @@ public sealed class AppHubSchemaConventionTests
             .Invoke(migration, [migrationBuilder]);
 
         AssertInboxDeduplicationBeforeUniqueIndex(migrationBuilder, "apphub");
+    }
+
+    [Fact]
+    public void Collection_health_migration_backfills_registration_scope_without_fake_empty_values()
+    {
+        var migration = new AddConnectorCollectionHealthProjection();
+        var builder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddConnectorCollectionHealthProjection).GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(migration, [builder]);
+
+        var addedScopeColumns = builder.Operations.OfType<AddColumnOperation>().Where(x => x.Table == "registration_idempotency" && x.Name is "OrganizationId" or "EnvironmentId").ToArray();
+        Assert.Equal(2, addedScopeColumns.Length);
+        Assert.All(addedScopeColumns, column => { Assert.True(column.IsNullable); Assert.Null(column.DefaultValue); });
+        Assert.Contains(builder.Operations.OfType<SqlOperation>(), operation => operation.Sql.Contains("FROM apphub.application_instances", StringComparison.Ordinal) && operation.Sql.Contains("RAISE EXCEPTION", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Current_model_matches_the_latest_migration_snapshot()
+    {
+        using var fixture = CreateFixture();
+        var snapshot = Assert.IsAssignableFrom<ModelSnapshot>(
+            fixture.DbContext.GetService<IMigrationsAssembly>().ModelSnapshot);
+        var snapshotModel = fixture.DbContext.GetService<IModelRuntimeInitializer>()
+            .Initialize(snapshot.Model, designTime: true);
+        var currentModel = fixture.DbContext.GetService<IDesignTimeModel>().Model;
+        var modelDiffer = fixture.DbContext.GetService<IMigrationsModelDiffer>();
+
+        var differences = modelDiffer.GetDifferences(
+            snapshotModel.GetRelationalModel(),
+            currentModel.GetRelationalModel());
+
+        Assert.Empty(differences);
     }
 
     private static IReadOnlyCollection<string> ProcessedIntegrationEventHasUniqueInboxIndex(IModel model)

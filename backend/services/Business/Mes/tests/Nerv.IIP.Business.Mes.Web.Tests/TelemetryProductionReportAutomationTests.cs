@@ -44,6 +44,7 @@ public sealed class TelemetryProductionReportAutomationTests
                 report.ReportNo,
                 "telemetry counter correction",
                 DateTimeOffset.Parse("2026-07-11T08:02:00Z"),
+                "system:telemetry",
                 "telemetry-reversal-001"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();

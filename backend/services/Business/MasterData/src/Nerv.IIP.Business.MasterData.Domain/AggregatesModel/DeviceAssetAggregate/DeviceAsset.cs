@@ -264,7 +264,7 @@ public class DeviceAsset : Entity<DeviceAssetId>, IAggregateRoot
         Disabled = true;
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new MasterDataAggregateDisabledDomainEvent(nameof(DeviceAsset), OrganizationId, EnvironmentId, Code, validReason));
-        this.AddDomainEvent(new DeviceAssetChangedDomainEvent(OrganizationId, EnvironmentId, Code));
+        this.AddDomainEvent(new DeviceAssetChangedDomainEvent(OrganizationId, EnvironmentId, Code, "disabled"));
     }
 
     public void Enable(string reason)

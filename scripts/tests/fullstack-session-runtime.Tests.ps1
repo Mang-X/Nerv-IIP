@@ -1,0 +1,479 @@
+# Script-Governance:
+#   Category: check
+#   SideEffects:
+#     - Validates full-stack Docker ownership predicates against synthetic inspect data
+#   Writes:
+#     - None
+#   Cleanup:
+#     - None
+#   Requires:
+#     - PowerShell 7
+
+$ErrorActionPreference = 'Stop'
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
+. (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1')
+
+function Assert-True([bool] $Condition, [string] $Message) {
+    if (-not $Condition) { throw $Message }
+}
+
+Assert-True ($null -ne (Get-Command Get-NervFullStackContainerRecords -ErrorAction SilentlyContinue)) 'Shared runtime must expose current session container discovery.'
+Assert-True ($null -ne (Get-Command Merge-NervSessionContainerIds -ErrorAction SilentlyContinue)) 'Cleanup must merge recorded and label-discovered containers.'
+Assert-True ($null -ne (Get-Command Get-NervRecordableDcpNetworkIds -ErrorAction SilentlyContinue)) 'Startup must identify manifest-recordable DCP session networks.'
+
+$sessionId = 'nerv-abcd-123456'
+$fixturePath = Join-Path $PSScriptRoot 'fixtures/fullstack/docker-resources.json'
+$inspectObjects = @(Get-Content -LiteralPath $fixturePath -Raw | ConvertFrom-Json)
+$recordedContainerIds = @('owned-container-id', 'unlabeled-container-id')
+$mergedContainerIds = @(Merge-NervSessionContainerIds `
+    -RecordedIds @('recorded') `
+    -DiscoveredRecords @([pscustomobject]@{ id = 'discovered' }, [pscustomobject]@{ id = 'recorded' }))
+Assert-True ($mergedContainerIds.Count -eq 2) 'Container cleanup candidates must include recorded and label-discovered IDs without duplicates.'
+Assert-True ($mergedContainerIds -ccontains 'discovered') 'A partially started label-discovered container must be recoverable.'
+$discoveredNetworkIds = @(Get-NervContainerNetworkIds -Containers @(
+    [pscustomobject]@{ NetworkSettings = [pscustomobject]@{ Networks = [pscustomobject]@{ session = [pscustomobject]@{ NetworkID = 'network-from-owned-container' } } } }
+))
+Assert-True ($discoveredNetworkIds -ccontains 'network-from-owned-container') 'Networks attached to label-owned containers must be recoverable after partial startup.'
+$recordableDcpNetwork = [pscustomobject]@{
+    Id = 'dcp-session-network'
+    Name = 'aspire-session-network-xgsryykh-Nerv.IIP'
+    Labels = [pscustomobject]@{
+        'com.microsoft.developer.usvc-dev.creatorProcessId' = '120080'
+        'com.microsoft.developer.usvc-dev.persistent' = 'false'
+    }
+    Containers = [pscustomobject]@{
+        'owned-container-id' = [pscustomobject]@{}
+        'owned-container-id-2' = [pscustomobject]@{}
+    }
+}
+$recordableNetworkIds = @(Get-NervRecordableDcpNetworkIds `
+    -Networks @(
+        $recordableDcpNetwork,
+        [pscustomobject]@{ Id = 'shared'; Name = 'shared'; Labels = $null; Containers = [pscustomobject]@{ 'owned-container-id' = [pscustomobject]@{} } },
+        [pscustomobject]@{ Id = 'foreign'; Name = 'aspire-session-network-foreign-Nerv.IIP'; Labels = $recordableDcpNetwork.Labels; Containers = [pscustomobject]@{ 'foreign-container-id' = [pscustomobject]@{} } }
+    ) `
+    -OwnedContainerIds @('owned-container-id', 'owned-container-id-2'))
+Assert-True ($recordableNetworkIds.Count -eq 1) 'Only the ephemeral DCP network exclusively attached to owned containers may become manifest authority.'
+Assert-True ($recordableNetworkIds[0] -ceq 'dcp-session-network') 'The exact DCP session network ID must be recorded.'
+$startFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-start.json'
+$describeFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-describe.json'
+$parallelAcceptanceScript = Join-Path $repoRoot 'scripts/verify-parallel-fullstack-isolation.ps1'
+Assert-True (Test-Path -LiteralPath $parallelAcceptanceScript -PathType Leaf) 'Parallel full-stack acceptance entrypoint is missing.'
+$parallelAcceptanceText = Get-Content -LiteralPath $parallelAcceptanceScript -Raw
+$fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
+$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
+Assert-True ($appHostText.Contains('max_connections=300')) 'Ephemeral AppHost PostgreSQL must leave capacity for full-stack probes and service pools.'
+Assert-True ($fullStackSessionText.Contains("ASPIRE_CLI_START_TIMEOUT'] = '300'")) 'Full-stack startup must extend the Aspire CLI handshake timeout.'
+Assert-True ($fullStackSessionText.Contains("MSBUILDDISABLENODEREUSE'] = '1'")) 'Full-stack startup must prevent reusable MSBuild worker accumulation.'
+Assert-True ($fullStackSessionText.Contains("DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'")) 'Full-stack startup must disable the persistent .NET build server.'
+Assert-True ($fullStackSessionText.Contains("'business-master-data'")) 'Full-stack startup must wait for the business service used by the browser smoke test.'
+$volumeRegistrationIndex = $fullStackSessionText.IndexOf('.runtime.volumeNames = @(', [StringComparison]::Ordinal)
+$aspireStartIndex = $fullStackSessionText.IndexOf('Invoke-NervAspireStartWithRetry', [StringComparison]::Ordinal)
+Assert-True ($volumeRegistrationIndex -ge 0 -and $volumeRegistrationIndex -lt $aspireStartIndex) 'Deterministic session volume names must be persisted before Aspire can create resources.'
+foreach ($requiredText in @(
+    '# Script-Governance:',
+    '[ValidateRange(2, 3)]',
+    'Get-NervFullStackStateRoot',
+    'fullstack-worktrees',
+    'scripts/setup-worktree.ps1',
+    'Invoke-PwshScript',
+    'Stop-AcceptanceStartProcess',
+    'Remove-AcceptanceWorktree',
+    'Test-NervProcessIdentity',
+    'Primary failure:',
+    'Injected failure was not observed before the primary failure:',
+    'PGPASSWORD="$POSTGRES_PASSWORD"',
+    "-TimeoutSeconds 300 ``",
+    'finally',
+    'git',
+    'worktree',
+    'remove'
+)) {
+    Assert-True ($parallelAcceptanceText.Contains($requiredText)) "Parallel acceptance script is missing '$requiredText'."
+}
+$parseErrors = $null
+[void] [System.Management.Automation.Language.Parser]::ParseFile($parallelAcceptanceScript, [ref] $null, [ref] $parseErrors)
+Assert-True (@($parseErrors).Count -eq 0) 'Parallel acceptance script must parse successfully.'
+
+$start = Read-NervAspireJson -Text (Get-Content -LiteralPath $startFixture -Raw)
+$describe = Read-NervAspireJson -Text (Get-Content -LiteralPath $describeFixture -Raw)
+$identity = Get-NervAspireStartIdentity -StartObject $start
+$endpoint = Get-NervAspireResourceEndpoint -DescribeObject $describe -ResourceName 'business-console' -EndpointName 'http'
+Assert-True (-not [string]::IsNullOrWhiteSpace($identity.AppHostId)) 'AppHost ID was not parsed.'
+Assert-True ($identity.AppHostPid -eq 4242) 'AppHost PID was not parsed.'
+Assert-True ($endpoint -eq 'http://127.0.0.1:43125') "Unexpected endpoint '$endpoint'."
+$emptyInspect = @(Get-NervDockerInspectObjects -Kind container -Identifiers @() -WorkingDirectory $repoRoot -Name 'empty-inspect-contract')
+Assert-True ($emptyInspect.Count -eq 0) 'Empty recorded Docker resources must not invoke inspect or fail cleanup.'
+$allDescribe = [pscustomobject]@{
+    resources = @('gateway', 'business-gateway', 'console', 'business-console', 'screen') | ForEach-Object {
+        [pscustomobject]@{
+            displayName = $_
+            urls = @([pscustomobject]@{ name = 'http'; url = "http://127.0.0.1/$($_)" })
+        }
+    }
+}
+$endpointManifest = [pscustomobject]@{ endpoints = [ordered]@{} }
+$savedManifest = @(Save-NervFullStackEndpoints -Manifest $endpointManifest -DescribeObject $allDescribe)
+Assert-True ($savedManifest.Count -eq 1) 'Endpoint discovery must return exactly one manifest object.'
+Assert-True ($savedManifest[0].endpoints.'business-console' -eq 'http://127.0.0.1/business-console') 'All public endpoints must be saved.'
+
+$missingPayloadFailed = $false
+try { Read-NervAspireJson -Text 'Aspire emitted no machine payload.' | Out-Null } catch { $missingPayloadFailed = $true }
+Assert-True $missingPayloadFailed 'Aspire JSON parsing must reject missing payloads.'
+$multiplePayloadsFailed = $false
+try { Read-NervAspireJson -Text '{"one":1} trailing {"two":2}' | Out-Null } catch { $multiplePayloadsFailed = $true }
+Assert-True $multiplePayloadsFailed 'Aspire JSON parsing must reject multiple payloads.'
+
+Assert-True `
+    (Test-NervDockerResourceOwnership -InspectObject $inspectObjects[0] -SessionId $sessionId -RecordedIds $recordedContainerIds) `
+    'A container with both the recorded ID and exact session label must be owned.'
+Assert-True `
+    (-not (Test-NervDockerResourceOwnership -InspectObject $inspectObjects[1] -SessionId $sessionId -RecordedIds $recordedContainerIds)) `
+    'A container from another session must not be owned.'
+Assert-True `
+    (-not (Test-NervDockerResourceOwnership -InspectObject $inspectObjects[2] -SessionId $sessionId -RecordedIds $recordedContainerIds)) `
+    'An unlabeled container must not be owned even when its ID is recorded.'
+Assert-True `
+    (-not (Test-NervDockerResourceOwnership -InspectObject $inspectObjects[0] -SessionId $sessionId -RecordedIds @('different-id'))) `
+    'A matching label without the recorded ID must not prove ownership.'
+
+$recordedVolume = "postgres-data-$sessionId"
+Assert-True `
+    (Test-NervDockerRecordedNameOwnership -Name $recordedVolume -SessionId $sessionId -RecordedNames @($recordedVolume)) `
+    'An exact recorded volume name with the session suffix must be owned.'
+Assert-True `
+    (-not (Test-NervDockerRecordedNameOwnership -Name "random-$sessionId" -SessionId $sessionId -RecordedNames @($recordedVolume))) `
+    'A session-suffixed but unrecorded volume must not be owned.'
+Assert-True `
+    (-not (Test-NervDockerRecordedNameOwnership -Name 'postgres-data-nerv-ffff-654321' -SessionId $sessionId -RecordedNames @('postgres-data-nerv-ffff-654321'))) `
+    'A recorded name with another session suffix must not be owned.'
+Assert-True `
+    (-not (Test-NervDockerRecordedNameOwnership -Name 'postgres-data-unsafe-session' -SessionId 'unsafe-session' -RecordedNames @('postgres-data-unsafe-session'))) `
+    'An invalid session ID must never prove name ownership.'
+Assert-True `
+    (Test-NervDockerOptionalSessionLabel -Labels $null -SessionId $sessionId) `
+    'Aspire volumes without exposed labels must rely on exact recorded-name ownership.'
+Assert-True `
+    (Test-NervDockerOptionalSessionLabel -Labels ([pscustomobject]@{ 'com.nerv-iip.session' = $sessionId }) -SessionId $sessionId) `
+    'An exposed volume session label must match the active session.'
+Assert-True `
+    (-not (Test-NervDockerOptionalSessionLabel -Labels ([pscustomobject]@{ 'com.nerv-iip.session' = 'nerv-ffff-654321' }) -SessionId $sessionId)) `
+    'An exposed volume label from another session must be rejected.'
+Assert-True `
+    (-not (Test-NervDockerNetworkOwnership -InspectObject ([pscustomobject]@{ Id = 'shared-network'; Name = 'shared'; Labels = $null }) -SessionId $sessionId -RecordedIds @())) `
+    'An unrecorded unlabeled network discovered from a container must not be owned.'
+Assert-True `
+    (Test-NervDockerNetworkOwnership -InspectObject ([pscustomobject]@{ Id = 'recorded-network'; Name = 'session-network'; Labels = $null }) -SessionId $sessionId -RecordedIds @('recorded-network')) `
+    'An exact manifest-recorded network may be recovered when Docker exposes no label.'
+Assert-True `
+    (-not (Test-NervDockerNetworkOwnership -InspectObject ([pscustomobject]@{ Id = 'bridge-id'; Name = 'bridge'; Labels = $null }) -SessionId $sessionId -RecordedIds @('bridge-id'))) `
+    'Docker predefined networks must never be removed by a session cleanup.'
+
+$environment = Get-NervFullStackEnvironment -SessionId $sessionId
+Assert-True ($environment.NERV_IIP_EPHEMERAL -eq 'true') 'Ephemeral flag missing.'
+Assert-True ($environment.NERV_IIP_SESSION_ID -eq $sessionId) 'Session ID missing.'
+foreach ($expected in @(
+    "nerv-iip-postgres-18-$sessionId",
+    "nerv-iip-redis-$sessionId",
+    "nerv-iip-minio-$sessionId",
+    "nerv-iip-victoria-logs-$sessionId"
+)) {
+    Assert-True ($environment.Values -ccontains $expected) "Missing ephemeral volume '$expected'."
+}
+
+$invalidEnvironmentFailed = $false
+try { Get-NervFullStackEnvironment -SessionId 'unsafe-session' | Out-Null } catch { $invalidEnvironmentFailed = $true }
+Assert-True $invalidEnvironmentFailed 'Invalid session IDs must be rejected by the AppHost environment contract.'
+
+$secretEnvironment = New-NervFullStackSecretEnvironment -SessionId $sessionId
+foreach ($requiredName in @(
+    'Parameters__iam-jwt-signing-key-id',
+    'Parameters__iam-jwt-private-key-pem',
+    'Parameters__iam-jwt-jwks-json',
+    'Parameters__iam-secrets-pepper',
+    'Parameters__internal-service-bearer-token',
+    'Parameters__redis-password',
+    'Parameters__minio-root-user',
+    'Parameters__minio-root-password',
+    'Parameters__iam-seed-admin-password',
+    'Parameters__iam-seed-connector-host-secret',
+    'Parameters__connector-ingestion-token-signing-key'
+)) {
+    Assert-True $secretEnvironment.Environment.ContainsKey($requiredName) "Missing session secret '$requiredName'."
+    Assert-True (-not [string]::IsNullOrWhiteSpace($secretEnvironment.Environment[$requiredName])) "Session secret '$requiredName' is empty."
+}
+Assert-True `
+    ($secretEnvironment.AdminPassword -ceq $secretEnvironment.Environment['Parameters__iam-seed-admin-password']) `
+    'The browser password must match the AppHost seed password.'
+$jwks = $secretEnvironment.Environment['Parameters__iam-jwt-jwks-json'] | ConvertFrom-Json
+Assert-True ($jwks.keys.Count -eq 1) 'A session JWKS must contain one signing key.'
+Assert-True `
+    ($jwks.keys[0].kid -ceq $secretEnvironment.Environment['Parameters__iam-jwt-signing-key-id']) `
+    'The session JWKS key ID must match the private signing key ID.'
+$secretEnvironment.Environment.Clear()
+$secretEnvironment = $null
+
+$scenarioManifest = [pscustomobject]@{
+    sessionId = $sessionId
+    appHostProject = Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
+    worktreeRoot = "$repoRoot"
+    endpoints = [pscustomobject]@{
+        gateway = 'http://127.0.0.1:41001'
+        'business-gateway' = 'http://127.0.0.1:41002'
+        console = 'http://127.0.0.1:41003'
+        'business-console' = 'http://127.0.0.1:41004'
+        screen = 'http://127.0.0.1:41005'
+    }
+}
+$script:checkedUrls = [System.Collections.Generic.List[string]]::new()
+$script:browserEnvironment = $null
+$healthySnapshot = [pscustomobject]@{
+    resources = @([pscustomobject]@{ displayName = 'gateway'; resourceType = 'Project.v0'; state = 'Running' })
+}
+$scenarioResult = Invoke-NervFullStackSmokeScenario `
+    -Manifest $scenarioManifest `
+    -SessionAdminPassword 'process-only-password' `
+    -WaitAction { param($Name, $Manifest) } `
+    -HttpCheckAction { param($Name, $Url) $script:checkedUrls.Add("$Name=$Url") } `
+    -AspireSnapshotAction { param($Manifest) $healthySnapshot } `
+    -BrowserAction { param($Environment, $Manifest) $script:browserEnvironment = $Environment }
+Assert-True ($scenarioResult.ExitCode -eq 0) 'Healthy injected smoke must pass.'
+Assert-True ($script:checkedUrls.Count -eq 5) 'Smoke must HTTP-check all five manifest endpoints.'
+foreach ($name in @('gateway', 'business-gateway', 'console', 'business-console', 'screen')) {
+    Assert-True ($script:checkedUrls -ccontains "$name=$($scenarioManifest.endpoints.$name)") "Smoke did not use manifest endpoint '$name'."
+}
+$expectedBrowserEnvironment = @{
+    NERV_IIP_GATEWAY_URL = $scenarioManifest.endpoints.gateway
+    NERV_IIP_BUSINESS_GATEWAY_URL = $scenarioManifest.endpoints.'business-gateway'
+    NERV_IIP_PLAYWRIGHT_BASE_URL = $scenarioManifest.endpoints.'business-console'
+    NERV_IIP_FULLSTACK_ADMIN_PASSWORD = 'process-only-password'
+}
+Assert-True ($script:browserEnvironment.Count -eq $expectedBrowserEnvironment.Count) 'Browser child environment contained unexpected keys.'
+foreach ($key in $expectedBrowserEnvironment.Keys) {
+    Assert-True ($script:browserEnvironment[$key] -ceq $expectedBrowserEnvironment[$key]) "Unexpected browser environment value for '$key'."
+}
+$playwrightReportRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-playwright-$([guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($playwrightReportRoot) | Out-Null
+    $passedReport = Join-Path $playwrightReportRoot 'passed.json'
+    [IO.File]::WriteAllText($passedReport, '{"stats":{"expected":1,"skipped":0,"unexpected":0,"flaky":0}}')
+    Assert-NervPlaywrightJsonReport -ReportPath $passedReport | Out-Null
+    $skippedReport = Join-Path $playwrightReportRoot 'skipped.json'
+    [IO.File]::WriteAllText($skippedReport, '{"stats":{"expected":0,"skipped":1,"unexpected":0,"flaky":0}}')
+    $skippedReportFailed = $false
+    try { Assert-NervPlaywrightJsonReport -ReportPath $skippedReport | Out-Null } catch { $skippedReportFailed = $true }
+    Assert-True $skippedReportFailed 'A skipped-only Playwright report must fail the full-stack browser gate.'
+}
+finally {
+    Remove-Item -LiteralPath $playwrightReportRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+$finishedFailed = $false
+try {
+    Invoke-NervFullStackSmokeScenario `
+        -Manifest $scenarioManifest `
+        -SessionAdminPassword 'process-only-password' `
+        -WaitAction { param($Name, $Manifest) } `
+        -HttpCheckAction { param($Name, $Url) } `
+        -AspireSnapshotAction { param($Manifest) [pscustomobject]@{ resources = @([pscustomobject]@{ displayName = 'console'; resourceType = 'Project.v0'; state = 'Finished' }) } } `
+        -BrowserAction { param($Environment, $Manifest) } | Out-Null
+}
+catch { $finishedFailed = $true }
+Assert-True $finishedFailed 'A Finished Aspire project must fail smoke.'
+
+$generatedDiagnosticSecret = New-NervFullStackSecretValue -Bytes 24
+$unsafeDiagnostic = "$generatedDiagnosticSecret password=secret Authorization: Bearer token Host=localhost;Port=5432;Database=nerv;Username=postgres;Password=db-secret"
+$safeDiagnostic = Protect-NervFullStackDiagnosticText -Text $unsafeDiagnostic -SensitiveValues @($generatedDiagnosticSecret)
+foreach ($forbidden in @($generatedDiagnosticSecret, 'password=secret', 'Bearer token', 'db-secret')) {
+    Assert-True (-not $safeDiagnostic.Contains($forbidden)) "Diagnostic redaction leaked '$forbidden'."
+}
+$diagnosticRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-diagnostics-$([guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory((Join-Path $diagnosticRoot 'traces')) | Out-Null
+    [IO.File]::WriteAllText((Join-Path $diagnosticRoot 'traces/preserved.txt'), 'preserve')
+    $diagnosticManifest = [pscustomobject]@{
+        sessionId = $sessionId
+        state = 'Running'
+        artifactPath = $diagnosticRoot
+        appHostProject = $scenarioManifest.appHostProject
+        worktreeRoot = "$repoRoot"
+        endpoints = $scenarioManifest.endpoints
+        cleanup = [pscustomobject]@{ errors = @() }
+    }
+    Collect-NervFullStackDiagnostics `
+        -Manifest $diagnosticManifest `
+        -SensitiveValues @($generatedDiagnosticSecret) `
+        -LogAction { param($ResourceName, $Manifest, $TimeoutSeconds) $unsafeDiagnostic } | Out-Null
+    $diagnosticText = (Get-ChildItem -LiteralPath $diagnosticRoot -File -Recurse | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
+    foreach ($forbidden in @($generatedDiagnosticSecret, 'password=secret', 'Bearer token', 'db-secret')) {
+        Assert-True (-not $diagnosticText.Contains($forbidden)) "Collected diagnostics leaked '$forbidden'."
+    }
+    Assert-True (Test-Path -LiteralPath (Join-Path $diagnosticRoot 'summary.json')) 'Diagnostic summary was not written.'
+    Assert-True (Test-Path -LiteralPath (Join-Path $diagnosticRoot 'traces/preserved.txt')) 'Existing trace artifacts must be preserved.'
+}
+finally {
+    Remove-Item -LiteralPath $diagnosticRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$script:managedCollectCalls = 0
+$script:managedStopCalls = 0
+$managedScenarioFailure = $null
+try {
+    Invoke-NervManagedFullStackRun `
+        -StartAction { [pscustomobject]@{ sessionId = 'nerv-dead-000002'; state = 'Running' } } `
+        -ScenarioAction { param($Manifest) throw 'original scenario failure' } `
+        -CollectAction { param($Manifest) $script:managedCollectCalls++ } `
+        -StopAction { param($Manifest) $script:managedStopCalls++; [pscustomobject]@{ Complete = $true; Manifest = $Manifest } } | Out-Null
+}
+catch { $managedScenarioFailure = $_.Exception.Message }
+Assert-True ($managedScenarioFailure -eq 'original scenario failure') 'Managed run must preserve the original scenario error.'
+Assert-True ($script:managedCollectCalls -eq 1) 'Managed run must collect after scenario failure.'
+Assert-True ($script:managedStopCalls -eq 1) 'Managed run must stop after scenario failure.'
+
+$managedCleanupFailure = $null
+try {
+    Invoke-NervManagedFullStackRun `
+        -StartAction { [pscustomobject]@{ sessionId = 'nerv-dead-000003'; state = 'Running' } } `
+        -ScenarioAction { param($Manifest) throw 'scenario hidden by cleanup' } `
+        -CollectAction { param($Manifest) } `
+        -StopAction { param($Manifest) throw 'cleanup failure wins' } | Out-Null
+}
+catch { $managedCleanupFailure = $_.Exception.Message }
+Assert-True ($managedCleanupFailure -eq 'cleanup failure wins') 'Cleanup failure must take precedence after cleanup was attempted.'
+
+$script:dockerRetryCalls = 0
+$dockerRetryResult = Invoke-NervDockerCleanupWithRetry `
+    -Manifest ([pscustomobject]@{ sessionId = $sessionId }) `
+    -RemoveAction {
+        param($Manifest)
+        $script:dockerRetryCalls++
+        if ($script:dockerRetryCalls -lt 2) { return [pscustomobject]@{ Complete = $false; Remaining = @('container:stopping') } }
+        return [pscustomobject]@{ Complete = $true; Remaining = @() }
+    } `
+    -DelayAction { param($Attempt) }
+Assert-True $dockerRetryResult.Complete 'Docker cleanup retry must return the successful result.'
+Assert-True ($script:dockerRetryCalls -eq 2) 'Docker cleanup must retry a transient incomplete result.'
+
+$script:aspireRetryCalls = 0
+$script:aspireRetryCleanupCalls = 0
+$aspireRetryResult = Invoke-NervAspireStartWithRetry `
+    -StartAction {
+        $script:aspireRetryCalls++
+        if ($script:aspireRetryCalls -eq 1) { throw 'MSB4166 system resource exhaustion' }
+        return 'started'
+    } `
+    -CleanupAction { $script:aspireRetryCleanupCalls++ } `
+    -DelayAction { param($Attempt) }
+Assert-True ($aspireRetryResult -eq 'started') 'Aspire startup retry must return the successful result.'
+Assert-True ($script:aspireRetryCalls -eq 2) 'Aspire startup must retry one transient MSBuild resource failure.'
+Assert-True ($script:aspireRetryCleanupCalls -eq 1) 'Aspire startup retry must clean the failed attempt first.'
+
+$missingWorktree = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-missing-worktree-$([guid]::NewGuid().ToString('N'))"
+$cleanupStateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-cleanup-state-$([guid]::NewGuid().ToString('N'))"
+try {
+    $cleanupWorkingDirectory = Get-NervFullStackCleanupWorkingDirectory -StateRoot $cleanupStateRoot
+    Assert-True (Test-Path -LiteralPath $cleanupWorkingDirectory -PathType Container) 'Cleanup must use an existing state-root working directory.'
+    Assert-True (-not (Test-NervFullStackAppHostAvailable -Manifest ([pscustomobject]@{ worktreeRoot = $missingWorktree; appHostProject = (Join-Path $missingWorktree 'AppHost.csproj') }))) 'Aspire stop must be skipped after its worktree and AppHost project were removed.'
+}
+finally {
+    Remove-Item -LiteralPath $cleanupStateRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$script:guardianReads = 0
+$script:guardianStops = 0
+$guardianResult = Invoke-NervFullStackGuardian `
+    -SessionId $sessionId `
+    -Mode Automated `
+    -CoordinatorPid 1 `
+    -CoordinatorStartTimeUtc '2000-01-01T00:00:00Z' `
+    -IntervalSeconds 1 `
+    -MaximumObservationFailures 3 `
+    -MaximumStopAttempts 3 `
+    -ReadAction {
+        $script:guardianReads++
+        if ($script:guardianReads -eq 1) { throw 'transient manifest lock' }
+        if ($script:guardianStops -eq 0) { return [pscustomobject]@{ state = 'Running'; leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O') } }
+        return [pscustomobject]@{ state = 'Stopped'; leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O') }
+    } `
+    -CoordinatorAliveAction { $false } `
+    -StopAction {
+        $script:guardianStops++
+        if ($script:guardianStops -eq 1) { throw 'transient stop failure' }
+    } `
+    -DelayAction { param($Seconds) }
+Assert-True ($guardianResult.State -eq 'Stopped') 'Guardian must survive transient manifest and stop failures until cleanup reaches Stopped.'
+Assert-True ($script:guardianReads -ge 3) 'Guardian must retry manifest observation after a transient read failure.'
+Assert-True ($script:guardianStops -eq 2) 'Guardian must retry a failed stop operation.'
+
+$script:worktreeStoppedPids = [System.Collections.Generic.List[int]]::new()
+$worktreeProcessResult = Stop-NervWorktreeProcesses `
+    -WorktreeRoot 'C:\nfs\fullstack-worktrees\abcd1234\s2' `
+    -ExcludedProcessIds @(102) `
+    -ProcessQueryAction {
+        @(
+            [pscustomobject]@{ ProcessId = 101; Name = 'dotnet.exe'; CommandLine = 'dotnet run --project C:\nfs\fullstack-worktrees\abcd1234\s2\backend\service.csproj' },
+            [pscustomobject]@{ ProcessId = 102; Name = 'node.exe'; CommandLine = 'node C:\nfs\fullstack-worktrees\abcd1234\s2\frontend\vite.js' },
+            [pscustomobject]@{ ProcessId = 103; Name = 'dotnet.exe'; CommandLine = 'dotnet run --project C:\other\service.csproj' },
+            [pscustomobject]@{ ProcessId = 104; Name = 'pwsh.exe'; CommandLine = 'pwsh -File C:\nfs\fullstack-worktrees\abcd1234\s2\scripts\operator.ps1' }
+        )
+    } `
+    -StopAction { param($ProcessId, $Reason) $script:worktreeStoppedPids.Add($ProcessId) }
+Assert-True ($worktreeProcessResult.StoppedProcessIds.Count -eq 1) 'Worktree cleanup must select only exact owned process command lines.'
+Assert-True ($script:worktreeStoppedPids[0] -eq 101) 'Worktree cleanup stopped the wrong process.'
+
+$stopStateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-stop-$([guid]::NewGuid().ToString('N'))"
+try {
+    $stopSessionId = 'nerv-dead-000001'
+    $stopManifest = New-NervFullStackManifest `
+        -SessionId $stopSessionId `
+        -WorktreeRoot $repoRoot `
+        -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
+        -ArtifactPath (Join-Path $repoRoot "artifacts/fullstack/$stopSessionId") `
+        -StateRoot $stopStateRoot
+    $stopManifest = Move-NervFullStackSessionState -Manifest $stopManifest -State Running
+    Write-NervFullStackManifest -Manifest $stopManifest -StateRoot $stopStateRoot
+    $script:aspireStopCalls = 0
+    $script:processStopCalls = 0
+    $script:dockerStopCalls = 0
+    $aspireStop = { param($Manifest) $script:aspireStopCalls++ }
+    $processStop = { param($Manifest) $script:processStopCalls++ }
+    $dockerStop = {
+        param($Manifest)
+        $script:dockerStopCalls++
+        [pscustomobject]@{ Complete = $true; Remaining = @() }
+    }
+
+    $firstStop = Stop-NervFullStackSession -SessionId $stopSessionId -StateRoot $stopStateRoot -AspireStopAction $aspireStop -ProcessStopAction $processStop -DockerRemoveAction $dockerStop
+    $secondStop = Stop-NervFullStackSession -SessionId $stopSessionId -StateRoot $stopStateRoot -AspireStopAction $aspireStop -ProcessStopAction $processStop -DockerRemoveAction $dockerStop
+    Assert-True $firstStop.Complete 'The first exact stop must complete.'
+    Assert-True $secondStop.Complete 'A repeated exact stop must remain complete.'
+    Assert-True ($script:aspireStopCalls -eq 1) 'A stopped session must not invoke Aspire stop twice.'
+    Assert-True ($script:processStopCalls -eq 1) 'A stopped session must not stop recorded processes twice.'
+    Assert-True ($script:dockerStopCalls -eq 2) 'Repeated stop must still verify exact recorded Docker resources.'
+    $stoppedManifest = Read-NervFullStackManifest -SessionId $stopSessionId -StateRoot $stopStateRoot
+    Assert-True ($stoppedManifest.state -eq 'Stopped') 'A complete stop must persist Stopped.'
+
+    $failedStopSessionId = 'nerv-dead-000004'
+    $failedStopManifest = New-NervFullStackManifest `
+        -SessionId $failedStopSessionId `
+        -WorktreeRoot $repoRoot `
+        -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
+        -ArtifactPath (Join-Path $repoRoot "artifacts/fullstack/$failedStopSessionId") `
+        -StateRoot $stopStateRoot
+    $failedStopManifest = Move-NervFullStackSessionState -Manifest $failedStopManifest -State Running
+    Write-NervFullStackManifest -Manifest $failedStopManifest -StateRoot $stopStateRoot
+    $failedStop = Stop-NervFullStackSession `
+        -SessionId $failedStopSessionId `
+        -StateRoot $stopStateRoot `
+        -AspireStopAction { param($Manifest) throw 'aspire stop failed' } `
+        -ProcessStopAction { param($Manifest) throw 'process stop failed' } `
+        -DockerRemoveAction { param($Manifest) [pscustomobject]@{ Complete = $true; Remaining = @() } }
+    Assert-True (-not $failedStop.Complete) 'Aspire or process cleanup errors must prevent a successful stop result.'
+    Assert-True ($failedStop.Manifest.state -eq 'CleanupFailed') 'Aspire or process cleanup errors must persist CleanupFailed.'
+    Assert-True ($failedStop.Remaining -ccontains 'aspire:stop-failed') 'Aspire cleanup failure must be explicit.'
+    Assert-True ($failedStop.Remaining -ccontains 'process:stop-failed') 'Process cleanup failure must be explicit.'
+}
+finally {
+    Remove-Item -LiteralPath $stopStateRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host 'Full-stack session runtime tests passed.'

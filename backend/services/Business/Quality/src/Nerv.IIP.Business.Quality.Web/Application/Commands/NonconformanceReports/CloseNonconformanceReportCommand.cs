@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
+using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 
@@ -7,7 +8,8 @@ public sealed record CloseNonconformanceReportCommand(
     NonconformanceReportId NcrId,
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
-    string? ReturnDocumentId) : ICommand;
+    string? ReturnDocumentId,
+    string Reason) : ICommand;
 
 public sealed class CloseNonconformanceReportCommandValidator : AbstractValidator<CloseNonconformanceReportCommand>
 {
@@ -17,12 +19,14 @@ public sealed class CloseNonconformanceReportCommandValidator : AbstractValidato
         RuleFor(x => x.ReworkWorkOrderId).MaximumLength(150);
         RuleFor(x => x.ScrapMovementId).MaximumLength(150);
         RuleFor(x => x.ReturnDocumentId).MaximumLength(150);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
     }
 }
 
 public sealed class CloseNonconformanceReportCommandHandler(
     INonconformanceReportRepository repository,
-    ICorrectiveActionRepository correctiveActionRepository)
+    ICorrectiveActionRepository correctiveActionRepository,
+    IQualityIntegrationEventContextAccessor integrationEventContextAccessor)
     : ICommandHandler<CloseNonconformanceReportCommand>
 {
     public async Task Handle(CloseNonconformanceReportCommand request, CancellationToken cancellationToken)
@@ -39,6 +43,11 @@ public sealed class CloseNonconformanceReportCommandHandler(
             throw new KnownException("NCR requires a linked effective CAPA before closure.");
         }
 
-        ncr.Close(request.ReworkWorkOrderId, request.ScrapMovementId, request.ReturnDocumentId);
+        ncr.Close(
+            request.ReworkWorkOrderId,
+            request.ScrapMovementId,
+            request.ReturnDocumentId,
+            request.Reason,
+            integrationEventContextAccessor.GetContext().Actor);
     }
 }

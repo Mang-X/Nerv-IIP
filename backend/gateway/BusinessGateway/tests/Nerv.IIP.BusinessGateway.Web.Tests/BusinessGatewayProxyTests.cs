@@ -26,6 +26,65 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayProxyTests
 {
     [Fact]
+    public async Task Notification_facade_binds_forged_recipient_to_principal_and_uses_internal_token()
+    {
+        var notification = new PrincipalRecordingNotificationClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessNotificationClient>();
+            services.AddSingleton<IBusinessNotificationClient>(notification);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-notification-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var list = await client.GetAsync("/api/business-console/v1/notifications/messages?organizationId=org-001&environmentId=env-dev&recipientRef=user-forged&status=unread");
+        var tasks = await client.GetAsync("/api/business-console/v1/notifications/tasks?organizationId=org-001&environmentId=env-dev&recipientRef=user-forged&status=open");
+        var mark = await client.PostAsJsonAsync("/api/business-console/v1/notifications/messages/message-001/read", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            recipientRef = "user-forged",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, tasks.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, mark.StatusCode);
+        Assert.Equal("user:user-admin", notification.LastListRequest!.RecipientRef);
+        Assert.Equal("user:user-admin", notification.LastTaskRequest!.RecipientRef);
+        Assert.Equal("user:user-admin", notification.LastMarkRequest!.RecipientRef);
+        Assert.Equal("internal-notification-token", notification.LastInternalToken);
+        Assert.Equal(BusinessGatewayPermissions.NotificationMessagesRead, auth.LastRequirement!.PermissionCode);
+    }
+    [Fact]
+    public async Task Quality_ncr_close_forwards_reason_with_authenticated_actor()
+    {
+        var quality = new RecordingQualityClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/quality/ncrs/ncr-001/close", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reason = "Engineering concession approved",
+            actor = "user:forged-client-actor",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Engineering concession approved", quality.LastCloseNcrRequest!.Reason);
+        Assert.Equal("user:user-admin", quality.LastCloseNcrActor);
+        Assert.NotEqual("user:forged-client-actor", quality.LastCloseNcrActor);
+    }
+
+    [Fact]
     public async Task List_skus_uses_internal_service_token_for_downstream_business_service()
     {
         var masterData = new RecordingMasterDataClient
@@ -227,22 +286,30 @@ public sealed class BusinessGatewayProxyTests
             category = "raw-material",
             materialType = "powder",
         });
-        var disable = await client.PostAsJsonAsync("/api/business-console/v1/master-data/resources/sku/SKU-001/disable", new
+        using var disableMessage = new HttpRequestMessage(HttpMethod.Post, "/api/business-console/v1/master-data/resources/sku/SKU-001/disable");
+        disableMessage.Headers.Add("X-Correlation-Id", "corr-master-disable");
+        disableMessage.Content = JsonContent.Create(new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
             resourceType = "sku",
             code = "SKU-001",
+            idempotencyKey = "idem-master-disable",
             reason = "duplicate",
         });
-        var enable = await client.PostAsJsonAsync("/api/business-console/v1/master-data/resources/sku/SKU-001/enable", new
+        var disable = await client.SendAsync(disableMessage);
+        using var enableMessage = new HttpRequestMessage(HttpMethod.Post, "/api/business-console/v1/master-data/resources/sku/SKU-001/enable");
+        enableMessage.Headers.Add("X-Correlation-Id", "corr-master-enable");
+        enableMessage.Content = JsonContent.Create(new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
             resourceType = "sku",
             code = "SKU-001",
+            idempotencyKey = "idem-master-enable",
             reason = "reactivated",
         });
+        var enable = await client.SendAsync(enableMessage);
 
         Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
         Assert.Equal(HttpStatusCode.OK, update.StatusCode);
@@ -254,6 +321,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Contains(false, masterData.SetResourceEnabledCalls);
         Assert.Contains(masterData.SetResourceEnabledRequests, request => request.Reason == "duplicate");
         Assert.Contains(true, masterData.SetResourceEnabledCalls);
+        Assert.All(masterData.SetResourceEnabledActors, actor => Assert.Equal("user:user-admin", actor));
+        Assert.Equal(["corr-master-disable", "corr-master-enable"], masterData.SetResourceEnabledCorrelationIds);
+        Assert.Equal(["idem-master-disable", "idem-master-enable"], masterData.SetResourceEnabledIdempotencyKeys);
     }
 
     [Fact]
@@ -706,7 +776,12 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("pending", firstItem.GetProperty("status").GetString());
         Assert.Equal(1, listDocument.RootElement.GetProperty("data").GetProperty("total").GetInt32());
         using var createDocument = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
-        Assert.Equal("inspection-from-task-001", createDocument.RootElement.GetProperty("data").GetProperty("inspectionRecordId").GetString());
+        var createData = createDocument.RootElement.GetProperty("data");
+        Assert.Equal("inspection-from-task-001", createData.GetProperty("inspectionRecordId").GetString());
+        // 权威结论 + NCR 业务编号透传到客户端（供结果页互查）。
+        Assert.Equal("rejected", createData.GetProperty("result").GetString());
+        Assert.Equal("ncr-from-task-001", createData.GetProperty("nonconformanceReportId").GetString());
+        Assert.Equal("NCR-2026-0001", createData.GetProperty("nonconformanceReportCode").GetString());
     }
 
     [Fact]
@@ -1111,10 +1186,13 @@ public sealed class BusinessGatewayProxyTests
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
 
-        var response = await client.PostAsJsonAsync(
-            "/api/business-console/v1/mes/quality-holds/QH-001/force-release?organizationId=org-001&environmentId=env-dev",
+        using var forceRequest = new HttpRequestMessage(HttpMethod.Post,
+            "/api/business-console/v1/mes/quality-holds/QH-001/force-release?organizationId=org-001&environmentId=env-dev");
+        forceRequest.Headers.TryAddWithoutValidation("X-Correlation-Id", "corr-gateway-1");
+        forceRequest.Content = JsonContent.Create(
             // A caller-supplied actor must never be trusted; the gateway overrides it with the principal.
-            new { reason = "quality-override", actor = "supervisor-1", sourceService = "BusinessMes", releasedAtUtc = (DateTimeOffset?)null });
+            new { reason = "quality-override", actor = "supervisor-1", sourceService = "BusinessMes", releasedAtUtc = (DateTimeOffset?)null, idempotencyKey = "idem-force-1" });
+        var response = await client.SendAsync(forceRequest);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         // Facade forwards the internal service token, never the caller bearer.
@@ -1125,15 +1203,38 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("org-001", mes.LastForceReleaseQualityHoldRequest.OrganizationId);
         Assert.Equal("env-dev", mes.LastForceReleaseQualityHoldRequest.EnvironmentId);
         Assert.Equal("quality-override", mes.LastForceReleaseQualityHoldRequest.Reason);
+        Assert.Equal("idem-force-1", mes.LastForceReleaseQualityHoldRequest.IdempotencyKey);
+        Assert.Equal("corr-gateway-1", mes.LastForceReleaseQualityHoldCorrelationId);
         // The releaser identity is bound to the authenticated principal; the request-body actor is ignored.
-        Assert.Equal("user-admin", mes.LastForceReleaseQualityHoldActor);
+        Assert.Equal("user:user-admin", mes.LastForceReleaseQualityHoldActor);
         Assert.NotEqual("supervisor-1", mes.LastForceReleaseQualityHoldActor);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.True(document.RootElement.GetProperty("data").GetProperty("accepted").GetBoolean());
     }
 
     [Fact]
-    public async Task Mes_production_report_reverse_forwards_context_and_maps_response()
+    public async Task Mes_quality_hold_timeline_requires_quality_read_and_returns_full_lineage()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/mes/quality-holds/DOC-1/timeline?organizationId=org-001&environmentId=env-dev&sourceService=source");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = json.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("event-idem", item.GetProperty("idempotencyKey").GetString());
+        Assert.Equal("PLAN-1", item.GetProperty("sourceInspectionDocumentId").GetString());
+    }
+
+    [Fact]
+    public async Task Mes_production_report_reverse_injects_principal_actor_and_ignores_spoofed_actor_fields()
     {
         var mes = new RecordingMesClient();
         await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
@@ -1148,7 +1249,14 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.PostAsJsonAsync(
             "/api/business-console/v1/mes/production-reports/PR-001/reverse?organizationId=org-001&environmentId=env-dev",
-            new { reason = "mis-report", reversedAtUtc = (DateTimeOffset?)null, idempotencyKey = "reverse-001" });
+            new
+            {
+                reason = "mis-report",
+                reversedAtUtc = (DateTimeOffset?)null,
+                idempotencyKey = "reverse-001",
+                actorRef = "spoofed-actor",
+                reversedBy = "spoofed-reverser",
+            });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", mes.LastInternalToken);
@@ -1159,11 +1267,50 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("env-dev", mes.LastReverseProductionReportRequest.EnvironmentId);
         Assert.Equal("mis-report", mes.LastReverseProductionReportRequest.Reason);
         Assert.Equal("reverse-001", mes.LastReverseProductionReportRequest.IdempotencyKey);
+        Assert.Equal("user-admin", mes.LastReverseProductionReportActor);
+        Assert.NotEqual("spoofed-actor", mes.LastReverseProductionReportActor);
+        Assert.NotEqual("spoofed-reverser", mes.LastReverseProductionReportActor);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var data = document.RootElement.GetProperty("data");
         Assert.Equal("PR-REV-001", data.GetProperty("productionReportId").GetString());
         Assert.Equal("PR-001", data.GetProperty("reportNo").GetString());
         Assert.Equal("PR-ORIG-001", data.GetProperty("originalReportNo").GetString());
+    }
+
+    [Fact]
+    public async Task Mes_production_report_detail_forwards_scoped_context_and_preserves_consumed_lot_uom()
+    {
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/mes/production-reports/PR-001?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", mes.LastInternalToken);
+        Assert.Equal("PR-001", mes.LastProductionReportNo);
+        Assert.Equal("org-001", mes.LastProductionReportContext?.OrganizationId);
+        Assert.Equal("env-dev", mes.LastProductionReportContext?.EnvironmentId);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        var report = data.GetProperty("report");
+        Assert.Equal("LOT-FG-001", report.GetProperty("producedLotNo").GetString());
+        Assert.Equal("PR-REV-001", report.GetProperty("reversalReportNo").GetString());
+        Assert.Equal("posting-failed", report.GetProperty("inventoryPostingFailureCode").GetString());
+        var consumedLot = data.GetProperty("consumedMaterialLots")[0];
+        Assert.Equal("MAT-001", consumedLot.GetProperty("materialId").GetString());
+        Assert.Equal("LOT-RM-001", consumedLot.GetProperty("materialLotId").GetString());
+        Assert.Equal(2.5m, consumedLot.GetProperty("consumedQuantity").GetDecimal());
+        Assert.Equal("KG", consumedLot.GetProperty("uomCode").GetString());
+        Assert.Equal("MIR-001", consumedLot.GetProperty("materialIssueRequestNo").GetString());
     }
 
     [Fact]
@@ -3649,13 +3796,19 @@ public sealed class BusinessGatewayProxyTests
             CancellationToken.None);
         await client.SetResourceEnabledAsync(
             "internal-token-001",
-            new BusinessConsoleSetMasterDataResourceEnabledRequest("org-001", "env-dev", "sku", "SKU-001", Reason: "duplicate"),
+            new BusinessConsoleSetMasterDataResourceEnabledRequest("org-001", "env-dev", "sku", "SKU-001", "idem-master-http", Reason: "duplicate"),
             false,
+            "user:trusted",
+            "corr-master-http",
+            "idem-master-http",
             CancellationToken.None);
 
         AssertRequest(handler.Requests[0], HttpMethod.Get, "/api/business/v1/master-data/resources/reference-data/powder?organizationId=org-001&environmentId=env-dev&codeSet=material-type");
         AssertRequest(handler.Requests[1], HttpMethod.Patch, "/api/business/v1/master-data/resources/sku/SKU-001");
         AssertRequest(handler.Requests[2], HttpMethod.Post, "/api/business/v1/master-data/resources/sku/SKU-001/disable");
+        Assert.Equal("user:trusted", handler.Requests[2].Headers.GetValues("X-Authenticated-Actor").Single());
+        Assert.Equal("corr-master-http", handler.Requests[2].Headers.GetValues("X-Correlation-Id").Single());
+        Assert.Equal("idem-master-http", handler.Requests[2].Headers.GetValues("X-Idempotency-Key").Single());
     }
 
     [Fact]
@@ -4352,6 +4505,139 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_http_client_get_ncr_proxies_real_detail_endpoint_with_tenant_scope()
+    {
+        // 代理真实详情端点：GET /quality/ncrs/{id}，org/env 随查询下传由服务端做租户过滤。
+        HttpRequestMessage? seen = null;
+        var handler = new RecordingHandler(request =>
+        {
+            seen = request;
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    ncrId = "ncr-77",
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    ncrCode = "NCR-77",
+                    sourceType = "receiving",
+                    sourceDocumentId = "RCV-9",
+                    skuCode = "SKU-Z",
+                    defectQuantity = 2,
+                    defectReason = "appearance",
+                    status = "open",
+                    attachmentFileIds = Array.Empty<string>(),
+                    createdAtUtc = "2026-07-14T01:00:00Z",
+                    updatedAtUtc = "2026-07-14T01:00:00Z",
+                    sourceInspectionRecordId = "rec-77",
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var item = await client.GetNcrAsync(
+            "internal-token-001",
+            new BusinessConsoleQualityNcrDetailRequest("ncr-77", "org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal("ncr-77", item.Id);
+        Assert.Equal("NCR-77", item.Code);
+        Assert.Equal("appearance", item.DefectReason);
+        // 权威业务关系：来源检验记录回链来自服务端，而非客户端 query 参数。
+        Assert.Equal("rec-77", item.SourceInspectionRecordId);
+        Assert.Equal("/api/business/v1/quality/ncrs/ncr-77", seen!.RequestUri!.AbsolutePath);
+        var query = seen.RequestUri!.Query;
+        Assert.Contains("organizationId=org-001", query);
+        Assert.Contains("environmentId=env-dev", query);
+    }
+
+    [Fact]
+    public async Task Quality_http_client_get_ncr_propagates_downstream_not_found()
+    {
+        // 越权/不存在：Quality 按 org/env 过滤后 not found（success=false 业务错误）→ 透传为代理异常，
+        // 不泄露跨租户数据。
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = (object?)null,
+            success = false,
+            message = "NCR 'ncr-other-tenant' was not found.",
+            code = 400,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.GetNcrAsync(
+            "internal-token-001",
+            new BusinessConsoleQualityNcrDetailRequest("ncr-other-tenant", "org-001", "env-dev"),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Quality_http_client_get_inspection_record_proxies_real_detail_endpoint_with_tenant_scope()
+    {
+        // 代理真实详情端点：GET /quality/inspection-records/{id}，org/env 随查询下传由服务端做租户过滤；
+        // 响应含 NCR 回链 id（记录 ↔ NCR 双向互查）。
+        HttpRequestMessage? seen = null;
+        var handler = new RecordingHandler(request =>
+        {
+            seen = request;
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    inspectionRecordId = "rec-77",
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    sourceType = "receiving",
+                    sourceService = "wms",
+                    sourceDocumentId = "IN-970",
+                    skuCode = "SKU-RM-2300",
+                    inspectedQuantity = 10,
+                    result = "rejected",
+                    dispositionReason = "外观不良，判退",
+                    nonconformanceReportId = "ncr-77",
+                    resultLines = new[]
+                    {
+                        new
+                        {
+                            characteristicCode = "appearance",
+                            observedValue = "scratch",
+                            result = "failed",
+                            defectReason = "SCRATCH",
+                            defectQuantity = 2,
+                        },
+                    },
+                    createdAtUtc = "2026-07-14T01:00:00Z",
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var detail = await client.GetInspectionRecordAsync(
+            "internal-token-001",
+            new BusinessConsoleQualityInspectionRecordDetailRequest("rec-77", "org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal("rec-77", detail.InspectionRecordId);
+        Assert.Equal("rejected", detail.Result);
+        Assert.Equal("ncr-77", detail.NonconformanceReportId);
+        var line = Assert.Single(detail.ResultLines);
+        Assert.Equal("appearance", line.CharacteristicCode);
+        Assert.Equal("/api/business/v1/quality/inspection-records/rec-77", seen!.RequestUri!.AbsolutePath);
+        var query = seen.RequestUri!.Query;
+        Assert.Contains("organizationId=org-001", query);
+        Assert.Contains("environmentId=env-dev", query);
+    }
+
+    [Fact]
     public async Task Quality_http_client_maps_inspection_record_to_real_downstream_request_shape()
     {
         string? requestBody = null;
@@ -4497,6 +4783,9 @@ public sealed class BusinessGatewayProxyTests
                 data = new
                 {
                     inspectionRecordId = "inspection-from-task-001",
+                    result = "rejected",
+                    nonconformanceReportId = "ncr-from-task-001",
+                    nonconformanceReportCode = "NCR-2026-0001",
                 },
                 success = true,
                 message = string.Empty,
@@ -4529,6 +4818,9 @@ public sealed class BusinessGatewayProxyTests
             CancellationToken.None);
 
         Assert.Equal("inspection-from-task-001", response.InspectionRecordId);
+        Assert.Equal("rejected", response.Result);
+        Assert.Equal("ncr-from-task-001", response.NonconformanceReportId);
+        Assert.Equal("NCR-2026-0001", response.NonconformanceReportCode);
         var request = handler.Requests.Single();
         Assert.Equal(HttpMethod.Post, request.Method);
         Assert.Equal("/api/business/v1/quality/inspection-tasks/inspection-task-001/inspection-record", request.RequestUri!.PathAndQuery);
@@ -4704,6 +4996,112 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Equal("/api/business/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev&status=released&keyword=filter&workCenterId=WC-FILTER&shiftId=SHIFT-FILTER&deviceAssetId=DEV-FILTER&skip=4&take=12", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Mes_http_client_gets_production_report_detail_with_escaped_report_number_and_scoped_context()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            report = new
+            {
+                productionReportId = "report-id",
+                reportNo = "PR/001",
+                workOrderId = "WO-001",
+                operationTaskId = "OP-10",
+                goodQuantity = 8,
+                scrapQuantity = 1,
+                reworkQuantity = 0,
+                reportedAtUtc = DateTimeOffset.Parse("2026-07-12T00:00:00Z"),
+                reversedReportNo = "PR-ORIG-001",
+                reversalReason = "incorrect lot",
+                inventoryPostingFailureCode = "posting-failed",
+                inventoryPostingFailureMessage = "inventory unavailable",
+                inventoryPostingFailedAtUtc = DateTimeOffset.Parse("2026-07-12T00:05:00Z"),
+                workOrderStatus = "released",
+                reversalReportNo = "PR-REV-001",
+            },
+            consumedMaterialLots = new[]
+            {
+                new
+                {
+                    materialId = "MAT-001",
+                    materialLotId = "LOT-RM-001",
+                    consumedQuantity = 2.5m,
+                    uomCode = "KG",
+                    materialIssueRequestNo = "MIR-001",
+                },
+            },
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var response = await client.GetProductionReportAsync(
+            "internal-token-001",
+            "PR/001",
+            new BusinessConsoleMesContextRequest("org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal("PR-ORIG-001", response.Report.ReversedReportNo);
+        Assert.Equal("incorrect lot", response.Report.ReversalReason);
+        Assert.Equal("posting-failed", response.Report.InventoryPostingFailureCode);
+        Assert.Equal("inventory unavailable", response.Report.InventoryPostingFailureMessage);
+        Assert.Equal("released", response.Report.WorkOrderStatus);
+        Assert.Equal("PR-REV-001", response.Report.ReversalReportNo);
+        var consumedLot = response.ConsumedMaterialLots.Single();
+        Assert.Equal("MAT-001", consumedLot.MaterialId);
+        Assert.Equal("LOT-RM-001", consumedLot.MaterialLotId);
+        Assert.Equal(2.5m, consumedLot.ConsumedQuantity);
+        Assert.Equal("KG", consumedLot.UomCode);
+        Assert.Equal("MIR-001", consumedLot.MaterialIssueRequestNo);
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal("/api/business/v1/mes/production-reports/PR%2F001?organizationId=org-001&environmentId=env-dev", request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Mes_http_client_rebuilds_production_report_reversal_body_with_injected_actor()
+    {
+        var reversedAtUtc = DateTimeOffset.Parse("2026-07-12T08:00:00Z");
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            productionReportId = "report-reversal-id",
+            reportNo = "PR/REV-001",
+            originalReportNo = "PR/001",
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        await client.ReverseProductionReportAsync(
+            "internal-token-001",
+            "PR/001",
+            new BusinessConsoleMesReverseProductionReportRequest(
+                "PR/001",
+                "org-001",
+                "env-dev",
+                "incorrect lot",
+                reversedAtUtc,
+                "reverse-001"),
+            "user-admin",
+            CancellationToken.None);
+
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("/api/business/v1/mes/production-reports/PR%2F001/reverse", request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+        var requestBody = Assert.Single(handler.RequestBodies);
+        Assert.NotNull(requestBody);
+        using var document = JsonDocument.Parse(requestBody);
+        var root = document.RootElement;
+        Assert.Equal("org-001", root.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", root.GetProperty("environmentId").GetString());
+        Assert.Equal("incorrect lot", root.GetProperty("reason").GetString());
+        Assert.Equal("user-admin", root.GetProperty("actorRef").GetString());
+        Assert.Equal(reversedAtUtc, root.GetProperty("reversedAtUtc").GetDateTimeOffset());
+        Assert.Equal("reverse-001", root.GetProperty("idempotencyKey").GetString());
+        Assert.False(root.TryGetProperty("reportNo", out _));
+        Assert.False(root.TryGetProperty("reversedBy", out _));
     }
 
     [Fact]
@@ -5626,6 +6024,35 @@ public sealed class BusinessGatewayProxyTests
     }
 }
 
+internal sealed class PrincipalRecordingNotificationClient : IBusinessNotificationClient
+{
+    public string? LastInternalToken { get; private set; }
+    public BusinessConsoleNotificationListRequest? LastListRequest { get; private set; }
+    public BusinessConsoleNotificationListRequest? LastTaskRequest { get; private set; }
+    public BusinessConsoleMarkNotificationMessageReadRequest? LastMarkRequest { get; private set; }
+
+    public Task<NotificationMessageListResponse> ListMessagesAsync(string internalBearerToken, BusinessConsoleNotificationListRequest request, CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastListRequest = request;
+        return Task.FromResult(new NotificationMessageListResponse([]));
+    }
+
+    public Task<NotificationTaskListResponse> ListTasksAsync(string internalBearerToken, BusinessConsoleNotificationListRequest request, CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastTaskRequest = request;
+        return Task.FromResult(new NotificationTaskListResponse([]));
+    }
+
+    public Task<MarkNotificationMessageReadResponse> MarkMessageReadAsync(string internalBearerToken, BusinessConsoleMarkNotificationMessageReadRequest request, CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastMarkRequest = request;
+        return Task.FromResult(new MarkNotificationMessageReadResponse(request.MessageId, "read", DateTimeOffset.UtcNow));
+    }
+}
+
 internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 {
     public int ListResourcesCallCount { get; private set; }
@@ -5645,6 +6072,12 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public bool LastSetEnabled { get; private set; }
 
     public List<bool> SetResourceEnabledCalls { get; } = [];
+
+    public List<string> SetResourceEnabledActors { get; } = [];
+
+    public List<string> SetResourceEnabledCorrelationIds { get; } = [];
+
+    public List<string> SetResourceEnabledIdempotencyKeys { get; } = [];
 
     public List<BusinessConsoleSetMasterDataResourceEnabledRequest> SetResourceEnabledRequests { get; } = [];
 
@@ -5755,6 +6188,9 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         string internalBearerToken,
         BusinessConsoleSetMasterDataResourceEnabledRequest request,
         bool enabled,
+        string actor,
+        string correlationId,
+        string idempotencyKey,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
@@ -5762,6 +6198,9 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         LastSetEnabled = enabled;
         SetResourceEnabledCalls.Add(enabled);
         SetResourceEnabledRequests.Add(request);
+        SetResourceEnabledActors.Add(actor);
+        SetResourceEnabledCorrelationIds.Add(correlationId);
+        SetResourceEnabledIdempotencyKeys.Add(idempotencyKey);
         return Task.FromResult(ResourceDetail(request.ResourceType, request.Code, request.CodeSet, enabled));
     }
 
@@ -6257,6 +6696,8 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
 
 internal sealed class RecordingQualityClient : IBusinessQualityClient
 {
+    public BusinessConsoleNcrCloseRequest? LastCloseNcrRequest { get; private set; }
+    public string? LastCloseNcrActor { get; private set; }
     public int NcrListCallCount { get; private set; }
 
     public string? LastInternalToken { get; private set; }
@@ -6376,7 +6817,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
             1));
     }
 
-    public Task<BusinessConsoleCreateInspectionRecordResponse> CreateInspectionRecordFromTaskAsync(
+    public Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> CreateInspectionRecordFromTaskAsync(
         string internalBearerToken,
         string inspectionTaskId,
         BusinessConsoleCreateInspectionRecordFromTaskRequest request,
@@ -6385,7 +6826,30 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         LastInternalToken = internalBearerToken;
         LastCreateInspectionRecordFromTaskTaskId = inspectionTaskId;
         LastCreateInspectionRecordFromTaskRequest = request;
-        return Task.FromResult(new BusinessConsoleCreateInspectionRecordResponse("inspection-from-task-001"));
+        return Task.FromResult(new BusinessConsoleCreateInspectionRecordFromTaskResponse(
+            "inspection-from-task-001", "rejected", "ncr-from-task-001", "NCR-2026-0001"));
+    }
+
+    public BusinessConsoleQualityInspectionPlanCharacteristicsRequest? LastInspectionPlanCharacteristicsRequest { get; private set; }
+
+    public Task<BusinessConsoleQualityInspectionPlanCharacteristicListResponse> GetInspectionPlanCharacteristicsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityInspectionPlanCharacteristicsRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastInspectionPlanCharacteristicsRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityInspectionPlanCharacteristicListResponse(
+            request.InspectionPlanId,
+            "QP-RM-1000",
+            "receiving",
+            "SKU-RM-1000",
+            [
+                new BusinessConsoleInspectionPlanCharacteristicItem(
+                    "od", "外径", "variable", true, 10.0m, 9.9m, 10.1m, "mm"),
+                new BusinessConsoleInspectionPlanCharacteristicItem(
+                    "appearance", "外观", "attribute", true, null, null, null, null),
+            ]));
     }
 
     public Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
@@ -6416,6 +6880,55 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
                     null),
             ],
             NcrTotal ?? 1));
+    }
+
+    public BusinessConsoleQualityNcrDetailRequest? LastNcrDetailRequest { get; private set; }
+
+    public BusinessConsoleQualityInspectionRecordDetailRequest? LastInspectionRecordDetailRequest { get; private set; }
+
+    public Task<BusinessConsoleInspectionRecordDetailResponse> GetInspectionRecordAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityInspectionRecordDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastInspectionRecordDetailRequest = request;
+        return Task.FromResult(new BusinessConsoleInspectionRecordDetailResponse(
+            "inspection-record-001",
+            "receiving",
+            "wms",
+            "IN-001",
+            "SKU-001",
+            10m,
+            "LOT-001",
+            null,
+            "kg",
+            "rejected",
+            "外观不良，判退",
+            "ncr-001",
+            [new BusinessConsoleInspectionRecordResultLine("appearance", "scratch", null, null, "failed", "SCRATCH", 2m)],
+            DateTime.Parse("2026-07-14T01:00:00Z")));
+    }
+
+    public Task<BusinessConsoleQualityNcrDetailResponse> GetNcrAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityNcrDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastNcrDetailRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityNcrDetailResponse(
+            "ncr-001",
+            "NCR-001",
+            "open",
+            "SKU-001",
+            "inspection",
+            "IR-001",
+            1,
+            "Defect",
+            null,
+            null,
+            "inspection-record-001"));
     }
 
     public Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(
@@ -6530,8 +7043,13 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         string internalBearerToken,
         string ncrId,
         BusinessConsoleNcrCloseRequest request,
-        CancellationToken cancellationToken) =>
-        Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        LastCloseNcrRequest = request;
+        LastCloseNcrActor = actor;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
 
     private static BusinessConsoleQualityReasonItem QualityReasonItem(
         string reasonCode,
@@ -8786,6 +9304,8 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
 
 internal sealed class RecordingMesClient : IBusinessMesClient
 {
+    public string? LastProductionReportNo { get; private set; }
+    public BusinessConsoleMesContextRequest? LastProductionReportContext { get; private set; }
     public int WorkOrderListCallCount { get; private set; }
 
     public string? LastInternalToken { get; private set; }
@@ -8823,10 +9343,13 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     public BusinessConsoleMesForceReleaseQualityHoldRequest? LastForceReleaseQualityHoldRequest { get; private set; }
 
     public string? LastForceReleaseQualityHoldActor { get; private set; }
+    public string? LastForceReleaseQualityHoldCorrelationId { get; private set; }
 
     public int ReverseProductionReportCallCount { get; private set; }
 
     public BusinessConsoleMesReverseProductionReportRequest? LastReverseProductionReportRequest { get; private set; }
+
+    public string? LastReverseProductionReportActor { get; private set; }
 
     public int RetryFinishedGoodsReceiptInventoryPostingCallCount { get; private set; }
 
@@ -8987,15 +9510,44 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 
+    public Task<BusinessConsoleAcceptedResponse> ForceReleaseQualityHoldAsync(
+        string internalBearerToken,
+        string sourceDocumentId,
+        BusinessConsoleMesForceReleaseQualityHoldRequest request,
+        string actor,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        LastForceReleaseQualityHoldCorrelationId = correlationId;
+        return ForceReleaseQualityHoldAsync(internalBearerToken, sourceDocumentId, request, actor, cancellationToken);
+    }
+
+    public Task<BusinessConsoleMesQualityHoldTimelineResponse> GetQualityHoldTimelineAsync(
+        string internalBearerToken,
+        string sourceDocumentId,
+        BusinessConsoleMesQualityHoldTimelineRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMesQualityHoldTimelineResponse([
+            new BusinessConsoleMesQualityHoldTimelineItem(
+                Guid.Parse("019f0000-0000-7000-8000-000000000001"), "source", sourceDocumentId,
+                "cycle-1", "corr-1", "hold-applied", "quality", DateTimeOffset.Parse("2026-07-13T08:00:00Z"),
+                "defect", "QI-1", "PLAN-1", "automatic", "event-idem")
+        ]));
+    }
+
     public Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(
         string internalBearerToken,
         string reportNo,
         BusinessConsoleMesReverseProductionReportRequest request,
+        string actor,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         ReverseProductionReportCallCount++;
         LastReverseProductionReportRequest = request;
+        LastReverseProductionReportActor = actor;
         return Task.FromResult(new BusinessConsoleMesReverseProductionReportResponse("PR-REV-001", reportNo, "PR-ORIG-001"));
     }
 
@@ -9121,6 +9673,25 @@ internal sealed class RecordingMesClient : IBusinessMesClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleMesProductionReportListResponse([], 0));
+    }
+
+    public Task<BusinessConsoleMesProductionReportDetailResponse> GetProductionReportAsync(
+        string internalBearerToken,
+        string reportNo,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastProductionReportNo = reportNo;
+        LastProductionReportContext = request;
+        return Task.FromResult(new BusinessConsoleMesProductionReportDetailResponse(
+            new BusinessConsoleMesProductionReportDetail(
+                "report-id", reportNo, "WO-001", "OP-10", 8m, 1m, 0m,
+                DateTimeOffset.Parse("2026-07-12T00:00:00Z"),
+                ProducedLotNo: "LOT-FG-001",
+                InventoryPostingFailureCode: "posting-failed",
+                ReversalReportNo: "PR-REV-001"),
+            [new BusinessConsoleMesConsumedMaterialLot("MAT-001", "LOT-RM-001", 2.5m, "KG", "MIR-001")]));
     }
 
     public Task<BusinessConsoleMesTelemetryCandidateListResponse> ListTelemetryCandidatesAsync(

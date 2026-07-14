@@ -5,55 +5,66 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SchedulingPage from './scheduling.vue'
 
 const stub = vi.hoisted(() => ({
-  releasePlan: vi.fn().mockResolvedValue({ success: true, data: { planId: 'plan-001', status: 'released' } }),
+  releasePlan: vi
+    .fn()
+    .mockResolvedValue({ success: true, data: { planId: 'plan-001', status: 'released' } }),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
 }))
 
 const detailSelection = reactive({ planId: '' })
 const detailError = shallowRef<unknown>()
-const detail = computed(() => detailSelection.planId
-  === 'plan-001'
+const detail = computed(() =>
+  detailSelection.planId === 'plan-001'
     ? {
-      planId: detailSelection.planId,
-      status: 'generated',
-      generatedAtUtc: '2026-07-01T09:30:00Z',
-      metrics: {
-        scheduledOperationCount: 6,
-        unscheduledOperationCount: 1,
-        assignedMinutes: 480,
-        makespanMinutes: 720,
-      },
-      assignments: [{
-        assignmentId: 'assign-001',
-        orderId: 'WO-20260701-001',
-        operationSequence: 20,
-        resourceId: 'RES-CNC-01',
-        workCenterId: 'WC-CNC',
-        startUtc: '2026-07-02T08:00:00Z',
-        endUtc: '2026-07-02T10:00:00Z',
-      }],
-      resourceLoads: [{
-        resourceId: 'RES-CNC-01',
-        assignedMinutes: 480,
-        availableMinutes: 600,
-        utilization: 0.8,
-      }],
-      conflicts: [{
-        conflictId: 'conflict-001',
-        reasonCode: 'material',
-        severity: 'warning',
-        orderId: 'WO-20260701-001',
-        message: '关键物料到货晚于计划开工',
-      }],
-      unscheduledOperations: [{
-        orderId: 'WO-20260701-002',
-        operationId: 'OP-30',
-        reasonCode: 'capacity',
-        message: '瓶颈资源产能不足',
-      }],
-    }
-    : undefined)
+        planId: detailSelection.planId,
+        status: 'generated',
+        generatedAtUtc: '2026-07-01T09:30:00Z',
+        metrics: {
+          scheduledOperationCount: 6,
+          unscheduledOperationCount: 1,
+          assignedMinutes: 480,
+          makespanMinutes: 720,
+        },
+        assignments: [
+          {
+            assignmentId: 'assign-001',
+            orderId: 'WO-20260701-001',
+            operationSequence: 20,
+            resourceId: 'RES-CNC-01',
+            workCenterId: 'WC-CNC',
+            startUtc: '2026-07-02T08:00:00Z',
+            endUtc: '2026-07-02T10:00:00Z',
+          },
+        ],
+        resourceLoads: [
+          {
+            resourceId: 'RES-CNC-01',
+            assignedMinutes: 480,
+            availableMinutes: 600,
+            utilization: 0.8,
+          },
+        ],
+        conflicts: [
+          {
+            conflictId: 'conflict-001',
+            reasonCode: 'material',
+            severity: 'warning',
+            orderId: 'WO-20260701-001',
+            message: '关键物料到货晚于计划开工',
+          },
+        ],
+        unscheduledOperations: [
+          {
+            orderId: 'WO-20260701-002',
+            operationId: 'OP-30',
+            reasonCode: 'capacity',
+            message: '瓶颈资源产能不足',
+          },
+        ],
+      }
+    : undefined,
+)
 
 vi.mock('@/composables/useBusinessScheduling', () => ({
   useBusinessScheduling: () => ({
@@ -79,6 +90,18 @@ vi.mock('@/composables/useBusinessScheduling', () => ({
         assignmentCount: 0,
         conflictCount: 0,
         unscheduledOperationCount: 0,
+      },
+      {
+        planId: 'plan-invalid',
+        status: 'released',
+        generatedAtUtc: '2026-07-01T11:00:00Z',
+        releasedAtUtc: '2026-07-01T11:30:00Z',
+        assignmentCount: 5,
+        conflictCount: 0,
+        unscheduledOperationCount: 0,
+        isInvalidated: true,
+        latestInvalidationReasonCode: 'equipmentUnavailable',
+        latestInvalidatedAtUtc: '2026-07-01T12:00:00Z',
       },
     ]),
     plansPending: shallowRef(false),
@@ -153,7 +176,10 @@ describe('APS scheduling workbench page', () => {
     const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
     await flushPromises()
 
-    await wrapper.findAll('button').find((button) => button.text().includes('明细'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('明细'))!
+      .trigger('click')
     await flushPromises()
 
     expect(detailSelection.planId).toBe('plan-001')
@@ -162,11 +188,31 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.text()).toContain('关键物料到货晚于计划开工')
     expect(wrapper.text()).toContain('瓶颈资源产能不足')
 
-    await wrapper.findAll('button').find((button) => button.text().includes('发布'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('发布'))!
+      .trigger('click')
     await flushPromises()
 
     expect(stub.releasePlan).toHaveBeenCalledWith('plan-001')
     expect(stub.toastSuccess).toHaveBeenCalled()
+  })
+
+  it('marks invalidated plans with their reason and blocks release', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    // 失效方案:标记 + 失效原因列展示中文原因
+    expect(wrapper.text()).toContain('已失效')
+    expect(wrapper.text()).toContain('设备不可用')
+
+    // 失效方案那一行的发布按钮被禁用(须重排后再发布)
+    const rows = wrapper.findAll('tbody tr')
+    const invalidRow = rows.find((row) => row.text().includes('plan-invalid'))!
+    const releaseButton = invalidRow
+      .findAll('button')
+      .find((button) => button.text().includes('发布'))!
+    expect(releaseButton.attributes('disabled')).toBeDefined()
   })
 
   it('shows explicit detail feedback when a plan detail request fails', async () => {
@@ -174,7 +220,10 @@ describe('APS scheduling workbench page', () => {
     const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
     await flushPromises()
 
-    await wrapper.findAll('button').filter((button) => button.text().includes('明细'))[1]!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .filter((button) => button.text().includes('明细'))[1]!
+      .trigger('click')
     await flushPromises()
 
     expect(detailSelection.planId).toBe('plan-empty')
@@ -185,7 +234,10 @@ describe('APS scheduling workbench page', () => {
     const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
     await flushPromises()
 
-    await wrapper.findAll('button').filter((button) => button.text().includes('明细'))[1]!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .filter((button) => button.text().includes('明细'))[1]!
+      .trigger('click')
     await flushPromises()
 
     expect(detailSelection.planId).toBe('plan-empty')

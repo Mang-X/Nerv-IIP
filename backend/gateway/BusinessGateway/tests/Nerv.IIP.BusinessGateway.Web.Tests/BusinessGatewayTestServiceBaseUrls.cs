@@ -6,6 +6,7 @@ internal static class BusinessGatewayTestServiceBaseUrls
 {
     public static void Configure(IWebHostBuilder builder)
     {
+        builder.UseSetting("AppHub:BaseUrl", "http://apphub.local");
         builder.UseSetting("Iam:BaseUrl", "http://iam.local");
         builder.UseSetting("MasterData:BaseUrl", "http://master-data.local");
         builder.UseSetting("Inventory:BaseUrl", "http://inventory.local");

@@ -145,6 +145,33 @@ public sealed class CodeAllocatorTests
     }
 
     [Fact]
+    public async Task TryPeekReplayAsync_returns_existing_allocation_without_allocating_again()
+    {
+        var allocator = new CodeAllocator(timeProvider: new FrozenTimeProvider(new DateTimeOffset(2026, 6, 12, 1, 0, 0, TimeSpan.Zero)));
+        var request = new CodeAllocationRequest("org", "env", SkuRule(), null, null, "idem-peek", "payload-a", "sku");
+
+        Assert.Null(await allocator.TryPeekReplayAsync(request, CancellationToken.None));
+        var first = await allocator.AllocateAsync(request, CancellationToken.None);
+        var replay = await allocator.TryPeekReplayAsync(request, CancellationToken.None);
+
+        Assert.NotNull(replay);
+        Assert.Equal(first.Code, replay.Code);
+        Assert.True(replay.IsIdempotentReplay);
+    }
+
+    [Fact]
+    public async Task TryPeekReplayAsync_rejects_conflicting_payload_with_allocator_semantics()
+    {
+        var allocator = new CodeAllocator(timeProvider: new FrozenTimeProvider(new DateTimeOffset(2026, 6, 12, 1, 0, 0, TimeSpan.Zero)));
+        var request = new CodeAllocationRequest("org", "env", SkuRule(), null, null, "idem-peek-conflict", "payload-a", "sku");
+        await allocator.AllocateAsync(request, CancellationToken.None);
+
+        await Assert.ThrowsAsync<KnownException>(() => allocator.TryPeekReplayAsync(
+            request with { PayloadFingerprint = "payload-b" },
+            CancellationToken.None));
+    }
+
+    [Fact]
     public async Task AllocateAsync_replays_concurrent_in_memory_idempotency_requests()
     {
         var allocator = new CodeAllocator(timeProvider: new FrozenTimeProvider(new DateTimeOffset(2026, 6, 12, 1, 0, 0, TimeSpan.Zero)));

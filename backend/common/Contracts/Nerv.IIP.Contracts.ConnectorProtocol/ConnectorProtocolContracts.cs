@@ -53,7 +53,35 @@ public sealed record InstanceStateSnapshot(
     string Summary,
     IReadOnlyDictionary<string, string> Detail,
     IReadOnlyDictionary<string, decimal> Metrics,
-    IReadOnlyDictionary<string, string> Metadata);
+    IReadOnlyDictionary<string, string> Metadata,
+    ConnectorCollectionHealth? CollectionHealth = null);
+
+/// <summary>
+/// Monotonic counters scoped to organization, environment, connector identity and counter epoch.
+/// Received counts each raw source message/sample attempt exactly once. Dropped is the subset of received
+/// input not accepted for processing. Error counts collection or processing exceptions and never reconnects.
+/// Null counters mean no collection fact has yet been observed; zero is reported only after the first fact.
+/// </summary>
+public sealed record ConnectorCollectionHealth(
+    string ConnectorId,
+    string SourceSystem,
+    Guid CounterEpoch,
+    DateTimeOffset ReportedAtUtc,
+    long? ReceivedCount,
+    long? DroppedCount,
+    long? ErrorCount,
+    DateTimeOffset? LastSampleAtUtc);
+
+public sealed record ConnectorCollectionHealthResponse(
+    string ConnectorId,
+    string Status,
+    DateTimeOffset? LastHeartbeatAtUtc,
+    DateTimeOffset? MetricsReportedAtUtc,
+    DateTimeOffset? LastSampleAtUtc,
+    long? ReceivedCount,
+    long? DroppedCount,
+    long? ErrorCount,
+    string? SourceSystem);
 
 public sealed record OperationResult(
     ConnectorRequestContext Context,

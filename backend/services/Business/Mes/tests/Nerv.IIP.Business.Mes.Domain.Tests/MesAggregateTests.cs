@@ -598,6 +598,21 @@ public sealed class MesAggregateTests
         Assert.Equal(firstReleaseAt, context.ReleasedAtUtc);
     }
 
+    [Fact]
+    public void QualityHoldContext_rejects_force_release_before_hold_time()
+    {
+        var heldAtUtc = DateTimeOffset.Parse("2026-07-13T05:00:00Z");
+        var context = QualityHoldContext.Capture(
+            "org", "env", "WO-1", null, "business-mes", "WO-1", "QI-1", "PLAN-1",
+            "rejected", "quality.InspectionRejected", "defect", heldAtUtc, "quality");
+
+        var exception = Assert.Throws<KnownException>(() =>
+            context.ForceRelease("manual override", "user:supervisor", heldAtUtc.AddSeconds(-1)));
+
+        Assert.Contains("earlier", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(context.Active);
+    }
+
     [Theory]
     [InlineData("completed")]
     [InlineData("cancelled")]

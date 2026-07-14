@@ -48,6 +48,28 @@ public sealed class ErpCodingService
         return new ErpCodeAllocation(allocation.Code, allocation.IsIdempotentReplay);
     }
 
+    public async Task<ErpCodeAllocation?> TryPeekReplayAsync(
+        string organizationId,
+        string environmentId,
+        string ruleKey,
+        string? idempotencyKey,
+        string payloadFingerprint,
+        CancellationToken cancellationToken)
+    {
+        var replay = await _allocator.TryPeekReplayAsync(
+            new CodeAllocationRequest(
+                organizationId,
+                environmentId,
+                StandardCodeRules.Get(ruleKey),
+                Fields: null,
+                RequestedCode: null,
+                idempotencyKey,
+                payloadFingerprint,
+                "ERP"),
+            cancellationToken);
+        return replay is null ? null : new ErpCodeAllocation(replay.Code, replay.IsIdempotentReplay);
+    }
+
     public static string Fingerprint(params object?[] parts)
     {
         return CodeAllocator.Fingerprint(parts);

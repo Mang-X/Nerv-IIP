@@ -34,6 +34,9 @@ public interface IBusinessMasterDataClient
         string internalBearerToken,
         BusinessConsoleSetMasterDataResourceEnabledRequest request,
         bool enabled,
+        string actor,
+        string correlationId,
+        string idempotencyKey,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleResourceItem> CreateSkuAsync(
@@ -268,10 +271,15 @@ public interface IBusinessQualityClient
         BusinessConsoleQualityInspectionTaskListRequest request,
         CancellationToken cancellationToken);
 
-    Task<BusinessConsoleCreateInspectionRecordResponse> CreateInspectionRecordFromTaskAsync(
+    Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> CreateInspectionRecordFromTaskAsync(
         string internalBearerToken,
         string inspectionTaskId,
         BusinessConsoleCreateInspectionRecordFromTaskRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityInspectionPlanCharacteristicListResponse> GetInspectionPlanCharacteristicsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityInspectionPlanCharacteristicsRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleOpenNcrFromInspectionResponse> OpenNcrFromInspectionAsync(
@@ -283,6 +291,16 @@ public interface IBusinessQualityClient
     Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityNcrDetailResponse> GetNcrAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityNcrDetailRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleInspectionRecordDetailResponse> GetInspectionRecordAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityInspectionRecordDetailRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(
@@ -333,6 +351,7 @@ public interface IBusinessQualityClient
         string internalBearerToken,
         string ncrId,
         BusinessConsoleNcrCloseRequest request,
+        string actor,
         CancellationToken cancellationToken);
 }
 
@@ -975,6 +994,8 @@ public interface IBusinessIndustrialTelemetryClient
         BusinessConsoleEquipmentAvailabilityRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleTelemetryRuntimeHoursResponse> QueryRuntimeHoursAsync(string internalBearerToken, BusinessConsoleTelemetryRuntimeHoursRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+
     Task<EquipmentRuntimeAvailabilityResponse> GetDeviceRuntimeAvailabilityAsync(
         string internalBearerToken,
         string deviceAssetId,
@@ -1201,6 +1222,11 @@ public interface IBusinessNotificationClient
         string internalBearerToken,
         BusinessConsoleNotificationListRequest request,
         CancellationToken cancellationToken);
+
+    Task<MarkNotificationMessageReadResponse> MarkMessageReadAsync(
+        string internalBearerToken,
+        BusinessConsoleMarkNotificationMessageReadRequest request,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
 }
 
 public interface IBusinessMesClient
@@ -1269,10 +1295,26 @@ public interface IBusinessMesClient
         string actor,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleAcceptedResponse> ForceReleaseQualityHoldAsync(
+        string internalBearerToken,
+        string sourceDocumentId,
+        BusinessConsoleMesForceReleaseQualityHoldRequest request,
+        string actor,
+        string correlationId,
+        CancellationToken cancellationToken) =>
+        ForceReleaseQualityHoldAsync(internalBearerToken, sourceDocumentId, request, actor, cancellationToken);
+
+    Task<BusinessConsoleMesQualityHoldTimelineResponse> GetQualityHoldTimelineAsync(
+        string internalBearerToken,
+        string sourceDocumentId,
+        BusinessConsoleMesQualityHoldTimelineRequest request,
+        CancellationToken cancellationToken) => throw new NotSupportedException();
+
     Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(
         string internalBearerToken,
         string reportNo,
         BusinessConsoleMesReverseProductionReportRequest request,
+        string actor,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesCreateReceiptResponse> RetryFinishedGoodsReceiptInventoryPostingAsync(
@@ -1357,6 +1399,12 @@ public interface IBusinessMesClient
     Task<BusinessConsoleMesProductionReportListResponse> ListProductionReportsAsync(
         string internalBearerToken,
         BusinessConsoleMesListWithoutStatusRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMesProductionReportDetailResponse> GetProductionReportAsync(
+        string internalBearerToken,
+        string reportNo,
+        BusinessConsoleMesContextRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesTelemetryCandidateListResponse> ListTelemetryCandidatesAsync(string internalBearerToken, BusinessConsoleMesTelemetryCandidateListRequest request, CancellationToken cancellationToken);
@@ -1866,15 +1914,36 @@ public sealed class HttpBusinessNotificationClient(HttpClient httpClient) : Busi
             cancellationToken,
             configureRequest: notificationRequest => AddNotificationScopeHeaders(notificationRequest, request));
 
+    public Task<MarkNotificationMessageReadResponse> MarkMessageReadAsync(
+        string internalBearerToken,
+        BusinessConsoleMarkNotificationMessageReadRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<MarkNotificationMessageReadResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/notifications/v1/messages/{Uri.EscapeDataString(request.MessageId)}/read?" + Query(("recipientRef", request.RecipientRef)),
+            null,
+            cancellationToken,
+            configureRequest: notificationRequest => AddNotificationScopeHeaders(
+                notificationRequest,
+                request.OrganizationId,
+                request.EnvironmentId));
+
     private static string NotificationQuery(BusinessConsoleNotificationListRequest request) =>
         Query(
             ("recipientRef", request.RecipientRef),
             ("status", request.Status));
 
     private static void AddNotificationScopeHeaders(HttpRequestMessage httpRequest, BusinessConsoleNotificationListRequest request)
+        => AddNotificationScopeHeaders(httpRequest, request.OrganizationId, request.EnvironmentId);
+
+    private static void AddNotificationScopeHeaders(
+        HttpRequestMessage httpRequest,
+        string organizationId,
+        string environmentId)
     {
-        httpRequest.Headers.TryAddWithoutValidation("X-Organization-Id", request.OrganizationId);
-        httpRequest.Headers.TryAddWithoutValidation("X-Environment-Id", request.EnvironmentId);
+        httpRequest.Headers.TryAddWithoutValidation("X-Organization-Id", organizationId);
+        httpRequest.Headers.TryAddWithoutValidation("X-Environment-Id", environmentId);
     }
 }
 
@@ -1944,13 +2013,22 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
         string internalBearerToken,
         BusinessConsoleSetMasterDataResourceEnabledRequest request,
         bool enabled,
+        string actor,
+        string correlationId,
+        string idempotencyKey,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMasterDataResourceDetail>(
             internalBearerToken,
             HttpMethod.Post,
             ResourcePath(request.ResourceType, request.Code) + (enabled ? "/enable" : "/disable"),
             request,
-            cancellationToken);
+            cancellationToken,
+            configureRequest: message =>
+            {
+                message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor);
+                message.Headers.TryAddWithoutValidation("X-Correlation-Id", correlationId);
+                message.Headers.TryAddWithoutValidation("X-Idempotency-Key", idempotencyKey);
+            });
 
     public Task<BusinessConsoleResourceItem> CreateSkuAsync(
         string internalBearerToken,
@@ -2509,12 +2587,13 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             response.Total);
     }
 
-    public Task<BusinessConsoleCreateInspectionRecordResponse> CreateInspectionRecordFromTaskAsync(
+    public async Task<BusinessConsoleCreateInspectionRecordFromTaskResponse> CreateInspectionRecordFromTaskAsync(
         string internalBearerToken,
         string inspectionTaskId,
         BusinessConsoleCreateInspectionRecordFromTaskRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleCreateInspectionRecordResponse>(
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamCreateInspectionRecordFromTaskResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/quality/inspection-tasks/{Uri.EscapeDataString(inspectionTaskId)}/inspection-record",
@@ -2525,6 +2604,52 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 request.DispositionReason,
                 request.DispositionAttachmentFileIds),
             cancellationToken);
+        return new BusinessConsoleCreateInspectionRecordFromTaskResponse(
+            response.InspectionRecordId,
+            response.Result,
+            response.NonconformanceReportId,
+            response.NonconformanceReportCode);
+    }
+
+    public async Task<BusinessConsoleQualityInspectionPlanCharacteristicListResponse> GetInspectionPlanCharacteristicsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityInspectionPlanCharacteristicsRequest request,
+        CancellationToken cancellationToken)
+    {
+        // The Quality inspection-plans list already resolves a single plan (with characteristics)
+        // by id via its keyword filter; no dedicated detail endpoint is needed.
+        var response = await SendAsync<DownstreamInspectionPlanListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/quality/inspection-plans?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("keyword", request.InspectionPlanId),
+                ("skip", 0),
+                ("take", 1)),
+            null,
+            cancellationToken);
+        var plan = response.Items.FirstOrDefault(x =>
+                string.Equals(x.InspectionPlanId, request.InspectionPlanId, StringComparison.OrdinalIgnoreCase))
+            ?? response.Items.FirstOrDefault();
+        var items = (plan?.Characteristics ?? [])
+            .Select(c => new BusinessConsoleInspectionPlanCharacteristicItem(
+                c.CharacteristicCode,
+                c.Name,
+                c.CharacteristicType,
+                c.Required,
+                c.NominalValue,
+                c.LowerSpecLimit,
+                c.UpperSpecLimit,
+                c.UnitCode))
+            .ToArray();
+        return new BusinessConsoleQualityInspectionPlanCharacteristicListResponse(
+            request.InspectionPlanId,
+            plan?.PlanCode,
+            plan?.Category,
+            plan?.SkuCode,
+            items);
+    }
 
     public async Task<BusinessConsoleQualityListResponse> ListInspectionRecordsAsync(
         string internalBearerToken,
@@ -2588,6 +2713,73 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         return new BusinessConsoleQualityListResponse(
             response.Items.Select(ToQualityItem).ToArray(),
             response.Total);
+    }
+
+    public async Task<BusinessConsoleQualityNcrDetailResponse> GetNcrAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityNcrDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        // 代理真实详情端点，org/env 随查询下传由 Quality 服务端做租户过滤：越权 id 与不存在同为
+        // not found（下游业务错误透传），不泄露跨租户数据。
+        var response = await SendAsync<DownstreamNcrItem>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/quality/ncrs/{Uri.EscapeDataString(request.NcrId)}?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            null,
+            cancellationToken);
+        return new BusinessConsoleQualityNcrDetailResponse(
+            response.NcrId,
+            response.NcrCode,
+            response.Status,
+            response.SkuCode,
+            response.SourceType,
+            response.SourceDocumentId,
+            response.DefectQuantity,
+            response.DefectReason,
+            response.BatchNo,
+            response.SerialNo,
+            response.SourceInspectionRecordId);
+    }
+
+    public async Task<BusinessConsoleInspectionRecordDetailResponse> GetInspectionRecordAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityInspectionRecordDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        // 代理真实详情端点；org/env 随查询下传由 Quality 服务端做租户过滤（越权与不存在同为 not found）。
+        var record = await SendAsync<DownstreamInspectionRecordDetail>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/quality/inspection-records/{Uri.EscapeDataString(request.InspectionRecordId)}?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            null,
+            cancellationToken);
+        return new BusinessConsoleInspectionRecordDetailResponse(
+            record.InspectionRecordId,
+            record.SourceType,
+            record.SourceService,
+            record.SourceDocumentId,
+            record.SkuCode,
+            record.InspectedQuantity,
+            record.BatchNo,
+            record.SerialNo,
+            record.UomCode,
+            record.Result,
+            record.DispositionReason,
+            record.NonconformanceReportId,
+            (record.ResultLines ?? []).Select(line => new BusinessConsoleInspectionRecordResultLine(
+                line.CharacteristicCode,
+                line.ObservedValue,
+                line.MeasuredValue,
+                line.UnitCode,
+                line.Result,
+                line.DefectReason,
+                line.DefectQuantity)).ToArray(),
+            record.CreatedAtUtc);
     }
 
     public Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(
@@ -2714,6 +2906,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string internalBearerToken,
         string ncrId,
         BusinessConsoleNcrCloseRequest request,
+        string actor,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleAcceptedResponse>(
             internalBearerToken,
@@ -2723,8 +2916,10 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ncrId,
                 request.ReworkWorkOrderId,
                 request.ScrapMovementId,
-                request.ReturnDocumentId),
-            cancellationToken);
+                request.ReturnDocumentId,
+                request.Reason),
+            cancellationToken,
+            configureRequest: message => message.Headers.TryAddWithoutValidation("X-Actor", actor));
 
     private static BusinessConsoleQualityItem ToQualityItem(DownstreamInspectionPlanItem item) =>
         new(
@@ -2794,6 +2989,12 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
     private sealed record DownstreamInspectionTaskListResponse(
         IReadOnlyCollection<DownstreamInspectionTaskItem> Items,
         int Total);
+
+    private sealed record DownstreamCreateInspectionRecordFromTaskResponse(
+        string InspectionRecordId,
+        string Result,
+        string? NonconformanceReportId,
+        string? NonconformanceReportCode);
 
     private sealed record DownstreamInspectionTaskItem(
         string InspectionTaskId,
@@ -2911,7 +3112,18 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string? DeviceAssetId,
         string? DocumentType,
         int Version,
-        string Status);
+        string Status,
+        IReadOnlyCollection<DownstreamInspectionPlanCharacteristic>? Characteristics);
+
+    private sealed record DownstreamInspectionPlanCharacteristic(
+        string CharacteristicCode,
+        string Name,
+        string CharacteristicType,
+        bool Required,
+        decimal? NominalValue,
+        decimal? LowerSpecLimit,
+        decimal? UpperSpecLimit,
+        string? UnitCode);
 
     private sealed record DownstreamInspectionRecordItem(
         string InspectionRecordId,
@@ -2922,6 +3134,31 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string? BatchNo,
         string? SerialNo,
         string? DispositionReason);
+
+    private sealed record DownstreamInspectionRecordDetail(
+        string InspectionRecordId,
+        string SourceType,
+        string SourceService,
+        string SourceDocumentId,
+        string SkuCode,
+        decimal InspectedQuantity,
+        string? BatchNo,
+        string? SerialNo,
+        string? UomCode,
+        string Result,
+        string? DispositionReason,
+        string? NonconformanceReportId,
+        IReadOnlyCollection<DownstreamInspectionRecordDetailLine>? ResultLines,
+        DateTime CreatedAtUtc);
+
+    private sealed record DownstreamInspectionRecordDetailLine(
+        string CharacteristicCode,
+        string ObservedValue,
+        decimal? MeasuredValue,
+        string? UnitCode,
+        string Result,
+        string? DefectReason,
+        decimal? DefectQuantity);
 
     private sealed record DownstreamNcrListResponse(
         IReadOnlyCollection<DownstreamNcrItem> Items,
@@ -2937,7 +3174,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string DefectReason,
         string? BatchNo,
         string? SerialNo,
-        string Status);
+        string Status,
+        string? SourceInspectionRecordId = null);
 
     private sealed record DownstreamSubmitNcrDispositionRequest(
         string NcrId,
@@ -2956,7 +3194,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string NcrId,
         string? ReworkWorkOrderId,
         string? ScrapMovementId,
-        string? ReturnDocumentId);
+        string? ReturnDocumentId,
+        string Reason);
 
     private sealed record DownstreamOpenNcrFromInspectionRequest(
         string InspectionRecordId,
@@ -4486,6 +4725,11 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
             cancellationToken,
             EquipmentRuntimeJson.Options);
 
+    public Task<BusinessConsoleTelemetryRuntimeHoursResponse> QueryRuntimeHoursAsync(string internalBearerToken, BusinessConsoleTelemetryRuntimeHoursRequest request, CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleTelemetryRuntimeHoursResponse>(internalBearerToken, HttpMethod.Get,
+            "/api/business/v1/iiot/runtime-hours?" + Query(("organizationId", request.OrganizationId), ("environmentId", request.EnvironmentId), ("deviceAssetId", request.DeviceAssetId), ("windowStartUtc", request.WindowStartUtc), ("windowEndUtc", request.WindowEndUtc)),
+            null, cancellationToken);
+
     public Task<EquipmentRuntimeAvailabilityResponse> GetDeviceRuntimeAvailabilityAsync(
         string internalBearerToken,
         string deviceAssetId,
@@ -5950,6 +6194,15 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         BusinessConsoleMesForceReleaseQualityHoldRequest request,
         string actor,
         CancellationToken cancellationToken) =>
+        ForceReleaseQualityHoldAsync(internalBearerToken, sourceDocumentId, request, actor, Guid.CreateVersion7().ToString("N"), cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> ForceReleaseQualityHoldAsync(
+        string internalBearerToken,
+        string sourceDocumentId,
+        BusinessConsoleMesForceReleaseQualityHoldRequest request,
+        string actor,
+        string correlationId,
+        CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleAcceptedResponse>(
             internalBearerToken,
             HttpMethod.Post,
@@ -5958,21 +6211,45 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.Reason,
-                actor,
                 request.SourceService,
                 request.ReleasedAtUtc),
+            cancellationToken,
+            configureRequest: message =>
+            {
+                message.Headers.TryAddWithoutValidation("X-Authenticated-Actor", actor);
+                message.Headers.TryAddWithoutValidation("X-Correlation-Id", correlationId);
+                message.Headers.TryAddWithoutValidation("X-Idempotency-Key", request.IdempotencyKey);
+            });
+
+    public Task<BusinessConsoleMesQualityHoldTimelineResponse> GetQualityHoldTimelineAsync(
+        string internalBearerToken,
+        string sourceDocumentId,
+        BusinessConsoleMesQualityHoldTimelineRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesQualityHoldTimelineResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/quality-holds/{Uri.EscapeDataString(sourceDocumentId)}/timeline?organizationId={Uri.EscapeDataString(request.OrganizationId)}&environmentId={Uri.EscapeDataString(request.EnvironmentId)}&sourceService={Uri.EscapeDataString(request.SourceService)}",
+            null,
             cancellationToken);
 
     public Task<BusinessConsoleMesReverseProductionReportResponse> ReverseProductionReportAsync(
         string internalBearerToken,
         string reportNo,
         BusinessConsoleMesReverseProductionReportRequest request,
+        string actor,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMesReverseProductionReportResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/mes/production-reports/{Uri.EscapeDataString(reportNo)}/reverse",
-            request,
+            new DownstreamReverseProductionReportRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.Reason,
+                actor,
+                request.ReversedAtUtc,
+                request.IdempotencyKey),
             cancellationToken);
 
     public Task<BusinessConsoleMesCreateReceiptResponse> RetryFinishedGoodsReceiptInventoryPostingAsync(
@@ -6121,6 +6398,18 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/mes/production-reports?" + ListQueryWithoutStatus(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleMesProductionReportDetailResponse> GetProductionReportAsync(
+        string internalBearerToken,
+        string reportNo,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleMesProductionReportDetailResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/mes/production-reports/{Uri.EscapeDataString(reportNo)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
             cancellationToken);
 
@@ -6453,9 +6742,16 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
         string OrganizationId,
         string EnvironmentId,
         string Reason,
-        string Actor,
         string? SourceService,
         DateTimeOffset? ReleasedAtUtc);
+
+    private sealed record DownstreamReverseProductionReportRequest(
+        string OrganizationId,
+        string EnvironmentId,
+        string Reason,
+        string ActorRef,
+        DateTimeOffset? ReversedAtUtc,
+        string? IdempotencyKey);
 
     private static string FormatTrigger(JsonElement trigger) => trigger.ValueKind switch
     {

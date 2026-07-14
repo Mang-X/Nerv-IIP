@@ -3347,6 +3347,59 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Infrastructure.MasterData.BusinessPartnerAvailability", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("ERP business-partner availability projection identifier.");
+
+                    b.Property<DateTimeOffset>("ChangedAtUtc")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("UTC time of the latest applied MasterData partner change and optimistic concurrency token.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Owning environment identifier.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Owning organization identifier.");
+
+                    b.Property<string>("PartnerCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasComment("MasterData business-partner code used by ERP orders.");
+
+                    b.Property<string>("SourceEventId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasComment("Latest applied MasterData integration event identifier.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasComment("Latest partner status: active or disabled.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "PartnerCode")
+                        .IsUnique()
+                        .HasDatabaseName("ux_business_partner_availabilities_scope_code");
+
+                    b.ToTable("business_partner_availabilities", "erp", t =>
+                        {
+                            t.HasComment("Latest MasterData business-partner availability projected for ERP order gates.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Coding.CodeCounter", b =>
                 {
                     b.Property<long>("Id")
