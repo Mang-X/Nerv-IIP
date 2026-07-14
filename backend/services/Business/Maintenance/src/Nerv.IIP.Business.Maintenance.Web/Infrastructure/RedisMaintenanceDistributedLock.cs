@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NetCorePal.Extensions.DistributedLocks;
 using StackExchange.Redis;
 
@@ -12,6 +14,7 @@ public sealed class RedisMaintenanceDistributedLock : IDistributedLock
     private static readonly TimeSpan RetryDelay = TimeSpan.FromMilliseconds(50);
     private readonly IRedisCommandLockStore store;
     private readonly TimeProvider timeProvider;
+    private readonly ILogger<RedisMaintenanceDistributedLock> logger;
     private readonly TimeSpan leaseTime;
     private readonly TimeSpan renewalInterval;
 
@@ -19,10 +22,12 @@ public sealed class RedisMaintenanceDistributedLock : IDistributedLock
         IRedisCommandLockStore store,
         TimeProvider timeProvider,
         TimeSpan? leaseTime = null,
-        TimeSpan? renewalInterval = null)
+        TimeSpan? renewalInterval = null,
+        ILogger<RedisMaintenanceDistributedLock>? logger = null)
     {
         this.store = store;
         this.timeProvider = timeProvider;
+        this.logger = logger ?? NullLogger<RedisMaintenanceDistributedLock>.Instance;
         this.leaseTime = leaseTime ?? DefaultLeaseTime;
         this.renewalInterval = renewalInterval ?? DefaultRenewalInterval;
         if (this.leaseTime <= TimeSpan.Zero)
@@ -54,7 +59,7 @@ public sealed class RedisMaintenanceDistributedLock : IDistributedLock
             var token = NewToken();
             if (await store.TryAcquireAsync(key, token, leaseTime, cancellationToken))
             {
-                return new Handle(store, timeProvider, key, token, leaseTime, renewalInterval);
+                return new Handle(store, timeProvider, logger, key, token, leaseTime, renewalInterval);
             }
 
             if (timeout <= TimeSpan.Zero || timeProvider.GetUtcNow() >= deadlineUtc)
@@ -93,6 +98,7 @@ public sealed class RedisMaintenanceDistributedLock : IDistributedLock
     {
         private readonly IRedisCommandLockStore store;
         private readonly TimeProvider timeProvider;
+        private readonly ILogger<RedisMaintenanceDistributedLock> logger;
         private readonly string key;
         private readonly string token;
         private readonly TimeSpan leaseTime;
@@ -105,6 +111,7 @@ public sealed class RedisMaintenanceDistributedLock : IDistributedLock
         public Handle(
             IRedisCommandLockStore store,
             TimeProvider timeProvider,
+            ILogger<RedisMaintenanceDistributedLock> logger,
             string key,
             string token,
             TimeSpan leaseTime,
@@ -112,6 +119,7 @@ public sealed class RedisMaintenanceDistributedLock : IDistributedLock
         {
             this.store = store;
             this.timeProvider = timeProvider;
+            this.logger = logger;
             this.key = key;
             this.token = token;
             this.leaseTime = leaseTime;
@@ -147,6 +155,9 @@ public sealed class RedisMaintenanceDistributedLock : IDistributedLock
                     await Task.Delay(renewalInterval, timeProvider, stopRenewal.Token);
                     if (!await store.RenewAsync(key, token, leaseTime, stopRenewal.Token))
                     {
+                        logger.LogWarning(
+                            "Distributed lock {LockKey} renewal was rejected; the lock handle will be canceled.",
+                            key);
                         await handleLost.CancelAsync();
                         return;
                     }
@@ -155,8 +166,12 @@ public sealed class RedisMaintenanceDistributedLock : IDistributedLock
             catch (OperationCanceledException) when (stopRenewal.IsCancellationRequested)
             {
             }
-            catch
+            catch (Exception exception)
             {
+                logger.LogWarning(
+                    exception,
+                    "Distributed lock {LockKey} renewal failed; the lock handle will be canceled.",
+                    key);
                 await handleLost.CancelAsync();
             }
         }

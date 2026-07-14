@@ -219,7 +219,10 @@ static void AddMaintenanceDistributedLock(IServiceCollection services, IConfigur
         return ConnectionMultiplexer.Connect(options);
     });
     services.AddSingleton<IRedisCommandLockStore>(sp => new StackExchangeRedisCommandLockStore(sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase()));
-    services.AddSingleton<IDistributedLock>(sp => new RedisMaintenanceDistributedLock(sp.GetRequiredService<IRedisCommandLockStore>(), sp.GetRequiredService<TimeProvider>()));
+    services.AddSingleton<IDistributedLock>(sp => new RedisMaintenanceDistributedLock(
+        sp.GetRequiredService<IRedisCommandLockStore>(),
+        sp.GetRequiredService<TimeProvider>(),
+        logger: sp.GetRequiredService<ILogger<RedisMaintenanceDistributedLock>>()));
 }
 
 static string? ResolveRedisConnectionString(IConfiguration configuration)

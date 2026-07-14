@@ -321,6 +321,8 @@ public sealed class ApplyMaintenanceDeviceStateCommandHandler(ApplicationDbConte
 
 internal static class MaintenancePmCommandLockKeys
 {
+    public const int AcquireTimeoutSeconds = 30;
+
     public static string For(string organizationId, string environmentId)
     {
         return string.Join(':',
@@ -341,7 +343,9 @@ public sealed class ApplyMaintenanceDeviceStateCommandLock : ICommandLock<ApplyM
     public Task<CommandLockSettings> GetLockKeysAsync(ApplyMaintenanceDeviceStateCommand command, CancellationToken cancellationToken)
     {
         _ = cancellationToken;
-        return Task.FromResult(new CommandLockSettings(MaintenancePmCommandLockKeys.For(command.OrganizationId, command.EnvironmentId), 30));
+        return Task.FromResult(new CommandLockSettings(
+            MaintenancePmCommandLockKeys.For(command.OrganizationId, command.EnvironmentId),
+            MaintenancePmCommandLockKeys.AcquireTimeoutSeconds));
     }
 }
 
@@ -357,7 +361,7 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandLock : ICommandLock<G
     {
         _ = cancellationToken;
         var lockKey = MaintenancePmCommandLockKeys.For(command.OrganizationId, command.EnvironmentId);
-        return Task.FromResult(new CommandLockSettings(lockKey, 30));
+        return Task.FromResult(new CommandLockSettings(lockKey, MaintenancePmCommandLockKeys.AcquireTimeoutSeconds));
     }
 }
 
@@ -612,7 +616,9 @@ public sealed class CreateMaintenancePlanCommandLock : ICommandLock<CreateMainte
     public Task<CommandLockSettings> GetLockKeysAsync(CreateMaintenancePlanCommand command, CancellationToken cancellationToken)
     {
         _ = cancellationToken;
-        return Task.FromResult(new CommandLockSettings(MaintenancePmCommandLockKeys.For(command.OrganizationId, command.EnvironmentId), 30));
+        return Task.FromResult(new CommandLockSettings(
+            MaintenancePmCommandLockKeys.For(command.OrganizationId, command.EnvironmentId),
+            MaintenancePmCommandLockKeys.AcquireTimeoutSeconds));
     }
 }
 
