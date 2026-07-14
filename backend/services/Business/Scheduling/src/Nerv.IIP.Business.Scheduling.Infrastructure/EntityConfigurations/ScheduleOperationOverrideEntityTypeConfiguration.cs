@@ -22,7 +22,7 @@ public sealed class ScheduleOperationOverrideEntityTypeConfiguration : IEntityTy
         builder.Property(x => x.SourceType).HasColumnName("source_type").HasMaxLength(64).IsRequired().HasComment("Scheduling API or MES dispatch source type.");
         builder.Property(x => x.SourceEventId).HasColumnName("source_event_id").HasMaxLength(128).HasComment("Optional source integration event id.");
         builder.Property(x => x.Actor).HasColumnName("actor").HasMaxLength(128).IsRequired().HasComment("Actor that created the current fact.");
-        builder.Property(x => x.SourceOccurredAtUtc).HasColumnName("source_occurred_at_utc").HasComment("Source ordering timestamp used to reject stale updates.");
+        builder.Property(x => x.SourceOccurredAtUtc).HasColumnName("source_occurred_at_utc").IsConcurrencyToken().HasComment("Source ordering timestamp and optimistic concurrency token used to reject stale updates.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasComment("Last persistence update timestamp in UTC.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OperationId }).IsUnique();
     }

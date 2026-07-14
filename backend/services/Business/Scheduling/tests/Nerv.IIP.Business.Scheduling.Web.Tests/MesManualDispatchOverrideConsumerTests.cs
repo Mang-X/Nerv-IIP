@@ -1,5 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Mes;
@@ -71,6 +73,42 @@ public sealed class MesManualDispatchOverrideConsumerTests
         Assert.Equal("DEV-NEW", persisted.ResourceId);
         Assert.Equal(newer, persisted.SourceOccurredAtUtc);
         Assert.Equal(2, await db.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Concurrent_stale_snapshot_reloads_and_converges_to_newer_event()
+    {
+        var databaseName = $"mes-dispatch-concurrency-{Guid.NewGuid():N}";
+        var databaseRoot = new InMemoryDatabaseRoot();
+        DbContextOptions<ApplicationDbContext> Options() => new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName, databaseRoot).Options;
+        var baseline = new DateTimeOffset(2026, 7, 14, 8, 0, 0, TimeSpan.Zero);
+        await using (var seed = new ApplicationDbContext(Options(), new NoopMediator()))
+        {
+            seed.ScheduleOperationOverrides.Add(ScheduleOperationOverride.Create(
+                "org-1", "env-1", "WO-1", "OP-1", 10, "DEV-BASE", "WC-1",
+                baseline, baseline.AddHours(1), "mes-manual-dispatch", "mes-dispatch",
+                "evt-base", "user:dispatcher", baseline, baseline));
+            await seed.SaveChangesAsync();
+        }
+
+        await using var staleDb = new ApplicationDbContext(Options(), new NoopMediator());
+        await using var newerDb = new ApplicationDbContext(Options(), new NoopMediator());
+        await staleDb.ScheduleOperationOverrides.SingleAsync();
+        await newerDb.ScheduleOperationOverrides.SingleAsync();
+        var staleHandler = new MesOperationTaskManuallyDispatchedIntegrationEventHandlerForUpsertOverride(
+            staleDb, new InMemoryIntegrationEventDeadLetterStore());
+        var newerHandler = new MesOperationTaskManuallyDispatchedIntegrationEventHandlerForUpsertOverride(
+            newerDb, new InMemoryIntegrationEventDeadLetterStore());
+
+        await newerHandler.HandleAsync(CreateEvent("evt-newer", baseline.AddMinutes(10), "DEV-NEWER"), CancellationToken.None);
+        await staleHandler.HandleAsync(CreateEvent("evt-stale", baseline.AddMinutes(5), "DEV-STALE"), CancellationToken.None);
+
+        await using var verificationDb = new ApplicationDbContext(Options(), new NoopMediator());
+        var persisted = await verificationDb.ScheduleOperationOverrides.SingleAsync();
+        Assert.Equal("DEV-NEWER", persisted.ResourceId);
+        Assert.Equal(baseline.AddMinutes(10), persisted.SourceOccurredAtUtc);
+        Assert.Equal(2, await verificationDb.ProcessedIntegrationEvents.CountAsync());
     }
 
     private static MesOperationTaskManuallyDispatchedIntegrationEvent CreateEvent(

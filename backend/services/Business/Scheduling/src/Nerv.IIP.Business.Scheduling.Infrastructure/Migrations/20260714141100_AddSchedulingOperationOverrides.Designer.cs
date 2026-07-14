@@ -92,9 +92,10 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasComment("Optional source integration event id.");
 
                     b.Property<DateTimeOffset>("SourceOccurredAtUtc")
+                        .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("source_occurred_at_utc")
-                        .HasComment("Source ordering timestamp used to reject stale updates.");
+                        .HasComment("Source ordering timestamp and optimistic concurrency token used to reject stale updates.");
 
                     b.Property<string>("SourceType")
                         .IsRequired()

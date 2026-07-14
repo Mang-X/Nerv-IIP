@@ -94,7 +94,7 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     source_type = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false, comment: "Scheduling API or MES dispatch source type."),
                     source_event_id = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true, comment: "Optional source integration event id."),
                     actor = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false, comment: "Actor that created the current fact."),
-                    source_occurred_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "Source ordering timestamp used to reject stale updates."),
+                    source_occurred_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "Source ordering timestamp and optimistic concurrency token used to reject stale updates."),
                     updated_at_utc = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, comment: "Last persistence update timestamp in UTC.")
                 },
                 constraints: table =>
