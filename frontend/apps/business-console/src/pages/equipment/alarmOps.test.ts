@@ -12,6 +12,11 @@ const alarmState = vi.hoisted(() => ({
   refreshAlarms: vi.fn((..._args: unknown[]) => Promise.resolve()),
 }))
 
+const routerState = vi.hoisted(() => ({
+  replace: vi.fn((..._args: unknown[]) => Promise.resolve()),
+  query: {} as Record<string, unknown>,
+}))
+
 vi.mock('@/composables/useBusinessEquipment', () => ({
   useBusinessEquipmentAlarms: () => ({
     acknowledgeAlarm: alarmState.acknowledgeAlarm,
@@ -35,7 +40,11 @@ vi.mock('@/stores/auth', () => ({
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
-  return { ...actual, useRouter: () => ({ push: vi.fn() }) }
+  return {
+    ...actual,
+    useRouter: () => ({ push: vi.fn(), replace: routerState.replace }),
+    useRoute: () => ({ query: routerState.query }),
+  }
 })
 
 const stubs = {
@@ -98,6 +107,19 @@ function seedAlarms() {
       escalationReason: '严重报警自动升级',
       escalationRecipientRefs: ['设备主管'],
     },
+    {
+      // Shelved AND acknowledged — 处置列必须同时显示搁置与确认两个事实。
+      alarmEventId: 'ALM-6',
+      deviceAssetId: 'DEV-BOIL-03',
+      alarmCode: 'LEVEL-LOW',
+      severity: 'warning',
+      status: 'shelved',
+      raisedAtUtc: '2026-07-12T02:20:00Z',
+      shelvedUntilUtc: '2026-07-12T04:20:00Z',
+      shelvedBy: 'operator-e',
+      acknowledgedAtUtc: '2026-07-12T02:25:00Z',
+      acknowledgedBy: 'operator-f',
+    },
   ]
 }
 
@@ -115,6 +137,8 @@ describe('alarm ops depth (MAN-441 #795)', () => {
     alarmState.acknowledgeAlarm.mockReset().mockResolvedValue(undefined)
     alarmState.shelveAlarm.mockReset().mockResolvedValue(undefined)
     alarmState.refreshAlarms.mockReset().mockResolvedValue(undefined)
+    routerState.replace.mockReset().mockResolvedValue(undefined)
+    routerState.query = {}
     seedAlarms()
   })
 
@@ -165,6 +189,8 @@ describe('alarm ops — shelve validation + batch retry (attaches to body for te
     alarmState.acknowledgeAlarm.mockReset().mockResolvedValue(undefined)
     alarmState.shelveAlarm.mockReset().mockResolvedValue(undefined)
     alarmState.refreshAlarms.mockReset().mockResolvedValue(undefined)
+    routerState.replace.mockReset().mockResolvedValue(undefined)
+    routerState.query = {}
     seedAlarms()
     wrapper = mount(AlarmsPage, { global: { stubs }, attachTo: document.body })
   })
@@ -186,10 +212,11 @@ describe('alarm ops — shelve validation + batch retry (attaches to body for te
     await nextTick()
   }
   function dialogConfirmBtn() {
-    // The shelve dialog footer confirm button (excludes 取消).
+    // The shelve dialog footer confirm button (excludes 取消 / 放弃重试).
     const btns = [...document.body.querySelectorAll('[data-slot=nv-dialog-content] button')]
     return btns.find(
-      (b) => /搁置|确认搁置/.test(b.textContent ?? '') && !/取消/.test(b.textContent ?? ''),
+      (b) =>
+        /搁置|确认搁置|重试/.test(b.textContent ?? '') && !/取消|放弃/.test(b.textContent ?? ''),
     ) as HTMLButtonElement | undefined
   }
   async function selectRows(ids: string[]) {
@@ -255,6 +282,17 @@ describe('alarm ops — shelve validation + batch retry (attaches to body for te
     expect(bulkText).toContain('已选')
     expect(bulkText).toContain('1')
 
+    // Locked: duration + reason inputs disabled so the frozen key/payload cannot drift.
+    expect(q<HTMLInputElement>('#shelve-reason')?.disabled).toBe(true)
+    expect(document.body.textContent).toContain('放弃重试')
+
+    // Close is blocked while locked (Esc / 取消 must not drop the frozen intent).
+    document
+      .querySelector('[data-slot=nv-dialog-content]')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+    expect(q('[data-slot=nv-dialog-content]')).not.toBeNull() // still open
+
     // Run 2 (retry): ALM-2 now succeeds; the frozen key must be identical → idempotent.
     failAlm2 = false
     alarmState.shelveAlarm.mockClear()
@@ -266,5 +304,106 @@ describe('alarm ops — shelve validation + batch retry (attaches to body for te
     expect(run2).toHaveLength(1)
     expect(run2[0][0]).toBe('ALM-2')
     expect(keyOf(run2, 'ALM-2')).toBe(alm2Key1)
+  })
+
+  it('exposes aria-invalid + aria-describedby on the native input when the duration is invalid', async () => {
+    await openBatchShelve(['ALM-1', 'ALM-2'])
+    const customRadio = [...document.body.querySelectorAll('[data-slot=nv-radio-group-item]')].find(
+      (el) => (el.closest('div')?.textContent ?? '').includes('自定义'),
+    )
+    nativeClick(customRadio!)
+    await nextTick()
+    await setInput('#shelve-custom-minutes', '5000')
+    await nextTick()
+
+    const input = q<HTMLInputElement>('#shelve-custom-minutes')!
+    expect(input.getAttribute('aria-invalid')).toBe('true')
+    const describedBy = input.getAttribute('aria-describedby')
+    expect(describedBy).toBe('shelve-custom-minutes-error')
+    expect(q(`#${describedBy}`)?.getAttribute('role')).toBe('alert')
+  })
+})
+
+describe('alarm ops — view filtering (orthogonal, selection prune, URL, page reset)', () => {
+  beforeEach(() => {
+    alarmState.acknowledgeAlarm.mockReset().mockResolvedValue(undefined)
+    alarmState.shelveAlarm.mockReset().mockResolvedValue(undefined)
+    alarmState.refreshAlarms.mockReset().mockResolvedValue(undefined)
+    routerState.replace.mockReset().mockResolvedValue(undefined)
+    routerState.query = {}
+    seedAlarms()
+  })
+
+  it('shows both 搁置 and 确认 facts for a shelved+acknowledged alarm in 已确认', async () => {
+    const wrapper = mount(AlarmsPage, { global: { stubs } })
+    await clickViewTab(wrapper, '已确认')
+    const row = rowByText(wrapper, 'ALM-6')
+    expect(row).toBeTruthy() // acknowledged → in 已确认 even though also shelved
+    expect(row?.text()).toContain('搁置至')
+    expect(row?.text()).toContain('确认于')
+    expect(row?.text()).toContain('operator-f') // acknowledger visible
+  })
+
+  it('prunes hidden selection and writes the view to the URL on switch', async () => {
+    const wrapper = mount(AlarmsPage, { global: { stubs } })
+    // Select everything in 全部.
+    await wrapper.find('[aria-label="全选"]').trigger('click')
+    await nextTick()
+    expect(wrapper.text()).toContain('已选')
+
+    // Switch to 已升级 (only ALM-1, ALM-5 match) → selection pruned to the visible set,
+    // so the bulk bar cannot act on now-hidden rows.
+    await clickViewTab(wrapper, '已升级')
+    expect(routerState.replace).toHaveBeenCalledWith(
+      expect.objectContaining({ query: expect.objectContaining({ view: 'escalated' }) }),
+    )
+    // Batch-confirm target count is now scoped to the escalated view (ALM-1 unacked only;
+    // ALM-5 already acknowledged) → at most the escalated＋unacked rows, never all 6.
+    const ackBtn = wrapper.findAll('button').find((b) => b.text().includes('批量确认'))
+    const m = ackBtn?.text().match(/\((\d+)\)/)
+    expect(Number(m?.[1] ?? 0)).toBeLessThanOrEqual(2)
+  })
+
+  it('initializes the active view from the URL query', () => {
+    routerState.query = { view: 'shelved' }
+    const wrapper = mount(AlarmsPage, { global: { stubs } })
+    // 已搁置 view → ALM-4 and ALM-6 (shelved), not the raised ALM-2.
+    expect(rowByText(wrapper, 'ALM-4')).toBeTruthy()
+    expect(rowByText(wrapper, 'ALM-2')).toBeUndefined()
+  })
+
+  it('resets the table to page 1 when switching to a narrower view (no empty page)', async () => {
+    // 15 raised alarms + 1 escalated so 全部 paginates; 已升级 has a single row.
+    const many = Array.from({ length: 15 }, (_, i) => ({
+      alarmEventId: `BULK-${i + 1}`,
+      deviceAssetId: 'DEV-X',
+      alarmCode: `C-${i + 1}`,
+      severity: 'warning',
+      status: 'raised',
+      raisedAtUtc: '2026-07-12T00:00:00Z',
+    }))
+    alarmState.alarms = [
+      ...many,
+      {
+        alarmEventId: 'ESC-1',
+        deviceAssetId: 'DEV-Y',
+        alarmCode: 'ESC',
+        severity: 'critical',
+        status: 'raised',
+        raisedAtUtc: '2026-07-12T00:10:00Z',
+        escalatedAtUtc: '2026-07-12T00:20:00Z',
+      },
+    ]
+    const wrapper = mount(AlarmsPage, { global: { stubs } })
+
+    // Go to page 2 of 全部 (16 rows / 10 per page).
+    const page2 = wrapper.findAll('button').find((b) => b.text().trim() === '2')
+    await page2!.trigger('click')
+    await nextTick()
+
+    // Switch to 已升级 (1 row). Page must reset → the escalated row is visible, not an empty page.
+    await clickViewTab(wrapper, '已升级')
+    expect(rowByText(wrapper, 'ESC-1')).toBeTruthy()
+    expect(wrapper.findAll('tbody tr').length).toBe(1)
   })
 })

@@ -50,8 +50,8 @@ import {
   Undo2Icon,
   WrenchIcon,
 } from 'lucide-vue-next'
-import { computed, reactive, ref } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { computed, reactive, ref, watch } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -62,6 +62,7 @@ definePage({
 })
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const {
   acknowledgeAlarm,
@@ -132,7 +133,9 @@ const VIEW_TABS = [
   { value: 'acknowledged', label: '已确认' },
 ] as const
 type AlarmView = (typeof VIEW_TABS)[number]['value']
-const activeView = ref<AlarmView>('all')
+// Init the view from the URL and keep it in the query (§5.3 筛选状态双向同步).
+const queryView = typeof route.query.view === 'string' ? route.query.view : undefined
+const activeView = ref<AlarmView>(VIEW_TABS.find((v) => v.value === queryView)?.value ?? 'all')
 
 function matchesView(row: Alarm, view: AlarmView): boolean {
   switch (view) {
@@ -161,6 +164,17 @@ const viewCounts = computed<Record<AlarmView, number>>(() => {
   return counts
 })
 const filteredAlarms = computed(() => alarms.value.filter((a) => matchesView(a, activeView.value)))
+
+// Switching view: write it back to the URL and prune the selection to what is still
+// visible, so bulk actions never touch rows hidden by the current view (误操作 guard).
+watch(activeView, (view) => {
+  const query = { ...route.query }
+  if (view === 'all') delete query.view
+  else query.view = view
+  void router.replace({ query })
+  const visible = new Set<string | number>(filteredAlarms.value.map(alarmKey))
+  selectedKeys.value = selectedKeys.value.filter((k) => visible.has(k))
+})
 
 // De-emphasize resolved rows (已确认 / 已搁置), but never dim escalated ones — they
 // must stay identifiable at a glance (验收: 升级报警 3 秒内可辨识).
@@ -222,18 +236,20 @@ function canShelve(row: Alarm) {
 function canUnshelve(row: Alarm) {
   return canManageAlarms.value && Boolean(row.alarmEventId) && isShelved(row)
 }
-// Disposition only. 升级 is surfaced separately by the row icon/tooltip (orthogonal), so an
-// escalated alarm still shows its acknowledger / shelve state here rather than being masked.
+// Disposition only. 升级 is surfaced separately by the row icon/tooltip (orthogonal). An alarm
+// can be BOTH shelved and acknowledged (canAcknowledge does not exclude shelved), so show both
+// facts — otherwise such a row would appear in 已确认 without its acknowledger (#795).
 function lifecycleLabel(row: Alarm) {
+  const parts: string[] = []
   if (isShelved(row)) {
     const by = row.shelvedBy ? ` · ${row.shelvedBy}` : ''
-    return `搁置至 ${formatDateTime(row.shelvedUntilUtc)}${by}`
+    parts.push(`搁置至 ${formatDateTime(row.shelvedUntilUtc)}${by}`)
   }
   if (row.acknowledgedAtUtc) {
     const by = row.acknowledgedBy ? ` · ${row.acknowledgedBy}` : ''
-    return `确认于 ${formatDateTime(row.acknowledgedAtUtc)}${by}`
+    parts.push(`确认于 ${formatDateTime(row.acknowledgedAtUtc)}${by}`)
   }
-  return '待确认'
+  return parts.length ? parts.join('；') : '待确认'
 }
 function escalationTooltip(row: Alarm) {
   const lines = [`升级时间：${formatDateTime(row.escalatedAtUtc)}`]
@@ -314,6 +330,10 @@ const shelve = reactive({
   // Shelve instant frozen once per batch intent (see openShelve) so a partial-failure
   // retry reuses the same window + idempotency keys.
   batchAtUtc: '',
+  // Set after a submit leaves failed rows: locks duration/reason and blocks dialog close so
+  // the frozen shelvedAtUtc/key/payload cannot drift on retry (idempotent no-op preserved).
+  // Cleared only by a full success or an explicit 放弃重试.
+  locked: false,
 })
 const resolvedMinutes = computed(() =>
   shelve.duration === 'custom' ? Math.trunc(Number(shelve.customMinutes)) : Number(shelve.duration),
@@ -344,6 +364,7 @@ function openShelve(rows: Alarm[]) {
   shelve.duration = '30'
   shelve.customMinutes = 60
   shelve.reason = ''
+  shelve.locked = false
   // Freeze the shelve instant for the whole batch intent: the backend derives the shelve
   // window from ShelvedAtUtc and de-dupes on the idempotency key (first-write-wins), so a
   // retry of the failed rows with the SAME frozen key is a no-op, not a re-shelve.
@@ -369,18 +390,36 @@ async function confirmShelve() {
     summarizeBatch('搁置', results)
     await refreshAlarms()
     // Keep only the failed rows selected + queued so the operator can locate and retry them;
-    // the frozen shelvedAtUtc/key makes that retry idempotent (A1 §5.2「失败行可定位」).
+    // lock the payload (frozen shelvedAtUtc/minutes/reason/key) and block dialog close so a
+    // retry stays an idempotent no-op even if the first attempt actually succeeded on the
+    // backend but the response was lost (A1 §5.2「失败行可定位」+ 稳定重试).
     const failed = targets.filter((_, i) => results[i].status === 'rejected')
     if (failed.length) {
       shelve.targets = failed
       selectedKeys.value = failed.map(alarmKey)
+      shelve.locked = true
     } else {
       clearSelection()
+      shelve.locked = false
       shelve.open = false
     }
   } finally {
     shelve.submitting = false
   }
+}
+// Give up the frozen retry intent explicitly (the only way out of a locked dialog).
+function abandonShelve() {
+  shelve.locked = false
+  shelve.batchAtUtc = ''
+  shelve.targets = []
+  clearSelection()
+  shelve.open = false
+}
+// Block close (Esc / overlay / 取消) while locked so the frozen intent cannot be lost; a
+// fresh open resets the lock. Explicit 放弃重试 uses abandonShelve.
+function onShelveOpenChange(open: boolean) {
+  if (!open && shelve.locked) return
+  shelve.open = open
 }
 
 function summarizeBatch(action: string, results: PromiseSettledResult<unknown>[]) {
@@ -468,6 +507,7 @@ function formatError(error: unknown) {
     </div>
 
     <NvDataTable
+      :key="activeView"
       v-model:selected="selectedKeys"
       :columns="columns"
       :rows="filteredAlarms"
@@ -589,24 +629,36 @@ function formatError(error: unknown) {
       </template>
     </NvDataTable>
 
-    <!-- 搁置对话框:时长选项组(30m/2h/8h/自定义) + 原因(批量必填) -->
-    <NvDialog v-model:open="shelve.open">
+    <!-- 搁置对话框:时长选项组(30m/2h/8h/自定义) + 原因(批量必填);失败重试时锁定字段+禁关闭 -->
+    <NvDialog :open="shelve.open" @update:open="onShelveOpenChange">
       <NvDialogContent class="sm:max-w-lg">
         <NvDialogHeader>
           <NvDialogTitle>{{
             shelveIsBatch ? `批量搁置 ${shelve.targets.length} 条报警` : '搁置报警'
           }}</NvDialogTitle>
           <NvDialogDescription>
-            搁置期间该报警暂不再提醒；到期后自动恢复。请选择搁置时长{{
-              reasonRequired ? '并填写原因' : ''
-            }}。
+            <template v-if="shelve.locked"
+              >已提交，{{
+                shelve.targets.length
+              }}
+              条搁置失败。请原样重试（时长/原因已锁定以复用相同幂等键），或放弃重试。</template
+            >
+            <template v-else
+              >搁置期间该报警暂不再提醒；到期后自动恢复。请选择搁置时长{{
+                reasonRequired ? '并填写原因' : ''
+              }}。</template
+            >
           </NvDialogDescription>
         </NvDialogHeader>
 
         <div class="grid gap-4 py-1">
           <NvField>
             <NvFieldLabel>搁置时长</NvFieldLabel>
-            <NvRadioGroup v-model="shelve.duration" class="grid grid-cols-2 gap-2.5">
+            <NvRadioGroup
+              v-model="shelve.duration"
+              :disabled="shelve.locked"
+              class="grid grid-cols-2 gap-2.5"
+            >
               <NvRadioGroupItem
                 v-for="preset in DURATION_PRESETS"
                 :key="preset.value"
@@ -629,9 +681,16 @@ function formatError(error: unknown) {
               step="1"
               class="w-40"
               placeholder="分钟"
+              :disabled="shelve.locked"
               :invalid="Boolean(customMinutesError)"
+              :aria-invalid="customMinutesError ? 'true' : undefined"
+              :aria-describedby="customMinutesError ? 'shelve-custom-minutes-error' : undefined"
             />
-            <NvFieldError v-if="customMinutesError" :errors="[customMinutesError]" />
+            <NvFieldError
+              v-if="customMinutesError"
+              id="shelve-custom-minutes-error"
+              :errors="[customMinutesError]"
+            />
           </NvField>
 
           <NvField>
@@ -642,20 +701,39 @@ function formatError(error: unknown) {
               id="shelve-reason"
               v-model="shelve.reason"
               placeholder="例如：等待备件到货 / 计划内检修"
+              :disabled="shelve.locked"
               :invalid="Boolean(reasonError)"
+              :aria-invalid="reasonError ? 'true' : undefined"
+              :aria-describedby="reasonError ? 'shelve-reason-error' : undefined"
             />
-            <NvFieldError v-if="reasonError" :errors="[reasonError]" />
+            <NvFieldError v-if="reasonError" id="shelve-reason-error" :errors="[reasonError]" />
           </NvField>
         </div>
 
         <NvDialogFooter>
-          <NvButton type="button" variant="outline" @click="shelve.open = false">取消</NvButton>
+          <NvButton
+            v-if="shelve.locked"
+            type="button"
+            variant="outline"
+            :disabled="shelve.submitting"
+            @click="abandonShelve"
+            >放弃重试</NvButton
+          >
+          <NvButton v-else type="button" variant="outline" @click="onShelveOpenChange(false)"
+            >取消</NvButton
+          >
           <NvButton
             type="button"
             :disabled="shelve.submitting || shelveInvalid"
             @click="confirmShelve"
           >
-            {{ shelveIsBatch ? `搁置 ${shelve.targets.length} 条` : '确认搁置' }}
+            {{
+              shelve.locked
+                ? `重试 ${shelve.targets.length} 条`
+                : shelveIsBatch
+                  ? `搁置 ${shelve.targets.length} 条`
+                  : '确认搁置'
+            }}
           </NvButton>
         </NvDialogFooter>
       </NvDialogContent>
