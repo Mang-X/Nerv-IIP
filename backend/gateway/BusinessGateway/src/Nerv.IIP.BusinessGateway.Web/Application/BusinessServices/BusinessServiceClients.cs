@@ -290,7 +290,7 @@ public interface IBusinessQualityClient
         BusinessConsoleQualityListRequest request,
         CancellationToken cancellationToken);
 
-    Task<BusinessConsoleQualityItem> GetNcrAsync(
+    Task<BusinessConsoleQualityNcrDetailResponse> GetNcrAsync(
         string internalBearerToken,
         BusinessConsoleQualityNcrDetailRequest request,
         CancellationToken cancellationToken);
@@ -2652,7 +2652,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             response.Total);
     }
 
-    public async Task<BusinessConsoleQualityItem> GetNcrAsync(
+    public async Task<BusinessConsoleQualityNcrDetailResponse> GetNcrAsync(
         string internalBearerToken,
         BusinessConsoleQualityNcrDetailRequest request,
         CancellationToken cancellationToken)
@@ -2667,7 +2667,18 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ("environmentId", request.EnvironmentId)),
             null,
             cancellationToken);
-        return ToQualityItem(response);
+        return new BusinessConsoleQualityNcrDetailResponse(
+            response.NcrId,
+            response.NcrCode,
+            response.Status,
+            response.SkuCode,
+            response.SourceType,
+            response.SourceDocumentId,
+            response.DefectQuantity,
+            response.DefectReason,
+            response.BatchNo,
+            response.SerialNo,
+            response.SourceInspectionRecordId);
     }
 
     public async Task<BusinessConsoleInspectionRecordDetailResponse> GetInspectionRecordAsync(
@@ -3097,7 +3108,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string DefectReason,
         string? BatchNo,
         string? SerialNo,
-        string Status);
+        string Status,
+        string? SourceInspectionRecordId = null);
 
     private sealed record DownstreamSubmitNcrDispositionRequest(
         string NcrId,

@@ -23,7 +23,9 @@ public sealed record NonconformanceReportResponse(
     string? ReturnDocumentId,
     IReadOnlyCollection<string> AttachmentFileIds,
     DateTime CreatedAtUtc,
-    DateTime UpdatedAtUtc);
+    DateTime UpdatedAtUtc,
+    // 权威业务关系：从检验开出的 NCR 回链其来源检验记录（记录 ↔ NCR 双向互查的服务端事实）。
+    string? SourceInspectionRecordId = null);
 
 public sealed record ListNonconformanceReportsResponse(IReadOnlyCollection<NonconformanceReportResponse> Items, int Total);
 
@@ -118,6 +120,7 @@ public sealed class ListNonconformanceReportsQueryHandler(ApplicationDbContext d
             ncr.ReturnDocumentId,
             ncr.AttachmentFileIds,
             ncr.CreatedAtUtc,
-            ncr.UpdatedAtUtc);
+            ncr.UpdatedAtUtc,
+            ncr.SourceInspectionRecordId == null ? null : ncr.SourceInspectionRecordId.ToString());
     }
 }

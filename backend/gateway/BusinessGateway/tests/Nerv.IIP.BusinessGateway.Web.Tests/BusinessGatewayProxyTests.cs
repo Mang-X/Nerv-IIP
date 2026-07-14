@@ -4381,6 +4381,7 @@ public sealed class BusinessGatewayProxyTests
                     attachmentFileIds = Array.Empty<string>(),
                     createdAtUtc = "2026-07-14T01:00:00Z",
                     updatedAtUtc = "2026-07-14T01:00:00Z",
+                    sourceInspectionRecordId = "rec-77",
                 },
                 success = true,
                 message = string.Empty,
@@ -4398,6 +4399,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("ncr-77", item.Id);
         Assert.Equal("NCR-77", item.Code);
         Assert.Equal("appearance", item.DefectReason);
+        // 权威业务关系：来源检验记录回链来自服务端，而非客户端 query 参数。
+        Assert.Equal("rec-77", item.SourceInspectionRecordId);
         Assert.Equal("/api/business/v1/quality/ncrs/ncr-77", seen!.RequestUri!.AbsolutePath);
         var query = seen.RequestUri!.Query;
         Assert.Contains("organizationId=org-001", query);
@@ -6610,29 +6613,25 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
             DateTime.Parse("2026-07-14T01:00:00Z")));
     }
 
-    public Task<BusinessConsoleQualityItem> GetNcrAsync(
+    public Task<BusinessConsoleQualityNcrDetailResponse> GetNcrAsync(
         string internalBearerToken,
         BusinessConsoleQualityNcrDetailRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         LastNcrDetailRequest = request;
-        return Task.FromResult(new BusinessConsoleQualityItem(
+        return Task.FromResult(new BusinessConsoleQualityNcrDetailResponse(
             "ncr-001",
             "NCR-001",
             "open",
-            null,
             "SKU-001",
-            null,
-            null,
-            null,
-            null,
             "inspection",
             "IR-001",
             1,
             "Defect",
             null,
-            null));
+            null,
+            "inspection-record-001"));
     }
 
     public Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(

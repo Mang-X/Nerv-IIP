@@ -87,16 +87,11 @@ function goBack() {
   router.push('/').catch(() => {})
 }
 function openNcr() {
-  // 结果页「已触发 NCR」→ 打开该 NCR 详情；带上来源检验记录 id 供 NCR 页回链。
+  // 结果页「已触发 NCR」→ 打开该 NCR 详情（来源检验记录回链由 NCR 详情的服务端权威字段提供）。
   if (result.value?.phase !== 'submitted') return
-  const { nonconformanceReportId, inspectionRecordId } = result.value.authoritative
+  const { nonconformanceReportId } = result.value.authoritative
   if (!nonconformanceReportId) return
-  router
-    .push({
-      path: `/quality/ncr/${nonconformanceReportId}`,
-      query: inspectionRecordId ? { from: inspectionRecordId } : undefined,
-    })
-    .catch(() => {})
+  router.push(`/quality/ncr/${nonconformanceReportId}`).catch(() => {})
 }
 </script>
 

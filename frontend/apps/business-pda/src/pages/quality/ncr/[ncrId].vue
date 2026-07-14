@@ -16,12 +16,8 @@ const route = useRoute('/quality/ncr/[ncrId]')
 const router = useRouter()
 
 const ncrId = computed(() => String(route.params.ncrId ?? ''))
-// 来源检验记录 id（结果页跳转时带上，展示上下文）。
-const fromRecordId = computed(() => {
-  const v = route.query.from
-  return typeof v === 'string' && v ? v : null
-})
 
+// 来源检验记录互链取服务端权威字段（响应里的 sourceInspectionRecordId），不读客户端 query。
 const { ncr, pending, error, refresh } = useNonconformanceReport(ncrId)
 
 function goBack() {
@@ -48,7 +44,6 @@ function openRecord(recordId: string) {
       :ncr="ncr"
       :pending="pending"
       :error="error"
-      :from-record-id="fromRecordId"
       @retry="() => refresh()"
       @back="goBack"
       @open-record="openRecord"

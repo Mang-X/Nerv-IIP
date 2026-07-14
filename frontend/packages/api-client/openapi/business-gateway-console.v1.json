@@ -4168,7 +4168,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityItem"
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityNcrDetailResponse"
                 }
               }
             }
@@ -27500,7 +27500,7 @@
         "type": "object",
         "additionalProperties": false
       },
-      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityItem": {
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityNcrDetailResponse": {
         "allOf": [
           {
             "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
@@ -27513,13 +27513,61 @@
                 "nullable": true,
                 "oneOf": [
                   {
-                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityItem"
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrDetailResponse"
                   }
                 ]
               }
             }
           }
         ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrDetailResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceType": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceDocumentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "defectQuantity": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "defectReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "batchNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceInspectionRecordId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrDetailRequest": {
         "type": "object",

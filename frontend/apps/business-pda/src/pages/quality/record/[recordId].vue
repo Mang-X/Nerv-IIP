@@ -24,10 +24,8 @@ function goBack() {
   else router.push('/quality/tasks').catch(() => {})
 }
 function openNcr(ncrId: string) {
-  // 记录 → NCR 互链（带上本记录 id，NCR 页可回链）。
-  router
-    .push({ path: `/quality/ncr/${ncrId}`, query: { from: recordId.value } })
-    .catch(() => {})
+  // 记录 → NCR 互链（NCR 页回链由其服务端权威字段提供，无需 query 透传）。
+  router.push(`/quality/ncr/${ncrId}`).catch(() => {})
 }
 </script>
 

@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
-import type { BusinessConsoleQualityItem } from '@nerv-iip/api-client'
+import type { BusinessConsoleQualityNcrDetailResponse } from '@nerv-iip/api-client'
 import { NvCell, NvCellGroup, NvMobileButton, NvMobileTag } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 
 const props = defineProps<{
-  ncr: BusinessConsoleQualityItem | null
+  ncr: BusinessConsoleQualityNcrDetailResponse | null
   pending: boolean
   error: unknown
-  /** 来源检验记录 id（结果页/记录页跳转带入）——提供时可导航到记录详情（NCR → 记录互链）。 */
-  fromRecordId: string | null
 }>()
 const emit = defineEmits<{ retry: []; back: []; openRecord: [recordId: string] }>()
+
+// 来源检验记录取服务端权威业务关系（NCR 聚合的 SourceInspectionRecordId），
+// 而非客户端 query 参数——直接打开 NCR URL 也有回链，且不可被 query 篡改指向无关记录。
+const sourceRecordId = computed(() => props.ncr?.sourceInspectionRecordId ?? null)
 
 const statusLabel = computed(() => {
   switch (props.ncr?.status) {
@@ -60,14 +62,14 @@ const statusLabel = computed(() => {
         <NvCell v-if="ncr.defectQuantity != null" title="不良数" :value="ncr.defectQuantity" />
         <NvCell v-if="ncr.batchNo" title="批次" :value="ncr.batchNo" />
         <NvCell v-if="ncr.serialNo" title="序列号" :value="ncr.serialNo" />
-        <!-- NCR → 检验记录互链：点按打开检验记录详情（真实路由 /quality/record/{id}）。 -->
+        <!-- NCR → 检验记录互链：目标来自服务端权威回链，点按打开真实路由 /quality/record/{id}。 -->
         <NvCell
-          v-if="fromRecordId"
+          v-if="sourceRecordId"
           data-testid="source-record"
           title="来源检验记录"
           value="查看"
           arrow
-          @click="emit('openRecord', fromRecordId)"
+          @click="emit('openRecord', sourceRecordId)"
         />
       </NvCellGroup>
 

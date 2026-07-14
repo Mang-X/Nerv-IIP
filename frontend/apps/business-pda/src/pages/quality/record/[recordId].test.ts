@@ -64,8 +64,8 @@ describe('inspection record detail page', () => {
   it('navigates from the record to its NCR via a real route (bidirectional interlink)', async () => {
     const wrapper = mount(RecordDetailPage)
     await flushPromises()
-    // 记录 → NCR 互链：点按打开 /quality/ncr/{id}，带上本记录 id 供 NCR 页回链。
+    // 记录 → NCR 互链：点按打开 /quality/ncr/{id}（NCR 页回链由其服务端权威字段提供）。
     await wrapper.get('[data-testid="record-ncr-link"]').trigger('click')
-    expect(push).toHaveBeenCalledWith({ path: '/quality/ncr/ncr-001', query: { from: 'rec-1' } })
+    expect(push).toHaveBeenCalledWith('/quality/ncr/ncr-001')
   })
 })

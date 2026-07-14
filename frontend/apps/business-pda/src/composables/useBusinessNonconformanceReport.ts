@@ -1,5 +1,5 @@
 import { getBusinessConsoleQualityNcrQueryOptions } from '@nerv-iip/api-client'
-import type { BusinessConsoleQualityItem } from '@nerv-iip/api-client'
+import type { BusinessConsoleQualityNcrDetailResponse } from '@nerv-iip/api-client'
 import { useAuthStore } from '@/stores/auth'
 import { useQuery } from '@pinia/colada'
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
@@ -31,7 +31,7 @@ export function useNonconformanceReport(ncrId: MaybeRefOrGetter<string | undefin
     enabled: enabled.value,
   }))
 
-  const ncr = computed<BusinessConsoleQualityItem | null>(() => {
+  const ncr = computed<BusinessConsoleQualityNcrDetailResponse | null>(() => {
     const envelope = query.data.value
     return envelope?.success ? (envelope.data ?? null) : null
   })

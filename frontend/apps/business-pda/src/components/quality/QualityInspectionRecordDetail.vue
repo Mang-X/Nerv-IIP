@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import QualityInspectionRecordLines from '@/components/quality/QualityInspectionRecordLines.vue'
 import type { BusinessConsoleInspectionRecordDetailResponse } from '@nerv-iip/api-client'
 import { inspectionRecordResultLabel, inspectionTaskSourceTypeLabel } from '@nerv-iip/business-core'
 import { NvCell, NvCellGroup, NvMobileButton, NvMobileTag } from '@nerv-iip/ui-mobile'
@@ -63,26 +64,7 @@ const resultLines = computed(() => props.record?.resultLines ?? [])
         />
       </NvCellGroup>
 
-      <section v-if="resultLines.length > 0" class="space-y-2">
-        <h2 class="text-sm font-medium text-muted-foreground">特性结果</h2>
-        <div class="overflow-hidden rounded-lg border border-border">
-          <NvCell
-            v-for="line in resultLines"
-            :key="line.characteristicCode ?? ''"
-            data-testid="record-line"
-            :title="line.characteristicCode ?? ''"
-            :note="line.defectReason ? `原因码 ${line.defectReason}` : undefined"
-          >
-            <template #value>
-              <span :class="line.result === 'passed' ? 'text-foreground' : 'text-destructive'">
-                {{ line.measuredValue ?? line.observedValue
-                }}{{ line.unitCode ? ` ${line.unitCode}` : '' }} ·
-                {{ line.result === 'passed' ? '合格' : '不合格' }}
-              </span>
-            </template>
-          </NvCell>
-        </div>
-      </section>
+      <QualityInspectionRecordLines :lines="resultLines" />
 
       <NvMobileButton variant="outline" size="lg" block data-testid="record-back" @click="emit('back')">
         返回

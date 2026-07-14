@@ -34,7 +34,8 @@ internal static class NonconformanceReportEndpointMapping
             response.ReturnDocumentId,
             response.AttachmentFileIds,
             response.CreatedAtUtc,
-            response.UpdatedAtUtc);
+            response.UpdatedAtUtc,
+            response.SourceInspectionRecordId);
     }
 }
 
@@ -128,7 +129,9 @@ public sealed record NonconformanceReportDto(
     string? ReturnDocumentId,
     IReadOnlyCollection<string> AttachmentFileIds,
     DateTime CreatedAtUtc,
-    DateTime UpdatedAtUtc);
+    DateTime UpdatedAtUtc,
+    // 权威业务关系：从检验开出的 NCR 回链其来源检验记录。
+    string? SourceInspectionRecordId = null);
 
 public sealed record ListNonconformanceReportsEndpointResponse(IReadOnlyCollection<NonconformanceReportDto> Items, int Total);
 

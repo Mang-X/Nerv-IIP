@@ -440,7 +440,7 @@ public sealed class GetBusinessConsoleQualityNcrEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessQualityClient quality,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityNcrDetailRequest, BusinessConsoleQualityItem>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityNcrDetailRequest, BusinessConsoleQualityNcrDetailResponse>(
         auth,
         BusinessGatewayPermissions.QualityInspectionRecordsRead)
 {
@@ -448,7 +448,7 @@ public sealed class GetBusinessConsoleQualityNcrEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleQualityNcrDetailRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleQualityItem> ForwardAsync(
+    protected override Task<BusinessConsoleQualityNcrDetailResponse> ForwardAsync(
         BusinessConsoleQualityNcrDetailRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>

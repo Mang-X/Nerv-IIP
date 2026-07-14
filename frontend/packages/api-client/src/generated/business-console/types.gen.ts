@@ -1385,8 +1385,22 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     [key: string]: never;
 };
 
-export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityItem = NetCorePalExtensionsDtoResponseData & {
-    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityItem | null;
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityNcrDetailResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrDetailResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrDetailResponse = {
+    id?: string;
+    code?: string;
+    status?: string;
+    skuCode?: string | null;
+    sourceType?: string | null;
+    sourceDocumentId?: string | null;
+    defectQuantity?: number | null;
+    defectReason?: string | null;
+    batchNo?: string | null;
+    serialNo?: string | null;
+    sourceInspectionRecordId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrDetailRequest = {
@@ -7927,7 +7941,7 @@ export type GetBusinessConsoleQualityNcrResponses = {
     /**
      * Success
      */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityItem;
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityNcrDetailResponse;
 };
 
 export type GetBusinessConsoleQualityNcrResponse = GetBusinessConsoleQualityNcrResponses[keyof GetBusinessConsoleQualityNcrResponses];

@@ -1180,6 +1180,23 @@ public sealed record BusinessConsoleQualityNcrDetailRequest(
     [property: QueryParam] string EnvironmentId);
 
 /// <summary>
+/// NCR 详情（含权威的来源检验记录回链 <see cref="SourceInspectionRecordId"/>——记录 ↔ NCR 双向互查
+/// 由服务端业务关系驱动，而非客户端 query 参数）。
+/// </summary>
+public sealed record BusinessConsoleQualityNcrDetailResponse(
+    string Id,
+    string Code,
+    string Status,
+    string? SkuCode,
+    string? SourceType,
+    string? SourceDocumentId,
+    decimal? DefectQuantity,
+    string? DefectReason,
+    string? BatchNo,
+    string? SerialNo,
+    string? SourceInspectionRecordId);
+
+/// <summary>
 /// 按 id 取单条检验记录详情（PDA NCR 详情「来源检验记录」→ 打开记录的互链）。代理真实详情端点，
 /// org/env 随查询下传由 Quality 服务端做租户过滤。
 /// </summary>
