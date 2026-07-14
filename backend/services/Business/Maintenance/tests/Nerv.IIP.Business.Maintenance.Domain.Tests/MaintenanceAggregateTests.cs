@@ -130,6 +130,21 @@ public sealed class MaintenanceAggregateTests
     }
 
     [Fact]
+    public void Maintenance_plan_pause_is_idempotent()
+    {
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "weekly-inspection", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+
+        plan.Pause();
+        plan.Pause();
+
+        Assert.True(plan.Paused);
+        Assert.False(plan.IsDueOn(new DateOnly(2026, 6, 8)));
+        Assert.Empty(plan.ConsumeDueDates(new DateOnly(2026, 6, 8)));
+        Assert.Equal(new DateOnly(2026, 6, 1), plan.NextDueOn);
+        Assert.Null(plan.LastGeneratedOn);
+    }
+
+    [Fact]
     public void Inspection_must_reference_a_plan_or_work_order()
     {
         Assert.Throws<ArgumentException>(() =>

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Nerv.IIP.Contracts.MasterData;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.DomainEvents;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 
@@ -100,6 +101,30 @@ public sealed class MasterDataIntegrationEventTests
         Assert.Equal("quality-reason", integrationEvent.Payload.CodeSet);
         Assert.Equal("scratch", integrationEvent.Payload.Code);
         Assert.Equal("masterdata:reference-data-code-changed:org-001:env-dev:quality-reason:scratch", integrationEvent.IdempotencyKey);
+    }
+
+    [Fact]
+    public void Device_asset_changed_event_carries_disabled_status_from_aggregate_change()
+    {
+        var asset = DeviceAsset.Register("org-001", "env-dev", "DEV-CNC-01", "CNC", "LINE-1", "WC-1");
+        asset.ClearDomainEvents();
+        asset.Disable("retired");
+        var domainEvent = Assert.Single(asset.GetDomainEvents().OfType<DeviceAssetChangedDomainEvent>());
+        var converter = new DeviceAssetChangedIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor());
+
+        var integrationEvent = converter.Convert(domainEvent);
+
+        Assert.Equal("disabled", integrationEvent.Payload.Status);
+    }
+
+    [Fact]
+    public void Device_asset_changed_events_for_distinct_changes_use_distinct_idempotency_keys()
+    {
+        var converter = new DeviceAssetChangedIntegrationEventConverter(new StubMasterDataIntegrationEventContextAccessor());
+        var first = converter.Convert(new DeviceAssetChangedDomainEvent("org-001", "env-dev", "DEV-CNC-01"));
+        var second = converter.Convert(new DeviceAssetChangedDomainEvent("org-001", "env-dev", "DEV-CNC-01"));
+
+        Assert.NotEqual(first.IdempotencyKey, second.IdempotencyKey);
     }
 
     private sealed class StubMasterDataIntegrationEventContextAccessor(
