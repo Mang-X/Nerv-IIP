@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Scheduling;
 
@@ -25,11 +27,43 @@ public sealed class AssembleSchedulingProblemCommandValidator : AbstractValidato
     }
 }
 
-public sealed class AssembleSchedulingProblemCommandHandler(ISchedulingProblemProducer producer)
+public sealed class AssembleSchedulingProblemCommandHandler(
+    ISchedulingProblemProducer producer,
+    ApplicationDbContext? dbContext = null,
+    ISchedulingOperationOverrideOverlay? overrideOverlay = null)
     : ICommandHandler<AssembleSchedulingProblemCommand, SchedulingProblemContract>
 {
     public async Task<SchedulingProblemContract> Handle(AssembleSchedulingProblemCommand request, CancellationToken cancellationToken)
     {
-        return await producer.AssembleAsync(request.Request, cancellationToken);
+        var source = request.Request;
+        if (source.LockedOperationIds is { Count: > 0 } && string.IsNullOrWhiteSpace(source.BasePlanId))
+        {
+            throw new KnownException("BasePlanId is required when LockedOperationIds are supplied.");
+        }
+
+        var resolvedLocks = new List<SchedulingLockedAssignmentContract>(source.LockedAssignments ?? []);
+        if (!string.IsNullOrWhiteSpace(source.BasePlanId))
+        {
+            if (dbContext is null)
+            {
+                throw new InvalidOperationException("Scheduling persistence is required to resolve base-plan locks.");
+            }
+            var plan = await dbContext.SchedulePlans.AsNoTracking().Include(x => x.Assignments)
+                .SingleOrDefaultAsync(x => x.OrganizationId == source.OrganizationId &&
+                    x.EnvironmentId == source.EnvironmentId && x.PlanId == source.BasePlanId, cancellationToken)
+                ?? throw new KnownException($"Schedule plan was not found, PlanId = {source.BasePlanId}");
+            foreach (var operationId in (source.LockedOperationIds ?? []).Distinct(StringComparer.Ordinal))
+            {
+                var assignment = plan.Assignments.SingleOrDefault(x => x.OperationId == operationId)
+                    ?? throw new KnownException($"Schedule operation was not found in base plan, OperationId = {operationId}");
+                resolvedLocks.Add(new SchedulingLockedAssignmentContract(
+                    assignment.AssignmentId, assignment.WorkOrderId, assignment.OperationId,
+                    assignment.OperationSequence, assignment.ResourceId, assignment.WorkCenterId,
+                    assignment.StartUtc, assignment.EndUtc, "base-plan-lock"));
+            }
+        }
+
+        var problem = await producer.AssembleAsync(source with { LockedAssignments = resolvedLocks }, cancellationToken);
+        return overrideOverlay is null ? problem : await overrideOverlay.ApplyAsync(problem, cancellationToken);
     }
 }

@@ -164,6 +164,25 @@ public sealed class ReleaseBusinessConsoleSchedulingPlanEndpoint(
         scheduling.ReleasePlanAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+[Tags("Business Console Scheduling")]
+[HttpPut("/api/business-console/v1/scheduling/plans/{planId}/operations/{operationId}/override")]
+[BusinessGatewayOperationId("upsertBusinessConsoleSchedulingOperationOverride")]
+public sealed class UpsertBusinessConsoleSchedulingOperationOverrideEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessSchedulingClient scheduling,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessSchedulingProxyEndpoint<BusinessConsoleScheduleOperationOverrideRequest, BusinessConsoleScheduleOperationOverrideResponse>(
+        auth, BusinessGatewayPermissions.SchedulingPlansManage)
+{
+    protected override string OrganizationId(BusinessConsoleScheduleOperationOverrideRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleScheduleOperationOverrideRequest request) => request.EnvironmentId;
+    protected override string ResourceType(BusinessConsoleScheduleOperationOverrideRequest request) => "scheduling-operation";
+    protected override string? ResourceId(BusinessConsoleScheduleOperationOverrideRequest request) => request.OperationId;
+    protected override Task<BusinessConsoleScheduleOperationOverrideResponse> ForwardAsync(
+        BusinessConsoleScheduleOperationOverrideRequest request, string bearerToken, CancellationToken cancellationToken) =>
+        scheduling.UpsertOperationOverrideAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
 public sealed class BusinessConsoleSchedulingProblemRequestValidator : Validator<BusinessConsoleSchedulingProblemRequest>
 {
     public BusinessConsoleSchedulingProblemRequestValidator()
@@ -199,4 +218,17 @@ public sealed class BusinessConsoleSchedulingPlanRequestValidator : Validator<Bu
     }
 
     private static bool NotBeWhiteSpace(string value) => !string.IsNullOrWhiteSpace(value);
+}
+
+public sealed class BusinessConsoleScheduleOperationOverrideRequestValidator : Validator<BusinessConsoleScheduleOperationOverrideRequest>
+{
+    public BusinessConsoleScheduleOperationOverrideRequestValidator()
+    {
+        RuleFor(x => x.PlanId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.OperationId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.ResourceId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.EndUtc).GreaterThan(x => x.StartUtc);
+    }
 }

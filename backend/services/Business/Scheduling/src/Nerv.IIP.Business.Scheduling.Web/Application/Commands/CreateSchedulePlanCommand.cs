@@ -34,16 +34,21 @@ public sealed class CreateSchedulePlanCommandHandler(
     FiniteCapacityScheduler scheduler,
     TimeProvider timeProvider,
     ISchedulingEquipmentAvailabilityProvider equipmentAvailabilityProvider,
-    ISchedulingMaterialReadinessProvider materialReadinessProvider) : ICommandHandler<CreateSchedulePlanCommand, SchedulePlanContract>
+    ISchedulingMaterialReadinessProvider materialReadinessProvider,
+    ISchedulingOperationOverrideOverlay? overrideOverlay = null) : ICommandHandler<CreateSchedulePlanCommand, SchedulePlanContract>
 {
     public async Task<SchedulePlanContract> Handle(CreateSchedulePlanCommand request, CancellationToken cancellationToken)
     {
-        var problemFingerprint = CalculateProblemFingerprint(request.Problem);
+        var overlaidProblem = overrideOverlay is null
+            ? request.Problem
+            : await overrideOverlay.ApplyAsync(request.Problem, cancellationToken);
+        var normalizedProblem = SchedulingProblemNormalizer.Normalize(overlaidProblem);
+        var problemFingerprint = CalculateProblemFingerprint(normalizedProblem);
         var existingSnapshot = await dbContext.ScheduleProblems.AsNoTracking()
             .SingleOrDefaultAsync(
-                x => x.OrganizationId == request.Problem.OrganizationId &&
-                    x.EnvironmentId == request.Problem.EnvironmentId &&
-                    x.ProblemId == request.Problem.ProblemId,
+                x => x.OrganizationId == overlaidProblem.OrganizationId &&
+                    x.EnvironmentId == overlaidProblem.EnvironmentId &&
+                    x.ProblemId == overlaidProblem.ProblemId,
                 cancellationToken);
         if (existingSnapshot is not null)
         {
@@ -68,25 +73,26 @@ public sealed class CreateSchedulePlanCommandHandler(
         }
 
         var generatedAtUtc = timeProvider.GetUtcNow();
-        var availability = await equipmentAvailabilityProvider.QueryAsync(request.Problem, cancellationToken);
-        var materialReadiness = await materialReadinessProvider.QueryAsync(request.Problem, cancellationToken);
+        var availability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
+        var materialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
         var schedulingProblem = MaterialReadinessSchedulingAdapter.Apply(
-            EquipmentAvailabilitySchedulingAdapter.Apply(request.Problem, availability),
+            EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability),
             materialReadiness);
         var preview = scheduler.Schedule(schedulingProblem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc);
         var generated = SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated);
         dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(
-            request.Problem.ProblemId,
-            request.Problem.ContractVersion,
-            request.Problem.OrganizationId,
-            request.Problem.EnvironmentId,
+            overlaidProblem.ProblemId,
+            overlaidProblem.ContractVersion,
+            overlaidProblem.OrganizationId,
+            overlaidProblem.EnvironmentId,
             problemFingerprint,
-            request.Problem.HorizonStartUtc,
-            request.Problem.HorizonEndUtc,
+            JsonSerializer.Serialize(normalizedProblem, SchedulingJson.Options),
+            overlaidProblem.HorizonStartUtc,
+            overlaidProblem.HorizonEndUtc,
             generatedAtUtc));
         dbContext.SchedulePlans.Add(SchedulePlan.FromGeneratedPlan(
-            request.Problem.OrganizationId,
-            request.Problem.EnvironmentId,
+            overlaidProblem.OrganizationId,
+            overlaidProblem.EnvironmentId,
             SchedulePlanContractMapper.ToDomainSnapshot(generated)));
         return generated;
     }

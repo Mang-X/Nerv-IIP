@@ -281,6 +281,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         DeviceAssetId = NormalizeOptional(deviceAssetId);
         ShiftId = NormalizeOptional(shiftId);
         AssignedAtUtc = assignedAtUtc;
+        if (DeviceAssetId is not null && Duration > TimeSpan.Zero)
+        {
+            AddDomainEvent(new OperationTaskManuallyDispatchedDomainEvent(this));
+        }
     }
 
     public void Cancel(DateTimeOffset cancelledAtUtc)

@@ -8690,6 +8690,18 @@ internal sealed class RecordingSchedulingClient : IBusinessSchedulingClient
             SchedulePlanStatusContract.Released,
             DateTimeOffset.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture)));
     }
+
+    public Task<BusinessConsoleScheduleOperationOverrideResponse> UpsertOperationOverrideAsync(
+        string internalBearerToken,
+        BusinessConsoleScheduleOperationOverrideRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPlanId = request.PlanId;
+        return Task.FromResult(new BusinessConsoleScheduleOperationOverrideResponse(
+            request.OperationId, "WO-001", request.ResourceId, "WC-001",
+            request.StartUtc, request.EndUtc, "manual-override"));
+    }
 }
 
 internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTelemetryClient

@@ -21,6 +21,8 @@ public sealed class SchedulePlanEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").HasComment("UTC timestamp when the plan was released.");
         builder.Property(x => x.ScheduledOperationCount).HasColumnName("scheduled_operation_count").HasComment("Number of operations assigned by this plan.");
         builder.Property(x => x.UnscheduledOperationCount).HasColumnName("unscheduled_operation_count").HasComment("Number of operations left unscheduled by this plan.");
+        builder.Property(x => x.LockedOperationCount).HasColumnName("locked_operation_count").HasComment("Number of fixed locked operations retained by this plan.");
+        builder.Property(x => x.OptimizableOperationCount).HasColumnName("optimizable_operation_count").HasComment("Number of non-locked scheduled operations included in optimization KPIs.");
         builder.Property(x => x.AssignedMinutes).HasColumnName("assigned_minutes").HasComment("Total resource occupied minutes, including operation processing plus setup/changeover time.");
         builder.Property(x => x.MakespanMinutes).HasColumnName("makespan_minutes").HasComment("Minutes between the earliest resource occupancy start and latest assignment end.");
         builder.Property(x => x.TotalTardinessMinutes).HasColumnName("total_tardiness_minutes").HasComment("Total minutes by which assigned operations finish after their due dates.");

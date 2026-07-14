@@ -693,6 +693,11 @@ public interface IBusinessSchedulingClient
         string internalBearerToken,
         BusinessConsoleSchedulingPlanRequest request,
         CancellationToken cancellationToken);
+
+    Task<BusinessConsoleScheduleOperationOverrideResponse> UpsertOperationOverrideAsync(
+        string internalBearerToken,
+        BusinessConsoleScheduleOperationOverrideRequest request,
+        CancellationToken cancellationToken);
 }
 
 public interface IBusinessErpClient
@@ -4370,6 +4375,18 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
             HttpMethod.Post,
             $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/release?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
+            cancellationToken,
+            SchedulingJson.Options);
+
+    public Task<BusinessConsoleScheduleOperationOverrideResponse> UpsertOperationOverrideAsync(
+        string internalBearerToken,
+        BusinessConsoleScheduleOperationOverrideRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleScheduleOperationOverrideResponse>(
+            internalBearerToken,
+            HttpMethod.Put,
+            $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/operations/{Uri.EscapeDataString(request.OperationId)}/override",
+            request,
             cancellationToken,
             SchedulingJson.Options);
 

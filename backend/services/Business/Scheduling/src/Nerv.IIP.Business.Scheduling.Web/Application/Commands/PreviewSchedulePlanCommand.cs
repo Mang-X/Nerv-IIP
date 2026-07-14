@@ -28,15 +28,19 @@ public sealed class PreviewSchedulePlanCommandHandler(
     FiniteCapacityScheduler scheduler,
     TimeProvider timeProvider,
     ISchedulingEquipmentAvailabilityProvider equipmentAvailabilityProvider,
-    ISchedulingMaterialReadinessProvider materialReadinessProvider)
+    ISchedulingMaterialReadinessProvider materialReadinessProvider,
+    ISchedulingOperationOverrideOverlay? overrideOverlay = null)
     : ICommandHandler<PreviewSchedulePlanCommand, SchedulePlanContract>
 {
     public async Task<SchedulePlanContract> Handle(PreviewSchedulePlanCommand request, CancellationToken cancellationToken)
     {
-        var availability = await equipmentAvailabilityProvider.QueryAsync(request.Problem, cancellationToken);
-        var materialReadiness = await materialReadinessProvider.QueryAsync(request.Problem, cancellationToken);
+        var overlaidProblem = overrideOverlay is null
+            ? request.Problem
+            : await overrideOverlay.ApplyAsync(request.Problem, cancellationToken);
+        var availability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
+        var materialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
         var schedulingProblem = MaterialReadinessSchedulingAdapter.Apply(
-            EquipmentAvailabilitySchedulingAdapter.Apply(request.Problem, availability),
+            EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability),
             materialReadiness);
         var plan = scheduler.Schedule(schedulingProblem, $"preview-{request.Problem.ProblemId}", timeProvider.GetUtcNow());
         return SchedulePlanContractMapper.WithStatus(plan, SchedulePlanStatusContract.Preview);

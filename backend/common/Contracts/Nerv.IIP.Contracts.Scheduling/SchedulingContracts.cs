@@ -129,7 +129,9 @@ public sealed record SchedulePlanMetricsContract(
     int TotalTardinessMinutes,
     int LateOperationCount,
     decimal OnTimeRate,
-    decimal AverageResourceUtilization);
+    decimal AverageResourceUtilization,
+    int LockedOperationCount = 0,
+    int OptimizableOperationCount = 0);
 
 public sealed record ScheduleAssignmentContract(
     string AssignmentId,

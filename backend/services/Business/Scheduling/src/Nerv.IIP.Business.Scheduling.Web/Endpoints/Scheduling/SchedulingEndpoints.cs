@@ -22,6 +22,9 @@ public abstract class SchedulingEndpoint<TRequest, TResponse> : Endpoint<TReques
             case "POST":
                 Post(contract.Route);
                 break;
+            case "PUT":
+                Put(contract.Route);
+                break;
             default:
                 throw new NotSupportedException($"HTTP method '{contract.HttpMethod}' is not supported by Scheduling endpoints.");
         }
@@ -55,6 +58,15 @@ public sealed record ReleaseSchedulePlanRequest(
     [property: RouteParam] string PlanId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId);
+
+public sealed record UpsertScheduleOperationOverrideRequest(
+    [property: RouteParam] string PlanId,
+    [property: RouteParam] string OperationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ResourceId,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc);
 
 public sealed class PreviewSchedulePlanEndpoint(ISender sender)
     : SchedulingEndpoint<PreviewSchedulePlanRequest, ResponseData<SchedulePlanContract>>
@@ -170,6 +182,20 @@ public sealed class ReleaseSchedulePlanEndpoint(ISender sender)
     }
 }
 
+public sealed class UpsertScheduleOperationOverrideEndpoint(ISender sender)
+    : SchedulingEndpoint<UpsertScheduleOperationOverrideRequest, ResponseData<ScheduleOperationOverrideResponse>>
+{
+    public override void Configure() => ConfigureSchedulingContract(SchedulingEndpointContracts.Get<UpsertScheduleOperationOverrideEndpoint>());
+
+    public override async Task HandleAsync(UpsertScheduleOperationOverrideRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new UpsertScheduleOperationOverrideCommand(
+            req.OrganizationId, req.EnvironmentId, req.PlanId, req.OperationId,
+            req.ResourceId, req.StartUtc, req.EndUtc), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class ListSchedulePlansRequestValidator : Validator<ListSchedulePlansRequest>
 {
     public ListSchedulePlansRequestValidator()
@@ -213,6 +239,19 @@ public sealed class ReleaseSchedulePlanRequestValidator : Validator<ReleaseSched
     }
 }
 
+public sealed class UpsertScheduleOperationOverrideRequestValidator : Validator<UpsertScheduleOperationOverrideRequest>
+{
+    public UpsertScheduleOperationOverrideRequestValidator()
+    {
+        RuleFor(x => x.PlanId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.OperationId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.ResourceId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.EndUtc).GreaterThan(x => x.StartUtc);
+    }
+}
+
 public sealed record SchedulingEndpointContract(
     Type EndpointType,
     string HttpMethod,
@@ -232,6 +271,7 @@ public static class SchedulingEndpointContracts
         new(typeof(GetSchedulePlanEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlan"),
         new(typeof(GetSchedulePlanGanttEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}/gantt", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlanGantt"),
         new(typeof(ReleaseSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/{planId}/release", SchedulingPermissionCodes.PlansRelease, InternalServiceAuthorizationPolicy.Name, "releaseSchedulingPlan"),
+        new(typeof(UpsertScheduleOperationOverrideEndpoint), "PUT", "/api/business/v1/scheduling/plans/{planId}/operations/{operationId}/override", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "upsertSchedulingOperationOverride"),
     ];
 
     public static SchedulingEndpointContract Get<TEndpoint>()

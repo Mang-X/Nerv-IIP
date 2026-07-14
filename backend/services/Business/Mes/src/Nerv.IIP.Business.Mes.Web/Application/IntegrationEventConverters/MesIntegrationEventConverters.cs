@@ -238,6 +238,28 @@ public sealed class OperationTaskCompletedIntegrationEventConverter
     }
 }
 
+public sealed class OperationTaskManuallyDispatchedIntegrationEventConverter
+    : IIntegrationEventConverter<OperationTaskManuallyDispatchedDomainEvent, MesOperationTaskManuallyDispatchedIntegrationEvent>
+{
+    public MesOperationTaskManuallyDispatchedIntegrationEvent Convert(OperationTaskManuallyDispatchedDomainEvent domainEvent)
+    {
+        var task = domainEvent.OperationTask;
+        var occurredAtUtc = task.AssignedAtUtc ?? throw new InvalidOperationException("Manual dispatch timestamp is required.");
+        var resourceId = task.DeviceAssetId ?? throw new InvalidOperationException("Manual dispatch device is required.");
+        var idempotencyKey = EventIds.Idempotency("operation-task-manually-dispatched",
+            task.OrganizationId, task.EnvironmentId, task.OperationTaskId, occurredAtUtc.UtcTicks.ToString(CultureInfo.InvariantCulture));
+        return new MesOperationTaskManuallyDispatchedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}", MesIntegrationEventTypes.OperationTaskManuallyDispatched,
+            MesIntegrationEventVersions.V1, occurredAtUtc, MesIntegrationEventSources.BusinessMes,
+            idempotencyKey, task.WorkOrderId, task.OrganizationId, task.EnvironmentId,
+            "system:mes", idempotencyKey,
+            new OperationTaskManuallyDispatchedPayload(
+                task.WorkOrderId, task.OperationTaskId, task.OperationSequence, resourceId,
+                task.WorkCenterId, task.EarliestStartUtc, task.EarliestStartUtc + task.Duration,
+                occurredAtUtc));
+    }
+}
+
 public sealed class MaterialIssueRequestedIntegrationEventConverter
     : IIntegrationEventConverter<MaterialIssueRequestedDomainEvent, InventoryMovementRequestedIntegrationEvent>
 {
