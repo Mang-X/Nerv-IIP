@@ -54,6 +54,16 @@ function resetQuery(next: Record<string, unknown> = {}) {
   for (const k of Object.keys(routerState.query)) delete routerState.query[k]
   Object.assign(routerState.query, next)
 }
+// router.replace writes the query back into the reactive route so the full
+// state→router→route round-trip (and the URL→state watcher) is exercised for real.
+function resetRouter() {
+  routerState.replace.mockReset().mockImplementation((...args: unknown[]) => {
+    const loc = args[0] as { query?: Record<string, unknown> } | undefined
+    resetQuery(loc?.query ?? {})
+    return Promise.resolve()
+  })
+  resetQuery()
+}
 
 const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
@@ -145,8 +155,7 @@ describe('alarm ops depth (MAN-441 #795)', () => {
     alarmState.acknowledgeAlarm.mockReset().mockResolvedValue(undefined)
     alarmState.shelveAlarm.mockReset().mockResolvedValue(undefined)
     alarmState.refreshAlarms.mockReset().mockResolvedValue(undefined)
-    routerState.replace.mockReset().mockResolvedValue(undefined)
-    resetQuery()
+    resetRouter()
     seedAlarms()
   })
 
@@ -197,8 +206,7 @@ describe('alarm ops — shelve validation + batch retry (attaches to body for te
     alarmState.acknowledgeAlarm.mockReset().mockResolvedValue(undefined)
     alarmState.shelveAlarm.mockReset().mockResolvedValue(undefined)
     alarmState.refreshAlarms.mockReset().mockResolvedValue(undefined)
-    routerState.replace.mockReset().mockResolvedValue(undefined)
-    resetQuery()
+    resetRouter()
     seedAlarms()
     wrapper = mount(AlarmsPage, { global: { stubs }, attachTo: document.body })
   })
@@ -357,8 +365,7 @@ describe('alarm ops — view filtering (orthogonal, selection prune, URL, page r
     alarmState.acknowledgeAlarm.mockReset().mockResolvedValue(undefined)
     alarmState.shelveAlarm.mockReset().mockResolvedValue(undefined)
     alarmState.refreshAlarms.mockReset().mockResolvedValue(undefined)
-    routerState.replace.mockReset().mockResolvedValue(undefined)
-    resetQuery()
+    resetRouter()
     seedAlarms()
   })
 
@@ -451,8 +458,8 @@ describe('alarm ops — view filtering (orthogonal, selection prune, URL, page r
     expect(rowByText(wrapper, 'ALM-2')).toBeTruthy()
   })
 
-  it('writes page + pageSize to the URL query (defaults omitted)', async () => {
-    alarmState.alarms = Array.from({ length: 25 }, (_, i) => ({
+  function seedRaised(count: number) {
+    alarmState.alarms = Array.from({ length: count }, (_, i) => ({
       alarmEventId: `P-${i + 1}`,
       deviceAssetId: 'DEV-Z',
       alarmCode: `C-${i + 1}`,
@@ -460,13 +467,45 @@ describe('alarm ops — view filtering (orthogonal, selection prune, URL, page r
       status: 'raised',
       raisedAtUtc: '2026-07-12T00:00:00Z',
     }))
+  }
+
+  it('round-trips page through the URL (state → router.replace → reactive route)', async () => {
+    seedRaised(25)
     const wrapper = mount(AlarmsPage, { global: { stubs } })
 
     const page2 = wrapper.findAll('button').find((b) => b.text().trim() === '2')
     await page2!.trigger('click')
     await nextTick()
-    expect(routerState.replace).toHaveBeenCalledWith(
-      expect.objectContaining({ query: expect.objectContaining({ page: '2' }) }),
-    )
+    // router.replace writes back into the reactive route → the query now carries page=2.
+    expect(routerState.query.page).toBe('2')
+  })
+
+  it('round-trips pageSize through the URL and resets page to 1 (default page omitted)', async () => {
+    seedRaised(25)
+    resetQuery({ page: '2' }) // start on page 2 so we can prove the reset
+    const wrapper = mount(AlarmsPage, { global: { stubs } })
+    // The NvDataTable footer emits update:page-size when the operator changes the size.
+    wrapper.findComponent({ name: 'NvDataTable' }).vm.$emit('update:page-size', 20)
+    await nextTick()
+    expect(routerState.query.pageSize).toBe('20')
+    expect(routerState.query.page).toBeUndefined() // reset to 1 → default omitted
+  })
+
+  it('honors pageSize from the URL query', () => {
+    seedRaised(25)
+    resetQuery({ pageSize: '20' })
+    const wrapper = mount(AlarmsPage, { global: { stubs } })
+    expect(wrapper.findAll('tbody tr').length).toBe(20)
+  })
+
+  it('clamps an out-of-range page from the URL and normalizes the query (no empty table)', async () => {
+    seedRaised(25) // 3 pages at 10 per page
+    resetQuery({ page: '99' })
+    const wrapper = mount(AlarmsPage, { global: { stubs } })
+    await nextTick()
+    // Clamped to the last page → rows are visible, not an empty table…
+    expect(wrapper.findAll('tbody tr').length).toBeGreaterThan(0)
+    // …and the query is normalized to the last valid page.
+    expect(routerState.query.page).toBe('3')
   })
 })

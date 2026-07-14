@@ -200,23 +200,35 @@ function updatePageSize(size: number) {
   pageSize.value = size
   page.value = 1
 }
-// Clamp the page if the filtered set shrank below the current window.
-watch(totalItems, (total) => {
-  const maxPage = Math.max(1, Math.ceil(total / pageSize.value))
-  if (page.value > maxPage) page.value = maxPage
-})
+// Clamp the page whenever page / pageSize / total change — including the initial load and an
+// out-of-range page/pageSize arriving from the URL or browser back-forward — so an oversized
+// page can never render an empty table. The clamped value is normalized back into the query by
+// the state→URL watcher below.
+watch(
+  [page, pageSize, totalItems],
+  () => {
+    const maxPage = Math.max(1, Math.ceil(totalItems.value / pageSize.value))
+    if (page.value > maxPage) page.value = maxPage
+  },
+  { immediate: true },
+)
 
-// State → URL (default values are omitted from the query).
-watch([activeView, page, pageSize], () => {
-  const query: LocationQueryRaw = { ...route.query }
-  if (activeView.value === 'all') delete query.view
-  else query.view = activeView.value
-  if (page.value > 1) query.page = String(page.value)
-  else delete query.page
-  if (pageSize.value !== DEFAULT_PAGE_SIZE) query.pageSize = String(pageSize.value)
-  else delete query.pageSize
-  if (JSON.stringify(query) !== JSON.stringify(route.query)) void router.replace({ query })
-})
+// State → URL (default values omitted). Runs on load too, so a clamped/normalized page or a
+// pageSize read from the query is written back and the URL stays canonical.
+watch(
+  [activeView, page, pageSize],
+  () => {
+    const query: LocationQueryRaw = { ...route.query }
+    if (activeView.value === 'all') delete query.view
+    else query.view = activeView.value
+    if (page.value > 1) query.page = String(page.value)
+    else delete query.page
+    if (pageSize.value !== DEFAULT_PAGE_SIZE) query.pageSize = String(pageSize.value)
+    else delete query.pageSize
+    if (JSON.stringify(query) !== JSON.stringify(route.query)) void router.replace({ query })
+  },
+  { immediate: true },
+)
 // URL → State (external navigation / browser back-forward reflect back into the view).
 watch(
   () => [route.query.view, route.query.page, route.query.pageSize],
