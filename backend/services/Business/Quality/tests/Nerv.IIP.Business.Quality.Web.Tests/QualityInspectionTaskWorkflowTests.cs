@@ -14,6 +14,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
+using Nerv.IIP.Business.Quality.Web.Application.Seed;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Mes;
@@ -360,6 +361,23 @@ public sealed class QualityInspectionTaskWorkflowTests
         Assert.Equal(result.NonconformanceReportId, replay.NonconformanceReportId);
         Assert.Equal(ncr.NcrCode, replay.NonconformanceReportCode);
         Assert.Single(await dbContext.NonconformanceReports.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Quality_seed_populates_reason_catalog_idempotently()
+    {
+        // 全新环境原因码目录为空会让检验执行的原因码 Picker 无码可选（MAN-457 真机走查发现）。
+        // seed 幂等：重复执行不重复插入；已有码更新名称/分组等而非报错。
+        await using var dbContext = CreateDbContext(nameof(Quality_seed_populates_reason_catalog_idempotently));
+        var seed = new QualitySeedService(dbContext);
+
+        await seed.SeedAsync("org-001", "env-dev");
+        var first = await dbContext.QualityReasons.CountAsync();
+        Assert.True(first >= 5);
+        Assert.Contains(await dbContext.QualityReasons.ToArrayAsync(), x => x.ReasonCode == "RSN-APPEARANCE" && x.Enabled);
+
+        await seed.SeedAsync("org-001", "env-dev");
+        Assert.Equal(first, await dbContext.QualityReasons.CountAsync());
     }
 
     [Fact]

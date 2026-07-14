@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import RetryableListError from '@/components/RetryableListError.vue'
+import QualityTaskListView from '@/components/quality/QualityTaskListView.vue'
+import QualityTaskScanFilter from '@/components/quality/QualityTaskScanFilter.vue'
 import { useNowClock } from '@/composables/useNowClock'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
 import { INSPECTION_TASK_SOURCE_TYPES, inspectionTaskSourceTypeLabel } from '@nerv-iip/business-core'
-import { NvListRow, NvMobileButton, NvMobileTag, NvScanBar } from '@nerv-iip/ui-mobile'
 import { computed, shallowRef } from 'vue'
 
 type Task = BusinessConsoleQualityInspectionTaskItem
@@ -89,134 +89,32 @@ async function onScan(value: string) {
   const hit = pickScanHit(pool, kw)
   if (hit) emit('select', hit)
 }
-
-function clearScan() {
-  scanKeyword.value = ''
-}
-function pickSourceType(type: string | null) {
-  sourceTypeFilter.value = type
-}
-
-function taskTitle(task: Task) {
-  return `${inspectionTaskSourceTypeLabel(task.sourceType)} · ${task.skuCode ?? '未知物料'}`
-}
-function taskSubtitle(task: Task) {
-  const parts: string[] = []
-  if (task.sourceDocumentId) parts.push(`来源单 ${task.sourceDocumentId}`)
-  if (task.quantity != null) parts.push(`数量 ${task.quantity}${task.uomCode ?? ''}`)
-  if (task.batchNo) parts.push(`批次 ${task.batchNo}`)
-  return parts.join(' · ')
-}
-function dueText(iso?: string) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('zh-CN')
-}
 </script>
 
 <template>
+  <!-- 数据协调（时钟/筛选/排序/扫码直达）+ 子组件组合。 -->
   <div class="space-y-4 p-4">
-    <NvScanBar placeholder="扫来源单据 / SKU 直达" @scan="onScan" />
-
-    <div
-      v-if="scanKeyword"
-      class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2 text-sm"
-    >
-      <span class="truncate text-foreground">筛选：{{ scanKeyword }}</span>
-      <NvMobileButton variant="outline" size="sm" data-testid="clear-scan" @click="clearScan">
-        清除
-      </NvMobileButton>
-    </div>
-
-    <div class="flex flex-wrap gap-2">
-      <NvMobileButton
-        :variant="sourceTypeFilter === null ? 'primary' : 'outline'"
-        size="sm"
-        data-testid="chip-all"
-        @click="pickSourceType(null)"
-      >
-        全部
-      </NvMobileButton>
-      <NvMobileButton
-        v-for="chip in sourceChips"
-        :key="chip.type"
-        :variant="sourceTypeFilter === chip.type ? 'primary' : 'outline'"
-        size="sm"
-        :data-testid="`chip-${chip.type}`"
-        @click="pickSourceType(chip.type)"
-      >
-        {{ chip.label }} {{ chip.count }}
-      </NvMobileButton>
-    </div>
-
-    <RetryableListError
-      v-if="error"
-      :error="error"
-      :pending="pending"
-      fallback="待检任务加载失败，请稍后重试。"
-      test-id="tasks-error"
-      @retry="() => emit('refresh')"
+    <QualityTaskScanFilter
+      :scan-keyword="scanKeyword"
+      :source-type-filter="sourceTypeFilter"
+      :chips="sourceChips"
+      @scan="onScan"
+      @clear-scan="scanKeyword = ''"
+      @pick-source-type="(type) => (sourceTypeFilter = type)"
     />
 
-    <div v-else-if="pending" class="px-4 py-6 text-center text-sm text-muted-foreground">
-      加载中…
-    </div>
-
-    <div
-      v-else-if="tasks.length === 0"
-      class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
-    >
-      暂无待检任务
-    </div>
-
-    <div
-      v-else-if="displayTasks.length === 0 && hasMore"
-      data-testid="tasks-partial-no-match"
-      class="space-y-3 rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
-    >
-      <p>在已加载的 {{ loaded }} 条待检任务中未匹配（共 {{ total }} 条）。</p>
-      <NvMobileButton
-        variant="outline"
-        block
-        data-testid="load-more"
-        :disabled="pending"
-        @click="emit('loadMore')"
-      >
-        加载更多
-      </NvMobileButton>
-    </div>
-
-    <div
-      v-else-if="displayTasks.length === 0"
-      class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
-    >
-      未找到匹配的待检任务
-    </div>
-
-    <div v-else class="overflow-hidden rounded-lg border border-border">
-      <NvListRow
-        v-for="task in displayTasks"
-        :key="task.inspectionTaskId"
-        data-testid="task-row"
-        :title="taskTitle(task)"
-        :subtitle="taskSubtitle(task)"
-        @select="emit('select', task)"
-      >
-        <template #trailing>
-          <div class="flex shrink-0 flex-col items-end gap-1">
-            <NvMobileTag
-              v-if="isOverdue(task)"
-              :data-testid="`overdue-${task.inspectionTaskId}`"
-              variant="danger"
-            >
-              超期
-            </NvMobileTag>
-            <span v-if="task.dueAtUtc" class="text-xs text-muted-foreground">
-              {{ dueText(task.dueAtUtc) }}
-            </span>
-          </div>
-        </template>
-      </NvListRow>
-    </div>
+    <QualityTaskListView
+      :display-tasks="displayTasks"
+      :raw-count="tasks.length"
+      :total="total"
+      :loaded="loaded"
+      :has-more="hasMore"
+      :pending="pending"
+      :error="error"
+      :is-overdue="isOverdue"
+      @select="(task) => emit('select', task)"
+      @load-more="emit('loadMore')"
+      @refresh="emit('refresh')"
+    />
   </div>
 </template>
