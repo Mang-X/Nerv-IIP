@@ -45,15 +45,14 @@ describe('NCR detail page', () => {
     expect(wrapper.text()).toContain('SKU-A')
   })
 
-  it('shows the source inspection record as display-only context and back returns to the flow', async () => {
+  it('navigates from NCR to the source inspection record via a real route (bidirectional interlink)', async () => {
     const wrapper = mount(NcrDetailPage)
     await flushPromises()
-    // 来源检验记录仅展示上下文（PDA 无检验记录详情路由，不做可点击入口）。
-    const source = wrapper.get('[data-testid="source-record"]')
-    expect(source.text()).toContain('rec-1')
-    expect(source.attributes('role')).toBeUndefined() // 无 arrow → 非 button 语义，不可点击
+    // NCR → 检验记录互链：点按打开 /quality/record/{id} 真实路由。
+    await wrapper.get('[data-testid="source-record"]').trigger('click')
+    expect(push).toHaveBeenCalledWith('/quality/record/rec-1')
     // 「返回检验流程」按钮回到来路。
     await wrapper.get('[data-testid="ncr-back"]').trigger('click')
-    expect(back.mock.calls.length + push.mock.calls.length).toBeGreaterThan(0)
+    expect(back.mock.calls.length + push.mock.calls.length).toBeGreaterThan(1)
   })
 })

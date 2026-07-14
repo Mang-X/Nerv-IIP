@@ -12,7 +12,9 @@ using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.MeasuringDevices;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
@@ -358,6 +360,66 @@ public sealed class QualityInspectionTaskWorkflowTests
         Assert.Equal(result.NonconformanceReportId, replay.NonconformanceReportId);
         Assert.Equal(ncr.NcrCode, replay.NonconformanceReportCode);
         Assert.Single(await dbContext.NonconformanceReports.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Get_inspection_record_scopes_to_tenant_and_returns_ncr_backlink()
+    {
+        // PDA NCR 详情「来源检验记录」互链读：按 org/env 过滤（越权 id 与不存在同为 not found），
+        // 返回回链的 NonconformanceReportId 供记录 → NCR 双向导航。
+        await using var dbContext = CreateDbContext(nameof(Get_inspection_record_scopes_to_tenant_and_returns_ncr_backlink));
+        var plan = ActivePlan("PLAN-RCV-2300", "receiving", "SKU-RM-2300");
+        var task = InspectionTask.CreatePending(
+            "org-001",
+            "env-dev",
+            plan.Id,
+            "receiving",
+            "wms",
+            "IN-970",
+            "LINE-001",
+            "SKU-RM-2300",
+            10m,
+            "kg",
+            null,
+            null,
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+            "wms:inbound-completed:org-001:env-dev:IN-970:LINE-001");
+        dbContext.InspectionPlans.Add(plan);
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+        var fromTask = new CreateInspectionRecordFromTaskCommandHandler(
+            new InspectionTaskRepository(dbContext),
+            new InspectionRecordRepository(dbContext),
+            new InspectionPlanRepository(dbContext),
+            new NonconformanceReportRepository(dbContext),
+            new NonconformanceReportCodeGenerator());
+        var created = await fromTask.Handle(
+            new CreateInspectionRecordFromTaskCommand(
+                task.Id,
+                "qa-user-001",
+                [
+                    new InspectionResultLineCommandInput("appearance", "scratch", null, InspectionLineResults.Failed, "SCRATCH", 2m, [])
+                ],
+                "外观不良，判退",
+                []),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new GetInspectionRecordQueryHandler(dbContext);
+
+        // 同租户：取到详情 + NCR 回链 + 结果行。
+        var detail = await handler.Handle(
+            new GetInspectionRecordQuery(created.InspectionRecordId, "org-001", "env-dev"),
+            CancellationToken.None);
+        Assert.Equal(InspectionRecordResults.Rejected, detail.Result);
+        Assert.Equal(created.NonconformanceReportId, detail.NonconformanceReportId);
+        Assert.Single(detail.ResultLines);
+
+        // 越权租户：与不存在同为 not found，不泄露跨租户数据。
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new GetInspectionRecordQuery(created.InspectionRecordId, "org-other", "env-dev"),
+            CancellationToken.None));
     }
 
     [Fact]

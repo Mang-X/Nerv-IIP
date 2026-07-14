@@ -29,6 +29,10 @@ function goBack() {
   if (window.history.length > 1) router.back()
   else router.push('/quality/tasks').catch(() => {})
 }
+function openRecord(recordId: string) {
+  // NCR → 检验记录互链（真实路由；记录页可再跳回本 NCR）。
+  router.push(`/quality/record/${recordId}`).catch(() => {})
+}
 </script>
 
 <template>
@@ -47,6 +51,7 @@ function goBack() {
       :from-record-id="fromRecordId"
       @retry="() => refresh()"
       @back="goBack"
+      @open-record="openRecord"
     />
   </NvAppShellMobile>
 </template>

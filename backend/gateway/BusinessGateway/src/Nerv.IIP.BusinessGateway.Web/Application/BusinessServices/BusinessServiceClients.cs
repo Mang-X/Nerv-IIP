@@ -295,6 +295,11 @@ public interface IBusinessQualityClient
         BusinessConsoleQualityNcrDetailRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleInspectionRecordDetailResponse> GetInspectionRecordAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityInspectionRecordDetailRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(
         string internalBearerToken,
         BusinessConsoleQualitySpcRequest request,
@@ -2665,6 +2670,44 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         return ToQualityItem(response);
     }
 
+    public async Task<BusinessConsoleInspectionRecordDetailResponse> GetInspectionRecordAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityInspectionRecordDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        // 代理真实详情端点；org/env 随查询下传由 Quality 服务端做租户过滤（越权与不存在同为 not found）。
+        var record = await SendAsync<DownstreamInspectionRecordDetail>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/quality/inspection-records/{Uri.EscapeDataString(request.InspectionRecordId)}?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            null,
+            cancellationToken);
+        return new BusinessConsoleInspectionRecordDetailResponse(
+            record.InspectionRecordId,
+            record.SourceType,
+            record.SourceService,
+            record.SourceDocumentId,
+            record.SkuCode,
+            record.InspectedQuantity,
+            record.BatchNo,
+            record.SerialNo,
+            record.UomCode,
+            record.Result,
+            record.DispositionReason,
+            record.NonconformanceReportId,
+            (record.ResultLines ?? []).Select(line => new BusinessConsoleInspectionRecordResultLine(
+                line.CharacteristicCode,
+                line.ObservedValue,
+                line.MeasuredValue,
+                line.UnitCode,
+                line.Result,
+                line.DefectReason,
+                line.DefectQuantity)).ToArray(),
+            record.CreatedAtUtc);
+    }
+
     public Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(
         string internalBearerToken,
         BusinessConsoleQualitySpcRequest request,
@@ -3014,6 +3057,31 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string? BatchNo,
         string? SerialNo,
         string? DispositionReason);
+
+    private sealed record DownstreamInspectionRecordDetail(
+        string InspectionRecordId,
+        string SourceType,
+        string SourceService,
+        string SourceDocumentId,
+        string SkuCode,
+        decimal InspectedQuantity,
+        string? BatchNo,
+        string? SerialNo,
+        string? UomCode,
+        string Result,
+        string? DispositionReason,
+        string? NonconformanceReportId,
+        IReadOnlyCollection<DownstreamInspectionRecordDetailLine>? ResultLines,
+        DateTime CreatedAtUtc);
+
+    private sealed record DownstreamInspectionRecordDetailLine(
+        string CharacteristicCode,
+        string ObservedValue,
+        decimal? MeasuredValue,
+        string? UnitCode,
+        string Result,
+        string? DefectReason,
+        decimal? DefectQuantity);
 
     private sealed record DownstreamNcrListResponse(
         IReadOnlyCollection<DownstreamNcrItem> Items,

@@ -24,7 +24,9 @@ public sealed record InspectionRecordResponse(
     string? DispositionReason,
     IReadOnlyCollection<string> DispositionAttachmentFileIds,
     IReadOnlyCollection<InspectionResultLineResponse> ResultLines,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    // 详情读补充：回链的 NCR id（记录 → NCR 双向互查）；列表投影不需要，保持 null。
+    string? NonconformanceReportId = null);
 
 public sealed record InspectionResultLineResponse(
     string CharacteristicCode,

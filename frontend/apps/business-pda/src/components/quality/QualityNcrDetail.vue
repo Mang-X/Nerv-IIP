@@ -8,10 +8,10 @@ const props = defineProps<{
   ncr: BusinessConsoleQualityItem | null
   pending: boolean
   error: unknown
-  /** 来源检验记录 id（结果页跳转带入，仅展示上下文——PDA 无检验记录详情路由）。 */
+  /** 来源检验记录 id（结果页/记录页跳转带入）——提供时可导航到记录详情（NCR → 记录互链）。 */
   fromRecordId: string | null
 }>()
-const emit = defineEmits<{ retry: []; back: [] }>()
+const emit = defineEmits<{ retry: []; back: []; openRecord: [recordId: string] }>()
 
 const statusLabel = computed(() => {
   switch (props.ncr?.status) {
@@ -60,12 +60,14 @@ const statusLabel = computed(() => {
         <NvCell v-if="ncr.defectQuantity != null" title="不良数" :value="ncr.defectQuantity" />
         <NvCell v-if="ncr.batchNo" title="批次" :value="ncr.batchNo" />
         <NvCell v-if="ncr.serialNo" title="序列号" :value="ncr.serialNo" />
-        <!-- 仅展示上下文：PDA 暂无检验记录详情路由，不做可点击入口以免误导。 -->
+        <!-- NCR → 检验记录互链：点按打开检验记录详情（真实路由 /quality/record/{id}）。 -->
         <NvCell
           v-if="fromRecordId"
           data-testid="source-record"
           title="来源检验记录"
-          :value="fromRecordId"
+          value="查看"
+          arrow
+          @click="emit('openRecord', fromRecordId)"
         />
       </NvCellGroup>
 

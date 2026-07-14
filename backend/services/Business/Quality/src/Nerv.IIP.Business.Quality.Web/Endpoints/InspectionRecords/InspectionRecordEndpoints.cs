@@ -48,6 +48,12 @@ public sealed record ListInspectionRecordsRequest(
 
 public sealed record ListInspectionRecordsEndpointResponse(IReadOnlyCollection<InspectionRecordResponse> Items, int Total);
 
+/// <summary>org/env 提供时按租户过滤（网关 facade 必传，越权与不存在同为 not found）。</summary>
+public sealed record GetInspectionRecordRequest(
+    InspectionRecordId InspectionRecordId,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
+
 public sealed class CreateInspectionRecordEndpoint(ISender sender)
     : QualityEndpoint<CreateInspectionRecordRequest, ResponseData<CreateInspectionRecordResponse>>
 {
@@ -93,6 +99,22 @@ public sealed class OpenNcrFromInspectionEndpoint(ISender sender)
             req.DefectReason,
             req.AttachmentFileIds ?? []), ct);
         await Send.OkAsync(new OpenNcrFromInspectionResponse(ncrId).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetInspectionRecordEndpoint(ISender sender)
+    : QualityEndpoint<GetInspectionRecordRequest, ResponseData<InspectionRecordResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureQualityContract(QualityInspectionEndpointContracts.Get<GetInspectionRecordEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetInspectionRecordRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new GetInspectionRecordQuery(req.InspectionRecordId, req.OrganizationId, req.EnvironmentId), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 

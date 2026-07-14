@@ -3542,6 +3542,19 @@
     {
       "service": "Quality",
       "method": "GET",
+      "route": "/api/business/v1/quality/inspection-records/{inspectionRecordId}",
+      "operationId": "getBusinessQualityInspectionRecord",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleQualityInspectionRecord"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
       "route": "/api/business/v1/quality/inspection-records",
       "operationId": "listBusinessQualityInspectionRecords",
       "classification": "exposed",

@@ -1171,13 +1171,48 @@ public sealed record BusinessConsoleQualityInspectionPlanCharacteristicsRequest(
     [property: QueryParam] string EnvironmentId);
 
 /// <summary>
-/// 按 id 取单条 NCR 详情（PDA 检验结果页「已触发 NCR」→ 打开 NCR 的互链）。租户隔离由网关按主体
-/// 注入 org/env 并复用 NCR 列表读（列表按 org/env 过滤 + keyword=GUID 命中 x.Id）保证。
+/// 按 id 取单条 NCR 详情（PDA 检验结果页「已触发 NCR」→ 打开 NCR 的互链）。代理真实详情端点，
+/// org/env 随查询下传由 Quality 服务端做租户过滤（越权 id 与不存在同为 not found）。
 /// </summary>
 public sealed record BusinessConsoleQualityNcrDetailRequest(
     [property: RouteParam] string NcrId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId);
+
+/// <summary>
+/// 按 id 取单条检验记录详情（PDA NCR 详情「来源检验记录」→ 打开记录的互链）。代理真实详情端点，
+/// org/env 随查询下传由 Quality 服务端做租户过滤。
+/// </summary>
+public sealed record BusinessConsoleQualityInspectionRecordDetailRequest(
+    [property: RouteParam] string InspectionRecordId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleInspectionRecordResultLine(
+    string CharacteristicCode,
+    string ObservedValue,
+    decimal? MeasuredValue,
+    string? UnitCode,
+    string Result,
+    string? DefectReason,
+    decimal? DefectQuantity);
+
+/// <summary>检验记录详情（含权威结论、处置与回链 NCR id——记录 ↔ NCR 双向互查）。</summary>
+public sealed record BusinessConsoleInspectionRecordDetailResponse(
+    string InspectionRecordId,
+    string SourceType,
+    string SourceService,
+    string SourceDocumentId,
+    string SkuCode,
+    decimal InspectedQuantity,
+    string? BatchNo,
+    string? SerialNo,
+    string? UomCode,
+    string Result,
+    string? DispositionReason,
+    string? NonconformanceReportId,
+    IReadOnlyCollection<BusinessConsoleInspectionRecordResultLine> ResultLines,
+    DateTime CreatedAtUtc);
 
 public sealed record BusinessConsoleInspectionPlanCharacteristicItem(
     string CharacteristicCode,

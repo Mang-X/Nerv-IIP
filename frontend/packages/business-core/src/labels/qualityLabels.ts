@@ -48,3 +48,17 @@ export function inspectionTaskSourceTypeLabel(value: string | null | undefined):
 
 /** 来源类型有序表（筛选 chips 的候选，顺序即展示顺序）。 */
 export const INSPECTION_TASK_SOURCE_TYPES: readonly string[] = ['receiving', 'operation', 'final']
+
+/**
+ * 检验记录权威结论（镜像 Quality `InspectionRecordResults`：passed/rejected/conditional-release）。
+ * 用于检验记录详情/结果页的结论展示。
+ */
+export const inspectionRecordResultLabels: Record<string, string> = {
+  'passed': '合格',
+  'rejected': '不合格',
+  'conditional-release': '条件放行',
+}
+
+export function inspectionRecordResultLabel(value: string | null | undefined): string {
+  return lookup(inspectionRecordResultLabels, value, '未知结论')
+}

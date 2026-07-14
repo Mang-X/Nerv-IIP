@@ -75,6 +75,8 @@ export type {
 } from './inspections/qualityResults'
 export {
   INSPECTION_TASK_SOURCE_TYPES,
+  inspectionRecordResultLabel,
+  inspectionRecordResultLabels,
   inspectionTaskSourceTypeLabel,
   inspectionTaskSourceTypeLabels,
   inspectionTaskStatusLabel,

@@ -4426,6 +4426,67 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_http_client_get_inspection_record_proxies_real_detail_endpoint_with_tenant_scope()
+    {
+        // 代理真实详情端点：GET /quality/inspection-records/{id}，org/env 随查询下传由服务端做租户过滤；
+        // 响应含 NCR 回链 id（记录 ↔ NCR 双向互查）。
+        HttpRequestMessage? seen = null;
+        var handler = new RecordingHandler(request =>
+        {
+            seen = request;
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    inspectionRecordId = "rec-77",
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    sourceType = "receiving",
+                    sourceService = "wms",
+                    sourceDocumentId = "IN-970",
+                    skuCode = "SKU-RM-2300",
+                    inspectedQuantity = 10,
+                    result = "rejected",
+                    dispositionReason = "外观不良，判退",
+                    nonconformanceReportId = "ncr-77",
+                    resultLines = new[]
+                    {
+                        new
+                        {
+                            characteristicCode = "appearance",
+                            observedValue = "scratch",
+                            result = "failed",
+                            defectReason = "SCRATCH",
+                            defectQuantity = 2,
+                        },
+                    },
+                    createdAtUtc = "2026-07-14T01:00:00Z",
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        var detail = await client.GetInspectionRecordAsync(
+            "internal-token-001",
+            new BusinessConsoleQualityInspectionRecordDetailRequest("rec-77", "org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal("rec-77", detail.InspectionRecordId);
+        Assert.Equal("rejected", detail.Result);
+        Assert.Equal("ncr-77", detail.NonconformanceReportId);
+        var line = Assert.Single(detail.ResultLines);
+        Assert.Equal("appearance", line.CharacteristicCode);
+        Assert.Equal("/api/business/v1/quality/inspection-records/rec-77", seen!.RequestUri!.AbsolutePath);
+        var query = seen.RequestUri!.Query;
+        Assert.Contains("organizationId=org-001", query);
+        Assert.Contains("environmentId=env-dev", query);
+    }
+
+    [Fact]
     public async Task Quality_http_client_maps_inspection_record_to_real_downstream_request_shape()
     {
         string? requestBody = null;
@@ -6522,6 +6583,32 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
     }
 
     public BusinessConsoleQualityNcrDetailRequest? LastNcrDetailRequest { get; private set; }
+
+    public BusinessConsoleQualityInspectionRecordDetailRequest? LastInspectionRecordDetailRequest { get; private set; }
+
+    public Task<BusinessConsoleInspectionRecordDetailResponse> GetInspectionRecordAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityInspectionRecordDetailRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastInspectionRecordDetailRequest = request;
+        return Task.FromResult(new BusinessConsoleInspectionRecordDetailResponse(
+            "inspection-record-001",
+            "receiving",
+            "wms",
+            "IN-001",
+            "SKU-001",
+            10m,
+            "LOT-001",
+            null,
+            "kg",
+            "rejected",
+            "外观不良，判退",
+            "ncr-001",
+            [new BusinessConsoleInspectionRecordResultLine("appearance", "scratch", null, null, "failed", "SCRATCH", 2m)],
+            DateTime.Parse("2026-07-14T01:00:00Z")));
+    }
 
     public Task<BusinessConsoleQualityItem> GetNcrAsync(
         string internalBearerToken,
