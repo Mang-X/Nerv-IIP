@@ -70,6 +70,8 @@ try {
     Assert-True ($claimed.Count -eq 1 -and $claimed[0] -eq $sessionId) 'GC must atomically claim an actually stale session.'
     $renewAfterClaim = Renew-NervFullStackSessionLease -SessionId $sessionId -StateRoot $testRoot -LeaseMinutes 30
     Assert-True ($renewAfterClaim.state -eq 'Stopping') 'Lease renewal must never overwrite a GC or user stop claim.'
+    $reclaimedStopping = @(Claim-NervStaleFullStackSessions -StateRoot $testRoot)
+    Assert-True ($reclaimedStopping.Count -eq 1 -and $reclaimedStopping[0] -eq $sessionId) 'GC must reclaim a stale session already left in Stopping.'
 
     $claimedManifest = Read-NervFullStackManifest -SessionId $sessionId -StateRoot $testRoot
     $claimedManifest = Move-NervFullStackSessionState -Manifest $claimedManifest -State Stopped

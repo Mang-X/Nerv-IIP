@@ -214,17 +214,11 @@ try {
         $browserEnvironment = @{
             NERV_IIP_GATEWAY_URL = Get-NervFullStackEndpointValue -Manifest $record.Manifest -ResourceName 'gateway'
             NERV_IIP_BUSINESS_GATEWAY_URL = Get-NervFullStackEndpointValue -Manifest $record.Manifest -ResourceName 'business-gateway'
-            PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $record.Manifest -ResourceName 'business-console'
+            NERV_IIP_PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $record.Manifest -ResourceName 'business-console'
             NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $record.AdminPassword
         }
         try {
-            Invoke-WithScopedEnvironment -Variables $browserEnvironment -ScriptBlock {
-            Invoke-Pnpm `
-                -Arguments @('-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test', 'e2e/fullstack-proxy.spec.ts', '--project=desktop', '--reporter=line', '--output', (Join-Path "$($record.Manifest.artifactPath)" 'test-results')) `
-                -WorkingDirectory $record.WorktreePath `
-                -TimeoutSeconds 300 `
-                -Name "parallel-fullstack-browser-$($record.Index)" | Out-Null
-            }
+            Invoke-NervFullStackProxyBrowserCheck -Environment $browserEnvironment -Manifest $record.Manifest | Out-Null
         }
         finally {
             $record.AdminPassword = $null
@@ -327,7 +321,10 @@ if ($cleanupFailures.Count -gt 0) {
     throw "Parallel acceptance failed. Primary failure: $primaryMessage Cleanup failures: $($cleanupFailures -join ' | ')"
 }
 if ($InjectFailure) {
-    Assert-Acceptance $injectedFailureObserved 'Injected failure was not observed.'
+    if (-not $injectedFailureObserved) {
+        $primaryMessage = if ($primaryFailure) { Protect-ScriptAutomationText -Text "$($primaryFailure.Exception.Message)" } else { 'none' }
+        throw "Injected failure was not observed before the primary failure: $primaryMessage"
+    }
     Write-Host 'Parallel full-stack injected-failure cleanup acceptance passed.'
     exit 0
 }

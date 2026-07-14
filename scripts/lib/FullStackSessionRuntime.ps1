@@ -67,6 +67,38 @@ function Test-NervDockerOptionalSessionLabel {
     return $null -eq $sessionLabel -or "$($sessionLabel.Value)" -ceq $SessionId
 }
 
+function Test-NervDockerNetworkOwnership {
+    param(
+        [Parameter(Mandatory)] [object] $InspectObject,
+        [Parameter(Mandatory)] [string] $SessionId,
+        [string[]] $RecordedIds = @()
+    )
+
+    if ($SessionId -notmatch $script:NervFullStackSessionIdPattern) { return $false }
+    if (@('bridge', 'host', 'none') -ccontains "$($InspectObject.Name)") { return $false }
+
+    $id = "$($InspectObject.Id)"
+    $labels = if ($null -ne $InspectObject.PSObject.Properties['Labels']) { $InspectObject.Labels } else { $null }
+    $sessionLabel = if ($null -ne $labels) { $labels.PSObject.Properties['com.nerv-iip.session'] } else { $null }
+    if ($null -ne $sessionLabel) { return "$($sessionLabel.Value)" -ceq $SessionId }
+    return $RecordedIds -ccontains $id
+}
+
+function Get-NervFullStackCleanupWorkingDirectory {
+    param([string] $StateRoot = (Get-NervFullStackStateRoot))
+
+    $path = [System.IO.Path]::GetFullPath($StateRoot)
+    [void] [System.IO.Directory]::CreateDirectory($path)
+    return $path
+}
+
+function Test-NervFullStackAppHostAvailable {
+    param([Parameter(Mandatory)] [object] $Manifest)
+
+    return (Test-Path -LiteralPath "$($Manifest.worktreeRoot)" -PathType Container) -and
+        (Test-Path -LiteralPath "$($Manifest.appHostProject)" -PathType Leaf)
+}
+
 function Read-NervAspireJson {
     param(
         [Parameter(Mandatory)] [AllowEmptyString()] [string] $Text,
@@ -280,21 +312,7 @@ function Invoke-NervFullStackSmokeScenario {
     if ($null -eq $BrowserAction) {
         $BrowserAction = {
             param($Environment, $InputManifest)
-            try {
-                foreach ($entry in $Environment.GetEnumerator()) { Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value }
-                Invoke-Pnpm `
-                    -Arguments @(
-                        '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
-                        'e2e/fullstack-proxy.spec.ts', '--project=desktop', '--reporter=line',
-                        '--output', (Join-Path "$($InputManifest.artifactPath)" 'test-results')
-                    ) `
-                    -WorkingDirectory "$($InputManifest.worktreeRoot)" `
-                    -TimeoutSeconds 300 `
-                    -Name "fullstack-$($InputManifest.sessionId)-playwright" | Out-Null
-            }
-            finally {
-                foreach ($key in $Environment.Keys) { Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue }
-            }
+            Invoke-NervFullStackProxyBrowserCheck -Environment $Environment -Manifest $InputManifest | Out-Null
         }
     }
 
@@ -316,11 +334,126 @@ function Invoke-NervFullStackSmokeScenario {
     $childEnvironment = @{
         NERV_IIP_GATEWAY_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'gateway'
         NERV_IIP_BUSINESS_GATEWAY_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-gateway'
-        PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-console'
+        NERV_IIP_PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-console'
         NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $SessionAdminPassword
     }
     & $BrowserAction $childEnvironment $Manifest | Out-Null
     return [pscustomobject]@{ ExitCode = 0; ChildEnvironment = $childEnvironment; CheckedResources = $resourceNames }
+}
+
+function Assert-NervPlaywrightJsonReport {
+    param([Parameter(Mandatory)] [string] $ReportPath)
+
+    if (-not (Test-Path -LiteralPath $ReportPath -PathType Leaf)) {
+        throw "Playwright JSON report was not created at '$ReportPath'."
+    }
+    $report = Get-Content -LiteralPath $ReportPath -Raw | ConvertFrom-Json -Depth 100
+    if ($null -eq $report.stats) { throw "Playwright JSON report '$ReportPath' has no stats object." }
+    $expected = [int] $report.stats.expected
+    $skipped = [int] $report.stats.skipped
+    $unexpected = [int] $report.stats.unexpected
+    if ($expected -lt 1 -or $skipped -ne 0 -or $unexpected -ne 0) {
+        throw "Playwright full-stack gate requires at least one expected test and zero skipped or unexpected tests; expected=$expected skipped=$skipped unexpected=$unexpected."
+    }
+    return $report
+}
+
+function Invoke-NervFullStackProxyBrowserCheck {
+    param(
+        [Parameter(Mandatory)] [hashtable] $Environment,
+        [Parameter(Mandatory)] [object] $Manifest
+    )
+
+    [void] [System.IO.Directory]::CreateDirectory("$($Manifest.artifactPath)")
+    $reportPath = Join-Path "$($Manifest.artifactPath)" 'playwright-fullstack-proxy.json'
+    Remove-Item -LiteralPath $reportPath -Force -ErrorAction SilentlyContinue
+    $browserEnvironment = @{}
+    foreach ($entry in $Environment.GetEnumerator()) { $browserEnvironment[$entry.Key] = "$($entry.Value)" }
+    $browserEnvironment.PLAYWRIGHT_JSON_OUTPUT_FILE = $reportPath
+    Invoke-WithScopedEnvironment -Variables $browserEnvironment -ScriptBlock {
+        Invoke-Pnpm `
+            -Arguments @(
+                '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
+                'e2e/fullstack-proxy.spec.ts', '--project=desktop', '--reporter=json',
+                '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
+            ) `
+            -WorkingDirectory "$($Manifest.worktreeRoot)" `
+            -TimeoutSeconds 300 `
+            -Name "fullstack-$($Manifest.sessionId)-playwright" | Out-Null
+    }
+    return Assert-NervPlaywrightJsonReport -ReportPath $reportPath
+}
+
+function Invoke-NervFullStackGuardian {
+    param(
+        [Parameter(Mandatory)] [string] $SessionId,
+        [Parameter(Mandatory)] [ValidateSet('Automated', 'Interactive')] [string] $Mode,
+        [int] $CoordinatorPid,
+        [string] $CoordinatorStartTimeUtc,
+        [ValidateRange(1, 3600)] [int] $IntervalSeconds = 60,
+        [ValidateRange(1, 10)] [int] $MaximumObservationFailures = 3,
+        [ValidateRange(1, 10)] [int] $MaximumStopAttempts = 3,
+        [scriptblock] $ReadAction,
+        [scriptblock] $CoordinatorAliveAction,
+        [scriptblock] $StopAction,
+        [scriptblock] $DelayAction
+    )
+
+    if ($null -eq $ReadAction) { $ReadAction = { Read-NervFullStackManifest -SessionId $SessionId } }
+    if ($null -eq $CoordinatorAliveAction) {
+        $CoordinatorAliveAction = { Test-NervProcessIdentity -ProcessId $CoordinatorPid -ProcessStartTimeUtc $CoordinatorStartTimeUtc }
+    }
+    if ($null -eq $StopAction) {
+        $StopAction = {
+            Invoke-WithScopedEnvironment -Variables @{ NERV_IIP_FULLSTACK_CALLER_GUARDIAN_PID = "$PID" } -ScriptBlock {
+                Invoke-PwshScript `
+                    -ScriptPath (Join-Path $runtimeLibraryRoot 'scripts/fullstack-session.ps1') `
+                    -Arguments @('stop', '-SessionId', $SessionId) `
+                    -WorkingDirectory $runtimeLibraryRoot `
+                    -TimeoutSeconds 300 `
+                    -Name "fullstack-$SessionId-guardian-stop" | Out-Null
+            }
+        }
+    }
+    if ($null -eq $DelayAction) { $DelayAction = { param($Seconds) Start-Sleep -Seconds $Seconds } }
+
+    $observationFailures = 0
+    while ($true) {
+        try {
+            $manifest = & $ReadAction
+            $observationFailures = 0
+        }
+        catch {
+            $observationFailures++
+            Write-Warning "Guardian manifest observation $observationFailures/$MaximumObservationFailures failed for '$SessionId': $($_.Exception.Message)"
+            if ($observationFailures -ge $MaximumObservationFailures) { throw }
+            & $DelayAction $IntervalSeconds
+            continue
+        }
+
+        if ("$($manifest.state)" -eq 'Stopped') { return [pscustomobject]@{ State = 'Stopped' } }
+        $leaseExpired = [DateTimeOffset] $manifest.leaseExpiresAtUtc -le [DateTimeOffset]::UtcNow
+        $coordinatorMissing = $Mode -eq 'Automated' -and
+            ($CoordinatorPid -le 0 -or [string]::IsNullOrWhiteSpace($CoordinatorStartTimeUtc) -or -not (& $CoordinatorAliveAction))
+        if (-not ($leaseExpired -or $coordinatorMissing)) {
+            & $DelayAction $IntervalSeconds
+            continue
+        }
+
+        $lastStopError = 'cleanup did not reach Stopped'
+        for ($attempt = 1; $attempt -le $MaximumStopAttempts; $attempt++) {
+            try {
+                & $StopAction
+                $afterStop = & $ReadAction
+                if ("$($afterStop.state)" -eq 'Stopped') { return [pscustomobject]@{ State = 'Stopped' } }
+                $lastStopError = "cleanup returned state '$($afterStop.state)'"
+            }
+            catch { $lastStopError = $_.Exception.Message }
+            Write-Warning "Guardian stop attempt $attempt/$MaximumStopAttempts failed for '$SessionId': $lastStopError"
+            if ($attempt -lt $MaximumStopAttempts) { & $DelayAction $IntervalSeconds }
+        }
+        throw "Guardian could not stop session '$SessionId' after $MaximumStopAttempts attempts: $lastStopError"
+    }
 }
 
 function Get-NervFullStackCollectTimeoutSeconds {
@@ -640,7 +773,7 @@ function Get-NervContainerNetworkIds {
 function Get-NervSessionDockerResources {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
-        [string] $WorkingDirectory = "$($Manifest.worktreeRoot)"
+        [string] $WorkingDirectory = (Get-NervFullStackCleanupWorkingDirectory)
     )
 
     $sessionId = "$($Manifest.sessionId)"
@@ -686,8 +819,7 @@ function Get-NervSessionDockerResources {
         }
         else { @() }
         $networks = @($networkInspect | Where-Object {
-            $candidateNetworkIds -ccontains "$($_.Id)" -and
-                (Test-NervDockerOptionalSessionLabel -Labels $_.Labels -SessionId $sessionId)
+            Test-NervDockerNetworkOwnership -InspectObject $_ -SessionId $sessionId -RecordedIds $recordedNetworkIds
         })
         $ownedNetworkIds = @($networks | ForEach-Object { "$($_.Id)" })
         foreach ($id in $presentNetworkIds) {
@@ -732,7 +864,7 @@ function Get-NervSessionDockerResources {
 function Remove-NervSessionDockerResources {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
-        [string] $WorkingDirectory = "$($Manifest.worktreeRoot)",
+        [string] $WorkingDirectory = (Get-NervFullStackCleanupWorkingDirectory),
         [ValidateRange(1, 600)] [int] $TimeoutSeconds = 120
     )
 
@@ -864,9 +996,10 @@ function Stop-NervFullStackSession {
     if ($null -eq $AspireStopAction) {
         $AspireStopAction = {
             param($Manifest)
+            if (-not (Test-NervFullStackAppHostAvailable -Manifest $Manifest)) { return }
             Invoke-AspireOutput `
                 -Arguments @('stop', '--apphost', "$($Manifest.appHostProject)", '--non-interactive', '--nologo') `
-                -WorkingDirectory "$($Manifest.worktreeRoot)" `
+                -WorkingDirectory (Get-NervFullStackCleanupWorkingDirectory -StateRoot $StateRoot) `
                 -TimeoutSeconds 150 `
                 -Name "fullstack-$($Manifest.sessionId)-aspire-stop" | Out-Null
         }
@@ -899,7 +1032,7 @@ function Stop-NervFullStackSession {
     if ($null -eq $DockerRemoveAction) {
         $DockerRemoveAction = {
             param($Manifest)
-            Remove-NervSessionDockerResources -Manifest $Manifest -WorkingDirectory "$($Manifest.worktreeRoot)"
+            Remove-NervSessionDockerResources -Manifest $Manifest -WorkingDirectory (Get-NervFullStackCleanupWorkingDirectory -StateRoot $StateRoot)
         }
     }
 

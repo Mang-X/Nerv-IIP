@@ -14,6 +14,30 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $nerv = Join-Path $repoRoot 'nerv.ps1'
 
+$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
+if ($appHostText.Contains('env: fullStackEphemeral ? "PORT" : null') -or -not $appHostText.Contains('env: fullStackEphemeral ? "NERV_IIP_VITE_PORT" : null')) {
+    throw 'Ephemeral Vite endpoints must use the dedicated NERV_IIP_VITE_PORT environment variable.'
+}
+foreach ($relativePath in @(
+    'frontend/apps/console/vite.config.ts',
+    'frontend/apps/business-console/vite.config.ts',
+    'frontend/apps/screen/vite.config.ts'
+)) {
+    $viteText = Get-Content -LiteralPath (Join-Path $repoRoot $relativePath) -Raw
+    if ($viteText.Contains('process.env.PORT') -or -not $viteText.Contains('process.env.NERV_IIP_VITE_PORT')) {
+        throw "$relativePath must not let a generic PORT variable change persistent development ports."
+    }
+}
+foreach ($relativePath in @(
+    'frontend/apps/console/playwright.config.ts',
+    'frontend/apps/business-console/playwright.config.ts'
+)) {
+    $playwrightText = Get-Content -LiteralPath (Join-Path $repoRoot $relativePath) -Raw
+    if ($playwrightText.Contains('process.env.PLAYWRIGHT_BASE_URL') -or -not $playwrightText.Contains('process.env.NERV_IIP_PLAYWRIGHT_BASE_URL')) {
+        throw "$relativePath must use the dedicated NERV_IIP_PLAYWRIGHT_BASE_URL override."
+    }
+}
+
 function Invoke-Nerv {
     param(
         [Parameter(Mandatory)]

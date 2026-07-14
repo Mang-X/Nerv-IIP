@@ -384,7 +384,11 @@ function Claim-NervStaleFullStackSessions {
     return @(Invoke-WithNervFullStackSessionLock -StateRoot $StateRoot -TimeoutSeconds $TimeoutSeconds -ScriptBlock {
         $claimed = [System.Collections.Generic.List[string]]::new()
         foreach ($manifest in @(Get-NervFullStackManifests -StateRoot $StateRoot)) {
-            if ("$($manifest.state)" -eq 'Stopping' -or -not (Test-NervFullStackSessionStale -Manifest $manifest -Now $Now)) {
+            if (-not (Test-NervFullStackSessionStale -Manifest $manifest -Now $Now)) {
+                continue
+            }
+            if ("$($manifest.state)" -eq 'Stopping') {
+                $claimed.Add("$($manifest.sessionId)")
                 continue
             }
             $manifest = Move-NervFullStackSessionState -Manifest $manifest -State Stopping

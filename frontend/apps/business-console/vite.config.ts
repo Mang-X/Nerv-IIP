@@ -30,7 +30,11 @@ const dhxAlias = dhxInstalled
       '@dhx/trial-gantt': existsSync(dhxVendor) ? dhxVendor : dhxStub,
     }
 
-const port = Number(process.env.PORT ?? '5125')
+const configuredPort = process.env.NERV_IIP_VITE_PORT
+const port = Number(configuredPort ?? '5125')
+if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+  throw new Error(`NERV_IIP_VITE_PORT must be an integer from 1 through 65535; received '${configuredPort}'.`)
+}
 
 export default defineConfig({
   plugins: [

@@ -35,7 +35,7 @@ Modify:
 5. `scripts/tests/check-script-governance.Tests.ps1` - detached helper survival and log tests.
 6. `infra/aspire/Nerv.IIP.AppHost/Program.cs` - validated ephemeral session mode, dynamic endpoint definitions, session-specific stateful volume names, and container runtime ownership labels.
 7. `frontend/apps/console/vite.config.ts`, `frontend/apps/business-console/vite.config.ts`, and `frontend/apps/screen/vite.config.ts` - honor Aspire-injected `PORT` with existing fixed ports as fallbacks.
-8. `frontend/apps/console/playwright.config.ts` and `frontend/apps/business-console/playwright.config.ts` - attach to manifest-derived `PLAYWRIGHT_BASE_URL` without starting a second Vite server.
+8. `frontend/apps/console/playwright.config.ts` and `frontend/apps/business-console/playwright.config.ts` - attach to manifest-derived `NERV_IIP_PLAYWRIGHT_BASE_URL` without starting a second Vite server.
 9. `README.md` - persistent development versus ephemeral full-stack usage.
 10. `infra/aspire/README.md` - AppHost session-mode environment contract.
 11. `docs/architecture/deployment-baseline.md` - isolated full-stack topology and temporary storage ownership.
@@ -397,7 +397,7 @@ For every .NET project resource, preserve the current `.WithHttpEndpoint(port: <
 In each Vite config, replace the literal server port with an environment-aware fallback and retain existing proxies:
 
 ```typescript
-const port = Number(process.env.PORT ?? '<existing-port>')
+const port = Number(process.env.NERV_IIP_VITE_PORT ?? '<existing-port>')
 
 server: {
   port,
@@ -411,7 +411,7 @@ Use `5105`, `5125`, and `5128` respectively for `<existing-port>`. The Vite prox
 In both Playwright configs, use the manifest-provided URL when present and do not launch another Vite server:
 
 ```typescript
-const externalBaseURL = process.env.PLAYWRIGHT_BASE_URL
+const externalBaseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const baseURL = externalBaseURL ?? `http://127.0.0.1:${port}`
 
 export default defineConfig({
@@ -422,12 +422,12 @@ export default defineConfig({
 })
 ```
 
-Create `fullstack-proxy.spec.ts` as an explicitly unmocked test: it must not install `page.route` handlers. Require `PLAYWRIGHT_BASE_URL` and a process-only `NERV_IIP_FULLSTACK_ADMIN_PASSWORD`, open the dynamic Business Console `/login`, sign in as `admin`, and then visit `/master-data/skus`. Require 2xx responses from `/api/console/v1/auth/login` and `/api/business-console/v1/master-data/skus`. Assert both request origins exactly equal `new URL(PLAYWRIGHT_BASE_URL).origin`, and fail if any browser `/api/` request targets a Gateway origin directly. This proves both `/api/console` and `/api/business-console` traverse Vite's same-origin proxies; the fixed Gateway CORS allowlist is intentionally not expanded for ephemeral ports.
+Create `fullstack-proxy.spec.ts` as an explicitly unmocked test: it must not install `page.route` handlers. Require `NERV_IIP_PLAYWRIGHT_BASE_URL` and a process-only `NERV_IIP_FULLSTACK_ADMIN_PASSWORD`, open the dynamic Business Console `/login`, sign in as `admin`, and then visit `/master-data/skus`. Require 2xx responses from `/api/console/v1/auth/login` and `/api/business-console/v1/master-data/skus`. Assert both request origins exactly equal `new URL(NERV_IIP_PLAYWRIGHT_BASE_URL).origin`, and fail if any browser `/api/` request targets a Gateway origin directly. This proves both `/api/console` and `/api/business-console` traverse Vite's same-origin proxies; the fixed Gateway CORS allowlist is intentionally not expanded for ephemeral ports.
 
 ```typescript
 import { expect, test } from '@playwright/test'
 
-const baseURL = process.env.PLAYWRIGHT_BASE_URL
+const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
 
 test.skip(!baseURL || !adminPassword, 'requires a managed full-stack session')
@@ -684,7 +684,7 @@ Add fixture-driven tests for `Invoke-NervFullStackSmokeScenario` using injected 
 @{
     NERV_IIP_GATEWAY_URL = $manifest.endpoints.gateway
     NERV_IIP_BUSINESS_GATEWAY_URL = $manifest.endpoints.'business-gateway'
-    PLAYWRIGHT_BASE_URL = $manifest.endpoints.'business-console'
+    NERV_IIP_PLAYWRIGHT_BASE_URL = $manifest.endpoints.'business-console'
     NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $sessionAdminPassword
 }
 ```

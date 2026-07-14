@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
 const port = Number(process.env.PLAYWRIGHT_BUSINESS_CONSOLE_PORT ?? 5126)
-const externalBaseURL = process.env.PLAYWRIGHT_BASE_URL
+const externalBaseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const baseURL = externalBaseURL ?? `http://127.0.0.1:${port}`
 
 export default defineConfig({

@@ -184,10 +184,10 @@ The manifest stores URLs by stable resource name, including at least the resourc
 ```text
 NERV_IIP_GATEWAY_URL
 NERV_IIP_BUSINESS_GATEWAY_URL
-PLAYWRIGHT_BASE_URL
+NERV_IIP_PLAYWRIGHT_BASE_URL
 ```
 
-HTTP scenarios receive these values from the manifest. Existing Playwright configs must accept `PLAYWRIGHT_BASE_URL` as an override and skip their own `webServer` when that URL is supplied, so full-stack browser scenarios attach to the Aspire-started Vite resource. A dedicated unmocked acceptance spec signs in through relative `/api/console` and then exercises a relative `/api/business-console` request, asserting both observed request origins equal the dynamic Vite origin. This is the executable proof that the fixed Gateway CORS list is harmless in ephemeral mode. The tests do not scan ports, assume `5100`/`5125`, or depend on a global reverse proxy.
+HTTP scenarios receive these values from the manifest. Existing Playwright configs must accept `NERV_IIP_PLAYWRIGHT_BASE_URL` as an override and skip their own `webServer` when that URL is supplied, so full-stack browser scenarios attach to the Aspire-started Vite resource. The dedicated name prevents a stale generic environment variable from changing ordinary local E2E behavior. A dedicated unmocked acceptance spec signs in through relative `/api/console` and then exercises a relative `/api/business-console` request, asserting both observed request origins equal the dynamic Vite origin. This is the executable proof that the fixed Gateway CORS list is harmless in ephemeral mode. The tests do not scan ports, assume `5100`/`5125`, or depend on a global reverse proxy.
 
 ## Session State Machine
 

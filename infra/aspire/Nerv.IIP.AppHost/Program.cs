@@ -631,7 +631,7 @@ builder.AddViteApp("console", "../../../frontend/apps/console")
         port: fullStackEphemeral ? null : 5105,
         scheme: "http",
         name: "http",
-        env: fullStackEphemeral ? "PORT" : null,
+        env: fullStackEphemeral ? "NERV_IIP_VITE_PORT" : null,
         isProxied: fullStackEphemeral)
     .WithPnpm()
     .WithEnvironment("NERV_IIP_GATEWAY_URL", gateway.GetEndpoint("http"))
@@ -647,7 +647,7 @@ builder.AddViteApp("business-console", "../../../frontend/apps/business-console"
         port: fullStackEphemeral ? null : 5125,
         scheme: "http",
         name: "http",
-        env: fullStackEphemeral ? "PORT" : null,
+        env: fullStackEphemeral ? "NERV_IIP_VITE_PORT" : null,
         isProxied: fullStackEphemeral)
     .WithPnpm()
     .WithEnvironment("NERV_IIP_PLATFORM_GATEWAY_URL", gateway.GetEndpoint("http"))
@@ -665,7 +665,7 @@ builder.AddViteApp("screen", "../../../frontend/apps/screen")
         port: fullStackEphemeral ? null : 5128,
         scheme: "http",
         name: "http",
-        env: fullStackEphemeral ? "PORT" : null,
+        env: fullStackEphemeral ? "NERV_IIP_VITE_PORT" : null,
         isProxied: fullStackEphemeral)
     .WithPnpm()
     .WithEnvironment("NERV_IIP_PLATFORM_GATEWAY_URL", gateway.GetEndpoint("http"))

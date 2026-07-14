@@ -59,6 +59,7 @@ foreach ($requiredText in @(
     'Remove-AcceptanceWorktree',
     'Test-NervProcessIdentity',
     'Primary failure:',
+    'Injected failure was not observed before the primary failure:',
     'PGPASSWORD="$POSTGRES_PASSWORD"',
     "-TimeoutSeconds 300 ``",
     'finally',
@@ -136,6 +137,15 @@ Assert-True `
 Assert-True `
     (-not (Test-NervDockerOptionalSessionLabel -Labels ([pscustomobject]@{ 'com.nerv-iip.session' = 'nerv-ffff-654321' }) -SessionId $sessionId)) `
     'An exposed volume label from another session must be rejected.'
+Assert-True `
+    (-not (Test-NervDockerNetworkOwnership -InspectObject ([pscustomobject]@{ Id = 'shared-network'; Name = 'shared'; Labels = $null }) -SessionId $sessionId -RecordedIds @())) `
+    'An unrecorded unlabeled network discovered from a container must not be owned.'
+Assert-True `
+    (Test-NervDockerNetworkOwnership -InspectObject ([pscustomobject]@{ Id = 'recorded-network'; Name = 'session-network'; Labels = $null }) -SessionId $sessionId -RecordedIds @('recorded-network')) `
+    'An exact manifest-recorded network may be recovered when Docker exposes no label.'
+Assert-True `
+    (-not (Test-NervDockerNetworkOwnership -InspectObject ([pscustomobject]@{ Id = 'bridge-id'; Name = 'bridge'; Labels = $null }) -SessionId $sessionId -RecordedIds @('bridge-id'))) `
+    'Docker predefined networks must never be removed by a session cleanup.'
 
 $environment = Get-NervFullStackEnvironment -SessionId $sessionId
 Assert-True ($environment.NERV_IIP_EPHEMERAL -eq 'true') 'Ephemeral flag missing.'
@@ -213,12 +223,27 @@ foreach ($name in @('gateway', 'business-gateway', 'console', 'business-console'
 $expectedBrowserEnvironment = @{
     NERV_IIP_GATEWAY_URL = $scenarioManifest.endpoints.gateway
     NERV_IIP_BUSINESS_GATEWAY_URL = $scenarioManifest.endpoints.'business-gateway'
-    PLAYWRIGHT_BASE_URL = $scenarioManifest.endpoints.'business-console'
+    NERV_IIP_PLAYWRIGHT_BASE_URL = $scenarioManifest.endpoints.'business-console'
     NERV_IIP_FULLSTACK_ADMIN_PASSWORD = 'process-only-password'
 }
 Assert-True ($script:browserEnvironment.Count -eq $expectedBrowserEnvironment.Count) 'Browser child environment contained unexpected keys.'
 foreach ($key in $expectedBrowserEnvironment.Keys) {
     Assert-True ($script:browserEnvironment[$key] -ceq $expectedBrowserEnvironment[$key]) "Unexpected browser environment value for '$key'."
+}
+$playwrightReportRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-playwright-$([guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($playwrightReportRoot) | Out-Null
+    $passedReport = Join-Path $playwrightReportRoot 'passed.json'
+    [IO.File]::WriteAllText($passedReport, '{"stats":{"expected":1,"skipped":0,"unexpected":0,"flaky":0}}')
+    Assert-NervPlaywrightJsonReport -ReportPath $passedReport | Out-Null
+    $skippedReport = Join-Path $playwrightReportRoot 'skipped.json'
+    [IO.File]::WriteAllText($skippedReport, '{"stats":{"expected":0,"skipped":1,"unexpected":0,"flaky":0}}')
+    $skippedReportFailed = $false
+    try { Assert-NervPlaywrightJsonReport -ReportPath $skippedReport | Out-Null } catch { $skippedReportFailed = $true }
+    Assert-True $skippedReportFailed 'A skipped-only Playwright report must fail the full-stack browser gate.'
+}
+finally {
+    Remove-Item -LiteralPath $playwrightReportRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 $finishedFailed = $false
 try {
@@ -319,6 +344,43 @@ $aspireRetryResult = Invoke-NervAspireStartWithRetry `
 Assert-True ($aspireRetryResult -eq 'started') 'Aspire startup retry must return the successful result.'
 Assert-True ($script:aspireRetryCalls -eq 2) 'Aspire startup must retry one transient MSBuild resource failure.'
 Assert-True ($script:aspireRetryCleanupCalls -eq 1) 'Aspire startup retry must clean the failed attempt first.'
+
+$missingWorktree = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-missing-worktree-$([guid]::NewGuid().ToString('N'))"
+$cleanupStateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-cleanup-state-$([guid]::NewGuid().ToString('N'))"
+try {
+    $cleanupWorkingDirectory = Get-NervFullStackCleanupWorkingDirectory -StateRoot $cleanupStateRoot
+    Assert-True (Test-Path -LiteralPath $cleanupWorkingDirectory -PathType Container) 'Cleanup must use an existing state-root working directory.'
+    Assert-True (-not (Test-NervFullStackAppHostAvailable -Manifest ([pscustomobject]@{ worktreeRoot = $missingWorktree; appHostProject = (Join-Path $missingWorktree 'AppHost.csproj') }))) 'Aspire stop must be skipped after its worktree and AppHost project were removed.'
+}
+finally {
+    Remove-Item -LiteralPath $cleanupStateRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$script:guardianReads = 0
+$script:guardianStops = 0
+$guardianResult = Invoke-NervFullStackGuardian `
+    -SessionId $sessionId `
+    -Mode Automated `
+    -CoordinatorPid 1 `
+    -CoordinatorStartTimeUtc '2000-01-01T00:00:00Z' `
+    -IntervalSeconds 1 `
+    -MaximumObservationFailures 3 `
+    -MaximumStopAttempts 3 `
+    -ReadAction {
+        $script:guardianReads++
+        if ($script:guardianReads -eq 1) { throw 'transient manifest lock' }
+        if ($script:guardianStops -eq 0) { return [pscustomobject]@{ state = 'Running'; leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O') } }
+        return [pscustomobject]@{ state = 'Stopped'; leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O') }
+    } `
+    -CoordinatorAliveAction { $false } `
+    -StopAction {
+        $script:guardianStops++
+        if ($script:guardianStops -eq 1) { throw 'transient stop failure' }
+    } `
+    -DelayAction { param($Seconds) }
+Assert-True ($guardianResult.State -eq 'Stopped') 'Guardian must survive transient manifest and stop failures until cleanup reaches Stopped.'
+Assert-True ($script:guardianReads -ge 3) 'Guardian must retry manifest observation after a transient read failure.'
+Assert-True ($script:guardianStops -eq 2) 'Guardian must retry a failed stop operation.'
 
 $script:worktreeStoppedPids = [System.Collections.Generic.List[int]]::new()
 $worktreeProcessResult = Stop-NervWorktreeProcesses `
