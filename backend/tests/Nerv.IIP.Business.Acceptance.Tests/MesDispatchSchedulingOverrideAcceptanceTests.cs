@@ -2,12 +2,15 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Messaging.CAP;
+using MesDbContext = Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext;
+using SchedulingDbContext = Nerv.IIP.Business.Scheduling.Infrastructure.ApplicationDbContext;
 
 namespace Nerv.IIP.Business.Acceptance.Tests;
 
@@ -17,15 +20,31 @@ public sealed class MesDispatchSchedulingOverrideAcceptanceTests
     public async Task Manual_mes_dispatch_is_preserved_by_the_next_scheduling_run()
     {
         var start = new DateTimeOffset(2026, 7, 14, 8, 0, 0, TimeSpan.Zero);
-        var task = OperationTask.Queue(
-            "org-1", "env-1", "WO-1", "OP-10", 10, "WC-1", [], start, TimeSpan.FromHours(1));
-        task.Assign(null, "DEVICE-2", "SHIFT-1", start.AddMinutes(-5));
-        var domainEvent = Assert.IsType<OperationTaskManuallyDispatchedDomainEvent>(task.GetDomainEvents().Single());
-        var integrationEvent = new OperationTaskManuallyDispatchedIntegrationEventConverter().Convert(domainEvent);
+        await using var mesDb = new MesDbContext(
+            new DbContextOptionsBuilder<MesDbContext>()
+                .UseInMemoryDatabase($"mes-dispatch-acceptance-{Guid.NewGuid():N}").Options,
+            new NoopMediator());
+        mesDb.OperationTasks.Add(OperationTask.Queue(
+            "org-1", "env-1", "WO-1", "OP-10", 10, "WC-1", [], start, TimeSpan.FromHours(1)));
+        await mesDb.SaveChangesAsync();
+        mesDb.ChangeTracker.Clear();
+        var dispatchHandler = new AssignDispatchTaskCommandHandler(mesDb);
 
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+        await dispatchHandler.Handle(new AssignDispatchTaskCommand(
+            "org-1", "env-1", "OP-10", null, "DEVICE-2", "SHIFT-1", start.AddMinutes(-5)),
+            CancellationToken.None);
+
+        var persistedTask = await mesDb.OperationTasks.SingleAsync();
+        var domainEvent = Assert.IsType<OperationTaskManuallyDispatchedDomainEvent>(persistedTask.GetDomainEvents().Single());
+        var integrationEvent = new OperationTaskManuallyDispatchedIntegrationEventConverter().Convert(domainEvent);
+        await mesDb.SaveChangesAsync();
+        mesDb.ChangeTracker.Clear();
+        var reloadedTask = await mesDb.OperationTasks.SingleAsync();
+        Assert.Equal("DEVICE-2", reloadedTask.DeviceAssetId);
+
+        var options = new DbContextOptionsBuilder<SchedulingDbContext>()
             .UseInMemoryDatabase($"mes-dispatch-scheduling-acceptance-{Guid.NewGuid():N}").Options;
-        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        await using var db = new SchedulingDbContext(options, new NoopMediator());
         var handler = new MesOperationTaskManuallyDispatchedIntegrationEventHandlerForUpsertOverride(
             db, new InMemoryIntegrationEventDeadLetterStore());
 

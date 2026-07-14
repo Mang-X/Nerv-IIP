@@ -28,9 +28,11 @@ public sealed class SchedulingOperationOverrideOverlay(ApplicationDbContext dbCo
             .ToArrayAsync(cancellationToken);
 
         var validKeys = operationKeys.ToHashSet();
-        var merged = problem.LockedAssignments
-            .Where(x => validKeys.Contains((x.OrderId, x.OperationId)))
-            .ToDictionary(x => (x.OrderId, x.OperationId));
+        var merged = new Dictionary<(string OrderId, string OperationId), SchedulingLockedAssignmentContract>();
+        foreach (var locked in problem.LockedAssignments.Where(x => validKeys.Contains((x.OrderId, x.OperationId))))
+        {
+            merged[(locked.OrderId, locked.OperationId)] = locked;
+        }
         foreach (var item in overrides.Where(x => validKeys.Contains((x.WorkOrderId, x.OperationId))))
         {
             merged[(item.WorkOrderId, item.OperationId)] = new SchedulingLockedAssignmentContract(

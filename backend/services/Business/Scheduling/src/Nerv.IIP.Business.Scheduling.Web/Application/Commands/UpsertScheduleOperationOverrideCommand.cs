@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
@@ -48,8 +49,18 @@ public sealed class UpsertScheduleOperationOverrideCommandHandler(
             .SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId && x.ProblemId == plan.ProblemId, cancellationToken)
             ?? throw new KnownException($"Schedule problem snapshot was not found, ProblemId = {plan.ProblemId}");
-        var problem = JsonSerializer.Deserialize<SchedulingProblemContract>(snapshot.ProblemJson, SchedulingJson.Options)
-            ?? throw new KnownException($"Schedule problem details are unavailable, ProblemId = {plan.ProblemId}");
+        SchedulingProblemContract problem;
+        try
+        {
+            problem = JsonSerializer.Deserialize<SchedulingProblemContract>(snapshot.ProblemJson, SchedulingJson.Options)
+                ?? throw new JsonException("The scheduling problem payload is empty.");
+            problem = SchedulingProblemNormalizer.Normalize(problem);
+        }
+        catch (Exception exception) when (exception is JsonException or ArgumentException or NullReferenceException)
+        {
+            throw new KnownException(
+                $"Schedule problem details are unavailable for manual override, ProblemId = {plan.ProblemId}");
+        }
         var pair = problem.Orders
             .SelectMany(order => order.Operations.Select(operation => (Order: order, Operation: operation)))
             .SingleOrDefault(x => x.Operation.OperationId == request.OperationId);

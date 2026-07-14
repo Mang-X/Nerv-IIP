@@ -41,7 +41,7 @@ public sealed class AssembleSchedulingProblemCommandHandler(
             throw new KnownException("BasePlanId is required when LockedOperationIds are supplied.");
         }
 
-        var resolvedLocks = new List<SchedulingLockedAssignmentContract>(source.LockedAssignments ?? []);
+        var resolvedLocks = new Dictionary<(string OrderId, string OperationId), SchedulingLockedAssignmentContract>();
         if (!string.IsNullOrWhiteSpace(source.BasePlanId))
         {
             if (dbContext is null)
@@ -56,14 +56,20 @@ public sealed class AssembleSchedulingProblemCommandHandler(
             {
                 var assignment = plan.Assignments.SingleOrDefault(x => x.OperationId == operationId)
                     ?? throw new KnownException($"Schedule operation was not found in base plan, OperationId = {operationId}");
-                resolvedLocks.Add(new SchedulingLockedAssignmentContract(
+                resolvedLocks[(assignment.WorkOrderId, assignment.OperationId)] = new SchedulingLockedAssignmentContract(
                     assignment.AssignmentId, assignment.WorkOrderId, assignment.OperationId,
                     assignment.OperationSequence, assignment.ResourceId, assignment.WorkCenterId,
-                    assignment.StartUtc, assignment.EndUtc, "base-plan-lock"));
+                    assignment.StartUtc, assignment.EndUtc, "base-plan-lock");
             }
         }
 
-        var problem = await producer.AssembleAsync(source with { LockedAssignments = resolvedLocks }, cancellationToken);
+        foreach (var explicitLock in source.LockedAssignments ?? [])
+        {
+            resolvedLocks[(explicitLock.OrderId, explicitLock.OperationId)] = explicitLock;
+        }
+
+        var problem = await producer.AssembleAsync(
+            source with { LockedAssignments = resolvedLocks.Values.ToArray() }, cancellationToken);
         return overrideOverlay is null ? problem : await overrideOverlay.ApplyAsync(problem, cancellationToken);
     }
 }

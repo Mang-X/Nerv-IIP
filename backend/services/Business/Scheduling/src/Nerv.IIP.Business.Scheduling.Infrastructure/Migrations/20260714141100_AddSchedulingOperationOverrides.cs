@@ -38,6 +38,43 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                 defaultValue: 0,
                 comment: "Number of non-locked scheduled operations included in optimization KPIs.");
 
+            migrationBuilder.AlterColumn<int>(
+                name: "total_tardiness_minutes",
+                schema: "scheduling",
+                table: "schedule_plans",
+                type: "integer",
+                nullable: false,
+                comment: "Total minutes by which non-locked assigned operations finish after their due dates.",
+                oldClrType: typeof(int),
+                oldType: "integer",
+                oldComment: "Total minutes by which assigned operations finish after their due dates.");
+
+            migrationBuilder.AlterColumn<int>(
+                name: "late_operation_count",
+                schema: "scheduling",
+                table: "schedule_plans",
+                type: "integer",
+                nullable: false,
+                comment: "Number of non-locked assigned operations finishing after their due dates.",
+                oldClrType: typeof(int),
+                oldType: "integer",
+                oldComment: "Number of assigned operations finishing after their due dates.");
+
+            migrationBuilder.AlterColumn<decimal>(
+                name: "on_time_rate",
+                schema: "scheduling",
+                table: "schedule_plans",
+                type: "numeric(18,6)",
+                precision: 18,
+                scale: 6,
+                nullable: false,
+                comment: "Non-locked operations completed on or before due date divided by non-locked assigned operations.",
+                oldClrType: typeof(decimal),
+                oldType: "numeric(18,6)",
+                oldPrecision: 18,
+                oldScale: 6,
+                oldComment: "Assigned operations completed on or before due date divided by assigned operations.");
+
             migrationBuilder.CreateTable(
                 name: "schedule_operation_overrides",
                 schema: "scheduling",
@@ -95,6 +132,43 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                 name: "optimizable_operation_count",
                 schema: "scheduling",
                 table: "schedule_plans");
+
+            migrationBuilder.AlterColumn<int>(
+                name: "total_tardiness_minutes",
+                schema: "scheduling",
+                table: "schedule_plans",
+                type: "integer",
+                nullable: false,
+                comment: "Total minutes by which assigned operations finish after their due dates.",
+                oldClrType: typeof(int),
+                oldType: "integer",
+                oldComment: "Total minutes by which non-locked assigned operations finish after their due dates.");
+
+            migrationBuilder.AlterColumn<int>(
+                name: "late_operation_count",
+                schema: "scheduling",
+                table: "schedule_plans",
+                type: "integer",
+                nullable: false,
+                comment: "Number of assigned operations finishing after their due dates.",
+                oldClrType: typeof(int),
+                oldType: "integer",
+                oldComment: "Number of non-locked assigned operations finishing after their due dates.");
+
+            migrationBuilder.AlterColumn<decimal>(
+                name: "on_time_rate",
+                schema: "scheduling",
+                table: "schedule_plans",
+                type: "numeric(18,6)",
+                precision: 18,
+                scale: 6,
+                nullable: false,
+                comment: "Assigned operations completed on or before due date divided by assigned operations.",
+                oldClrType: typeof(decimal),
+                oldType: "numeric(18,6)",
+                oldPrecision: 18,
+                oldScale: 6,
+                oldComment: "Non-locked operations completed on or before due date divided by non-locked assigned operations.");
         }
     }
 }

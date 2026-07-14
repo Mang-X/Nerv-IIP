@@ -563,6 +563,7 @@ Source:
 4. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260531111947_InitialSchedulingSchema.cs`
 5. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260626170713_AddSchedulingInputChangeInvalidations.cs`
 6. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260707042000_AddScheduleAssignmentStandardOperationCode.cs`
+7. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260714141100_AddSchedulingOperationOverrides.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |

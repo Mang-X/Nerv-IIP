@@ -32,6 +32,12 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
         CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
+        if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext, ConsumerName, integrationEvent, cancellationToken))
+        {
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(payload.WorkOrderId) ||
             string.IsNullOrWhiteSpace(payload.OperationTaskId) ||
             string.IsNullOrWhiteSpace(payload.ResourceId) ||
@@ -41,35 +47,57 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
             await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(
                 ConsumerName, integrationEvent, "scheduling.mesManualDispatch.invalidPayload",
                 "MES manual dispatch requires real operation, resource, work center, and a positive scheduling window."), cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
-        if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAsync(
-            dbContext, ConsumerName, integrationEvent, cancellationToken))
+        await UpsertOverrideAsync(integrationEvent, cancellationToken);
+        try
         {
-            return;
+            await dbContext.SaveChangesAsync(cancellationToken);
         }
+        catch (DbUpdateException)
+        {
+            dbContext.ChangeTracker.Clear();
+            if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAsync(
+                dbContext, ConsumerName, integrationEvent, cancellationToken))
+            {
+                return;
+            }
 
+            await UpsertOverrideAsync(integrationEvent, cancellationToken, requireExisting: true);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private async Task UpsertOverrideAsync(
+        MesOperationTaskManuallyDispatchedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken,
+        bool requireExisting = false)
+    {
+        var payload = integrationEvent.Payload;
         var fact = await dbContext.ScheduleOperationOverrides.SingleOrDefaultAsync(x =>
             x.OrganizationId == integrationEvent.OrganizationId &&
             x.EnvironmentId == integrationEvent.EnvironmentId &&
             x.OperationId == payload.OperationTaskId, cancellationToken);
         if (fact is null)
         {
+            if (requireExisting)
+            {
+                throw new DbUpdateException("Concurrent override insert did not produce a readable current fact.");
+            }
+
             dbContext.ScheduleOperationOverrides.Add(ScheduleOperationOverride.Create(
                 integrationEvent.OrganizationId, integrationEvent.EnvironmentId,
                 payload.WorkOrderId, payload.OperationTaskId, payload.OperationSequence,
                 payload.ResourceId, payload.WorkCenterId, payload.StartUtc, payload.EndUtc,
                 "mes-manual-dispatch", "mes-dispatch", integrationEvent.EventId,
                 integrationEvent.Actor, integrationEvent.OccurredAtUtc, integrationEvent.OccurredAtUtc));
-        }
-        else
-        {
-            fact.TryReplace(payload.ResourceId, payload.WorkCenterId, payload.StartUtc,
-                payload.EndUtc, "mes-manual-dispatch", "mes-dispatch", integrationEvent.EventId,
-                integrationEvent.Actor, integrationEvent.OccurredAtUtc, integrationEvent.OccurredAtUtc);
+            return;
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        fact.TryReplace(payload.ResourceId, payload.WorkCenterId, payload.StartUtc,
+            payload.EndUtc, "mes-manual-dispatch", "mes-dispatch", integrationEvent.EventId,
+            integrationEvent.Actor, integrationEvent.OccurredAtUtc, integrationEvent.OccurredAtUtc);
     }
 }

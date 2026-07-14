@@ -183,7 +183,7 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.Property<int>("LateOperationCount")
                         .HasColumnType("integer")
                         .HasColumnName("late_operation_count")
-                        .HasComment("Number of assigned operations finishing after their due dates.");
+                        .HasComment("Number of non-locked assigned operations finishing after their due dates.");
 
                     b.Property<int>("LockedOperationCount")
                         .HasColumnType("integer")
@@ -199,7 +199,7 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("on_time_rate")
-                        .HasComment("Assigned operations completed on or before due date divided by assigned operations.");
+                        .HasComment("Non-locked operations completed on or before due date divided by non-locked assigned operations.");
 
                     b.Property<int>("OptimizableOperationCount")
                         .HasColumnType("integer")
@@ -254,7 +254,7 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.Property<int>("TotalTardinessMinutes")
                         .HasColumnType("integer")
                         .HasColumnName("total_tardiness_minutes")
-                        .HasComment("Total minutes by which assigned operations finish after their due dates.");
+                        .HasComment("Total minutes by which non-locked assigned operations finish after their due dates.");
 
                     b.Property<int>("UnscheduledOperationCount")
                         .HasColumnType("integer")
