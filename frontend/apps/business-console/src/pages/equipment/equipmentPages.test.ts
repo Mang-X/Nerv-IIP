@@ -160,11 +160,12 @@ const reviewFixture = vi.hoisted(() => {
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
   const { reactive } = await import('vue')
-  routeState.route = reactive({ params: { deviceAssetId: 'DEV-OIL-01' } })
+  routeState.route = reactive({ params: { deviceAssetId: 'DEV-OIL-01' }, query: {} })
 
   return {
     ...actual,
     useRoute: () => routeState.route,
+    useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   }
 })
 

@@ -96,11 +96,13 @@ const equipmentReasonDisplays: Record<string, EquipmentReasonDisplay> = {
 export function describeEquipmentReason(code: string): EquipmentReasonDisplay {
   const normalizedCode = code.trim()
 
-  return equipmentReasonDisplays[normalizedCode] ?? {
-    code: normalizedCode,
-    label: normalizedCode,
-    nextStep: '查看设备详情并处理来源业务单据',
-  }
+  return (
+    equipmentReasonDisplays[normalizedCode] ?? {
+      code: normalizedCode,
+      label: normalizedCode,
+      nextStep: '查看设备详情并处理来源业务单据',
+    }
+  )
 }
 
 export function equipmentStatusTone(status: string | null | undefined): EquipmentTone {
@@ -191,9 +193,10 @@ function unwrapData<TData, TEnvelope extends { success?: boolean; data?: TData |
   return envelope.data ?? undefined
 }
 
-function listItems<TItem, TEnvelope extends { success?: boolean; data?: { items?: TItem[] } | null }>(
-  envelope: TEnvelope | undefined,
-) {
+function listItems<
+  TItem,
+  TEnvelope extends { success?: boolean; data?: { items?: TItem[] } | null },
+>(envelope: TEnvelope | undefined) {
   if (!envelope?.success) {
     return []
   }
@@ -206,8 +209,8 @@ function listItems<TItem, TEnvelope extends { success?: boolean; data?: { items?
  * 取设备资源列表（device-asset）的全部编号（后端最多 50 个，超出截断）。返回逗号分隔串。
  */
 function useEffectiveDeviceAssetIds(filters: BusinessEquipmentOverviewFilters) {
-  const { resources: deviceResources, resourcesPending: deviceResourcesPending }
-    = useBusinessMasterDataResources('device-asset')
+  const { resources: deviceResources, resourcesPending: deviceResourcesPending } =
+    useBusinessMasterDataResources('device-asset')
 
   const allDeviceAssetIds = computed(() =>
     deviceResources.value
@@ -229,7 +232,9 @@ export function useBusinessEquipmentOverview() {
   const businessContext = useBusinessContextStore()
   const filters = defaultOverviewFilters()
   const { effectiveDeviceAssetIds, deviceResourcesPending } = useEffectiveDeviceAssetIds(filters)
-  const overviewEnabled = computed(() => hasBusinessContext(businessContext) && effectiveDeviceAssetIds.value.length > 0)
+  const overviewEnabled = computed(
+    () => hasBusinessContext(businessContext) && effectiveDeviceAssetIds.value.length > 0,
+  )
   const overviewQuery = useQuery(() => ({
     ...getBusinessConsoleEquipmentOverviewQueryOptions({
       query: {
@@ -253,14 +258,18 @@ export function useBusinessEquipmentOverview() {
     overview,
     overviewError: overviewQuery.error,
     overviewPending: computed(() => deviceResourcesPending.value || overviewQuery.isLoading.value),
-    refreshOverview: () => overviewEnabled.value ? overviewQuery.refetch() : Promise.resolve(),
+    refreshOverview: () => (overviewEnabled.value ? overviewQuery.refetch() : Promise.resolve()),
   }
 }
 
 export function useBusinessEquipmentAvailability() {
   const businessContext = useBusinessContextStore()
   const filters = defaultAvailabilityFilters()
-  const availabilityEnabled = computed(() => hasBusinessContext(businessContext) && normalizeDeviceAssetIds(filters.deviceAssetIds).length > 0)
+  const availabilityEnabled = computed(
+    () =>
+      hasBusinessContext(businessContext) &&
+      normalizeDeviceAssetIds(filters.deviceAssetIds).length > 0,
+  )
   const availabilityQuery = useQuery(() => ({
     ...getBusinessConsoleEquipmentAvailabilityQueryOptions({
       query: toAvailabilityQuery(businessContext, filters),
@@ -283,14 +292,17 @@ export function useBusinessEquipmentAvailability() {
       ),
     ),
     filters,
-    refreshAvailability: () => availabilityEnabled.value ? availabilityQuery.refetch() : Promise.resolve(),
+    refreshAvailability: () =>
+      availabilityEnabled.value ? availabilityQuery.refetch() : Promise.resolve(),
   }
 }
 
 export function useBusinessEquipmentDevice(deviceAssetId?: string) {
   const businessContext = useBusinessContextStore()
   const filters = defaultDeviceFilters(deviceAssetId)
-  const deviceEnabled = computed(() => hasBusinessContext(businessContext) && filters.deviceAssetId.trim().length > 0)
+  const deviceEnabled = computed(
+    () => hasBusinessContext(businessContext) && filters.deviceAssetId.trim().length > 0,
+  )
   const deviceQuery = useQuery(() => ({
     ...getBusinessConsoleEquipmentDeviceQueryOptions({
       path: { deviceAssetId: filters.deviceAssetId },
@@ -300,19 +312,24 @@ export function useBusinessEquipmentDevice(deviceAssetId?: string) {
   }))
 
   const device = computed<BusinessConsoleEquipmentDeviceDetailResponse | undefined>(() =>
-    unwrapData<BusinessConsoleEquipmentDeviceDetailResponse, BusinessConsoleEquipmentDeviceDetailEnvelope>(
-      deviceQuery.data.value,
-    ),
+    unwrapData<
+      BusinessConsoleEquipmentDeviceDetailResponse,
+      BusinessConsoleEquipmentDeviceDetailEnvelope
+    >(deviceQuery.data.value),
   )
 
   return {
-    activeAlarms: computed<EquipmentRuntimeAlarmSummary[]>(() => device.value?.currentState?.activeAlarms ?? []),
-    availabilityWindows: computed<EquipmentRuntimeAvailabilityWindow[]>(() => device.value?.availability?.items ?? []),
+    activeAlarms: computed<EquipmentRuntimeAlarmSummary[]>(
+      () => device.value?.currentState?.activeAlarms ?? [],
+    ),
+    availabilityWindows: computed<EquipmentRuntimeAvailabilityWindow[]>(
+      () => device.value?.availability?.items ?? [],
+    ),
     device,
     deviceError: deviceQuery.error,
     devicePending: deviceQuery.isLoading,
     filters,
-    refreshDevice: () => deviceEnabled.value ? deviceQuery.refetch() : Promise.resolve(),
+    refreshDevice: () => (deviceEnabled.value ? deviceQuery.refetch() : Promise.resolve()),
   }
 }
 
@@ -345,14 +362,24 @@ export function useBusinessEquipmentAlarms() {
     })
   }
 
-  async function shelveAlarm(alarmEventId: string, shelvedBy: string, durationMinutes = 30, reason?: string) {
+  async function shelveAlarm(
+    alarmEventId: string,
+    shelvedBy: string,
+    durationMinutes = 30,
+    reason?: string,
+    options?: { shelvedAtUtc?: string; idempotencyKey?: string },
+  ) {
+    // Freeze the shelve instant so a retried batch reuses the same window; the backend
+    // derives the shelve window from shelvedAtUtc + idempotencyKey (first-write-wins),
+    // so a stable key makes re-submitting the same batch a no-op instead of extending it.
     return shelveMutation.mutateAsync({
       path: { alarmEventId },
       body: {
         ...toContextQuery(businessContext),
         durationMinutes,
+        idempotencyKey: options?.idempotencyKey,
         reason,
-        shelvedAtUtc: new Date().toISOString(),
+        shelvedAtUtc: options?.shelvedAtUtc ?? new Date().toISOString(),
         shelvedBy,
       },
     })

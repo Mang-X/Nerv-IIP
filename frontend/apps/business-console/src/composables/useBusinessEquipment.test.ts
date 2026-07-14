@@ -28,7 +28,10 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
-  acknowledgeBusinessConsoleEquipmentAlarmMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
+  acknowledgeBusinessConsoleEquipmentAlarmMutationOptions: vi.fn(() => ({
+    key: [],
+    mutation: vi.fn(),
+  })),
   getBusinessConsoleEquipmentAvailabilityQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleEquipmentAvailability' }],
     query: vi.fn(),
@@ -46,7 +49,10 @@ vi.mock('@nerv-iip/api-client', () => ({
     query: vi.fn(),
   })),
   shelveBusinessConsoleEquipmentAlarmMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
-  unshelveBusinessConsoleEquipmentAlarmMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
+  unshelveBusinessConsoleEquipmentAlarmMutationOptions: vi.fn(() => ({
+    key: [],
+    mutation: vi.fn(),
+  })),
   // --- pulled in transitively via useBusinessMasterData (设备列表) ---
   addBusinessConsoleTeamMemberMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   assignBusinessConsolePersonnelSkillMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
@@ -54,8 +60,14 @@ vi.mock('@nerv-iip/api-client', () => ({
   createBusinessConsoleProductionLineMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   createBusinessConsoleShiftMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   createBusinessConsoleSiteMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
-  createBusinessConsoleBusinessPartnerMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
-  createBusinessConsoleReferenceDataCodeMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
+  createBusinessConsoleBusinessPartnerMutationOptions: vi.fn(() => ({
+    key: [],
+    mutation: vi.fn(),
+  })),
+  createBusinessConsoleReferenceDataCodeMutationOptions: vi.fn(() => ({
+    key: [],
+    mutation: vi.fn(),
+  })),
   createBusinessConsoleSkuMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   createBusinessConsoleUnitOfMeasureMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   createBusinessConsoleUomConversionMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
@@ -63,8 +75,14 @@ vi.mock('@nerv-iip/api-client', () => ({
   createBusinessConsoleWorkCalendarMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   createBusinessConsoleWorkCenterMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   createBusinessConsoleWorkshopMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
-  disableBusinessConsoleMasterDataResourceMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
-  enableBusinessConsoleMasterDataResourceMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
+  disableBusinessConsoleMasterDataResourceMutationOptions: vi.fn(() => ({
+    key: [],
+    mutation: vi.fn(),
+  })),
+  enableBusinessConsoleMasterDataResourceMutationOptions: vi.fn(() => ({
+    key: [],
+    mutation: vi.fn(),
+  })),
   getBusinessConsoleMasterDataResourceDetail: vi.fn(),
   listBusinessConsoleMasterDataResourcesQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMasterDataResources' }],
@@ -77,12 +95,17 @@ vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleWorkshopsQueryOptions: vi.fn(() => ({ key: [], query: vi.fn() })),
   registerBusinessConsoleDeviceAssetMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   removeBusinessConsoleTeamMemberMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
-  updateBusinessConsoleMasterDataResourceMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
+  updateBusinessConsoleMasterDataResourceMutationOptions: vi.fn(() => ({
+    key: [],
+    mutation: vi.fn(),
+  })),
 }))
 
 vi.mock('@pinia/colada', () => ({
   useMutation: vi.fn(() => {
-    const mutateAsync = vi.fn().mockResolvedValue({ success: true, data: { alarmEventId: 'alarm-1' } })
+    const mutateAsync = vi
+      .fn()
+      .mockResolvedValue({ success: true, data: { alarmEventId: 'alarm-1' } })
     coladaState.mutations.push(mutateAsync)
     return {
       mutateAsync,
@@ -176,7 +199,9 @@ describe('business equipment composables', () => {
         deviceAssetIds: '',
       },
     })
-    expect(coladaState.queryOptionsById.get('getBusinessConsoleEquipmentOverview')?.enabled).toBe(false)
+    expect(coladaState.queryOptionsById.get('getBusinessConsoleEquipmentOverview')?.enabled).toBe(
+      false,
+    )
     expect(devices.value).toEqual([])
     expect(activeBlocks.value).toEqual([])
   })
@@ -230,7 +255,9 @@ describe('business equipment composables', () => {
         deviceAssetIds: '',
       }),
     })
-    expect(coladaState.queryOptionsById.get('getBusinessConsoleEquipmentAvailability')?.enabled).toBe(false)
+    expect(
+      coladaState.queryOptionsById.get('getBusinessConsoleEquipmentAvailability')?.enabled,
+    ).toBe(false)
     expect(availabilityWindows.value).toEqual([])
   })
 
@@ -318,6 +345,26 @@ describe('business equipment composables', () => {
       body: expect.objectContaining({
         organizationId: 'org-001',
         environmentId: 'env-dev',
+      }),
+    })
+  })
+
+  it('forwards a frozen shelvedAtUtc and idempotency key so batch shelve retries are no-ops', async () => {
+    const active = useBusinessEquipmentAlarms()
+
+    await active.shelveAlarm('alarm-1', 'operator-a', 120, 'planned maintenance', {
+      shelvedAtUtc: '2026-07-12T08:00:00.000Z',
+      idempotencyKey: 'shelve:alarm-1:2026-07-12T08:00:00.000Z:120',
+    })
+
+    // acknowledge / shelve / unshelve mutations register in order → shelve is index 1.
+    expect(coladaState.mutations[1]).toHaveBeenCalledWith({
+      path: { alarmEventId: 'alarm-1' },
+      body: expect.objectContaining({
+        durationMinutes: 120,
+        reason: 'planned maintenance',
+        shelvedAtUtc: '2026-07-12T08:00:00.000Z',
+        idempotencyKey: 'shelve:alarm-1:2026-07-12T08:00:00.000Z:120',
       }),
     })
   })
