@@ -4357,9 +4357,9 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Quality_http_client_get_ncr_reuses_tenant_filtered_list_by_id_keyword()
+    public async Task Quality_http_client_get_ncr_proxies_real_detail_endpoint_with_tenant_scope()
     {
-        // 按 id 取详情复用 NCR 列表读：请求带 org/env + keyword=ncrId，返回 id 精确匹配项。
+        // 代理真实详情端点：GET /quality/ncrs/{id}，org/env 随查询下传由服务端做租户过滤。
         HttpRequestMessage? seen = null;
         var handler = new RecordingHandler(request =>
         {
@@ -4368,21 +4368,19 @@ public sealed class BusinessGatewayProxyTests
             {
                 data = new
                 {
-                    total = 1,
-                    items = new[]
-                    {
-                        new
-                        {
-                            ncrId = "ncr-77",
-                            ncrCode = "NCR-77",
-                            sourceType = "receiving",
-                            sourceDocumentId = "RCV-9",
-                            skuCode = "SKU-Z",
-                            defectQuantity = 2,
-                            defectReason = "appearance",
-                            status = "open",
-                        },
-                    },
+                    ncrId = "ncr-77",
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    ncrCode = "NCR-77",
+                    sourceType = "receiving",
+                    sourceDocumentId = "RCV-9",
+                    skuCode = "SKU-Z",
+                    defectQuantity = 2,
+                    defectReason = "appearance",
+                    status = "open",
+                    attachmentFileIds = Array.Empty<string>(),
+                    createdAtUtc = "2026-07-14T01:00:00Z",
+                    updatedAtUtc = "2026-07-14T01:00:00Z",
                 },
                 success = true,
                 message = string.Empty,
@@ -4397,37 +4395,34 @@ public sealed class BusinessGatewayProxyTests
             new BusinessConsoleQualityNcrDetailRequest("ncr-77", "org-001", "env-dev"),
             CancellationToken.None);
 
-        Assert.NotNull(item);
-        Assert.Equal("ncr-77", item!.Id);
+        Assert.Equal("ncr-77", item.Id);
         Assert.Equal("NCR-77", item.Code);
         Assert.Equal("appearance", item.DefectReason);
-        var query = seen!.RequestUri!.Query;
+        Assert.Equal("/api/business/v1/quality/ncrs/ncr-77", seen!.RequestUri!.AbsolutePath);
+        var query = seen.RequestUri!.Query;
         Assert.Contains("organizationId=org-001", query);
         Assert.Contains("environmentId=env-dev", query);
-        Assert.Contains("keyword=ncr-77", query);
-        Assert.StartsWith("/api/business/v1/quality/ncrs", seen.RequestUri!.AbsolutePath);
     }
 
     [Fact]
-    public async Task Quality_http_client_get_ncr_returns_null_when_no_id_match_in_tenant()
+    public async Task Quality_http_client_get_ncr_propagates_downstream_not_found()
     {
-        // 越权/不存在：列表（已按 org/env 过滤）无 id 匹配 → 返回 null（端点转 404），不泄露跨租户数据。
+        // 越权/不存在：Quality 按 org/env 过滤后 not found（success=false 业务错误）→ 透传为代理异常，
+        // 不泄露跨租户数据。
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
         {
-            data = new { total = 0, items = Array.Empty<object>() },
-            success = true,
-            message = string.Empty,
-            code = 0,
+            data = (object?)null,
+            success = false,
+            message = "NCR 'ncr-other-tenant' was not found.",
+            code = 400,
         }));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
         var client = new HttpBusinessQualityClient(httpClient);
 
-        var item = await client.GetNcrAsync(
+        await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.GetNcrAsync(
             "internal-token-001",
             new BusinessConsoleQualityNcrDetailRequest("ncr-other-tenant", "org-001", "env-dev"),
-            CancellationToken.None);
-
-        Assert.Null(item);
+            CancellationToken.None));
     }
 
     [Fact]
@@ -6528,32 +6523,29 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public BusinessConsoleQualityNcrDetailRequest? LastNcrDetailRequest { get; private set; }
 
-    public Task<BusinessConsoleQualityItem?> GetNcrAsync(
+    public Task<BusinessConsoleQualityItem> GetNcrAsync(
         string internalBearerToken,
         BusinessConsoleQualityNcrDetailRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         LastNcrDetailRequest = request;
-        BusinessConsoleQualityItem? item = request.NcrId == "ncr-001"
-            ? new BusinessConsoleQualityItem(
-                "ncr-001",
-                "NCR-001",
-                "open",
-                null,
-                "SKU-001",
-                null,
-                null,
-                null,
-                null,
-                "inspection",
-                "IR-001",
-                1,
-                "Defect",
-                null,
-                null)
-            : null;
-        return Task.FromResult(item);
+        return Task.FromResult(new BusinessConsoleQualityItem(
+            "ncr-001",
+            "NCR-001",
+            "open",
+            null,
+            "SKU-001",
+            null,
+            null,
+            null,
+            null,
+            "inspection",
+            "IR-001",
+            1,
+            "Defect",
+            null,
+            null));
     }
 
     public Task<BusinessConsoleQualitySpcControlChartResponse> QuerySpcControlChartAsync(

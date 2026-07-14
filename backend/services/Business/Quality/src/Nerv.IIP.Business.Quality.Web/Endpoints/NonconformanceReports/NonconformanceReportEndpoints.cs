@@ -87,7 +87,11 @@ public sealed record ListNonconformanceReportsRequest(
     int Skip = 0,
     int Take = 100);
 
-public sealed record GetNonconformanceReportRequest(NonconformanceReportId NcrId);
+/// <summary>org/env 提供时按租户过滤（网关 facade 必传，越权与不存在同为 not found）。</summary>
+public sealed record GetNonconformanceReportRequest(
+    NonconformanceReportId NcrId,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
 
 public sealed record SubmitNonconformanceReportDispositionRequest(
     NonconformanceReportId NcrId,
@@ -186,7 +190,7 @@ public sealed class GetNonconformanceReportEndpoint(ISender sender)
 
     public override async Task HandleAsync(GetNonconformanceReportRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new GetNonconformanceReportQuery(req.NcrId), ct);
+        var response = await sender.Send(new GetNonconformanceReportQuery(req.NcrId, req.OrganizationId, req.EnvironmentId), ct);
         await Send.OkAsync(ToDto(response).AsResponseData(), cancellation: ct);
     }
 }

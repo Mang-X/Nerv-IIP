@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
+import { shallowRef } from 'vue'
 
 // ---- vue-router mock ----------------------------------------------------------
 const push = vi.fn(() => Promise.resolve())
@@ -11,7 +11,7 @@ vi.mock('vue-router', () => ({
 }))
 
 // ---- NCR composable mock ------------------------------------------------------
-const ncr = ref<Record<string, unknown> | null>({
+const ncr = shallowRef<Record<string, unknown> | null>({
   id: 'ncr-001',
   code: 'NCR-2026-0001',
   status: 'open',
@@ -22,8 +22,8 @@ const ncr = ref<Record<string, unknown> | null>({
   batchNo: 'LOT-1',
   serialNo: null,
 })
-const ncrPending = ref(false)
-const ncrError = ref<unknown>(null)
+const ncrPending = shallowRef(false)
+const ncrError = shallowRef<unknown>(null)
 vi.mock('@/composables/useBusinessNonconformanceReport', () => ({
   useNonconformanceReport: () => ({
     ncr,
@@ -45,13 +45,15 @@ describe('NCR detail page', () => {
     expect(wrapper.text()).toContain('SKU-A')
   })
 
-  it('shows a back-link to the source inspection record (from query) and navigates back', async () => {
+  it('shows the source inspection record as display-only context and back returns to the flow', async () => {
     const wrapper = mount(NcrDetailPage)
     await flushPromises()
-    const backLink = wrapper.get('[data-testid="back-to-record"]')
-    expect(backLink.text()).toContain('rec-1') // 来源检验记录回链
-    await backLink.trigger('click')
-    // goBack: 有历史则 router.back，否则 push /quality/tasks——测试环境 history.length 通常 <=1。
+    // 来源检验记录仅展示上下文（PDA 无检验记录详情路由，不做可点击入口）。
+    const source = wrapper.get('[data-testid="source-record"]')
+    expect(source.text()).toContain('rec-1')
+    expect(source.attributes('role')).toBeUndefined() // 无 arrow → 非 button 语义，不可点击
+    // 「返回检验流程」按钮回到来路。
+    await wrapper.get('[data-testid="ncr-back"]').trigger('click')
     expect(back.mock.calls.length + push.mock.calls.length).toBeGreaterThan(0)
   })
 })

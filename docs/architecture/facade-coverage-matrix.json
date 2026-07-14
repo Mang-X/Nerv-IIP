@@ -3662,8 +3662,13 @@
       "method": "GET",
       "route": "/api/business/v1/quality/ncrs/{ncrId}",
       "operationId": "getBusinessQualityNcr",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; NCR list/disposition/close are exposed, single-NCR detail-by-id follows the Quality NCR detail menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleQualityNcr"
+      ]
     },
     {
       "service": "Quality",

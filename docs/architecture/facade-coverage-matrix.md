@@ -99,10 +99,10 @@ declaration against what actually shipped (facade + codegen + barrel for
 | MasterData | 46 | 38 | 4 | 4 |
 | Mes | 50 | 47 | 3 | 0 |
 | ProductEngineering | 38 | 38 | 0 | 0 |
-| Quality | 31 | 16 | 15 | 0 |
+| Quality | 31 | 17 | 14 | 0 |
 | Scheduling | 7 | 6 | 1 | 0 |
 | Wms | 30 | 19 | 6 | 5 |
-| **Total** | **343** | **275** | **48** | **20** |
+| **Total** | **343** | **276** | **47** | **20** |
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
 The `exposed` rows (271) — each with its verified facade `gatewayOperationIds` — are

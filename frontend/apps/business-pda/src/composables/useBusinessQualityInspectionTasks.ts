@@ -1,6 +1,7 @@
 import {
   createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions,
   listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions,
+  listBusinessConsoleQualityInspectionTasks,
   listBusinessConsoleQualityInspectionTasksQueryOptions,
   listBusinessConsoleQualityReasonCodesQueryOptions,
   type BusinessConsoleInspectionCharacteristicResult,
@@ -11,9 +12,11 @@ import {
 import type { QualityCharacteristicResultLine as ResultLine } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
+import { computed, reactive, shallowRef, toValue, type MaybeRefOrGetter } from 'vue'
 
 const DEFAULT_TAKE = 100
+/** facade / Quality 查询验证器的 take 上限——超页数据靠受限分页迭代聚合，不把 take 扩过上限。 */
+const MAX_TAKE = 200
 
 /** 待检工作台默认只呈现 pending（未检）任务；提交后任务转 completed 并从列表失效回落。 */
 const PENDING_STATUS = 'pending'
@@ -108,36 +111,72 @@ export function useBusinessQualityInspectionTasks() {
     listItems<BusinessConsoleQualityReasonItem>(reasonCodesQuery.data.value),
   )
 
+  // 超出基础查询（take ≤ MAX_TAKE）之外、按页聚合的补充任务页——「加载更多 / 扫码全量」共用。
+  const extraTasks = shallowRef<BusinessConsoleQualityInspectionTaskItem[]>([])
+
   const submitMutation = useMutation({
     ...createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions(),
     onSuccess() {
+      // 基础页失效重取；聚合补充页会 stale，一并丢弃（需要时再按页重聚合）。
+      extraTasks.value = []
       void queryCache
         .invalidateQueries({ predicate: isInspectionTasksQuery })
         .catch(ignoreBackgroundError)
     },
   })
 
-  const tasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() =>
+  const baseTasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() =>
     listItems<BusinessConsoleQualityInspectionTaskItem>(listQuery.data.value),
   )
+  const tasks = computed<BusinessConsoleQualityInspectionTaskItem[]>(() => {
+    if (extraTasks.value.length === 0) return baseTasks.value
+    const seen = new Set(baseTasks.value.map((t) => t.inspectionTaskId))
+    return [...baseTasks.value, ...extraTasks.value.filter((t) => !seen.has(t.inspectionTaskId))]
+  })
   const total = computed(() => listTotal(listQuery.data.value))
   const loaded = computed(() => tasks.value.length)
   const hasMore = computed(() => loaded.value < total.value)
 
-  /** 加载更多页（facade 无关键字/来源过滤，客户端筛选命中首页之外时据 total 加载）。 */
-  function loadMore() {
-    if (filters.take < total.value) filters.take += DEFAULT_TAKE
+  /** 受限拉取一页（take 不超上限），返回该页 items；失败抛错由调用方处理。 */
+  async function fetchPage(skip: number, take: number) {
+    const { data } = await listBusinessConsoleQualityInspectionTasks({
+      query: {
+        organizationId: organizationId.value,
+        environmentId: environmentId.value,
+        status: filters.status,
+        skip,
+        take: Math.min(Math.max(take, 1), MAX_TAKE),
+      },
+    })
+    return listItems<BusinessConsoleQualityInspectionTaskItem>(data)
+  }
+
+  /**
+   * 加载更多（facade 无关键字/来源过滤，客户端筛选命中首页之外时据 total 加载）。基础查询 take
+   * 封顶 MAX_TAKE（后端验证器上限），超出部分按页拉取聚合到 `extraTasks`，不把 take 扩过上限。
+   */
+  async function loadMore() {
+    if (!scopeReady.value || !hasMore.value) return
+    if (filters.take < MAX_TAKE) {
+      filters.take = Math.min(filters.take + DEFAULT_TAKE, MAX_TAKE)
+      return
+    }
+    const page = await fetchPage(loaded.value, MAX_TAKE)
+    if (page.length > 0) extraTasks.value = [...extraTasks.value, ...page]
   }
 
   /**
    * 加载全部待检任务后返回最新集合。扫码直达用：facade 无 sourceDocumentId/关键字服务端过滤，
-   * 目标任务可能落在未加载分页；扫码在已加载集合未唯一命中时据 `total` 一次性扩 `take` 覆盖全部
-   * 再匹配，从而跨页直达（而非停在"页内未命中"）。
+   * 目标任务可能落在未加载分页；按 **受限分页迭代**（每页 ≤ MAX_TAKE）聚合覆盖全量再匹配——
+   * 不把 take 直接扩到 total（超过后端验证器上限会整段失败）。
    */
   async function ensureAllLoaded() {
-    if (scopeReady.value && total.value > 0 && filters.take < total.value) {
-      filters.take = total.value
-      await listQuery.refetch()
+    if (!scopeReady.value) return tasks.value
+    // 防御：空页即止（total 与实际漂移时不空转）。
+    while (hasMore.value) {
+      const page = await fetchPage(loaded.value, Math.min(MAX_TAKE, total.value - loaded.value))
+      if (page.length === 0) break
+      extraTasks.value = [...extraTasks.value, ...page]
     }
     return tasks.value
   }
