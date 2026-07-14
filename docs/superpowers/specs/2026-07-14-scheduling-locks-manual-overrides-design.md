@@ -50,6 +50,8 @@ The missing behavior is upstream of that pure scheduling rule:
 4. Released schedules can overwrite queued MES manual assignments.
 5. Current tardiness and on-time metrics include locked operations in the apparent
    optimization space.
+6. `schedule_problems` currently persists fingerprint and horizon metadata but not
+   the normalized problem payload required to validate later manual adjustments.
 
 Scheduling and MES do not have service-local `AGENTS.md` files in the current tree, so
 the repository root instructions govern both service areas.
@@ -97,6 +99,14 @@ override only when its source occurrence time is not older than the stored fact.
 Duplicate delivery remains idempotent through the consumer inbox and the unique
 business key.
 
+Add a required JSON `problem_json` column to `scheduling.schedule_problems`. New plan
+creation stores the normalized `SchedulingProblemContract` used for fingerprinting.
+This payload is the service-owned validation source for later override requests and
+base-plan operation locks; callers are not asked to resend or reconstruct historical
+operation/resource identities. Existing rows are migrated with a valid empty JSON
+object default for schema compatibility, and commands that require historical problem
+details return an explicit business error for such legacy rows instead of guessing.
+
 The migration must configure table and column comments, update the EF model snapshot,
 and be reflected in `database-schema-catalog.md`.
 
@@ -110,7 +120,7 @@ The request contains organization/environment scope, the desired `resourceId`,
 `startUtc`, and `endUtc`. It does not accept caller-provided work-order ID, operation
 sequence, work-center ID, assignment ID, or other downstream identities.
 
-The handler loads the scoped plan and its persisted Scheduling problem snapshot,
+The handler loads the scoped plan and its persisted normalized Scheduling problem JSON,
 finds the requested operation, and derives:
 
 1. work-order ID and operation sequence from the problem,
