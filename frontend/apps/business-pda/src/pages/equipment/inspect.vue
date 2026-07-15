@@ -237,6 +237,8 @@ function removeMeasurementRow(rowId: number) {
 // 提交入口：有超差先确认，无超差直接提交。
 function onSubmitClick() {
   if (!valid.value || recordPending.value) return
+  // 收起数字键盘，避免其浮层叠在确认弹窗之下。
+  keyboard.show = false
   if (outOfToleranceCount.value > 0) {
     confirmOpen.value = true
     return

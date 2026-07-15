@@ -2,7 +2,7 @@
 import type { CapturedPhoto } from '@/composables/useInspectionPhotoCapture'
 import { measurementOutOfTolerance, type MeasurementDraftRow } from '@nerv-iip/business-core'
 import { NvCell, NvMobileButton, NvMobileTag } from '@nerv-iip/ui-mobile'
-import { Camera } from 'lucide-vue-next'
+import { Camera } from '@lucide/vue'
 import { computed } from 'vue'
 
 /** 点检测量值单行（数值 / 上下限走数字键盘，只读触发防系统键盘弹出）。 */

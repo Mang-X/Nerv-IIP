@@ -335,8 +335,9 @@ describe('PDA equipment inspect page', () => {
     await wrapper.get('[data-testid="submit"]').trigger('click')
     await flushPromises()
 
-    // 超差先确认，未直接提交。
+    // 超差先确认，未直接提交；数字键盘已收起（不叠在弹窗之下）。
     expect(recordInspection).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-slot="number-keyboard"]')).toBeNull()
     const dialog = document.querySelector('[data-slot="mobile-dialog-content"]')
     expect(dialog?.textContent).toContain('1 项测量值超差')
 
