@@ -149,8 +149,9 @@ describe('generated API client contract', () => {
       expiryDate?: string | null
     }>()
     expectTypeOf<
-      Pick<BusinessConsoleCompleteWmsInboundOrderRequest, 'lines'>
+      Pick<BusinessConsoleCompleteWmsInboundOrderRequest, 'idempotencyKey' | 'lines'>
     >().toEqualTypeOf<{
+      idempotencyKey: string
       lines?: BusinessConsoleWmsInboundLineCaptureInput[] | null
     }>()
     expectTypeOf<
