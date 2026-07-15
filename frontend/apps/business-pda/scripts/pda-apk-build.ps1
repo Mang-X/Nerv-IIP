@@ -124,8 +124,15 @@ if ($ReleaseProfile) {
         Write-Diagnostic -Level 'ERROR' -Message '-ReleaseProfile 必须显式传 -ApiBaseUrl https://<gateway>（默认值 http://10.0.2.2:5126 是 dev 冒烟统一入口，release 包不可用）。'
         exit 1
     }
-    if ($ApiBaseUrl -notmatch '^https://') {
-        Write-Diagnostic -Level 'ERROR' -Message "-ReleaseProfile 下 -ApiBaseUrl 必须是 https:// 绝对地址（收到：$ApiBaseUrl）。androidScheme https + 无 cleartext 的包访问非 https 基址必然失败；如要走明文 dev 口径请去掉 -ReleaseProfile。"
+    # 按绝对 URI 解析校验，而非前缀匹配：`https://`（空 Host）/`https:///path` 这类
+    # 畸形值前缀能过但必然连不上，同样 fail-closed。
+    $parsedBaseUri = $null
+    if (
+        -not [System.Uri]::TryCreate($ApiBaseUrl, [System.UriKind]::Absolute, [ref] $parsedBaseUri) -or
+        $parsedBaseUri.Scheme -ne 'https' -or
+        [string]::IsNullOrWhiteSpace($parsedBaseUri.Host)
+    ) {
+        Write-Diagnostic -Level 'ERROR' -Message "-ReleaseProfile 下 -ApiBaseUrl 必须是含非空 Host 的 https:// 绝对地址（收到：$ApiBaseUrl）。androidScheme https + 无 cleartext 的包访问非 https 基址必然失败；如要走明文 dev 口径请去掉 -ReleaseProfile。"
         exit 1
     }
     Write-Diagnostic "构建配置：ReleaseProfile（androidScheme https，无 cleartext）；VITE_NERV_IIP_API_BASE_URL=$ApiBaseUrl"
@@ -297,6 +304,7 @@ $fingerprintPath = Join-Path (Split-Path -Parent $apkPath) 'build-fingerprint.tx
     "profile=$profileNote"
     "verifiedProfile=$($ReleaseProfile ? 'release' : 'dev')"
     "verifiedAndroidScheme=$packagedScheme"
+    "verifiedPackagedCleartext=$packagedCleartext"
     "verifiedManifestCleartext=$manifestCleartext"
 ) -join "`n" | Set-Content -Path $fingerprintPath -Encoding utf8
 
