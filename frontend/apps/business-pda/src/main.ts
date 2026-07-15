@@ -34,9 +34,10 @@ configureAuthenticatedApiClient({
       baseUrl: resolveGatewayBaseUrl(),
       // Every facade call flows through this fetch, so the 30s timeout + offline
       // pre-check live here once — never per page. See ./api/request-timeout.
-      // VITE_NERV_IIP_REQUEST_TIMEOUT_MS is a TEST/DEBUG-only override (live specs
-      // inject a short ceiling instead of really waiting 30s); unset/invalid values
-      // resolve to the 30s default. See .env.example.
+      // VITE_NERV_IIP_REQUEST_TIMEOUT_MS is a DEV-only TEST/DEBUG override (live specs
+      // inject a short ceiling instead of really waiting 30s), clamped to [100, 30000];
+      // production/APK builds (DEV=false) and unset/invalid values resolve to the 30s
+      // default unconditionally. See .env.example.
       fetch: createTimeoutFetch({ timeoutMs: resolveRequestTimeoutMs() }),
     }),
   loginPath: '/login',

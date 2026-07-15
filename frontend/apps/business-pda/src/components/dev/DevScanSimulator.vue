@@ -36,9 +36,12 @@ async function inject(value: string) {
 
 // 焦点保卫：扫码页的 ScanBar 是焦点常驻组件（blur → RAF 回抢），真实浮层靠页面
 // 传 `:active=false` opt-out，但本 dev 浮层对页面透明、拿不到该开关。面板打开
-// 期间若焦点被面板外的**可编辑元素**抢走（即 ScanBar 的回抢），同步夺回，否则
-// 输入框每帧被抢焦无法打字；焦点去向面板内按钮或非可编辑元素则放行。注码派发
-// 期间（injecting）让位 —— 注码正需要焦点不在可编辑元素上走 document 捕获路径。
+// 期间**只在焦点没有去向任何可编辑元素时**（relatedTarget 为 body/非可编辑元素，
+// 即被 ScanBar RAF 类回抢之前焦点悬空的空档）才同步夺回，保住输入框可持续打字；
+// 焦点明确去了面板外的其它可编辑元素 = 用户主动点了页面上另一个输入框，一律让位
+// —— dev 浮层绝不劫持用户的真实输入意图（旧实现把「面板外任何可编辑元素」都当
+// ScanBar 回抢而夺回，会把用户点击的页面输入框抢走，属误伤）。注码派发期间
+// （injecting）也让位 —— 注码正需要焦点不在可编辑元素上走 document 捕获路径。
 function isEditable(el: unknown): boolean {
   return (
     el instanceof HTMLInputElement ||
@@ -52,7 +55,9 @@ function onCodeInputBlur(event: FocusEvent) {
   if (!open.value || injecting.value) return
   const next = event.relatedTarget
   if (next instanceof Node && panelEl.value?.contains(next)) return
-  if (!isEditable(next)) return
+  // 焦点去向任何可编辑元素（用户主动点击其它输入框）→ 让位，不劫持。
+  if (isEditable(next)) return
+  // 焦点悬空（body/非可编辑元素）→ 夺回，输入框保持可打字。
   codeInputEl.value?.focus()
 }
 </script>

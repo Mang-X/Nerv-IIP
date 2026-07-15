@@ -171,6 +171,56 @@ describe('DevScanSimulator', () => {
     expect(scanBar.emitted('scan')).toEqual([['WO-2026-0001']])
   })
 
+  it('焦点保卫：blur 焦点悬空（body/非可编辑元素）时同步夺回输入框', async () => {
+    // ScanBar RAF 类回抢之前的空档形态：焦点离开输入框但没有任何可编辑元素接管。
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const wrapper = mount(DevScanSimulator, { attachTo: host })
+    await wrapper.find('[data-testid=dev-scan-toggle]').trigger('click')
+
+    const input = wrapper.find<HTMLInputElement>('[data-testid=dev-scan-input]')
+    input.element.focus()
+    expect(document.activeElement).toBe(input.element)
+
+    await input.trigger('blur', { relatedTarget: null })
+    expect(document.activeElement).toBe(input.element)
+  })
+
+  it('焦点保卫：blur 去向面板外其它可编辑元素（用户主动点击）时让位，不劫持', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const otherInput = document.createElement('input')
+    document.body.appendChild(otherInput)
+    const wrapper = mount(DevScanSimulator, { attachTo: host })
+    await wrapper.find('[data-testid=dev-scan-toggle]').trigger('click')
+
+    const input = wrapper.find<HTMLInputElement>('[data-testid=dev-scan-input]')
+    input.element.focus()
+    otherInput.focus()
+    await input.trigger('blur', { relatedTarget: otherInput })
+
+    // 用户主动去了页面上另一个输入框 → dev 面板不得夺回焦点。
+    expect(document.activeElement).toBe(otherInput)
+    otherInput.remove()
+  })
+
+  it('焦点保卫：blur 去向面板内元素（如注码按钮）时放行', async () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const wrapper = mount(DevScanSimulator, { attachTo: host })
+    await wrapper.find('[data-testid=dev-scan-toggle]').trigger('click')
+
+    const input = wrapper.find<HTMLInputElement>('[data-testid=dev-scan-input]')
+    // 先填值使注码按钮脱离 disabled（disabled 元素不可聚焦）。
+    await input.setValue('WO-1')
+    const injectButton = wrapper.find<HTMLButtonElement>('[data-testid=dev-scan-inject]')
+    input.element.focus()
+    injectButton.element.focus()
+    await input.trigger('blur', { relatedTarget: injectButton.element })
+
+    expect(document.activeElement).toBe(injectButton.element)
+  })
+
   it('与 ScanBar 集成：焦点常驻（input 已聚焦）时注码仍生效（逐字符让位）', async () => {
     vi.useFakeTimers()
     const host = document.createElement('div')

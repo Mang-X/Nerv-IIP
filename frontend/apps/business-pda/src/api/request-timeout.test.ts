@@ -196,17 +196,39 @@ describe('describeRequestError', () => {
 })
 
 describe('resolveRequestTimeoutMs', () => {
-  const envWith = (raw?: string) =>
-    (raw === undefined ? {} : { VITE_NERV_IIP_REQUEST_TIMEOUT_MS: raw }) as unknown as ImportMetaEnv
+  const envWith = (raw?: string, dev = true) =>
+    ({
+      DEV: dev,
+      ...(raw === undefined ? {} : { VITE_NERV_IIP_REQUEST_TIMEOUT_MS: raw }),
+    }) as unknown as ImportMetaEnv
 
-  it('returns the parsed value for a plain positive-integer string (test-only short ceiling)', () => {
+  it('returns the parsed value for a plain positive-integer string in range (DEV-only short ceiling)', () => {
     expect(resolveRequestTimeoutMs(envWith('2000'))).toBe(2000)
     expect(resolveRequestTimeoutMs(envWith(' 1500 '))).toBe(1500)
+  })
+
+  it('accepts the clamp-range boundaries [100, 30000]', () => {
+    expect(resolveRequestTimeoutMs(envWith('100'))).toBe(100)
+    expect(resolveRequestTimeoutMs(envWith('30000'))).toBe(30_000)
   })
 
   it('falls back to the 30s default when the env var is absent', () => {
     expect(resolveRequestTimeoutMs(envWith())).toBe(REQUEST_TIMEOUT_MS)
   })
+
+  it.each([
+    ['a valid short value', '2000'],
+    ['the lower clamp boundary', '100'],
+    ['the upper clamp boundary', '30000'],
+    ['garbage', 'abc'],
+  ])(
+    'PRODUCTION GATE: falls back unconditionally when DEV !== true, even for %s',
+    (_label, raw) => {
+      // 生产/APK 构建里 import.meta.env.DEV 被静态替换为 false —— 覆盖通道整体失效，
+      // 打包时误带该变量也不可能改动产品 30s 上限。
+      expect(resolveRequestTimeoutMs(envWith(raw, false))).toBe(REQUEST_TIMEOUT_MS)
+    },
+  )
 
   it.each([
     ['empty string', ''],
@@ -219,6 +241,8 @@ describe('resolveRequestTimeoutMs', () => {
     ['digit separator', '30_000'],
     ['trailing unit', '2000ms'],
     ['signed positive', '+2000'],
+    ['below the 100ms floor (instant-abort territory)', '99'],
+    ['above the 30s product ceiling', '30001'],
   ])('falls back to the default for %s (a typo must never weaken the ceiling)', (_label, raw) => {
     expect(resolveRequestTimeoutMs(envWith(raw))).toBe(REQUEST_TIMEOUT_MS)
   })
@@ -227,7 +251,7 @@ describe('resolveRequestTimeoutMs', () => {
     expect(resolveRequestTimeoutMs(envWith('9007199254740993'))).toBe(REQUEST_TIMEOUT_MS)
   })
 
-  it('defaults to import.meta.env (unset in tests → 30s default)', () => {
+  it('defaults to import.meta.env (DEV in vitest, var unset → 30s default)', () => {
     expect(resolveRequestTimeoutMs()).toBe(REQUEST_TIMEOUT_MS)
   })
 })

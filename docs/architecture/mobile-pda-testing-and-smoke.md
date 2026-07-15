@@ -84,7 +84,8 @@ pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test --list
 
 - **形态**：`e2e-live/` 独立目录 + 独立 `playwright.live.config.ts`（`workers: 1`、`retries: 0`、
   `trace: 'on'`，webServer 独立端口 **5177**，`PLAYWRIGHT_BUSINESS_PDA_LIVE_PORT` 可覆盖）。
-  **无任何 `page.route` mock**：vite dev 双代理直连真实网关（`NERV_IIP_BUSINESS_GATEWAY_URL`
+  **无业务数据 mock**（M2 网络韧性场景仅用 `page.route`/CDP 做**传输层故障注入**，
+  不伪造业务响应）：vite dev 双代理直连真实网关（`NERV_IIP_BUSINESS_GATEWAY_URL`
   默认 5119、`NERV_IIP_PLATFORM_GATEWAY_URL` 默认 5100），走真实登录页 UI 用真实 IAM 凭据登录
   （env `NERV_IIP_LIVE_USER` / `NERV_IIP_LIVE_PASSWORD`，不硬编码）。
 - **扫码仿真**：`e2e-live/support/scan-gun.ts` 的 `simulateScanGun()`——不 `focus()`、不 `fill()`，
@@ -106,8 +107,13 @@ pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test --list
      `e2e-live/support/network.ts` 适配层内隔离，仅 Chromium）→ loading 态呈现、最终落定
      非错误态、同 URL 特性 GET 恰好一次（不闪断重发）。
 - **短超时注入用法**：PDA `main.ts` 读 `VITE_NERV_IIP_REQUEST_TIMEOUT_MS`（毫秒）传入
-  `createTimeoutFetch`，仅用于测试注入，产品默认 30s 不变；live webServer 继承进程环境变量，
-  在命令行注入即可（见下方命令示例）。
+  `createTimeoutFetch`。**仅 DEV 生效**（`import.meta.env.DEV === true`，即 vite dev / vitest）：
+  生产 / APK 构建把 DEV 静态替换为 false，覆盖通道整体失效、无条件回落产品默认 30s；
+  DEV 下钳制区间 [100, 30000]，越界回落默认（`request-timeout.ts` 生产门禁）。live webServer
+  是 vite dev（DEV=true）并继承进程环境变量，在命令行注入即可（见下方命令示例）；
+  `pda-live-walkthrough.ps1` 默认路径（自起 server）已默认注入 2000，注入值写入
+  `run-fingerprint.txt`；`-AllowServerReuse` 复用既有 server 时该值在 server 启动时烘焙、
+  无法证明已生效，脚本会 WARN「超时注入场景可能如实失败（环境阻塞）」而非静默跳过。
 - **「headers 已到、body 卡死」覆盖归属**：Playwright `route.fulfill()` 是**原子**下发
   （只接受完整 body，无「先发 headers、body 流保持打开」的流式 API），live 层无法注入
   该形态、不硬造；该形态已由 L0 集成测试覆盖（真实 api-client 组合）——
@@ -118,13 +124,17 @@ pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test --list
 
 ```bash
 # 前置：完整本地栈已运行（仓库根目录 .\nerv.ps1 dev，Docker 先开）+ live 凭据 env
-pnpm -C frontend --filter @nerv-iip/business-pda run e2e:live
+# 全量含 M2 网络韧性：手跑 pnpm 入口需自带短超时注入（DEV-only，钳制 [100, 30000]），
+# 否则「挂起+短超时」场景如实报环境阻塞；pwsh 写法：$env:VITE_NERV_IIP_REQUEST_TIMEOUT_MS='2000'
+VITE_NERV_IIP_REQUEST_TIMEOUT_MS=2000 \
+  pnpm -C frontend --filter @nerv-iip/business-pda run e2e:live
 
-# 一键串联（worktree 归属检查 → 栈可达性 → e2e:live → 证据归集）
+# 一键串联（worktree 归属检查 → 栈可达性 → e2e:live → 证据归集）——标准入口。
+# 默认路径（自起 server）已默认注入 VITE_NERV_IIP_REQUEST_TIMEOUT_MS=2000（未显式设置时），
+# 无需手动传 env；-AllowServerReuse 复用模式无法证明既有 server 带该值，脚本会 WARN。
 pwsh frontend/apps/business-pda/scripts/pda-live-walkthrough.ps1
 
-# M2 网络韧性单跑（挂起+短超时场景需注入 VITE_NERV_IIP_REQUEST_TIMEOUT_MS，推荐 2000；
-# pwsh 写法：$env:VITE_NERV_IIP_REQUEST_TIMEOUT_MS='2000'）
+# M2 网络韧性单跑（同上需注入短超时，推荐 2000）
 VITE_NERV_IIP_REQUEST_TIMEOUT_MS=2000 \
   pnpm -C frontend --filter @nerv-iip/business-pda run e2e:live -- network-resilience.spec.ts
 ```

@@ -70,9 +70,27 @@ async function selectFirstTask(page: Page): Promise<void> {
 }
 
 /**
- * 故障解除后的恢复断言：以「特性内容真实渲染」为最终锚点——特性行（char-row，
- * QualityCharacteristicRow.vue）或权威空态（no-plan-characteristics，
- * QualityExecuteStep.vue L170-176）二者其一可见，且错误面板/loading 均消失。
+ * 「特性数据已真实落定」锚点——按 QualityExecuteStep.vue 加载成功后的三种合法数据形态取
+ * 三选一锚点（三者随数据形态互斥/共存，`.first()` 收敛 Playwright 严格模式）：
+ *  1. `char-row`：计划含**必检**特性——useInspectionExecution.ts 的 watch 只自动补齐
+ *     required 特性行，必检行到位即渲染 QualityCharacteristicRow；
+ *  2. `no-plan-characteristics`：计划为空（planCharacteristics.length === 0 的权威空态，
+ *     QualityExecuteStep.vue）；
+ *  3. `add-all-characteristics`：计划**非空但全部 optional**——此时不自动建行（无 char-row）、
+ *     也非空计划（无空态），但加载成功的 v-else 分支必然渲染「全部添加」按钮
+ *     （QualityExecuteStep.vue data-testid="add-all-characteristics"，disabled 也可见）。
+ */
+function characteristicsSettledLocator(page: Page) {
+  return page
+    .getByTestId('char-row')
+    .or(page.getByTestId('no-plan-characteristics'))
+    .or(page.getByTestId('add-all-characteristics'))
+    .first()
+}
+
+/**
+ * 故障解除后的恢复断言：以「特性数据真实落定」为最终锚点（见
+ * characteristicsSettledLocator 的三形态说明），且错误面板/loading 均消失。
  *
  * 容错点击：Pinia Colada 默认 `refetchOnReconnect: true`（node_modules @pinia/colada
  * dist 查询默认值），恢复联网触发 online 事件时错误查询可能**自动重取自愈**，
@@ -83,9 +101,7 @@ async function expectCharacteristicsRecovered(page: Page): Promise<void> {
   if (await retryButton.isVisible().catch(() => false)) {
     await retryButton.click().catch(() => {})
   }
-  await expect(
-    page.getByTestId('char-row').first().or(page.getByTestId('no-plan-characteristics')),
-  ).toBeVisible({ timeout: 30_000 })
+  await expect(characteristicsSettledLocator(page)).toBeVisible({ timeout: 30_000 })
   await expect(page.getByTestId('plan-characteristics-error')).toHaveCount(0)
   await expect(page.getByText('加载检验计划特性中…')).toHaveCount(0)
 }
@@ -133,16 +149,20 @@ test('live 网络韧性：请求整体挂起 + 短超时注入——超时文案
   // 依赖声明：本场景假定 main.ts 已支持 `VITE_NERV_IIP_REQUEST_TIMEOUT_MS` 超时注入
   // （读 env 传给 createTimeoutFetch({ timeoutMs })，与本 spec 同一 PR 的并行改动）。
   // webServer 继承进程环境变量（playwright.live.config.ts webServer 注释），故运行时在
-  // 命令行注入即可：`VITE_NERV_IIP_REQUEST_TIMEOUT_MS=2000 pnpm e2e:live`。
+  // 命令行注入即可：`VITE_NERV_IIP_REQUEST_TIMEOUT_MS=2000 pnpm e2e:live`
+  // （pda-live-walkthrough.ps1 的默认自起 server 路径已默认注入 2000）。
   // 未注入/注入过长时如实报环境阻塞——绝不退化成真等 30s 的假「数秒」断言。
-  // 解析口径与 app 侧 resolveRequestTimeoutMs 对齐（request-timeout.ts：只认纯正整数字符串，
-  // 其余一律回落 30s 默认）——spec 侧若放宽会出现「spec 以为注入了 2s、app 实跑 30s」的错位。
+  // 解析口径与 app 侧 resolveRequestTimeoutMs 对齐（request-timeout.ts：仅 DEV 生效——
+  // live webServer 是 vite dev、DEV=true 故覆盖通道可用；只认纯正整数字符串且钳制区间
+  // [100, 30000]，其余一律回落 30s 默认）——spec 侧若放宽会出现「spec 以为注入了 2s、
+  // app 实跑 30s」的错位，故低于 100ms 的注入值这里同样按环境阻塞拒绝。
   const rawInjected = (process.env.VITE_NERV_IIP_REQUEST_TIMEOUT_MS ?? '').trim()
   const injectedTimeoutMs = /^\d+$/.test(rawInjected) ? Number(rawInjected) : Number.NaN
-  if (!Number.isSafeInteger(injectedTimeoutMs) || injectedTimeoutMs <= 0) {
+  if (!Number.isSafeInteger(injectedTimeoutMs) || injectedTimeoutMs < 100) {
     throw new Error(
-      '环境阻塞：未注入（或注入值非纯正整数、会被 app 回落 30s 默认的）短超时——本场景要求设 ' +
-        'VITE_NERV_IIP_REQUEST_TIMEOUT_MS（推荐 2000）后运行 pnpm e2e:live（webServer 继承进程 env）。' +
+      '环境阻塞：未注入（或注入值非纯正整数 / 低于 app 侧钳制下限 100ms、会被 app 回落 30s ' +
+        '默认的）短超时——本场景要求设 VITE_NERV_IIP_REQUEST_TIMEOUT_MS（推荐 2000）后运行 ' +
+        'pnpm e2e:live（webServer 继承进程 env）。' +
         '不注入则超时为默认 30s，「数秒内透出」断言无法诚实成立，故直接失败而非等 30s。',
     )
   }
@@ -210,10 +230,9 @@ test('live 网络韧性：慢网（CDP 节流）——loading 态呈现、不闪
     const loading = page.getByText('加载检验计划特性中…')
     await expect(loading).toBeVisible()
 
-    // 慢网最终成功落定（非错误态）：特性行或权威空态可见，loading 消失、无错误面板。
-    await expect(
-      page.getByTestId('char-row').first().or(page.getByTestId('no-plan-characteristics')),
-    ).toBeVisible({ timeout: 30_000 })
+    // 慢网最终成功落定（非错误态）：特性数据落定锚点（三形态说明见
+    // characteristicsSettledLocator）可见，loading 消失、无错误面板。
+    await expect(characteristicsSettledLocator(page)).toBeVisible({ timeout: 30_000 })
     await expect(loading).toHaveCount(0)
     await expect(page.getByTestId('plan-characteristics-error')).toHaveCount(0)
 

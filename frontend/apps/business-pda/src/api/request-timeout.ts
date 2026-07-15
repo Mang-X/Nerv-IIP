@@ -30,22 +30,41 @@
 export const REQUEST_TIMEOUT_MS = 30_000
 
 /**
+ * Lower bound for the DEV-only override. Anything below is instant-abort territory
+ * (every request dies before the first byte), so it falls back to the default instead.
+ */
+export const MIN_REQUEST_TIMEOUT_OVERRIDE_MS = 100
+
+/**
  * Resolve the request timeout from `VITE_NERV_IIP_REQUEST_TIMEOUT_MS` — a TEST/DEBUG
  * override so live network-sim specs can inject a short ceiling (e.g. 2000) instead of
- * really waiting 30s. Production builds must NOT set it; see .env.example.
+ * really waiting 30s. See .env.example.
  *
- * Only a plain positive-integer string (no sign, no decimals, no separators) overrides
- * the default. Anything else — unset, empty, non-numeric, zero, negative, fractional,
- * or beyond the safe-integer range — falls back to {@link REQUEST_TIMEOUT_MS}, so a
- * typo can never silently disable the timeout or make it zero/instant.
+ * **Production gate:** the override only exists in DEV (`vite dev` / vitest). When
+ * `env.DEV !== true` — production/APK builds statically replace `import.meta.env.DEV`
+ * with `false` — this returns {@link REQUEST_TIMEOUT_MS} unconditionally, so shipping
+ * a build with the variable set can never weaken (or extend) the product ceiling.
+ *
+ * In DEV, only a plain positive-integer string (no sign, no decimals, no separators)
+ * inside the clamp range `[MIN_REQUEST_TIMEOUT_OVERRIDE_MS, REQUEST_TIMEOUT_MS]`
+ * (100ms–30s) overrides the default. Anything else — unset, empty, non-numeric, zero,
+ * negative, fractional, out of range — falls back to {@link REQUEST_TIMEOUT_MS}, so a
+ * typo can never silently disable the timeout, make it instant, or raise it past 30s.
  */
 export function resolveRequestTimeoutMs(env: ImportMetaEnv = import.meta.env): number {
+  if (env.DEV !== true) return REQUEST_TIMEOUT_MS
   const raw: unknown = env.VITE_NERV_IIP_REQUEST_TIMEOUT_MS
   if (typeof raw !== 'string') return REQUEST_TIMEOUT_MS
   const trimmed = raw.trim()
   if (!/^\d+$/.test(trimmed)) return REQUEST_TIMEOUT_MS
   const value = Number(trimmed)
-  if (!Number.isSafeInteger(value) || value <= 0) return REQUEST_TIMEOUT_MS
+  if (
+    !Number.isSafeInteger(value) ||
+    value < MIN_REQUEST_TIMEOUT_OVERRIDE_MS ||
+    value > REQUEST_TIMEOUT_MS
+  ) {
+    return REQUEST_TIMEOUT_MS
+  }
   return value
 }
 
