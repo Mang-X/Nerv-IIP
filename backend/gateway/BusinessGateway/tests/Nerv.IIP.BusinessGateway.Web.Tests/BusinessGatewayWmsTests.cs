@@ -75,6 +75,19 @@ public sealed class BusinessGatewayWmsTests
         ],
         handler.Requests.Select(request => $"{request.Method} {request.RequestUri!.AbsolutePath}").ToArray());
         Assert.All(handler.Requests, request => Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter));
+
+        using var createInboundBody = JsonDocument.Parse(handler.RequestBodies[0]!);
+        var createInboundLine = createInboundBody.RootElement.GetProperty("lines")[0];
+        Assert.Equal("2026-01-15", createInboundLine.GetProperty("productionDate").GetString());
+        Assert.Equal("2027-01-15", createInboundLine.GetProperty("expiryDate").GetString());
+
+        using var completeInboundBody = JsonDocument.Parse(handler.RequestBodies[2]!);
+        Assert.Equal("complete-in-001", completeInboundBody.RootElement.GetProperty("idempotencyKey").GetString());
+        var completeInboundLine = completeInboundBody.RootElement.GetProperty("lines")[0];
+        Assert.Equal("10", completeInboundLine.GetProperty("lineNo").GetString());
+        Assert.Equal("LOT-CAPTURED-001", completeInboundLine.GetProperty("lotNo").GetString());
+        Assert.Equal("2026-01-16", completeInboundLine.GetProperty("productionDate").GetString());
+        Assert.Equal("2027-01-16", completeInboundLine.GetProperty("expiryDate").GetString());
     }
 
     [Fact]
@@ -91,7 +104,39 @@ public sealed class BusinessGatewayWmsTests
                     "/api/business/v1/wms/picking-tasks" => new { items = Array.Empty<object>(), total = 13 },
                     "/api/business/v1/wms/count-executions" => new { items = Array.Empty<object>(), total = 11 },
                     "/api/business/v1/wms/wcs-tasks" => new { items = Array.Empty<object>(), total = 9 },
-                    "/api/business/v1/wms/receiving-quality-gates" => new { items = Array.Empty<object>(), total = 7 },
+                    "/api/business/v1/wms/receiving-quality-gates" => (object)new
+                    {
+                        items = new[]
+                        {
+                            new
+                            {
+                                inboundOrderId = "inbound-order-001",
+                                inboundOrderLineId = "inbound-order-line-001",
+                                organizationId = "org-001",
+                                environmentId = "env-dev",
+                                inboundOrderNo = "IN-GATE-001",
+                                inboundOrderStatus = "Completed",
+                                siteCode = "S1",
+                                lineNo = "10",
+                                skuCode = "SKU-FG-1000",
+                                uomCode = "kg",
+                                receivedQuantity = 5,
+                                stagingLocationCode = "STAGE-01",
+                                lotNo = "LOT-001",
+                                serialNo = (string?)null,
+                                productionDate = "2026-01-15",
+                                expiryDate = "2027-01-15",
+                                qualityStatus = "quality",
+                                qualityGateStatus = "rejected",
+                                inspectionRecordId = "QI-REJ-001",
+                                qualityDispositionReason = "critical-defect",
+                                ownerType = "company",
+                                ownerId = (string?)null,
+                                createdAtUtc = "2026-06-01T10:10:00Z",
+                            },
+                        },
+                        total = 7,
+                    },
                     "/api/business/v1/wms/supplier-return-requests" => new { items = Array.Empty<object>(), total = 5 },
                     _ => throw new InvalidOperationException($"Unexpected path {request.RequestUri!.AbsolutePath}"),
                 },
@@ -118,6 +163,9 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(11, count.Total);
         Assert.Equal(9, wcs.Total);
         Assert.Equal(7, gates.Total);
+        var gate = Assert.Single(gates.Items);
+        Assert.Equal(new DateOnly(2026, 1, 15), gate.ProductionDate);
+        Assert.Equal(new DateOnly(2027, 1, 15), gate.ExpiryDate);
         Assert.Equal(5, returns.Total);
         Assert.Equal(
         [
@@ -167,6 +215,8 @@ public sealed class BusinessGatewayWmsTests
                     stagingLocationCode = "STAGE-01",
                     lotNo = "LOT-001",
                     serialNo = (string?)null,
+                    productionDate = "2026-01-15",
+                    expiryDate = "2027-01-15",
                     qualityStatus = "qualified",
                     ownerType = "company",
                     ownerId = (string?)null,
@@ -184,6 +234,16 @@ public sealed class BusinessGatewayWmsTests
         var completeInbound = await client.PostAsJsonAsync("/api/business-console/v1/wms/inbound-orders/inbound-order-001/complete?organizationId=org-001&environmentId=env-dev", new
         {
             idempotencyKey = "complete-in-001",
+            lines = new[]
+            {
+                new
+                {
+                    lineNo = "10",
+                    lotNo = "LOT-CAPTURED-001",
+                    productionDate = "2026-01-16",
+                    expiryDate = "2027-01-16",
+                },
+            },
         });
         var count = await client.PostAsJsonAsync("/api/business-console/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev", new
         {
@@ -211,8 +271,17 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(["create-inbound", "create-putaway", "complete-inbound", "create-count", "complete-count"], wms.Calls);
         Assert.Equal("internal-test-token", wms.LastInternalToken);
         Assert.Equal("IN-NEW", wms.LastCreateInboundRequest!.InboundOrderNo);
+        var createInboundLine = Assert.Single(wms.LastCreateInboundRequest.Lines);
+        Assert.Equal(new DateOnly(2026, 1, 15), createInboundLine.ProductionDate);
+        Assert.Equal(new DateOnly(2027, 1, 15), createInboundLine.ExpiryDate);
         Assert.Equal("inbound-order-001", wms.LastCreatePutawayRequest!.InboundOrderId);
         Assert.Equal("inbound-order-001", wms.LastCompleteInboundRequest!.InboundOrderId);
+        Assert.Equal("complete-in-001", wms.LastCompleteInboundRequest.IdempotencyKey);
+        var completeInboundLine = Assert.Single(wms.LastCompleteInboundRequest.Lines!);
+        Assert.Equal("10", completeInboundLine.LineNo);
+        Assert.Equal("LOT-CAPTURED-001", completeInboundLine.LotNo);
+        Assert.Equal(new DateOnly(2026, 1, 16), completeInboundLine.ProductionDate);
+        Assert.Equal(new DateOnly(2027, 1, 16), completeInboundLine.ExpiryDate);
         Assert.Equal("COUNT-001", wms.LastCreateCountRequest!.CountNo);
         Assert.Equal("count-execution-001", wms.LastCompleteCountRequest!.CountExecutionId);
     }
@@ -581,6 +650,8 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("rejected", gateItem.GetProperty("qualityGateStatus").GetString());
         Assert.Equal("QI-REJ-001", gateItem.GetProperty("inspectionRecordId").GetString());
         Assert.Equal("critical-defect", gateItem.GetProperty("qualityDispositionReason").GetString());
+        Assert.Equal("2026-01-15", gateItem.GetProperty("productionDate").GetString());
+        Assert.Equal("2027-01-15", gateItem.GetProperty("expiryDate").GetString());
 
         using var returnsDocument = JsonDocument.Parse(await returns.Content.ReadAsStringAsync());
         var returnsData = returnsDocument.RootElement.GetProperty("data");
@@ -618,13 +689,18 @@ public sealed class BusinessGatewayWmsTests
             "purchase-receipt",
             "PR-001",
             "S1",
-            [new("10", "SKU-001", "EA", 1, "STAGE-01", "LOT-001", null, "qualified", "company", null)]);
+            [new("10", "SKU-001", "EA", 1, "STAGE-01", "LOT-001", null, "qualified", "company", null, new DateOnly(2026, 1, 15), new DateOnly(2027, 1, 15))]);
 
     private static BusinessConsoleCreateWmsPutawayTaskRequest ValidPutawayRequest() =>
         new("inbound-order-001", "org-001", "env-dev", "PUT-001", "10", "STAGE-01", "BIN-01", 1);
 
     private static BusinessConsoleCompleteWmsInboundOrderRequest ValidCompleteInboundRequest() =>
-        new("inbound-order-001", "org-001", "env-dev", "complete-in-001");
+        new(
+            "inbound-order-001",
+            "org-001",
+            "env-dev",
+            "complete-in-001",
+            [new("10", "LOT-CAPTURED-001", new DateOnly(2026, 1, 16), new DateOnly(2027, 1, 16))]);
 
     private static BusinessConsoleCreateWmsOutboundOrderRequest ValidOutboundRequest() =>
         new(
@@ -667,10 +743,13 @@ public sealed class BusinessGatewayWmsTests
     {
         public List<HttpRequestMessage> Requests { get; } = [];
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        public List<string?> RequestBodies { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Requests.Add(request);
-            return Task.FromResult(responseFactory(request));
+            RequestBodies.Add(request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken));
+            return responseFactory(request);
         }
     }
 }
@@ -1027,6 +1106,8 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
                 "STAGE-01",
                 "LOT-001",
                 null,
+                new DateOnly(2026, 1, 15),
+                new DateOnly(2027, 1, 15),
                 "quality",
                 "rejected",
                 "QI-REJ-001",

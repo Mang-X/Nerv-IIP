@@ -103,7 +103,10 @@ public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbConte
     }
 }
 
-public sealed record CompleteInboundOrderCommand(InboundOrderId InboundOrderId, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
+public sealed record CompleteInboundOrderCommand(
+    InboundOrderId InboundOrderId,
+    string IdempotencyKey,
+    IReadOnlyCollection<InboundOrderLineCapture>? Lines = null) : ICommand<CompleteWmsMovementResult>;
 
 public sealed record CompleteWmsMovementResult(InventoryMovementRequestId? RequestId, string? InventoryMovementId);
 
@@ -114,7 +117,7 @@ public sealed class CompleteInboundOrderCommandHandler(ApplicationDbContext dbCo
     {
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
             ?? throw new KnownException($"Inbound order was not found: {request.InboundOrderId}");
-        var movementRequests = inbound.Complete(request.IdempotencyKey);
+        var movementRequests = inbound.Complete(request.IdempotencyKey, request.Lines);
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
         return new CompleteWmsMovementResult(movementRequests.First().Id, null);
     }

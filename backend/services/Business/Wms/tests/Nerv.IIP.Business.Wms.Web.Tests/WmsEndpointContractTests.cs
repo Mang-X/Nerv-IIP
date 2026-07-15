@@ -19,6 +19,8 @@ using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions;
 using InboundOrder = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder;
+using InboundOrderId = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderId;
+using InboundOrderLineCapture = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderLineCapture;
 using InboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderLineDraft;
 using OutboundOrder = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder;
 using OutboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrderLineDraft;
@@ -70,6 +72,23 @@ public sealed class WmsEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/receiving-quality-gates" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsReceivingQualityGates");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/supplier-return-requests" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsSupplierReturnRequests");
         Assert.All(contracts, x => Assert.Equal(InternalServiceAuthorizationPolicy.Name, x.AuthorizationPolicy));
+    }
+
+    [Fact]
+    public void Complete_inbound_contract_accepts_optional_line_captures_without_changing_the_operation_id()
+    {
+        var inboundOrderId = new InboundOrderId(Guid.CreateVersion7());
+        var legacyRequest = new CompleteInboundOrderRequest(inboundOrderId, "idem-legacy-001");
+        var capture = new InboundOrderLineCapture("LINE-001", "LOT-001", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
+        var captureRequest = new CompleteInboundOrderRequest(inboundOrderId, "idem-capture-001", [capture]);
+        var command = new CompleteInboundOrderCommand(captureRequest.InboundOrderId, captureRequest.IdempotencyKey, captureRequest.Lines);
+
+        Assert.Null(legacyRequest.Lines);
+        Assert.Equal([capture], captureRequest.Lines);
+        Assert.Equal([capture], command.Lines);
+        Assert.Equal(
+            "completeWmsInboundOrder",
+            WmsEndpointContracts.Get<CompleteInboundOrderEndpoint>().OperationId);
     }
 
     [Fact]
@@ -208,6 +227,67 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
+    public async Task Wms_live_http_host_binds_legacy_and_captured_inbound_completion_json()
+    {
+        await using var factory = CreateAuthorizedFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        InboundOrder legacyOrder;
+        InboundOrder capturedOrder;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            legacyOrder = InboundOrder.Create(
+                "org-http", "env-http", "IN-LEGACY-HTTP", "purchase-receipt", "PO-LEGACY-HTTP", "SITE-01",
+                [new InboundOrderLineDraft("10", "SKU-LEGACY", "pcs", 1m, "STAGE-01", "LOT-LEGACY", null, "qualified", "company", null)]);
+            capturedOrder = InboundOrder.Create(
+                "org-http", "env-http", "IN-CAPTURE-HTTP", "purchase-receipt", "PO-CAPTURE-HTTP", "SITE-01",
+                [new InboundOrderLineDraft("20", "SKU-CAPTURE", "pcs", 2m, "STAGE-01", "LOT-OLD", null, "qualified", "company", null)]);
+            dbContext.InboundOrders.AddRange(legacyOrder, capturedOrder);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await PostJsonAndAssertOkAsync(
+            client,
+            $"/api/business/v1/wms/inbound-orders/{legacyOrder.Id}/complete",
+            new { idempotencyKey = "idem-legacy-http" });
+        await PostJsonAndAssertOkAsync(
+            client,
+            $"/api/business/v1/wms/inbound-orders/{capturedOrder.Id}/complete",
+            new
+            {
+                idempotencyKey = "idem-capture-http",
+                lines = new[]
+                {
+                    new
+                    {
+                        lineNo = "20",
+                        lotNo = (string?)null,
+                        productionDate = "2026-07-15",
+                        expiryDate = (string?)null,
+                    },
+                },
+            });
+
+        using var verificationScope = factory.Services.CreateScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var persistedLegacy = await verificationDb.InboundOrders
+            .Include(x => x.Lines)
+            .SingleAsync(x => x.Id == legacyOrder.Id, CancellationToken.None);
+        var persistedCaptured = await verificationDb.InboundOrders
+            .Include(x => x.Lines)
+            .SingleAsync(x => x.Id == capturedOrder.Id, CancellationToken.None);
+
+        Assert.Equal("Completed", persistedLegacy.Status.ToString());
+        Assert.Equal("LOT-LEGACY", persistedLegacy.Lines.Single().LotNo);
+        Assert.Equal("Completed", persistedCaptured.Status.ToString());
+        Assert.Null(persistedCaptured.Lines.Single().LotNo);
+        Assert.Equal(new DateOnly(2026, 7, 15), persistedCaptured.Lines.Single().ProductionDate);
+        Assert.Null(persistedCaptured.Lines.Single().ExpiryDate);
+    }
+
+    [Fact]
     public async Task Wcs_task_query_exposes_failure_retry_and_completion_diagnostics()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
@@ -329,7 +409,9 @@ public sealed class WmsEndpointContractTests
         var passed = CreateQualityGateInboundOrder("IN-GATE-PASS-001");
         passed.Complete("idem-gate-pass-001");
         passed.ApplyInspectionResult("quality.InspectionPassed", "QI-PASS-001", "SKU-FG-1000", "LOT-001", null, 5m, null);
-        var rejected = CreateQualityGateInboundOrder("IN-GATE-REJ-001");
+        var productionDate = new DateOnly(2026, 1, 15);
+        var expiryDate = new DateOnly(2027, 1, 15);
+        var rejected = CreateQualityGateInboundOrder("IN-GATE-REJ-001", productionDate: productionDate, expiryDate: expiryDate);
         rejected.Complete("idem-gate-rej-001");
         rejected.ApplyInspectionResult("quality.InspectionRejected", "QI-REJ-001", "SKU-FG-1000", "LOT-001", null, 5m, "critical-defect");
         var pending = CreateQualityGateInboundOrder("IN-GATE-PEND-001");
@@ -363,6 +445,8 @@ public sealed class WmsEndpointContractTests
         Assert.Equal(5m, fact.ReceivedQuantity);
         Assert.Equal("LOT-001", fact.LotNo);
         Assert.Equal("10", fact.LineNo);
+        Assert.Equal(productionDate, fact.ProductionDate);
+        Assert.Equal(expiryDate, fact.ExpiryDate);
     }
 
     [Fact]
@@ -655,7 +739,11 @@ public sealed class WmsEndpointContractTests
         return order;
     }
 
-    private static InboundOrder CreateQualityGateInboundOrder(string orderNo, string organizationId = "org-001")
+    private static InboundOrder CreateQualityGateInboundOrder(
+        string orderNo,
+        string organizationId = "org-001",
+        DateOnly? productionDate = null,
+        DateOnly? expiryDate = null)
     {
         return InboundOrder.Create(
             organizationId,
@@ -664,7 +752,7 @@ public sealed class WmsEndpointContractTests
             "purchase-receipt",
             $"PO-{orderNo}",
             "SITE-01",
-            [new InboundOrderLineDraft("10", "SKU-FG-1000", "kg", 5m, "STAGE-01", "LOT-001", null, "quality", "company", null)]);
+            [new InboundOrderLineDraft("10", "SKU-FG-1000", "kg", 5m, "STAGE-01", "LOT-001", null, "quality", "company", null, productionDate, expiryDate)]);
     }
 
     private static SupplierReturnRequest CreateSupplierReturnRequest(string inboundOrderNo, string inspectionRecordId, string organizationId = "org-001")

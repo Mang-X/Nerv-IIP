@@ -714,6 +714,16 @@ public sealed class BusinessConsoleCompleteWmsInboundOrderRequestValidator
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleForEach(x => x.Lines).SetValidator(new BusinessConsoleWmsInboundLineCaptureInputValidator());
+    }
+}
+
+public sealed class BusinessConsoleWmsInboundLineCaptureInputValidator
+    : Validator<BusinessConsoleWmsInboundLineCaptureInput>
+{
+    public BusinessConsoleWmsInboundLineCaptureInputValidator()
+    {
+        RuleFor(x => x.LineNo).NotEmpty().MaximumLength(50);
     }
 }
 

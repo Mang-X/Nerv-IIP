@@ -505,6 +505,8 @@ public sealed record ReceivingQualityGateFact(
     string? QualityDispositionReason,
     string OwnerType,
     string? OwnerId,
+    DateOnly? ProductionDate,
+    DateOnly? ExpiryDate,
     DateTime CreatedAtUtc);
 
 public sealed class ListReceivingQualityGatesQueryHandler(ApplicationDbContext dbContext)
@@ -564,6 +566,8 @@ public sealed class ListReceivingQualityGatesQueryHandler(ApplicationDbContext d
                 x.line.QualityDispositionReason,
                 x.line.OwnerType,
                 x.line.OwnerId,
+                x.line.ProductionDate,
+                x.line.ExpiryDate,
                 x.order.CreatedAtUtc))
             .ToArrayAsync(cancellationToken);
         return new ListReceivingQualityGatesResponse(items, total);
