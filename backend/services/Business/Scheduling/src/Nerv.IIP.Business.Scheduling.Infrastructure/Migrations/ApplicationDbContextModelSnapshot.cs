@@ -113,9 +113,10 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasComment("Source ordering timestamp and optimistic concurrency token used to reject stale updates.");
 
                     b.Property<long?>("SourceRevision")
+                        .IsConcurrencyToken()
                         .HasColumnType("bigint")
                         .HasColumnName("source_revision")
-                        .HasComment("Optional positive MES manual-dispatch lifecycle revision used as the ordering watermark.");
+                        .HasComment("Optional positive MES manual-dispatch lifecycle revision and optimistic concurrency token used as the ordering watermark.");
 
                     b.Property<string>("SourceType")
                         .IsRequired()

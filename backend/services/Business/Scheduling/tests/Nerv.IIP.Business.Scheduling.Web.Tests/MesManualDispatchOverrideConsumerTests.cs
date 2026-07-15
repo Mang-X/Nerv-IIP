@@ -283,6 +283,47 @@ public sealed class MesManualDispatchOverrideConsumerTests
     }
 
     [Fact]
+    public async Task Concurrent_equal_timestamp_revision_updates_reload_and_keep_highest_revision()
+    {
+        var databaseName = $"mes-dispatch-revision-concurrency-{Guid.NewGuid():N}";
+        var databaseRoot = new InMemoryDatabaseRoot();
+        DbContextOptions<ApplicationDbContext> Options() => new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName, databaseRoot).Options;
+        var occurredAtUtc = At(8);
+        await using (var seed = new ApplicationDbContext(Options(), new NoopMediator()))
+        {
+            var fact = ScheduleOperationOverride.Create(
+                "org-1", "env-1", "WO-1", "OP-1", 10, "DEV-1", "WC-1",
+                occurredAtUtc, occurredAtUtc.AddHours(1), "mes-manual-dispatch", "mes-dispatch",
+                "evt-dispatch-1", "user:dispatcher", occurredAtUtc, occurredAtUtc);
+            Assert.True(fact.TryApplyMesDispatch(
+                "DEV-1", "WC-1", occurredAtUtc, occurredAtUtc.AddHours(1), "evt-dispatch-1",
+                "user:dispatcher", 1, occurredAtUtc, occurredAtUtc));
+            seed.ScheduleOperationOverrides.Add(fact);
+            await seed.SaveChangesAsync();
+        }
+
+        await using var revisionTwoDb = new ApplicationDbContext(Options(), new NoopMediator());
+        await using var revisionThreeDb = new ApplicationDbContext(Options(), new NoopMediator());
+        await revisionTwoDb.ScheduleOperationOverrides.SingleAsync();
+        await revisionThreeDb.ScheduleOperationOverrides.SingleAsync();
+        var revisionTwoHandler = CreateClearHandler(revisionTwoDb, new InMemoryIntegrationEventDeadLetterStore());
+        var revisionThreeHandler = CreateDispatchHandler(revisionThreeDb, new InMemoryIntegrationEventDeadLetterStore());
+
+        await revisionThreeHandler.HandleAsync(
+            CreateEvent("evt-dispatch-3", occurredAtUtc, "DEV-3", revision: 3), CancellationToken.None);
+        await revisionTwoHandler.HandleAsync(
+            CreateClearEvent("evt-clear-2", occurredAtUtc, revision: 2), CancellationToken.None);
+
+        await using var verificationDb = new ApplicationDbContext(Options(), new NoopMediator());
+        var persisted = await verificationDb.ScheduleOperationOverrides.SingleAsync();
+        Assert.True(persisted.IsActive);
+        Assert.Equal(3, persisted.SourceRevision);
+        Assert.Equal("DEV-3", persisted.ResourceId);
+        Assert.Equal(2, await verificationDb.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Fact]
     public async Task Concurrent_stale_snapshot_reloads_and_converges_to_newer_event()
     {
         var databaseName = $"mes-dispatch-concurrency-{Guid.NewGuid():N}";

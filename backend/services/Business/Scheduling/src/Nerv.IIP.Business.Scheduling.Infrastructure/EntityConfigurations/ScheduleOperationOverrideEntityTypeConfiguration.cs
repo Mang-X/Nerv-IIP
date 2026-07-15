@@ -25,7 +25,7 @@ public sealed class ScheduleOperationOverrideEntityTypeConfiguration : IEntityTy
         builder.Property(x => x.SourceOccurredAtUtc).HasColumnName("source_occurred_at_utc").IsConcurrencyToken().HasComment("Source ordering timestamp and optimistic concurrency token used to reject stale updates.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").HasComment("Last persistence update timestamp in UTC.");
         builder.Property(x => x.IsActive).HasColumnName("is_active").IsRequired().HasDefaultValue(true).HasComment("Whether this override currently contributes an active scheduling lock.");
-        builder.Property(x => x.SourceRevision).HasColumnName("source_revision").HasComment("Optional positive MES manual-dispatch lifecycle revision used as the ordering watermark.");
+        builder.Property(x => x.SourceRevision).HasColumnName("source_revision").IsConcurrencyToken().HasComment("Optional positive MES manual-dispatch lifecycle revision and optimistic concurrency token used as the ordering watermark.");
         builder.Property(x => x.ClearedReasonCode).HasColumnName("cleared_reason_code").HasMaxLength(64).HasComment("Optional MES reason code that made this projection an inactive tombstone.");
         builder.Property(x => x.ClearedAtUtc).HasColumnName("cleared_at_utc").HasComment("Optional MES timestamp at which the manual dispatch was cleared.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OperationId }).IsUnique();

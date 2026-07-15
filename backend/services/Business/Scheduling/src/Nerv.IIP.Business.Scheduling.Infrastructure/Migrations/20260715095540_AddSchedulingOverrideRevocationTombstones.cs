@@ -49,7 +49,7 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                 table: "schedule_operation_overrides",
                 type: "bigint",
                 nullable: true,
-                comment: "Optional positive MES manual-dispatch lifecycle revision used as the ordering watermark.");
+                comment: "Optional positive MES manual-dispatch lifecycle revision and optimistic concurrency token used as the ordering watermark.");
         }
 
         /// <inheritdoc />

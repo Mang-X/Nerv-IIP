@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260715081348_AddSchedulingOverrideRevocationTombstones")]
+    [Migration("20260715095540_AddSchedulingOverrideRevocationTombstones")]
     partial class AddSchedulingOverrideRevocationTombstones
     {
         /// <inheritdoc />
@@ -116,9 +116,10 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasComment("Source ordering timestamp and optimistic concurrency token used to reject stale updates.");
 
                     b.Property<long?>("SourceRevision")
+                        .IsConcurrencyToken()
                         .HasColumnType("bigint")
                         .HasColumnName("source_revision")
-                        .HasComment("Optional positive MES manual-dispatch lifecycle revision used as the ordering watermark.");
+                        .HasComment("Optional positive MES manual-dispatch lifecycle revision and optimistic concurrency token used as the ordering watermark.");
 
                     b.Property<string>("SourceType")
                         .IsRequired()
