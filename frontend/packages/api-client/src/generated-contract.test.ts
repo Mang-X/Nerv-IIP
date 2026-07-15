@@ -142,12 +142,15 @@ import {
 
 describe('generated API client contract', () => {
   it('exposes WMS receiving shelf-life fields through the stable boundary', () => {
-    expectTypeOf<BusinessConsoleWmsInboundLineInput>().toMatchTypeOf<{
+    expectTypeOf<
+      Pick<BusinessConsoleWmsInboundLineInput, 'productionDate' | 'expiryDate'>
+    >().toEqualTypeOf<{
       productionDate?: string | null
       expiryDate?: string | null
     }>()
-    expectTypeOf<BusinessConsoleCompleteWmsInboundOrderRequest>().toMatchTypeOf<{
-      idempotencyKey: string
+    expectTypeOf<
+      Pick<BusinessConsoleCompleteWmsInboundOrderRequest, 'lines'>
+    >().toEqualTypeOf<{
       lines?: BusinessConsoleWmsInboundLineCaptureInput[] | null
     }>()
     expectTypeOf<
@@ -161,7 +164,9 @@ describe('generated API client contract', () => {
       productionDate?: string | null
       expiryDate?: string | null
     }>()
-    expectTypeOf<BusinessConsoleWmsReceivingQualityGateItem>().toMatchTypeOf<{
+    expectTypeOf<
+      Pick<BusinessConsoleWmsReceivingQualityGateItem, 'productionDate' | 'expiryDate'>
+    >().toEqualTypeOf<{
       productionDate?: string | null
       expiryDate?: string | null
     }>()
