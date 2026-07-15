@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Behaviors;
@@ -24,12 +25,17 @@ public sealed class ManualDispatchConcurrencyRetryBehavior<TRequest, TResponse>(
                 return await next(cancellationToken);
             }
             catch (DbUpdateConcurrencyException exception)
-                when (attempt < MaxAttempts && IsManualDispatchRevisionConflict(exception))
+                when (IsSupportedCommand(request) &&
+                    attempt < MaxAttempts &&
+                    IsManualDispatchRevisionConflict(exception))
             {
                 dbContext.ChangeTracker.Clear();
             }
         }
     }
+
+    private static bool IsSupportedCommand(TRequest request) =>
+        request is AssignDispatchTaskCommand or CancelWorkOrderCommand;
 
     private static bool IsManualDispatchRevisionConflict(DbUpdateConcurrencyException exception)
     {

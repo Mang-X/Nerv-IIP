@@ -252,6 +252,36 @@ public sealed class ManualDispatchConcurrencyTests
         Assert.Equal(3, attempts);
     }
 
+    [Fact]
+    public async Task Non_manual_dispatch_command_does_not_retry_a_manual_revision_concurrency_exception()
+    {
+        var options = CreateInMemoryOptions();
+        await SeedTaskAsync(options, activeDeviceAssetId: null);
+        await using var staleContext = CreateContext(options);
+        var command = new ChangeOperationTaskStateCommand(
+            "org-001", "env-dev", "OP-CONCURRENCY-10", "start", At(1));
+        var behavior = new ManualDispatchConcurrencyRetryBehavior<ChangeOperationTaskStateCommand, MesOperationActionResponse>(staleContext);
+        var attempts = 0;
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => behavior.Handle(
+            command,
+            async cancellationToken =>
+            {
+                attempts++;
+                var losingTask = await staleContext.OperationTasks.SingleAsync(cancellationToken);
+                losingTask.Start(At(attempts));
+                await WinConcurrentAssignmentAsync(options, $"device-winner-{attempts}", At(attempts));
+                await staleContext.SaveChangesAsync(cancellationToken);
+                return new MesOperationActionResponse(
+                    command.OperationTaskId,
+                    losingTask.Status.ToString(),
+                    command.ChangedAtUtc);
+            },
+            CancellationToken.None));
+
+        Assert.Equal(1, attempts);
+    }
+
     private static async Task SeedTaskAsync(
         DbContextOptions<ApplicationDbContext> options,
         string? activeDeviceAssetId)
