@@ -412,6 +412,10 @@ BusinessApproval 模板步骤现在可通过结构化条件配置金额上下限
 
 MasterData 已新增 Coding-backed `ToolingAsset`、工作中心/SKU 适用范围、Available/Maintenance/Retired 生命周期、保养寿命计数，以及按工作中心和 from-SKU/现有 ProductCategory 到 to-SKU 管理 setup 分钟与所需工装的 `ChangeoverMatrixEntry`。当前代码没有独立 ProductFamily 主数据，因此不把 SKU `Category` 静默别名为产品族。BusinessScheduling problem assembly 通过内部 MasterData facts API 获取权威换型事实：矩阵命中覆盖 routing 默认 setup，未命中保留 ProductEngineering 发布快照中的基础 setup，不接受调用方内联 tooling。有限产能调度器将同一工装视为跨设备容量 1 的占用资源；工装维护/不适用或争用无法在 horizon 内消解时输出显式 `tooling` error conflict。管理 facade/UI 在 facade matrix 中标记 deferred，本切片不修改前端 scheduling visualization。
 
+### 2026-07-14 排程锁定与手动调整记录（MAN-384 / #700）
+
+BusinessScheduling 现在可以从 base plan + operation IDs 解析精确锁定分配，并将 Scheduling 手动资源/时间调整持久化为 `schedule_operation_overrides`；装配、预览和生成方案都会把当前 override 作为固定约束。MES 对真实设备的手动派工发布 `mes.OperationTaskManuallyDispatched`，Scheduling 以 inbox + 来源时间幂等投影到同一 override，不伪造工序、资源或时间窗。方案 KPI 新增 locked/optimizable operation count，延期、延期工序数和准时率只统计非锁定工序；资源负载与全方案计数仍保持完整方案口径。手动 override 已通过 BusinessGateway exposed facade 与 generated client 暴露；#78 甘特拖拽交互和 #701 release/revoke 版本治理仍未包含在本切片。
+
 ### 可以并行但不阻塞开工的事项
 
 1. Ops 持久化 outbox、复杂失败重试、审批 Console 管理入口和生产级调度策略。

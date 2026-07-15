@@ -77,7 +77,9 @@ public sealed record GeneratedSchedulePlanMetricsSnapshot(
     int TotalTardinessMinutes,
     int LateOperationCount,
     decimal OnTimeRate,
-    decimal AverageResourceUtilization);
+    decimal AverageResourceUtilization,
+    int LockedOperationCount = 0,
+    int OptimizableOperationCount = 0);
 
 public sealed record GeneratedScheduleAssignmentSnapshot(
     string AssignmentId,
@@ -178,6 +180,7 @@ public sealed class ScheduleProblemSnapshot : Entity<ScheduleProblemSnapshotId>
         string organizationId,
         string environmentId,
         string problemFingerprint,
+        string problemJson,
         DateTimeOffset horizonStartUtc,
         DateTimeOffset horizonEndUtc,
         DateTimeOffset capturedAtUtc)
@@ -187,6 +190,7 @@ public sealed class ScheduleProblemSnapshot : Entity<ScheduleProblemSnapshotId>
         OrganizationId = Required(organizationId, nameof(organizationId));
         EnvironmentId = Required(environmentId, nameof(environmentId));
         ProblemFingerprint = Required(problemFingerprint, nameof(problemFingerprint));
+        ProblemJson = Required(problemJson, nameof(problemJson));
         HorizonStartUtc = horizonStartUtc;
         HorizonEndUtc = horizonEndUtc;
         CapturedAtUtc = capturedAtUtc;
@@ -197,6 +201,7 @@ public sealed class ScheduleProblemSnapshot : Entity<ScheduleProblemSnapshotId>
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
     public string ProblemFingerprint { get; private set; } = string.Empty;
+    public string ProblemJson { get; private set; } = string.Empty;
     public DateTimeOffset HorizonStartUtc { get; private set; }
     public DateTimeOffset HorizonEndUtc { get; private set; }
     public DateTimeOffset CapturedAtUtc { get; private set; }
@@ -289,6 +294,8 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
     public DateTimeOffset? ReleasedAtUtc { get; private set; }
     public int ScheduledOperationCount { get; private set; }
     public int UnscheduledOperationCount { get; private set; }
+    public int LockedOperationCount { get; private set; }
+    public int OptimizableOperationCount { get; private set; }
     public int AssignedMinutes { get; private set; }
     public int MakespanMinutes { get; private set; }
     public int TotalTardinessMinutes { get; private set; }
@@ -378,6 +385,8 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         ArgumentNullException.ThrowIfNull(metrics);
         ScheduledOperationCount = metrics.ScheduledOperationCount;
         UnscheduledOperationCount = metrics.UnscheduledOperationCount;
+        LockedOperationCount = metrics.LockedOperationCount;
+        OptimizableOperationCount = metrics.OptimizableOperationCount;
         AssignedMinutes = metrics.AssignedMinutes;
         MakespanMinutes = metrics.MakespanMinutes;
         TotalTardinessMinutes = metrics.TotalTardinessMinutes;
