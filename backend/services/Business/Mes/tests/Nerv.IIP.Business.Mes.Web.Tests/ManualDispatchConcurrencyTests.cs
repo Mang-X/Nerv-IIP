@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
@@ -19,6 +20,25 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class ManualDispatchConcurrencyTests
 {
+    [Theory]
+    [InlineData(typeof(AssignDispatchTaskCommand))]
+    [InlineData(typeof(CancelWorkOrderCommand))]
+    [InlineData(typeof(ChangeOperationTaskStateCommand))]
+    [InlineData(typeof(RecordProductionReportCommand))]
+    [InlineData(typeof(ReverseProductionReportCommand))]
+    public void Existing_operation_task_writer_commands_opt_into_revision_conflict_retry(Type commandType)
+    {
+        Assert.True(typeof(IOperationTaskConcurrencyRetryCommand).IsAssignableFrom(commandType));
+    }
+
+    [Theory]
+    [InlineData(typeof(HoldWorkOrderCommand))]
+    [InlineData(typeof(ConvertPlanToWorkOrderCommand))]
+    public void Commands_that_do_not_update_existing_operation_tasks_do_not_opt_into_revision_conflict_retry(Type commandType)
+    {
+        Assert.False(typeof(IOperationTaskConcurrencyRetryCommand).IsAssignableFrom(commandType));
+    }
+
     [Fact]
     public async Task Concurrent_manual_dispatch_assignments_reject_the_stale_revision()
     {
@@ -225,6 +245,32 @@ public sealed class ManualDispatchConcurrencyTests
     }
 
     [Fact]
+    public async Task Real_unit_of_work_pipeline_retries_completion_and_publishes_only_the_successful_attempt()
+    {
+        var databaseName = $"mes-operation-state-pipeline-{Guid.CreateVersion7():N}";
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateInMemoryOptions(databaseName, databaseRoot);
+        await SeedTaskAsync(options, activeDeviceAssetId: null, OperationTaskLifecycleStatus.InProgress);
+        await using var provider = CreatePipelineProvider(databaseName, databaseRoot);
+        await using var scope = provider.CreateAsyncScope();
+        var staleContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        _ = await staleContext.OperationTasks.SingleAsync();
+        await WinConcurrentAssignmentAsync(options, "device-winner", At(2));
+
+        await scope.ServiceProvider.GetRequiredService<ISender>().Send(new ChangeOperationTaskStateCommand(
+            "org-001", "env-dev", "OP-CONCURRENCY-10", "complete", At(3)));
+
+        await using var assertionContext = CreateContext(options);
+        var persisted = await assertionContext.OperationTasks.SingleAsync();
+        Assert.Equal(OperationTaskLifecycleStatus.Completed, persisted.Status);
+        Assert.Equal(1, persisted.ManualDispatchRevision);
+        Assert.Equal("device-winner", persisted.DeviceAssetId);
+        var completed = Assert.Single(provider.GetRequiredService<RecordingIntegrationEventPublisher>().Published
+            .OfType<MesOperationTaskCompletedIntegrationEvent>());
+        Assert.Equal("OP-CONCURRENCY-10", completed.Payload.OperationTaskId);
+    }
+
+    [Fact]
     public async Task Manual_dispatch_retry_is_bounded_to_three_conflicting_attempts()
     {
         var options = CreateInMemoryOptions();
@@ -253,14 +299,14 @@ public sealed class ManualDispatchConcurrencyTests
     }
 
     [Fact]
-    public async Task Non_manual_dispatch_command_does_not_retry_a_manual_revision_concurrency_exception()
+    public async Task Command_that_does_not_write_operation_tasks_does_not_retry_a_manual_revision_concurrency_exception()
     {
         var options = CreateInMemoryOptions();
         await SeedTaskAsync(options, activeDeviceAssetId: null);
         await using var staleContext = CreateContext(options);
-        var command = new ChangeOperationTaskStateCommand(
-            "org-001", "env-dev", "OP-CONCURRENCY-10", "start", At(1));
-        var behavior = new ManualDispatchConcurrencyRetryBehavior<ChangeOperationTaskStateCommand, MesOperationActionResponse>(staleContext);
+        var command = new HoldWorkOrderCommand(
+            "org-001", "env-dev", "WO-CONCURRENCY-001", "quality hold", At(1));
+        var behavior = new ManualDispatchConcurrencyRetryBehavior<HoldWorkOrderCommand, MesAcceptedResponse>(staleContext);
         var attempts = 0;
 
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => behavior.Handle(
@@ -269,13 +315,10 @@ public sealed class ManualDispatchConcurrencyTests
             {
                 attempts++;
                 var losingTask = await staleContext.OperationTasks.SingleAsync(cancellationToken);
-                losingTask.Start(At(attempts));
+                losingTask.Assign(null, $"device-loser-{attempts}", null, At(attempts), "user:loser");
                 await WinConcurrentAssignmentAsync(options, $"device-winner-{attempts}", At(attempts));
                 await staleContext.SaveChangesAsync(cancellationToken);
-                return new MesOperationActionResponse(
-                    command.OperationTaskId,
-                    losingTask.Status.ToString(),
-                    command.ChangedAtUtc);
+                return new MesAcceptedResponse("unreachable", command.WorkOrderId, command.HeldAtUtc);
             },
             CancellationToken.None));
 
@@ -284,7 +327,8 @@ public sealed class ManualDispatchConcurrencyTests
 
     private static async Task SeedTaskAsync(
         DbContextOptions<ApplicationDbContext> options,
-        string? activeDeviceAssetId)
+        string? activeDeviceAssetId,
+        OperationTaskLifecycleStatus status = OperationTaskLifecycleStatus.Queued)
     {
         await using var context = CreateContext(options);
         await context.Database.EnsureCreatedAsync();
@@ -302,7 +346,7 @@ public sealed class ManualDispatchConcurrencyTests
             "env-dev",
             "WO-CONCURRENCY-001",
             "OP-CONCURRENCY-10",
-            OperationTaskLifecycleStatus.Queued,
+            status,
             10,
             "WC-001",
             [],
@@ -362,6 +406,7 @@ public sealed class ManualDispatchConcurrencyTests
         services.AddScoped<IMesIntegrationEventContextAccessor, StubMesIntegrationEventContextAccessor>();
         services.AddScoped<OperationTaskManuallyDispatchedIntegrationEventConverter>();
         services.AddScoped<OperationTaskManualDispatchClearedIntegrationEventConverter>();
+        services.AddScoped<OperationTaskCompletedIntegrationEventConverter>();
         services.AddSingleton<RecordingIntegrationEventPublisher>();
         services.AddSingleton<IIntegrationEventPublisher>(serviceProvider =>
             serviceProvider.GetRequiredService<RecordingIntegrationEventPublisher>());

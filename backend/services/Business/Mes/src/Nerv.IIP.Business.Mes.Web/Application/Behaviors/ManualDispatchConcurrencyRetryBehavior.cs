@@ -2,10 +2,11 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
-using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Behaviors;
+
+public interface IOperationTaskConcurrencyRetryCommand;
 
 public sealed class ManualDispatchConcurrencyRetryBehavior<TRequest, TResponse>(ApplicationDbContext dbContext)
     : IPipelineBehavior<TRequest, TResponse>
@@ -35,7 +36,7 @@ public sealed class ManualDispatchConcurrencyRetryBehavior<TRequest, TResponse>(
     }
 
     private static bool IsSupportedCommand(TRequest request) =>
-        request is AssignDispatchTaskCommand or CancelWorkOrderCommand;
+        request is IOperationTaskConcurrencyRetryCommand;
 
     private static bool IsManualDispatchRevisionConflict(DbUpdateConcurrencyException exception)
     {

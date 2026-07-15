@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 
@@ -39,7 +40,7 @@ public sealed record RecordProductionReportCommand(
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
     string? SerialNo = null,
-    string Source = "manual") : ICommand<ProductionReportCommandResult>;
+    string Source = "manual") : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand;
 
 public sealed class RecordProductionReportCommandValidator : AbstractValidator<RecordProductionReportCommand>
 {
@@ -288,7 +289,7 @@ public sealed record ReverseProductionReportCommand(
     string Reason,
     DateTimeOffset ReversedAtUtc,
     string ActorRef,
-    string? IdempotencyKey = null) : ICommand<ReverseProductionReportCommandResult>;
+    string? IdempotencyKey = null) : ICommand<ReverseProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand;
 
 public sealed class ReverseProductionReportCommandValidator : AbstractValidator<ReverseProductionReportCommand>
 {
