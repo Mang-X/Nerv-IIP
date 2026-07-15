@@ -102,6 +102,20 @@ public sealed class ManualDispatchSchedulingLockEventTests
     }
 
     [Fact]
+    public void Released_schedule_assignment_preserves_an_active_manual_dispatch_lifecycle()
+    {
+        var task = NewTask();
+        task.Assign(null, "DEV-MANUAL", null, At(1), "user:planner");
+        task.ClearDomainEvents();
+
+        task.ApplyScheduleAssignment("WC-2", "DEV-SCHEDULED", At(3), At(4), At(2));
+
+        Assert.Empty(task.GetDomainEvents());
+        Assert.Equal(1, task.ManualDispatchRevision);
+        Assert.True(task.HasActiveManualDispatch);
+    }
+
+    [Fact]
     public void Manual_dispatch_event_uses_snapshot_actor_and_revision_in_contract()
     {
         var task = NewTask();

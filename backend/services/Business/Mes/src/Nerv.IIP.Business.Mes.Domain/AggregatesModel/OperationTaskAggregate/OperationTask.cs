@@ -381,7 +381,6 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         EarliestStartUtc = plannedStartUtc;
         DurationTicks = (plannedEndUtc - plannedStartUtc).Ticks;
         DeviceAssetId = NormalizeOptional(deviceAssetId);
-        HasActiveManualDispatch = false;
         OperationCode = NormalizeOptional(operationCode) ?? OperationCode;
         AssignedAtUtc = assignedAtUtc;
         ScheduledAtUtc = assignedAtUtc;
