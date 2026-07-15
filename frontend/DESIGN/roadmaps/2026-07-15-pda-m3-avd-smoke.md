@@ -20,8 +20,12 @@
 | 统一入口   | 宿主 vite dev `127.0.0.1:5126`（双代理 `/api/console`→5100、`/api/business-console`→5119）                                                  |
 | 后端栈     | **未运行**（本走查的有意边界）                                                                                                              |
 
-<!-- refresh-after-fix：复审修复（release fail-closed 校验/基址语义/AVD 治理）commit 后，
-     主控重跑 dev 构建与一次装载冒烟并在此更新修复后 APK 指纹。 -->
+**复审修复后重跑（证据绑定干净 commit）**：在复审修复 commit `42632c2`（工作树 clean）上重跑
+`pda-apk-build.ps1`——SHA256 **仍为 `E7334B87…F80B41`**（与首跑逐字节一致，脚本改动不影响
+bundle 输入，可复现性三次成立）；新增的 aapt2 fail-closed 校验真实执行通过
+（`manifest usesCleartextTraffic=true / androidScheme=http / cleartext=true` 与 dev profile 一致，
+三项写入 build-fingerprint.txt，`commit=42632c2…`）；重装该 APK 至 `nerv-pda` 并启动，
+登录页正常渲染（见截图 4）。
 
 ## 步骤与证据
 
@@ -30,6 +34,7 @@
 | 1   | `pda-avd.ps1 -Action start -Headless` → `adb install -r` → `am start` | boot_completed=1；install Success；应用启动渲染登录页（中文字体/布局/手势条区域正常）                                                                                                                                                              | ![1](./assets/2026-07-15-pda-m3-avd-smoke/1-app-launch.png)      |
 | 2   | adb 填 admin → 点「登录」                                             | 应用透出类型化错误「无法连接认证服务。」（非白屏非裸堆栈）；**宿主 vite 日志同刻记录** `http proxy error: /api/console/v1/auth/login → ECONNREFUSED 127.0.0.1:5100`——请求真实穿过 APK WebView → 10.0.2.2 → 宿主统一入口 → 代理，仅因网关未起而失败 | ![2](./assets/2026-07-15-pda-m3-avd-smoke/2-login-attempt.png)   |
 | 3   | `pda-adb-scan.ps1 -Code 'RCV-2026-0715-M3'`（焦点在账号输入框）       | 码值完整进入 WebView 真实 input（Android 输入栈注入经 IME/焦点系统生效）                                                                                                                                                                           | ![3](./assets/2026-07-15-pda-m3-avd-smoke/3-adb-scan-inject.png) |
+| 4   | 复审修复 commit `42632c2` 重建（SHA 同）→ 重装 → 重启动               | install Success；登录页正常渲染（重跑冒烟，证据绑定干净 commit）                                                                                                                                                                                   | ![4](./assets/2026-07-15-pda-m3-avd-smoke/4-refix-relaunch.png)  |
 
 ## 已覆盖 / 未覆盖
 
