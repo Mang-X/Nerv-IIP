@@ -3253,7 +3253,8 @@ public sealed record BusinessConsoleMesWorkOrderItem(
     string Status,
     IReadOnlyCollection<BusinessConsoleMesOperationTaskItem> OperationTasks,
     string? WorkOrderNo = null,
-    string? SkuCode = null);
+    string? SkuCode = null,
+    bool HasActiveQualityHold = false);
 
 public sealed record BusinessConsoleMesOperationTaskItem(
     string OperationTaskId,
@@ -3438,7 +3439,20 @@ public sealed record BusinessConsoleMesWorkOrderDetailResponse(
     string ReadinessStatus,
     IReadOnlyCollection<string> BlockingReasons,
     IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> OperationTasks,
-    BusinessConsoleMesSourcePlanReference? SourcePlanReference = null);
+    BusinessConsoleMesSourcePlanReference? SourcePlanReference = null,
+    IReadOnlyCollection<BusinessConsoleMesWorkOrderQualityHoldSummary>? ActiveQualityHolds = null);
+
+public sealed record BusinessConsoleMesWorkOrderQualityHoldSummary(
+    string SourceService,
+    string SourceDocumentId,
+    string Scope,
+    string? OperationTaskId,
+    string? HoldReason,
+    DateTimeOffset? HeldAtUtc,
+    string? HeldBy,
+    string? HeldInspectionRecordId,
+    string? HeldInspectionDocumentId,
+    string InspectionRecordId);
 
 public sealed record BusinessConsoleMesSourcePlanReference(
     string SourceSystem,
@@ -3789,7 +3803,10 @@ public sealed record BusinessConsoleMesReceiptRequestRow(
     string? ProducedLotNo = null,
     string? SerialNo = null,
     string? PostedInventoryMovementId = null,
-    DateTimeOffset? PostedAtUtc = null);
+    DateTimeOffset? PostedAtUtc = null,
+    string? InventoryPostingFailureCode = null,
+    string? InventoryPostingFailureMessage = null,
+    DateTimeOffset? InventoryPostingFailedAtUtc = null);
 
 public sealed record BusinessConsoleMesCreateReceiptRequest(
     string OrganizationId,

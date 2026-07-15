@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import QualityHoldPanel from '@/components/mes/QualityHoldPanel.vue'
 import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
 import {
   resolveScheduleStatus,
   scheduleInvalidationHint,
 } from '@/composables/useScheduleInvalidation'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvAlertDialog,
@@ -37,6 +40,7 @@ import {
 } from '@nerv-iip/ui'
 import {
   ClipboardCheckIcon,
+  LockIcon,
   PackageCheckIcon,
   RefreshCwIcon,
   ShieldCheckIcon,
@@ -84,7 +88,20 @@ watch(
   { immediate: true },
 )
 
+const auth = useAuthStore()
+const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
+// 人工强制释放质量保留需 business.mes.quality.write（网关 MesQualityWrite），无权则只读时间线。
+const canManageQualityHold = computed(() => permissionCodes.value.includes(P.mesQualityWrite))
+
 const operationTasks = computed(() => detail.value?.operationTasks ?? [])
+// 当前工单的活跃质量保留（工单级 + 工序级），供 hold 区块渲染时间线与强制释放。
+// 生成层字段皆可选，此处收窄出定位键齐备（sourceService + sourceDocumentId）的保留再渲染。
+const activeQualityHolds = computed(() =>
+  (detail.value?.activeQualityHolds ?? []).filter(
+    (hold): hold is typeof hold & { sourceService: string; sourceDocumentId: string } =>
+      Boolean(hold.sourceService) && Boolean(hold.sourceDocumentId),
+  ),
+)
 const materialRows = computed(() => materialReadiness.value?.items ?? [])
 const blockingReasons = computed(() => [
   ...(detail.value?.blockingReasons ?? []),
@@ -428,6 +445,32 @@ function formatError(error: unknown) {
           <p class="mt-2 text-sm text-muted-foreground">{{ reason.nextStep }}</p>
         </div>
       </div>
+    </div>
+
+    <!-- 质量保留（hold）区块：施加/释放时间线、来源检验单互链、人工强制释放（#886 读面 + 既有 force-release）。 -->
+    <div v-if="activeQualityHolds.length" class="grid gap-2">
+      <div class="flex items-center gap-2">
+        <LockIcon class="size-4 text-destructive" aria-hidden="true" />
+        <span class="text-sm font-semibold text-foreground">质量保留</span>
+        <span class="text-xs text-muted-foreground"
+          >该工单存在 {{ activeQualityHolds.length }} 项有效质量保留，需处理后才能放行或开工</span
+        >
+      </div>
+      <QualityHoldPanel
+        v-for="hold in activeQualityHolds"
+        :key="`${hold.sourceService}-${hold.sourceDocumentId}`"
+        :organization-id="filters.organizationId"
+        :environment-id="filters.environmentId"
+        :source-service="hold.sourceService"
+        :source-document-id="hold.sourceDocumentId"
+        :scope="hold.scope"
+        :operation-task-id="hold.operationTaskId"
+        :hold-reason="hold.holdReason"
+        :held-at-utc="hold.heldAtUtc"
+        :held-by="hold.heldBy"
+        :can-manage="canManageQualityHold"
+        @released="refreshDetail"
+      />
     </div>
 
     <div class="grid gap-2">

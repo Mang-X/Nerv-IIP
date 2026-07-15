@@ -6,6 +6,9 @@ import {
   confirmBusinessConsoleMesDowntimeRecoveryMutationOptions,
   convertBusinessConsoleMesPlanToWorkOrderMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
+  retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
+  forceReleaseBusinessConsoleMesQualityHoldMutationOptions,
+  getBusinessConsoleMesQualityHoldTimelineQueryOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
   createBusinessConsoleMesShiftHandoverMutationOptions,
@@ -79,6 +82,8 @@ import {
   type BusinessConsoleMesRelatedQualityItemRow,
   type BusinessConsoleMesReceiptRequestListEnvelope,
   type BusinessConsoleMesReceiptRequestRow,
+  type BusinessConsoleMesQualityHoldTimelineItem,
+  type BusinessConsoleMesWorkOrderQualityHoldSummary,
   type BusinessConsoleMesCreateShiftHandoverRequest,
   type BusinessConsoleMesShiftHandoverListEnvelope,
   type BusinessConsoleMesShiftHandoverRow,
@@ -390,6 +395,16 @@ function isBusinessQuery(id: string) {
 }
 
 function ignoreBackgroundError(_error: unknown) {}
+
+// 传输层幂等键。完工入库重试与质量 hold 强制释放的重复保护由后端状态机兜底
+// （重试仅 InventoryPostingFailed 可发起、强制释放仅 Active hold 生效），此处每次动作取新键即可。
+function makeIdempotencyKey(prefix: string): string {
+  const cryptoApi = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+  if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+    return `${prefix}-${cryptoApi.randomUUID()}`
+  }
+  return `${prefix}-${Math.random().toString(36).slice(2)}`
+}
 
 function invalidateMesQueries(queryCache: ReturnType<typeof useQueryCache>, ids: string[]) {
   return Promise.all(
@@ -1268,11 +1283,43 @@ export function useMesFinishedGoodsReceipts() {
     },
   })
 
+  // 完工入库失败重试（#833 facade）：只对 InventoryPostingFailed 单据重投库存过账意图。
+  const retryMutation = useMutation({
+    ...retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions(),
+    onSuccess() {
+      void invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesFinishedGoodsReceiptRequests',
+        'getBusinessConsoleMesOverview',
+        // 跨域（A1 §4.2）：重投成功后库存移动过账，库存可用量读面失效
+        'getBusinessConsoleInventoryAvailability',
+      ]).catch(ignoreBackgroundError)
+    },
+  })
+  // 当前正在重试的单据号，供行内按钮 spinner/禁用只作用于该行（列表其余行不受影响）。
+  const retryingRequestNo = shallowRef<string | null>(null)
+
   return {
     createReceiptRequest: (body: BusinessConsoleMesCreateReceiptRequest) =>
       createReceiptMutation.mutateAsync({ body }),
     createReceiptRequestError: createReceiptMutation.error,
     createReceiptRequestPending: createReceiptMutation.isLoading,
+    retryInventoryPosting: async (requestNo: string) => {
+      retryingRequestNo.value = requestNo
+      try {
+        await retryMutation.mutateAsync({
+          path: { requestNo },
+          query: {
+            organizationId: filters.organizationId,
+            environmentId: filters.environmentId,
+          },
+          body: { idempotencyKey: makeIdempotencyKey('receipt-retry') },
+        })
+      } finally {
+        retryingRequestNo.value = null
+      }
+    },
+    retryInventoryPostingError: retryMutation.error,
+    retryingRequestNo: computed(() => retryingRequestNo.value),
     filters,
     receiptRequests: computed<BusinessConsoleMesReceiptRequestRow[]>(() =>
       envelopeItems<
@@ -1284,6 +1331,82 @@ export function useMesFinishedGoodsReceipts() {
     receiptRequestsPending: receiptsQuery.isLoading,
     receiptRequestsTotal: computed(() => envelopeTotal(receiptsQuery.data.value)),
     refreshReceiptRequests: () => refetchWithBusinessContext(filters, receiptsQuery),
+  }
+}
+
+export interface MesQualityHoldSource {
+  organizationId: string
+  environmentId: string
+  sourceService: string
+  sourceDocumentId: string
+}
+
+// 单个质量保留(quality hold)的时间线读面(#886)+人工强制释放(既有 force-release 写面)。
+// 由工单详情 hold 区块按活跃保留逐个实例化;定位键为 sourceService + sourceDocumentId。
+export function useMesQualityHold(source: () => MesQualityHoldSource) {
+  const queryCache = useQueryCache()
+  const enabled = computed(() => {
+    const s = source()
+    return (
+      isNonEmpty(s.organizationId) &&
+      isNonEmpty(s.environmentId) &&
+      isNonEmpty(s.sourceService) &&
+      isNonEmpty(s.sourceDocumentId)
+    )
+  })
+
+  const timelineQuery = useQuery(() => {
+    const s = source()
+    return {
+      ...getBusinessConsoleMesQualityHoldTimelineQueryOptions({
+        path: { sourceDocumentId: s.sourceDocumentId },
+        query: {
+          organizationId: s.organizationId,
+          environmentId: s.environmentId,
+          sourceService: s.sourceService,
+        },
+      }),
+      enabled: enabled.value,
+    }
+  })
+
+  const forceReleaseMutation = useMutation({
+    ...forceReleaseBusinessConsoleMesQualityHoldMutationOptions(),
+    onSuccess() {
+      void invalidateMesQueries(queryCache, [
+        // 本读面：释放后时间线追加一条 manual-force-released 事件
+        'getBusinessConsoleMesQualityHoldTimeline',
+        // 保留解除改动工单详情活跃保留、列表锁定标记与齐套/开工阻塞
+        'getBusinessConsoleMesWorkOrderDetail',
+        'listBusinessConsoleMesWorkOrders',
+        'getBusinessConsoleMesMaterialReadiness',
+        'getBusinessConsoleMesProductionPlanReadiness',
+      ]).catch(ignoreBackgroundError)
+    },
+  })
+
+  return {
+    timeline: computed<BusinessConsoleMesQualityHoldTimelineItem[]>(() => {
+      const data = timelineQuery.data.value
+      return data?.success ? (data.data?.items ?? []) : []
+    }),
+    timelinePending: timelineQuery.isLoading,
+    timelineError: timelineQuery.error,
+    refreshTimeline: () => (enabled.value ? timelineQuery.refetch() : Promise.resolve()),
+    forceRelease: (reason: string) => {
+      const s = source()
+      return forceReleaseMutation.mutateAsync({
+        path: { sourceDocumentId: s.sourceDocumentId },
+        query: { organizationId: s.organizationId, environmentId: s.environmentId },
+        body: {
+          reason,
+          sourceService: s.sourceService,
+          idempotencyKey: makeIdempotencyKey('quality-hold-release'),
+        },
+      })
+    },
+    forceReleasePending: forceReleaseMutation.isLoading,
+    forceReleaseError: forceReleaseMutation.error,
   }
 }
 

@@ -19,6 +19,7 @@ const routerState = vi.hoisted(() => ({
 const mesSpies = vi.hoisted(() => ({
   createReceiptRequest: vi.fn(async () => undefined),
   refreshReceiptRequests: vi.fn(async () => undefined),
+  retryInventoryPosting: vi.fn(async () => undefined),
   traceabilityFilters: undefined as { batchOrSerial: string, materialLotId: string, mode: string, workOrderId: string } | undefined,
 }))
 
@@ -57,6 +58,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
     receiptRequestsPending: ref(false),
     receiptRequestsTotal: ref(0),
     refreshReceiptRequests: mesSpies.refreshReceiptRequests,
+    retryInventoryPosting: mesSpies.retryInventoryPosting,
+    retryInventoryPostingError: ref(undefined),
+    retryingRequestNo: ref(null),
   }),
   useMesOperationTasks: () => ({
     filters: {
@@ -251,6 +255,25 @@ const uiStubs = {
     template: '<p><slot /></p>',
   },
   NvDialogFooter: {
+    template: '<div><slot /></div>',
+  },
+  NvSheet: {
+    props: ['open'],
+    template: '<div><slot /></div>',
+  },
+  NvSheetContent: {
+    template: '<div><slot /></div>',
+  },
+  NvSheetHeader: {
+    template: '<div><slot /></div>',
+  },
+  NvSheetTitle: {
+    template: '<h2><slot /></h2>',
+  },
+  NvSheetDescription: {
+    template: '<p><slot /></p>',
+  },
+  NvSheetFooter: {
     template: '<div><slot /></div>',
   },
   RowActions: {

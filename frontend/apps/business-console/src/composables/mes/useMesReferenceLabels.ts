@@ -18,7 +18,9 @@ const statusLabels: Record<MesStatusValue, string> = {
   dispositionAccepted: '处置已受理',
   hold: '挂起',
   inProgress: '执行中',
+  inventoryPostingFailed: '入库失败',
   open: '未恢复',
+  partiallyPosted: '部分入库',
   partiallyReceived: '部分接收',
   paused: '暂停',
   posted: '已入库',
@@ -90,7 +92,9 @@ export const mesQualityStatusOptions = statusOptions([
 
 export const mesReceiptStatusOptions = statusOptions([
   'requested',
+  'partiallyPosted',
   'posted',
+  'inventoryPostingFailed',
 ])
 
 export const mesDowntimeStatusOptions = statusOptions([

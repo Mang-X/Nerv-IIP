@@ -9867,7 +9867,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -10151,7 +10153,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -11030,7 +11034,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -11248,7 +11254,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -11466,7 +11474,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -11988,7 +11998,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -12695,7 +12707,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -12842,7 +12856,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -13032,7 +13048,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -13293,7 +13311,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -13728,7 +13748,9 @@
                 "dispositionAccepted",
                 "hold",
                 "inProgress",
+                "inventoryPostingFailed",
                 "open",
+                "partiallyPosted",
                 "partiallyReceived",
                 "paused",
                 "posted",
@@ -33248,7 +33270,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -33280,6 +33304,9 @@
           "skuCode": {
             "type": "string",
             "nullable": true
+          },
+          "hasActiveQualityHold": {
+            "type": "boolean"
           }
         }
       },
@@ -33303,7 +33330,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -33435,6 +33464,13 @@
                 "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference"
               }
             ]
+          },
+          "activeQualityHolds": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderQualityHoldSummary"
+            }
           }
         }
       },
@@ -33461,7 +33497,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -33567,6 +33605,49 @@
           "sourceDemandReference": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderQualityHoldSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sourceService": {
+            "type": "string"
+          },
+          "sourceDocumentId": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "operationTaskId": {
+            "type": "string",
+            "nullable": true
+          },
+          "holdReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "heldAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "heldBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "heldInspectionRecordId": {
+            "type": "string",
+            "nullable": true
+          },
+          "heldInspectionDocumentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "inspectionRecordId": {
+            "type": "string"
           }
         }
       },
@@ -34156,7 +34237,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -34286,7 +34369,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -34541,7 +34626,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -35250,7 +35337,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -35354,7 +35443,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -35398,6 +35489,19 @@
             "nullable": true
           },
           "postedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "inventoryPostingFailureCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "inventoryPostingFailureMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "inventoryPostingFailedAtUtc": {
             "type": "string",
             "format": "date-time",
             "nullable": true
@@ -35517,7 +35621,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",
@@ -35857,7 +35963,9 @@
               "dispositionAccepted",
               "hold",
               "inProgress",
+              "inventoryPostingFailed",
               "open",
+              "partiallyPosted",
               "partiallyReceived",
               "paused",
               "posted",

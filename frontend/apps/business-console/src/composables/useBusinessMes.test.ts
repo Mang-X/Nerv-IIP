@@ -104,6 +104,22 @@ vi.mock('@nerv-iip/api-client', () => ({
       data: vars.body,
     })),
   })),
+  retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  forceReleaseBusinessConsoleMesQualityHoldMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  getBusinessConsoleMesQualityHoldTimelineQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesQualityHoldTimeline' }],
+    query: vi.fn(),
+  })),
   createBusinessConsoleMesMaterialIssueRequestMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,

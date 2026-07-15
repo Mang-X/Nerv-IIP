@@ -1,40 +1,42 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesCreateReceiptRequest } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { StatusTone } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { mesReceiptStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
-  NvDialog,
-  NvDialogContent,
-  NvDialogDescription,
-  NvDialogFooter,
-  NvDialogHeader,
-  NvDialogTitle,
-  NvDropdownMenuItem,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
   NvPageHeader,
   NvRowActions,
+  NvDropdownMenuItem,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
+  NvSheet,
+  NvSheetContent,
+  NvSheetDescription,
+  NvSheetFooter,
+  NvSheetHeader,
+  NvSheetTitle,
   Spinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { EyeIcon, PackageCheckIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { EyeIcon, PackageCheckIcon, RefreshCwIcon, RotateCcwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -54,14 +56,18 @@ const {
   receiptRequestsPending,
   receiptRequestsTotal,
   refreshReceiptRequests,
+  retryInventoryPosting,
+  retryingRequestNo,
 } = useMesFinishedGoodsReceipts()
 const { page, pageSize, resetPage } = usePagedList(filters, { resetOn: [() => filters.status] })
 const { resolveSku } = useMesDisplayNames()
 
 const route = useRoute()
-const successMessage = shallowRef('')
+const router = useRouter()
 const receiptSheetOpen = shallowRef(false)
 const quickViewWorkOrderId = ref<string | null>(null)
+// 登记成功后容器内成功态（A1 §4.1「下一步去哪」）：留存刚登记的单号，给出「继续登记 / 完成」出路。
+const lastCreatedRequestNo = shallowRef('')
 
 const statusFilter = computed({
   get: () => filters.status || 'all',
@@ -71,21 +77,36 @@ const statusFilter = computed({
 })
 const statusOptions = mesReceiptStatusOptions
 
-// 完工入库申请状态的可读中文标签（与一线 / PDA 完工入库口径一致：待入库 / 部分入库 / 已入库…）。
-// 通用 StatusBadge 会把 Completed 解析成「已完成」，但本域语义是「已入库」，故按入库上下文显式映射。
+// 完工入库申请状态语义与真实域状态一致（Requested/PartiallyPosted/Posted/InventoryPostingFailed/Cancelled，
+// 运行时为原始 PascalCase），大小写不敏感查表。入库上下文用「已入库」而非通用「已完成」。
 const RECEIPT_STATUS_LABELS: Record<string, string> = {
-  Requested: '待入库',
-  Pending: '待入库',
-  Created: '待入库',
-  Submitted: '待入库',
-  PartiallyReceived: '部分入库',
-  Received: '已入库',
-  Completed: '已入库',
-  Cancelled: '已取消',
-  Rejected: '已驳回',
+  requested: '待入库',
+  partiallyposted: '部分入库',
+  posted: '已入库',
+  inventorypostingfailed: '入库失败',
+  cancelled: '已取消',
+}
+const RECEIPT_STATUS_TONES: Record<string, StatusTone> = {
+  requested: 'neutral',
+  partiallyposted: 'info',
+  posted: 'success',
+  inventorypostingfailed: 'danger',
+  cancelled: 'neutral',
+}
+function normalizeStatus(status?: string | null) {
+  return (status ?? '').toLowerCase()
 }
 function receiptStatusLabel(status?: string | null) {
-  return RECEIPT_STATUS_LABELS[status ?? ''] ?? '未知状态'
+  return RECEIPT_STATUS_LABELS[normalizeStatus(status)] ?? '未知状态'
+}
+function receiptStatusTone(status?: string | null): StatusTone {
+  return RECEIPT_STATUS_TONES[normalizeStatus(status)] ?? 'neutral'
+}
+function isFailedReceipt(status?: string | null) {
+  return normalizeStatus(status) === 'inventorypostingfailed'
+}
+function canRetry(row: ReceiptRow) {
+  return isFailedReceipt(row.receiptStatus) && isNonEmpty(row.requestNo ?? '')
 }
 
 const form = reactive({
@@ -101,7 +122,8 @@ const form = reactive({
 })
 
 const listErrorMessage = computed(() => formatError(receiptRequestsError.value))
-const createErrorMessage = computed(() => formatError(createReceiptRequestError.value))
+// 超量校验：后端 KnownException「累计完工入库申请数量超过工单完工数量」→ 给一线可读业务文案。
+const createErrorMessage = computed(() => friendlyCreateError(createReceiptRequestError.value))
 const hasReceiptContext = computed(() => isNonEmpty(form.workOrderId) && isNonEmpty(form.skuId))
 const canCreate = computed(
   () =>
@@ -113,6 +135,26 @@ const canCreate = computed(
     toPositiveNumber(form.unitCost) !== undefined &&
     isNonEmpty(form.uomCode) &&
     isNonEmpty(form.requestedAtUtc),
+)
+
+// 状态筛选进 URL query（A1 §5.3）：进入读 query 初始化，变更防抖后 replace 写回，默认值（all）删除键。
+watch(
+  () => route.query.status,
+  (value) => {
+    const next = firstQueryValue(value)
+    if (next && next !== filters.status) filters.status = next
+  },
+  { immediate: true },
+)
+watch(
+  () => filters.status,
+  (value) => {
+    const current = firstQueryValue(route.query.status)
+    if ((value ?? '') === (current ?? '')) return
+    void router.replace({
+      query: { ...route.query, status: value ? value : undefined },
+    })
+  },
 )
 
 watch(
@@ -142,9 +184,9 @@ const columns: NvDataTableColumn<ReceiptRow>[] = [
   { key: 'skuId', header: '成品', accessor: (r) => resolveSku(r.skuCode ?? r.skuId) ?? '无' },
   { key: 'quantity', header: '入库数量', align: 'end', width: 'w-28' },
   { key: 'unitCost', header: '单位成本', align: 'end', width: 'w-28' },
-  { key: 'receiptStatus', header: '入库状态', width: 'w-24' },
+  { key: 'receiptStatus', header: '入库状态', width: 'w-48' },
   { key: 'requestedAtUtc', header: '登记时间', width: 'w-44' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-28' },
 ]
 
 function openWorkOrder(workOrderId?: string | null) {
@@ -152,8 +194,15 @@ function openWorkOrder(workOrderId?: string | null) {
 }
 function openReceiptSheet() {
   if (!hasReceiptContext.value) return
-  successMessage.value = ''
+  lastCreatedRequestNo.value = ''
   receiptSheetOpen.value = true
+}
+function resetCreateForm() {
+  form.quantity = '1'
+  form.unitCost = ''
+  form.uomCode = 'EA'
+  form.requestedAtUtc = toLocalDateTimeInput(new Date())
+  form.idempotencyKey = ''
 }
 
 async function submitReceiptRequest() {
@@ -171,9 +220,29 @@ async function submitReceiptRequest() {
   }
   await createReceiptRequest(body)
   if (createReceiptRequestError.value) return
-  successMessage.value = '成品入库登记已提交，可在列表查看入库状态。'
-  receiptSheetOpen.value = false
+  // 容器内成功态：留存单号 + 提供「继续登记 / 完成」出路（高频连录含「继续登记」）。
+  lastCreatedRequestNo.value = body.workOrderId ?? form.workOrderId.trim()
   await refreshReceiptRequests()
+}
+function continueCreating() {
+  lastCreatedRequestNo.value = ''
+  resetCreateForm()
+}
+function finishCreating() {
+  lastCreatedRequestNo.value = ''
+  receiptSheetOpen.value = false
+}
+
+async function retryRow(row: ReceiptRow) {
+  const requestNo = row.requestNo
+  if (!requestNo || !canRetry(row)) return
+  try {
+    await retryInventoryPosting(requestNo)
+    notifySuccess(`已重新提交入库过账（${requestNo}），过账完成后刷新即显示为「已入库」。`)
+    await refreshReceiptRequests()
+  } catch (error) {
+    notifyError(error, '重投入库过账失败，请稍后重试。')
+  }
 }
 
 function formatDateTime(value?: string | null) {
@@ -215,6 +284,15 @@ function toPositiveNumber(value: string) {
 }
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+}
+// 累计申请量超过工单完工数量：把后端带 WorkOrderId 后缀的技术消息收敛成一线业务文案。
+function friendlyCreateError(error: unknown) {
+  const raw = formatError(error)
+  if (!raw) return ''
+  if (raw.includes('累计完工入库申请数量超过') || raw.includes('完工数量')) {
+    return '累计请求量超过完工数量，请先核对该工单的报工完成数量后再登记入库。'
+  }
+  return raw
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0
@@ -309,33 +387,76 @@ function isNonEmpty(value: string) {
         ><span class="tabular-nums">{{ formatUnitCost(row.unitCost) }}</span></template
       >
       <template #cell-receiptStatus="{ row }">
-        <NvStatusBadge :value="row.receiptStatus" :label="receiptStatusLabel(row.receiptStatus)" />
+        <div class="grid gap-1">
+          <NvStatusBadge
+            :tone="receiptStatusTone(row.receiptStatus)"
+            :label="receiptStatusLabel(row.receiptStatus)"
+          />
+          <!-- 失败原因：库存过账失败时给出后端失败信息，一线据此判断是补库存还是改数量后再重投。 -->
+          <p
+            v-if="isFailedReceipt(row.receiptStatus) && row.inventoryPostingFailureMessage"
+            class="max-w-64 text-xs leading-snug text-destructive"
+            :title="row.inventoryPostingFailureMessage"
+          >
+            {{ row.inventoryPostingFailureMessage }}
+          </p>
+        </div>
       </template>
       <template #cell-requestedAtUtc="{ row }">{{ formatDateTime(row.requestedAtUtc) }}</template>
       <template #cell-actions="{ row }">
-        <NvRowActions :label="`入库登记操作 ${row.requestNo ?? row.workOrderId ?? ''}`">
-          <NvDropdownMenuItem :disabled="!row.workOrderId" @click="openWorkOrder(row.workOrderId)">
-            <EyeIcon aria-hidden="true" />
-            查看工单
-          </NvDropdownMenuItem>
-        </NvRowActions>
+        <div class="flex items-center justify-end gap-1">
+          <!-- 失败重试为该行高频主动作（A1 §2）：行内直达，重试中仅本行禁用 + spinner。 -->
+          <NvButton
+            v-if="canRetry(row)"
+            size="sm"
+            type="button"
+            variant="outline"
+            :disabled="retryingRequestNo === row.requestNo"
+            @click="retryRow(row)"
+          >
+            <Spinner v-if="retryingRequestNo === row.requestNo" aria-hidden="true" />
+            <RotateCcwIcon v-else aria-hidden="true" />
+            重试
+          </NvButton>
+          <NvRowActions :label="`入库登记操作 ${row.requestNo ?? row.workOrderId ?? ''}`">
+            <NvDropdownMenuItem :disabled="!row.workOrderId" @click="openWorkOrder(row.workOrderId)">
+              <EyeIcon aria-hidden="true" />
+              查看工单
+            </NvDropdownMenuItem>
+          </NvRowActions>
+        </div>
       </template>
     </NvDataTable>
 
-    <NvDialog v-model:open="receiptSheetOpen">
-      <NvDialogContent>
-        <NvDialogHeader>
-          <NvDialogTitle>登记完工入库</NvDialogTitle>
-          <NvDialogDescription
-            >把完工成品登记入库。工单与成品由报工完成或工单详情带出，只需确认入库数量、单位成本和单位。</NvDialogDescription
+    <NvSheet v-model:open="receiptSheetOpen">
+      <NvSheetContent class="w-full overflow-y-auto sm:max-w-xl">
+        <NvSheetHeader>
+          <NvSheetTitle>登记完工入库</NvSheetTitle>
+          <NvSheetDescription
+            >把完工成品登记入库。工单与成品由报工完成或工单详情带出，只需确认入库数量、单位成本和单位。</NvSheetDescription
           >
-        </NvDialogHeader>
-        <form class="grid content-start gap-4" @submit.prevent="submitReceiptRequest">
+        </NvSheetHeader>
+
+        <!-- 成功态：给出「继续登记（重置表单留在原地）/ 完成（关闭）」出路（A1 §4.1）。 -->
+        <div v-if="lastCreatedRequestNo" class="grid content-start gap-4 p-4">
+          <div class="grid gap-2 rounded-lg border border-success/30 bg-success/5 p-4">
+            <p class="text-sm font-medium text-success">完工入库登记已提交</p>
+            <p class="text-sm text-muted-foreground">
+              工单 {{ lastCreatedRequestNo }} 的入库登记已进入列表，稍后可在列表查看入库状态。
+            </p>
+          </div>
+          <div class="flex justify-end gap-2">
+            <NvButton type="button" variant="outline" @click="continueCreating">
+              <PackageCheckIcon aria-hidden="true" />
+              继续登记
+            </NvButton>
+            <NvButton type="button" @click="finishCreating">完成</NvButton>
+          </div>
+        </div>
+
+        <form v-else class="grid content-start gap-4 p-4" @submit.prevent="submitReceiptRequest">
           <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">
             {{ createErrorMessage }}
-          </p>
-          <p v-if="successMessage" class="text-sm text-success" role="status">
-            {{ successMessage }}
           </p>
 
           <NvFieldGroup class="grid gap-3">
@@ -386,7 +507,7 @@ function isNonEmpty(value: string) {
             </NvField>
           </NvFieldGroup>
 
-          <NvDialogFooter>
+          <NvSheetFooter>
             <NvButton type="button" variant="outline" @click="receiptSheetOpen = false"
               >取消</NvButton
             >
@@ -395,10 +516,10 @@ function isNonEmpty(value: string) {
               <PackageCheckIcon v-else aria-hidden="true" />
               提交入库登记
             </NvButton>
-          </NvDialogFooter>
+          </NvSheetFooter>
         </form>
-      </NvDialogContent>
-    </NvDialog>
+      </NvSheetContent>
+    </NvSheet>
 
     <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>
