@@ -12,9 +12,10 @@
 #   Writes:
 #     - artifacts/script-logs/**
 #     - frontend/apps/business-pda/test-results-live/** (Playwright traces/screenshots)
-#     - frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd-HHmmss-fff>-<shortSHA>-pda-live/** (per-run
-#       unique evidence dir; the script errors out if the target dir already exists non-empty,
-#       so evidence from different runs never mixes; path overridable via -EvidenceDir)
+#     - frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd-HHmmss-fff>-<shortSHA>-pda-live-<rand4hex>/**
+#       (per-run unique evidence dir; created upfront as an atomic placeholder via New-Item without
+#       -Force so a concurrent run claiming the same name fails instead of mixing evidence; the
+#       script errors out if the target dir already exists; path overridable via -EvidenceDir)
 #     - Business data in the local stack databases (inspection records / completed inspection tasks)
 #   Cleanup:
 #     - Playwright stops the vite webServer it started; a reused pre-existing server is left running
@@ -34,9 +35,10 @@
 
 [CmdletBinding()]
 param(
-    # 证据归集目录；默认 frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd-HHmmss-fff>-<shortSHA>-pda-live/
-    # （毫秒级时间戳 + shortSHA，每次运行唯一；无论默认还是显式指定，目录已存在且非空一律
-    # 报错退出，避免混入/覆盖既有证据）
+    # 证据归集目录；默认 frontend/DESIGN/roadmaps/assets/
+    # <yyyy-MM-dd-HHmmss-fff>-<shortSHA>-pda-live-<rand4hex>/（毫秒级时间戳 + shortSHA +
+    # 4 位随机十六进制后缀，每次运行唯一；无论默认还是显式指定，唯一性检查通过后立即
+    # 原子占位创建目录——已存在（含空目录）一律报错退出，避免混入/覆盖既有证据）
     [string] $EvidenceDir,
 
     # live 端口已被占用时，允许复用既有 dev server（设 PLAYWRIGHT_PDA_LIVE_REUSE=1）。
@@ -127,7 +129,10 @@ if ($livePortOccupied) {
         }
         $normalizedCommandLine = ($ownerCommandLine -replace '\\', '/').ToLowerInvariant()
         $normalizedToplevel = ($scriptToplevel -replace '\\', '/').ToLowerInvariant()
-        if (-not $normalizedCommandLine.Contains($normalizedToplevel)) {
+        # 带路径边界匹配：worktree 根路径之后必须紧跟 /、引号、空白或字符串结尾，
+        # 防止 'Nerv-IIP' 被 'Nerv-IIP-old' 之类的前缀碰撞误判为本 worktree。
+        $toplevelBoundaryPattern = [regex]::Escape($normalizedToplevel) + '([/"''\s]|$)'
+        if ($normalizedCommandLine -notmatch $toplevelBoundaryPattern) {
             Write-Diagnostic -Level 'ERROR' -Message "live 端口 $livePort 上的 dev server 不属于本 worktree（$scriptToplevel）：监听进程命令行为 '$ownerCommandLine'。判定为并行会话的 server，复用会产生失真证据。"
             Write-Diagnostic -Level 'ERROR' -Message '请停掉该进程（或改 PLAYWRIGHT_BUSINESS_PDA_LIVE_PORT 换口）后重跑。'
             exit 1
@@ -149,13 +154,23 @@ else {
 
 # --- 5. 跑 live spec + 证据归集（无论成败都归集 trace/截图，失败时证据更重要）。
 if ([string]::IsNullOrWhiteSpace($EvidenceDir)) {
-    # 每次运行唯一（毫秒级时间戳 + shortSHA），不与其他运行混目录、不覆盖既有证据。
-    $EvidenceDir = Join-Path $repoRoot 'frontend' 'DESIGN' 'roadmaps' 'assets' ("{0}-{1}-pda-live" -f (Get-Date -Format 'yyyy-MM-dd-HHmmss-fff'), $head)
+    # 每次运行唯一（毫秒级时间戳 + shortSHA + 4 位随机十六进制后缀），不与其他运行
+    # 混目录、不覆盖既有证据；随机后缀防两次并行运行落在同一毫秒 + 同一 HEAD 撞名。
+    $EvidenceDir = Join-Path $repoRoot 'frontend' 'DESIGN' 'roadmaps' 'assets' ("{0}-{1}-pda-live-{2:x4}" -f (Get-Date -Format 'yyyy-MM-dd-HHmmss-fff'), $head, (Get-Random -Maximum 65536))
 }
 # 归集前守卫（默认目录与显式 -EvidenceDir 一视同仁）：目标目录已存在且非空 → 报错退出，
 # 绝不把本次证据静默混入/覆盖到既有证据里。
 if ((Test-Path $EvidenceDir) -and $null -ne (Get-ChildItem -LiteralPath $EvidenceDir -Force | Select-Object -First 1)) {
     Write-Diagnostic -Level 'ERROR' -Message "证据目录已存在且非空：$EvidenceDir。拒绝混入/覆盖既有证据——请换一个 -EvidenceDir，或先清理该目录后重跑。"
+    exit 1
+}
+# 原子占位：唯一性检查通过后立即创建目录（不带 -Force，已存在即失败），把
+# 「检查 → 归集时创建」窗口内并行运行抢占同名目录的竞态收敛为此处的创建失败。
+try {
+    New-Item -ItemType Directory -Path $EvidenceDir -ErrorAction Stop | Out-Null
+}
+catch {
+    Write-Diagnostic -Level 'ERROR' -Message "证据目录创建失败（目录已存在——可能被并行运行抢占，或显式 -EvidenceDir 指向既有空目录）：$EvidenceDir——$($_.Exception.Message)。请换一个 -EvidenceDir 后重跑。"
     exit 1
 }
 $testResultsDir = Join-Path $appDir 'test-results-live'
@@ -169,11 +184,8 @@ catch {
 }
 finally {
     if (Test-Path $testResultsDir) {
-        # 目录已存在且非空的情况在归集前守卫已挡掉，这里只需补建缺失目录（不用 -Force 兜混入）。
-        if (-not (Test-Path $EvidenceDir)) {
-            New-Item -ItemType Directory -Path $EvidenceDir | Out-Null
-        }
-        # 不加 -Force：默认目录每次运行唯一，若显式 -EvidenceDir 撞既有文件则如实报错而非静默覆盖。
+        # 证据目录已在第 5 步前置原子占位创建，这里只写入不创建。
+        # 不加 -Force：目录本次运行独占（占位创建成功即无既有文件），撞文件如实报错而非静默覆盖。
         Copy-Item -Path (Join-Path $testResultsDir '*') -Destination $EvidenceDir -Recurse
         $reuseNote = $serverReuse ? 'true (reused pre-existing dev server; worktree ownership VERIFIED — listener process command line contains this worktree root)' : 'false'
         "branch=$branch`nhead=$head`nworktree=$scriptToplevel`ndate=$(Get-Date -Format 'o')`nserverReuse=$reuseNote" |

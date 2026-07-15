@@ -20,10 +20,35 @@ const inputEl = ref<HTMLInputElement>()
 const buffer = ref('')
 
 function submit() {
+  // P0 守卫：缓冲若仍是纯 document 捕获的短残片（有未消费捕获标记、内容与捕获
+  // 快照原封一致、且不足最小突发长度），则无论 Enter 从哪个入口来（document
+  // 捕获路径或回焦后的原生 keydown.enter）都遵守捕获规则——清空丢弃、不 emit。
+  // 否则「短残片 + RAF 回焦 + 原生 Enter」会旁路 MIN_SCAN_CHARS 判定把误按
+  // 残片当扫码提交。手工输入在首个原生 input 事件即接管缓冲（清捕获标记，见
+  // onNativeInput），不受此守卫影响。
+  if (
+    lastDocCaptureAt !== null &&
+    buffer.value === docCaptureSnapshot &&
+    buffer.value.trim().length < MIN_SCAN_CHARS
+  ) {
+    buffer.value = ''
+    resetDocCapture()
+    return
+  }
   const value = buffer.value.trim()
   if (!value) return
   emit('scan', value)
   buffer.value = ''
+}
+
+// --- 缓冲所有权转移（捕获 → 用户）--------------------------------------------
+// 原生 input 事件只可能由用户在聚焦态键入/删改触发（document 捕获路径是程序
+// 赋值 buffer.value，不触发 input 事件）。事件一旦发生即视为用户接管缓冲：
+// 撤销捕获标记并取消空闲清理定时器，内容保留、此后不再受空闲清理 / active=false
+// 清理影响。捕获前缀 + 原生续流的混合路径在续写第一个字符时就完成所有权转移；
+// 「编辑后值恰好变回捕获快照」也不会再被快照相等误判为未消费残片而误清。
+function onNativeInput() {
+  resetDocCapture()
 }
 
 // --- 焦点回抢（含浮层竞态防护）------------------------------------------------
@@ -107,8 +132,9 @@ function armIdleCleanup() {
   clearIdleCleanup()
   idleCleanupTimer = setTimeout(() => {
     idleCleanupTimer = null
-    // 只看快照是否失配：失配说明缓冲已被 input 路径续写/编辑过
-    // （捕获前缀 + 原生续流的正常拼装），保留内容、只撤销捕获标记；
+    // 用户接管（原生 input 事件）会经 onNativeInput → resetDocCapture 直接
+    // 取消本定时器，正常不会走到这里；快照失配判断保留作兜底：失配说明缓冲
+    // 已被 input 路径续写/编辑过，保留内容、只撤销捕获标记。
     // 原封未动则是纯捕获残片——document 捕获只发生在未聚焦窗口，
     // RAF 回焦后 300ms 内用户没碰它就是误按残片，无论 input 此刻
     // 是否聚焦都清空（真实扫码流会在几十 ms 内续写或以 Enter 收尾，
@@ -211,6 +237,7 @@ onBeforeUnmount(() => {
       spellcheck="false"
       :placeholder="placeholder"
       class="w-full bg-transparent py-2 text-base outline-none placeholder:text-muted-foreground"
+      @input="onNativeInput"
       @keydown.enter.prevent="submit"
       @blur="refocus"
     />

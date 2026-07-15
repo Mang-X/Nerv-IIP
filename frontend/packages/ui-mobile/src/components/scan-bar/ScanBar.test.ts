@@ -306,14 +306,65 @@ describe('ScanBar', () => {
       typeOnDocument('K')
       await nextTick()
       expect(inputEl.value).toBe('SK')
-      // 模拟 RAF 回焦，之后扫码流走原生 input 路径续写余下字符
+      // 模拟 RAF 回焦，之后扫码流走原生 input 路径续写余下字符：setValue 触发
+      // 原生 input 事件 → 所有权转移（清捕获标记），缓冲从此归用户/原生路径。
       inputEl.focus()
       await input.setValue('SKU-12345')
-      // 原生 Enter 提交：拼装后的完整码 emit，不受 document 路径约束
+      // 原生 Enter 提交：拼装后的完整码 emit，不再受 document 捕获路径约束
+      // （P0 守卫只拦「未接管的纯捕获短残片」，接管后不生效）。
       await input.trigger('keydown', { key: 'Enter' })
       expect(wrapper.emitted('scan')).toBeTruthy()
       expect(wrapper.emitted('scan')![0]).toEqual(['SKU-12345'])
       expect(inputEl.value).toBe('')
+      wrapper.unmount()
+    })
+
+    it('discards a pure captured short fragment on native Enter after refocus instead of emitting (P0 guard)', async () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      const input = wrapper.get('input')
+      const inputEl = input.element as HTMLInputElement
+      // 未聚焦窗口内 document 捕获 1-2 字符误按残片
+      typeOnDocument('A')
+      typeOnDocument('B')
+      await nextTick()
+      expect(inputEl.value).toBe('AB')
+      // 模拟 RAF 回焦后立即原生 Enter：缓冲仍是未被接管的纯捕获短残片，
+      // 不得旁路 MIN_SCAN_CHARS 捕获规则——不 emit，且残片被清空。
+      inputEl.focus()
+      await input.trigger('keydown', { key: 'Enter' })
+      expect(wrapper.emitted('scan')).toBeFalsy()
+      expect(inputEl.value).toBe('')
+      wrapper.unmount()
+    })
+
+    it('transfers buffer ownership on a native input event: idle timeout keeps the content', async () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      const input = wrapper.get('input')
+      typeOnDocument('A')
+      typeOnDocument('B')
+      await nextTick()
+      // 用户接管：原生 input 事件一旦发生即转移所有权——即使值恰好仍等于捕获
+      // 快照（编辑后变回快照的场景），空闲超时也不得再按「纯捕获残片」清空。
+      ;(input.element as HTMLInputElement).focus()
+      await input.setValue('AB')
+      vi.advanceTimersByTime(300)
+      await nextTick()
+      expect((input.element as HTMLInputElement).value).toBe('AB')
+      expect(wrapper.emitted('scan')).toBeFalsy()
+      wrapper.unmount()
+    })
+
+    it('transfers buffer ownership on a native input event: active=false keeps the content', async () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      const input = wrapper.get('input')
+      typeOnDocument('A')
+      typeOnDocument('B')
+      await nextTick()
+      // 同上：接管后浮层打开（active=false）也不得清空用户已接管的内容。
+      ;(input.element as HTMLInputElement).focus()
+      await input.setValue('AB')
+      await wrapper.setProps({ active: false })
+      expect((input.element as HTMLInputElement).value).toBe('AB')
       wrapper.unmount()
     })
 
@@ -361,7 +412,8 @@ describe('ScanBar', () => {
     it('does not clear the buffer on idle timeout when the input path modified it since capture', async () => {
       const wrapper = mount(ScanBar, { attachTo: document.body })
       typeOnDocument('A')
-      // 捕获后缓冲被 input 路径改动（快照失配）：用户内容不动
+      // 捕获后缓冲被 input 路径改动：input 事件即所有权转移（新语义），用户内容不动；
+      // 快照失配判断仍作兜底保留同一结论。
       await wrapper.get('input').setValue('A-EDITED')
       vi.advanceTimersByTime(300)
       await nextTick()
