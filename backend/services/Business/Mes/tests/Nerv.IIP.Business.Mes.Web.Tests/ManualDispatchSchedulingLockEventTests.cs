@@ -40,7 +40,7 @@ public sealed class ManualDispatchSchedulingLockEventTests
             Assert.Single(task.GetDomainEvents()));
         Assert.Equal(2, cleared.Dispatch.DispatchRevision);
         Assert.Equal("DEV-1", cleared.Dispatch.ResourceId);
-        Assert.Equal("device-cleared", cleared.ReasonCode);
+        Assert.Equal(OperationTaskManualDispatchClearReason.DeviceCleared, cleared.Reason);
         Assert.Equal(At(2), cleared.ClearedAtUtc);
         Assert.Equal("user:planner", cleared.Actor);
         Assert.False(task.HasActiveManualDispatch);
@@ -83,7 +83,7 @@ public sealed class ManualDispatchSchedulingLockEventTests
 
         var cleared = Assert.IsType<OperationTaskManualDispatchClearedDomainEvent>(
             Assert.Single(task.GetDomainEvents()));
-        Assert.Equal("operation-cancelled", cleared.ReasonCode);
+        Assert.Equal(OperationTaskManualDispatchClearReason.OperationCancelled, cleared.Reason);
         Assert.Equal("DEV-1", cleared.Dispatch.ResourceId);
         Assert.Equal(2, cleared.Dispatch.DispatchRevision);
         Assert.False(task.HasActiveManualDispatch);
@@ -126,7 +126,7 @@ public sealed class ManualDispatchSchedulingLockEventTests
             Assert.Single(task.GetDomainEvents()));
         Assert.Equal(1, cleared.Dispatch.DispatchRevision);
         Assert.Equal("DEV-LEGACY", cleared.Dispatch.ResourceId);
-        Assert.Equal("operation-cancelled", cleared.ReasonCode);
+        Assert.Equal(OperationTaskManualDispatchClearReason.OperationCancelled, cleared.Reason);
         Assert.False(task.HasActiveManualDispatch);
     }
 
@@ -221,7 +221,7 @@ public sealed class ManualDispatchSchedulingLockEventTests
         Assert.Equal("corr-1", integrationEvent.CorrelationId);
         Assert.Equal("cause-1", integrationEvent.CausationId);
         Assert.Equal("user:planner", integrationEvent.Actor);
-        Assert.Equal("device-cleared", integrationEvent.Payload.ReasonCode);
+        Assert.Equal(MesManualDispatchClearReasonCodes.DeviceCleared, integrationEvent.Payload.ReasonCode);
         Assert.Equal(2, integrationEvent.Payload.DispatchRevision);
         Assert.Contains("operation-task-manual-dispatch-cleared", integrationEvent.IdempotencyKey, StringComparison.Ordinal);
     }

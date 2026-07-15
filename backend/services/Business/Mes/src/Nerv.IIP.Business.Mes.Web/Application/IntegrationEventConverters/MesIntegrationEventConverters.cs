@@ -267,10 +267,19 @@ public sealed class OperationTaskManualDispatchClearedIntegrationEventConverter(
         OperationTaskManualDispatchClearedDomainEvent domainEvent)
     {
         var dispatch = domainEvent.Dispatch;
+        var reasonCode = domainEvent.Reason switch
+        {
+            OperationTaskManualDispatchClearReason.DeviceCleared =>
+                MesManualDispatchClearReasonCodes.DeviceCleared,
+            OperationTaskManualDispatchClearReason.OperationCancelled =>
+                MesManualDispatchClearReasonCodes.OperationCancelled,
+            _ => throw new ArgumentOutOfRangeException(nameof(domainEvent),
+                domainEvent.Reason, "Unsupported manual dispatch clear reason.")
+        };
         var context = contextAccessor.GetContext();
         var idempotencyKey = EventIds.Idempotency("operation-task-manual-dispatch-cleared",
             dispatch.OrganizationId, dispatch.EnvironmentId, dispatch.OperationTaskId,
-            dispatch.DispatchRevision.ToString(CultureInfo.InvariantCulture), domainEvent.ReasonCode);
+            dispatch.DispatchRevision.ToString(CultureInfo.InvariantCulture), reasonCode);
         return new MesOperationTaskManualDispatchClearedIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}", MesIntegrationEventTypes.OperationTaskManualDispatchCleared,
             MesIntegrationEventVersions.V1, domainEvent.ClearedAtUtc, MesIntegrationEventSources.BusinessMes,
@@ -279,7 +288,7 @@ public sealed class OperationTaskManualDispatchClearedIntegrationEventConverter(
             new OperationTaskManualDispatchClearedPayload(
                 dispatch.WorkOrderId, dispatch.OperationTaskId, dispatch.OperationSequence,
                 dispatch.ResourceId, dispatch.WorkCenterId, dispatch.StartUtc, dispatch.EndUtc,
-                dispatch.DispatchRevision, domainEvent.ReasonCode, domainEvent.ClearedAtUtc));
+                dispatch.DispatchRevision, reasonCode, domainEvent.ClearedAtUtc));
     }
 }
 

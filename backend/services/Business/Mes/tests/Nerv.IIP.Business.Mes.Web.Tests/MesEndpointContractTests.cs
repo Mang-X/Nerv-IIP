@@ -485,7 +485,7 @@ public sealed class MesEndpointContractTests
         Assert.Equal(OperationTaskLifecycleStatus.Cancelled, operationTask.Status);
         var dispatchClearedEvent = Assert.IsType<OperationTaskManualDispatchClearedDomainEvent>(
             Assert.Single(operationTask.GetDomainEvents()));
-        Assert.Equal("operation-cancelled", dispatchClearedEvent.ReasonCode);
+        Assert.Equal(OperationTaskManualDispatchClearReason.OperationCancelled, dispatchClearedEvent.Reason);
         Assert.Equal("user:endpoint-actor-695", dispatchClearedEvent.Actor);
         var cancelledEvent = Assert.IsType<WorkOrderCancelledDomainEvent>(workOrder.GetDomainEvents().Last());
         Assert.Equal(["MIR-695-LOCAL"], cancelledEvent.MaterialIssueRequestNos);

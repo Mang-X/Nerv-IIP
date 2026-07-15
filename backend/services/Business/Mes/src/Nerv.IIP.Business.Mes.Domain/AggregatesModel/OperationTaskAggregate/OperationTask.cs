@@ -303,7 +303,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
                     previousDeviceAssetId!,
                     previousAssignedAtUtc ?? assignedAtUtc,
                     ManualDispatchRevision),
-                "device-cleared",
+                OperationTaskManualDispatchClearReason.DeviceCleared,
                 assignedAtUtc,
                 canonicalActor!));
         }
@@ -342,7 +342,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
                     DeviceAssetId!,
                     AssignedAtUtc ?? cancelledAtUtc,
                     ManualDispatchRevision),
-                "operation-cancelled",
+                OperationTaskManualDispatchClearReason.OperationCancelled,
                 cancelledAtUtc,
                 canonicalActor!));
             HasActiveManualDispatch = false;

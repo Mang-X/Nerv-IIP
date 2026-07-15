@@ -15,10 +15,6 @@ public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandler
 {
     public const string ConsumerName = "business-scheduling.mes-operation-manual-dispatch-cleared";
 
-    private static readonly HashSet<string> RecognizedReasons =
-        ["device-cleared", "operation-cancelled"];
-
-    private static readonly IntegrationEventEnvelopeValidator EnvelopeValidator = new();
     private static readonly IntegrationEventConsumerOptions ConsumerOptions = new(
         ConsumerName, MesIntegrationEventTypes.OperationTaskManualDispatchCleared, MesIntegrationEventVersions.V1);
 
@@ -44,7 +40,7 @@ public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandler
             return;
         }
 
-        var envelopeValidation = EnvelopeValidator.Validate(integrationEvent, ConsumerOptions);
+        var envelopeValidation = MesOverrideConsumerValidation.ValidateEnvelope(integrationEvent, ConsumerOptions);
         if (!envelopeValidation.IsValid)
         {
             await deadLetterStore.AddAsync(MesOverrideConsumerPersistence.CreateDeadLetter(
@@ -62,17 +58,7 @@ public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandler
         MesOverrideInboxIdentity inboxIdentity,
         CancellationToken cancellationToken)
     {
-        var payload = integrationEvent.Payload;
-        if (!inboxIdentity.IsValid ||
-            !IsValidEnvelopeProjectionIdentity(integrationEvent) ||
-            !IsValidIdentity(payload.WorkOrderId) ||
-            !IsValidIdentity(payload.OperationTaskId) ||
-            !IsValidIdentity(payload.ResourceId) ||
-            !IsValidIdentity(payload.WorkCenterId) ||
-            payload.OperationSequence <= 0 ||
-            payload.DispatchRevision <= 0 ||
-            payload.EndUtc <= payload.StartUtc ||
-            !RecognizedReasons.Contains(payload.ReasonCode))
+        if (!MesOverrideConsumerValidation.IsValidClear(integrationEvent, inboxIdentity))
         {
             await deadLetterStore.AddAsync(MesOverrideConsumerPersistence.CreateDeadLetter(
                 ConsumerName, integrationEvent,
@@ -145,20 +131,4 @@ public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandler
             payload.ClearedAtUtc);
     }
 
-    private static bool IsValidIdentity(string value) =>
-        !string.IsNullOrWhiteSpace(value) &&
-        value == value.Trim() &&
-        value.Length <= 128;
-
-    private static bool IsValidEnvelopeProjectionIdentity(
-        MesOperationTaskManualDispatchClearedIntegrationEvent integrationEvent) =>
-        IsValidIdentity(integrationEvent.OrganizationId, 64) &&
-        IsValidIdentity(integrationEvent.EnvironmentId, 64) &&
-        IsValidIdentity(integrationEvent.EventId, 128) &&
-        IsValidIdentity(integrationEvent.Actor, 128);
-
-    private static bool IsValidIdentity(string value, int maxLength) =>
-        !string.IsNullOrWhiteSpace(value) &&
-        value == value.Trim() &&
-        value.Length <= maxLength;
 }

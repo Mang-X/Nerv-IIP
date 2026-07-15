@@ -164,6 +164,19 @@ public sealed class MesDispatchSchedulingOverrideAcceptanceTests
         await dispatchConsumer.HandleAsync(delayedDispatchRevision1, CancellationToken.None);
         await clearConsumer.HandleAsync(delayedClearRevision2, CancellationToken.None);
 
+        // A legacy revision-less delivery may have a later source timestamp, but it cannot
+        // cross the positive revision watermark established by the current MES lineage.
+        var delayedLegacyDispatch = dispatchRevision1 with
+        {
+            EventId = "evt-delayed-legacy-dispatch",
+            OccurredAtUtc = start.AddHours(1),
+            CorrelationId = "corr-delayed-legacy-dispatch",
+            CausationId = dispatchRevision3.EventId,
+            IdempotencyKey = "idem-delayed-legacy-dispatch",
+            Payload = dispatchRevision1.Payload with { DispatchRevision = 0 }
+        };
+        await dispatchConsumer.HandleAsync(delayedLegacyDispatch, CancellationToken.None);
+
         var overlaid = await new SchedulingOperationOverrideOverlay(schedulingDb)
             .ApplyAsync(CreateProblem(start), CancellationToken.None);
         var plan = new FiniteCapacityScheduler().Schedule(overlaid, "plan-after-redispatch", start.AddMinutes(-1));
@@ -177,11 +190,13 @@ public sealed class MesDispatchSchedulingOverrideAcceptanceTests
         Assert.True(persisted.IsActive);
         Assert.Equal(3, persisted.SourceRevision);
         Assert.Equal(dispatchRevision3.EventId, persisted.SourceEventId);
-        Assert.Equal(5, await schedulingDb.ProcessedIntegrationEvents.CountAsync());
+        Assert.Equal(6, await schedulingDb.ProcessedIntegrationEvents.CountAsync());
         Assert.True(await schedulingDb.ProcessedIntegrationEvents.AnyAsync(
             x => x.EventId == delayedDispatchRevision1.EventId));
         Assert.True(await schedulingDb.ProcessedIntegrationEvents.AnyAsync(
             x => x.EventId == delayedClearRevision2.EventId));
+        Assert.True(await schedulingDb.ProcessedIntegrationEvents.AnyAsync(
+            x => x.EventId == delayedLegacyDispatch.EventId));
     }
 
     private static MesOperationTaskManuallyDispatchedIntegrationEvent ConvertSingleDispatch(OperationTask task) =>

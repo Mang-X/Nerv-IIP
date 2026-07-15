@@ -66,6 +66,25 @@ public sealed class ScheduleOperationOverrideTests
     }
 
     [Fact]
+    public void Legacy_revision_zero_cannot_replace_a_positive_mes_revision_even_with_a_later_timestamp()
+    {
+        var fact = ScheduleOperationOverride.CreateClearedMesDispatch(
+            "org-1", "env-1", "WO-1", "OP-1", 10, "DEV-1", "WC-1",
+            At(8), At(9), "evt-clear", "user:planner", 2, At(2),
+            "device-cleared", At(2));
+
+        var applied = fact.TryApplyMesDispatch(
+            "DEV-LEGACY", "WC-1", At(10), At(11), "evt-legacy", "user:legacy",
+            0, At(7), At(7));
+
+        Assert.False(applied);
+        Assert.False(fact.IsActive);
+        Assert.Equal(2, fact.SourceRevision);
+        Assert.Equal("DEV-1", fact.ResourceId);
+        Assert.Equal("evt-clear", fact.SourceEventId);
+    }
+
+    [Fact]
     public void Replace_manually_reactivates_and_resets_mes_revocation_metadata()
     {
         var fact = ScheduleOperationOverride.CreateClearedMesDispatch(

@@ -15,7 +15,6 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
 {
     public const string ConsumerName = "business-scheduling.mes-operation-manually-dispatched";
 
-    private static readonly IntegrationEventEnvelopeValidator EnvelopeValidator = new();
     private static readonly IntegrationEventConsumerOptions ConsumerOptions = new(
         ConsumerName, MesIntegrationEventTypes.OperationTaskManuallyDispatched, MesIntegrationEventVersions.V1);
 
@@ -37,7 +36,7 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
             return;
         }
 
-        var envelopeValidation = EnvelopeValidator.Validate(integrationEvent, ConsumerOptions);
+        var envelopeValidation = MesOverrideConsumerValidation.ValidateEnvelope(integrationEvent, ConsumerOptions);
         if (!envelopeValidation.IsValid)
         {
             await deadLetterStore.AddAsync(MesOverrideConsumerPersistence.CreateDeadLetter(
@@ -55,16 +54,7 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
         MesOverrideInboxIdentity inboxIdentity,
         CancellationToken cancellationToken)
     {
-        var payload = integrationEvent.Payload;
-        if (!inboxIdentity.IsValid ||
-            !IsValidEnvelopeProjectionIdentity(integrationEvent) ||
-            !IsValidIdentity(payload.WorkOrderId) ||
-            !IsValidIdentity(payload.OperationTaskId) ||
-            !IsValidIdentity(payload.ResourceId) ||
-            !IsValidIdentity(payload.WorkCenterId) ||
-            payload.OperationSequence <= 0 ||
-            payload.DispatchRevision < 0 ||
-            payload.EndUtc <= payload.StartUtc)
+        if (!MesOverrideConsumerValidation.IsValidDispatch(integrationEvent, inboxIdentity))
         {
             await deadLetterStore.AddAsync(MesOverrideConsumerPersistence.CreateDeadLetter(
                 ConsumerName, integrationEvent,
@@ -127,7 +117,8 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
                 integrationEvent.OrganizationId, integrationEvent.EnvironmentId,
                 payload.WorkOrderId, payload.OperationTaskId, payload.OperationSequence,
                 payload.ResourceId, payload.WorkCenterId, payload.StartUtc, payload.EndUtc,
-                "mes-manual-dispatch", "mes-dispatch", integrationEvent.EventId,
+                ScheduleOperationOverrideLockReasonCodes.MesManualDispatch,
+                ScheduleOperationOverrideSourceTypes.MesDispatch, integrationEvent.EventId,
                 integrationEvent.Actor, integrationEvent.OccurredAtUtc, integrationEvent.OccurredAtUtc);
             fact.TryApplyMesDispatch(payload.ResourceId, payload.WorkCenterId, payload.StartUtc,
                 payload.EndUtc, integrationEvent.EventId, integrationEvent.Actor,
@@ -141,15 +132,4 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
             payload.DispatchRevision, integrationEvent.OccurredAtUtc, integrationEvent.OccurredAtUtc);
     }
 
-    private static bool IsValidEnvelopeProjectionIdentity(
-        MesOperationTaskManuallyDispatchedIntegrationEvent integrationEvent) =>
-        IsValidIdentity(integrationEvent.OrganizationId, 64) &&
-        IsValidIdentity(integrationEvent.EnvironmentId, 64) &&
-        IsValidIdentity(integrationEvent.EventId) &&
-        IsValidIdentity(integrationEvent.Actor);
-
-    private static bool IsValidIdentity(string value, int maxLength = 128) =>
-        !string.IsNullOrWhiteSpace(value) &&
-        value == value.Trim() &&
-        value.Length <= maxLength;
 }

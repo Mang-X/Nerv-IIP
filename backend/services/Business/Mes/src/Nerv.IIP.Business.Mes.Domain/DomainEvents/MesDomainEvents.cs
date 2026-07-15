@@ -8,6 +8,12 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
 
 namespace Nerv.IIP.Business.Mes.Domain.DomainEvents;
 
+public enum OperationTaskManualDispatchClearReason
+{
+    DeviceCleared,
+    OperationCancelled
+}
+
 public sealed record WorkOrderCreatedDomainEvent(WorkOrder WorkOrder) : IDomainEvent;
 
 public sealed record WorkOrderReleasedDomainEvent(WorkOrder WorkOrder, IReadOnlyCollection<OperationTask> OperationTasks) : IDomainEvent;
@@ -39,7 +45,7 @@ public sealed record OperationTaskManuallyDispatchedDomainEvent(
 
 public sealed record OperationTaskManualDispatchClearedDomainEvent(
     OperationTaskManualDispatchSnapshot Dispatch,
-    string ReasonCode,
+    OperationTaskManualDispatchClearReason Reason,
     DateTimeOffset ClearedAtUtc,
     string Actor) : IDomainEvent;
 

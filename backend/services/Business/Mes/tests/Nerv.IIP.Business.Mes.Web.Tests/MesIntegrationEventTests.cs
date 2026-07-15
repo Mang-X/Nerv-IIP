@@ -42,7 +42,7 @@ public sealed class MesIntegrationEventTests
         Assert.Equal(MesIntegrationEventTypes.OperationTaskManualDispatchCleared, cleared.EventType);
         Assert.Equal(2, cleared.Payload.DispatchRevision);
         Assert.Equal("DEVICE-2", cleared.Payload.ResourceId);
-        Assert.Equal("device-cleared", cleared.Payload.ReasonCode);
+        Assert.Equal(MesManualDispatchClearReasonCodes.DeviceCleared, cleared.Payload.ReasonCode);
         Assert.Equal("corr-clear-2", cleared.CorrelationId);
         Assert.Equal(dispatched.EventId, cleared.CausationId);
         Assert.Equal("user:planner-1", cleared.Actor);

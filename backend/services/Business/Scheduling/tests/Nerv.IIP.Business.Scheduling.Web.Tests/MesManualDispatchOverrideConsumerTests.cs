@@ -646,6 +646,30 @@ public sealed class MesManualDispatchOverrideConsumerTests
     }
 
     [Fact]
+    public async Task Legacy_revision_zero_cannot_replace_an_active_positive_revision_with_a_later_timestamp()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"mes-dispatch-legacy-after-versioned-{Guid.NewGuid():N}").Options;
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        var handler = CreateDispatchHandler(db, new InMemoryIntegrationEventDeadLetterStore());
+        var versionedAt = At(8);
+
+        await handler.HandleAsync(
+            CreateEvent("evt-versioned-3", versionedAt, "DEV-VERSIONED", revision: 3),
+            CancellationToken.None);
+        await handler.HandleAsync(
+            CreateEvent("evt-legacy-late", versionedAt.AddHours(2), "DEV-LEGACY", revision: 0),
+            CancellationToken.None);
+
+        var persisted = await db.ScheduleOperationOverrides.SingleAsync();
+        Assert.True(persisted.IsActive);
+        Assert.Equal(3, persisted.SourceRevision);
+        Assert.Equal("DEV-VERSIONED", persisted.ResourceId);
+        Assert.Equal("evt-versioned-3", persisted.SourceEventId);
+        Assert.Equal(2, await db.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Fact]
     public async Task Concurrent_stale_clear_snapshot_reloads_and_converges_to_newer_dispatch()
     {
         var databaseName = $"mes-dispatch-clear-concurrency-{Guid.NewGuid():N}";
@@ -773,7 +797,7 @@ public sealed class MesManualDispatchOverrideConsumerTests
 
     private static MesOperationTaskManualDispatchClearedIntegrationEvent CreateClearEvent(
         string eventId, DateTimeOffset occurredAtUtc, long revision,
-        string reasonCode = "device-cleared") =>
+        string reasonCode = MesManualDispatchClearReasonCodes.DeviceCleared) =>
         new(eventId, MesIntegrationEventTypes.OperationTaskManualDispatchCleared, 1, occurredAtUtc,
             MesIntegrationEventSources.BusinessMes, $"corr-{eventId}", "cause-1", "org-1", "env-1",
             "user:dispatcher", $"mes:dispatch-clear:{eventId}", new OperationTaskManualDispatchClearedPayload(

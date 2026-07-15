@@ -25,6 +25,12 @@ public static class MesIntegrationEventSources
     public const string BusinessMes = "business-mes";
 }
 
+public static class MesManualDispatchClearReasonCodes
+{
+    public const string DeviceCleared = "device-cleared";
+    public const string OperationCancelled = "operation-cancelled";
+}
+
 public sealed record WorkOrderReleasedIntegrationEvent(
     string EventId,
     string EventType,
