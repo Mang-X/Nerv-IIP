@@ -277,7 +277,8 @@ public sealed record CancelWorkOrderCommand(
     string EnvironmentId,
     string WorkOrderId,
     string Reason,
-    DateTimeOffset CancelledAtUtc) : ICommand<MesAcceptedResponse>;
+    DateTimeOffset CancelledAtUtc,
+    string Actor = "system:mes") : ICommand<MesAcceptedResponse>;
 
 public sealed class CancelWorkOrderCommandValidator : AbstractValidator<CancelWorkOrderCommand>
 {
@@ -302,7 +303,8 @@ public sealed class CancelWorkOrderCommandHandler(ApplicationDbContext dbContext
             request.WorkOrderId,
             request.Reason,
             request.CancelledAtUtc,
-            cancellationToken);
+            cancellationToken,
+            request.Actor);
     }
 }
 
@@ -315,7 +317,8 @@ internal static class WorkOrderCancellationOrchestrator
         string workOrderId,
         string reason,
         DateTimeOffset cancelledAtUtc,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string actor = "system:mes")
     {
         var workOrder = await WorkOrderLifecycleCommandGuards.GetWorkOrderAsync(
             dbContext,
@@ -377,7 +380,7 @@ internal static class WorkOrderCancellationOrchestrator
 
         foreach (var operationTask in operationTasks)
         {
-            operationTask.Cancel(cancelledAtUtc);
+            operationTask.Cancel(cancelledAtUtc, actor);
         }
 
         return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, cancelledAtUtc);

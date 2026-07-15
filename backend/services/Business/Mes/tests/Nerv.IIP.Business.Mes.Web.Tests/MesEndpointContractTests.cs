@@ -461,6 +461,8 @@ public sealed class MesEndpointContractTests
             [],
             now,
             TimeSpan.FromMinutes(30));
+        operationTask.Assign(null, "DEV-695-LOCAL", null, now.AddMinutes(5), "user:dispatcher-695");
+        operationTask.ClearDomainEvents();
         dbContext.WorkOrders.Add(workOrder);
         dbContext.MaterialIssueRequests.Add(materialIssue);
         dbContext.FinishedGoodsReceiptRequests.Add(receipt);
@@ -468,13 +470,23 @@ public sealed class MesEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new CancelWorkOrderCommandHandler(dbContext).Handle(
-            new CancelWorkOrderCommand("org-001", "env-dev", "WO-695-LOCAL", "plan cancelled", now.AddMinutes(30)),
+            new CancelWorkOrderCommand(
+                "org-001",
+                "env-dev",
+                "WO-695-LOCAL",
+                "plan cancelled",
+                now.AddMinutes(30),
+                "user:endpoint-actor-695"),
             CancellationToken.None);
 
         Assert.Equal(WorkOrder.CancelledStatus, workOrder.Status);
         Assert.Equal(MaterialIssueRequest.CancelledStatus, materialIssue.Status);
         Assert.Equal(FinishedGoodsReceiptRequest.CancelledStatus, receipt.Status);
         Assert.Equal(OperationTaskLifecycleStatus.Cancelled, operationTask.Status);
+        var dispatchClearedEvent = Assert.IsType<OperationTaskManualDispatchClearedDomainEvent>(
+            Assert.Single(operationTask.GetDomainEvents()));
+        Assert.Equal("operation-cancelled", dispatchClearedEvent.ReasonCode);
+        Assert.Equal("user:endpoint-actor-695", dispatchClearedEvent.Actor);
         var cancelledEvent = Assert.IsType<WorkOrderCancelledDomainEvent>(workOrder.GetDomainEvents().Last());
         Assert.Equal(["MIR-695-LOCAL"], cancelledEvent.MaterialIssueRequestNos);
     }
@@ -1371,6 +1383,7 @@ public sealed class MesEndpointContractTests
                 builder.UseSetting("InternalService:BearerToken", "test-internal-service-token"));
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        client.DefaultRequestHeaders.Add("X-Authenticated-Actor", "user:validation-test");
 
         var response = await client.PostAsJsonAsync(
             "/api/business/v1/mes/work-orders/WO-VALIDATION/cancel",

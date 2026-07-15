@@ -1508,21 +1508,37 @@ public sealed class MesPersistenceContractTests
             await dbContext.SaveChangesAsync();
 
             await new AssignDispatchTaskCommandHandler(dbContext).Handle(
-                new AssignDispatchTaskCommand("org-001", "env-dev", "OP-DISPATCH-10", "person-001", "device-fill-01", "shift-a", now.AddMinutes(5)),
+                new AssignDispatchTaskCommand("org-001", "env-dev", "OP-DISPATCH-10", "person-001", "device-fill-01", "shift-a", now.AddMinutes(5), "user:dispatcher-001"),
                 CancellationToken.None);
             await dbContext.SaveChangesAsync();
+
+            dbContext.ChangeTracker.Clear();
+            var persistedAssignment = await dbContext.OperationTasks.SingleAsync(
+                x => x.OperationTaskIdValue == "OP-DISPATCH-10");
+            Assert.Equal(1, persistedAssignment.ManualDispatchRevision);
+            Assert.True(persistedAssignment.HasActiveManualDispatch);
+
+            var list = await new ListDispatchTasksQueryHandler(dbContext)
+                .Handle(new ListDispatchTasksQuery("org-001", "env-dev", null), CancellationToken.None);
+
+            var row = Assert.Single(list.Items);
+            Assert.Equal("OP-DISPATCH-10", row.OperationTaskId);
+            Assert.Equal("person-001", row.AssignedUserId);
+            Assert.Equal("device-fill-01", row.DeviceAssetId);
+            Assert.Equal("shift-a", row.ShiftId);
+            Assert.Equal(now, row.PlannedStartUtc);
+
+            await new AssignDispatchTaskCommandHandler(dbContext).Handle(
+                new AssignDispatchTaskCommand("org-001", "env-dev", "OP-DISPATCH-10", "person-001", null, "shift-a", now.AddMinutes(10), "user:dispatcher-001"),
+                CancellationToken.None);
+            await dbContext.SaveChangesAsync();
+
+            dbContext.ChangeTracker.Clear();
+            var persistedClear = await dbContext.OperationTasks.SingleAsync(
+                x => x.OperationTaskIdValue == "OP-DISPATCH-10");
+            Assert.Equal(2, persistedClear.ManualDispatchRevision);
+            Assert.False(persistedClear.HasActiveManualDispatch);
         }
-
-        using var recreatedScope = services.CreateScope();
-        var list = await new ListDispatchTasksQueryHandler(recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>())
-            .Handle(new ListDispatchTasksQuery("org-001", "env-dev", null), CancellationToken.None);
-
-        var row = Assert.Single(list.Items);
-        Assert.Equal("OP-DISPATCH-10", row.OperationTaskId);
-        Assert.Equal("person-001", row.AssignedUserId);
-        Assert.Equal("device-fill-01", row.DeviceAssetId);
-        Assert.Equal("shift-a", row.ShiftId);
-        Assert.Equal(now, row.PlannedStartUtc);
     }
 
     [Fact]
