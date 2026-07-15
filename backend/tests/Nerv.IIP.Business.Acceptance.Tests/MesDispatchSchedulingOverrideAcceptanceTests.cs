@@ -137,8 +137,32 @@ public sealed class MesDispatchSchedulingOverrideAcceptanceTests
         mesDb.ChangeTracker.Clear();
         await dispatchConsumer.HandleAsync(dispatchRevision3, CancellationToken.None);
 
+        // Exact broker duplicates are stopped by the inbox.
         await dispatchConsumer.HandleAsync(dispatchRevision1, CancellationToken.None);
         await clearConsumer.HandleAsync(clearRevision2, CancellationToken.None);
+
+        // Delayed deliveries have new broker identities but retain the authentic MES payload,
+        // source occurrence time, and revision so they must reach revision ordering and no-op.
+        var delayedDispatchRevision1 = dispatchRevision1 with
+        {
+            EventId = "evt-delayed-dispatch-revision-1",
+            CorrelationId = "corr-delayed-dispatch-revision-1",
+            CausationId = dispatchRevision3.EventId,
+            IdempotencyKey = "idem-delayed-dispatch-revision-1"
+        };
+        var delayedClearRevision2 = clearRevision2 with
+        {
+            EventId = "evt-delayed-clear-revision-2",
+            CorrelationId = "corr-delayed-clear-revision-2",
+            CausationId = delayedDispatchRevision1.EventId,
+            IdempotencyKey = "idem-delayed-clear-revision-2"
+        };
+        Assert.Same(dispatchRevision1.Payload, delayedDispatchRevision1.Payload);
+        Assert.Equal(dispatchRevision1.OccurredAtUtc, delayedDispatchRevision1.OccurredAtUtc);
+        Assert.Same(clearRevision2.Payload, delayedClearRevision2.Payload);
+        Assert.Equal(clearRevision2.OccurredAtUtc, delayedClearRevision2.OccurredAtUtc);
+        await dispatchConsumer.HandleAsync(delayedDispatchRevision1, CancellationToken.None);
+        await clearConsumer.HandleAsync(delayedClearRevision2, CancellationToken.None);
 
         var overlaid = await new SchedulingOperationOverrideOverlay(schedulingDb)
             .ApplyAsync(CreateProblem(start), CancellationToken.None);
@@ -153,7 +177,11 @@ public sealed class MesDispatchSchedulingOverrideAcceptanceTests
         Assert.True(persisted.IsActive);
         Assert.Equal(3, persisted.SourceRevision);
         Assert.Equal(dispatchRevision3.EventId, persisted.SourceEventId);
-        Assert.Equal(3, await schedulingDb.ProcessedIntegrationEvents.CountAsync());
+        Assert.Equal(5, await schedulingDb.ProcessedIntegrationEvents.CountAsync());
+        Assert.True(await schedulingDb.ProcessedIntegrationEvents.AnyAsync(
+            x => x.EventId == delayedDispatchRevision1.EventId));
+        Assert.True(await schedulingDb.ProcessedIntegrationEvents.AnyAsync(
+            x => x.EventId == delayedClearRevision2.EventId));
     }
 
     private static MesOperationTaskManuallyDispatchedIntegrationEvent ConvertSingleDispatch(OperationTask task) =>
