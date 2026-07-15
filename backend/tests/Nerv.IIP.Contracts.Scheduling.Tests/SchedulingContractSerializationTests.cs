@@ -250,7 +250,9 @@ internal static class SchedulingContractSamples
                 TotalTardinessMinutes: 0,
                 LateOperationCount: 0,
                 OnTimeRate: 1m,
-                AverageResourceUtilization: 0.1667m),
+                AverageResourceUtilization: 0.1667m,
+                LockedOperationCount: 0,
+                OptimizableOperationCount: 1),
             Assignments:
             [
                 new ScheduleAssignmentContract(
