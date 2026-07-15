@@ -1,9 +1,9 @@
 import { OfflineError, RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed } from 'vue'
 
-const push = vi.fn()
+const push = vi.fn(() => Promise.resolve())
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
   RouterView: { template: '<div />' },
@@ -27,7 +27,7 @@ const wmsState = vi.hoisted(() => ({
     {
       inboundOrderId: '22222222-2222-2222-2222-222222222222',
       inboundOrderNo: 'IB-2026-0002',
-      status: 'inProgress',
+      status: 'completed',
       createdAtUtc: '2026-06-11T09:00:00Z',
     },
   ],
@@ -36,6 +36,40 @@ const wmsState = vi.hoisted(() => ({
   error: null as unknown,
   pending: false,
   refresh: vi.fn(() => Promise.resolve()),
+  // 门禁行按单分组：单1 待检（含批号 LOT-A），单2 全合格。
+  gates: new Map<string, Array<Record<string, unknown>>>([
+    [
+      '11111111-1111-1111-1111-111111111111',
+      [
+        {
+          inboundOrderId: '11111111-1111-1111-1111-111111111111',
+          inboundOrderLineId: 'line-1',
+          lineNo: '1',
+          skuCode: 'SKU-A',
+          uomCode: 'EA',
+          receivedQuantity: 20,
+          lotNo: 'LOT-A',
+          qualityGateStatus: 'pending',
+        },
+      ],
+    ],
+    [
+      '22222222-2222-2222-2222-222222222222',
+      [
+        {
+          inboundOrderId: '22222222-2222-2222-2222-222222222222',
+          inboundOrderLineId: 'line-2',
+          lineNo: '1',
+          skuCode: 'SKU-B',
+          uomCode: 'EA',
+          receivedQuantity: 5,
+          lotNo: 'LOT-B',
+          qualityGateStatus: 'passed',
+        },
+      ],
+    ],
+  ]),
+  gatesRefresh: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('@/composables/useBusinessWms', () => ({
@@ -48,6 +82,13 @@ vi.mock('@/composables/useBusinessWms', () => ({
     refresh: wmsState.refresh,
     completeInbound: wmsState.completeInbound,
     completePending: computed(() => wmsState.completePending),
+  }),
+  useWmsReceivingQualityGates: () => ({
+    linesByOrderId: computed(() => wmsState.gates),
+    lines: computed(() => [...wmsState.gates.values()].flat()),
+    refresh: wmsState.gatesRefresh,
+    pending: computed(() => false),
+    error: computed(() => null),
   }),
 }))
 
@@ -66,7 +107,7 @@ function resetState() {
     {
       inboundOrderId: '22222222-2222-2222-2222-222222222222',
       inboundOrderNo: 'IB-2026-0002',
-      status: 'inProgress',
+      status: 'completed',
       createdAtUtc: '2026-06-11T09:00:00Z',
     },
   ]
@@ -75,6 +116,7 @@ function resetState() {
   wmsState.pending = false
   wmsState.completeInbound.mockClear()
   wmsState.refresh.mockClear()
+  wmsState.gatesRefresh.mockClear()
   push.mockClear()
 }
 
@@ -86,13 +128,21 @@ describe('WMS 收货入库', () => {
     const text = wrapper.text()
     expect(text).toContain('IB-2026-0001')
     expect(text).toContain('IB-2026-0002')
-    // 中文状态
     expect(text).toContain('待入库')
-    expect(text).toContain('入库中')
-    // 不暴露工程语言：原始状态码 / GUID
+    expect(text).toContain('已入库')
     expect(text).not.toContain('open')
-    expect(text).not.toContain('inProgress')
+    expect(text).not.toContain('completed')
     expect(text).not.toContain('11111111-1111-1111-1111-111111111111')
+  })
+
+  it('列表单据显示质检状态标（待检 / 合格）', () => {
+    const wrapper = mount(InboundPage)
+    const text = wrapper.text()
+    expect(text).toContain('待检')
+    expect(text).toContain('合格')
+    // 不暴露工程态码
+    expect(text).not.toContain('pending')
+    expect(text).not.toContain('passed')
   })
 
   it('扫单号写入 filters.keyword', async () => {
@@ -103,10 +153,39 @@ describe('WMS 收货入库', () => {
     expect(wmsState.filters.keyword).toBe('IB-2026-0002')
   })
 
+  it('点单 → 抽屉展示行级批号+质检门禁明细', async () => {
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    const line = document.querySelector('[data-line]')!
+    expect(line).toBeTruthy()
+    expect(line.textContent).toContain('SKU-A')
+    expect(line.textContent).toContain('LOT-A')
+    expect(line.textContent).toContain('待检')
+    wrapper.unmount()
+  })
+
+  it('待检单据不出现「去上架」，显示待质检门禁提示', async () => {
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    expect(document.querySelector('[data-quality-gate-notice]')).toBeTruthy()
+    expect(document.querySelector('[data-testid="go-putaway"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('合格单据出现「去上架」引导，点按跳上架页', async () => {
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[1].trigger('click')
+    const putaway = document.querySelector<HTMLButtonElement>('[data-testid="go-putaway"]')!
+    expect(putaway).toBeTruthy()
+    expect(document.querySelector('[data-quality-gate-notice]')).toBeNull()
+    putaway.click()
+    expect(push).toHaveBeenCalledWith('/wms/putaway')
+    wrapper.unmount()
+  })
+
   it('点单 → 抽屉确认 → 以该单 id 与页面生成的稳定 idempotencyKey 调用 completeInbound', async () => {
     const wrapper = mount(InboundPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    // BottomSheet 经 reka-ui Portal teleport 到 body，需在 document 中查询。
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     expect(confirm).toBeTruthy()
     confirm.click()
@@ -119,28 +198,23 @@ describe('WMS 收货入库', () => {
   })
 
   it('重试（不重新点单）复用同一 idempotencyKey；重新点单为新操作换新键', async () => {
-    // 首次提交失败，停留在抽屉，operationKey 不变。
     wmsState.completeInbound.mockRejectedValueOnce(new Error('lost response'))
     const wrapper = mount(InboundPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     confirm.click()
     await flushPromises()
-    // 重试：不重新点单，直接再次确认。
     confirm.click()
     await flushPromises()
     expect(wmsState.completeInbound).toHaveBeenCalledTimes(2)
     const firstKey = wmsState.completeInbound.mock.calls[0][1]
     const retryKey = wmsState.completeInbound.mock.calls[1][1]
-    // 重试复用同一键——丢响应也不会重复入库。
     expect(retryKey).toBe(firstKey)
 
-    // 重试成功 → 进入成功态；点「继续」回列表清空选择与 operationKey。
     const continueBtn = wrapper.findAll('button').find((b) => b.text() === '继续')!
     expect(continueBtn).toBeTruthy()
     await continueBtn.trigger('click')
 
-    // 重新点单（新操作）→ 新键。
     await wrapper.findAll('[data-row]')[1].trigger('click')
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     await flushPromises()
@@ -159,7 +233,7 @@ describe('WMS 收货入库', () => {
     wrapper.unmount()
   })
 
-  it('完成后显示成功 Result', async () => {
+  it('完成后显示成功 Result，文案为「入库完成，待质检」', async () => {
     const wrapper = mount(InboundPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
@@ -167,7 +241,7 @@ describe('WMS 收货入库', () => {
     await wrapper.vm.$nextTick()
     const result = wrapper.find('[data-result][data-status="success"]')
     expect(result.exists()).toBe(true)
-    expect(wrapper.text()).toContain('入库已完成')
+    expect(wrapper.text()).toContain('入库完成，待质检')
     wrapper.unmount()
   })
 
@@ -199,5 +273,45 @@ describe('WMS 收货入库', () => {
     wmsState.orders = []
     const wrapper = mount(InboundPage)
     expect(wrapper.text()).toContain('暂无待收货单据')
+  })
+})
+
+describe('WMS 收货入库 · GS1 扫码效期', () => {
+  const GS = String.fromCharCode(29)
+
+  beforeEach(() => {
+    resetState()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-15T00:00:00Z'))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('扫 GS1 批次码带出效期 → 行显示效期三色标 + 临期黄色提示', async () => {
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    const gs1Input = document.querySelector<HTMLInputElement>('input[placeholder*="GS1"]')!
+    expect(gs1Input).toBeTruthy()
+    // (17)260801 效期 2026-08-01（距 7/15 约 17 天 → 临近过期红），(10)LOT-A 匹配收货行。
+    gs1Input.value = `17260801${GS}10LOT-A`
+    gs1Input.dispatchEvent(new Event('input'))
+    gs1Input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    await flushPromises()
+    expect(document.querySelector('[data-expiry-tag]')?.textContent).toContain('2026-08-01')
+    expect(document.querySelector('[data-near-expiry-notice]')).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('扫非 GS1 码提示未识别', async () => {
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    const gs1Input = document.querySelector<HTMLInputElement>('input[placeholder*="GS1"]')!
+    gs1Input.value = 'NOT-A-GS1'
+    gs1Input.dispatchEvent(new Event('input'))
+    gs1Input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    await flushPromises()
+    expect(document.querySelector('[data-gs1-notice]')?.textContent).toContain('未识别')
+    wrapper.unmount()
   })
 })

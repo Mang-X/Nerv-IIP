@@ -7,6 +7,7 @@ import {
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsPickingTasksQueryOptions,
   listBusinessConsoleWmsPutawayTasksQueryOptions,
+  listBusinessConsoleWmsReceivingQualityGatesQueryOptions,
   type BusinessConsoleCompleteWmsCountExecutionRequest,
   type BusinessConsoleCompleteWmsInboundOrderRequest,
   type BusinessConsoleCompleteWmsOutboundOrderRequest,
@@ -14,6 +15,8 @@ import {
   type BusinessConsoleWmsCountExecutionListEnvelope,
   type BusinessConsoleWmsInboundOrderItem,
   type BusinessConsoleWmsInboundOrderListEnvelope,
+  type BusinessConsoleWmsReceivingQualityGateItem,
+  type BusinessConsoleWmsReceivingQualityGateListEnvelope,
   type BusinessConsoleWmsOutboundOrderItem,
   type BusinessConsoleWmsOutboundOrderListEnvelope,
   type BusinessConsoleWmsWarehouseTaskItem,
@@ -50,12 +53,14 @@ function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | u
   return value === undefined || value === '' ? {} : { [key]: value }
 }
 
-function listItems<TItem>(envelope: { success?: boolean, data?: { items?: TItem[] } | null } | undefined) {
-  return envelope?.success ? envelope.data?.items ?? [] : []
+function listItems<TItem>(
+  envelope: { success?: boolean; data?: { items?: TItem[] } | null } | undefined,
+) {
+  return envelope?.success ? (envelope.data?.items ?? []) : []
 }
 
-function listTotal(envelope: { success?: boolean, data?: { total?: number } | null } | undefined) {
-  return envelope?.success ? envelope.data?.total ?? 0 : 0
+function listTotal(envelope: { success?: boolean; data?: { total?: number } | null } | undefined) {
+  return envelope?.success ? (envelope.data?.total ?? 0) : 0
 }
 
 // DRY scope binding：org/env 一律取登录主体；空 scope → 不发请求（enabled:false）。
@@ -84,7 +89,9 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
   const filters = defaultFilters<WmsScopeFilters>(initialFilters)
 
   const ordersQuery = useQuery(() => ({
-    ...listBusinessConsoleWmsInboundOrdersQueryOptions({ query: scope.scopeQueryWithPaging(filters) }),
+    ...listBusinessConsoleWmsInboundOrdersQueryOptions({
+      query: scope.scopeQueryWithPaging(filters),
+    }),
     enabled: scope.hasScope.value,
   }))
 
@@ -98,9 +105,13 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
   return {
     filters,
     orders: computed<BusinessConsoleWmsInboundOrderItem[]>(() =>
-      listItems<BusinessConsoleWmsInboundOrderItem>(ordersQuery.data.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined),
+      listItems<BusinessConsoleWmsInboundOrderItem>(
+        ordersQuery.data.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
+      ),
     ),
-    total: computed(() => listTotal(ordersQuery.data.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined)),
+    total: computed(() =>
+      listTotal(ordersQuery.data.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined),
+    ),
     pending: ordersQuery.isLoading,
     error: ordersQuery.error,
     refresh: ordersQuery.refetch,
@@ -108,7 +119,11 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
       // 幂等键由页面在用户发起操作时生成一次并跨重试复用（防丢响应重复入库）；
       // org/env 取登录主体注入 query，调用方无法影响。
       const body = { idempotencyKey } satisfies BusinessConsoleCompleteWmsInboundOrderRequest
-      return completeMutation.mutateAsync({ path: { inboundOrderId }, query: scope.scopeQuery(), body })
+      return completeMutation.mutateAsync({
+        path: { inboundOrderId },
+        query: scope.scopeQuery(),
+        body,
+      })
     },
     completePending: completeMutation.isLoading,
   }
@@ -119,7 +134,9 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
   const filters = defaultFilters<WmsScopeFilters>(initialFilters)
 
   const ordersQuery = useQuery(() => ({
-    ...listBusinessConsoleWmsOutboundOrdersQueryOptions({ query: scope.scopeQueryWithPaging(filters) }),
+    ...listBusinessConsoleWmsOutboundOrdersQueryOptions({
+      query: scope.scopeQueryWithPaging(filters),
+    }),
     enabled: scope.hasScope.value,
   }))
 
@@ -133,9 +150,13 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
   return {
     filters,
     orders: computed<BusinessConsoleWmsOutboundOrderItem[]>(() =>
-      listItems<BusinessConsoleWmsOutboundOrderItem>(ordersQuery.data.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined),
+      listItems<BusinessConsoleWmsOutboundOrderItem>(
+        ordersQuery.data.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
+      ),
     ),
-    total: computed(() => listTotal(ordersQuery.data.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined)),
+    total: computed(() =>
+      listTotal(ordersQuery.data.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined),
+    ),
     pending: ordersQuery.isLoading,
     error: ordersQuery.error,
     refresh: ordersQuery.refetch,
@@ -143,7 +164,11 @@ export function useWmsOutbound(initialFilters: Partial<WmsScopeFilters> = {}) {
       // 页面提供 packReviewNo/passed/idempotencyKey（幂等键跨重试复用）；
       // org/env 不取自 input，恒由登录主体注入 query，敌意 org/env 永远落空。
       const body = { ...input } satisfies BusinessConsoleCompleteWmsOutboundOrderRequest
-      return completeMutation.mutateAsync({ path: { outboundOrderId }, query: scope.scopeQuery(), body })
+      return completeMutation.mutateAsync({
+        path: { outboundOrderId },
+        query: scope.scopeQuery(),
+        body,
+      })
     },
     completePending: completeMutation.isLoading,
   }
@@ -172,9 +197,13 @@ function useWmsWarehouseTasks(
   return {
     filters,
     tasks: computed<BusinessConsoleWmsWarehouseTaskItem[]>(() =>
-      listItems<BusinessConsoleWmsWarehouseTaskItem>(tasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined),
+      listItems<BusinessConsoleWmsWarehouseTaskItem>(
+        tasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
+      ),
     ),
-    total: computed(() => listTotal(tasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined)),
+    total: computed(() =>
+      listTotal(tasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined),
+    ),
     pending: tasksQuery.isLoading,
     error: tasksQuery.error,
     refresh: tasksQuery.refetch,
@@ -183,6 +212,62 @@ function useWmsWarehouseTasks(
 
 export function useWmsPicking(initialFilters: Partial<WmsTaskFilters> = {}) {
   return useWmsWarehouseTasks(listBusinessConsoleWmsPickingTasksQueryOptions, initialFilters)
+}
+
+export type ReceivingQualityGateLine = BusinessConsoleWmsReceivingQualityGateItem
+
+// 收货质检门禁（#705）：扁平的行级投影（跨单）。PDA 用它给收货单挂质检状态标 +
+// 行级批号/门禁明细 + 上架门禁判据。org/env 由登录主体注入；filters.status 复用为
+// gateStatus 过滤。默认加载全量（take=DEFAULT_TAKE），页面按 inboundOrderId 客户端分组。
+export function useWmsReceivingQualityGates(initialFilters: Partial<WmsScopeFilters> = {}) {
+  const scope = useWmsScope()
+  const filters = defaultFilters<WmsScopeFilters>(initialFilters)
+
+  const gatesQuery = useQuery(() => ({
+    ...listBusinessConsoleWmsReceivingQualityGatesQueryOptions({
+      query: {
+        ...scope.scopeQuery(),
+        skip: filters.skip,
+        take: filters.take,
+        ...optionalQuery('gateStatus', filters.status),
+        ...optionalQuery('keyword', filters.keyword),
+      },
+    }),
+    enabled: scope.hasScope.value,
+  }))
+
+  const lines = computed<ReceivingQualityGateLine[]>(() =>
+    listItems<ReceivingQualityGateLine>(
+      gatesQuery.data.value as BusinessConsoleWmsReceivingQualityGateListEnvelope | undefined,
+    ),
+  )
+
+  // 按收货单 id 分组，页面据此挂状态标与行级明细。
+  const linesByOrderId = computed<Map<string, ReceivingQualityGateLine[]>>(() => {
+    const map = new Map<string, ReceivingQualityGateLine[]>()
+    for (const line of lines.value) {
+      const id = line.inboundOrderId
+      if (!id) continue
+      const bucket = map.get(id)
+      if (bucket) bucket.push(line)
+      else map.set(id, [line])
+    }
+    return map
+  })
+
+  return {
+    filters,
+    lines,
+    linesByOrderId,
+    total: computed(() =>
+      listTotal(
+        gatesQuery.data.value as BusinessConsoleWmsReceivingQualityGateListEnvelope | undefined,
+      ),
+    ),
+    pending: gatesQuery.isLoading,
+    error: gatesQuery.error,
+    refresh: gatesQuery.refetch,
+  }
 }
 
 export function useWmsPutaway(initialFilters: Partial<WmsTaskFilters> = {}) {
@@ -213,9 +298,15 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
   return {
     filters,
     executions: computed<BusinessConsoleWmsCountExecutionItem[]>(() =>
-      listItems<BusinessConsoleWmsCountExecutionItem>(executionsQuery.data.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined),
+      listItems<BusinessConsoleWmsCountExecutionItem>(
+        executionsQuery.data.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
+      ),
     ),
-    total: computed(() => listTotal(executionsQuery.data.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined)),
+    total: computed(() =>
+      listTotal(
+        executionsQuery.data.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
+      ),
+    ),
     pending: executionsQuery.isLoading,
     error: executionsQuery.error,
     refresh: executionsQuery.refetch,
@@ -223,7 +314,11 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
       // 页面提供 countedQuantity/idempotencyKey（幂等键跨重试复用）；
       // org/env 不取自 input，恒由登录主体注入 query，敌意 org/env 永远落空。
       const body = { ...input } satisfies BusinessConsoleCompleteWmsCountExecutionRequest
-      return completeMutation.mutateAsync({ path: { countExecutionId }, query: scope.scopeQuery(), body })
+      return completeMutation.mutateAsync({
+        path: { countExecutionId },
+        query: scope.scopeQuery(),
+        body,
+      })
     },
     completePending: completeMutation.isLoading,
   }
