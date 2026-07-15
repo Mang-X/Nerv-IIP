@@ -7,7 +7,7 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import './assets/main.css'
 import { resolveGatewayBaseUrl } from './api/gateway-base-url'
-import { createTimeoutFetch } from './api/request-timeout'
+import { createTimeoutFetch, resolveRequestTimeoutMs } from './api/request-timeout'
 import { router } from './router'
 import { useAuthStore } from './stores/auth'
 
@@ -34,7 +34,11 @@ configureAuthenticatedApiClient({
       baseUrl: resolveGatewayBaseUrl(),
       // Every facade call flows through this fetch, so the 30s timeout + offline
       // pre-check live here once — never per page. See ./api/request-timeout.
-      fetch: createTimeoutFetch(),
+      // VITE_NERV_IIP_REQUEST_TIMEOUT_MS is a DEV-only TEST/DEBUG override (live specs
+      // inject a short ceiling instead of really waiting 30s), clamped to [100, 30000];
+      // production/APK builds (DEV=false) and unset/invalid values resolve to the 30s
+      // default unconditionally. See .env.example.
+      fetch: createTimeoutFetch({ timeoutMs: resolveRequestTimeoutMs() }),
     }),
   loginPath: '/login',
   router,

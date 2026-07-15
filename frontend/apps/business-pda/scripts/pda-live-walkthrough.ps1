@@ -9,6 +9,12 @@
 #       and only reuses the existing server when -AllowServerReuse is passed (sets
 #       PLAYWRIGHT_PDA_LIVE_REUSE=1) AND the listener process command line proves it belongs to
 #       this worktree; otherwise the script errors out instead of reusing
+#     - When starting its own server (default path) and VITE_NERV_IIP_REQUEST_TIMEOUT_MS is not
+#       already set, sets it to 2000 in this process so the spawned vite webServer bakes the
+#       DEV-only short request-timeout override required by network-resilience.spec.ts; the
+#       effective value is logged and recorded in run-fingerprint.txt. In -AllowServerReuse mode
+#       the env cannot be proven baked into the reused server, so the script WARNS instead
+#       (timeout-injection scenarios may honestly fail as environment blockage)
 #   Writes:
 #     - artifacts/script-logs/**
 #     - frontend/apps/business-pda/test-results-live/** (Playwright traces/screenshots)
@@ -152,7 +158,30 @@ else {
     $env:PLAYWRIGHT_PDA_LIVE_REUSE = '0'
 }
 
-# --- 5. 跑 live spec + 证据归集（无论成败都归集 trace/截图，失败时证据更重要）。
+# --- 5. 短超时注入（M2 network-resilience.spec.ts 的「挂起 + 短超时」场景依赖，方案 §4.2）：
+#        VITE_NERV_IIP_REQUEST_TIMEOUT_MS 是 DEV-only 覆盖（request-timeout.ts 生产门禁，
+#        钳制区间 [100, 30000]），由 vite dev server 启动时烘焙进 import.meta.env。
+$timeoutEnvNote = $null
+if (-not $serverReuse) {
+    # 默认路径（本脚本经 Playwright webServer 自起 server）：未显式设置时注入推荐值 2000，
+    # 保证标准入口跑全量 live spec 时超时场景不因缺 env 而环境阻塞。
+    if ([string]::IsNullOrWhiteSpace($env:VITE_NERV_IIP_REQUEST_TIMEOUT_MS)) {
+        $env:VITE_NERV_IIP_REQUEST_TIMEOUT_MS = '2000'
+        $timeoutEnvNote = "$($env:VITE_NERV_IIP_REQUEST_TIMEOUT_MS) (script-injected default)"
+    }
+    else {
+        $timeoutEnvNote = "$($env:VITE_NERV_IIP_REQUEST_TIMEOUT_MS) (pre-set by caller)"
+    }
+    Write-Diagnostic "短超时注入：VITE_NERV_IIP_REQUEST_TIMEOUT_MS=$timeoutEnvNote——将随本脚本进程 env 烘焙进自起的 vite webServer（DEV-only 覆盖，生产构建无效）。"
+}
+else {
+    # 复用模式：vite define 在 server **启动时**烘焙，复用的既有 server 无法证明启动时带了
+    # 该值——如实 WARN，不静默跳过、不伪造：依赖超时注入的场景可能如实失败（环境阻塞）。
+    $timeoutEnvNote = 'unverifiable (reused pre-existing dev server; env is baked at server start)'
+    Write-Diagnostic -Level 'WARN' -Message '复用既有 dev server：无法证明其启动时带 VITE_NERV_IIP_REQUEST_TIMEOUT_MS（vite env 在 server 启动时烘焙）——超时注入影响的场景（network-resilience 挂起+短超时）可能如实失败（环境阻塞），不静默跳过、不伪造。需要该场景请停掉既有 server 后不带 -AllowServerReuse 重跑。'
+}
+
+# --- 6. 跑 live spec + 证据归集（无论成败都归集 trace/截图，失败时证据更重要）。
 if ([string]::IsNullOrWhiteSpace($EvidenceDir)) {
     # 每次运行唯一（毫秒级时间戳 + shortSHA + 4 位随机十六进制后缀），不与其他运行
     # 混目录、不覆盖既有证据；随机后缀防两次并行运行落在同一毫秒 + 同一 HEAD 撞名。
@@ -184,11 +213,11 @@ catch {
 }
 finally {
     if (Test-Path $testResultsDir) {
-        # 证据目录已在第 5 步前置原子占位创建，这里只写入不创建。
+        # 证据目录已在第 6 步前置原子占位创建，这里只写入不创建。
         # 不加 -Force：目录本次运行独占（占位创建成功即无既有文件），撞文件如实报错而非静默覆盖。
         Copy-Item -Path (Join-Path $testResultsDir '*') -Destination $EvidenceDir -Recurse
         $reuseNote = $serverReuse ? 'true (reused pre-existing dev server; worktree ownership VERIFIED — listener process command line contains this worktree root)' : 'false'
-        "branch=$branch`nhead=$head`nworktree=$scriptToplevel`ndate=$(Get-Date -Format 'o')`nserverReuse=$reuseNote" |
+        "branch=$branch`nhead=$head`nworktree=$scriptToplevel`ndate=$(Get-Date -Format 'o')`nserverReuse=$reuseNote`nrequestTimeoutMs=$timeoutEnvNote" |
             Set-Content -Path (Join-Path $EvidenceDir 'run-fingerprint.txt') -Encoding utf8
         Write-Diagnostic "证据已归集：$EvidenceDir（trace/截图 + commit 指纹；请按方案 §4.5 补关键请求与后端回读记录）"
     }
