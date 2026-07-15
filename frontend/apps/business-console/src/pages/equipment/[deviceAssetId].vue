@@ -67,7 +67,9 @@ definePage({
   },
 })
 
-const MAINTENANCE_DETAIL_TAKE = 250
+// 网关维护列表 facade 校验 Take 上限为 200；曾用 250 会被拒（400），使详情页维护上下文
+// （工单/计划/备件/点检）与运行小时保养卡全部拿不到数据。收敛到上限内。
+const MAINTENANCE_DETAIL_TAKE = 200
 const RUNTIME_HOURS_DEFAULT_WINDOW_DAYS = 90
 
 const route = useRoute()
