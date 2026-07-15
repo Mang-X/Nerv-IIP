@@ -303,11 +303,17 @@ export async function routeBusinessConsoleApi(route: Route) {
   const base = '/api/business-console/v1/mes'
 
   // Operation-task actions: start/pause/resume/complete → success envelope.
-  if (method === 'POST' && /\/mes\/operation-tasks\/[^/]+\/(start|pause|resume|complete)$/.test(pathname)) {
+  if (
+    method === 'POST' &&
+    /\/mes\/operation-tasks\/[^/]+\/(start|pause|resume|complete)$/.test(pathname)
+  ) {
     return fulfillJson(route, envelope({}))
   }
   if (pathname === `${base}/operation-tasks`) {
-    return fulfillJson(route, envelope({ items: mesOperationTasks, total: mesOperationTasks.length }))
+    return fulfillJson(
+      route,
+      envelope({ items: mesOperationTasks, total: mesOperationTasks.length }),
+    )
   }
   if (pathname === `${base}/work-orders`) {
     return fulfillJson(route, envelope({ items: mesWorkOrders, total: mesWorkOrders.length }))
@@ -317,11 +323,17 @@ export async function routeBusinessConsoleApi(route: Route) {
     return fulfillJson(route, envelope({ items: [], total: 0 }))
   }
   if (pathname === `${base}/material-issue-requests`) {
-    return fulfillJson(route, envelope({ items: mesMaterialIssueRequests, total: mesMaterialIssueRequests.length }))
+    return fulfillJson(
+      route,
+      envelope({ items: mesMaterialIssueRequests, total: mesMaterialIssueRequests.length }),
+    )
   }
   if (pathname === `${base}/finished-goods-receipt-requests`) {
     if (method === 'POST') return fulfillJson(route, envelope({}))
-    return fulfillJson(route, envelope({ items: mesReceiptRequests, total: mesReceiptRequests.length }))
+    return fulfillJson(
+      route,
+      envelope({ items: mesReceiptRequests, total: mesReceiptRequests.length }),
+    )
   }
 
   // Don't fake-succeed unmatched paths — fall back so a future un-mocked / mistyped
@@ -387,7 +399,8 @@ export async function expectTouchTargets(page: Page) {
         // full-width intent so it cannot excuse a small control inside a tall wrapper.
         if (el.tagName === 'INPUT' && el.parentElement) {
           const row = el.parentElement.getBoundingClientRect()
-          const declaredFullWidth = getComputedStyle(el).width === '100%' || el.classList.contains('w-full')
+          const declaredFullWidth =
+            getComputedStyle(el).width === '100%' || el.classList.contains('w-full')
           if (row.height >= FLOOR && own.width > 0 && declaredFullWidth) {
             effW = Math.max(own.width, row.width)
             effH = row.height

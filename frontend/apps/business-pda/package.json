@@ -8,6 +8,7 @@
     "build": "vue-tsc --noEmit -p tsconfig.json && vp build .",
     "test": "vp test run src",
     "e2e": "playwright test",
+    "e2e:live": "playwright test --config playwright.live.config.ts",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "cap:sync": "vp build . && cap sync android",
     "cap:open": "cap open android"
