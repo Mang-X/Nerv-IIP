@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
@@ -12,6 +13,42 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesIntegrationEventTests
 {
+    [Fact]
+    public void Manual_dispatch_lifecycle_converters_preserve_real_snapshot_revision_actor_and_lineage()
+    {
+        var start = DateTimeOffset.Parse("2026-07-15T08:00:00Z");
+        var task = OperationTask.Queue(
+            "org-001", "env-dev", "WO-001", "OP-10", 10, "WC-1", [],
+            start, TimeSpan.FromHours(1));
+        task.Assign("operator-1", "DEVICE-2", "SHIFT-1", start.AddMinutes(-5), "user:planner-1");
+        var dispatchedDomainEvent = Assert.IsType<OperationTaskManuallyDispatchedDomainEvent>(
+            Assert.Single(task.GetDomainEvents()));
+        var dispatched = new OperationTaskManuallyDispatchedIntegrationEventConverter()
+            .Convert(dispatchedDomainEvent);
+
+        task.ClearDomainEvents();
+        task.Assign("operator-1", null, "SHIFT-1", start.AddMinutes(-4), "user:planner-1");
+        var clearedDomainEvent = Assert.IsType<OperationTaskManualDispatchClearedDomainEvent>(
+            Assert.Single(task.GetDomainEvents()));
+        var cleared = new OperationTaskManualDispatchClearedIntegrationEventConverter(
+                new StubMesIntegrationEventContextAccessor(
+                    new MesIntegrationEventContext("corr-clear-2", dispatched.EventId)))
+            .Convert(clearedDomainEvent);
+
+        Assert.Equal(MesIntegrationEventTypes.OperationTaskManuallyDispatched, dispatched.EventType);
+        Assert.Equal(1, dispatched.Payload.DispatchRevision);
+        Assert.Equal("DEVICE-2", dispatched.Payload.ResourceId);
+        Assert.Equal("user:planner-1", dispatched.Actor);
+        Assert.Equal(MesIntegrationEventTypes.OperationTaskManualDispatchCleared, cleared.EventType);
+        Assert.Equal(2, cleared.Payload.DispatchRevision);
+        Assert.Equal("DEVICE-2", cleared.Payload.ResourceId);
+        Assert.Equal("device-cleared", cleared.Payload.ReasonCode);
+        Assert.Equal("corr-clear-2", cleared.CorrelationId);
+        Assert.Equal(dispatched.EventId, cleared.CausationId);
+        Assert.Equal("user:planner-1", cleared.Actor);
+        Assert.NotEqual(dispatched.IdempotencyKey, cleared.IdempotencyKey);
+    }
+
     [Fact]
     public void Production_report_converter_emits_inventory_outbound_requests_from_production_line_side_account()
     {
@@ -289,5 +326,11 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("DEV-PACK-01", integrationEvent.Payload.DeviceAssetId);
         Assert.Equal("PCS", integrationEvent.Payload.UomCode);
         Assert.Equal(100m, integrationEvent.Payload.TheoreticalRatePerHour);
+    }
+
+    private sealed class StubMesIntegrationEventContextAccessor(MesIntegrationEventContext context)
+        : IMesIntegrationEventContextAccessor
+    {
+        public MesIntegrationEventContext GetContext() => context;
     }
 }
