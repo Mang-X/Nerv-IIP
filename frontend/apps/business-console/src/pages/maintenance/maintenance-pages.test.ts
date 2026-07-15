@@ -5,6 +5,7 @@ import { computed, reactive, shallowRef } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
 import InspectionsPage from './inspections.vue'
+import PlansPage from './plans.vue'
 import WorkOrdersPage from './work-orders.vue'
 
 // Hoisted mutable state — safe to reference from vi.mock factories (unlike const locals).
@@ -12,9 +13,14 @@ const state = vi.hoisted(() => ({
   query: { deviceAssetId: 'DEV-PRESS-01', sourceAlarmId: 'ALARM-9001' } as Record<string, string>,
   inspections: [] as Array<Record<string, unknown>>,
   workOrders: [] as Array<Record<string, unknown>>,
+  plans: [] as Array<Record<string, unknown>>,
   createWorkOrder: vi.fn(async (_body: Record<string, unknown>) => ({})),
   completeWorkOrder: vi.fn(async (_id: string, _body: Record<string, unknown>) => ({})),
   recordInspection: vi.fn(async (_body: Record<string, unknown>) => ({})),
+  createPlan: vi.fn(async (_body: Record<string, unknown>) => ({})),
+  generateDue: vi.fn(async (_payload: Record<string, unknown>) => ({
+    data: { generatedCount: 0 },
+  })),
 }))
 
 vi.mock('vue-router', async (importOriginal) => {
@@ -52,6 +58,20 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     recordInspectionPending: shallowRef(false),
     recordInspectionError: shallowRef(),
   }),
+  useMaintenancePlans: () => ({
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
+    plans: computed(() => state.plans),
+    plansError: shallowRef(),
+    plansPending: shallowRef(false),
+    plansTotal: computed(() => state.plans.length),
+    refreshPlans: vi.fn(),
+    createPlan: state.createPlan,
+    createPlanPending: shallowRef(false),
+    createPlanError: shallowRef(),
+    generateDue: state.generateDue,
+    generateDuePending: shallowRef(false),
+    generateDueError: shallowRef(),
+  }),
 }))
 
 // Worker directory (technician selector) + device-asset resources (device combobox)
@@ -88,6 +108,28 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 
 const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
+  // reka Tabs 的点击在 jsdom 下不更新 v-model；用 CustomEvent 冒泡的轻量 stub 驱动触发模式切换。
+  // trigger 冒泡 settab 事件到 NvTabs 根节点，再 $emit update:modelValue，避开 provide/inject 的 slot 作用域问题。
+  NvTabs: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: `<div @settab="$emit('update:modelValue', $event.detail)"><slot /></div>`,
+  },
+  NvTabsList: { template: '<div><slot /></div>' },
+  NvTabsTrigger: {
+    props: ['value'],
+    methods: {
+      emitSet() {
+        ;(this as unknown as { $el: HTMLElement }).$el.dispatchEvent(
+          new CustomEvent('settab', {
+            bubbles: true,
+            detail: (this as unknown as { value: string }).value,
+          }),
+        )
+      },
+    },
+    template: `<button type="button" role="tab" :data-tab="value" @click="emitSet"><slot /></button>`,
+  },
 }
 
 // 页面用 useAuthStore 拿当前用户默认「点检人 / 开单人」——需要真 pinia + 登录 principal。
@@ -101,8 +143,11 @@ beforeEach(() => {
   state.createWorkOrder.mockClear()
   state.completeWorkOrder.mockClear()
   state.recordInspection.mockClear()
+  state.createPlan.mockClear()
+  state.generateDue.mockClear()
   state.query = { deviceAssetId: 'DEV-PRESS-01', sourceAlarmId: 'ALARM-9001' }
   state.inspections = []
+  state.plans = []
   // 默认一张在保工单：既覆盖保修列渲染（在保 / 供应商），也让列表非空。
   state.workOrders = [
     {
@@ -348,5 +393,119 @@ describe('maintenance inspections page', () => {
     // 测量特性是下拉选择（button 触发），不再是自由输入。
     const characteristic = document.body.querySelector('[id^="m-char-"]')!
     expect(characteristic.tagName).toBe('BUTTON')
+  })
+})
+
+describe('maintenance plans page', () => {
+  it('renders trigger-mode column and next-due for calendar vs runtime plans', async () => {
+    state.plans = [
+      {
+        planId: 'p-cal',
+        deviceAssetId: 'DEV-CAL',
+        planCode: 'PM-CAL',
+        interval: 'P30D',
+        startsOn: '2026-07-01',
+        nextDueOn: '2026-07-31',
+        lastGeneratedRuntimeHours: 0,
+      },
+      {
+        planId: 'p-run',
+        deviceAssetId: 'DEV-RUN',
+        planCode: 'PM-RUN',
+        interval: 'P365D',
+        startsOn: '2026-06-01',
+        nextDueOn: '2027-06-01',
+        runtimeHourInterval: 1000,
+        nextDueRuntimeHours: 1000,
+        lastGeneratedRuntimeHours: 0,
+      },
+    ]
+    const wrapper = mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('触发模式')
+    expect(wrapper.text()).toContain('日历周期')
+    expect(wrapper.text()).toContain('运行小时')
+    // 日历型显下次到期日；运行小时型显下一触发阈值。
+    expect(wrapper.text()).toContain('2026-07-31')
+    expect(wrapper.text()).toContain('运行满 1000 小时')
+  })
+
+  it('creates a runtime-hours plan with a positive threshold and calendar fallback interval', async () => {
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    const openBtn = [...document.body.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('新建保养计划'),
+    )!
+    openBtn.click()
+    await flushPromises()
+
+    // 切到「运行小时」触发模式。
+    document.body
+      .querySelector<HTMLButtonElement>('[role="dialog"] button[data-tab="runtime"]')!
+      .click()
+    await flushPromises()
+
+    function setInput(selector: string, value: string) {
+      const el = document.body.querySelector<HTMLInputElement>(selector)!
+      el.value = value
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    setInput('#plan-device', 'DEV-SMT-01')
+    setInput('#plan-owner', '设备保全班')
+    // 用 1000 小时快捷按钮填充触发运行小时数。
+    const quick = [
+      ...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ].find((b) => b.textContent?.trim() === '1000 小时')!
+    quick.click()
+    await flushPromises()
+
+    const submit = [
+      ...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button[type="submit"]'),
+    ].find((b) => b.textContent?.includes('创建保养计划'))!
+    submit.click()
+    await flushPromises()
+
+    expect(state.createPlan).toHaveBeenCalledTimes(1)
+    const body = state.createPlan.mock.calls[0][0]
+    expect(body.deviceAssetId).toBe('DEV-SMT-01')
+    expect(body.runtimeHourInterval).toBe(1000)
+    // 运行小时模式仍带日历兜底周期（后端 interval 恒必填）。
+    expect(body.interval).toBe('P365D')
+  })
+
+  it('blocks a runtime-mode submit when the trigger hours are missing', async () => {
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    const openBtn = [...document.body.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('新建保养计划'),
+    )!
+    openBtn.click()
+    await flushPromises()
+
+    document.body
+      .querySelector<HTMLButtonElement>('[role="dialog"] button[data-tab="runtime"]')!
+      .click()
+    await flushPromises()
+
+    const deviceInput = document.body.querySelector<HTMLInputElement>('#plan-device')!
+    deviceInput.value = 'DEV-SMT-02'
+    deviceInput.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const ownerInput = document.body.querySelector<HTMLInputElement>('#plan-owner')!
+    ownerInput.value = '设备保全班'
+    ownerInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    const submit = [
+      ...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button[type="submit"]'),
+    ].find((b) => b.textContent?.includes('创建保养计划'))!
+    submit.click()
+    await flushPromises()
+
+    expect(state.createPlan).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('请填写正的触发运行小时数。')
   })
 })

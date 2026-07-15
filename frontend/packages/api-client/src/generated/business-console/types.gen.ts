@@ -4468,6 +4468,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     windowStartUtc?: string | null;
     windowEndUtc?: string | null;
     idempotencyKey?: string | null;
+    runtimeHourInterval?: number | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenancePlanListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4487,6 +4488,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     planCode?: string;
     interval?: string;
     startsOn?: string;
+    nextDueOn?: string;
+    runtimeHourInterval?: number | null;
+    nextDueRuntimeHours?: number | null;
+    lastGeneratedRuntimeHours?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest = {

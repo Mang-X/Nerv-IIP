@@ -130,6 +130,19 @@ const reviewFixture = vi.hoisted(() => {
       planCode: 'PM-CNC-MONTHLY',
       interval: 'P30D',
       startsOn: '2026-07-01',
+      nextDueOn: '2026-07-31',
+      lastGeneratedRuntimeHours: 0,
+    },
+    {
+      planId: 'plan-2',
+      deviceAssetId: 'DEV-OIL-01',
+      planCode: 'PM-CNC-RUNTIME',
+      interval: 'P365D',
+      startsOn: '2026-06-01',
+      nextDueOn: '2027-06-01',
+      runtimeHourInterval: 1000,
+      nextDueRuntimeHours: 1000,
+      lastGeneratedRuntimeHours: 0,
     },
   ] satisfies BusinessConsoleMaintenancePlanItem[]
 
@@ -287,6 +300,15 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
     refreshOee: vi.fn(),
     runtimeAvailabilityError: shallowRef(),
   }),
+  useBusinessTelemetryRuntimeHours: () => ({
+    runtimeHours: computed(() => ({ totalRuntimeHours: 720, hasRuntimeSamples: true })),
+    totalRuntimeHours: computed(() => 720),
+    hasRuntimeSamples: computed(() => true),
+    runtimeHoursError: shallowRef(),
+    runtimeHoursPending: shallowRef(false),
+    runtimeHoursEnabled: computed(() => true),
+    refreshRuntimeHours: vi.fn(),
+  }),
 }))
 
 vi.mock('@/composables/useBusinessMaintenance', () => ({
@@ -411,6 +433,17 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('BEARING-6205')
     expect(wrapper.text()).toContain('MTBF')
     expect(wrapper.text()).toContain('正式页面')
+  })
+
+  it('renders cumulative runtime hours and hours-until-next-maintenance on equipment detail', () => {
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    expect(wrapper.text()).toContain('累计运行小时')
+    expect(wrapper.text()).toContain('720.0 小时')
+    expect(wrapper.text()).toContain('距下次保养还需')
+    // 累计 720h、运行小时型计划阈值 1000h → 剩余 280h。
+    expect(wrapper.text()).toContain('280.0 小时')
+    expect(wrapper.text()).toContain('PM-CNC-RUNTIME')
   })
 
   it('renders the device control action and command history when the user can control the device', () => {

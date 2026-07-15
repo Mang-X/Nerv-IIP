@@ -6,7 +6,10 @@ import {
   queryBusinessConsoleTelemetryDeviceHistoryQueryOptions,
   queryBusinessConsoleTelemetryOeeQueryOptions,
   queryBusinessConsoleTelemetryRuntimeAvailabilityQueryOptions,
+  queryBusinessConsoleTelemetryRuntimeHoursQueryOptions,
   type BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest,
+  type BusinessConsoleTelemetryRuntimeHoursEnvelope,
+  type BusinessConsoleTelemetryRuntimeHoursResponse,
   type BusinessConsoleTelemetryTagCurrentValueEnvelope,
   type BusinessConsoleTelemetryTagCurrentValueResponse,
   type BusinessConsoleTelemetryAlarmRuleItem,
@@ -343,5 +346,52 @@ export function useBusinessTelemetryOee(initialFilters: Partial<TelemetryWindowF
         ? Promise.all([oeeQuery.refetch(), runtimeAvailabilityQuery.refetch()])
         : Promise.resolve(),
     runtimeAvailabilityError: runtimeAvailabilityQuery.error,
+  }
+}
+
+/**
+ * 设备累计运行小时（IIoT #688/#884 facade）。返回值是 [windowStartUtc, windowEndUtc] 窗口内累计，不是
+ * 终身表底，调用方须按窗口口径展示。窗口起点对齐运行小时型保养计划的起算日时，`totalRuntimeHours`
+ * 即等于计划推算所用的累计口径，可与计划 `nextDueRuntimeHours` 相减得到「距下次保养还需 X 小时」。
+ * org/env + 设备 + 窗口齐备才发请求，缺任一即静默空态。
+ */
+export function useBusinessTelemetryRuntimeHours(
+  deviceAssetId: Ref<string>,
+  windowStartUtc: Ref<string>,
+  windowEndUtc: Ref<string>,
+) {
+  const businessContext = useBusinessContextStore()
+  const enabled = computed(
+    () =>
+      hasBusinessContext(businessContext) &&
+      deviceAssetId.value.trim().length > 0 &&
+      windowStartUtc.value.trim().length > 0 &&
+      windowEndUtc.value.trim().length > 0,
+  )
+  const runtimeHoursQuery = useQuery(() => ({
+    ...queryBusinessConsoleTelemetryRuntimeHoursQueryOptions({
+      query: {
+        ...toContextQuery(businessContext),
+        deviceAssetId: deviceAssetId.value.trim(),
+        windowStartUtc: windowStartUtc.value,
+        windowEndUtc: windowEndUtc.value,
+      },
+    }),
+    enabled: enabled.value,
+  }))
+  const runtimeHours = computed<BusinessConsoleTelemetryRuntimeHoursResponse | undefined>(() =>
+    unwrapData<BusinessConsoleTelemetryRuntimeHoursResponse>(
+      runtimeHoursQuery.data.value as BusinessConsoleTelemetryRuntimeHoursEnvelope | undefined,
+    ),
+  )
+
+  return {
+    runtimeHours,
+    totalRuntimeHours: computed(() => runtimeHours.value?.totalRuntimeHours ?? null),
+    hasRuntimeSamples: computed(() => runtimeHours.value?.hasRuntimeSamples ?? false),
+    runtimeHoursError: runtimeHoursQuery.error,
+    runtimeHoursPending: runtimeHoursQuery.isLoading,
+    runtimeHoursEnabled: enabled,
+    refreshRuntimeHours: () => (enabled.value ? runtimeHoursQuery.refetch() : Promise.resolve()),
   }
 }

@@ -13,6 +13,7 @@ import {
   formatOeeRate,
   useBusinessTelemetryHistory,
   useBusinessTelemetryOee,
+  useBusinessTelemetryRuntimeHours,
 } from '@/composables/useBusinessTelemetry'
 import {
   deviceControlApprovalLabel,
@@ -67,6 +68,7 @@ definePage({
 })
 
 const MAINTENANCE_DETAIL_TAKE = 250
+const RUNTIME_HOURS_DEFAULT_WINDOW_DAYS = 90
 
 const route = useRoute()
 const router = useRouter()
@@ -157,7 +159,12 @@ function controlCommandRowKey(row: ControlCommandRow) {
 const currentState = computed(() => device.value?.currentState)
 const errorMessage = computed(() => formatError(deviceError.value))
 const telemetryErrorMessage = computed(() =>
-  formatError(historyError.value || oeeError.value || runtimeAvailabilityError.value),
+  formatError(
+    historyError.value ||
+      oeeError.value ||
+      runtimeAvailabilityError.value ||
+      runtimeHoursError.value,
+  ),
 )
 const oeeDegradedReasons = computed(() =>
   (oee.value?.degradedReasons ?? []).map(describeTelemetryOeeDegradation),
@@ -186,6 +193,46 @@ const currentDevicePlanMatches = computed(() =>
   plans.value.filter((row) => row.deviceAssetId === currentDeviceId.value),
 )
 const currentDevicePlans = computed(() => currentDevicePlanMatches.value.slice(0, 5))
+// 运行小时型保养计划（有 runtimeHourInterval）——取起算日最早者，作为累计运行小时窗口锚点，
+// 使 totalRuntimeHours 与后端计划推算口径一致，可与 nextDueRuntimeHours 相减求剩余小时。
+const currentDeviceRuntimePlan = computed(
+  () =>
+    currentDevicePlanMatches.value
+      .filter((row) => row.runtimeHourInterval != null)
+      .slice()
+      .sort((a, b) => (a.startsOn ?? '').localeCompare(b.startsOn ?? ''))[0],
+)
+const nowIso = ref(new Date().toISOString())
+const runtimeHoursWindowEnd = nowIso
+const runtimeHoursWindowStart = computed(() => {
+  const startsOn = currentDeviceRuntimePlan.value?.startsOn
+  if (startsOn) return `${startsOn}T00:00:00.000Z`
+  const start = new Date(nowIso.value)
+  start.setDate(start.getDate() - RUNTIME_HOURS_DEFAULT_WINDOW_DAYS)
+  return start.toISOString()
+})
+const {
+  totalRuntimeHours,
+  hasRuntimeSamples: hasRuntimeHoursSamples,
+  runtimeHoursError,
+  runtimeHoursPending,
+} = useBusinessTelemetryRuntimeHours(
+  deviceAssetIdRef,
+  runtimeHoursWindowStart,
+  runtimeHoursWindowEnd,
+)
+const runtimeHoursUntilNextMaintenance = computed(() => {
+  const plan = currentDeviceRuntimePlan.value
+  const total = totalRuntimeHours.value
+  if (!plan || plan.nextDueRuntimeHours == null || total == null) return null
+  return Math.max(0, plan.nextDueRuntimeHours - total)
+})
+const runtimeHoursCardHint = computed(() => {
+  if (!hasRuntimeHoursSamples.value) return '当前窗口无运行样本，等于设备暂无运行事实'
+  return currentDeviceRuntimePlan.value
+    ? '自运行小时型计划起算日累计'
+    : `近 ${RUNTIME_HOURS_DEFAULT_WINDOW_DAYS} 天窗口累计`
+})
 const currentDeviceSpareParts = computed(() =>
   spareParts.value.filter((row) => row.deviceAssetId === currentDeviceId.value).slice(0, 5),
 )
@@ -297,6 +344,10 @@ function availabilityVariant(value?: string | null) {
 function metricLabel(value?: number | null, suffix = '') {
   if (value === null || value === undefined) return '无样本'
   return `${Number(value).toFixed(1)}${suffix}`
+}
+function formatHours(value?: number | null) {
+  if (value === null || value === undefined) return '无样本'
+  return `${Number(value).toFixed(1)} 小时`
 }
 function historyTypeLabel(value?: string | null) {
   const labels: Record<string, string> = {
@@ -670,6 +721,28 @@ function formatError(error: unknown) {
             description="历史事件"
             :value="historyCount"
             hint="设备历史趋势 facade 返回数量"
+          />
+        </NvSectionCards>
+
+        <NvSectionCards :columns="2">
+          <NvSectionCard
+            description="累计运行小时"
+            :value="runtimeHoursPending ? '读取中…' : formatHours(totalRuntimeHours)"
+            :hint="runtimeHoursCardHint"
+          />
+          <NvSectionCard
+            v-if="currentDeviceRuntimePlan"
+            description="距下次保养还需"
+            :value="formatHours(runtimeHoursUntilNextMaintenance)"
+            :hint="`运行小时型计划 ${currentDeviceRuntimePlan.planCode ?? '—'} · 阈值 ${
+              currentDeviceRuntimePlan.nextDueRuntimeHours ?? '—'
+            } 小时`"
+          />
+          <NvSectionCard
+            v-else
+            description="距下次保养（运行小时）"
+            value="未设运行小时计划"
+            hint="该设备没有运行小时型保养计划；到期以日历周期为准"
           />
         </NvSectionCards>
 

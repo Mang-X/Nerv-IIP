@@ -39691,6 +39691,13 @@
             "maxLength": 150,
             "minLength": 0,
             "nullable": true
+          },
+          "runtimeHourInterval": {
+            "type": "number",
+            "format": "decimal",
+            "minimum": 0.0,
+            "nullable": true,
+            "exclusiveMinimum": true
           }
         }
       },
@@ -39758,6 +39765,24 @@
           "startsOn": {
             "type": "string",
             "format": "date"
+          },
+          "nextDueOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "runtimeHourInterval": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "nextDueRuntimeHours": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "lastGeneratedRuntimeHours": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },

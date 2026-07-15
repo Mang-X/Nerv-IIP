@@ -146,6 +146,30 @@ public sealed class MaintenanceEndpointContractTests
     }
 
     [Fact]
+    public async Task Maintenance_plan_list_projects_trigger_mode_and_next_due_fields()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-CAL", "PM-CAL", "P30D", new DateOnly(2026, 6, 1), "maintenance"));
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-RUN", "PM-RUN", "P30D", new DateOnly(2026, 6, 1), "maintenance", runtimeHourInterval: 1000m));
+        await dbContext.SaveChangesAsync();
+
+        var plans = await new ListMaintenancePlansQueryHandler(dbContext).Handle(
+            new ListMaintenancePlansQuery("org-001", "env-dev", 0, 100),
+            CancellationToken.None);
+
+        var calendar = plans.Items.Single(x => x.PlanCode == "PM-CAL");
+        Assert.Null(calendar.RuntimeHourInterval);
+        Assert.Null(calendar.NextDueRuntimeHours);
+        Assert.Equal(new DateOnly(2026, 6, 1), calendar.NextDueOn);
+        Assert.Equal(0m, calendar.LastGeneratedRuntimeHours);
+
+        var runtime = plans.Items.Single(x => x.PlanCode == "PM-RUN");
+        Assert.Equal(1000m, runtime.RuntimeHourInterval);
+        Assert.Equal(1000m, runtime.NextDueRuntimeHours);
+        Assert.Equal(0m, runtime.LastGeneratedRuntimeHours);
+    }
+
+    [Fact]
     public async Task Maintenance_inspection_list_returns_paged_inspection_facts()
     {
         await using var dbContext = CreateDbContext();

@@ -89,7 +89,16 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
 
 public sealed record ListMaintenancePlansQuery(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100) : IQuery<PagedMaintenanceListResponse<MaintenancePlanListItem>>;
 
-public sealed record MaintenancePlanListItem(MaintenancePlanId PlanId, string DeviceAssetId, string PlanCode, string Interval, DateOnly StartsOn);
+public sealed record MaintenancePlanListItem(
+    MaintenancePlanId PlanId,
+    string DeviceAssetId,
+    string PlanCode,
+    string Interval,
+    DateOnly StartsOn,
+    DateOnly NextDueOn,
+    decimal? RuntimeHourInterval,
+    decimal? NextDueRuntimeHours,
+    decimal LastGeneratedRuntimeHours);
 
 public sealed class ListMaintenancePlansQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaintenancePlansQuery, PagedMaintenanceListResponse<MaintenancePlanListItem>>
@@ -104,7 +113,16 @@ public sealed class ListMaintenancePlansQueryHandler(ApplicationDbContext dbCont
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
-            .Select(x => new MaintenancePlanListItem(x.Id, x.DeviceAssetId, x.PlanCode, x.Interval, x.StartsOn))
+            .Select(x => new MaintenancePlanListItem(
+                x.Id,
+                x.DeviceAssetId,
+                x.PlanCode,
+                x.Interval,
+                x.StartsOn,
+                x.NextDueOn,
+                x.RuntimeHourInterval,
+                x.NextDueRuntimeHours,
+                x.LastGeneratedRuntimeHours))
             .Skip(skip)
             .Take(take)
             .ToArrayAsync(cancellationToken);

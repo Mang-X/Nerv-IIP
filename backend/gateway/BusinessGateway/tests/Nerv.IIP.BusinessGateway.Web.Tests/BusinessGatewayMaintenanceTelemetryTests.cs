@@ -307,6 +307,12 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
 
         Assert.Equal(HttpStatusCode.OK, plansResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, windowsResponse.StatusCode);
+        using var plansDocument = JsonDocument.Parse(await plansResponse.Content.ReadAsStringAsync());
+        var planItem = plansDocument.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("2026-06-08", planItem.GetProperty("nextDueOn").GetString());
+        Assert.Equal(1000m, planItem.GetProperty("runtimeHourInterval").GetDecimal());
+        Assert.Equal(1000m, planItem.GetProperty("nextDueRuntimeHours").GetDecimal());
+        Assert.Equal(0m, planItem.GetProperty("lastGeneratedRuntimeHours").GetDecimal());
         Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenancePlansRead);
         Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         Assert.DoesNotContain(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.IiotTelemetryRead);
@@ -393,6 +399,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             windowStartUtc = "2026-06-01T08:00:00Z",
             windowEndUtc = "2026-06-01T16:00:00Z",
             idempotencyKey = "maintenance-plan-create-001",
+            runtimeHourInterval = 1000m,
         });
         var inspectionResponse = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/inspections", new
         {
@@ -415,6 +422,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(
             DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
             maintenance.LastCreatePlanRequest.GetProperty("windowStartUtc").GetDateTimeOffset());
+        Assert.Equal(1000m, maintenance.LastCreatePlanRequest.GetProperty("runtimeHourInterval").GetDecimal());
         Assert.Equal("plan-001", maintenance.LastRecordInspectionRequest.GetProperty("planId").GetString());
         Assert.Equal("wo-maint-001", maintenance.LastRecordInspectionRequest.GetProperty("workOrderId").GetString());
     }
@@ -861,7 +869,11 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
                 "DEV-PRESS-01",
                 "PM-PRESS",
                 "weekly",
-                new DateOnly(2026, 6, 1)),
+                new DateOnly(2026, 6, 1),
+                new DateOnly(2026, 6, 8),
+                1000m,
+                1000m,
+                0m),
         ], request.Skip, request.Take, 1));
 
     public Task<BusinessConsoleMaintenanceInspectionListResponse> ListInspectionsAsync(

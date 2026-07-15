@@ -605,6 +605,9 @@ public sealed class BusinessConsoleCreateMaintenancePlanRequestValidator : Valid
         RuleFor(x => x.WindowEndUtc)
             .GreaterThan(x => x.WindowStartUtc)
             .When(x => x.WindowStartUtc.HasValue && x.WindowEndUtc.HasValue);
+        RuleFor(x => x.RuntimeHourInterval)
+            .GreaterThan(0m)
+            .When(x => x.RuntimeHourInterval.HasValue);
     }
 }
 

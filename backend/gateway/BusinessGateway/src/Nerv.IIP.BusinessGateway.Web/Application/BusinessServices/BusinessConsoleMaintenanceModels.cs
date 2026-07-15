@@ -60,7 +60,8 @@ public sealed record BusinessConsoleCreateMaintenancePlanRequest(
     string Owner,
     DateTimeOffset? WindowStartUtc,
     DateTimeOffset? WindowEndUtc,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    decimal? RuntimeHourInterval = null);
 
 public sealed record BusinessConsoleCreateMaintenancePlanResponse(string PlanId);
 
@@ -129,7 +130,11 @@ public sealed record BusinessConsoleMaintenancePlanItem(
     string DeviceAssetId,
     string PlanCode,
     string Interval,
-    DateOnly StartsOn);
+    DateOnly StartsOn,
+    DateOnly NextDueOn,
+    decimal? RuntimeHourInterval,
+    decimal? NextDueRuntimeHours,
+    decimal LastGeneratedRuntimeHours);
 
 public sealed record BusinessConsoleMaintenanceInspectionListResponse(
     IReadOnlyCollection<BusinessConsoleMaintenanceInspectionItem> Items,
