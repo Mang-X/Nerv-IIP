@@ -1,22 +1,27 @@
 # PDA M3 首次 AVD + debug APK 冒烟走查记录
 
 > 证据口径声明：本走查属方案（`2026-07-15-pda-device-sim-detection-plan.md` §5）的 **L3 层
-> （Android 模拟器 + APK）**首跑——真实 WebView / Capacitor 原生路径 / Android 输入栈，
+> （Android 模拟器 + APK）**首跑——真实 WebView / Capacitor Android 宿主装载 + 网络管道 /
+> Android 输入栈（业务代码尚无消费 `isNativePlatform` 的分支，本走查不声称「原生路径已验证」），
 > 仍非实体 PDA + 实体扫码枪（L4 口径不变）。本次**无后端栈**（Docker 内无 Nerv 栈），
 > 覆盖到「APK → 统一入口网络管道」为止；联栈业务链路（登录成功 → 扫码作业）留待
 > 栈可用时按 `pda-live-walkthrough.ps1` + L3 清单补跑。
 
 ## 环境
 
-| 项       | 值                                                                                                                  |
-| -------- | ------------------------------------------------------------------------------------------------------------------- |
-| 日期     | 2026-07-15（17:5x +08:00）                                                                                          |
-| 分支     | `pda-sim-m3-avd-apk` @ `048ab87`（main 含 M1+M2）                                                                   |
-| APK      | `app-debug.apk` 4,564,206 B，SHA256 `E7334B87…F80B41`（双次构建一致），基址 `http://10.0.2.2:5126`，profile=dev-apk |
-| AVD      | `nerv-pda`（pixel_5 / system-images;android-35;google_apis;x86_64），WHPX 加速，headless，boot 60s                  |
-| WebView  | 124.0.6367.219（镜像内置，随镜像固定）                                                                              |
-| 统一入口 | 宿主 vite dev `127.0.0.1:5126`（双代理 `/api/console`→5100、`/api/business-console`→5119）                          |
-| 后端栈   | **未运行**（本走查的有意边界）                                                                                      |
+| 项         | 值                                                                                                                                          |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 日期       | 2026-07-15（17:5x +08:00）                                                                                                                  |
+| 分支       | `pda-sim-m3-avd-apk` @ `048ab87`（main 含 M1+M2）                                                                                           |
+| 工作树状态 | 首跑基于 `048ab87` + 当时未提交的 M3 变更（内容即后来提交的 `3270dad` tree）                                                                |
+| APK        | `app-debug.apk` 4,564,206 B，SHA256 `E7334B87…F80B41`（双次构建一致；首跑值，修复后重跑见下），基址 `http://10.0.2.2:5126`，profile=dev-apk |
+| AVD        | `nerv-pda`（pixel_5 / system-images;android-35;google_apis;x86_64），WHPX 加速，headless，boot 60s                                          |
+| WebView    | 124.0.6367.219（镜像内置，随镜像固定）                                                                                                      |
+| 统一入口   | 宿主 vite dev `127.0.0.1:5126`（双代理 `/api/console`→5100、`/api/business-console`→5119）                                                  |
+| 后端栈     | **未运行**（本走查的有意边界）                                                                                                              |
+
+<!-- refresh-after-fix：复审修复（release fail-closed 校验/基址语义/AVD 治理）commit 后，
+     主控重跑 dev 构建与一次装载冒烟并在此更新修复后 APK 指纹。 -->
 
 ## 步骤与证据
 
@@ -28,8 +33,9 @@
 
 ## 已覆盖 / 未覆盖
 
-- **已覆盖（L3 首跑）**：可复现 debug APK 构建（SHA 一致）；Capacitor 原生装载（`isNativePlatform`
-  路径的宿主环境成立）；AVD 真实 WebView 渲染；cleartext/scheme/基址/统一入口整条网络管道
+- **已覆盖（L3 首跑）**：可复现 debug APK 构建（SHA 一致）；Capacitor Android 宿主装载 +
+  真实 WebView 渲染 + 网络管道（业务代码尚无消费 `isNativePlatform` 的分支，不据此声称
+  原生分支已验证）；cleartext/scheme/基址/统一入口整条网络管道
   （vite 代理日志为证）；OS 级 adb 注码进真实 input；`pda-avd.ps1`/`pda-adb-scan.ps1`/
   `pda-apk-build.ps1` 三脚本全部真跑验证。
 - **未覆盖（如实声明）**：联栈登录成功后的业务链路（扫码直达/执行/提交）——需 `nerv.ps1 dev`

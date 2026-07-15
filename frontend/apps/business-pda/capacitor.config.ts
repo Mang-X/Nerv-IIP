@@ -15,6 +15,10 @@ declare const process: { env: Record<string, string | undefined> }
 // 两种 APK 之间不共享登录会话等本地状态。
 // 默认（未设该 env，含所有 release / 生产构建路径）保持 androidScheme 'https'、
 // cleartext 缺省 false，release 行为与既有口径完全一致。
+// fail-closed 保障（脚本侧，见 scripts/pda-apk-build.ps1）：-ReleaseProfile 构建前显式
+// 清除本 env（防手工/CI 残留把 release 悄悄切到 http+cleartext），构建后用 aapt2 断言
+// manifest usesCleartextTraffic + 解包 assets/capacitor.config.json 断言 androidScheme
+// 与 profile 一致，不一致 exit 1——本文件的分叉不是唯一防线。
 const devApk = process.env.NERV_PDA_DEV_APK === '1'
 
 const config: CapacitorConfig = {

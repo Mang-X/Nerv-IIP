@@ -159,7 +159,9 @@ VITE_NERV_IIP_REQUEST_TIMEOUT_MS=2000 \
 
 > 定位：`frontend/DESIGN/roadmaps/2026-07-15-pda-device-sim-detection-plan.md` §5 / §8 M3 的落地。
 > 覆盖 L2 无法触达的三类真机差异：**真实 Android WebView 内核**（非桌面 Chromium）、
-> **Capacitor 原生路径**（`isNativePlatform === true`、APK 内无 dev proxy 的网关直连）、
+> **Capacitor Android 宿主装载 + 真实 WebView 渲染 + 网络管道**（APK 内无 dev proxy 的
+> 网关直连；注意业务代码目前没有消费 `isNativePlatform` 的分支，L3 验证的是宿主环境
+> 成立，不夸大为「原生分支已验证」）、
 > **系统级输入栈与 safe-area**。但仍**不是硬件等价**（方案 §2 保真等级）：`adb shell input`
 > 是 Android 输入栈注入（字符流经 IME/焦点系统），仿真不了 USB HID scan code、键重复/丢键
 > 与厂商扫码服务（如 Zebra DataWedge——未来接入改 `adb shell am broadcast` intent 仿真，
@@ -179,7 +181,8 @@ VITE_NERV_IIP_REQUEST_TIMEOUT_MS=2000 \
 # 前置：显式设置 ANDROID_HOME（本机 Android SDK 根目录）
 $env:ANDROID_HOME = 'C:\Users\hp\android-sdk'
 
-# 1) 创建 AVD（幂等：已存在同名 AVD 直接跳过）
+# 1) 创建 AVD（幂等不只认名字：同名 AVD 会核验 config.ini 的 image.sysdir.1 与锁定镜像
+#    一致——一致才跳过，不一致/不可读 exit 1 并提示 -Recreate 重建）
 pwsh frontend/apps/business-pda/scripts/pda-avd.ps1 -Action create
 
 # 2) 启动（默认带窗口便于人工走查；-Headless 无窗口 + swiftshader GPU，适合无人值守存证）：
@@ -190,7 +193,8 @@ pwsh frontend/apps/business-pda/scripts/pda-avd.ps1 -Action start -Headless
 # 3) 注码 + 截图存证：adb shell input text + keyevent 66（Enter 后缀，与 ScanBar 现契约一致）
 pwsh frontend/apps/business-pda/scripts/pda-adb-scan.ps1 -Code 'WO-2026-0715-001' -Screencap artifacts/pda-l3/scan-echo.png
 
-# 4) 状态 / 关停
+# 4) 状态 / 关停（stop 默认只关 AVD 名匹配 -AvdName 的实例——adb emu avd name 反查，
+#    避免误杀并行会话的模拟器；-All 全量、-Serial 指定实例；关停会等到目标离线，超时 exit 非零）
 pwsh frontend/apps/business-pda/scripts/pda-avd.ps1 -Action status
 pwsh frontend/apps/business-pda/scripts/pda-avd.ps1 -Action stop
 ```
@@ -215,21 +219,45 @@ pwsh frontend/apps/business-pda/scripts/pda-avd.ps1 -Action stop
   M4 spike（方案 §8，可弃）。L3 通过不改写「真机」口径（真机 = 目标 PDA + APK + 实体
   扫码枪），仿真不了实体枪 HID 电气时序与厂商 ROM WebView 差异；发版门仍是 L4 清单。
 
+### L3 人工勾验清单（方案 §8 M3b）
+
+模拟器内装好 dev APK、联栈登录成功后逐项人工勾验（每项附 screencap 存证；
+模拟器操作口径见括号内提示）：
+
+1. **横竖屏旋转无错位**：旋转设备（模拟器侧边栏旋转按钮或 `adb shell settings put system
+user_rotation`）后当前页三段布局（顶栏/内容/底栏）不错位、无内容截断，转回竖屏恢复正常。
+2. **硬件 Back 行为**：`adb shell input keyevent 4`（或模拟器 Back 键）——业务子页返回上一级
+   路由而非直接退出应用；工作台首页再按 Back 才允许退到系统（不得中途白屏/崩溃）。
+3. **后台/前台恢复（含锁屏）**：Home 切后台 + 电源键锁屏（`keyevent 3` / `keyevent 26`），
+   停留 ≥30s 后回前台——恢复到离开时的页面与表单状态，登录态不丢、不白屏不重启到登录页。
+4. **覆盖安装升级 localStorage 保留**：不卸载，直接 `adb install -r` 安装新构建（同
+   profile，scheme 一致）——启动后登录会话等本地状态（localStorage）仍在，无需重新登录。
+
+模拟器先挡以上各项；发版仍按下方 §4 真机手动冒烟清单在实体机勾验。
+
 ## Capacitor/APK 网关基址与可复现构建
 
 > 真机冒烟前提是先有一个**能连上网关**的 APK。详细部署口径见
 > `docs/architecture/mobile-pda-deployment.md`，要点：
 >
 > - **网关基址**：Web/dev 留空 `VITE_NERV_IIP_API_BASE_URL`（相对 `/api/...` + vite dev proxy）；
->   **Capacitor/APK 构建必须**把它设为绝对的 BusinessGateway/PlatformGateway 基址，因为
->   APK 内 WebView **没有 dev proxy**。模板见 `frontend/apps/business-pda/.env.example`。
+>   APK 内 WebView **没有 dev proxy**，构建必须注入绝对基址，且分两种口径——
+>   **dev 冒烟 APK** 指向宿主 vite dev 统一双代理入口 `http://10.0.2.2:5126`
+>   （`pda-apk-build.ps1` 默认，`NERV_PDA_DEV_APK=1` 切 androidScheme http + cleartext）；
+>   **release/发版 APK** 指向真实 HTTPS 网关（`-ReleaseProfile`，必须显式传
+>   `-ApiBaseUrl https://<gateway>`，androidScheme 保持 https）。
+>   模板见 `frontend/apps/business-pda/.env.example`。
 > - **可复现构建**：`android/` 有意 gitignore，由 `cap add android` 确定性再生；仓库基线是
->   **配置 + 脚本 + 锁定的 `@capacitor/*` 版本**。干净环境步骤（需 JDK 17 + Android SDK/`ANDROID_HOME`）：
->   `pnpm -C frontend install` → 在 `apps/business-pda`：`pnpm exec cap add android` →
+>   **配置 + 脚本 + 锁定的 `@capacitor/*` 版本**。干净环境步骤（需 **JDK 21+**（Capacitor 8
+>   android 库 `sourceCompatibility=21`，JDK 17 会报「无效的源发行版：21」）+ Android
+>   SDK/`ANDROID_HOME`）：一键入口 `pwsh frontend/apps/business-pda/scripts/pda-apk-build.ps1`；
+>   手动路径：`pnpm -C frontend install` → 在 `apps/business-pda`：`pnpm exec cap add android` →
 >   `pnpm run cap:sync` → `cd android && ./gradlew assembleDebug`（Unix）/
 >   `.\gradlew.bat assembleDebug`（Windows，平台相关手动步骤）。
 
 ## 4. 真机手动冒烟清单（每次发版前在目标 PDA 上勾验）
+
+> L3 模拟器可先挡上方「L3 人工勾验清单」各项，发版仍按本清单在实体机勾验。
 
 1. 安装 APK 启动，登录成功，首页三段（顶栏/内容/底栏）无遮挡，刘海/手势条不压内容。
 2. 硬件扫码枪扫一段条码 → 扫码条捕获并显示，焦点常驻、失焦自动回抢。

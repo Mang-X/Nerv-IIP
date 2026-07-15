@@ -3,13 +3,19 @@
 #   SideEffects:
 #     - create: creates an Android Virtual Device (default name nerv-pda, pixel_5 profile,
 #       system-images;android-35;google_apis;x86_64) under the user AVD home
-#       (%USERPROFILE%\.android\avd); idempotent — skipped when an AVD with the same name exists
+#       (%USERPROFILE%\.android\avd); idempotent — when an AVD with the same name exists its
+#       config.ini image.sysdir.1 is verified against the pinned system image (mismatch or
+#       unreadable config fails with exit 1 and a -Recreate hint); -Recreate deletes and
+#       recreates the AVD (destroys its disk images)
 #     - start: probes emulator acceleration (emulator -accel-check), then launches the Android
 #       emulator as a detached background process (windowed by default; -Headless adds
 #       -no-window/-no-audio/-no-boot-anim + swiftshader GPU) and polls adb until
 #       sys.boot_completed=1; the emulator KEEPS RUNNING after the script exits
 #     - start: starts the adb server if it is not already running
-#     - stop: kills the target emulator instance(s) via adb emu kill
+#     - stop: kills the target emulator instance(s) via adb emu kill — by default only
+#       instances whose AVD name (adb emu avd name) matches -AvdName; -Serial targets one
+#       explicit instance; -All targets every online emulator; waits until the targets go
+#       offline and exits non-zero on kill failure or shutdown timeout
 #     - status: read-only (adb devices / avdmanager list avd / accel probe)
 #   Writes:
 #     - artifacts/script-logs/** (command logs + detached emulator stdout/stderr)
@@ -39,7 +45,12 @@ param(
     [string] $Action,
 
     # AVD 名称；create/start/stop 共用。固定默认值保证证据指纹可比。
+    # 白名单 ^[A-Za-z0-9._-]{1,64}$（脚本体内显式校验，越界 exit 1）：该值会拼进
+    # cmd /c 的 avdmanager 命令行与 AVD 目录路径，白名单是防命令注入的第一道门。
     [string] $AvdName = 'nerv-pda',
+
+    # create：同名 AVD 存在时先 avdmanager delete 再重建（会销毁该 AVD 的磁盘镜像）。
+    [switch] $Recreate,
 
     # start：无窗口模式（-no-window -no-audio -no-boot-anim + swiftshader GPU），
     # 适合无人值守跑冒烟 + screencap 存证；默认带窗口便于人工走查。
@@ -52,8 +63,12 @@ param(
     # start：从 emulator 进程拉起到 sys.boot_completed=1 的总超时（秒）。
     [int] $BootTimeoutSeconds = 600,
 
-    # stop：目标模拟器 serial（如 emulator-5554）；缺省时对所有在线 emulator-* 实例逐一关停。
-    [string] $Serial
+    # stop：目标模拟器 serial（如 emulator-5554），显式指定时只关该实例。
+    # 缺省时默认只关 AVD 名（adb emu avd name 反查）匹配 -AvdName 的在线实例。
+    [string] $Serial,
+
+    # stop：关停所有在线 emulator-* 实例（不按 -AvdName 过滤）。
+    [switch] $All
 )
 
 Set-StrictMode -Version Latest
@@ -62,12 +77,30 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..' '..' '..')).Path
 . (Join-Path $repoRoot 'scripts' 'lib' 'ScriptAutomation.ps1')
 
+# --- 注入面白名单校验：AvdName 会拼进 cmd /c 命令行（avdmanager 是 .bat，见
+#     Invoke-AvdManagerCommandLine 注释）与 AVD 目录路径，越界直接拒绝，不做任何转义补救。
+if ($AvdName -notmatch '^[A-Za-z0-9._-]{1,64}$') {
+    Write-Diagnostic -Level 'ERROR' -Message "非法 -AvdName '$AvdName'：仅接受 ^[A-Za-z0-9._-]{1,64}$（该值会进入 cmd 命令行与文件路径，白名单校验防命令注入）。"
+    exit 1
+}
+# -Serial 同样会进 adb 参数（经 ArgumentList 传递，本身安全），仍按已知形态校验防误用。
+if (-not [string]::IsNullOrWhiteSpace($Serial) -and $Serial -notmatch '^emulator-\d{1,5}$') {
+    Write-Diagnostic -Level 'ERROR' -Message "非法 -Serial '$Serial'：模拟器 serial 形如 emulator-5554。"
+    exit 1
+}
+
 # --- Android SDK 定位：不依赖全局安装状态，显式从 ANDROID_HOME 读，缺失即报错并给出本机既定路径提示。
 if ([string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) {
     Write-Diagnostic -Level 'ERROR' -Message '缺少环境变量 ANDROID_HOME。请指向本机 Android SDK 根目录（本仓库开发机为 C:\Users\hp\android-sdk），例如：$env:ANDROID_HOME = ''C:\Users\hp\android-sdk''。'
     exit 1
 }
 $sdkRoot = $env:ANDROID_HOME
+# SDK 路径也会拼进 cmd /c 命令行（引号包裹）：含 cmd 元字符/引号的路径直接拒绝，
+# 而不是尝试转义（cmd 的引号语义无法与 .NET ArgumentList 转义可靠互通）。
+if ($sdkRoot -match '["&|<>^%]') {
+    Write-Diagnostic -Level 'ERROR' -Message "ANDROID_HOME 含 cmd 元字符（引号或 & | < > ^ %）：$sdkRoot。请把 SDK 放在不含这些字符的路径下。"
+    exit 1
+}
 $emulatorExe = Join-Path $sdkRoot 'emulator' 'emulator.exe'
 $adbExe = Join-Path $sdkRoot 'platform-tools' 'adb.exe'
 $avdManagerBat = Join-Path $sdkRoot 'cmdline-tools' 'latest' 'bin' 'avdmanager.bat'
@@ -85,12 +118,28 @@ function Invoke-AvdManagerCommandLine {
     # avdmanager 是 .bat，经 cmd /d /s /c "<整条命令行>" 调起（/s 剥外层引号、保留内层引号，
     # 保证含分号的 -k 包 id 与含空格的 SDK 路径都完整传入 .bat）。
     # create 会交互式问「Do you wish to create a custom hardware profile?」——经 stdin 灌 'no' 回答默认值。
+    #
+    # 为什么不走 ScriptAutomation 的 Invoke-NativeCommandOutput（本函数是显式包装层）：
+    # 1) .bat 不能由 ProcessStartInfo 可靠直启，须经 cmd；而 cmd /s 的引号语义与 .NET
+    #    ArgumentList 的 C 式转义（\"）互不兼容，整条命令行经 ArgumentList 传给 cmd /c
+    #    会被二次转义破坏（路径反斜杠 + 引号组合），无法安全 round-trip；
+    # 2) create 需要向 stdin 灌 'no' 回答交互提示，helper 无 stdin 通道。
+    # 注入面控制：拼进 $CommandLine 的变量只有白名单校验过的 $AvdName、元字符校验过的
+    # SDK 路径与脚本内写死的常量（$systemImage/$deviceProfile），调用点不得引入其他变量。
+    # avdmanager list/create/delete 均为秒级短命令，无 helper 超时通道的风险敞口有限；
+    # 这里补齐与 helper 同口径的调用日志。
     param(
         [Parameter(Mandatory)]
         [string] $CommandLine,
 
         [switch] $AnswerNoToPrompts
     )
+
+    if ($CommandLine -match '[\r\n]') {
+        Write-Diagnostic -Level 'ERROR' -Message 'avdmanager 命令行含换行符，拒绝执行（防注入）。'
+        exit 1
+    }
+    Write-Diagnostic "Invoking avdmanager via cmd /d /s /c: $CommandLine"
 
     $output = if ($AnswerNoToPrompts) {
         'no' | cmd /d /s /c $CommandLine 2>&1
@@ -102,6 +151,42 @@ function Invoke-AvdManagerCommandLine {
     return [pscustomobject]@{
         ExitCode = $LASTEXITCODE
         Output = @($output | ForEach-Object { "$_" })
+    }
+}
+
+function Get-AvdConfiguredImage {
+    # 读 AVD config.ini 的 image.sysdir.1（实测格式：
+    #   image.sysdir.1 = system-images\android-35\google_apis\x86_64\
+    # 分隔符/尾斜杠随平台浮动），归一化为正斜杠、无尾斜杠形态供与锁定镜像比对。
+    # AVD 定义定位：优先 ANDROID_AVD_HOME，再读 <name>.ini 指针文件的 path=，兜底默认目录。
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name
+    )
+
+    $avdHome = if (-not [string]::IsNullOrWhiteSpace($env:ANDROID_AVD_HOME)) { $env:ANDROID_AVD_HOME } else { Join-Path $HOME '.android' 'avd' }
+    $avdDirectory = Join-Path $avdHome "$Name.avd"
+    $pointerIni = Join-Path $avdHome "$Name.ini"
+    if (Test-Path -LiteralPath $pointerIni -PathType Leaf) {
+        $pathMatch = (Select-String -LiteralPath $pointerIni -Pattern '^\s*path\s*=\s*(.+?)\s*$').Matches
+        if ($pathMatch.Count -gt 0) {
+            $avdDirectory = $pathMatch[0].Groups[1].Value
+        }
+    }
+
+    $configPath = Join-Path $avdDirectory 'config.ini'
+    if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+        return [pscustomobject]@{ ConfigPath = $configPath; SysDir = $null; Normalized = $null }
+    }
+    $imageMatch = (Select-String -LiteralPath $configPath -Pattern '^\s*image\.sysdir\.1\s*=\s*(.+?)\s*$').Matches
+    if ($imageMatch.Count -eq 0) {
+        return [pscustomobject]@{ ConfigPath = $configPath; SysDir = $null; Normalized = $null }
+    }
+    $rawSysDir = $imageMatch[0].Groups[1].Value
+    return [pscustomobject]@{
+        ConfigPath = $configPath
+        SysDir = $rawSysDir
+        Normalized = (($rawSysDir -replace '\\', '/').TrimEnd('/'))
     }
 }
 
@@ -133,8 +218,31 @@ switch ($Action) {
             exit 1
         }
         if (@($listResult.Output | Where-Object { $_.Trim() -eq $AvdName }).Count -gt 0) {
-            Write-Diagnostic "AVD '$AvdName' 已存在，跳过创建（幂等）。如需重建请先 avdmanager delete avd -n $AvdName。"
-            exit 0
+            if ($Recreate) {
+                Write-Diagnostic "按 -Recreate 删除既有 AVD '$AvdName'（含磁盘镜像）后重建……"
+                $deleteResult = Invoke-AvdManagerCommandLine -CommandLine "`"$avdManagerBat`" delete avd -n `"$AvdName`""
+                if ($deleteResult.ExitCode -ne 0) {
+                    Write-Diagnostic -Level 'ERROR' -Message "avdmanager delete avd 失败（exit=$($deleteResult.ExitCode)）：$($deleteResult.Output -join ' | ')"
+                    exit 1
+                }
+            }
+            else {
+                # 幂等不只认名字：核验既有 AVD 的 config.ini 系统镜像与锁定镜像一致，
+                # 防「同名但镜像漂移」的 AVD 冒充可复现环境静默通过。config.ini 不可读
+                # 视为无法核验，同样 fail-closed。
+                $configuredImage = Get-AvdConfiguredImage -Name $AvdName
+                $expectedImageDir = ($systemImage -replace ';', '/')
+                if ($null -eq $configuredImage.SysDir) {
+                    Write-Diagnostic -Level 'ERROR' -Message "AVD '$AvdName' 已存在但无法从 $($configuredImage.ConfigPath) 读到 image.sysdir.1，无法核验镜像一致性。请传 -Recreate 重建，或手工核对该 AVD。"
+                    exit 1
+                }
+                if ($configuredImage.Normalized -ne $expectedImageDir) {
+                    Write-Diagnostic -Level 'ERROR' -Message "AVD '$AvdName' 已存在但系统镜像不一致：config.ini image.sysdir.1=$($configuredImage.SysDir)，期望 $expectedImageDir（即 $systemImage）。证据指纹不可比，请传 -Recreate 按锁定镜像重建。"
+                    exit 1
+                }
+                Write-Diagnostic "AVD '$AvdName' 已存在且镜像一致（image.sysdir.1=$($configuredImage.Normalized)），跳过创建（幂等）。如需重建请传 -Recreate。"
+                exit 0
+            }
         }
 
         Write-Diagnostic "创建 AVD '$AvdName'（$systemImage / $deviceProfile）……"
@@ -239,29 +347,84 @@ switch ($Action) {
             Write-Diagnostic -Level 'WARN' -Message "读取 WebView 版本失败：$($_.Exception.Message)"
         }
 
+        # 镜像指纹从 config.ini 实测读取（不回显脚本内锁定常量——AVD 若由旧版本/他处创建，
+        # 硬编码值会谎报实际镜像）。
+        $configuredImage = Get-AvdConfiguredImage -Name $AvdName
+        $imageNote = ($null -ne $configuredImage.SysDir) ? $configuredImage.Normalized : "unknown（$($configuredImage.ConfigPath) 无 image.sysdir.1）"
+
         Write-Diagnostic "模拟器就绪：serial=$serialValue，boot 耗时 $($stopwatch.Elapsed)。"
-        Write-Diagnostic "指纹：avd=$AvdName image=$systemImage build=$buildFingerprint webview=$webviewVersion accel=$($NoAccel ? 'off (-NoAccel)' : ($accel.Usable ? 'on' : 'unknown'))"
+        Write-Diagnostic "指纹：avd=$AvdName image=$imageNote（config.ini 实测）build=$buildFingerprint webview=$webviewVersion accel=$($NoAccel ? 'off (-NoAccel)' : ($accel.Usable ? 'on' : 'unknown'))"
         Write-Host "SERIAL=$serialValue"
         exit 0
     }
 
     'stop' {
+        # 目标选择：-Serial 显式实例 > -All 全量 > 默认只关 AVD 名匹配 -AvdName 的实例
+        # （adb emu avd name 反查——避免误杀并行会话/其他用途的模拟器）。
         # @() 必须包在 if 表达式整体外层：if 赋值同样走 pipeline 解包，单元素会退化成标量，
         # StrictMode 下 .Count 会炸。
-        $targetSerials = @(if ([string]::IsNullOrWhiteSpace($Serial)) { Get-EmulatorSerialList } else { $Serial })
+        $onlineSerials = @(Get-EmulatorSerialList)
+        $targetSerials = @(
+            if (-not [string]::IsNullOrWhiteSpace($Serial)) {
+                $Serial
+            }
+            elseif ($All) {
+                $onlineSerials
+            }
+            else {
+                foreach ($candidateSerial in $onlineSerials) {
+                    try {
+                        $nameProbe = Invoke-NativeCommandOutput -Command $adbExe -Arguments @('-s', $candidateSerial, 'emu', 'avd', 'name') -Name 'adb-emu-avd-name'
+                        # 输出为「<avd 名>\nOK」，取首个非空行。
+                        $candidateName = @($nameProbe.Stdout -split "`r?`n" | Where-Object { $_ -match '\S' })[0].Trim()
+                        if ($candidateName -eq $AvdName) {
+                            $candidateSerial
+                        }
+                        else {
+                            Write-Diagnostic "跳过 $candidateSerial（avd=$candidateName ≠ $AvdName；-All 可全量关停）。"
+                        }
+                    }
+                    catch {
+                        Write-Diagnostic -Level 'WARN' -Message "读取 $candidateSerial 的 AVD 名失败（$($_.Exception.Message)），按不匹配跳过。"
+                    }
+                }
+            }
+        )
         if ($targetSerials.Count -eq 0) {
-            Write-Diagnostic '没有在线的模拟器实例，无需关停。'
+            Write-Diagnostic "没有匹配的在线模拟器实例（AvdName=$AvdName$([string]::IsNullOrWhiteSpace($Serial) ? '' : "，Serial=$Serial")），无需关停。全量关停请传 -All。"
             exit 0
         }
+
+        $killFailed = $false
         foreach ($targetSerial in $targetSerials) {
             try {
                 $killResult = Invoke-NativeCommandOutput -Command $adbExe -Arguments @('-s', $targetSerial, 'emu', 'kill') -Name 'adb-emu-kill'
                 Write-Diagnostic "已请求关停 $targetSerial：$($killResult.Stdout.Trim())"
             }
             catch {
-                Write-Diagnostic -Level 'WARN' -Message "关停 $targetSerial 失败：$($_.Exception.Message)"
+                Write-Diagnostic -Level 'WARN' -Message "关停 $targetSerial 请求失败：$($_.Exception.Message)"
+                $killFailed = $true
             }
         }
+
+        # 关停确认：轮询到目标 serial 全部离线才算成功；超时/请求失败 exit 非零（不虚报已关停）。
+        $shutdownDeadline = [datetime]::UtcNow.AddSeconds(60)
+        while ($true) {
+            $stillOnline = @(Get-EmulatorSerialList | Where-Object { $targetSerials -contains $_ })
+            if ($stillOnline.Count -eq 0) {
+                break
+            }
+            if ([datetime]::UtcNow -gt $shutdownDeadline) {
+                Write-Diagnostic -Level 'ERROR' -Message "关停超时：$($stillOnline -join ', ') 在 60s 后仍在线。"
+                exit 1
+            }
+            Start-Sleep -Seconds 2
+        }
+        if ($killFailed) {
+            Write-Diagnostic -Level 'ERROR' -Message '部分实例的关停请求失败（见上方 WARN）。'
+            exit 1
+        }
+        Write-Diagnostic "已关停并确认离线：$($targetSerials -join ', ')。"
         exit 0
     }
 

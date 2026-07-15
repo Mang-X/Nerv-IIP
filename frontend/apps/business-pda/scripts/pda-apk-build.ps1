@@ -3,7 +3,14 @@
 #   SideEffects:
 #     - Builds the business-pda web bundle (pnpm run build -> dist/) with the dev-APK
 #       build-time env injected (VITE_NERV_IIP_API_BASE_URL + NERV_PDA_DEV_APK=1 by default;
-#       -ReleaseProfile keeps NERV_PDA_DEV_APK unset so androidScheme stays https)
+#       -ReleaseProfile explicitly CLEARS NERV_PDA_DEV_APK from the process env so
+#       androidScheme stays https even when the flag leaked in from a previous shell/CI step,
+#       and requires an explicit https:// -ApiBaseUrl)
+#     - After the build, verifies the produced APK fail-closed via aapt2 (manifest
+#       usesCleartextTraffic must match the profile) + the packaged
+#       assets/capacitor.config.json (androidScheme/cleartext must match the profile);
+#       any mismatch exits 1 and the verification verdict is written into
+#       build-fingerprint.txt
 #     - Regenerates the gitignored native shell frontend/apps/business-pda/android/ via
 #       `cap add android` when missing, then runs `cap sync android`
 #     - Runs Gradle assembleDebug inside android/ (first run downloads the Gradle
@@ -25,6 +32,7 @@
 #       library compiles with sourceCompatibility 21 -- JDK 17 fails with
 #       "invalid source release: 21")
 #     - Android SDK (ANDROID_HOME or ANDROID_SDK_ROOT; platform-tools + build-tools
+#       (incl. aapt2, preferred pin 35.0.0, used for the fail-closed APK verification)
 #       + platforms;android-3x installed)
 #     - Network access to Gradle/Maven repositories on the first run
 
@@ -33,8 +41,12 @@
 # 默认产出 L3 dev 冒烟用 debug APK：基址指向宿主 vite dev 统一双代理入口
 # http://10.0.2.2:5126（模拟器内 10.0.2.2 = 宿主回环），并注入 NERV_PDA_DEV_APK=1
 # 使 capacitor.config.ts 切到 androidScheme http + cleartext true（仅本次构建生效）。
-# 生产/真实网关 APK 请传 -ApiBaseUrl https://<gateway> -ReleaseProfile（不注入 dev 分叉，
-# androidScheme 保持 https；打的仍是 assembleDebug 调试签名包，正式发布签名归发版流程）。
+# 生产/真实网关 APK 请传 -ApiBaseUrl https://<gateway> -ReleaseProfile（显式清除 dev 分叉
+# env 防残留，且基址必须显式传 https:// 绝对地址；androidScheme 保持 https；打的仍是
+# assembleDebug 调试签名包，正式发布签名归发版流程）。
+# 两条 profile 构建后都做 fail-closed 校验：aapt2 断言 manifest usesCleartextTraffic 与
+# profile 一致 + 解包 assets/capacitor.config.json 断言 androidScheme/cleartext 一致，
+# 不一致 exit 1，结论写入 build-fingerprint.txt。
 
 [CmdletBinding()]
 param(
@@ -100,19 +112,30 @@ if (-not (Test-Path (Join-Path $appDir 'node_modules'))) {
 
 # --- 2. 构建期 env 注入（vp build 阶段把 VITE_ 变量内联进 bundle；NERV_PDA_DEV_APK 由
 #        capacitor.config.ts 在 cap sync 求值时读取，控制 androidScheme/cleartext 分叉）。
-$env:VITE_NERV_IIP_API_BASE_URL = $ApiBaseUrl
 if ($ReleaseProfile) {
+    # fail-closed（其一）：显式清除可能由手工调试 / CI 步骤残留的 dev 分叉开关。
+    # capacitor.config.ts 只认这一个 env——残留会把 release 构建悄悄切到 http + cleartext。
     Remove-Item Env:NERV_PDA_DEV_APK -ErrorAction SilentlyContinue
-    Write-Diagnostic "构建配置：ReleaseProfile（androidScheme https，无 cleartext）；VITE_NERV_IIP_API_BASE_URL=$ApiBaseUrl"
-    if ($ApiBaseUrl -match '^http://') {
-        Write-Diagnostic -Level 'WARN' -Message 'ReleaseProfile 下基址是 http:// 明文地址——APK 内 WebView 将因 cleartext 限制无法访问该基址。请改用 https 网关，或去掉 -ReleaseProfile 走 dev 分叉。'
+    # release profile 基址语义：必须显式传入且为 https:// 绝对地址。默认值 10.0.2.2:5126 是
+    # dev 冒烟统一入口，烧进 release 包必然连不上；http:// 明文基址在 androidScheme https +
+    # 无 cleartext 下会被系统网络栈直接拒绝——两种情况 WARN 后继续只会产出必然无法联网的包，
+    # 因此直接失败。
+    if (-not $PSBoundParameters.ContainsKey('ApiBaseUrl')) {
+        Write-Diagnostic -Level 'ERROR' -Message '-ReleaseProfile 必须显式传 -ApiBaseUrl https://<gateway>（默认值 http://10.0.2.2:5126 是 dev 冒烟统一入口，release 包不可用）。'
+        exit 1
     }
+    if ($ApiBaseUrl -notmatch '^https://') {
+        Write-Diagnostic -Level 'ERROR' -Message "-ReleaseProfile 下 -ApiBaseUrl 必须是 https:// 绝对地址（收到：$ApiBaseUrl）。androidScheme https + 无 cleartext 的包访问非 https 基址必然失败；如要走明文 dev 口径请去掉 -ReleaseProfile。"
+        exit 1
+    }
+    Write-Diagnostic "构建配置：ReleaseProfile（androidScheme https，无 cleartext）；VITE_NERV_IIP_API_BASE_URL=$ApiBaseUrl"
 }
 else {
     $env:NERV_PDA_DEV_APK = '1'
     Write-Diagnostic "构建配置：dev 调试 APK（androidScheme http + cleartext true，仅本次构建）；VITE_NERV_IIP_API_BASE_URL=$ApiBaseUrl"
     Write-Diagnostic 'dev 口径提醒：该 APK 依赖宿主机上同时运行 vite dev（5126，统一双代理入口）与后端栈（nerv.ps1 dev）。'
 }
+$env:VITE_NERV_IIP_API_BASE_URL = $ApiBaseUrl
 
 # --- 3. web 构建（vue-tsc + vp build → dist/）。
 Invoke-Pnpm -Arguments @('run', 'build') -WorkingDirectory $appDir -TimeoutSeconds 1800 -Name 'pda-apk-web-build' | Out-Null
@@ -154,7 +177,7 @@ else {
     Invoke-NativeCommandWithTimeout -Command $gradleWrapper -Arguments @('assembleDebug', '--no-daemon') -WorkingDirectory $androidDir -TimeoutSeconds 3600 -Name 'pda-apk-gradle' | Out-Null
 }
 
-# --- 6. 产物校验 + 构建指纹（commit/时间/基址/分叉开关 + SHA256），落在 APK 旁（gitignored）。
+# --- 6. 产物存在性校验。
 $apkPath = Join-Path $androidDir 'app' 'build' 'outputs' 'apk' 'debug' 'app-debug.apk'
 if (-not (Test-Path $apkPath)) {
     Write-Diagnostic -Level 'ERROR' -Message "Gradle 成功退出但未找到 APK：$apkPath。"
@@ -162,6 +185,103 @@ if (-not (Test-Path $apkPath)) {
 }
 $apkHash = (Get-FileHash -LiteralPath $apkPath -Algorithm SHA256).Hash
 $apkSize = (Get-Item -LiteralPath $apkPath).Length
+
+# --- 7. fail-closed 校验（其二，核心）：断言产物 APK 的 manifest cleartext 与打进包内的
+#        capacitor.config.json scheme/cleartext 与 profile 一致。env 残留、配置漂移或
+#        cap sync 未按预期求值时，这里直接失败而不是产出口径不符的包。
+$aapt2Name = $IsWindows ? 'aapt2.exe' : 'aapt2'
+$buildToolsRoot = Join-Path $androidHome 'build-tools'
+$aapt2 = Join-Path $buildToolsRoot '35.0.0' $aapt2Name
+if (-not (Test-Path -LiteralPath $aapt2 -PathType Leaf)) {
+    # 锁定优先 35.0.0；不在时退而取已安装的最高版本。校验是 fail-closed 门禁，找不到
+    # aapt2 一律失败，不允许「没工具就跳过校验」。
+    $aapt2 = $null
+    $buildToolsCandidates = @()
+    if (Test-Path -LiteralPath $buildToolsRoot) {
+        $buildToolsCandidates = @(Get-ChildItem -LiteralPath $buildToolsRoot -Directory | Sort-Object Name -Descending)
+    }
+    foreach ($buildToolsCandidate in $buildToolsCandidates) {
+        $aapt2Probe = Join-Path $buildToolsCandidate.FullName $aapt2Name
+        if (Test-Path -LiteralPath $aapt2Probe -PathType Leaf) {
+            $aapt2 = $aapt2Probe
+            break
+        }
+    }
+    if (-not $aapt2) {
+        Write-Diagnostic -Level 'ERROR' -Message "未找到 aapt2（$buildToolsRoot\<version>\$aapt2Name）。APK manifest 校验是 fail-closed 门禁不可跳过：请 sdkmanager 安装 build-tools;35.0.0。"
+        exit 1
+    }
+    Write-Diagnostic -Level 'WARN' -Message "首选 build-tools;35.0.0 未安装，改用：$aapt2"
+}
+
+try {
+    $manifestDump = Invoke-NativeCommandOutput -Command $aapt2 -Arguments @('dump', 'xmltree', '--file', 'AndroidManifest.xml', $apkPath) -TimeoutSeconds 120 -Name 'pda-apk-aapt2-manifest'
+}
+catch {
+    Write-Diagnostic -Level 'ERROR' -Message "aapt2 dump xmltree 失败（无法校验 manifest，fail-closed）：$($_.Exception.Message)"
+    exit 1
+}
+# aapt2 xmltree 里 cleartext 属性形如：
+#   A: http://schemas.android.com/apk/res/android:usesCleartextTraffic(0x0101064e)=true
+$manifestCleartext = if ($manifestDump.Stdout -match 'usesCleartextTraffic[^\r\n]*=true') { 'true' }
+elseif ($manifestDump.Stdout -match 'usesCleartextTraffic') { 'present-not-true' }
+else { 'absent' }
+
+# APK 即 zip：直接读包内 assets/capacitor.config.json（cap sync 求值 capacitor.config.ts 的落地产物）。
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$capacitorConfigJson = $null
+$apkZip = [System.IO.Compression.ZipFile]::OpenRead($apkPath)
+try {
+    $configEntry = @($apkZip.Entries | Where-Object { $_.FullName -eq 'assets/capacitor.config.json' })
+    if ($configEntry.Count -gt 0) {
+        $configReader = [System.IO.StreamReader]::new($configEntry[0].Open())
+        try {
+            $capacitorConfigJson = $configReader.ReadToEnd()
+        }
+        finally {
+            $configReader.Dispose()
+        }
+    }
+}
+finally {
+    $apkZip.Dispose()
+}
+if ([string]::IsNullOrWhiteSpace($capacitorConfigJson)) {
+    Write-Diagnostic -Level 'ERROR' -Message 'APK 内未找到 assets/capacitor.config.json（无法校验 androidScheme，fail-closed）。'
+    exit 1
+}
+$capacitorConfig = $capacitorConfigJson | ConvertFrom-Json
+$packagedScheme = 'absent'
+$packagedCleartext = 'absent'
+if ($capacitorConfig.PSObject.Properties['server']) {
+    if ($capacitorConfig.server.PSObject.Properties['androidScheme']) {
+        $packagedScheme = [string] $capacitorConfig.server.androidScheme
+    }
+    if ($capacitorConfig.server.PSObject.Properties['cleartext']) {
+        $packagedCleartext = ([bool] $capacitorConfig.server.cleartext) ? 'true' : 'false'
+    }
+}
+
+$expectedScheme = $ReleaseProfile ? 'https' : 'http'
+$expectedManifestCleartext = $ReleaseProfile ? 'absent' : 'true'
+$expectedPackagedCleartext = $ReleaseProfile ? 'absent' : 'true'
+$verifyFailures = @()
+if ($manifestCleartext -ne $expectedManifestCleartext) {
+    $verifyFailures += "manifest usesCleartextTraffic=$manifestCleartext（期望 $expectedManifestCleartext）"
+}
+if ($packagedScheme -ne $expectedScheme) {
+    $verifyFailures += "capacitor.config.json androidScheme=$packagedScheme（期望 $expectedScheme）"
+}
+if ($packagedCleartext -ne $expectedPackagedCleartext) {
+    $verifyFailures += "capacitor.config.json cleartext=$packagedCleartext（期望 $expectedPackagedCleartext）"
+}
+if ($verifyFailures.Count -gt 0) {
+    Write-Diagnostic -Level 'ERROR' -Message "APK 产物校验失败（profile=$($ReleaseProfile ? 'release' : 'dev')）：$($verifyFailures -join '；')。产物口径与 profile 不符，拒绝放行——检查 NERV_PDA_DEV_APK 残留 / capacitor.config.ts 分叉逻辑后重跑。"
+    exit 1
+}
+Write-Diagnostic "APK 产物校验通过：manifest usesCleartextTraffic=$manifestCleartext，androidScheme=$packagedScheme，cleartext=$packagedCleartext（与 $($ReleaseProfile ? 'release' : 'dev') profile 一致）。"
+
+# --- 8. 构建指纹（commit/时间/基址/分叉开关 + SHA256 + 校验结论），落在 APK 旁（gitignored）。
 $branch = (git -C $appDir rev-parse --abbrev-ref HEAD)
 $head = (git -C $appDir rev-parse HEAD)
 $profileNote = $ReleaseProfile ? 'release-profile (androidScheme https, no cleartext; still a debug-signed APK)' : 'dev-apk (NERV_PDA_DEV_APK=1: androidScheme http + cleartext true)'
@@ -175,6 +295,9 @@ $fingerprintPath = Join-Path (Split-Path -Parent $apkPath) 'build-fingerprint.tx
     "builtAt=$(Get-Date -Format 'o')"
     "apiBaseUrl=$ApiBaseUrl"
     "profile=$profileNote"
+    "verifiedProfile=$($ReleaseProfile ? 'release' : 'dev')"
+    "verifiedAndroidScheme=$packagedScheme"
+    "verifiedManifestCleartext=$manifestCleartext"
 ) -join "`n" | Set-Content -Path $fingerprintPath -Encoding utf8
 
 Write-Diagnostic "APK 构建完成：$apkPath"
