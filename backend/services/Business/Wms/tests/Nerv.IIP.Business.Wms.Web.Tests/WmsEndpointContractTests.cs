@@ -348,7 +348,9 @@ public sealed class WmsEndpointContractTests
         var passed = CreateQualityGateInboundOrder("IN-GATE-PASS-001");
         passed.Complete("idem-gate-pass-001");
         passed.ApplyInspectionResult("quality.InspectionPassed", "QI-PASS-001", "SKU-FG-1000", "LOT-001", null, 5m, null);
-        var rejected = CreateQualityGateInboundOrder("IN-GATE-REJ-001");
+        var productionDate = new DateOnly(2026, 1, 15);
+        var expiryDate = new DateOnly(2027, 1, 15);
+        var rejected = CreateQualityGateInboundOrder("IN-GATE-REJ-001", productionDate: productionDate, expiryDate: expiryDate);
         rejected.Complete("idem-gate-rej-001");
         rejected.ApplyInspectionResult("quality.InspectionRejected", "QI-REJ-001", "SKU-FG-1000", "LOT-001", null, 5m, "critical-defect");
         var pending = CreateQualityGateInboundOrder("IN-GATE-PEND-001");
@@ -382,6 +384,8 @@ public sealed class WmsEndpointContractTests
         Assert.Equal(5m, fact.ReceivedQuantity);
         Assert.Equal("LOT-001", fact.LotNo);
         Assert.Equal("10", fact.LineNo);
+        Assert.Equal(productionDate, fact.ProductionDate);
+        Assert.Equal(expiryDate, fact.ExpiryDate);
     }
 
     [Fact]
@@ -674,7 +678,11 @@ public sealed class WmsEndpointContractTests
         return order;
     }
 
-    private static InboundOrder CreateQualityGateInboundOrder(string orderNo, string organizationId = "org-001")
+    private static InboundOrder CreateQualityGateInboundOrder(
+        string orderNo,
+        string organizationId = "org-001",
+        DateOnly? productionDate = null,
+        DateOnly? expiryDate = null)
     {
         return InboundOrder.Create(
             organizationId,
@@ -683,7 +691,7 @@ public sealed class WmsEndpointContractTests
             "purchase-receipt",
             $"PO-{orderNo}",
             "SITE-01",
-            [new InboundOrderLineDraft("10", "SKU-FG-1000", "kg", 5m, "STAGE-01", "LOT-001", null, "quality", "company", null)]);
+            [new InboundOrderLineDraft("10", "SKU-FG-1000", "kg", 5m, "STAGE-01", "LOT-001", null, "quality", "company", null, productionDate, expiryDate)]);
     }
 
     private static SupplierReturnRequest CreateSupplierReturnRequest(string inboundOrderNo, string inspectionRecordId, string organizationId = "org-001")
