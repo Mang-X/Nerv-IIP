@@ -37,6 +37,10 @@ import type {
   BusinessConsoleSearchResponse,
   BusinessConsoleSetMasterDataResourceEnabledRequest,
   BusinessConsoleTelemetryOeeEnvelope,
+  BusinessConsoleCompleteWmsInboundOrderRequest,
+  BusinessConsoleWmsInboundLineCaptureInput,
+  BusinessConsoleWmsInboundLineInput,
+  BusinessConsoleWmsReceivingQualityGateItem,
   BusinessConsoleWorkbenchSummaryResponse,
   CancelBusinessConsolePlanningDemandData,
   CancelScheduledBusinessConsoleEngineeringChangeData,
@@ -137,6 +141,27 @@ import {
 } from './iam'
 
 describe('generated API client contract', () => {
+  it('exposes WMS receiving shelf-life fields through the stable boundary', () => {
+    expectTypeOf<BusinessConsoleWmsInboundLineInput>().toMatchTypeOf<{
+      productionDate?: string | null
+      expiryDate?: string | null
+    }>()
+    expectTypeOf<BusinessConsoleCompleteWmsInboundOrderRequest>().toMatchTypeOf<{
+      idempotencyKey: string
+      lines?: BusinessConsoleWmsInboundLineCaptureInput[] | null
+    }>()
+    expectTypeOf<BusinessConsoleWmsInboundLineCaptureInput>().toMatchTypeOf<{
+      lineNo?: string
+      lotNo?: string | null
+      productionDate?: string | null
+      expiryDate?: string | null
+    }>()
+    expectTypeOf<BusinessConsoleWmsReceivingQualityGateItem>().toMatchTypeOf<{
+      productionDate?: string | null
+      expiryDate?: string | null
+    }>()
+  })
+
   it('exposes notification message task and read result shapes through the stable boundary', () => {
     expectTypeOf<BusinessConsoleNotificationMessageItem>().toMatchTypeOf<{
       messageId?: string
