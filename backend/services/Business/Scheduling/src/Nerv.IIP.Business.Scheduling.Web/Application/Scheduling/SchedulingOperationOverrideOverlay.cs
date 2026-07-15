@@ -24,6 +24,7 @@ public sealed class SchedulingOperationOverrideOverlay(ApplicationDbContext dbCo
         var overrides = await dbContext.ScheduleOperationOverrides.AsNoTracking()
             .Where(x => x.OrganizationId == problem.OrganizationId &&
                 x.EnvironmentId == problem.EnvironmentId &&
+                x.IsActive &&
                 operationIds.Contains(x.OperationId))
             .ToArrayAsync(cancellationToken);
 
