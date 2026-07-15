@@ -23510,6 +23510,16 @@
           "ownerId": {
             "type": "string",
             "nullable": true
+          },
+          "productionDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "expiryDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
           }
         }
       },
@@ -23917,6 +23927,42 @@
             "maxLength": 150,
             "minLength": 0,
             "nullable": false
+          },
+          "lines": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundLineCaptureInput"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundLineCaptureInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "lineNo"
+        ],
+        "properties": {
+          "lineNo": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 0,
+            "nullable": false
+          },
+          "lotNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "productionDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "expiryDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
           }
         }
       },
@@ -24698,6 +24744,16 @@
           },
           "serialNo": {
             "type": "string",
+            "nullable": true
+          },
+          "productionDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "expiryDate": {
+            "type": "string",
+            "format": "date",
             "nullable": true
           },
           "qualityStatus": {

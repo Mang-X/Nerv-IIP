@@ -52,7 +52,10 @@ public sealed record ListWarehouseTasksRequest(
 public sealed record CreateWarehouseTaskResponse(WarehouseTaskId WarehouseTaskId);
 public sealed record RecordWarehouseTaskProgressRequest(WarehouseTaskId WarehouseTaskId, decimal ExecutedQuantity);
 public sealed record CompleteWarehouseTaskRequest(WarehouseTaskId WarehouseTaskId);
-public sealed record CompleteInboundOrderRequest(InboundOrderId InboundOrderId, string IdempotencyKey);
+public sealed record CompleteInboundOrderRequest(
+    InboundOrderId InboundOrderId,
+    string IdempotencyKey,
+    IReadOnlyCollection<InboundOrderLineCapture>? Lines = null);
 public sealed record CompleteMovementResponse(InventoryMovementRequestId? RequestId, string? InventoryMovementId);
 public sealed record RetryInboundInventoryPostingRequest(InboundOrderId InboundOrderId, string IdempotencyKey);
 public sealed record CancelInboundOrdersForSourceRequest(string OrganizationId, string EnvironmentId, string SourceDocumentType, string SourceDocumentId, string Reason);
@@ -142,7 +145,7 @@ public sealed class CompleteInboundOrderEndpoint(ISender sender) : WmsEndpoint<C
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CompleteInboundOrderEndpoint>());
     public override async Task HandleAsync(CompleteInboundOrderRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new CompleteInboundOrderCommand(req.InboundOrderId, req.IdempotencyKey), ct);
+        var result = await sender.Send(new CompleteInboundOrderCommand(req.InboundOrderId, req.IdempotencyKey, req.Lines), ct);
         await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
     }
 }

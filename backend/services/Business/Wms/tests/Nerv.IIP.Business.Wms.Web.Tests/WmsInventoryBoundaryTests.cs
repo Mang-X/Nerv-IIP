@@ -19,6 +19,117 @@ namespace Nerv.IIP.Business.Wms.Web.Tests;
 public sealed class WmsInventoryBoundaryTests
 {
     [Fact]
+    public async Task Complete_inbound_atomically_captures_authoritative_line_batch_values()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-CAPTURE-001",
+            "purchase-receipt",
+            "PO-CAPTURE-001",
+            "SITE-01",
+            [
+                new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-A-01", "LOT-OLD", null, "qualified", "company", "owner-001", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
+                new InboundOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 3m, "LOC-A-02", "LOT-CLEAR", null, "qualified", "company", "owner-001", new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31))
+            ]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            new CompleteInboundOrderCommand(
+                inbound.Id,
+                "idem-capture-001",
+                [
+                    new InboundOrderLineCapture(" LINE-001 ", " LOT-NEW ", new DateOnly(2026, 2, 1), new DateOnly(2026, 11, 30)),
+                    new InboundOrderLineCapture("LINE-002", null, null, null)
+                ]),
+            CancellationToken.None);
+
+        var capturedLines = inbound.Lines.OrderBy(x => x.LineNo).ToArray();
+        Assert.Equal("LOT-NEW", capturedLines[0].LotNo);
+        Assert.Equal(new DateOnly(2026, 2, 1), capturedLines[0].ProductionDate);
+        Assert.Equal(new DateOnly(2026, 11, 30), capturedLines[0].ExpiryDate);
+        Assert.Null(capturedLines[1].LotNo);
+        Assert.Null(capturedLines[1].ProductionDate);
+        Assert.Null(capturedLines[1].ExpiryDate);
+
+        var movementRequests = dbContext.InventoryMovementRequests.Local.OrderBy(x => x.SourceDocumentLineId).ToArray();
+        Assert.Equal("LOT-NEW", movementRequests[0].LotNo);
+        Assert.Equal(new DateOnly(2026, 2, 1), movementRequests[0].ProductionDate);
+        Assert.Equal(new DateOnly(2026, 11, 30), movementRequests[0].ExpiryDate);
+        Assert.Null(movementRequests[1].LotNo);
+        Assert.Null(movementRequests[1].ProductionDate);
+        Assert.Null(movementRequests[1].ExpiryDate);
+    }
+
+    [Theory]
+    [InlineData("duplicate")]
+    [InlineData("unknown")]
+    [InlineData("reversed-dates")]
+    public void Complete_inbound_rejects_invalid_captures_before_mutating_any_line(string invalidCase)
+    {
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            $"IN-INVALID-{invalidCase}",
+            "purchase-receipt",
+            $"PO-INVALID-{invalidCase}",
+            "SITE-01",
+            [
+                new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-A-01", "LOT-OLD-1", null, "qualified", "company", "owner-001", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
+                new InboundOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 3m, "LOC-A-02", "LOT-OLD-2", null, "qualified", "company", "owner-001", new DateOnly(2026, 2, 1), new DateOnly(2026, 11, 30))
+            ]);
+        IReadOnlyCollection<InboundOrderLineCapture> captures = invalidCase switch
+        {
+            "duplicate" =>
+            [
+                new InboundOrderLineCapture("LINE-001", "LOT-NEW", null, null),
+                new InboundOrderLineCapture(" LINE-001 ", "LOT-DUPLICATE", null, null)
+            ],
+            "unknown" =>
+            [
+                new InboundOrderLineCapture("LINE-001", "LOT-NEW", null, null),
+                new InboundOrderLineCapture("LINE-UNKNOWN", "LOT-UNKNOWN", null, null)
+            ],
+            "reversed-dates" =>
+            [
+                new InboundOrderLineCapture("LINE-001", "LOT-NEW", null, null),
+                new InboundOrderLineCapture("LINE-002", "LOT-INVALID", new DateOnly(2026, 12, 31), new DateOnly(2026, 1, 1))
+            ],
+            _ => throw new ArgumentOutOfRangeException(nameof(invalidCase), invalidCase, null),
+        };
+
+        Assert.Throws<InvalidOperationException>(() => inbound.Complete("idem-invalid-001", captures));
+
+        Assert.Equal(InboundOrderStatus.Open, inbound.Status);
+        var unchangedLines = inbound.Lines.OrderBy(x => x.LineNo).ToArray();
+        Assert.Equal(new string?[] { "LOT-OLD-1", "LOT-OLD-2" }, unchangedLines.Select(x => x.LotNo).ToArray());
+        Assert.Equal(new DateOnly?[] { new(2026, 1, 1), new(2026, 2, 1) }, unchangedLines.Select(x => x.ProductionDate).ToArray());
+        Assert.Equal(new DateOnly?[] { new(2026, 12, 31), new(2026, 11, 30) }, unchangedLines.Select(x => x.ExpiryDate).ToArray());
+    }
+
+    [Fact]
+    public void Complete_inbound_rejects_capture_attempts_after_order_is_closed()
+    {
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-CLOSED-CAPTURE-001",
+            "purchase-receipt",
+            "PO-CLOSED-CAPTURE-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-A-01", "LOT-OLD", null, "qualified", "company", "owner-001")]);
+        inbound.Complete("idem-close-001");
+
+        Assert.Throws<InvalidOperationException>(() => inbound.Complete(
+            "idem-close-002",
+            [new InboundOrderLineCapture("LINE-001", "LOT-NEW", null, null)]));
+
+        Assert.Equal("LOT-OLD", inbound.Lines.Single().LotNo);
+    }
+
+    [Fact]
     public async Task Complete_inbound_creates_pending_inventory_movement_request_without_http_dependency()
     {
         await using var dbContext = CreateContext();

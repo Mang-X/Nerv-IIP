@@ -127,6 +127,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     qualityStatus?: string;
     ownerType?: string;
     ownerId?: string | null;
+    productionDate?: string | null;
+    expiryDate?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsInboundOrderListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -242,6 +244,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsInboundOrderRequest = {
     idempotencyKey: string;
+    lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundLineCaptureInput> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundLineCaptureInput = {
+    lineNo: string;
+    lotNo?: string | null;
+    productionDate?: string | null;
+    expiryDate?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateWmsOutboundOrderResponse = NetCorePalExtensionsDtoResponseData & {
@@ -450,6 +460,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     stagingLocationCode?: string;
     lotNo?: string | null;
     serialNo?: string | null;
+    productionDate?: string | null;
+    expiryDate?: string | null;
     qualityStatus?: string;
     qualityGateStatus?: string;
     inspectionRecordId?: string | null;

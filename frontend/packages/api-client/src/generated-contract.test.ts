@@ -37,6 +37,10 @@ import type {
   BusinessConsoleSearchResponse,
   BusinessConsoleSetMasterDataResourceEnabledRequest,
   BusinessConsoleTelemetryOeeEnvelope,
+  BusinessConsoleCompleteWmsInboundOrderRequest,
+  BusinessConsoleWmsInboundLineCaptureInput,
+  BusinessConsoleWmsInboundLineInput,
+  BusinessConsoleWmsReceivingQualityGateItem,
   BusinessConsoleWorkbenchSummaryResponse,
   CancelBusinessConsolePlanningDemandData,
   CancelScheduledBusinessConsoleEngineeringChangeData,
@@ -137,6 +141,38 @@ import {
 } from './iam'
 
 describe('generated API client contract', () => {
+  it('exposes WMS receiving shelf-life fields through the stable boundary', () => {
+    expectTypeOf<
+      Pick<BusinessConsoleWmsInboundLineInput, 'productionDate' | 'expiryDate'>
+    >().toEqualTypeOf<{
+      productionDate?: string | null
+      expiryDate?: string | null
+    }>()
+    expectTypeOf<
+      Pick<BusinessConsoleCompleteWmsInboundOrderRequest, 'idempotencyKey' | 'lines'>
+    >().toEqualTypeOf<{
+      idempotencyKey: string
+      lines?: BusinessConsoleWmsInboundLineCaptureInput[] | null
+    }>()
+    expectTypeOf<
+      Pick<BusinessConsoleWmsInboundLineCaptureInput, 'lineNo'>
+    >().toEqualTypeOf<{
+      lineNo: string
+    }>()
+    expectTypeOf<BusinessConsoleWmsInboundLineCaptureInput>().toEqualTypeOf<{
+      lineNo: string
+      lotNo?: string | null
+      productionDate?: string | null
+      expiryDate?: string | null
+    }>()
+    expectTypeOf<
+      Pick<BusinessConsoleWmsReceivingQualityGateItem, 'productionDate' | 'expiryDate'>
+    >().toEqualTypeOf<{
+      productionDate?: string | null
+      expiryDate?: string | null
+    }>()
+  })
+
   it('exposes notification message task and read result shapes through the stable boundary', () => {
     expectTypeOf<BusinessConsoleNotificationMessageItem>().toMatchTypeOf<{
       messageId?: string
