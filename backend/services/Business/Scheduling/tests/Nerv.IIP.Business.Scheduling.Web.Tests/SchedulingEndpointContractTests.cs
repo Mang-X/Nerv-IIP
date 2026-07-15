@@ -40,7 +40,7 @@ public sealed class SchedulingEndpointContractTests
             SchedulingPermissionCodes.PlansRelease
         };
 
-        Assert.Equal(7, contracts.Length);
+        Assert.Equal(8, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans/preview" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "previewSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/problems/assemble" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "assembleSchedulingProblem");
@@ -48,6 +48,7 @@ public sealed class SchedulingEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/plans/{planId}" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/plans/{planId}/gantt" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingPlanGantt");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans/{planId}/release" && x.PermissionCode == SchedulingPermissionCodes.PlansRelease && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "releaseSchedulingPlan");
+        Assert.Contains(contracts, x => x.HttpMethod == "PUT" && x.Route == "/api/business/v1/scheduling/plans/{planId}/operations/{operationId}/override" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "upsertSchedulingOperationOverride");
         Assert.All(contracts, x => Assert.Contains(x.PermissionCode, allowedPermissions));
     }
 
@@ -59,6 +60,7 @@ public sealed class SchedulingEndpointContractTests
     [InlineData(typeof(GetSchedulePlanEndpoint))]
     [InlineData(typeof(GetSchedulePlanGanttEndpoint))]
     [InlineData(typeof(ReleaseSchedulePlanEndpoint))]
+    [InlineData(typeof(UpsertScheduleOperationOverrideEndpoint))]
     public void Scheduling_endpoints_route_through_mediator(Type endpointType)
     {
         var parameterTypes = endpointType.GetConstructors().Single().GetParameters().Select(x => x.ParameterType).ToArray();
@@ -98,7 +100,8 @@ public sealed class SchedulingEndpointContractTests
             new FiniteCapacityScheduler(),
             new FixedTimeProvider(FixedNow),
             new NoopSchedulingEquipmentAvailabilityProvider(),
-            new NoopSchedulingMaterialReadinessProvider());
+            new NoopSchedulingMaterialReadinessProvider(),
+            new PassthroughSchedulingOperationOverrideOverlay());
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
 
         var first = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
@@ -139,7 +142,8 @@ public sealed class SchedulingEndpointContractTests
             new FiniteCapacityScheduler(),
             new FixedTimeProvider(FixedNow),
             availabilityProvider,
-            new NoopSchedulingMaterialReadinessProvider());
+            new NoopSchedulingMaterialReadinessProvider(),
+            new PassthroughSchedulingOperationOverrideOverlay());
 
         var plan = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
 
@@ -166,7 +170,8 @@ public sealed class SchedulingEndpointContractTests
             new FiniteCapacityScheduler(),
             new FixedTimeProvider(FixedNow),
             new NoopSchedulingEquipmentAvailabilityProvider(),
-            materialReadinessProvider);
+            materialReadinessProvider,
+            new PassthroughSchedulingOperationOverrideOverlay());
 
         var plan = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
 
@@ -182,7 +187,7 @@ public sealed class SchedulingEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(), new SchedulingOperationOverrideOverlay(dbContext));
         var detailHandler = new GetSchedulePlanDetailQueryHandler(dbContext);
 
         var problem = CreateProblemWithUnscheduledOperation();
@@ -265,7 +270,7 @@ public sealed class SchedulingEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(), new SchedulingOperationOverrideOverlay(dbContext));
         var command = new CreateSchedulePlanCommand(ShockAbsorberSchedulingFixture.CreateProblem());
 
         var first = await createHandler.Handle(command, CancellationToken.None);
@@ -285,11 +290,11 @@ public sealed class SchedulingEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var initialHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
+        var initialHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(), new SchedulingOperationOverrideOverlay(dbContext));
         var command = new CreateSchedulePlanCommand(ShockAbsorberSchedulingFixture.CreateProblem());
         var existing = await initialHandler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var retryHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new ThrowingTimeProvider(), new ThrowingSchedulingEquipmentAvailabilityProvider(), new ThrowingSchedulingMaterialReadinessProvider());
+        var retryHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new ThrowingTimeProvider(), new ThrowingSchedulingEquipmentAvailabilityProvider(), new ThrowingSchedulingMaterialReadinessProvider(), new SchedulingOperationOverrideOverlay(dbContext));
 
         var retried = await retryHandler.Handle(command, CancellationToken.None);
 
@@ -305,7 +310,7 @@ public sealed class SchedulingEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(), new SchedulingOperationOverrideOverlay(dbContext));
         var firstProblem = ShockAbsorberSchedulingFixture.CreateProblem();
         var secondTenantProblem = firstProblem with
         {
@@ -330,7 +335,7 @@ public sealed class SchedulingEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(), new SchedulingOperationOverrideOverlay(dbContext));
         var firstProblem = ShockAbsorberSchedulingFixture.CreateProblem();
         var changedProblem = firstProblem with
         {
@@ -424,7 +429,7 @@ public sealed class SchedulingEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(), new SchedulingOperationOverrideOverlay(dbContext));
         var releaseHandler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow.AddHours(2)));
 
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
@@ -446,7 +451,7 @@ public sealed class SchedulingEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(), new SchedulingOperationOverrideOverlay(dbContext));
         var releaseHandler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow.AddHours(2)));
 
         var problem = CreateProblemWithUnscheduledOperation();
@@ -491,7 +496,7 @@ public sealed class SchedulingEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider(), new SchedulingOperationOverrideOverlay(dbContext));
         var detailHandler = new GetSchedulePlanDetailQueryHandler(dbContext);
         var ganttHandler = new GetSchedulePlanGanttQueryHandler(dbContext);
         var releaseHandler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow.AddHours(2)));
@@ -847,6 +852,13 @@ public sealed class SchedulingEndpointContractTests
         {
             throw new InvalidOperationException("Material readiness provider should not be called on idempotent retries.");
         }
+    }
+
+    private sealed class PassthroughSchedulingOperationOverrideOverlay : ISchedulingOperationOverrideOverlay
+    {
+        public Task<SchedulingProblemContract> ApplyAsync(
+            SchedulingProblemContract problem,
+            CancellationToken cancellationToken) => Task.FromResult(problem);
     }
 
     private sealed class SchedulingLiveHttpTestFactory : WebApplicationFactory<Program>

@@ -3862,6 +3862,19 @@
     },
     {
       "service": "Scheduling",
+      "method": "PUT",
+      "route": "/api/business/v1/scheduling/plans/{planId}/operations/{operationId}/override",
+      "operationId": "upsertSchedulingOperationOverride",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "upsertBusinessConsoleSchedulingOperationOverride"
+      ]
+    },
+    {
+      "service": "Scheduling",
       "method": "POST",
       "route": "/api/business/v1/scheduling/plans",
       "operationId": "createSchedulingPlan",

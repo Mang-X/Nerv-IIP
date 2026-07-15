@@ -37,17 +37,27 @@ public sealed class HttpSchedulingIntegrationEventContextAccessor(IHttpContextAc
 
     private static string ResolveActor(ClaimsPrincipal? user, IHeaderDictionary? headers)
     {
+        var headerActor = ReadHeader(headers, "X-Actor");
+        if (string.Equals(user?.FindFirstValue("token_type"), "internal_service", StringComparison.Ordinal) &&
+            !string.IsNullOrWhiteSpace(headerActor))
+        {
+            var trimmed = headerActor.Trim();
+            var separator = trimmed.IndexOf(':', StringComparison.Ordinal);
+            if (separator <= 0 || separator >= trimmed.Length - 1 ||
+                string.IsNullOrWhiteSpace(trimmed[..separator]) ||
+                string.IsNullOrWhiteSpace(trimmed[(separator + 1)..]))
+            {
+                throw new KnownException("A canonical X-Actor is required for forwarded actor requests.");
+            }
+
+            return trimmed;
+        }
+
         var subject = user?.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? user?.FindFirstValue("sub");
         if (!string.IsNullOrWhiteSpace(subject))
         {
             return $"user:{subject}";
-        }
-
-        var headerActor = ReadHeader(headers, "X-Actor");
-        if (!string.IsNullOrWhiteSpace(headerActor))
-        {
-            return headerActor;
         }
 
         var name = user?.Identity?.Name;

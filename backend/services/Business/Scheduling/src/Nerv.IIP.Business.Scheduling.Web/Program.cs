@@ -84,6 +84,7 @@ try
     builder.Services.AddSingleton<FiniteCapacityScheduler>();
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
+    builder.Services.AddScoped<ISchedulingOperationOverrideOverlay, SchedulingOperationOverrideOverlay>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ISchedulingIntegrationEventContextAccessor, HttpSchedulingIntegrationEventContextAccessor>();
     builder.Services.AddScoped<SchedulePlanInvalidatedIntegrationEventConverter>();
@@ -114,6 +115,7 @@ try
     builder.Services.AddScoped<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans>();
+    builder.Services.AddScoped<MesOperationTaskManuallyDispatchedIntegrationEventHandlerForUpsertOverride>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)

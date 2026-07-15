@@ -14,7 +14,9 @@ public sealed record AssembleSchedulingProblemRequest(
     DateTimeOffset HorizonEndUtc,
     IReadOnlyCollection<SchedulingProblemSourceOrder> Orders,
     IReadOnlyCollection<SchedulingQualityBlockContract>? QualityBlocks = null,
-    IReadOnlyCollection<SchedulingLockedAssignmentContract>? LockedAssignments = null);
+    IReadOnlyCollection<SchedulingLockedAssignmentContract>? LockedAssignments = null,
+    string? BasePlanId = null,
+    IReadOnlyCollection<string>? LockedOperationIds = null);
 
 public sealed record SchedulingProblemSourceOrder(
     string OrderId,
