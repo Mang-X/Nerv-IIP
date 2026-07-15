@@ -14,6 +14,7 @@ public sealed class ScheduleProblemSnapshotEntityTypeConfiguration : IEntityType
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").HasMaxLength(64).IsRequired().HasComment("Tenant organization id.");
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").HasMaxLength(64).IsRequired().HasComment("Business environment id.");
         builder.Property(x => x.ProblemFingerprint).HasColumnName("problem_fingerprint").HasMaxLength(128).IsRequired().HasComment("Deterministic fingerprint of the scheduling problem input.");
+        builder.Property(x => x.ProblemJson).HasColumnName("problem_json").HasColumnType("jsonb").IsRequired().HasComment("Normalized scheduling problem payload used to validate later operation locks and overrides.");
         builder.Property(x => x.HorizonStartUtc).HasColumnName("horizon_start_utc").HasComment("Scheduling horizon start timestamp in UTC.");
         builder.Property(x => x.HorizonEndUtc).HasColumnName("horizon_end_utc").HasComment("Scheduling horizon end timestamp in UTC.");
         builder.Property(x => x.CapturedAtUtc).HasColumnName("captured_at_utc").HasComment("UTC timestamp when the problem snapshot was captured.");

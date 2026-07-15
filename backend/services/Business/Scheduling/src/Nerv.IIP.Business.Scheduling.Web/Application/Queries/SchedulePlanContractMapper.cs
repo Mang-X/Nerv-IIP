@@ -68,7 +68,9 @@ public static class SchedulePlanContractMapper
                 plan.TotalTardinessMinutes,
                 plan.LateOperationCount,
                 plan.OnTimeRate,
-                plan.AverageResourceUtilization),
+                plan.AverageResourceUtilization,
+                plan.LockedOperationCount,
+                plan.OptimizableOperationCount),
             Assignments: assignments,
             ResourceLoads: plan.ResourceLoads
                 .OrderBy(x => x.WindowStartUtc)
@@ -179,7 +181,9 @@ public static class SchedulePlanContractMapper
                 plan.Metrics.TotalTardinessMinutes,
                 plan.Metrics.LateOperationCount,
                 plan.Metrics.OnTimeRate,
-                plan.Metrics.AverageResourceUtilization),
+                plan.Metrics.AverageResourceUtilization,
+                plan.Metrics.LockedOperationCount,
+                plan.Metrics.OptimizableOperationCount),
             plan.Assignments
                 .Select(x => new GeneratedScheduleAssignmentSnapshot(
                     x.AssignmentId,

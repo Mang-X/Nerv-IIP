@@ -9,6 +9,7 @@ public static class MesIntegrationEventTypes
     public const string WorkOrderClosed = "mes.WorkOrderClosed";
     public const string WorkOrderEngineeringChangeImpactDetected = "mes.WorkOrderEngineeringChangeImpactDetected";
     public const string OperationTaskCompleted = "mes.OperationTaskCompleted";
+    public const string OperationTaskManuallyDispatched = "mes.OperationTaskManuallyDispatched";
     public const string FinishedGoodsReceiptRequested = "mes.FinishedGoodsReceiptRequested";
     public const string ProductionReportRecorded = "mes.ProductionReportRecorded";
 }
@@ -165,6 +166,20 @@ public sealed record OperationTaskCompletedPayload(
     string UomCode,
     bool RequiresQualityInspection,
     DateTimeOffset CompletedAtUtc);
+
+public sealed record MesOperationTaskManuallyDispatchedIntegrationEvent(
+    string EventId, string EventType, int EventVersion, DateTimeOffset OccurredAtUtc,
+    string SourceService, string CorrelationId, string CausationId,
+    string OrganizationId, string EnvironmentId, string Actor, string IdempotencyKey,
+    OperationTaskManuallyDispatchedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record OperationTaskManuallyDispatchedPayload(
+    string WorkOrderId, string OperationTaskId, int OperationSequence,
+    string ResourceId, string WorkCenterId, DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc, DateTimeOffset AssignedAtUtc);
 
 public sealed record ProductionReportRecordedIntegrationEvent(
     string EventId,

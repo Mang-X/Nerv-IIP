@@ -687,22 +687,7 @@ public sealed record MesQualityHoldRequestContext(string Actor, string Correlati
 {
     public static MesQualityHoldRequestContext Resolve(HttpContext context)
     {
-        var subject = context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? context.User.FindFirstValue("sub");
-        var forwardedActor = context.Request.Headers["X-Authenticated-Actor"].FirstOrDefault();
-        var tokenType = context.User.FindFirstValue("token_type");
-        string actor;
-        if (string.Equals(tokenType, "internal_service", StringComparison.Ordinal))
-        {
-            actor = IsCanonicalActor(forwardedActor)
-                ? forwardedActor!.Trim()
-                : throw new KnownException("A canonical X-Authenticated-Actor is required for internal service requests.");
-        }
-        else
-        {
-            actor = !string.IsNullOrWhiteSpace(subject)
-                ? $"user:{subject}"
-                : throw new KnownException("Authenticated actor is required.");
-        }
+        var actor = MesAuthenticatedActor.Resolve(context);
         var correlationId = context.Request.Headers["X-Correlation-Id"].FirstOrDefault();
         var idempotencyKey = context.Request.Headers["X-Idempotency-Key"].FirstOrDefault();
         if (string.IsNullOrWhiteSpace(correlationId) || string.IsNullOrWhiteSpace(idempotencyKey))
@@ -712,15 +697,36 @@ public sealed record MesQualityHoldRequestContext(string Actor, string Correlati
         return new(actor, correlationId.Trim(), idempotencyKey.Trim());
     }
 
-    private static bool IsCanonicalActor(string? actor)
+}
+
+internal static class MesAuthenticatedActor
+{
+    public static string Resolve(HttpContext context)
     {
-        if (string.IsNullOrWhiteSpace(actor)) return false;
-        var trimmed = actor.Trim();
-        var separator = trimmed.IndexOf(':', StringComparison.Ordinal);
-        return separator > 0
-               && separator < trimmed.Length - 1
-               && !string.IsNullOrWhiteSpace(trimmed[..separator])
-               && !string.IsNullOrWhiteSpace(trimmed[(separator + 1)..]);
+        var subject = context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? context.User.FindFirstValue("sub");
+        var forwardedActor = context.Request.Headers["X-Authenticated-Actor"].FirstOrDefault();
+        if (string.Equals(context.User.FindFirstValue("token_type"), "internal_service", StringComparison.Ordinal))
+        {
+            if (string.IsNullOrWhiteSpace(forwardedActor))
+            {
+                throw new KnownException("A canonical X-Authenticated-Actor is required for internal service requests.");
+            }
+
+            var trimmed = forwardedActor.Trim();
+            var separator = trimmed.IndexOf(':', StringComparison.Ordinal);
+            if (separator <= 0 || separator >= trimmed.Length - 1 ||
+                string.IsNullOrWhiteSpace(trimmed[..separator]) ||
+                string.IsNullOrWhiteSpace(trimmed[(separator + 1)..]))
+            {
+                throw new KnownException("A canonical X-Authenticated-Actor is required for internal service requests.");
+            }
+
+            return trimmed;
+        }
+
+        return !string.IsNullOrWhiteSpace(subject)
+            ? $"user:{subject}"
+            : throw new KnownException("Authenticated actor is required.");
     }
 }
 
@@ -918,7 +924,8 @@ public sealed class AssignDispatchTaskEndpoint(ISender sender, TimeProvider time
             req.AssignedUserId,
             req.DeviceAssetId,
             req.ShiftId,
-            req.AssignedAtUtc ?? timeProvider.GetUtcNow()), ct);
+            req.AssignedAtUtc ?? timeProvider.GetUtcNow(),
+            MesAuthenticatedActor.Resolve(HttpContext)), ct);
         await Send.OkAsync(response, ct);
     }
 }
