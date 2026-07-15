@@ -1,14 +1,24 @@
 # Script-Governance:
 #   Category: verify
 #   SideEffects:
-#     - Runs Playwright live specs against the real local stack (read-only business flows)
-#     - Starts (or reuses) the business-pda vite dev server on PLAYWRIGHT_BUSINESS_PDA_LIVE_PORT (default 5177) via the Playwright webServer
+#     - Runs Playwright live specs against the real local stack, INCLUDING real business writes:
+#       quality-execute.spec.ts consumes one shared-seed pending inspection task (POST creates an
+#       inspection record and flips the task pending -> completed)
+#     - Starts the business-pda vite dev server on PLAYWRIGHT_BUSINESS_PDA_LIVE_PORT (default 5177)
+#       via the Playwright webServer; if the port is already occupied the script fails by default,
+#       and only reuses the existing server when -AllowServerReuse is passed (sets
+#       PLAYWRIGHT_PDA_LIVE_REUSE=1; worktree ownership of that server is NOT verified)
 #   Writes:
 #     - artifacts/script-logs/**
 #     - frontend/apps/business-pda/test-results-live/** (Playwright traces/screenshots)
-#     - frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd>-pda-live/** (collected evidence, path overridable via -EvidenceDir)
+#     - frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd-HHmmss>-<shortSHA>-pda-live/** (per-run unique
+#       evidence dir, never overwrites earlier runs; path overridable via -EvidenceDir)
+#     - Business data in the local stack databases (inspection records / completed inspection tasks)
 #   Cleanup:
-#     - Playwright stops the vite webServer it started; a pre-existing dev server on the live port is reused and left running
+#     - Playwright stops the vite webServer it started; a reused pre-existing server is left running
+#     - Does NOT clean up business data written by the specs: consumed pending inspection tasks stay
+#       completed, so re-running requires re-seeding pending tasks (QualitySeedService); runId data
+#       namespacing + cleanup are deferred to M2
 #     - Does not start or stop the backend stack (expects an already-running nerv.ps1 dev stack)
 #   Requires:
 #     - PowerShell 7
@@ -22,8 +32,14 @@
 
 [CmdletBinding()]
 param(
-    # 证据归集目录；默认 frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd>-pda-live/
-    [string] $EvidenceDir
+    # 证据归集目录；默认 frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd-HHmmss>-<shortSHA>-pda-live/
+    # （每次运行唯一，避免同日多次运行互相混入/覆盖证据）
+    [string] $EvidenceDir,
+
+    # live 端口已被占用时，允许复用既有 dev server（设 PLAYWRIGHT_PDA_LIVE_REUSE=1）。
+    # 风险：无法验证该 server 属于哪个 worktree——可能测到别人的代码却把本 worktree 的
+    # commit SHA 写进证据。启用后会在证据 metadata 里如实记录。
+    [switch] $AllowServerReuse
 )
 
 Set-StrictMode -Version Latest
@@ -72,9 +88,42 @@ if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_LIVE_USER) -or [string]::IsNullOr
     exit 1
 }
 
-# --- 4. 跑 live spec + 证据归集（无论成败都归集 trace/截图，失败时证据更重要）。
+# --- 4. live 端口占用检查：5177 上若已有 dev server，无法验证其属于哪个 worktree——
+#        可能测到别人的代码却把本 worktree 的 SHA 写进证据。默认拒绝，-AllowServerReuse 显式放行。
+$livePort = if ([string]::IsNullOrWhiteSpace($env:PLAYWRIGHT_BUSINESS_PDA_LIVE_PORT)) { 5177 } else { [int]$env:PLAYWRIGHT_BUSINESS_PDA_LIVE_PORT }
+$livePortOccupied = $false
+$portProbe = [System.Net.Sockets.TcpClient]::new()
+try {
+    $livePortOccupied = $portProbe.ConnectAsync('127.0.0.1', $livePort).Wait(1000) -and $portProbe.Connected
+}
+catch {
+    $livePortOccupied = $false
+}
+finally {
+    $portProbe.Dispose()
+}
+$serverReuse = $false
+if ($livePortOccupied) {
+    if ($AllowServerReuse) {
+        $serverReuse = $true
+        $env:PLAYWRIGHT_PDA_LIVE_REUSE = '1'
+        Write-Diagnostic -Level 'WARN' -Message "live 端口 $livePort 已被占用，按 -AllowServerReuse 复用既有 dev server——该 server 的 worktree 归属未验证，证据 metadata 将如实记录。"
+    }
+    else {
+        Write-Diagnostic -Level 'ERROR' -Message "live 端口 $livePort 已被占用：可能是另一 worktree/会话的 vite dev server，复用会测错代码并产生失真证据。"
+        Write-Diagnostic -Level 'ERROR' -Message "请先停掉占用该端口的进程（或改 PLAYWRIGHT_BUSINESS_PDA_LIVE_PORT 换口），确认就是本 worktree 的 server 时可加 -AllowServerReuse 显式复用。"
+        exit 1
+    }
+}
+else {
+    # 确保 Playwright webServer 不因外部残留 env 意外进入复用模式。
+    $env:PLAYWRIGHT_PDA_LIVE_REUSE = '0'
+}
+
+# --- 5. 跑 live spec + 证据归集（无论成败都归集 trace/截图，失败时证据更重要）。
 if ([string]::IsNullOrWhiteSpace($EvidenceDir)) {
-    $EvidenceDir = Join-Path $repoRoot 'frontend' 'DESIGN' 'roadmaps' 'assets' ("{0}-pda-live" -f (Get-Date -Format 'yyyy-MM-dd'))
+    # 每次运行唯一（时间戳 + shortSHA），不与同日其他运行混目录、不覆盖既有证据。
+    $EvidenceDir = Join-Path $repoRoot 'frontend' 'DESIGN' 'roadmaps' 'assets' ("{0}-{1}-pda-live" -f (Get-Date -Format 'yyyy-MM-dd-HHmmss'), $head)
 }
 $testResultsDir = Join-Path $appDir 'test-results-live'
 $exitCode = 0
@@ -88,8 +137,10 @@ catch {
 finally {
     if (Test-Path $testResultsDir) {
         New-Item -ItemType Directory -Force -Path $EvidenceDir | Out-Null
-        Copy-Item -Path (Join-Path $testResultsDir '*') -Destination $EvidenceDir -Recurse -Force
-        "branch=$branch`nhead=$head`nworktree=$scriptToplevel`ndate=$(Get-Date -Format 'o')" |
+        # 不加 -Force：默认目录每次运行唯一，若显式 -EvidenceDir 撞既有文件则如实报错而非静默覆盖。
+        Copy-Item -Path (Join-Path $testResultsDir '*') -Destination $EvidenceDir -Recurse
+        $reuseNote = $serverReuse ? 'true (reused pre-existing dev server; worktree ownership NOT verified — SHA below may not match the code under test)' : 'false'
+        "branch=$branch`nhead=$head`nworktree=$scriptToplevel`ndate=$(Get-Date -Format 'o')`nserverReuse=$reuseNote" |
             Set-Content -Path (Join-Path $EvidenceDir 'run-fingerprint.txt') -Encoding utf8
         Write-Diagnostic "证据已归集：$EvidenceDir（trace/截图 + commit 指纹；请按方案 §4.5 补关键请求与后端回读记录）"
     }

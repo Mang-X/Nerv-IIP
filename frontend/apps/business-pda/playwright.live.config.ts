@@ -32,8 +32,11 @@ export default defineConfig({
   webServer: {
     command: `vp dev --host 127.0.0.1 --port ${port}`,
     url: baseURL,
-    // live 走查常与人工调试共用同一 dev server，无条件复用。
-    reuseExistingServer: true,
+    // 默认**不复用**已有 server：5177 上若是另一 worktree 的 vite，会测到别人的代码却把
+    // 当前 worktree 的 commit SHA 写进证据（证据失真）。确需与人工调试共用同一 dev server
+    // 时显式设 PLAYWRIGHT_PDA_LIVE_REUSE=1（此时 worktree 归属由使用者自行担保，
+    // pda-live-walkthrough.ps1 -AllowServerReuse 会在证据 metadata 里如实记录）。
+    reuseExistingServer: process.env.PLAYWRIGHT_PDA_LIVE_REUSE === '1',
     timeout: 120_000,
   },
   projects: [

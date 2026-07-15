@@ -133,7 +133,9 @@ async function simulateScanGun(page: Page, code: string, profile?: Partial<ScanG
 - 超时路径**不真等 30s**：timeout 值做成可注入（env/配置），live 测试注入短超时（如 2s）+
   `page.route` 故障注入，分别覆盖「请求整体挂起」与「headers 已到、body 卡死」两种形态，
   验 AbortController 超时文案（区别于导航取消不误报）。
-- 幂等断言不止 UI 不重复提交：**捕获重试前后两次请求的幂等键相同 + 从真实后端回读只落一条事实**。
+- 幂等断言不止 UI 不重复提交：**捕获重试前后两次请求的幂等键相同 + 从真实后端回读只落一条事实**；
+  对**无显式幂等键**的链路（如 quality 提交：请求体/头均无键，靠任务生命周期守门），落法为
+  **同请求重放断言返回同一实体 id**（同一 `inspectionRecordId`）。
 
 ### 4.3 相机（后置：待 MAN-458 `@capacitor/camera` 合入基线后启动）
 
@@ -160,7 +162,8 @@ async function simulateScanGun(page: Page, code: string, profile?: Partial<ScanG
   隔离方案落地后迁移到隔离入口）→ seed → 跑 live spec → 证据落
   `DESIGN/roadmaps/assets/<date>-<topic>/`。
 - **证据包**（截图不得单独构成 L2 通过证据）：commit/分支指纹 + Playwright trace +
-  关键请求 URL/status（写操作含幂等键）+ **写操作后端状态回读** + 截图。
+  关键请求 URL/status + 写操作幂等语义捕获（有显式键记两次请求键相同；无键链路记
+  「同请求重放 → 同一实体 id」）+ **写操作后端状态回读** + 截图。
   截图控制数量，避免二进制膨胀。
 - 走查记录沿用 man457 模板：环境表 + 步骤/断言/证据表 + 「已覆盖 / 未覆盖（留待 L3/L4）」
   声明，杜绝层级虚报。

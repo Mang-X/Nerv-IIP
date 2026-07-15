@@ -190,5 +190,147 @@ describe('ScanBar', () => {
       expect((wrapper.get('input').element as HTMLInputElement).value).toBe('')
       wrapper.unmount()
     })
+
+    it('lets Space pass through untouched (button activation must not be swallowed)', async () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      expect(typeOnDocument(' ').defaultPrevented).toBe(false)
+      await nextTick()
+      expect((wrapper.get('input').element as HTMLInputElement).value).toBe('')
+      wrapper.unmount()
+    })
+
+    it('lets keys pass through during IME composition', async () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      const event = new KeyboardEvent('keydown', {
+        key: 'a',
+        isComposing: true,
+        bubbles: true,
+        cancelable: true,
+      })
+      document.body.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+      await nextTick()
+      expect((wrapper.get('input').element as HTMLInputElement).value).toBe('')
+      wrapper.unmount()
+    })
+
+    it('lets Enter pass through when the buffer holds manually typed (non-captured) content', async () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      // 手工内容走 input 路径（v-model），document 捕获路径从未写入过。
+      await wrapper.get('input').setValue('DRAFT')
+      expect(document.activeElement).not.toBe(wrapper.get('input').element)
+      expect(typeOnDocument('Enter').defaultPrevented).toBe(false)
+      expect(wrapper.emitted('scan')).toBeFalsy()
+      wrapper.unmount()
+    })
+  })
+
+  // --- document 缓冲时序判别（假定时器）--------------------------------------
+  describe('document buffer timing with fake timers', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+      // RAF 置为 no-op：保持 input 不被回焦，停留在 document 捕获路径。
+      vi.stubGlobal('requestAnimationFrame', () => 0)
+      vi.stubGlobal('cancelAnimationFrame', () => {})
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    })
+
+    function typeOnDocument(key: string) {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      document.body.dispatchEvent(event)
+      return event
+    }
+
+    it('resets the buffer to the incoming char when the burst gap is exceeded', async () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      typeOnDocument('A')
+      typeOnDocument('B')
+      // 超过突发间隔（100ms）：AB 是陈旧残片，被新字符 C 取代
+      vi.advanceTimersByTime(150)
+      typeOnDocument('C')
+      typeOnDocument('D')
+      typeOnDocument('Enter')
+      expect(wrapper.emitted('scan')).toBeTruthy()
+      expect(wrapper.emitted('scan')![0]).toEqual(['CD'])
+      wrapper.unmount()
+    })
+
+    it('lets Enter pass through when the captured buffer is stale (freshness exceeded)', () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      typeOnDocument('A')
+      typeOnDocument('B')
+      // 只推进系统时钟不触发定时器：模拟空闲清理尚未执行、但缓冲已过新鲜度
+      vi.setSystemTime(Date.now() + 400)
+      expect(typeOnDocument('Enter').defaultPrevented).toBe(false)
+      expect(wrapper.emitted('scan')).toBeFalsy()
+      wrapper.unmount()
+    })
+
+    it('clears a captured fragment after the idle timeout without an Enter', async () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      typeOnDocument('A')
+      typeOnDocument('B')
+      await nextTick()
+      expect((wrapper.get('input').element as HTMLInputElement).value).toBe('AB')
+      vi.advanceTimersByTime(300)
+      await nextTick()
+      expect((wrapper.get('input').element as HTMLInputElement).value).toBe('')
+      expect(wrapper.emitted('scan')).toBeFalsy()
+      wrapper.unmount()
+    })
+
+    it('does not clear the buffer on idle timeout when the input has (re)gained focus', async () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      const input = wrapper.get('input').element as HTMLInputElement
+      typeOnDocument('A')
+      // 空闲定时器到期前 input 重获焦点：缓冲归原生 input 路径所有，不得清
+      input.focus()
+      expect(document.activeElement).toBe(input)
+      vi.advanceTimersByTime(300)
+      await nextTick()
+      expect(input.value).toBe('A')
+      wrapper.unmount()
+    })
+
+    it('does not clear the buffer on idle timeout when the input path modified it since capture', async () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      typeOnDocument('A')
+      // 捕获后缓冲被 input 路径改动（快照失配）：用户内容不动
+      await wrapper.get('input').setValue('A-EDITED')
+      vi.advanceTimersByTime(300)
+      await nextTick()
+      expect((wrapper.get('input').element as HTMLInputElement).value).toBe('A-EDITED')
+      wrapper.unmount()
+    })
+
+    it('clears an unconsumed captured fragment when active turns false (P1-1)', async () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      typeOnDocument('A')
+      typeOnDocument('B')
+      await nextTick()
+      expect((wrapper.get('input').element as HTMLInputElement).value).toBe('AB')
+      await wrapper.setProps({ active: false }) // 浮层打开：半次扫码残片必须丢弃
+      expect((wrapper.get('input').element as HTMLInputElement).value).toBe('')
+      // 恢复后下一枪不与残片拼接
+      await wrapper.setProps({ active: true })
+      typeOnDocument('C')
+      typeOnDocument('D')
+      typeOnDocument('Enter')
+      expect(wrapper.emitted('scan')).toBeTruthy()
+      expect(wrapper.emitted('scan')![0]).toEqual(['CD'])
+      wrapper.unmount()
+    })
+
+    it('keeps manually typed content when active turns false (only captured fragments are dropped)', async () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      await wrapper.get('input').setValue('DRAFT') // 手工内容，无未消费捕获
+      await wrapper.setProps({ active: false })
+      expect((wrapper.get('input').element as HTMLInputElement).value).toBe('DRAFT')
+      wrapper.unmount()
+    })
   })
 })

@@ -103,8 +103,16 @@ pwsh frontend/apps/business-pda/scripts/pda-live-walkthrough.ps1
 ```
 
 - **证据包口径**（截图不得单独构成 L2 通过证据）：commit/分支指纹 + Playwright trace +
-  关键请求 URL/status（写操作含幂等键）+ 写操作后端状态回读 + 截图；`pda-live-walkthrough.ps1`
-  会把 trace/截图归集到 `frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd>-pda-live/`。
+  关键请求 URL/status + 写操作幂等语义捕获 + 写操作后端状态回读 + 截图。幂等语义按链路
+  代码事实如实记录：quality 提交链路**无显式幂等键**（请求体仅 inspectorUserId/resultLines/
+  dispositionReason 三字段，头也无 Idempotency-Key），靠任务生命周期守门（completed 任务
+  重放回读既有记录），证据记录的是「同 URL/body 重放 → 返回同一 inspectionRecordId」；
+  `pda-live-walkthrough.ps1` 会把 trace/截图归集到
+  `frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd-HHmmss>-<shortSHA>-pda-live/`（每次运行唯一目录，
+  不覆盖既有证据；复用既有 dev server 须显式 `-AllowServerReuse`，metadata 会记录归属未验证）。
+- **写路径消耗共享 seed**：quality-execute.spec.ts 是真实业务写入——消耗一条共享 seed 的
+  pending 检验任务（提交后翻 completed，不清理），重复运行需重新 seed 待检任务
+  （QualitySeedService）；`runId` 数据命名空间隔离与 cleanup 归 M2，本里程碑不落地。
 - **不进 CI**：依赖本地完整栈与 seed，与 `*PostgresProfileTests` 环境门控同一口径；
   显式命令运行，浏览器/栈不可用时如实报告阻塞、不伪造通过。
 
