@@ -7,12 +7,14 @@
 #     - Starts the business-pda vite dev server on PLAYWRIGHT_BUSINESS_PDA_LIVE_PORT (default 5177)
 #       via the Playwright webServer; if the port is already occupied the script fails by default,
 #       and only reuses the existing server when -AllowServerReuse is passed (sets
-#       PLAYWRIGHT_PDA_LIVE_REUSE=1; worktree ownership of that server is NOT verified)
+#       PLAYWRIGHT_PDA_LIVE_REUSE=1) AND the listener process command line proves it belongs to
+#       this worktree; otherwise the script errors out instead of reusing
 #   Writes:
 #     - artifacts/script-logs/**
 #     - frontend/apps/business-pda/test-results-live/** (Playwright traces/screenshots)
-#     - frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd-HHmmss>-<shortSHA>-pda-live/** (per-run unique
-#       evidence dir, never overwrites earlier runs; path overridable via -EvidenceDir)
+#     - frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd-HHmmss-fff>-<shortSHA>-pda-live/** (per-run
+#       unique evidence dir; the script errors out if the target dir already exists non-empty,
+#       so evidence from different runs never mixes; path overridable via -EvidenceDir)
 #     - Business data in the local stack databases (inspection records / completed inspection tasks)
 #   Cleanup:
 #     - Playwright stops the vite webServer it started; a reused pre-existing server is left running
@@ -32,13 +34,15 @@
 
 [CmdletBinding()]
 param(
-    # 证据归集目录；默认 frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd-HHmmss>-<shortSHA>-pda-live/
-    # （每次运行唯一，避免同日多次运行互相混入/覆盖证据）
+    # 证据归集目录；默认 frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd-HHmmss-fff>-<shortSHA>-pda-live/
+    # （毫秒级时间戳 + shortSHA，每次运行唯一；无论默认还是显式指定，目录已存在且非空一律
+    # 报错退出，避免混入/覆盖既有证据）
     [string] $EvidenceDir,
 
     # live 端口已被占用时，允许复用既有 dev server（设 PLAYWRIGHT_PDA_LIVE_REUSE=1）。
-    # 风险：无法验证该 server 属于哪个 worktree——可能测到别人的代码却把本 worktree 的
-    # commit SHA 写进证据。启用后会在证据 metadata 里如实记录。
+    # 复用前会验证监听进程命令行属于本 worktree：不属于（或取不到命令行）一律报错退出——
+    # 否则可能测到并行会话的代码却把本 worktree 的 commit SHA 写进证据。
+    # 验证通过时在证据 metadata 里如实记录「复用已验证归属的既有 server」。
     [switch] $AllowServerReuse
 )
 
@@ -105,9 +109,32 @@ finally {
 $serverReuse = $false
 if ($livePortOccupied) {
     if ($AllowServerReuse) {
+        # 复用前验证归属：监听进程的命令行必须包含本 worktree 根路径，否则判定为并行会话的
+        # server（测到别人的代码却把本 worktree 的 SHA 写进证据 = 证据失真），一律报错退出。
+        $ownerCommandLine = $null
+        try {
+            $listener = Get-NetTCPConnection -LocalPort $livePort -State Listen -ErrorAction Stop | Select-Object -First 1
+            $ownerProcess = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $($listener.OwningProcess)" -ErrorAction Stop
+            $ownerCommandLine = $ownerProcess.CommandLine
+        }
+        catch {
+            Write-Diagnostic -Level 'WARN' -Message "读取 live 端口 $livePort 监听进程信息失败：$($_.Exception.Message)"
+        }
+        if ([string]::IsNullOrWhiteSpace($ownerCommandLine)) {
+            Write-Diagnostic -Level 'ERROR' -Message "无法读取 live 端口 $livePort 监听进程的 CommandLine（权限不足或进程已退出），无法验证该 dev server 的 worktree 归属。"
+            Write-Diagnostic -Level 'ERROR' -Message '归属不可验证时不允许复用：请停掉占用进程（或改 PLAYWRIGHT_BUSINESS_PDA_LIVE_PORT 换口）后不带 -AllowServerReuse 重跑。'
+            exit 1
+        }
+        $normalizedCommandLine = ($ownerCommandLine -replace '\\', '/').ToLowerInvariant()
+        $normalizedToplevel = ($scriptToplevel -replace '\\', '/').ToLowerInvariant()
+        if (-not $normalizedCommandLine.Contains($normalizedToplevel)) {
+            Write-Diagnostic -Level 'ERROR' -Message "live 端口 $livePort 上的 dev server 不属于本 worktree（$scriptToplevel）：监听进程命令行为 '$ownerCommandLine'。判定为并行会话的 server，复用会产生失真证据。"
+            Write-Diagnostic -Level 'ERROR' -Message '请停掉该进程（或改 PLAYWRIGHT_BUSINESS_PDA_LIVE_PORT 换口）后重跑。'
+            exit 1
+        }
         $serverReuse = $true
         $env:PLAYWRIGHT_PDA_LIVE_REUSE = '1'
-        Write-Diagnostic -Level 'WARN' -Message "live 端口 $livePort 已被占用，按 -AllowServerReuse 复用既有 dev server——该 server 的 worktree 归属未验证，证据 metadata 将如实记录。"
+        Write-Diagnostic -Level 'WARN' -Message "live 端口 $livePort 已被占用，按 -AllowServerReuse 复用已验证归属的既有 dev server（监听进程命令行包含本 worktree 根路径）。"
     }
     else {
         Write-Diagnostic -Level 'ERROR' -Message "live 端口 $livePort 已被占用：可能是另一 worktree/会话的 vite dev server，复用会测错代码并产生失真证据。"
@@ -122,8 +149,14 @@ else {
 
 # --- 5. 跑 live spec + 证据归集（无论成败都归集 trace/截图，失败时证据更重要）。
 if ([string]::IsNullOrWhiteSpace($EvidenceDir)) {
-    # 每次运行唯一（时间戳 + shortSHA），不与同日其他运行混目录、不覆盖既有证据。
-    $EvidenceDir = Join-Path $repoRoot 'frontend' 'DESIGN' 'roadmaps' 'assets' ("{0}-{1}-pda-live" -f (Get-Date -Format 'yyyy-MM-dd-HHmmss'), $head)
+    # 每次运行唯一（毫秒级时间戳 + shortSHA），不与其他运行混目录、不覆盖既有证据。
+    $EvidenceDir = Join-Path $repoRoot 'frontend' 'DESIGN' 'roadmaps' 'assets' ("{0}-{1}-pda-live" -f (Get-Date -Format 'yyyy-MM-dd-HHmmss-fff'), $head)
+}
+# 归集前守卫（默认目录与显式 -EvidenceDir 一视同仁）：目标目录已存在且非空 → 报错退出，
+# 绝不把本次证据静默混入/覆盖到既有证据里。
+if ((Test-Path $EvidenceDir) -and $null -ne (Get-ChildItem -LiteralPath $EvidenceDir -Force | Select-Object -First 1)) {
+    Write-Diagnostic -Level 'ERROR' -Message "证据目录已存在且非空：$EvidenceDir。拒绝混入/覆盖既有证据——请换一个 -EvidenceDir，或先清理该目录后重跑。"
+    exit 1
 }
 $testResultsDir = Join-Path $appDir 'test-results-live'
 $exitCode = 0
@@ -136,10 +169,13 @@ catch {
 }
 finally {
     if (Test-Path $testResultsDir) {
-        New-Item -ItemType Directory -Force -Path $EvidenceDir | Out-Null
+        # 目录已存在且非空的情况在归集前守卫已挡掉，这里只需补建缺失目录（不用 -Force 兜混入）。
+        if (-not (Test-Path $EvidenceDir)) {
+            New-Item -ItemType Directory -Path $EvidenceDir | Out-Null
+        }
         # 不加 -Force：默认目录每次运行唯一，若显式 -EvidenceDir 撞既有文件则如实报错而非静默覆盖。
         Copy-Item -Path (Join-Path $testResultsDir '*') -Destination $EvidenceDir -Recurse
-        $reuseNote = $serverReuse ? 'true (reused pre-existing dev server; worktree ownership NOT verified — SHA below may not match the code under test)' : 'false'
+        $reuseNote = $serverReuse ? 'true (reused pre-existing dev server; worktree ownership VERIFIED — listener process command line contains this worktree root)' : 'false'
         "branch=$branch`nhead=$head`nworktree=$scriptToplevel`ndate=$(Get-Date -Format 'o')`nserverReuse=$reuseNote" |
             Set-Content -Path (Join-Path $EvidenceDir 'run-fingerprint.txt') -Encoding utf8
         Write-Diagnostic "证据已归集：$EvidenceDir（trace/截图 + commit 指纹；请按方案 §4.5 补关键请求与后端回读记录）"

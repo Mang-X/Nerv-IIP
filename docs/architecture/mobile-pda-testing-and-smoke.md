@@ -108,8 +108,9 @@ pwsh frontend/apps/business-pda/scripts/pda-live-walkthrough.ps1
   dispositionReason 三字段，头也无 Idempotency-Key），靠任务生命周期守门（completed 任务
   重放回读既有记录），证据记录的是「同 URL/body 重放 → 返回同一 inspectionRecordId」；
   `pda-live-walkthrough.ps1` 会把 trace/截图归集到
-  `frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd-HHmmss>-<shortSHA>-pda-live/`（每次运行唯一目录，
-  不覆盖既有证据；复用既有 dev server 须显式 `-AllowServerReuse`，metadata 会记录归属未验证）。
+  `frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd-HHmmss-fff>-<shortSHA>-pda-live/`（每次运行唯一目录，
+  目标非空即拒绝，不混旧证据；复用既有 dev server 须显式 `-AllowServerReuse`，脚本会按
+  监听进程命令行验证 worktree 归属，验不过直接拒绝，验证结论写入 metadata）。
 - **写路径消耗共享 seed**：quality-execute.spec.ts 是真实业务写入——消耗一条共享 seed 的
   pending 检验任务（提交后翻 completed，不清理），重复运行需重新 seed 待检任务
   （QualitySeedService）；`runId` 数据命名空间隔离与 cleanup 归 M2，本里程碑不落地。

@@ -80,6 +80,10 @@ const SCAN_BURST_GAP_MS = 100
 // 超时仍未等到 Enter 即视为误按残片丢弃。取 300ms，留足扫码枪发送
 // Enter 后缀的余量（同批突发内间隔 <30ms，3 倍冗余仍远低于人手节奏）。
 const SCAN_FRESHNESS_MS = 300
+// document 捕获路径消费 Enter 的最小突发长度：真实条码/单号长度远超 3，
+// 单/双字符是人手误按的特征而非扫码流。不足该长度时 Enter 一律放行，
+// 只约束 document 捕获路径；input 聚焦时的原生 Enter 提交行为不变。
+const MIN_SCAN_CHARS = 3
 
 // document 捕获路径的「上次入缓冲时刻」；null = 当前缓冲无未消费的捕获残片。
 let lastDocCaptureAt: number | null = null
@@ -103,15 +107,12 @@ function armIdleCleanup() {
   clearIdleCleanup()
   idleCleanupTimer = setTimeout(() => {
     idleCleanupTimer = null
-    // input 已聚焦：缓冲归原生 input 路径所有（用户可能正在续写/编辑），
-    // 绝不清掉手工键入的内容，只撤销捕获状态。
-    if (document.activeElement === inputEl.value) {
-      lastDocCaptureAt = null
-      docCaptureSnapshot = ''
-      return
-    }
-    // 新鲜度窗口内没等到 Enter：这段捕获是误按残片，清掉。
-    // 快照不一致说明缓冲已被 input 路径改动过，同样不动。
+    // 只看快照是否失配：失配说明缓冲已被 input 路径续写/编辑过
+    // （捕获前缀 + 原生续流的正常拼装），保留内容、只撤销捕获标记；
+    // 原封未动则是纯捕获残片——document 捕获只发生在未聚焦窗口，
+    // RAF 回焦后 300ms 内用户没碰它就是误按残片，无论 input 此刻
+    // 是否聚焦都清空（真实扫码流会在几十 ms 内续写或以 Enter 收尾，
+    // 不会触发 300ms 空闲）。
     if (buffer.value === docCaptureSnapshot) buffer.value = ''
     lastDocCaptureAt = null
     docCaptureSnapshot = ''
@@ -149,10 +150,12 @@ function onDocumentKeydown(event: KeyboardEvent) {
   const now = Date.now()
   if (event.key === 'Enter') {
     // 仅当缓冲确由 document 捕获路径新鲜写入（非空且距最后捕获字符
-    // < 新鲜度阈值）才把 Enter 当扫码后缀消费；陈旧残片或手工内容上的
-    // Enter 一律放行——焦点在按钮上的回车激活等正常键盘交互不受影响。
+    // < 新鲜度阈值）、且达到最小突发长度时才把 Enter 当扫码后缀消费；
+    // 陈旧残片、过短误按或手工内容上的 Enter 一律放行——焦点在按钮上
+    // 的回车激活等正常键盘交互不受影响。
     if (!buffer.value.trim()) return
     if (lastDocCaptureAt === null || now - lastDocCaptureAt > SCAN_FRESHNESS_MS) return
+    if (buffer.value.trim().length < MIN_SCAN_CHARS) return
     event.preventDefault()
     resetDocCapture()
     submit()

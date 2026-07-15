@@ -249,13 +249,12 @@ describe('ScanBar', () => {
       const wrapper = mount(ScanBar, { attachTo: document.body })
       typeOnDocument('A')
       typeOnDocument('B')
-      // 超过突发间隔（100ms）：AB 是陈旧残片，被新字符 C 取代
+      // 超过突发间隔（100ms）：AB 是陈旧残片，被新突发 CDE 取代
       vi.advanceTimersByTime(150)
-      typeOnDocument('C')
-      typeOnDocument('D')
+      for (const ch of 'CDE') typeOnDocument(ch)
       typeOnDocument('Enter')
       expect(wrapper.emitted('scan')).toBeTruthy()
-      expect(wrapper.emitted('scan')![0]).toEqual(['CD'])
+      expect(wrapper.emitted('scan')![0]).toEqual(['CDE'])
       wrapper.unmount()
     })
 
@@ -283,17 +282,80 @@ describe('ScanBar', () => {
       wrapper.unmount()
     })
 
-    it('does not clear the buffer on idle timeout when the input has (re)gained focus', async () => {
+    it('clears an untouched captured fragment on idle timeout even after the input regained focus', async () => {
       const wrapper = mount(ScanBar, { attachTo: document.body })
       const input = wrapper.get('input').element as HTMLInputElement
       typeOnDocument('A')
-      // 空闲定时器到期前 input 重获焦点：缓冲归原生 input 路径所有，不得清
+      // RAF 回焦后 300ms 内用户没碰残片：这就是误按残片，聚焦与否都要清。
+      // 否则残片永久滞留输入框，之后的原生 Enter 会把它当扫码提交（P0-1）。
       input.focus()
       expect(document.activeElement).toBe(input)
       vi.advanceTimersByTime(300)
       await nextTick()
-      expect(input.value).toBe('A')
+      expect(input.value).toBe('')
+      expect(wrapper.emitted('scan')).toBeFalsy()
       wrapper.unmount()
+    })
+
+    it('emits the full code when a captured prefix is continued via the native input path (mixed path)', async () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      const input = wrapper.get('input')
+      const inputEl = input.element as HTMLInputElement
+      // 未聚焦窗口内 document 捕获前缀两个字符
+      typeOnDocument('S')
+      typeOnDocument('K')
+      await nextTick()
+      expect(inputEl.value).toBe('SK')
+      // 模拟 RAF 回焦，之后扫码流走原生 input 路径续写余下字符
+      inputEl.focus()
+      await input.setValue('SKU-12345')
+      // 原生 Enter 提交：拼装后的完整码 emit，不受 document 路径约束
+      await input.trigger('keydown', { key: 'Enter' })
+      expect(wrapper.emitted('scan')).toBeTruthy()
+      expect(wrapper.emitted('scan')![0]).toEqual(['SKU-12345'])
+      expect(inputEl.value).toBe('')
+      wrapper.unmount()
+    })
+
+    it('clears a captured fragment via the active=false guard even after the input regained focus', async () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      const input = wrapper.get('input').element as HTMLInputElement
+      typeOnDocument('A')
+      await nextTick()
+      input.focus()
+      // 残片尚未超时（捕获标记还在）：active=false 守卫必须仍认得并清掉
+      await wrapper.setProps({ active: false })
+      expect(input.value).toBe('')
+      wrapper.unmount()
+    })
+
+    it('lets a document-path Enter pass through when the burst is shorter than MIN_SCAN_CHARS', async () => {
+      const wrapper = mount(ScanBar, { attachTo: document.body })
+      typeOnDocument('A')
+      typeOnDocument('B')
+      await nextTick()
+      expect((wrapper.get('input').element as HTMLInputElement).value).toBe('AB')
+      // 单/双字符是误按特征：Enter 放行（原生交互不受影响），不当扫码消费
+      expect(typeOnDocument('Enter').defaultPrevented).toBe(false)
+      expect(wrapper.emitted('scan')).toBeFalsy()
+      wrapper.unmount()
+    })
+
+    it('arbitrates via defaultPrevented so only one of two mounted ScanBars consumes a burst', async () => {
+      const first = mount(ScanBar, { attachTo: document.body })
+      const second = mount(ScanBar, { attachTo: document.body })
+      for (const ch of 'SKU-99') typeOnDocument(ch)
+      typeOnDocument('Enter')
+      await nextTick()
+      // 先注册者 preventDefault 抢占，后注册者让位：恰好一个 emit、值完整、无双写
+      const firstScans = first.emitted('scan') ?? []
+      const secondScans = second.emitted('scan') ?? []
+      expect(firstScans.length + secondScans.length).toBe(1)
+      expect([...firstScans, ...secondScans][0]).toEqual(['SKU-99'])
+      expect((first.get('input').element as HTMLInputElement).value).toBe('')
+      expect((second.get('input').element as HTMLInputElement).value).toBe('')
+      second.unmount()
+      first.unmount()
     })
 
     it('does not clear the buffer on idle timeout when the input path modified it since capture', async () => {
@@ -317,11 +379,10 @@ describe('ScanBar', () => {
       expect((wrapper.get('input').element as HTMLInputElement).value).toBe('')
       // 恢复后下一枪不与残片拼接
       await wrapper.setProps({ active: true })
-      typeOnDocument('C')
-      typeOnDocument('D')
+      for (const ch of 'CDE') typeOnDocument(ch)
       typeOnDocument('Enter')
       expect(wrapper.emitted('scan')).toBeTruthy()
-      expect(wrapper.emitted('scan')![0]).toEqual(['CD'])
+      expect(wrapper.emitted('scan')![0]).toEqual(['CDE'])
       wrapper.unmount()
     })
 
