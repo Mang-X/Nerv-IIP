@@ -45,10 +45,10 @@ public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandler
         }
 
         var payload = integrationEvent.Payload;
-        if (string.IsNullOrWhiteSpace(payload.WorkOrderId) ||
-            string.IsNullOrWhiteSpace(payload.OperationTaskId) ||
-            string.IsNullOrWhiteSpace(payload.ResourceId) ||
-            string.IsNullOrWhiteSpace(payload.WorkCenterId) ||
+        if (!IsValidIdentity(payload.WorkOrderId) ||
+            !IsValidIdentity(payload.OperationTaskId) ||
+            !IsValidIdentity(payload.ResourceId) ||
+            !IsValidIdentity(payload.WorkCenterId) ||
             payload.OperationSequence <= 0 ||
             payload.DispatchRevision <= 0 ||
             payload.EndUtc <= payload.StartUtc ||
@@ -110,4 +110,7 @@ public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandler
             integrationEvent.Actor, integrationEvent.OccurredAtUtc, payload.ReasonCode,
             payload.ClearedAtUtc);
     }
+
+    private static bool IsValidIdentity(string value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= 128;
 }

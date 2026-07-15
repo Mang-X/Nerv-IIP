@@ -139,6 +139,30 @@ public sealed class MesManualDispatchOverrideConsumerTests
     }
 
     [Fact]
+    public async Task Overlength_clear_identity_enters_dead_letter_once_without_mutating_override()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"mes-dispatch-clear-overlength-{Guid.NewGuid():N}").Options;
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateClearHandler(db, deadLetters);
+        var integrationEvent = CreateClearEvent("evt-clear-overlength", At(8), revision: 2);
+        var invalid = integrationEvent with
+        {
+            Payload = integrationEvent.Payload with { WorkOrderId = new string('W', 129) }
+        };
+
+        await handler.HandleAsync(invalid, CancellationToken.None);
+        await handler.HandleAsync(invalid, CancellationToken.None);
+
+        Assert.Empty(db.ScheduleOperationOverrides);
+        Assert.Equal(1, await db.ProcessedIntegrationEvents.CountAsync());
+        Assert.Single(await deadLetters.ListAsync(
+            MesOperationTaskManualDispatchClearedIntegrationEventHandlerForClearOverride.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Handle_dead_letters_invalid_payload_once_without_throwing()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
