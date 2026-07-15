@@ -23867,9 +23867,15 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundLineCaptureInput": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "lineNo"
+        ],
         "properties": {
           "lineNo": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 0,
+            "nullable": false
           },
           "lotNo": {
             "type": "string",

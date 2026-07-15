@@ -227,6 +227,67 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
+    public async Task Wms_live_http_host_binds_legacy_and_captured_inbound_completion_json()
+    {
+        await using var factory = CreateAuthorizedFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        InboundOrder legacyOrder;
+        InboundOrder capturedOrder;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            legacyOrder = InboundOrder.Create(
+                "org-http", "env-http", "IN-LEGACY-HTTP", "purchase-receipt", "PO-LEGACY-HTTP", "SITE-01",
+                [new InboundOrderLineDraft("10", "SKU-LEGACY", "pcs", 1m, "STAGE-01", "LOT-LEGACY", null, "qualified", "company", null)]);
+            capturedOrder = InboundOrder.Create(
+                "org-http", "env-http", "IN-CAPTURE-HTTP", "purchase-receipt", "PO-CAPTURE-HTTP", "SITE-01",
+                [new InboundOrderLineDraft("20", "SKU-CAPTURE", "pcs", 2m, "STAGE-01", "LOT-OLD", null, "qualified", "company", null)]);
+            dbContext.InboundOrders.AddRange(legacyOrder, capturedOrder);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await PostJsonAndAssertOkAsync(
+            client,
+            $"/api/business/v1/wms/inbound-orders/{legacyOrder.Id}/complete",
+            new { idempotencyKey = "idem-legacy-http" });
+        await PostJsonAndAssertOkAsync(
+            client,
+            $"/api/business/v1/wms/inbound-orders/{capturedOrder.Id}/complete",
+            new
+            {
+                idempotencyKey = "idem-capture-http",
+                lines = new[]
+                {
+                    new
+                    {
+                        lineNo = "20",
+                        lotNo = (string?)null,
+                        productionDate = "2026-07-15",
+                        expiryDate = (string?)null,
+                    },
+                },
+            });
+
+        using var verificationScope = factory.Services.CreateScope();
+        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var persistedLegacy = await verificationDb.InboundOrders
+            .Include(x => x.Lines)
+            .SingleAsync(x => x.Id == legacyOrder.Id, CancellationToken.None);
+        var persistedCaptured = await verificationDb.InboundOrders
+            .Include(x => x.Lines)
+            .SingleAsync(x => x.Id == capturedOrder.Id, CancellationToken.None);
+
+        Assert.Equal("Completed", persistedLegacy.Status.ToString());
+        Assert.Equal("LOT-LEGACY", persistedLegacy.Lines.Single().LotNo);
+        Assert.Equal("Completed", persistedCaptured.Status.ToString());
+        Assert.Null(persistedCaptured.Lines.Single().LotNo);
+        Assert.Equal(new DateOnly(2026, 7, 15), persistedCaptured.Lines.Single().ProductionDate);
+        Assert.Null(persistedCaptured.Lines.Single().ExpiryDate);
+    }
+
+    [Fact]
     public async Task Wcs_task_query_exposes_failure_retry_and_completion_diagnostics()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();

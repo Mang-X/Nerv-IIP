@@ -248,7 +248,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundLineCaptureInput = {
-    lineNo?: string;
+    lineNo: string;
     lotNo?: string | null;
     productionDate?: string | null;
     expiryDate?: string | null;

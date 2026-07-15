@@ -150,8 +150,13 @@ describe('generated API client contract', () => {
       idempotencyKey: string
       lines?: BusinessConsoleWmsInboundLineCaptureInput[] | null
     }>()
-    expectTypeOf<BusinessConsoleWmsInboundLineCaptureInput>().toMatchTypeOf<{
-      lineNo?: string
+    expectTypeOf<
+      Pick<BusinessConsoleWmsInboundLineCaptureInput, 'lineNo'>
+    >().toEqualTypeOf<{
+      lineNo: string
+    }>()
+    expectTypeOf<BusinessConsoleWmsInboundLineCaptureInput>().toEqualTypeOf<{
+      lineNo: string
       lotNo?: string | null
       productionDate?: string | null
       expiryDate?: string | null

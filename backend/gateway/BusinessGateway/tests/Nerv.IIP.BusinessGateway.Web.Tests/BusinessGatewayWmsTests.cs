@@ -82,6 +82,7 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("2027-01-15", createInboundLine.GetProperty("expiryDate").GetString());
 
         using var completeInboundBody = JsonDocument.Parse(handler.RequestBodies[2]!);
+        Assert.Equal("complete-in-001", completeInboundBody.RootElement.GetProperty("idempotencyKey").GetString());
         var completeInboundLine = completeInboundBody.RootElement.GetProperty("lines")[0];
         Assert.Equal("10", completeInboundLine.GetProperty("lineNo").GetString());
         Assert.Equal("LOT-CAPTURED-001", completeInboundLine.GetProperty("lotNo").GetString());
@@ -275,6 +276,7 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(new DateOnly(2027, 1, 15), createInboundLine.ExpiryDate);
         Assert.Equal("inbound-order-001", wms.LastCreatePutawayRequest!.InboundOrderId);
         Assert.Equal("inbound-order-001", wms.LastCompleteInboundRequest!.InboundOrderId);
+        Assert.Equal("complete-in-001", wms.LastCompleteInboundRequest.IdempotencyKey);
         var completeInboundLine = Assert.Single(wms.LastCompleteInboundRequest.Lines!);
         Assert.Equal("10", completeInboundLine.LineNo);
         Assert.Equal("LOT-CAPTURED-001", completeInboundLine.LotNo);
