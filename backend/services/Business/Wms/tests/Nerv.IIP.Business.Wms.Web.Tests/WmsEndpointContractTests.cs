@@ -19,6 +19,8 @@ using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions;
 using InboundOrder = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder;
+using InboundOrderId = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderId;
+using InboundOrderLineCapture = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderLineCapture;
 using InboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderLineDraft;
 using OutboundOrder = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder;
 using OutboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrderLineDraft;
@@ -70,6 +72,23 @@ public sealed class WmsEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/receiving-quality-gates" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsReceivingQualityGates");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/supplier-return-requests" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsSupplierReturnRequests");
         Assert.All(contracts, x => Assert.Equal(InternalServiceAuthorizationPolicy.Name, x.AuthorizationPolicy));
+    }
+
+    [Fact]
+    public void Complete_inbound_contract_accepts_optional_line_captures_without_changing_the_operation_id()
+    {
+        var inboundOrderId = new InboundOrderId(Guid.CreateVersion7());
+        var legacyRequest = new CompleteInboundOrderRequest(inboundOrderId, "idem-legacy-001");
+        var capture = new InboundOrderLineCapture("LINE-001", "LOT-001", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
+        var captureRequest = new CompleteInboundOrderRequest(inboundOrderId, "idem-capture-001", [capture]);
+        var command = new CompleteInboundOrderCommand(captureRequest.InboundOrderId, captureRequest.IdempotencyKey, captureRequest.Lines);
+
+        Assert.Null(legacyRequest.Lines);
+        Assert.Equal([capture], captureRequest.Lines);
+        Assert.Equal([capture], command.Lines);
+        Assert.Equal(
+            "completeWmsInboundOrder",
+            WmsEndpointContracts.Get<CompleteInboundOrderEndpoint>().OperationId);
     }
 
     [Fact]

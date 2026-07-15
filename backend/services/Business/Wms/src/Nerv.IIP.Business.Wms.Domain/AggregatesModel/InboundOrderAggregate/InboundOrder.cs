@@ -33,6 +33,12 @@ public sealed record InboundOrderLineDraft(
     DateOnly? ProductionDate = null,
     DateOnly? ExpiryDate = null);
 
+public sealed record InboundOrderLineCapture(
+    string LineNo,
+    string? LotNo,
+    DateOnly? ProductionDate,
+    DateOnly? ExpiryDate);
+
 public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
 {
     private readonly List<InboundOrderLine> lines = [];
@@ -130,11 +136,19 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             quantity);
     }
 
-    public IReadOnlyCollection<InventoryMovementRequest> Complete(string idempotencyKey)
+    public IReadOnlyCollection<InventoryMovementRequest> Complete(
+        string idempotencyKey,
+        IReadOnlyCollection<InboundOrderLineCapture>? captures = null)
     {
         EnsureOpen();
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
         EnsureHasLines();
+        var validatedCaptures = ValidateCaptures(captures);
+        foreach (var (line, capture) in validatedCaptures)
+        {
+            line.Capture(capture);
+        }
+
         Status = lines.Any(x => x.RequiresQualityInspection)
             ? InboundOrderStatus.PendingQualityCheck
             : InboundOrderStatus.Completed;
@@ -332,6 +346,43 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             throw new InvalidOperationException("Inbound order must contain at least one line before completion.");
         }
     }
+
+    private IReadOnlyCollection<(InboundOrderLine Line, InboundOrderLineCapture Capture)> ValidateCaptures(
+        IReadOnlyCollection<InboundOrderLineCapture>? captures)
+    {
+        if (captures is null || captures.Count == 0)
+        {
+            return [];
+        }
+
+        var linesByNumber = lines.ToDictionary(x => x.LineNo, StringComparer.Ordinal);
+        var normalizedLineNumbers = new HashSet<string>(StringComparer.Ordinal);
+        var validatedCaptures = new List<(InboundOrderLine, InboundOrderLineCapture)>(captures.Count);
+        foreach (var capture in captures)
+        {
+            var normalizedLineNo = WmsText.Required(capture.LineNo, nameof(capture.LineNo));
+            if (!normalizedLineNumbers.Add(normalizedLineNo))
+            {
+                throw new InvalidOperationException($"Inbound line '{normalizedLineNo}' was captured more than once.");
+            }
+
+            if (capture.ProductionDate.HasValue
+                && capture.ExpiryDate.HasValue
+                && capture.ProductionDate.Value > capture.ExpiryDate.Value)
+            {
+                throw new InvalidOperationException($"Inbound line '{normalizedLineNo}' production date cannot be after its expiry date.");
+            }
+
+            if (!linesByNumber.TryGetValue(normalizedLineNo, out var line))
+            {
+                throw new InvalidOperationException($"Inbound line '{normalizedLineNo}' was not found.");
+            }
+
+            validatedCaptures.Add((line, capture with { LineNo = normalizedLineNo }));
+        }
+
+        return validatedCaptures;
+    }
 }
 
 public sealed class InboundOrderLine : Entity<InboundOrderLineId>
@@ -382,6 +433,13 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
     public static InboundOrderLine Create(InboundOrderLineDraft draft)
     {
         return new InboundOrderLine(draft);
+    }
+
+    internal void Capture(InboundOrderLineCapture capture)
+    {
+        LotNo = WmsText.Optional(capture.LotNo);
+        ProductionDate = capture.ProductionDate;
+        ExpiryDate = capture.ExpiryDate;
     }
 
     internal void ApplyInspectionResult(
