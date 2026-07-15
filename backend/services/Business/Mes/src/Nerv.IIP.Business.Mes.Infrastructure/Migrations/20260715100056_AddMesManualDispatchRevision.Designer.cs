@@ -613,6 +613,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasComment("Actual machine time stored as .NET ticks after paused duration deduction.");
 
                     b.Property<long>("ManualDispatchRevision")
+                        .IsConcurrencyToken()
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint")
                         .HasDefaultValue(0L)

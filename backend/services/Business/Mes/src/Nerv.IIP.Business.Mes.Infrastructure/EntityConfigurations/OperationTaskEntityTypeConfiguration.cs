@@ -36,7 +36,7 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.AssignedUserId).HasColumnName("assigned_user_id").HasMaxLength(100).HasComment("Assigned operator or person public id captured by MES dispatch.");
         builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").HasMaxLength(100).HasComment("Assigned MasterData device asset public id captured by MES dispatch.");
         builder.Property(x => x.ManualDispatchRevision)
-            .HasColumnName("manual_dispatch_revision").IsRequired().HasDefaultValue(0L)
+            .HasColumnName("manual_dispatch_revision").IsRequired().HasDefaultValue(0L).IsConcurrencyToken()
             .HasComment("Monotonic MES manual-device dispatch lifecycle revision; zero is legacy-unknown after upgrade.");
         builder.Property(x => x.HasActiveManualDispatch)
             .HasColumnName("has_active_manual_dispatch").IsRequired().HasDefaultValue(false)
