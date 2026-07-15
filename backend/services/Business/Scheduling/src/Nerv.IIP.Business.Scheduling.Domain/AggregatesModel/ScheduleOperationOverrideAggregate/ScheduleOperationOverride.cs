@@ -39,6 +39,10 @@ public sealed class ScheduleOperationOverride : Entity<ScheduleOperationOverride
     public string Actor { get; private set; } = string.Empty;
     public DateTimeOffset SourceOccurredAtUtc { get; private set; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
+    public bool IsActive { get; private set; } = true;
+    public long? SourceRevision { get; private set; }
+    public string? ClearedReasonCode { get; private set; }
+    public DateTimeOffset? ClearedAtUtc { get; private set; }
 
     public static ScheduleOperationOverride Create(
         string organizationId, string environmentId, string workOrderId, string operationId,
@@ -49,6 +53,28 @@ public sealed class ScheduleOperationOverride : Entity<ScheduleOperationOverride
         new(organizationId, environmentId, workOrderId, operationId, operationSequence,
             resourceId, workCenterId, startUtc, endUtc, lockReasonCode, sourceType,
             sourceEventId, actor, sourceOccurredAtUtc, updatedAtUtc);
+
+    public static ScheduleOperationOverride CreateClearedMesDispatch(
+        string organizationId, string environmentId, string workOrderId, string operationId,
+        int operationSequence, string resourceId, string workCenterId,
+        DateTimeOffset startUtc, DateTimeOffset endUtc, string sourceEventId, string actor,
+        long sourceRevision, DateTimeOffset sourceOccurredAtUtc, string clearedReasonCode,
+        DateTimeOffset clearedAtUtc)
+    {
+        var fact = new ScheduleOperationOverride(
+            organizationId, environmentId, workOrderId, operationId, operationSequence,
+            resourceId, workCenterId, startUtc, endUtc, "mes-manual-dispatch",
+            "mes-dispatch", sourceEventId, actor, sourceOccurredAtUtc, clearedAtUtc);
+
+        if (!fact.TryClearMesDispatch(sourceRevision, sourceEventId, actor,
+                sourceOccurredAtUtc, clearedReasonCode, clearedAtUtc))
+        {
+            throw new ArgumentOutOfRangeException(nameof(sourceRevision),
+                "A cleared MES dispatch requires a positive source revision.");
+        }
+
+        return fact;
+    }
 
     public bool TryReplace(
         string resourceId, string workCenterId, DateTimeOffset startUtc, DateTimeOffset endUtc,
@@ -65,13 +91,73 @@ public sealed class ScheduleOperationOverride : Entity<ScheduleOperationOverride
         return true;
     }
 
+    public bool TryApplyMesDispatch(
+        string resourceId, string workCenterId, DateTimeOffset startUtc, DateTimeOffset endUtc,
+        string sourceEventId, string actor, long sourceRevision,
+        DateTimeOffset sourceOccurredAtUtc, DateTimeOffset updatedAtUtc)
+    {
+        if (!CanApplyMesFact(sourceRevision, sourceOccurredAtUtc))
+        {
+            return false;
+        }
+
+        SetMutableFacts(resourceId, workCenterId, startUtc, endUtc, "mes-manual-dispatch",
+            "mes-dispatch", sourceEventId, actor, sourceOccurredAtUtc, updatedAtUtc);
+        IsActive = true;
+        SourceRevision = PositiveRevisionOrNull(sourceRevision);
+        ClearedReasonCode = null;
+        ClearedAtUtc = null;
+        return true;
+    }
+
+    public bool TryClearMesDispatch(
+        long sourceRevision, string sourceEventId, string actor,
+        DateTimeOffset sourceOccurredAtUtc, string clearedReasonCode,
+        DateTimeOffset clearedAtUtc)
+    {
+        if (!string.Equals(SourceType, "mes-dispatch", StringComparison.Ordinal) ||
+            sourceRevision <= 0 ||
+            !CanApplyMesFact(sourceRevision, sourceOccurredAtUtc))
+        {
+            return false;
+        }
+
+        IsActive = false;
+        SourceEventId = Optional(sourceEventId);
+        Actor = Required(actor);
+        SourceRevision = sourceRevision;
+        SourceOccurredAtUtc = sourceOccurredAtUtc;
+        UpdatedAtUtc = clearedAtUtc;
+        ClearedReasonCode = Required(clearedReasonCode);
+        ClearedAtUtc = clearedAtUtc;
+        return true;
+    }
+
     public void ReplaceManually(
         string resourceId, string workCenterId, DateTimeOffset startUtc, DateTimeOffset endUtc,
         string actor, DateTimeOffset occurredAtUtc)
     {
         SetMutableFacts(resourceId, workCenterId, startUtc, endUtc, "manual-override",
             "scheduling-api", null, actor, occurredAtUtc, occurredAtUtc);
+        IsActive = true;
+        SourceRevision = null;
+        ClearedReasonCode = null;
+        ClearedAtUtc = null;
     }
+
+    private bool CanApplyMesFact(long sourceRevision, DateTimeOffset sourceOccurredAtUtc)
+    {
+        if (string.Equals(SourceType, "mes-dispatch", StringComparison.Ordinal) &&
+            sourceRevision > 0 && SourceRevision is > 0)
+        {
+            return sourceRevision > SourceRevision.Value;
+        }
+
+        return sourceOccurredAtUtc >= SourceOccurredAtUtc;
+    }
+
+    private static long? PositiveRevisionOrNull(long sourceRevision) =>
+        sourceRevision > 0 ? sourceRevision : null;
 
     private void SetMutableFacts(
         string resourceId, string workCenterId, DateTimeOffset startUtc, DateTimeOffset endUtc,
