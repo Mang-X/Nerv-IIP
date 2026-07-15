@@ -1,13 +1,27 @@
 import { RequestTimeoutError } from '@/api/request-timeout'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 
 // ---- vue-router mock ----------------------------------------------------------
 const push = vi.fn()
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
   useRoute: () => ({ query: {} }),
+}))
+
+// ---- 拍照能力 mock（能力门控 + 采集可控）-------------------------------------
+const photoMock = vi.hoisted(() => ({
+  supported: { current: false },
+  capture: vi.fn(),
+  releasePhoto: vi.fn(),
+}))
+vi.mock('@/composables/useInspectionPhotoCapture', () => ({
+  useInspectionPhotoCapture: () => ({
+    supported: photoMock.supported.current,
+    capture: photoMock.capture,
+    releasePhoto: photoMock.releasePhoto,
+  }),
 }))
 
 // ---- useBusinessMaintenance mock ----------------------------------------------
@@ -82,6 +96,30 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
 
 import InspectPage from './inspect.vue'
 
+// 数字键盘（Teleport 到 body）：点 Cell 打开键盘，再逐位敲键（需 attachTo document.body）。
+async function enterViaKeyboard(
+  wrapper: VueWrapper,
+  cellTestId: string,
+  digits: string,
+): Promise<void> {
+  await wrapper.get(`[data-testid="${cellTestId}"]`).trigger('click')
+  await flushPromises()
+  const keyboard = document.querySelector('[data-slot="number-keyboard"]')
+  const buttons = Array.from(keyboard?.querySelectorAll('button') ?? []) as HTMLButtonElement[]
+  for (const ch of digits) {
+    const btn = buttons.find((b) => b.textContent?.trim() === ch)
+    btn?.click()
+    await flushPromises()
+  }
+}
+
+async function startMeasuredRow(wrapper: VueWrapper): Promise<void> {
+  await wrapper.findAll('[data-testid="plan-option"]')[0].trigger('click')
+  await wrapper.get('[data-testid="result-pass"]').trigger('click')
+  await wrapper.get('[data-testid="measurement-characteristic"]').setValue('bearing-temperature')
+  await wrapper.get('[data-testid="measurement-uom"]').setValue('C')
+}
+
 beforeEach(() => {
   push.mockClear()
   recordInspection.mockClear()
@@ -95,7 +133,13 @@ beforeEach(() => {
   plansTotal.value = 2
   inspectionsError.value = null
   inspectionsPending.value = false
+  photoMock.supported.current = false
+  photoMock.capture.mockReset()
+  photoMock.releasePhoto.mockReset()
 })
+
+// 全局 setup.ts 已 enableAutoUnmount(afterEach)：每个 wrapper 用例后自动卸载，
+// teleport 到 body 的键盘/对话框随之清理，无需手动 unmount / 清 body。
 
 describe('PDA equipment inspect page', () => {
   it('renders recent inspections with Chinese result + business refs', () => {
@@ -208,15 +252,12 @@ describe('PDA equipment inspect page', () => {
     expect(body).not.toHaveProperty('inspectedAtUtc')
   })
 
-  it('submits entered measurement values with the inspection record', async () => {
-    const wrapper = mount(InspectPage)
-    await wrapper.findAll('[data-testid="plan-option"]')[0].trigger('click')
-    await wrapper.get('[data-testid="result-pass"]').trigger('click')
-    await wrapper.get('[data-testid="measurement-characteristic"]').setValue('bearing-temperature')
-    await wrapper.get('[data-testid="measurement-value"]').setValue('65')
-    await wrapper.get('[data-testid="measurement-uom"]').setValue('C')
-    await wrapper.get('[data-testid="measurement-lower"]').setValue('0')
-    await wrapper.get('[data-testid="measurement-upper"]').setValue('70')
+  it('submits measurement values entered via the number keyboard with the inspection record', async () => {
+    const wrapper = mount(InspectPage, { attachTo: document.body })
+    await startMeasuredRow(wrapper)
+    await enterViaKeyboard(wrapper, 'measurement-value', '65')
+    await enterViaKeyboard(wrapper, 'measurement-lower', '0')
+    await enterViaKeyboard(wrapper, 'measurement-upper', '70')
 
     await wrapper.get('[data-testid="submit"]').trigger('click')
     await flushPromises()
@@ -250,6 +291,104 @@ describe('PDA equipment inspect page', () => {
     await flushPromises()
 
     expect(recordInspection).not.toHaveBeenCalled()
+  })
+
+  it('rejects a row whose lower spec limit exceeds the upper (下限≤上限)', async () => {
+    const wrapper = mount(InspectPage, { attachTo: document.body })
+    await startMeasuredRow(wrapper)
+    await enterViaKeyboard(wrapper, 'measurement-value', '65')
+    await enterViaKeyboard(wrapper, 'measurement-lower', '90')
+    await enterViaKeyboard(wrapper, 'measurement-upper', '10')
+
+    expect(wrapper.find('[data-testid="measurement-error"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="submit"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('flags 超差 in real time and turns the value red only when it exceeds the spec limit', async () => {
+    const wrapper = mount(InspectPage, { attachTo: document.body })
+    await startMeasuredRow(wrapper)
+    await enterViaKeyboard(wrapper, 'measurement-lower', '0')
+    await enterViaKeyboard(wrapper, 'measurement-upper', '70')
+
+    // within spec → no warning
+    await enterViaKeyboard(wrapper, 'measurement-value', '65')
+    expect(wrapper.find('[data-testid="out-of-tolerance"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="measurement-value-text"]').classes()).not.toContain(
+      'text-destructive',
+    )
+
+    // over the upper limit → immediate warning + red value
+    await enterViaKeyboard(wrapper, 'measurement-value', '9') // 65 → 659, well over 70
+    expect(wrapper.find('[data-testid="out-of-tolerance"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="measurement-value-text"]').classes()).toContain(
+      'text-destructive',
+    )
+  })
+
+  it('asks for confirmation summarizing 超差 count, then submits on confirm', async () => {
+    const wrapper = mount(InspectPage, { attachTo: document.body })
+    await startMeasuredRow(wrapper)
+    await enterViaKeyboard(wrapper, 'measurement-lower', '0')
+    await enterViaKeyboard(wrapper, 'measurement-upper', '70')
+    await enterViaKeyboard(wrapper, 'measurement-value', '80')
+
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    // 超差先确认，未直接提交。
+    expect(recordInspection).not.toHaveBeenCalled()
+    const dialog = document.querySelector('[data-slot="mobile-dialog-content"]')
+    expect(dialog?.textContent).toContain('1 项测量值超差')
+
+    const confirmBtn = Array.from(dialog?.querySelectorAll('button') ?? []).find(
+      (b) => b.textContent?.trim() === '仍要提交',
+    ) as HTMLButtonElement | undefined
+    confirmBtn?.click()
+    await flushPromises()
+
+    expect(recordInspection).toHaveBeenCalledTimes(1)
+  })
+
+  it('submits directly without a confirm dialog when nothing is 超差', async () => {
+    const wrapper = mount(InspectPage, { attachTo: document.body })
+    await startMeasuredRow(wrapper)
+    await enterViaKeyboard(wrapper, 'measurement-lower', '0')
+    await enterViaKeyboard(wrapper, 'measurement-upper', '70')
+    await enterViaKeyboard(wrapper, 'measurement-value', '65')
+
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(document.querySelector('[data-slot="mobile-dialog-content"]')).toBeNull()
+    expect(recordInspection).toHaveBeenCalledTimes(1)
+  })
+
+  it('hides the photo-capture entry when the camera is unavailable', async () => {
+    photoMock.supported.current = false
+    const wrapper = mount(InspectPage)
+    await wrapper.findAll('[data-testid="plan-option"]')[0].trigger('click')
+    await wrapper.get('[data-testid="result-pass"]').trigger('click')
+    expect(wrapper.find('[data-testid="capture-photo"]').exists()).toBe(false)
+  })
+
+  it('shows the photo entry and attaches a captured photo when the camera is available', async () => {
+    photoMock.supported.current = true
+    photoMock.capture.mockResolvedValueOnce({
+      id: 1,
+      url: 'blob:test',
+      file: new File([], 'a.jpg'),
+      name: 'a.jpg',
+    })
+    const wrapper = mount(InspectPage)
+    await wrapper.findAll('[data-testid="plan-option"]')[0].trigger('click')
+    await wrapper.get('[data-testid="result-pass"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="capture-photo"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="capture-photo"]').trigger('click')
+    await flushPromises()
+
+    expect(photoMock.capture).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="measurement-photo"]').exists()).toBe(true)
   })
 
   it('disables submit while recordPending (double-submit guard)', async () => {

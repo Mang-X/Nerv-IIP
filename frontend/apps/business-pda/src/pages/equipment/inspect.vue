@@ -1,18 +1,29 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import InspectionMeasurementRow, {
+  type MeasurementFormRow,
+} from '@/components/equipment/InspectionMeasurementRow.vue'
 import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
+import { useInspectionPhotoCapture } from '@/composables/useInspectionPhotoCapture'
 import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
 import {
   createMeasurementDraft,
   inspectionFlow,
   inspectionResultLabel,
   inspectionResultLabels,
+  measurementOutOfTolerance,
   measurementRowsValid,
   toMeasurementPayload,
   type InspectCtx,
-  type MeasurementDraftRow,
 } from '@nerv-iip/business-core'
-import { NvAppShellMobile, NvListRow, NvMobileResult, NvScanBar } from '@nerv-iip/ui-mobile'
+import {
+  NvAppShellMobile,
+  NvListRow,
+  NvMobileDialog,
+  NvMobileResult,
+  NvNumberKeyboard,
+  NvScanBar,
+} from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -42,10 +53,6 @@ interface InspectionMeasurementRow {
   lowerSpecLimit?: number | null
   upperSpecLimit?: number | null
   isWithinSpec?: boolean
-}
-
-interface MeasurementFormRow extends MeasurementDraftRow {
-  id: number
 }
 
 definePage({
@@ -110,9 +117,69 @@ const measurementsValid = computed(() => measurementRowsValid(measurementRows))
 
 const measurementPayload = computed(() => toMeasurementPayload(measurementRows))
 
+// 超差行数（提交确认汇总用；仅统计可解析且越限的行）。
+const outOfToleranceCount = computed(
+  () => measurementRows.filter((row) => measurementOutOfTolerance(row)).length,
+)
+
 // 流程驱动校验：planId + result 必填，测量值行可选但一旦填写必须完整有效。
 const valid = computed(
   () => inspectionFlow.progress(form).completed >= 2 && measurementsValid.value,
+)
+
+// 数字键盘单例：大键 + 小数点，Teleport 底部；触发字段只读（不弹系统键盘）。
+const keyboard = reactive<{
+  show: boolean
+  rowId: number | null
+  field: 'measuredValue' | 'lowerSpecLimit' | 'upperSpecLimit'
+}>({ show: false, rowId: null, field: 'measuredValue' })
+const keyboardTitles: Record<typeof keyboard.field, string> = {
+  measuredValue: '录入测量值',
+  lowerSpecLimit: '录入下限',
+  upperSpecLimit: '录入上限',
+}
+const keyboardTitle = computed(() => keyboardTitles[keyboard.field])
+const keyboardValue = computed<string>({
+  get: () => {
+    const row = measurementRows.find((r) => r.id === keyboard.rowId)
+    return row ? String(row[keyboard.field] ?? '') : ''
+  },
+  set: (value) => {
+    const row = measurementRows.find((r) => r.id === keyboard.rowId)
+    if (row) row[keyboard.field] = value
+  },
+})
+function openKeyboard(rowId: number, field: typeof keyboard.field) {
+  keyboard.rowId = rowId
+  keyboard.field = field
+  keyboard.show = true
+}
+
+// 拍照取证：能力门控（相机不可用 → 隐藏入口）；后端图片契约就绪前仅本地留存。
+const { supported: photoSupported, capture, releasePhoto } = useInspectionPhotoCapture()
+async function capturePhoto(rowId: number) {
+  const photo = await capture()
+  if (!photo) return
+  const row = measurementRows.find((r) => r.id === rowId)
+  if (row) row.photos.push(photo)
+}
+function removePhoto(rowId: number, photoId: number) {
+  const row = measurementRows.find((r) => r.id === rowId)
+  if (!row) return
+  const index = row.photos.findIndex((p) => p.id === photoId)
+  if (index >= 0) {
+    releasePhoto(row.photos[index])
+    row.photos.splice(index, 1)
+  }
+}
+function releaseRowPhotos(row: MeasurementFormRow) {
+  row.photos.forEach(releasePhoto)
+}
+
+// 提交确认：有超差行时先弹「N 项超差，确认提交？」，无超差直接提交。
+const confirmOpen = ref(false)
+const confirmDescription = computed(
+  () => `${outOfToleranceCount.value} 项测量值超差，仍要提交点检？`,
 )
 
 // 点检端点无服务端幂等键 → 写结果状态机由共享 composable 统一：结果不确定（超时/网络中断）
@@ -147,7 +214,7 @@ function chooseResult(value: string) {
 }
 
 function createMeasurementRow(): MeasurementFormRow {
-  return { id: nextMeasurementRowId++, ...createMeasurementDraft() }
+  return { id: nextMeasurementRowId++, ...createMeasurementDraft(), photos: [] }
 }
 
 function addMeasurementRow() {
@@ -156,17 +223,30 @@ function addMeasurementRow() {
 
 function removeMeasurementRow(rowId: number) {
   if (measurementRows.length === 1) {
+    releaseRowPhotos(measurementRows[0])
     Object.assign(measurementRows[0], createMeasurementRow())
     return
   }
   const index = measurementRows.findIndex((row) => row.id === rowId)
   if (index >= 0) {
+    releaseRowPhotos(measurementRows[index])
     measurementRows.splice(index, 1)
   }
 }
 
+// 提交入口：有超差先确认，无超差直接提交。
+function onSubmitClick() {
+  if (!valid.value || recordPending.value) return
+  if (outOfToleranceCount.value > 0) {
+    confirmOpen.value = true
+    return
+  }
+  void submit()
+}
+
 async function submit() {
   if (!valid.value || recordPending.value) return
+  keyboard.show = false
   await run(() =>
     recordInspection({
       planId: form.planId as string,
@@ -180,6 +260,7 @@ function resetForm() {
   // 成功后清空，避免重复记录相同点检（端点无服务端幂等）。
   form.planId = ''
   form.result = ''
+  measurementRows.forEach(releaseRowPhotos)
   measurementRows.splice(0, measurementRows.length, createMeasurementRow())
   reset()
 }
@@ -395,89 +476,33 @@ function inspectionSubtitle(item: {
             </button>
           </div>
 
-          <div
+          <InspectionMeasurementRow
             v-for="row in measurementRows"
             :key="row.id"
-            class="space-y-2 rounded-lg border border-border bg-card p-3"
-          >
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <label class="space-y-1 text-xs text-muted-foreground">
-                <span>特性</span>
-                <input
-                  v-model="row.characteristicCode"
-                  data-testid="measurement-characteristic"
-                  class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base text-foreground"
-                  autocomplete="off"
-                />
-              </label>
-              <label class="space-y-1 text-xs text-muted-foreground">
-                <span>数值</span>
-                <input
-                  v-model="row.measuredValue"
-                  data-testid="measurement-value"
-                  class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base text-foreground"
-                  type="number"
-                  step="any"
-                />
-              </label>
-              <label class="space-y-1 text-xs text-muted-foreground">
-                <span>单位</span>
-                <input
-                  v-model="row.uomCode"
-                  data-testid="measurement-uom"
-                  class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base text-foreground"
-                  autocomplete="off"
-                />
-              </label>
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-              <label class="space-y-1 text-xs text-muted-foreground">
-                <span>下限</span>
-                <input
-                  v-model="row.lowerSpecLimit"
-                  data-testid="measurement-lower"
-                  class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base text-foreground"
-                  type="number"
-                  step="any"
-                />
-              </label>
-              <label class="space-y-1 text-xs text-muted-foreground">
-                <span>上限</span>
-                <input
-                  v-model="row.upperSpecLimit"
-                  data-testid="measurement-upper"
-                  class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base text-foreground"
-                  type="number"
-                  step="any"
-                />
-              </label>
-            </div>
-            <button
-              type="button"
-              data-testid="remove-measurement"
-              class="min-h-touch w-full rounded-lg border border-border bg-background text-sm font-medium text-foreground"
-              @click="removeMeasurementRow(row.id)"
-            >
-              移除
-            </button>
-          </div>
+            :row="row"
+            :photo-supported="photoSupported"
+            @open-keyboard="(field) => openKeyboard(row.id, field)"
+            @capture-photo="capturePhoto(row.id)"
+            @remove-photo="(photoId) => removePhoto(row.id, photoId)"
+            @remove="removeMeasurementRow(row.id)"
+          />
 
           <p
             v-if="!measurementsValid"
             data-testid="measurement-error"
             class="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
           >
-            请完整填写测量值，且下限不能大于上限。
+            请完整填写测量值：特性 + 数值必填，上下限同填时下限不能大于上限。
           </p>
         </div>
 
-        <!-- 步骤 3：提交 -->
+        <!-- 步骤 3：提交（有超差先确认） -->
         <button
           data-testid="submit"
           type="button"
           :disabled="!valid || recordPending"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
-          @click="submit"
+          @click="onSubmitClick"
         >
           {{ recordPending ? '记录中…' : '提交点检' }}
         </button>
@@ -521,5 +546,23 @@ function inspectionSubtitle(item: {
         </div>
       </section>
     </div>
+
+    <!-- 数字键盘单例（测量值 / 上下限共用） -->
+    <NvNumberKeyboard
+      v-model="keyboardValue"
+      v-model:show="keyboard.show"
+      :title="keyboardTitle"
+      extra-key="."
+    />
+
+    <!-- 超差提交确认 -->
+    <NvMobileDialog
+      v-model:open="confirmOpen"
+      title="确认提交"
+      :description="confirmDescription"
+      confirm-text="仍要提交"
+      confirm-tone="danger"
+      @confirm="submit"
+    />
   </NvAppShellMobile>
 </template>
