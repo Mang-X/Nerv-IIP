@@ -442,6 +442,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             throw new ArgumentException("A canonical dispatch actor is required.", nameof(actor));
         }
 
+        if (normalized.Length > 128)
+        {
+            throw new ArgumentException("Dispatch actor cannot exceed 128 characters.", nameof(actor));
+        }
+
         return normalized;
     }
 

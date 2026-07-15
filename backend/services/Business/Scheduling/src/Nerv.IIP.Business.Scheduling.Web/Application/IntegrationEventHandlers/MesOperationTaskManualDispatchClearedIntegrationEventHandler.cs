@@ -45,7 +45,8 @@ public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandler
         }
 
         var payload = integrationEvent.Payload;
-        if (!IsValidIdentity(payload.WorkOrderId) ||
+        if (!IsValidEnvelopeProjectionIdentity(integrationEvent) ||
+            !IsValidIdentity(payload.WorkOrderId) ||
             !IsValidIdentity(payload.OperationTaskId) ||
             !IsValidIdentity(payload.ResourceId) ||
             !IsValidIdentity(payload.WorkCenterId) ||
@@ -115,4 +116,16 @@ public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandler
         !string.IsNullOrWhiteSpace(value) &&
         value == value.Trim() &&
         value.Length <= 128;
+
+    private static bool IsValidEnvelopeProjectionIdentity(
+        MesOperationTaskManualDispatchClearedIntegrationEvent integrationEvent) =>
+        IsValidIdentity(integrationEvent.OrganizationId, 64) &&
+        IsValidIdentity(integrationEvent.EnvironmentId, 64) &&
+        IsValidIdentity(integrationEvent.EventId, 128) &&
+        IsValidIdentity(integrationEvent.Actor, 128);
+
+    private static bool IsValidIdentity(string value, int maxLength) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value == value.Trim() &&
+        value.Length <= maxLength;
 }

@@ -191,6 +191,20 @@ public sealed class ManualDispatchSchedulingLockEventTests
     }
 
     [Fact]
+    public void Manual_dispatch_rejects_an_actor_longer_than_projection_storage()
+    {
+        var task = NewTask();
+        var actor = $"user:{new string('a', 124)}";
+
+        Assert.Throws<ArgumentException>(() =>
+            task.Assign(null, "DEV-1", null, At(1), actor));
+
+        Assert.Equal(0, task.ManualDispatchRevision);
+        Assert.False(task.HasActiveManualDispatch);
+        Assert.Empty(task.GetDomainEvents());
+    }
+
+    [Fact]
     public void Cleared_converter_uses_request_context_and_revision_based_idempotency()
     {
         var task = NewTask();

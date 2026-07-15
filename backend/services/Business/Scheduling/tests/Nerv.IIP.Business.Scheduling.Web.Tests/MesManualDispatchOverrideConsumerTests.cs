@@ -139,6 +139,26 @@ public sealed class MesManualDispatchOverrideConsumerTests
     }
 
     [Fact]
+    public async Task Negative_clear_revision_enters_dead_letter_once_without_mutating_override()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"mes-dispatch-clear-negative-{Guid.NewGuid():N}").Options;
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateClearHandler(db, deadLetters);
+        var invalid = CreateClearEvent("evt-clear-negative", At(8), revision: -1);
+
+        await handler.HandleAsync(invalid, CancellationToken.None);
+        await handler.HandleAsync(invalid, CancellationToken.None);
+
+        Assert.Empty(db.ScheduleOperationOverrides);
+        Assert.Equal(1, await db.ProcessedIntegrationEvents.CountAsync());
+        Assert.Single(await deadLetters.ListAsync(
+            MesOperationTaskManualDispatchClearedIntegrationEventHandlerForClearOverride.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Overlength_clear_identity_enters_dead_letter_once_without_mutating_override()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -217,6 +237,72 @@ public sealed class MesManualDispatchOverrideConsumerTests
         Assert.Empty(db.ScheduleOperationOverrides);
         Assert.Single(await deadLetters.ListAsync(
             MesOperationTaskManuallyDispatchedIntegrationEventHandlerForUpsertOverride.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Negative_dispatch_revision_enters_dead_letter_once_without_mutating_override()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"mes-dispatch-negative-revision-{Guid.NewGuid():N}").Options;
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateDispatchHandler(db, deadLetters);
+        var invalid = CreateEvent("evt-negative-revision", At(8), "DEV-1", revision: -1);
+
+        await handler.HandleAsync(invalid, CancellationToken.None);
+        await handler.HandleAsync(invalid, CancellationToken.None);
+
+        Assert.Empty(db.ScheduleOperationOverrides);
+        Assert.Equal(1, await db.ProcessedIntegrationEvents.CountAsync());
+        Assert.Single(await deadLetters.ListAsync(
+            MesOperationTaskManuallyDispatchedIntegrationEventHandlerForUpsertOverride.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Overlength_dispatch_actor_enters_dead_letter_once_without_mutating_override()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"mes-dispatch-overlength-actor-{Guid.NewGuid():N}").Options;
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateDispatchHandler(db, deadLetters);
+        var invalid = CreateEvent("evt-overlength-actor", At(8), "DEV-1") with
+        {
+            Actor = $"user:{new string('a', 124)}"
+        };
+
+        await handler.HandleAsync(invalid, CancellationToken.None);
+        await handler.HandleAsync(invalid, CancellationToken.None);
+
+        Assert.Empty(db.ScheduleOperationOverrides);
+        Assert.Equal(1, await db.ProcessedIntegrationEvents.CountAsync());
+        Assert.Single(await deadLetters.ListAsync(
+            MesOperationTaskManuallyDispatchedIntegrationEventHandlerForUpsertOverride.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Overlength_clear_actor_enters_dead_letter_once_without_mutating_override()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"mes-clear-overlength-actor-{Guid.NewGuid():N}").Options;
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateClearHandler(db, deadLetters);
+        var invalid = CreateClearEvent("evt-clear-overlength-actor", At(8), revision: 1) with
+        {
+            Actor = $"user:{new string('a', 124)}"
+        };
+
+        await handler.HandleAsync(invalid, CancellationToken.None);
+        await handler.HandleAsync(invalid, CancellationToken.None);
+
+        Assert.Empty(db.ScheduleOperationOverrides);
+        Assert.Equal(1, await db.ProcessedIntegrationEvents.CountAsync());
+        Assert.Single(await deadLetters.ListAsync(
+            MesOperationTaskManualDispatchClearedIntegrationEventHandlerForClearOverride.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
     }
 

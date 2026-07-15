@@ -38,10 +38,13 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(payload.WorkOrderId) ||
-            string.IsNullOrWhiteSpace(payload.OperationTaskId) ||
-            string.IsNullOrWhiteSpace(payload.ResourceId) ||
-            string.IsNullOrWhiteSpace(payload.WorkCenterId) ||
+        if (!IsValidEnvelopeProjectionIdentity(integrationEvent) ||
+            !IsValidIdentity(payload.WorkOrderId) ||
+            !IsValidIdentity(payload.OperationTaskId) ||
+            !IsValidIdentity(payload.ResourceId) ||
+            !IsValidIdentity(payload.WorkCenterId) ||
+            payload.OperationSequence <= 0 ||
+            payload.DispatchRevision < 0 ||
             payload.EndUtc <= payload.StartUtc)
         {
             await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(
@@ -104,4 +107,16 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
             payload.EndUtc, integrationEvent.EventId, integrationEvent.Actor,
             payload.DispatchRevision, integrationEvent.OccurredAtUtc, integrationEvent.OccurredAtUtc);
     }
+
+    private static bool IsValidEnvelopeProjectionIdentity(
+        MesOperationTaskManuallyDispatchedIntegrationEvent integrationEvent) =>
+        IsValidIdentity(integrationEvent.OrganizationId, 64) &&
+        IsValidIdentity(integrationEvent.EnvironmentId, 64) &&
+        IsValidIdentity(integrationEvent.EventId) &&
+        IsValidIdentity(integrationEvent.Actor);
+
+    private static bool IsValidIdentity(string value, int maxLength = 128) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value == value.Trim() &&
+        value.Length <= maxLength;
 }
