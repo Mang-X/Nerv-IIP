@@ -116,6 +116,26 @@ public sealed class ManualDispatchSchedulingLockEventTests
     }
 
     [Fact]
+    public void Clear_after_schedule_release_uses_the_original_active_manual_dispatch_snapshot()
+    {
+        var task = NewTask();
+        task.Assign(null, "DEV-MANUAL", null, At(1), "user:planner");
+        task.ClearDomainEvents();
+        task.ApplyScheduleAssignment("WC-SCHEDULED", "DEV-SCHEDULED", At(3), At(4), At(2));
+
+        task.Assign(null, null, null, At(5), "user:planner");
+
+        var cleared = Assert.IsType<OperationTaskManualDispatchClearedDomainEvent>(
+            Assert.Single(task.GetDomainEvents()));
+        Assert.Equal("DEV-MANUAL", cleared.Dispatch.ResourceId);
+        Assert.Equal("WC-1", cleared.Dispatch.WorkCenterId);
+        Assert.Equal(At(0), cleared.Dispatch.StartUtc);
+        Assert.Equal(At(1), cleared.Dispatch.EndUtc);
+        Assert.Equal(At(1), cleared.Dispatch.OccurredAtUtc);
+        Assert.Equal(2, cleared.Dispatch.DispatchRevision);
+    }
+
+    [Fact]
     public void Manual_dispatch_event_uses_snapshot_actor_and_revision_in_contract()
     {
         var task = NewTask();

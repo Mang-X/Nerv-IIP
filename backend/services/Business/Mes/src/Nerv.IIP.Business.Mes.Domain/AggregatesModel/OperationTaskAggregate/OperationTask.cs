@@ -377,12 +377,17 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             throw new ArgumentOutOfRangeException(nameof(plannedEndUtc), "Planned end must be after planned start.");
         }
 
-        WorkCenterId = DomainGuard.Required(workCenterId, nameof(workCenterId));
-        EarliestStartUtc = plannedStartUtc;
-        DurationTicks = (plannedEndUtc - plannedStartUtc).Ticks;
-        DeviceAssetId = NormalizeOptional(deviceAssetId);
+        var normalizedWorkCenterId = DomainGuard.Required(workCenterId, nameof(workCenterId));
+        if (!HasActiveManualDispatch)
+        {
+            WorkCenterId = normalizedWorkCenterId;
+            EarliestStartUtc = plannedStartUtc;
+            DurationTicks = (plannedEndUtc - plannedStartUtc).Ticks;
+            DeviceAssetId = NormalizeOptional(deviceAssetId);
+            AssignedAtUtc = assignedAtUtc;
+        }
+
         OperationCode = NormalizeOptional(operationCode) ?? OperationCode;
-        AssignedAtUtc = assignedAtUtc;
         ScheduledAtUtc = assignedAtUtc;
         if (Status == OperationTaskLifecycleStatus.ScheduleInvalidated)
         {
