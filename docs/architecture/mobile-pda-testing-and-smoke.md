@@ -93,6 +93,28 @@ pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test --list
 - **预检不假绿**：`e2e-live/support/preflight.ts` 先探测两个网关的匿名 `GET /health`
   （BusinessGateway/PlatformGateway `HealthEndpoint`），栈不可达时**直接 throw
   报环境阻塞**（先 `nerv.ps1 dev` 起栈），绝不 `test.skip` 静默跳过。
+- **M2 网络/超时韧性**（`e2e-live/network-resilience.spec.ts`，方案 §4.2 / §8 M2）：
+  3 个独立场景，全部只读（载体 = /quality/tasks 列表 + 选中任务触发的检验计划特性 GET；
+  真实登录、真实数据加载完成后才注入**传输层故障**，不 mock 任何业务数据）——
+  1. **离线预检**：`context.setOffline(true)`（只仿真 `navigator.onLine=false`，不代表
+     Wi-Fi 抖动/DNS/TLS）→ `OfflineError` 类型化文案「当前离线，请检查网络连接后重试」
+     透出错误面板（非白屏非裸堆栈，且面板保留安全重试）→ 恢复联网后可重载；
+  2. **请求整体挂起 + 短超时**：`page.route` 悬挂特性 GET + `VITE_NERV_IIP_REQUEST_TIMEOUT_MS`
+     短超时注入 → 「网络超时，请检查连接后重试」**数秒内**透出（不真等 30s；未注入 env
+     时 spec 如实报环境阻塞而非退化长等）→ 路由释放后重试恢复；
+  3. **慢网**：CDP `Network.emulateNetworkConditions`（该协议方法已标 deprecated，封装在
+     `e2e-live/support/network.ts` 适配层内隔离，仅 Chromium）→ loading 态呈现、最终落定
+     非错误态、同 URL 特性 GET 恰好一次（不闪断重发）。
+- **短超时注入用法**：PDA `main.ts` 读 `VITE_NERV_IIP_REQUEST_TIMEOUT_MS`（毫秒）传入
+  `createTimeoutFetch`，仅用于测试注入，产品默认 30s 不变；live webServer 继承进程环境变量，
+  在命令行注入即可（见下方命令示例）。
+- **「headers 已到、body 卡死」覆盖归属**：Playwright `route.fulfill()` 是**原子**下发
+  （只接受完整 body，无「先发 headers、body 流保持打开」的流式 API），live 层无法注入
+  该形态、不硬造；该形态已由 L0 集成测试覆盖（真实 api-client 组合）——
+  `frontend/apps/business-pda/src/api/request-timeout.integration.test.ts`（headers 200 后
+  body 读取卡死 → `RequestTimeoutError` 超时文案）与
+  `frontend/apps/business-pda/src/api/download-timeout.integration.test.ts`（SOP 下载 blob
+  body 卡死 → 「网络超时」），live 不重复该覆盖。
 
 ```bash
 # 前置：完整本地栈已运行（仓库根目录 .\nerv.ps1 dev，Docker 先开）+ live 凭据 env
@@ -100,6 +122,11 @@ pnpm -C frontend --filter @nerv-iip/business-pda run e2e:live
 
 # 一键串联（worktree 归属检查 → 栈可达性 → e2e:live → 证据归集）
 pwsh frontend/apps/business-pda/scripts/pda-live-walkthrough.ps1
+
+# M2 网络韧性单跑（挂起+短超时场景需注入 VITE_NERV_IIP_REQUEST_TIMEOUT_MS，推荐 2000；
+# pwsh 写法：$env:VITE_NERV_IIP_REQUEST_TIMEOUT_MS='2000'）
+VITE_NERV_IIP_REQUEST_TIMEOUT_MS=2000 \
+  pnpm -C frontend --filter @nerv-iip/business-pda run e2e:live -- network-resilience.spec.ts
 ```
 
 - **证据包口径**（截图不得单独构成 L2 通过证据）：commit/分支指纹 + Playwright trace +

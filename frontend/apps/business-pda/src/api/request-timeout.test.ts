@@ -6,6 +6,7 @@ import {
   OfflineError,
   REQUEST_TIMEOUT_MS,
   RequestTimeoutError,
+  resolveRequestTimeoutMs,
 } from './request-timeout'
 
 /** A fetch that never resolves on its own — only rejects (AbortError) when its signal aborts. */
@@ -191,5 +192,42 @@ describe('describeRequestError', () => {
     // Offline pre-check (never dispatched) + business errors (server responded) → safe.
     expect(isIndeterminateError(new OfflineError())).toBe(false)
     expect(isIndeterminateError({ message: '业务失败' })).toBe(false)
+  })
+})
+
+describe('resolveRequestTimeoutMs', () => {
+  const envWith = (raw?: string) =>
+    (raw === undefined ? {} : { VITE_NERV_IIP_REQUEST_TIMEOUT_MS: raw }) as unknown as ImportMetaEnv
+
+  it('returns the parsed value for a plain positive-integer string (test-only short ceiling)', () => {
+    expect(resolveRequestTimeoutMs(envWith('2000'))).toBe(2000)
+    expect(resolveRequestTimeoutMs(envWith(' 1500 '))).toBe(1500)
+  })
+
+  it('falls back to the 30s default when the env var is absent', () => {
+    expect(resolveRequestTimeoutMs(envWith())).toBe(REQUEST_TIMEOUT_MS)
+  })
+
+  it.each([
+    ['empty string', ''],
+    ['whitespace only', '   '],
+    ['non-numeric', 'abc'],
+    ['zero (would fire instantly)', '0'],
+    ['negative', '-5'],
+    ['fractional', '1.5'],
+    ['scientific notation', '2e3'],
+    ['digit separator', '30_000'],
+    ['trailing unit', '2000ms'],
+    ['signed positive', '+2000'],
+  ])('falls back to the default for %s (a typo must never weaken the ceiling)', (_label, raw) => {
+    expect(resolveRequestTimeoutMs(envWith(raw))).toBe(REQUEST_TIMEOUT_MS)
+  })
+
+  it('falls back for all-digit values beyond the safe-integer range', () => {
+    expect(resolveRequestTimeoutMs(envWith('9007199254740993'))).toBe(REQUEST_TIMEOUT_MS)
+  })
+
+  it('defaults to import.meta.env (unset in tests → 30s default)', () => {
+    expect(resolveRequestTimeoutMs()).toBe(REQUEST_TIMEOUT_MS)
   })
 })

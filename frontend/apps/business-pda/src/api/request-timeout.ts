@@ -29,6 +29,26 @@
 /** Hard ceiling for any single facade request. 车间 WiFi hangs must not block forever. */
 export const REQUEST_TIMEOUT_MS = 30_000
 
+/**
+ * Resolve the request timeout from `VITE_NERV_IIP_REQUEST_TIMEOUT_MS` — a TEST/DEBUG
+ * override so live network-sim specs can inject a short ceiling (e.g. 2000) instead of
+ * really waiting 30s. Production builds must NOT set it; see .env.example.
+ *
+ * Only a plain positive-integer string (no sign, no decimals, no separators) overrides
+ * the default. Anything else — unset, empty, non-numeric, zero, negative, fractional,
+ * or beyond the safe-integer range — falls back to {@link REQUEST_TIMEOUT_MS}, so a
+ * typo can never silently disable the timeout or make it zero/instant.
+ */
+export function resolveRequestTimeoutMs(env: ImportMetaEnv = import.meta.env): number {
+  const raw: unknown = env.VITE_NERV_IIP_REQUEST_TIMEOUT_MS
+  if (typeof raw !== 'string') return REQUEST_TIMEOUT_MS
+  const trimmed = raw.trim()
+  if (!/^\d+$/.test(trimmed)) return REQUEST_TIMEOUT_MS
+  const value = Number(trimmed)
+  if (!Number.isSafeInteger(value) || value <= 0) return REQUEST_TIMEOUT_MS
+  return value
+}
+
 /** Thrown when a request exceeds {@link REQUEST_TIMEOUT_MS}. */
 export class RequestTimeoutError extends Error {
   constructor(message = '网络超时，请检查连接后重试') {
