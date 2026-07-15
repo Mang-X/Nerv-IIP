@@ -7,7 +7,8 @@
 ## 1. 测试层次
 
 PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见下文「L2 真实栈仿真走查（live）」节，
-完整分层方案见 `frontend/DESIGN/roadmaps/2026-07-15-pda-device-sim-detection-plan.md`）：
+模拟器 + APK 层见「L3 Android 模拟器 + APK」节，完整分层方案见
+`frontend/DESIGN/roadmaps/2026-07-15-pda-device-sim-detection-plan.md`）：
 
 1. **jsdom 单元/组件测试**（`vp test run src`）
    - 跑在 jsdom，无真实浏览器。覆盖：组件标记/行为/事件、store 逻辑、登录/首页页面的渲染与守卫断言。
@@ -153,6 +154,66 @@ VITE_NERV_IIP_REQUEST_TIMEOUT_MS=2000 \
   （QualitySeedService）；`runId` 数据命名空间隔离与 cleanup 归 M2，本里程碑不落地。
 - **不进 CI**：依赖本地完整栈与 seed，与 `*PostgresProfileTests` 环境门控同一口径；
   显式命令运行，浏览器/栈不可用时如实报告阻塞、不伪造通过。
+
+## L3 Android 模拟器 + APK
+
+> 定位：`frontend/DESIGN/roadmaps/2026-07-15-pda-device-sim-detection-plan.md` §5 / §8 M3 的落地。
+> 覆盖 L2 无法触达的三类真机差异：**真实 Android WebView 内核**（非桌面 Chromium）、
+> **Capacitor 原生路径**（`isNativePlatform === true`、APK 内无 dev proxy 的网关直连）、
+> **系统级输入栈与 safe-area**。但仍**不是硬件等价**（方案 §2 保真等级）：`adb shell input`
+> 是 Android 输入栈注入（字符流经 IME/焦点系统），仿真不了 USB HID scan code、键重复/丢键
+> 与厂商扫码服务（如 Zebra DataWedge——未来接入改 `adb shell am broadcast` intent 仿真，
+> 脚本留扩展位）。**不替代 L4** 实体枪与厂商 ROM，「真机」口径不变。
+
+- **形态**：`frontend/apps/business-pda/scripts/pda-avd.ps1`（AVD 创建/启动/关停/状态）+
+  `pda-adb-scan.ps1`（adb 注码 + 截图存证）。APK 构建/安装归 `pda-apk-build.ps1` 与
+  `docs/architecture/mobile-pda-deployment.md`（统一网关入口、debug NSC 等 M3a 前置口径见彼处）。
+- **工具链锁定**（可复现口径）：AVD `nerv-pda` = `pixel_5` 档案 +
+  `system-images;android-35;google_apis;x86_64`，写死在 `pda-avd.ps1` 内，不吃隐式默认；
+  脚本显式从 `ANDROID_HOME` 读 SDK（缺失报错并提示本机路径），不依赖全局安装状态。
+- **加速探测不假绿**：`start` 先跑 `emulator -accel-check`——不可加速（无 WHPX/AEHD）时
+  直接报错退出，确认无法启用加速时须显式 `-NoAccel` 降级为纯软件模拟（极慢但能跑），
+  不静默慢跑、不伪造就绪。
+
+```powershell
+# 前置：显式设置 ANDROID_HOME（本机 Android SDK 根目录）
+$env:ANDROID_HOME = 'C:\Users\hp\android-sdk'
+
+# 1) 创建 AVD（幂等：已存在同名 AVD 直接跳过）
+pwsh frontend/apps/business-pda/scripts/pda-avd.ps1 -Action create
+
+# 2) 启动（默认带窗口便于人工走查；-Headless 无窗口 + swiftshader GPU，适合无人值守存证）：
+#    轮询 sys.boot_completed=1 后输出 SERIAL=emulator-55xx 与
+#    AVD/系统镜像/build/WebView 版本指纹（即证据口径的版本指纹项）
+pwsh frontend/apps/business-pda/scripts/pda-avd.ps1 -Action start -Headless
+
+# 3) 注码 + 截图存证：adb shell input text + keyevent 66（Enter 后缀，与 ScanBar 现契约一致）
+pwsh frontend/apps/business-pda/scripts/pda-adb-scan.ps1 -Code 'WO-2026-0715-001' -Screencap artifacts/pda-l3/scan-echo.png
+
+# 4) 状态 / 关停
+pwsh frontend/apps/business-pda/scripts/pda-avd.ps1 -Action status
+pwsh frontend/apps/business-pda/scripts/pda-avd.ps1 -Action stop
+```
+
+- **注码转义限制（如实声明）**：`input text` 没有可靠的跨版本转义通道，脚本只接受白名单
+  `[A-Za-z0-9._:+,/=-]`——空格、引号、shell 元字符会被设备端解析（破坏码值甚至注入命令），
+  GS1 FNC1/GS 控制字符根本无法经此通道注入；脚本对越界码值**直接拒绝**而非静默转义出一个
+  「看起来像但不是」的码值（此类码值归 L4 实体枪）。且 `input text` 整段提交，无实体枪
+  10–30ms 字符间隔时序（时序覆盖归 L2 `simulateScanGun` / L4）。
+- **safe-area 环境前置断言（方案 §5）**：AVD 挖孔镜像**不保证** `env(safe-area-inset-*)`
+  非零——Android WebView 对 CSS safe-area 的支持受 WebView 版本与 window-insets 传递方式
+  影响。冒烟第一步先记录 WebView 版本 + 四个 computed inset：**inset 非零才可继续验
+  safe-area**；全零则如实报「环境不具备该能力（留待 L4 真机）」，不得拿 fallback 最小
+  内边距冒充真实 inset 通过验证。
+- **触发时机**：发版前必跑（且周期性冷启动跑，不只发版当天首跑）；触及 Capacitor 配置、
+  网关基址、扫码焦点逻辑、safe-area 的 PR 必跑。首期本地执行不进 CI（AVD 对 CI 太重）。
+- **证据口径**：关键页面 screencap（`pda-adb-scan.ps1 -Screencap`，设备端 `screencap -p`
+  落盘后 `adb pull`，二进制安全）+ APK SHA256（构建产物指纹，见 `pda-apk-build.ps1`）+
+  AVD/系统镜像/WebView 版本指纹（`pda-avd.ps1 -Action start` 就绪时输出）+ safe-area 验证
+  附 computed inset 记录（全零时记「环境不具备」）。
+- **与 L4 的边界**：首期为「脚本化构建安装 + 人工按下方 L4 清单勾验 + 存证」，自动化归
+  M4 spike（方案 §8，可弃）。L3 通过不改写「真机」口径（真机 = 目标 PDA + APK + 实体
+  扫码枪），仿真不了实体枪 HID 电气时序与厂商 ROM WebView 差异；发版门仍是 L4 清单。
 
 ## Capacitor/APK 网关基址与可复现构建
 
