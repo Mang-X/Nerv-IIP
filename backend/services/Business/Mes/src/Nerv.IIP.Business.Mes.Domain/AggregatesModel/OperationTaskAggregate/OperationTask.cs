@@ -81,6 +81,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public string? DeviceAssetId { get; private set; }
     public string? ShiftId { get; private set; }
     public DateTimeOffset? AssignedAtUtc { get; private set; }
+    public long ManualDispatchRevision { get; private set; }
+    public bool HasActiveManualDispatch { get; private set; }
     // Set only when a released APS schedule places this task (ApplyScheduleAssignment); never by manual
     // dispatch (Assign). This is the schedule-specific fact that distinguishes 已排程 from 未排程.
     public DateTimeOffset? ScheduledAtUtc { get; private set; }
@@ -278,26 +280,69 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             throw new KnownException("Schedule invalidated operation task cannot be dispatched until it is rescheduled.");
         }
 
+        var previousDeviceAssetId = HasActiveManualDispatch ? DeviceAssetId : null;
+        var previousAssignedAtUtc = AssignedAtUtc;
+        var normalizedDeviceAssetId = NormalizeOptional(deviceAssetId);
+        var isManualDispatch = normalizedDeviceAssetId is not null && Duration > TimeSpan.Zero;
+        var clearsManualDispatch = previousDeviceAssetId is not null && !isManualDispatch;
+        var canonicalActor = isManualDispatch || clearsManualDispatch
+            ? RequireCanonicalActor(actor)
+            : null;
+
+        if (isManualDispatch)
+        {
+            ManualDispatchRevision++;
+        }
+        else if (clearsManualDispatch)
+        {
+            ManualDispatchRevision++;
+            AddDomainEvent(new OperationTaskManualDispatchClearedDomainEvent(
+                CreateManualDispatchSnapshot(
+                    previousDeviceAssetId!,
+                    previousAssignedAtUtc ?? assignedAtUtc,
+                    ManualDispatchRevision),
+                "device-cleared",
+                assignedAtUtc,
+                canonicalActor!));
+        }
+
         AssignedUserId = NormalizeOptional(assignedUserId);
-        DeviceAssetId = NormalizeOptional(deviceAssetId);
+        DeviceAssetId = normalizedDeviceAssetId;
         ShiftId = NormalizeOptional(shiftId);
         AssignedAtUtc = assignedAtUtc;
-        if (DeviceAssetId is not null && Duration > TimeSpan.Zero)
-        {
-            if (string.IsNullOrWhiteSpace(actor))
-            {
-                throw new ArgumentException("Dispatch actor is required.", nameof(actor));
-            }
+        HasActiveManualDispatch = isManualDispatch;
 
-            AddDomainEvent(new OperationTaskManuallyDispatchedDomainEvent(this, actor.Trim()));
+        if (isManualDispatch)
+        {
+            AddDomainEvent(new OperationTaskManuallyDispatchedDomainEvent(
+                CreateManualDispatchSnapshot(normalizedDeviceAssetId!, assignedAtUtc, ManualDispatchRevision),
+                canonicalActor!));
         }
     }
 
-    public void Cancel(DateTimeOffset cancelledAtUtc)
+    public void Cancel(DateTimeOffset cancelledAtUtc, string actor = "system:mes")
     {
         if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
         {
             return;
+        }
+
+        var canonicalActor = HasActiveManualDispatch
+            ? RequireCanonicalActor(actor)
+            : null;
+
+        if (HasActiveManualDispatch)
+        {
+            ManualDispatchRevision++;
+            AddDomainEvent(new OperationTaskManualDispatchClearedDomainEvent(
+                CreateManualDispatchSnapshot(
+                    DeviceAssetId!,
+                    AssignedAtUtc ?? cancelledAtUtc,
+                    ManualDispatchRevision),
+                "operation-cancelled",
+                cancelledAtUtc,
+                canonicalActor!));
+            HasActiveManualDispatch = false;
         }
 
         if (Status == OperationTaskLifecycleStatus.Paused)
@@ -336,6 +381,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         EarliestStartUtc = plannedStartUtc;
         DurationTicks = (plannedEndUtc - plannedStartUtc).Ticks;
         DeviceAssetId = NormalizeOptional(deviceAssetId);
+        HasActiveManualDispatch = false;
         OperationCode = NormalizeOptional(operationCode) ?? OperationCode;
         AssignedAtUtc = assignedAtUtc;
         ScheduledAtUtc = assignedAtUtc;
@@ -356,6 +402,37 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     private static string? NormalizeOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private OperationTaskManualDispatchSnapshot CreateManualDispatchSnapshot(
+        string resourceId,
+        DateTimeOffset occurredAtUtc,
+        long dispatchRevision)
+    {
+        return new OperationTaskManualDispatchSnapshot(
+            OrganizationId,
+            EnvironmentId,
+            WorkOrderId,
+            OperationTaskId,
+            OperationSequence,
+            resourceId,
+            WorkCenterId,
+            EarliestStartUtc,
+            EarliestStartUtc + Duration,
+            occurredAtUtc,
+            dispatchRevision);
+    }
+
+    private static string RequireCanonicalActor(string actor)
+    {
+        var normalized = DomainGuard.Required(actor, nameof(actor));
+        var separator = normalized.IndexOf(':', StringComparison.Ordinal);
+        if (separator <= 0 || separator == normalized.Length - 1)
+        {
+            throw new ArgumentException("A canonical dispatch actor is required.", nameof(actor));
+        }
+
+        return normalized;
     }
 
     private void AccumulatePause(DateTimeOffset resumedAtUtc)

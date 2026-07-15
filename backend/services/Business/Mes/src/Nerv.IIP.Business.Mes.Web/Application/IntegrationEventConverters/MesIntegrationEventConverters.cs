@@ -243,20 +243,43 @@ public sealed class OperationTaskManuallyDispatchedIntegrationEventConverter
 {
     public MesOperationTaskManuallyDispatchedIntegrationEvent Convert(OperationTaskManuallyDispatchedDomainEvent domainEvent)
     {
-        var task = domainEvent.OperationTask;
-        var occurredAtUtc = task.AssignedAtUtc ?? throw new InvalidOperationException("Manual dispatch timestamp is required.");
-        var resourceId = task.DeviceAssetId ?? throw new InvalidOperationException("Manual dispatch device is required.");
+        var dispatch = domainEvent.Dispatch;
         var idempotencyKey = EventIds.Idempotency("operation-task-manually-dispatched",
-            task.OrganizationId, task.EnvironmentId, task.OperationTaskId, occurredAtUtc.UtcTicks.ToString(CultureInfo.InvariantCulture));
+            dispatch.OrganizationId, dispatch.EnvironmentId, dispatch.OperationTaskId,
+            dispatch.DispatchRevision.ToString(CultureInfo.InvariantCulture));
         return new MesOperationTaskManuallyDispatchedIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}", MesIntegrationEventTypes.OperationTaskManuallyDispatched,
-            MesIntegrationEventVersions.V1, occurredAtUtc, MesIntegrationEventSources.BusinessMes,
-            idempotencyKey, task.WorkOrderId, task.OrganizationId, task.EnvironmentId,
+            MesIntegrationEventVersions.V1, dispatch.OccurredAtUtc, MesIntegrationEventSources.BusinessMes,
+            idempotencyKey, dispatch.WorkOrderId, dispatch.OrganizationId, dispatch.EnvironmentId,
             domainEvent.Actor, idempotencyKey,
             new OperationTaskManuallyDispatchedPayload(
-                task.WorkOrderId, task.OperationTaskId, task.OperationSequence, resourceId,
-                task.WorkCenterId, task.EarliestStartUtc, task.EarliestStartUtc + task.Duration,
-                occurredAtUtc));
+                dispatch.WorkOrderId, dispatch.OperationTaskId, dispatch.OperationSequence, dispatch.ResourceId,
+                dispatch.WorkCenterId, dispatch.StartUtc, dispatch.EndUtc,
+                dispatch.OccurredAtUtc, dispatch.DispatchRevision));
+    }
+}
+
+public sealed class OperationTaskManualDispatchClearedIntegrationEventConverter(
+    IMesIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<OperationTaskManualDispatchClearedDomainEvent, MesOperationTaskManualDispatchClearedIntegrationEvent>
+{
+    public MesOperationTaskManualDispatchClearedIntegrationEvent Convert(
+        OperationTaskManualDispatchClearedDomainEvent domainEvent)
+    {
+        var dispatch = domainEvent.Dispatch;
+        var context = contextAccessor.GetContext();
+        var idempotencyKey = EventIds.Idempotency("operation-task-manual-dispatch-cleared",
+            dispatch.OrganizationId, dispatch.EnvironmentId, dispatch.OperationTaskId,
+            dispatch.DispatchRevision.ToString(CultureInfo.InvariantCulture), domainEvent.ReasonCode);
+        return new MesOperationTaskManualDispatchClearedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}", MesIntegrationEventTypes.OperationTaskManualDispatchCleared,
+            MesIntegrationEventVersions.V1, domainEvent.ClearedAtUtc, MesIntegrationEventSources.BusinessMes,
+            context.CorrelationId, context.CausationId, dispatch.OrganizationId, dispatch.EnvironmentId,
+            domainEvent.Actor, idempotencyKey,
+            new OperationTaskManualDispatchClearedPayload(
+                dispatch.WorkOrderId, dispatch.OperationTaskId, dispatch.OperationSequence,
+                dispatch.ResourceId, dispatch.WorkCenterId, dispatch.StartUtc, dispatch.EndUtc,
+                dispatch.DispatchRevision, domainEvent.ReasonCode, domainEvent.ClearedAtUtc));
     }
 }
 

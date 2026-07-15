@@ -19,7 +19,29 @@ public sealed record WorkOrderClosedDomainEvent(WorkOrder WorkOrder, DateTimeOff
 public sealed record MesEngineeringChangeWorkOrderImpactDetectedDomainEvent(MesEngineeringChangeWorkOrderImpact Impact) : IDomainEvent;
 
 public sealed record OperationTaskCompletedDomainEvent(OperationTask OperationTask) : IDomainEvent;
-public sealed record OperationTaskManuallyDispatchedDomainEvent(OperationTask OperationTask, string Actor) : IDomainEvent;
+
+public sealed record OperationTaskManualDispatchSnapshot(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string OperationTaskId,
+    int OperationSequence,
+    string ResourceId,
+    string WorkCenterId,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    DateTimeOffset OccurredAtUtc,
+    long DispatchRevision);
+
+public sealed record OperationTaskManuallyDispatchedDomainEvent(
+    OperationTaskManualDispatchSnapshot Dispatch,
+    string Actor) : IDomainEvent;
+
+public sealed record OperationTaskManualDispatchClearedDomainEvent(
+    OperationTaskManualDispatchSnapshot Dispatch,
+    string ReasonCode,
+    DateTimeOffset ClearedAtUtc,
+    string Actor) : IDomainEvent;
 
 public sealed record WorkOrderCancelledDomainEvent(
     WorkOrder WorkOrder,
