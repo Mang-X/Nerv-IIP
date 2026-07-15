@@ -46,7 +46,7 @@ internal static class MesOverrideConsumerPersistence
                 envelope.OrganizationId,
                 envelope.EnvironmentId,
                 envelope.Actor,
-                SafeIdentity("idempotency", envelope.IdempotencyKey, IdempotencyKeyMaxLength),
+                SafeIdempotencyKey(envelope, IdempotencyKeyMaxLength),
                 envelope.PayloadObject),
             eventIdValid && eventTypeValid && sourceServiceValid && idempotencyKeyValid);
     }
@@ -58,14 +58,14 @@ internal static class MesOverrideConsumerPersistence
         string failureMessage)
     {
         var message = IntegrationEventDeadLetterMessage.Create(
-            consumerName, originalEnvelope, failureCode, failureMessage);
+            consumerName, originalEnvelope, failureCode,
+            failureMessage.Length <= 1000 ? failureMessage : failureMessage[..1000]);
         return message with
         {
             EventId = SafeIdentity("event", originalEnvelope.EventId, DeadLetterEventIdMaxLength),
             EventType = SafeIdentity("type", originalEnvelope.EventType, DeadLetterEventTypeMaxLength),
             SourceService = SafeIdentity("source", originalEnvelope.SourceService, DeadLetterSourceServiceMaxLength),
-            IdempotencyKey = SafeIdentity(
-                "idempotency", originalEnvelope.IdempotencyKey, DeadLetterIdempotencyKeyMaxLength)
+            IdempotencyKey = SafeIdempotencyKey(originalEnvelope, DeadLetterIdempotencyKeyMaxLength)
         };
     }
 
@@ -84,7 +84,39 @@ internal static class MesOverrideConsumerPersistence
             return value!;
         }
 
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value ?? string.Empty));
+        return HashIdentity(field, value ?? string.Empty);
+    }
+
+    private static string SafeIdempotencyKey(
+        IIntegrationEventEnvelope envelope,
+        int maxLength)
+    {
+        if (IsCanonical(envelope.IdempotencyKey, maxLength))
+        {
+            return envelope.IdempotencyKey;
+        }
+
+        var fingerprint = string.Join('|',
+            FingerprintPart(envelope.IdempotencyKey),
+            FingerprintPart(envelope.EventId),
+            FingerprintPart(envelope.EventType),
+            FingerprintPart(envelope.SourceService),
+            FingerprintPart(envelope.CorrelationId),
+            FingerprintPart(envelope.CausationId),
+            FingerprintPart(envelope.OrganizationId),
+            FingerprintPart(envelope.EnvironmentId),
+            FingerprintPart(envelope.Actor),
+            envelope.EventVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            envelope.OccurredAtUtc.UtcTicks.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return HashIdentity("idempotency", fingerprint);
+    }
+
+    private static string FingerprintPart(string? value) =>
+        $"{value?.Length ?? -1}:{value}";
+
+    private static string HashIdentity(string field, string value)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
         return $"invalid-{field}-{Convert.ToHexString(bytes).ToLowerInvariant()}";
     }
 

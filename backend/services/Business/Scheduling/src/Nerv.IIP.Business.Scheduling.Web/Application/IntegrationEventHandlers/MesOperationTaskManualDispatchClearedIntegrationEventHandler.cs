@@ -18,15 +18,14 @@ public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandler
     private static readonly HashSet<string> RecognizedReasons =
         ["device-cleared", "operation-cancelled"];
 
-    private readonly IntegrationEventConsumerGuard<MesOperationTaskManualDispatchClearedIntegrationEvent> consumerGuard = new(
-        new IntegrationEventEnvelopeValidator(), deadLetterStore,
-        new IntegrationEventConsumerOptions(ConsumerName,
-            MesIntegrationEventTypes.OperationTaskManualDispatchCleared, MesIntegrationEventVersions.V1));
+    private static readonly IntegrationEventEnvelopeValidator EnvelopeValidator = new();
+    private static readonly IntegrationEventConsumerOptions ConsumerOptions = new(
+        ConsumerName, MesIntegrationEventTypes.OperationTaskManualDispatchCleared, MesIntegrationEventVersions.V1);
 
     public Task HandleAsync(
         MesOperationTaskManualDispatchClearedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken) =>
-        consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+        HandleEnvelopeAsync(integrationEvent, cancellationToken);
 
     [CapSubscribe(nameof(MesOperationTaskManualDispatchClearedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(
@@ -34,7 +33,7 @@ public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandler
         CancellationToken cancellationToken) =>
         HandleAsync(integrationEvent, cancellationToken);
 
-    private async Task HandleValidEventAsync(
+    private async Task HandleEnvelopeAsync(
         MesOperationTaskManualDispatchClearedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
@@ -45,6 +44,24 @@ public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandler
             return;
         }
 
+        var envelopeValidation = EnvelopeValidator.Validate(integrationEvent, ConsumerOptions);
+        if (!envelopeValidation.IsValid)
+        {
+            await deadLetterStore.AddAsync(MesOverrideConsumerPersistence.CreateDeadLetter(
+                ConsumerName, integrationEvent,
+                envelopeValidation.FailureCode, envelopeValidation.Message), cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        await HandleValidEventAsync(integrationEvent, inboxIdentity, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(
+        MesOperationTaskManualDispatchClearedIntegrationEvent integrationEvent,
+        MesOverrideInboxIdentity inboxIdentity,
+        CancellationToken cancellationToken)
+    {
         var payload = integrationEvent.Payload;
         if (!inboxIdentity.IsValid ||
             !IsValidEnvelopeProjectionIdentity(integrationEvent) ||

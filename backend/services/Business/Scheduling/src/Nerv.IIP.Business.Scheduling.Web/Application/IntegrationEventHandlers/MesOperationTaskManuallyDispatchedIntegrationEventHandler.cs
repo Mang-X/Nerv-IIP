@@ -15,23 +15,21 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
 {
     public const string ConsumerName = "business-scheduling.mes-operation-manually-dispatched";
 
-    private readonly IntegrationEventConsumerGuard<MesOperationTaskManuallyDispatchedIntegrationEvent> consumerGuard = new(
-        new IntegrationEventEnvelopeValidator(), deadLetterStore,
-        new IntegrationEventConsumerOptions(ConsumerName,
-            MesIntegrationEventTypes.OperationTaskManuallyDispatched, MesIntegrationEventVersions.V1));
+    private static readonly IntegrationEventEnvelopeValidator EnvelopeValidator = new();
+    private static readonly IntegrationEventConsumerOptions ConsumerOptions = new(
+        ConsumerName, MesIntegrationEventTypes.OperationTaskManuallyDispatched, MesIntegrationEventVersions.V1);
 
     public Task HandleAsync(MesOperationTaskManuallyDispatchedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
-        consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+        HandleEnvelopeAsync(integrationEvent, cancellationToken);
 
     [CapSubscribe(nameof(MesOperationTaskManuallyDispatchedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(MesOperationTaskManuallyDispatchedIntegrationEvent integrationEvent, CancellationToken cancellationToken) =>
         HandleAsync(integrationEvent, cancellationToken);
 
-    private async Task HandleValidEventAsync(
+    private async Task HandleEnvelopeAsync(
         MesOperationTaskManuallyDispatchedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
-        var payload = integrationEvent.Payload;
         var inboxIdentity = MesOverrideConsumerPersistence.CreateInboxIdentity(integrationEvent);
         if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAsync(
             dbContext, ConsumerName, inboxIdentity.Envelope, cancellationToken))
@@ -39,6 +37,25 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
             return;
         }
 
+        var envelopeValidation = EnvelopeValidator.Validate(integrationEvent, ConsumerOptions);
+        if (!envelopeValidation.IsValid)
+        {
+            await deadLetterStore.AddAsync(MesOverrideConsumerPersistence.CreateDeadLetter(
+                ConsumerName, integrationEvent,
+                envelopeValidation.FailureCode, envelopeValidation.Message), cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        await HandleValidEventAsync(integrationEvent, inboxIdentity, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(
+        MesOperationTaskManuallyDispatchedIntegrationEvent integrationEvent,
+        MesOverrideInboxIdentity inboxIdentity,
+        CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload;
         if (!inboxIdentity.IsValid ||
             !IsValidEnvelopeProjectionIdentity(integrationEvent) ||
             !IsValidIdentity(payload.WorkOrderId) ||
