@@ -112,5 +112,7 @@ public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandler
     }
 
     private static bool IsValidIdentity(string value) =>
-        !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= 128;
+        !string.IsNullOrWhiteSpace(value) &&
+        value == value.Trim() &&
+        value.Length <= 128;
 }

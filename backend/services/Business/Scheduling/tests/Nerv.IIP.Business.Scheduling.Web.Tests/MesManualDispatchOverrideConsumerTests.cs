@@ -163,6 +163,43 @@ public sealed class MesManualDispatchOverrideConsumerTests
     }
 
     [Fact]
+    public async Task Padded_clear_identity_enters_dead_letter_once_without_mutating_existing_override()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"mes-dispatch-clear-padded-{Guid.NewGuid():N}").Options;
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        var baseline = At(8);
+        var existing = ScheduleOperationOverride.Create(
+            "org-1", "env-1", "WO-1", "OP-1", 10, "DEV-1", "WC-1",
+            baseline, baseline.AddHours(1), "mes-manual-dispatch", "mes-dispatch",
+            "evt-dispatch-1", "user:dispatcher", baseline, baseline);
+        Assert.True(existing.TryApplyMesDispatch(
+            "DEV-1", "WC-1", baseline, baseline.AddHours(1), "evt-dispatch-1",
+            "user:dispatcher", 1, baseline, baseline));
+        db.ScheduleOperationOverrides.Add(existing);
+        await db.SaveChangesAsync();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateClearHandler(db, deadLetters);
+        var integrationEvent = CreateClearEvent("evt-clear-padded", At(9), revision: 2);
+        var invalid = integrationEvent with
+        {
+            Payload = integrationEvent.Payload with { OperationTaskId = " OP-1 " }
+        };
+
+        await handler.HandleAsync(invalid, CancellationToken.None);
+        await handler.HandleAsync(invalid, CancellationToken.None);
+
+        var persisted = Assert.Single(await db.ScheduleOperationOverrides.ToArrayAsync());
+        Assert.True(persisted.IsActive);
+        Assert.Equal(1, persisted.SourceRevision);
+        Assert.Equal("evt-dispatch-1", persisted.SourceEventId);
+        Assert.Equal(1, await db.ProcessedIntegrationEvents.CountAsync());
+        Assert.Single(await deadLetters.ListAsync(
+            MesOperationTaskManualDispatchClearedIntegrationEventHandlerForClearOverride.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Handle_dead_letters_invalid_payload_once_without_throwing()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
