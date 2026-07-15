@@ -32,13 +32,15 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
         CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
+        var inboxIdentity = MesOverrideConsumerPersistence.CreateInboxIdentity(integrationEvent);
         if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAsync(
-            dbContext, ConsumerName, integrationEvent, cancellationToken))
+            dbContext, ConsumerName, inboxIdentity.Envelope, cancellationToken))
         {
             return;
         }
 
-        if (!IsValidEnvelopeProjectionIdentity(integrationEvent) ||
+        if (!inboxIdentity.IsValid ||
+            !IsValidEnvelopeProjectionIdentity(integrationEvent) ||
             !IsValidIdentity(payload.WorkOrderId) ||
             !IsValidIdentity(payload.OperationTaskId) ||
             !IsValidIdentity(payload.ResourceId) ||
@@ -47,8 +49,9 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
             payload.DispatchRevision < 0 ||
             payload.EndUtc <= payload.StartUtc)
         {
-            await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(
-                ConsumerName, integrationEvent, "scheduling.mesManualDispatch.invalidPayload",
+            await deadLetterStore.AddAsync(MesOverrideConsumerPersistence.CreateDeadLetter(
+                ConsumerName, integrationEvent,
+                "scheduling.mesManualDispatch.invalidPayload",
                 "MES manual dispatch requires real operation, resource, work center, and a positive scheduling window."), cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             return;
@@ -59,18 +62,31 @@ public sealed class MesOperationTaskManuallyDispatchedIntegrationEventHandlerFor
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateConcurrencyException)
         {
-            dbContext.ChangeTracker.Clear();
-            if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAsync(
-                dbContext, ConsumerName, integrationEvent, cancellationToken))
-            {
-                return;
-            }
-
-            await UpsertOverrideAsync(integrationEvent, cancellationToken, requireExisting: true);
-            await dbContext.SaveChangesAsync(cancellationToken);
+            await RetryAfterConcurrentUpdateAsync(integrationEvent, inboxIdentity.Envelope, cancellationToken);
         }
+        catch (DbUpdateException exception) when (
+            MesOverrideConsumerPersistence.IsOverrideInsertConflict(exception, dbContext))
+        {
+            await RetryAfterConcurrentUpdateAsync(integrationEvent, inboxIdentity.Envelope, cancellationToken);
+        }
+    }
+
+    private async Task RetryAfterConcurrentUpdateAsync(
+        MesOperationTaskManuallyDispatchedIntegrationEvent integrationEvent,
+        Nerv.IIP.Contracts.IntegrationEvents.IIntegrationEventEnvelope inboxEnvelope,
+        CancellationToken cancellationToken)
+    {
+        dbContext.ChangeTracker.Clear();
+        if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext, ConsumerName, inboxEnvelope, cancellationToken))
+        {
+            return;
+        }
+
+        await UpsertOverrideAsync(integrationEvent, cancellationToken, requireExisting: true);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task UpsertOverrideAsync(

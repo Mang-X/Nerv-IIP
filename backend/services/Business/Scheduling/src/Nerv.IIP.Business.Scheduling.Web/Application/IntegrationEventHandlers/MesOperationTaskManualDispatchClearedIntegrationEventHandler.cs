@@ -38,14 +38,16 @@ public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandler
         MesOperationTaskManualDispatchClearedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
+        var inboxIdentity = MesOverrideConsumerPersistence.CreateInboxIdentity(integrationEvent);
         if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAsync(
-            dbContext, ConsumerName, integrationEvent, cancellationToken))
+            dbContext, ConsumerName, inboxIdentity.Envelope, cancellationToken))
         {
             return;
         }
 
         var payload = integrationEvent.Payload;
-        if (!IsValidEnvelopeProjectionIdentity(integrationEvent) ||
+        if (!inboxIdentity.IsValid ||
+            !IsValidEnvelopeProjectionIdentity(integrationEvent) ||
             !IsValidIdentity(payload.WorkOrderId) ||
             !IsValidIdentity(payload.OperationTaskId) ||
             !IsValidIdentity(payload.ResourceId) ||
@@ -55,8 +57,9 @@ public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandler
             payload.EndUtc <= payload.StartUtc ||
             !RecognizedReasons.Contains(payload.ReasonCode))
         {
-            await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(
-                ConsumerName, integrationEvent, "scheduling.mesManualDispatchCleared.invalidPayload",
+            await deadLetterStore.AddAsync(MesOverrideConsumerPersistence.CreateDeadLetter(
+                ConsumerName, integrationEvent,
+                "scheduling.mesManualDispatchCleared.invalidPayload",
                 "MES manual dispatch clear requires real operation, resource, work center, a positive prior window and revision, and a recognized reason."), cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             return;
@@ -67,18 +70,31 @@ public sealed class MesOperationTaskManualDispatchClearedIntegrationEventHandler
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateConcurrencyException)
         {
-            dbContext.ChangeTracker.Clear();
-            if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAsync(
-                dbContext, ConsumerName, integrationEvent, cancellationToken))
-            {
-                return;
-            }
-
-            await ClearOverrideAsync(integrationEvent, cancellationToken, requireExisting: true);
-            await dbContext.SaveChangesAsync(cancellationToken);
+            await RetryAfterConcurrentUpdateAsync(integrationEvent, inboxIdentity.Envelope, cancellationToken);
         }
+        catch (DbUpdateException exception) when (
+            MesOverrideConsumerPersistence.IsOverrideInsertConflict(exception, dbContext))
+        {
+            await RetryAfterConcurrentUpdateAsync(integrationEvent, inboxIdentity.Envelope, cancellationToken);
+        }
+    }
+
+    private async Task RetryAfterConcurrentUpdateAsync(
+        MesOperationTaskManualDispatchClearedIntegrationEvent integrationEvent,
+        Nerv.IIP.Contracts.IntegrationEvents.IIntegrationEventEnvelope inboxEnvelope,
+        CancellationToken cancellationToken)
+    {
+        dbContext.ChangeTracker.Clear();
+        if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext, ConsumerName, inboxEnvelope, cancellationToken))
+        {
+            return;
+        }
+
+        await ClearOverrideAsync(integrationEvent, cancellationToken, requireExisting: true);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task ClearOverrideAsync(

@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
@@ -33,6 +34,10 @@ public sealed class MesManualDispatchOverrideConsumerTests
         Assert.Equal("DEV-1", persisted.ResourceId);
         Assert.Equal(start, persisted.StartUtc);
         Assert.Equal(1, persisted.SourceRevision);
+        var processed = await db.ProcessedIntegrationEvents.SingleAsync();
+        Assert.Equal(integrationEvent.EventId, processed.EventId);
+        Assert.Equal(integrationEvent.SourceService, processed.SourceService);
+        Assert.Equal(integrationEvent.IdempotencyKey, processed.IdempotencyKey);
     }
 
     [Fact]
@@ -307,6 +312,182 @@ public sealed class MesManualDispatchOverrideConsumerTests
     }
 
     [Fact]
+    public async Task Overlength_dispatch_envelope_storage_identities_are_safely_deduplicated()
+    {
+        var variants = new MesOperationTaskManuallyDispatchedIntegrationEvent[]
+        {
+            CreateEvent(new string('e', 257), At(8), "DEV-1"),
+            CreateEvent("evt-overlength-source", At(8), "DEV-1") with
+            {
+                SourceService = new string('s', 129)
+            },
+            CreateEvent("evt-overlength-idempotency", At(8), "DEV-1") with
+            {
+                IdempotencyKey = new string('i', 513)
+            },
+            CreateEvent(" padded-event-id ", At(8), "DEV-1"),
+            CreateEvent("evt-padded-source", At(8), "DEV-1") with
+            {
+                SourceService = " business-mes "
+            },
+            CreateEvent("evt-padded-idempotency", At(8), "DEV-1") with
+            {
+                IdempotencyKey = " mes:dispatch:padded "
+            }
+        };
+
+        foreach (var invalid in variants)
+        {
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase($"mes-dispatch-overlength-envelope-{Guid.NewGuid():N}").Options;
+            await using var db = new ApplicationDbContext(options, new NoopMediator());
+            var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+            var handler = CreateDispatchHandler(db, deadLetters);
+
+            await handler.HandleAsync(invalid, CancellationToken.None);
+            await handler.HandleAsync(invalid, CancellationToken.None);
+
+            Assert.Empty(db.ScheduleOperationOverrides);
+            var processed = Assert.Single(await db.ProcessedIntegrationEvents.ToArrayAsync());
+            Assert.InRange(processed.EventId.Length, 1, 128);
+            Assert.InRange(processed.SourceService.Length, 1, 128);
+            Assert.InRange(processed.IdempotencyKey.Length, 1, 512);
+            Assert.Equal(processed.EventId.Trim(), processed.EventId);
+            Assert.Equal(processed.SourceService.Trim(), processed.SourceService);
+            Assert.Equal(processed.IdempotencyKey.Trim(), processed.IdempotencyKey);
+            var deadLetter = Assert.Single(await deadLetters.ListAsync(
+                MesOperationTaskManuallyDispatchedIntegrationEventHandlerForUpsertOverride.ConsumerName,
+                IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+            Assert.InRange(deadLetter.EventId!.Length, 1, 200);
+            Assert.InRange(deadLetter.SourceService!.Length, 1, 150);
+            Assert.InRange(deadLetter.IdempotencyKey!.Length, 1, 500);
+        }
+    }
+
+    [Fact]
+    public async Task Overlength_clear_envelope_storage_identities_are_safely_deduplicated()
+    {
+        var variants = new MesOperationTaskManualDispatchClearedIntegrationEvent[]
+        {
+            CreateClearEvent(new string('e', 257), At(8), revision: 1),
+            CreateClearEvent("evt-clear-overlength-source", At(8), revision: 1) with
+            {
+                SourceService = new string('s', 129)
+            },
+            CreateClearEvent("evt-clear-overlength-idempotency", At(8), revision: 1) with
+            {
+                IdempotencyKey = new string('i', 513)
+            },
+            CreateClearEvent(" padded-clear-event-id ", At(8), revision: 1),
+            CreateClearEvent("evt-clear-padded-source", At(8), revision: 1) with
+            {
+                SourceService = " business-mes "
+            },
+            CreateClearEvent("evt-clear-padded-idempotency", At(8), revision: 1) with
+            {
+                IdempotencyKey = " mes:dispatch-clear:padded "
+            }
+        };
+
+        foreach (var invalid in variants)
+        {
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseInMemoryDatabase($"mes-clear-overlength-envelope-{Guid.NewGuid():N}").Options;
+            await using var db = new ApplicationDbContext(options, new NoopMediator());
+            var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+            var handler = CreateClearHandler(db, deadLetters);
+
+            await handler.HandleAsync(invalid, CancellationToken.None);
+            await handler.HandleAsync(invalid, CancellationToken.None);
+
+            Assert.Empty(db.ScheduleOperationOverrides);
+            var processed = Assert.Single(await db.ProcessedIntegrationEvents.ToArrayAsync());
+            Assert.InRange(processed.EventId.Length, 1, 128);
+            Assert.InRange(processed.SourceService.Length, 1, 128);
+            Assert.InRange(processed.IdempotencyKey.Length, 1, 512);
+            Assert.Equal(processed.EventId.Trim(), processed.EventId);
+            Assert.Equal(processed.SourceService.Trim(), processed.SourceService);
+            Assert.Equal(processed.IdempotencyKey.Trim(), processed.IdempotencyKey);
+            var deadLetter = Assert.Single(await deadLetters.ListAsync(
+                MesOperationTaskManualDispatchClearedIntegrationEventHandlerForClearOverride.ConsumerName,
+                IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+            Assert.InRange(deadLetter.EventId!.Length, 1, 200);
+            Assert.InRange(deadLetter.SourceService!.Length, 1, 150);
+            Assert.InRange(deadLetter.IdempotencyKey!.Length, 1, 500);
+        }
+    }
+
+    [Fact]
+    public async Task Non_unique_database_failure_is_not_misclassified_as_override_insert_race()
+    {
+        var interceptor = new FailFirstSaveInterceptor();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"mes-dispatch-non-unique-failure-{Guid.NewGuid():N}")
+            .AddInterceptors(interceptor)
+            .Options;
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        var handler = CreateDispatchHandler(db, new InMemoryIntegrationEventDeadLetterStore());
+
+        var exception = await Assert.ThrowsAsync<DbUpdateException>(() => handler.HandleAsync(
+            CreateEvent("evt-non-unique-failure", At(8), "DEV-1"), CancellationToken.None));
+
+        Assert.Equal(FailFirstSaveInterceptor.FailureMessage, exception.Message);
+    }
+
+    [Fact]
+    public async Task Distinct_invalid_idempotency_keys_get_distinct_safe_inbox_identities()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"mes-dispatch-distinct-invalid-identities-{Guid.NewGuid():N}").Options;
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateDispatchHandler(db, deadLetters);
+        var first = CreateEvent("evt-invalid-idempotency", At(8), "DEV-1") with
+        {
+            IdempotencyKey = new string('a', 513)
+        };
+        var second = first with { IdempotencyKey = new string('b', 513) };
+
+        await handler.HandleAsync(first, CancellationToken.None);
+        await handler.HandleAsync(second, CancellationToken.None);
+
+        var identities = await db.ProcessedIntegrationEvents
+            .Select(x => x.IdempotencyKey)
+            .ToArrayAsync();
+        Assert.Equal(2, identities.Length);
+        Assert.Equal(2, identities.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(2, (await deadLetters.ListAsync(
+            MesOperationTaskManuallyDispatchedIntegrationEventHandlerForUpsertOverride.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending, CancellationToken.None)).Count);
+    }
+
+    [Fact]
+    public async Task Valid_512_character_inbox_key_is_safely_projected_to_invalid_payload_dead_letter()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase($"mes-dispatch-dead-letter-key-limit-{Guid.NewGuid():N}").Options;
+        await using var db = new ApplicationDbContext(options, new NoopMediator());
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateDispatchHandler(db, deadLetters);
+        var idempotencyKey = new string('i', 512);
+        var invalid = CreateEvent("evt-dead-letter-key-limit", At(8), "DEV-1", revision: -1) with
+        {
+            IdempotencyKey = idempotencyKey
+        };
+
+        await handler.HandleAsync(invalid, CancellationToken.None);
+        await handler.HandleAsync(invalid, CancellationToken.None);
+
+        var processed = await db.ProcessedIntegrationEvents.SingleAsync();
+        Assert.Equal(idempotencyKey, processed.IdempotencyKey);
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            MesOperationTaskManuallyDispatchedIntegrationEventHandlerForUpsertOverride.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        Assert.InRange(deadLetter.IdempotencyKey!.Length, 1, 500);
+        Assert.NotEqual(idempotencyKey, deadLetter.IdempotencyKey);
+    }
+
+    [Fact]
     public async Task Legacy_revision_zero_dispatches_converge_by_source_time()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -480,5 +661,25 @@ public sealed class MesManualDispatchOverrideConsumerTests
         public Task<object?> Send(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class FailFirstSaveInterceptor : SaveChangesInterceptor
+    {
+        public const string FailureMessage = "non-unique constraint failure";
+        private bool hasFailed;
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!hasFailed)
+            {
+                hasFailed = true;
+                throw new DbUpdateException(FailureMessage);
+            }
+
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
     }
 }
