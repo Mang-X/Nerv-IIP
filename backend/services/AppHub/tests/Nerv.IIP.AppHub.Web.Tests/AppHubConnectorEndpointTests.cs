@@ -133,6 +133,80 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
     }
 
     [Fact]
+    public async Task Authorized_collection_health_list_returns_reporting_connectors_with_stale_sorted_first()
+    {
+        var clock = new MutableTimeProvider(DateTimeOffset.Parse("2026-07-13T01:10:00Z"));
+        var databaseName = $"health-list-{Guid.CreateVersion7():N}";
+        var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ApplicationDbContext>();
+            services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+            services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(clock);
+        }));
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        // Fresh OPC UA collector -> current.
+        var current = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "opcua-main", "OPC UA Main", new Dictionary<string, string>(), []);
+        current.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), true, 3);
+        current.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-main", "opcua", Guid.Parse("11111111-1111-1111-1111-111111111111"), DateTimeOffset.Parse("2026-07-13T01:09:40Z"), 100, 4, 1, DateTimeOffset.Parse("2026-07-13T01:09:39Z")));
+
+        // Disconnected Modbus collector (old heartbeat) -> stale, must sort first.
+        var stale = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "modbus-main", "Modbus Main", new Dictionary<string, string>(), []);
+        stale.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:00:00Z"), true, 3);
+        stale.RecordCollectionHealth(new ConnectorCollectionHealth("modbus-main", "modbus", Guid.Parse("22222222-2222-2222-2222-222222222222"), DateTimeOffset.Parse("2026-07-13T01:01:00Z"), 50, 9, 2, DateTimeOffset.Parse("2026-07-13T01:00:58Z")));
+
+        // Registered but never reported collection health -> excluded from the wall.
+        var withoutHealth = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "docker-x", "Docker X", new Dictionary<string, string>(), []);
+        withoutHealth.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:00Z"), true, 3);
+
+        // Different environment must not leak into the org/env-scoped list.
+        var otherEnv = new ApplicationInstance("org", "env-other", "host", "collector", "1", "node", "opcua-other", "OPC UA Other", new Dictionary<string, string>(), []);
+        otherEnv.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), true, 3);
+        otherEnv.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-other", "opcua", Guid.Parse("33333333-3333-3333-3333-333333333333"), DateTimeOffset.Parse("2026-07-13T01:09:40Z"), 7, 0, 0, DateTimeOffset.Parse("2026-07-13T01:09:39Z")));
+
+        db.ApplicationInstances.AddRange(current, stale, withoutHealth, otherEnv);
+        await db.SaveChangesAsync();
+
+        var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
+        using var response = await client.GetAsync("/internal/apphub/v1/connectors/collection-health?organizationId=org&environmentId=env");
+        var body = await ReadResponseDataAsync<ConnectorCollectionHealthListResponse>(response);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, body.Total);
+        Assert.Equal(2, body.Items.Count);
+
+        var first = body.Items[0];
+        Assert.Equal("modbus-main", first.ConnectorId);
+        Assert.Equal("Modbus Main", first.ConnectorName);
+        Assert.Equal("stale", first.Status);
+        Assert.Equal("modbus", first.SourceSystem);
+        Assert.Equal(50, first.ReceivedCount);
+        Assert.Equal(9, first.DroppedCount);
+        Assert.Equal(2, first.ErrorCount);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-13T01:00:00Z"), first.LastHeartbeatAtUtc);
+
+        var second = body.Items[1];
+        Assert.Equal("opcua-main", second.ConnectorId);
+        Assert.Equal("current", second.Status);
+        Assert.Equal("opcua", second.SourceSystem);
+        Assert.Equal(100, second.ReceivedCount);
+    }
+
+    [Fact]
+    public async Task Collection_health_list_requires_internal_service_authorization()
+    {
+        var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/internal/apphub/v1/connectors/collection-health?organizationId=org-unauthorized&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Instance_query_endpoints_require_internal_service_authorization()
     {
         var client = factory.CreateClient();

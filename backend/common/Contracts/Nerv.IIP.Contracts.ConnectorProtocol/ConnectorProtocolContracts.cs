@@ -83,6 +83,28 @@ public sealed record ConnectorCollectionHealthResponse(
     long? ErrorCount,
     string? SourceSystem);
 
+/// <summary>
+/// One connector-host instance's collection health, self-sufficient for a status wall card:
+/// identity (<see cref="ConnectorId"/>), display name, protocol (<see cref="SourceSystem"/>: opcua/modbus/mqtt),
+/// derived <see cref="Status"/> (current/stale/unknown) and the same heartbeat/throughput/drop facts as
+/// <see cref="ConnectorCollectionHealthResponse"/>.
+/// </summary>
+public sealed record ConnectorCollectionHealthListItem(
+    string ConnectorId,
+    string ConnectorName,
+    string Status,
+    DateTimeOffset? LastHeartbeatAtUtc,
+    DateTimeOffset? MetricsReportedAtUtc,
+    DateTimeOffset? LastSampleAtUtc,
+    long? ReceivedCount,
+    long? DroppedCount,
+    long? ErrorCount,
+    string? SourceSystem);
+
+public sealed record ConnectorCollectionHealthListResponse(
+    IReadOnlyList<ConnectorCollectionHealthListItem> Items,
+    int Total);
+
 public sealed record OperationResult(
     ConnectorRequestContext Context,
     string OperationTaskId,

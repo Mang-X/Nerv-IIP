@@ -2,10 +2,13 @@ import {
   createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions,
   getBusinessConsoleTelemetryTagCurrentValueQueryOptions,
   listBusinessConsoleTelemetryAlarmRulesQueryOptions,
+  listBusinessConsoleTelemetryConnectorCollectionHealthQueryOptions,
   listBusinessConsoleTelemetryTagsQueryOptions,
   queryBusinessConsoleTelemetryDeviceHistoryQueryOptions,
   queryBusinessConsoleTelemetryOeeQueryOptions,
   queryBusinessConsoleTelemetryRuntimeAvailabilityQueryOptions,
+  type BusinessConsoleConnectorCollectionHealthListEnvelope,
+  type BusinessConsoleConnectorCollectionHealthListItem,
   type BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest,
   type BusinessConsoleTelemetryTagCurrentValueEnvelope,
   type BusinessConsoleTelemetryTagCurrentValueResponse,
@@ -343,5 +346,66 @@ export function useBusinessTelemetryOee(initialFilters: Partial<TelemetryWindowF
         ? Promise.all([oeeQuery.refetch(), runtimeAvailabilityQuery.refetch()])
         : Promise.resolve(),
     runtimeAvailabilityError: runtimeAvailabilityQuery.error,
+  }
+}
+
+/**
+ * 采集连接器状态墙轮询周期。拔线后后端在心跳超时窗口内把状态派生为 stale，本页每个周期重取以在
+ * 「1 个轮询周期内」反映断线。用官方 auto-refetch 表达，不手写 setInterval。
+ */
+export const CONNECTOR_HEALTH_POLL_INTERVAL_MS = 10_000
+
+export function connectorHealthStatusLabel(status?: string | null) {
+  const labels: Record<string, string> = {
+    current: '在线',
+    stale: '断线 / 异常',
+    unknown: '未上报',
+  }
+  return status ? (labels[status] ?? status) : '未上报'
+}
+
+/** 采集连接器的协议类型来自采集健康的 sourceSystem（opcua/modbus/mqtt）。 */
+export function connectorSourceSystemLabel(sourceSystem?: string | null) {
+  if (!sourceSystem) return '未知类型'
+  const labels: Record<string, string> = {
+    opcua: 'OPC UA',
+    modbus: 'Modbus',
+    mqtt: 'MQTT',
+  }
+  return labels[sourceSystem.toLowerCase()] ?? sourceSystem
+}
+
+/**
+ * 采集连接器健康墙：消费 #885 连接器采集健康列表 facade，按周期轮询。断线/异常连接器由后端排序置顶。
+ * 业务上下文为空时不发请求（空态由页面处理）。
+ */
+export function useBusinessTelemetryConnectors() {
+  const businessContext = useBusinessContextStore()
+  const connectorsQuery = useQuery(() => ({
+    ...listBusinessConsoleTelemetryConnectorCollectionHealthQueryOptions({
+      query: toContextQuery(businessContext),
+    }),
+    enabled: hasBusinessContext(businessContext),
+    autoRefetch: () => CONNECTOR_HEALTH_POLL_INTERVAL_MS,
+  }))
+
+  return {
+    connectors: computed<BusinessConsoleConnectorCollectionHealthListItem[]>(() =>
+      listItems<BusinessConsoleConnectorCollectionHealthListItem>(
+        connectorsQuery.data.value as
+          | BusinessConsoleConnectorCollectionHealthListEnvelope
+          | undefined,
+      ),
+    ),
+    connectorsError: connectorsQuery.error,
+    connectorsPending: connectorsQuery.isLoading,
+    connectorsTotal: computed(() =>
+      listTotal(
+        connectorsQuery.data.value as
+          | BusinessConsoleConnectorCollectionHealthListEnvelope
+          | undefined,
+      ),
+    ),
+    refreshConnectors: () => refetchWithBusinessContext(businessContext, connectorsQuery),
   }
 }

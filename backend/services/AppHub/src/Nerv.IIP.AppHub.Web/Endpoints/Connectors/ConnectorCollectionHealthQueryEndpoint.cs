@@ -2,6 +2,7 @@ using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.AppHub.Infrastructure;
+using Nerv.IIP.AppHub.Web.Application.Connectors;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Dto;
@@ -48,23 +49,7 @@ public sealed class ConnectorCollectionHealthQueryEndpoint(IServiceProvider serv
             await Send.OkAsync(missing.AsResponseData(), ct);
             return;
         }
-        var health = instance.CollectionHealth;
-        var now = clock.GetUtcNow();
-        var heartbeatStale = instance.Heartbeat is null
-            || !instance.Heartbeat.Reachable
-            || instance.Heartbeat.LastHeartbeatAtUtc.AddMinutes(2) <= now;
-        var metricsStale = health is not null && health.ReportedAtUtc.AddMinutes(2) <= now;
-        var status = health is null ? "unknown" : heartbeatStale || metricsStale ? "stale" : "current";
-        var response = new ConnectorCollectionHealthResponse(
-            connectorId,
-            status,
-            instance.Heartbeat?.LastHeartbeatAtUtc,
-            health?.ReportedAtUtc,
-            health?.LastSampleAtUtc,
-            health?.ReceivedCount,
-            health?.DroppedCount,
-            health?.ErrorCount,
-            health?.SourceSystem);
+        var response = ConnectorCollectionHealthEvaluator.ToResponse(instance, clock.GetUtcNow());
         await Send.OkAsync(response.AsResponseData(), ct);
     }
 }
