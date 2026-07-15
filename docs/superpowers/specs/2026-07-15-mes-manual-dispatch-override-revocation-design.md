@@ -52,6 +52,15 @@ Released schedule assignments are not manual dispatches and must not set
 scheduled device assignment from being misreported as cancellation of a MES manual
 override.
 
+The migration cannot safely infer whether an existing device assignment came from
+MES manual dispatch or a released schedule, so existing rows are initialized as
+revision zero and inactive (`legacy-unknown`). Such a row is not treated as a live
+manual lock during ordinary scheduling. If its device is explicitly cleared or the
+operation is cancelled, MES conservatively emits revision 1 clear/tombstone facts;
+this prevents an already-projected legacy lock from surviving. A later new manual
+dispatch then advances to revision 2. No historical row is guessed active during
+the upgrade.
+
 The domain events snapshot the revision and the affected resource/window facts.
 They must not depend on reading a later mutable aggregate state during conversion.
 

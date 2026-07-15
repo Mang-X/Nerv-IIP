@@ -90,6 +90,47 @@ public sealed class ManualDispatchSchedulingLockEventTests
     }
 
     [Fact]
+    public void Clearing_a_legacy_unknown_device_emits_revision_one_then_redispatch_uses_revision_two()
+    {
+        var task = NewTask();
+        task.ApplyScheduleAssignment("WC-1", "DEV-LEGACY", At(0), At(1), At(0));
+        Assert.Equal(0, task.ManualDispatchRevision);
+        Assert.False(task.HasActiveManualDispatch);
+
+        task.Assign(null, null, null, At(2), "user:planner");
+
+        var cleared = Assert.IsType<OperationTaskManualDispatchClearedDomainEvent>(
+            Assert.Single(task.GetDomainEvents()));
+        Assert.Equal(1, cleared.Dispatch.DispatchRevision);
+        Assert.Equal("DEV-LEGACY", cleared.Dispatch.ResourceId);
+        Assert.False(task.HasActiveManualDispatch);
+
+        task.ClearDomainEvents();
+        task.Assign(null, "DEV-NEW", null, At(3), "user:planner");
+
+        var dispatched = Assert.IsType<OperationTaskManuallyDispatchedDomainEvent>(
+            Assert.Single(task.GetDomainEvents()));
+        Assert.Equal(2, dispatched.Dispatch.DispatchRevision);
+        Assert.True(task.HasActiveManualDispatch);
+    }
+
+    [Fact]
+    public void Cancelling_a_legacy_unknown_device_emits_revision_one_tombstone_fact()
+    {
+        var task = NewTask();
+        task.ApplyScheduleAssignment("WC-1", "DEV-LEGACY", At(0), At(1), At(0));
+
+        task.Cancel(At(2), "user:planner");
+
+        var cleared = Assert.IsType<OperationTaskManualDispatchClearedDomainEvent>(
+            Assert.Single(task.GetDomainEvents()));
+        Assert.Equal(1, cleared.Dispatch.DispatchRevision);
+        Assert.Equal("DEV-LEGACY", cleared.Dispatch.ResourceId);
+        Assert.Equal("operation-cancelled", cleared.ReasonCode);
+        Assert.False(task.HasActiveManualDispatch);
+    }
+
+    [Fact]
     public void Released_schedule_assignment_does_not_become_a_manual_dispatch_fact()
     {
         var task = NewTask();

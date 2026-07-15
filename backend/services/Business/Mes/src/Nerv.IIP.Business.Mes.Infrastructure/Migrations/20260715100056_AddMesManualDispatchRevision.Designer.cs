@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260715075647_AddMesManualDispatchRevision")]
+    [Migration("20260715100056_AddMesManualDispatchRevision")]
     partial class AddMesManualDispatchRevision
     {
         /// <inheritdoc />
@@ -596,7 +596,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false)
                         .HasColumnName("has_active_manual_dispatch")
-                        .HasComment("Whether the operation currently owns an active MES manual-device dispatch lock.");
+                        .HasComment("Whether the operation currently owns an active MES manual-device dispatch lock; false with revision zero and a device remains legacy-unknown.");
 
                     b.Property<long>("LaborTimeTicks")
                         .ValueGeneratedOnAdd()
@@ -617,7 +617,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("bigint")
                         .HasDefaultValue(0L)
                         .HasColumnName("manual_dispatch_revision")
-                        .HasComment("Monotonic MES manual-device dispatch lifecycle revision.");
+                        .HasComment("Monotonic MES manual-device dispatch lifecycle revision; zero is legacy-unknown after upgrade.");
 
                     b.Property<string>("OperationCode")
                         .HasMaxLength(100)

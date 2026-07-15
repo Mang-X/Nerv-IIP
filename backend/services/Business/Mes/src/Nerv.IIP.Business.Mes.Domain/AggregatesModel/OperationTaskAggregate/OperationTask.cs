@@ -280,7 +280,9 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             throw new KnownException("Schedule invalidated operation task cannot be dispatched until it is rescheduled.");
         }
 
-        var previousDeviceAssetId = HasActiveManualDispatch ? DeviceAssetId : null;
+        var previousDeviceAssetId = HasActiveManualDispatch || HasLegacyUnknownManualDispatch
+            ? DeviceAssetId
+            : null;
         var previousAssignedAtUtc = AssignedAtUtc;
         var normalizedDeviceAssetId = NormalizeOptional(deviceAssetId);
         var isManualDispatch = normalizedDeviceAssetId is not null && Duration > TimeSpan.Zero;
@@ -327,11 +329,12 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             return;
         }
 
-        var canonicalActor = HasActiveManualDispatch
+        var shouldRevokeManualDispatch = HasActiveManualDispatch || HasLegacyUnknownManualDispatch;
+        var canonicalActor = shouldRevokeManualDispatch
             ? RequireCanonicalActor(actor)
             : null;
 
-        if (HasActiveManualDispatch)
+        if (shouldRevokeManualDispatch)
         {
             ManualDispatchRevision++;
             AddDomainEvent(new OperationTaskManualDispatchClearedDomainEvent(
@@ -407,6 +410,9 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
+
+    private bool HasLegacyUnknownManualDispatch =>
+        ManualDispatchRevision == 0 && !HasActiveManualDispatch && DeviceAssetId is not null;
 
     private OperationTaskManualDispatchSnapshot CreateManualDispatchSnapshot(
         string resourceId,
