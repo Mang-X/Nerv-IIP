@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ScanLine } from 'lucide-vue-next'
 import { cn } from '../../lib/utils'
 
@@ -26,14 +26,85 @@ function submit() {
   buffer.value = ''
 }
 
+// --- 焦点回抢（含浮层竞态防护）------------------------------------------------
+// blur 后下一帧回焦；RAF 回调内必须复查 `active`：
+// blur 已排入 RAF 后浮层才打开（active 变 false）的场景，回调不得再抢焦。
+let pendingRefocusRaf: number | null = null
+
+function cancelPendingRefocus() {
+  if (pendingRefocusRaf === null) return
+  cancelAnimationFrame(pendingRefocusRaf)
+  pendingRefocusRaf = null
+}
+
 function refocus() {
   if (!props.active) return
+  cancelPendingRefocus()
   // 键盘楔入设备需要输入框始终持有焦点
-  requestAnimationFrame(() => inputEl.value?.focus())
+  pendingRefocusRaf = requestAnimationFrame(() => {
+    pendingRefocusRaf = null
+    if (props.active) inputEl.value?.focus()
+  })
+}
+
+watch(
+  () => props.active,
+  (active) => {
+    // false：取消尚未执行的回焦；true：重新武装焦点（浮层关闭后恢复常驻）。
+    if (active) refocus()
+    else cancelPendingRefocus()
+  },
+)
+
+// --- document 级扫码缓冲（S2 首字符竞态的产品修复）----------------------------
+// blur → RAF 回焦的窗口内，扫码枪突发字符没有接收者会丢首字符。
+// 挂载期间在 document capture 阶段兜底：焦点不在本 input、也不在其它可编辑
+// 元素上时，把可打印单字符收进 buffer（Enter 触发提交），字符流不落地即不丢。
+function isOtherEditable(el: unknown): boolean {
+  if (!(el instanceof HTMLElement) || el === inputEl.value) return false
+  if (
+    el instanceof HTMLInputElement ||
+    el instanceof HTMLTextAreaElement ||
+    el instanceof HTMLSelectElement
+  ) {
+    return true
+  }
+  return el.isContentEditable || el.hasAttribute('contenteditable')
+}
+
+function onDocumentKeydown(event: KeyboardEvent) {
+  if (!props.active) return
+  // 多实例保险：另一个 ScanBar 已消费该事件时不再双写。
+  if (event.defaultPrevented) return
+  const own = inputEl.value
+  if (!own) return
+  // 本 input 已聚焦（或事件目标是本 input）时走原生 input 路径，避免双写。
+  if (event.target === own || document.activeElement === own) return
+  // 其它可编辑元素持有焦点/作为目标时不吞按键（浮层里的输入框优先）。
+  if (isOtherEditable(document.activeElement) || isOtherEditable(event.target)) return
+
+  if (event.key === 'Enter') {
+    // 仅当缓冲里已有扫码字符时才把 Enter 当扫码后缀消费，
+    // 否则放行（焦点在按钮上的回车激活等正常键盘交互不受影响）。
+    if (!buffer.value.trim()) return
+    event.preventDefault()
+    submit()
+    return
+  }
+  if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    event.preventDefault()
+    buffer.value += event.key
+  }
 }
 
 onMounted(() => {
+  document.addEventListener('keydown', onDocumentKeydown, true)
   if (props.active) refocus()
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onDocumentKeydown, true)
+  cancelPendingRefocus()
 })
 </script>
 

@@ -6,7 +6,8 @@
 
 ## 1. 测试层次
 
-PDA 测试分两层，职责互补、不重叠：
+PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见下文「L2 真实栈仿真走查（live）」节，
+完整分层方案见 `frontend/DESIGN/roadmaps/2026-07-15-pda-device-sim-detection-plan.md`）：
 
 1. **jsdom 单元/组件测试**（`vp test run src`）
    - 跑在 jsdom，无真实浏览器。覆盖：组件标记/行为/事件、store 逻辑、登录/首页页面的渲染与守卫断言。
@@ -18,15 +19,23 @@ PDA 测试分两层，职责互补、不重叠：
      `nerv-iip-color-mode`）跳过登录表单，直达受保护路由。
    - 覆盖：登录→首页真实流程、首页扫码条/应用墙/我的任务空态、`@nerv-iip/ui-mobile` 全部 5 个组件
      （AppShellMobile / ScanBar / ListRow / BottomSheet / Result，经 `/design-system/gallery` 画廊页载体）
-     的真实交互，以及视觉/布局 smoke。
+     的真实交互、WMS/MES/设备运维三域业务链路 smoke，以及视觉/布局 smoke。
 
-### e2e spec 清单（9 个用例）
+### e2e spec 清单（5 个 spec / 26 个用例）
 
-- `e2e/app-flow.spec.ts`（3）：登录落地工作台；首页扫码条/空态/禁用应用墙 + 无溢出 + 触控尺寸；
-  点击未就绪应用墙项不跳转。
-- `e2e/ui-mobile.spec.ts`（6）：5 组件渲染 + 无溢出 + 触控尺寸；ScanBar 键盘楔入（type+Enter）发值；
-  ListRow 仅交互行触发 select；BottomSheet 打开 + Escape 关闭；AppShellMobile 安全区 fallback 最小内边距；
-  暗色 token 接线（`.dark` + body 深色背景）。
+- `e2e/app-flow.spec.ts`（5）：登录落地工作台；登录失败留在登录路由并透出错误；
+  首页扫码条/空态/应用墙 + 无溢出 + 触控尺寸；应用墙入口跳转作业页；
+  首页扫码 type+Enter 页内回显、不跳死路由。
+- `e2e/ui-mobile.spec.ts`（8）：5 组件渲染 + 无溢出 + 触控尺寸；ScanBar 键盘楔入（type+Enter）发值；
+  ScanBar blur 后回抢焦点；ScanBar 浮层打开时不抢焦、关闭后重新武装（S3）；
+  ListRow 仅交互行触发 select；BottomSheet 打开 + Escape 关闭；
+  AppShellMobile 安全区 fallback 最小内边距；暗色 token 接线（`.dark` + body 深色背景）。
+- `e2e/wms.spec.ts`（4）：收货入库选单确认 → 成功结果；盘点录数确认 → 成功结果；
+  拣货只读中文状态（无裸 code/GUID）；首页应用墙 → `/wms/inbound`。
+- `e2e/mes.spec.ts`（5）：工序执行完成（二次确认）→ 成功结果；报工全链 → 成功结果；
+  领料列表渲染；完工入库列表渲染；首页应用墙 → `/mes/operation`。
+- `e2e/equipment.spec.ts`（4）：报修提交 → 成功结果；点检提交 → 成功结果；
+  报警行详情「去报修」带参穿透报修页；首页应用墙 → `/equipment/repair`。
 
 ## 2. 运行命令
 
@@ -49,21 +58,55 @@ pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test --list
   避免与 PDA dev(5126) 及 business-console e2e(5126) 撞口。
 - **浏览器不可用降级口径**（沿用仓库 Playwright caveat）：若本机/沙箱/离线环境无法安装或启动 Chromium，
   **如实报告环境阻塞、不伪造通过**。此时最低验证为 `playwright test --list`（解析/发现 spec，不启浏览器）
-  + 既有 `typecheck`/`test`/`build` 仍绿。设 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 可复用本机已装 Chromium。
+  加上既有 `typecheck`/`test`/`build` 仍绿。设 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 可复用本机已装 Chromium。
 
 ## 3. e2e 能 / 不能覆盖什么
 
 **能**（在仿真移动视口里用真实浏览器验证）：
+
 - 登录→首页真实跳转、DOM 交互（点击/输入/键盘事件）。
 - 计算样式布局：移动视口无横向溢出、触控目标 ≥44px、安全区 **fallback 最小内边距**
   （`max(0.75rem, env(...))`/`max(0.5rem, env(...))` → 仿真设备 env=0 时取 12px/8px 最小值）。
 - 暗色 token 接线（`document.documentElement.classList.contains('dark')` + body 深色背景）。
 
 **不能**（进真机手动冒烟清单）：
+
 - 真机真实 `env(safe-area-inset-*)`（仿真设备 inset=0，只能断言 fallback 最小值；刘海/手势条真实 inset 需真机）。
 - 硬件扫码枪键盘楔入（e2e 用 `input.type()+Enter` 近似，真实扫码枪时序/焦点常驻/失焦回抢需真机）。
 - Capacitor APK 内 WebView 行为、真机手势/滚动惯性/横竖屏切换。
 - 像素级视觉快照（仓库无基线，PDA 设计稿未定稿——留作后续）。
+
+## L2 真实栈仿真走查（live）
+
+> 定位：`frontend/DESIGN/roadmaps/2026-07-15-pda-device-sim-detection-plan.md` §4 的落地
+> （M1b harness 骨架）。**DOM 层键盘楔入近似**，不是硬件等价，也不改写「真机」口径
+> （真机 = 目标 PDA + APK + 实体扫码枪，发版门仍是下方真机手动冒烟清单）。
+
+- **形态**：`e2e-live/` 独立目录 + 独立 `playwright.live.config.ts`（`workers: 1`、`retries: 0`、
+  `trace: 'on'`，webServer 独立端口 **5177**，`PLAYWRIGHT_BUSINESS_PDA_LIVE_PORT` 可覆盖）。
+  **无任何 `page.route` mock**：vite dev 双代理直连真实网关（`NERV_IIP_BUSINESS_GATEWAY_URL`
+  默认 5119、`NERV_IIP_PLATFORM_GATEWAY_URL` 默认 5100），走真实登录页 UI 用真实 IAM 凭据登录
+  （env `NERV_IIP_LIVE_USER` / `NERV_IIP_LIVE_PASSWORD`，不硬编码）。
+- **扫码仿真**：`e2e-live/support/scan-gun.ts` 的 `simulateScanGun()`——不 `focus()`、不 `fill()`，
+  `page.keyboard` 按 10–30ms 级字符间隔注入 + Enter 后缀，字符流必须经由 ScanBar
+  「焦点常驻」契约进入输入框。
+- **预检不假绿**：`e2e-live/support/preflight.ts` 先探测两个网关的匿名 `GET /health`
+  （BusinessGateway/PlatformGateway `HealthEndpoint`），栈不可达时**直接 throw
+  报环境阻塞**（先 `nerv.ps1 dev` 起栈），绝不 `test.skip` 静默跳过。
+
+```bash
+# 前置：完整本地栈已运行（仓库根目录 .\nerv.ps1 dev，Docker 先开）+ live 凭据 env
+pnpm -C frontend --filter @nerv-iip/business-pda run e2e:live
+
+# 一键串联（worktree 归属检查 → 栈可达性 → e2e:live → 证据归集）
+pwsh frontend/apps/business-pda/scripts/pda-live-walkthrough.ps1
+```
+
+- **证据包口径**（截图不得单独构成 L2 通过证据）：commit/分支指纹 + Playwright trace +
+  关键请求 URL/status（写操作含幂等键）+ 写操作后端状态回读 + 截图；`pda-live-walkthrough.ps1`
+  会把 trace/截图归集到 `frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd>-pda-live/`。
+- **不进 CI**：依赖本地完整栈与 seed，与 `*PostgresProfileTests` 环境门控同一口径；
+  显式命令运行，浏览器/栈不可用时如实报告阻塞、不伪造通过。
 
 ## Capacitor/APK 网关基址与可复现构建
 

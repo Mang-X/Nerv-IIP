@@ -47,7 +47,9 @@ test('点检：选保养计划 → 选「通过」→ 提交 → 成功 Result',
   await expect(page.getByText('点检已记录')).toBeVisible()
 })
 
-test('报警 → 报修穿透：行内「去报修」带 deviceAssetId + sourceAlarmId 跳报修页', async ({ page }) => {
+test('报警 → 报修穿透：行详情「去报修」带 deviceAssetId + sourceAlarmId 跳报修页', async ({
+  page,
+}) => {
   await page.goto('/equipment/alarms')
   await expect(page.getByRole('heading', { name: '查看报警' })).toBeVisible()
 
@@ -56,7 +58,8 @@ test('报警 → 报修穿透：行内「去报修」带 deviceAssetId + sourceA
   await expect(page.getByText('严重')).toBeVisible()
   await expect(page.getByText('critical')).toHaveCount(0)
 
-  // 去报修：穿透 deviceAssetId=DEV-A + sourceAlarmId=ALM-1
+  // 去报修承载在行详情抽屉内（MAN-456 从行内移入详情）：先开详情再点。
+  await page.getByTestId('detail-ALM-1').click()
   await page.getByTestId('repair-ALM-1').click()
   await expect(page).toHaveURL(/\/equipment\/repair\?/)
   const url = new URL(page.url())
