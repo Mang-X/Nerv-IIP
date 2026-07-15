@@ -240,7 +240,7 @@ Source:
 17. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260706064951_AddMesEngineeringChangeWorkOrderImpacts.cs`
 18. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260707024208_AddOperationTaskSopOperationCode.cs`
 19. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260712144704_AddProductionReportReversalAudit.cs`
-20. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260715075647_AddMesManualDispatchRevision.cs`
+20. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260715100056_AddMesManualDispatchRevision.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
@@ -565,7 +565,7 @@ Source:
 5. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260626170713_AddSchedulingInputChangeInvalidations.cs`
 6. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260707042000_AddScheduleAssignmentStandardOperationCode.cs`
 7. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260714141100_AddSchedulingOperationOverrides.cs`
-8. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260715081348_AddSchedulingOverrideRevocationTombstones.cs`
+8. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260715095540_AddSchedulingOverrideRevocationTombstones.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
