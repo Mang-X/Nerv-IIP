@@ -1,12 +1,13 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
-import { computed, ref, shallowRef } from 'vue'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 import { computeConnectorSampleRate } from '@/composables/useBusinessTelemetry'
 import ConnectorsPage from './telemetry/connectors.vue'
 
 const connectorMocks = vi.hoisted(() => ({
   refreshConnectors: vi.fn(),
+  errorRef: null as { value: unknown } | null,
   connectors: [
     {
       connectorId: 'modbus-main',
@@ -33,7 +34,7 @@ const connectorMocks = vi.hoisted(() => ({
       errorCount: 0,
       counterEpoch: '44444444-4444-4444-4444-444444444444',
       lastHeartbeatAtUtc: '2026-07-13T01:09:45.000Z',
-      metricsReportedAtUtc: '2026-07-13T01:01:30.000Z',
+      metricsReportedAtUtc: '2026-07-13T01:09:40.000Z',
       lastSampleAtUtc: '2026-07-13T01:01:29.000Z',
     },
     {
@@ -53,19 +54,29 @@ const connectorMocks = vi.hoisted(() => ({
   ],
 }))
 
-vi.mock('@/utils/notify', () => ({ notifyError: vi.fn(), notifySuccess: vi.fn() }))
+const notifyMock = vi.hoisted(() => ({ notifyError: vi.fn(), notifySuccess: vi.fn() }))
+vi.mock('@/utils/notify', () => notifyMock)
 
-vi.mock('@/composables/useBusinessTelemetry', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/composables/useBusinessTelemetry')>()),
-  useBusinessTelemetryConnectors: () => ({
-    connectors: computed(() => connectorMocks.connectors),
-    connectorsError: shallowRef(),
-    connectorsPending: shallowRef(false),
-    connectorsTotal: computed(() => connectorMocks.connectors.length),
-    refreshConnectors: connectorMocks.refreshConnectors,
-    sampleRateByConnector: ref<Record<string, number | null>>({ 'opcua-main': 12.5 }),
-  }),
-}))
+vi.mock('@/composables/useBusinessTelemetry', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/composables/useBusinessTelemetry')>()
+  const vue = await import('vue')
+  connectorMocks.errorRef = vue.shallowRef<unknown>(undefined)
+  return {
+    ...original,
+    useBusinessTelemetryConnectors: () => ({
+      connectors: vue.computed(() => connectorMocks.connectors),
+      connectorsError: connectorMocks.errorRef,
+      connectorsPending: vue.shallowRef(false),
+      connectorsTotal: vue.computed(() => connectorMocks.connectors.length),
+      refreshConnectors: connectorMocks.refreshConnectors,
+      sampleRateByConnector: vue.ref<Record<string, number | null>>({ 'opcua-main': 12.5 }),
+    }),
+  }
+})
+
+function setError(error: unknown) {
+  connectorMocks.errorRef!.value = error
+}
 
 const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
@@ -85,15 +96,18 @@ const stubs = {
 }
 
 describe('equipment telemetry connectors page', () => {
+  beforeEach(() => {
+    notifyMock.notifyError.mockClear()
+    setError(undefined)
+  })
+
   it('renders connector name, protocol type, throughput rate, and derived status', () => {
-    const wrapper = mount(ConnectorsPage, { global: { stubs } })
-    const text = wrapper.text()
+    const text = mount(ConnectorsPage, { global: { stubs } }).text()
 
     expect(text).toContain('Modbus Main')
     expect(text).toContain('OPC UA Main')
     expect(text).toContain('OPC UA')
     expect(text).toContain('在线')
-    // sampling rate (samples/s) is shown, not only the cumulative counter
     expect(text).toContain('采样速率')
     expect(text).toContain('12.5 /秒')
   })
@@ -103,9 +117,8 @@ describe('equipment telemetry connectors page', () => {
 
     expect(text).toContain('断线')
     expect(text).toContain('采集停滞')
-    // heartbeat-loss shows a disconnect duration; metrics-stall shows a stalled-metrics hint instead
     expect(text).toContain('断线时长约')
-    expect(text).toContain('指标停更约')
+    expect(text).toContain('采样停更约')
   })
 
   it('summarizes online / disconnected / stalled connectors separately', () => {
@@ -116,21 +129,44 @@ describe('equipment telemetry connectors page', () => {
     expect(text).toMatch(/采集停滞\s*1/)
   })
 
-  it('does not expose organization or environment context', () => {
+  it('does not expose organization/environment context or engineering/issue jargon', () => {
     const wrapper = mount(ConnectorsPage, { global: { stubs } })
+    const html = wrapper.html()
 
     expect(wrapper.text()).not.toContain('组织')
     expect(wrapper.text()).not.toContain('环境')
-    expect(wrapper.html()).not.toContain('organizationId')
-    expect(wrapper.html()).not.toContain('environmentId')
+    expect(html).not.toContain('organizationId')
+    expect(html).not.toContain('environmentId')
+    // engineering/issue jargon must stay out of the field UI (docs/PR only)
+    expect(html).not.toContain('#947')
+    expect(html).not.toContain('github.com')
+    expect(html).not.toContain('facade')
   })
 
-  it('expands a connector and points the per-tag list to the tracked follow-up', async () => {
+  it('expands a connector to operator-facing collection detail', async () => {
     const wrapper = mount(ConnectorsPage, { global: { stubs } })
     await wrapper.findAll('button[aria-expanded]')[0].trigger('click')
 
-    expect(wrapper.text()).toContain('#947')
+    expect(wrapper.text()).toContain('采集协议')
     expect(wrapper.text()).toContain('采集标签')
+  })
+
+  it('does not spam toast on repeated auto-refetch failures, but re-notifies after recovery', async () => {
+    mount(ConnectorsPage, { global: { stubs } })
+
+    setError(new Error('boom-1'))
+    await nextTick()
+    setError(new Error('boom-2')) // next poll, fresh error object
+    await nextTick()
+    setError(new Error('boom-3'))
+    await nextTick()
+    expect(notifyMock.notifyError).toHaveBeenCalledTimes(1)
+
+    setError(undefined) // recovered
+    await nextTick()
+    setError(new Error('boom-4')) // new failure episode
+    await nextTick()
+    expect(notifyMock.notifyError).toHaveBeenCalledTimes(2)
   })
 })
 

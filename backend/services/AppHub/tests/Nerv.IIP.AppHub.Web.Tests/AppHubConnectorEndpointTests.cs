@@ -208,6 +208,54 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
     }
 
     [Fact]
+    public async Task Collection_health_list_treats_running_degraded_collector_as_online_and_stopped_as_disconnected()
+    {
+        var clock = new MutableTimeProvider(DateTimeOffset.Parse("2026-07-13T01:10:00Z"));
+        var databaseName = $"health-degraded-{Guid.CreateVersion7():N}";
+        var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ApplicationDbContext>();
+            services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+            services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(clock);
+        }));
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        // Actively collecting but degraded (had past reconnects) -> upstream heartbeat Reachable=false, but it is
+        // running and sampling now, so it must NOT be reported as disconnected.
+        var degraded = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "modbus-degraded", "Modbus Degraded", new Dictionary<string, string>(), []);
+        degraded.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), reachable: false, 3);
+        degraded.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), "running", "degraded", "reconnected", new Dictionary<string, string>());
+        degraded.RecordCollectionHealth(new ConnectorCollectionHealth("modbus-degraded", "modbus", Guid.Parse("55555555-5555-5555-5555-555555555555"), DateTimeOffset.Parse("2026-07-13T01:09:40Z"), 200, 3, 0, DateTimeOffset.Parse("2026-07-13T01:09:39Z")));
+
+        // Terminal failure -> reported stopped/unhealthy = a real disconnect.
+        var stopped = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "opcua-stopped", "OPC UA Stopped", new Dictionary<string, string>(), []);
+        stopped.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), reachable: false, 3);
+        stopped.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:30Z"), "stopped", "unhealthy", "collection failed", new Dictionary<string, string>());
+        stopped.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-stopped", "opcua", Guid.Parse("66666666-6666-6666-6666-666666666666"), DateTimeOffset.Parse("2026-07-13T01:09:40Z"), 10, 0, 5, DateTimeOffset.Parse("2026-07-13T01:09:39Z")));
+
+        db.ApplicationInstances.AddRange(degraded, stopped);
+        await db.SaveChangesAsync();
+
+        var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
+        using var response = await client.GetAsync("/internal/apphub/v1/connectors/collection-health?organizationId=org&environmentId=env");
+        var body = await ReadResponseDataAsync<ConnectorCollectionHealthListResponse>(response);
+
+        var degradedItem = body.Items.Single(x => x.ConnectorId == "modbus-degraded");
+        Assert.Equal("current", degradedItem.Status);
+        Assert.Null(degradedItem.StaleReason);
+
+        var stoppedItem = body.Items.Single(x => x.ConnectorId == "opcua-stopped");
+        Assert.Equal("stale", stoppedItem.Status);
+        Assert.Equal("heartbeat", stoppedItem.StaleReason);
+        // Terminal-down connector sorts to the top.
+        Assert.Equal("opcua-stopped", body.Items[0].ConnectorId);
+    }
+
+    [Fact]
     public async Task Collection_health_list_requires_internal_service_authorization()
     {
         var client = factory.CreateClient();
