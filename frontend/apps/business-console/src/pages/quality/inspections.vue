@@ -11,6 +11,7 @@ import {
 } from '@/composables/useBusinessQuality'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -111,16 +112,28 @@ const targetInspectionPlanMissing = computed(
 // 来源检验记录定位：hold 时间线「来源检验记录」互链带 ?inspectionRecordId= 进来，打开只读记录详情。
 const recordDetailId = computed(() => firstQuery(route.query.inspectionRecordId))
 const recordDetailOpen = shallowRef(false)
-const { record: inspectionRecordDetail, recordPending: inspectionRecordPending } =
-  useQualityInspectionRecordDetail(() => ({
-    organizationId: filters.organizationId,
-    environmentId: filters.environmentId,
-    inspectionRecordId: recordDetailId.value,
-  }))
+const {
+  record: inspectionRecordDetail,
+  recordPending: inspectionRecordPending,
+  recordError: inspectionRecordError,
+  refreshRecord: refreshInspectionRecord,
+} = useQualityInspectionRecordDetail(() => ({
+  organizationId: filters.organizationId,
+  environmentId: filters.environmentId,
+  inspectionRecordId: recordDetailId.value,
+}))
 watch(
   recordDetailId,
   (id) => {
     recordDetailOpen.value = !!id
+  },
+  { immediate: true },
+)
+// 记录详情加载失败（403/5xx/断网）走 toast，并保留可重试；仅真实成功空响应才显示「未找到」。
+watch(
+  inspectionRecordError,
+  (err) => {
+    if (err) notifyError(err, '检验记录加载失败，请稍后重试。')
   },
   { immediate: true },
 )
@@ -609,6 +622,14 @@ function isPresent(value: string | undefined | null): value is string {
           <div v-if="inspectionRecordPending" class="flex items-center gap-2 text-muted-foreground">
             <Spinner aria-hidden="true" />
             <span>正在加载检验记录…</span>
+          </div>
+          <!-- 加载失败（403/5xx/断网）：错误已 toast，此处给可重试出口，不误报为「未找到」空态。 -->
+          <div v-else-if="inspectionRecordError" class="grid justify-items-start gap-2">
+            <p class="text-sm text-muted-foreground">检验记录加载失败，请稍后重试。</p>
+            <NvButton size="sm" variant="outline" type="button" @click="refreshInspectionRecord">
+              <RefreshCwIcon aria-hidden="true" />
+              重试
+            </NvButton>
           </div>
           <div v-else-if="inspectionRecordDetail" class="grid gap-4">
             <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">

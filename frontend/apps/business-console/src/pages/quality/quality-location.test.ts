@@ -8,8 +8,15 @@ const routeState = vi.hoisted(() => ({
   route: undefined as { query: Record<string, string> } | undefined,
 }))
 
+const notifySpies = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
+vi.mock('@/utils/notify', () => ({
+  notifyError: notifySpies.error,
+  notifySuccess: notifySpies.success,
+}))
+
 const qualityState = vi.hoisted(() => ({
   inspectionFilters: undefined as { status?: string, keyword?: string } | undefined,
+  recordError: undefined as unknown,
   inspectionPlans: [
     {
       id: 'PLAN-001',
@@ -94,7 +101,7 @@ vi.mock('@/composables/useBusinessQuality', async () => {
           : undefined,
       ),
       recordPending: shallowRef(false),
-      recordError: shallowRef(),
+      recordError: computed(() => qualityState.recordError),
       refreshRecord: vi.fn(),
     }),
     useQualityNcrs: (initial = {}) => {
@@ -207,6 +214,9 @@ describe('quality route location behavior', () => {
     routeState.route!.query = {}
     qualityState.inspectionFilters = undefined
     qualityState.ncrFilters = undefined
+    qualityState.recordError = undefined
+    notifySpies.error.mockReset()
+    notifySpies.success.mockReset()
   })
 
   it('keeps the user-selected NCR status filter when ncrId is removed from the route', async () => {
@@ -254,6 +264,19 @@ describe('quality route location behavior', () => {
     expect(text).toContain('INSP-REC-9')
     expect(text).toContain('rejected')
     expect(text).toContain('DIM-01')
+  })
+
+  it('toasts + offers retry (not “未找到”) when the record detail request fails', async () => {
+    qualityState.recordError = new Error('403 forbidden')
+    routeState.route!.query = { inspectionRecordId: 'INSP-REC-X' }
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+
+    // 请求失败不再误报为空：走 toast + 可重试，不显示“未找到”。
+    expect(notifySpies.error).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('检验记录加载失败')
+    expect(wrapper.text()).not.toContain('未找到该检验记录')
   })
 })
 

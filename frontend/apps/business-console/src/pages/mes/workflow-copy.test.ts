@@ -35,6 +35,8 @@ vi.mock('vue-router', () => ({
   useRouter: () => routerState,
 }))
 
+vi.mock('@/utils/notify', () => ({ notifySuccess: vi.fn(), notifyError: vi.fn() }))
+
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessMasterDataResources: () => ({ resources: ref([]) }),
   useBusinessSkus: () => ({ skus: ref([]) }),

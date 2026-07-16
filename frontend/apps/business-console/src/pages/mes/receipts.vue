@@ -72,8 +72,6 @@ const route = useRoute()
 const router = useRouter()
 const receiptSheetOpen = shallowRef(false)
 const quickViewWorkOrderId = ref<string | null>(null)
-// 登记成功后容器内成功态（A1 §4.1「下一步去哪」）：留存刚登记的单号，给出「继续登记 / 完成」出路。
-const lastCreatedRequestNo = shallowRef('')
 
 const statusFilter = computed({
   get: () => filters.status || 'all',
@@ -112,8 +110,6 @@ const form = reactive({
 })
 
 const listErrorMessage = computed(() => formatError(receiptRequestsError.value))
-// 超量校验：后端 KnownException「累计完工入库申请数量超过工单完工数量」→ 给一线可读业务文案。
-const createErrorMessage = computed(() => friendlyCreateError(createReceiptRequestError.value))
 const hasReceiptContext = computed(() => isNonEmpty(form.workOrderId) && isNonEmpty(form.skuId))
 const canCreate = computed(
   () =>
@@ -187,7 +183,6 @@ function openWorkOrder(workOrderId?: string | null) {
 }
 function openReceiptSheet() {
   if (!hasReceiptContext.value || !canManageReceipts.value) return
-  lastCreatedRequestNo.value = ''
   receiptSheetOpen.value = true
 }
 function resetCreateForm() {
@@ -211,19 +206,17 @@ async function submitReceiptRequest() {
     requestedAtUtc: toIsoFromLocalInput(form.requestedAtUtc),
     idempotencyKey: optionalText(form.idempotencyKey) ?? `receipt-${form.workOrderId.trim()}`,
   }
-  await createReceiptRequest(body)
-  if (createReceiptRequestError.value) return
-  // 容器内成功态：留存单号 + 提供「继续登记 / 完成」出路（高频连录含「继续登记」）。
-  lastCreatedRequestNo.value = body.workOrderId ?? form.workOrderId.trim()
-  await refreshReceiptRequests()
-}
-function continueCreating() {
-  lastCreatedRequestNo.value = ''
-  resetCreateForm()
-}
-function finishCreating() {
-  lastCreatedRequestNo.value = ''
-  receiptSheetOpen.value = false
+  // 操作结果一律走 toast（反馈规范）：成功 toast + 重置表单留在原地（高频连录），失败保持 Sheet 打开。
+  try {
+    await createReceiptRequest(body)
+    notifySuccess(`已登记完工入库 · 工单 ${body.workOrderId ?? ''}，可在列表查看入库状态。`)
+    resetCreateForm()
+    await refreshReceiptRequests()
+  } catch {
+    // 超量校验保留「累计请求量超过完工数量」业务映射；其余（网络/服务/权限）由 notifyError 统一映射。
+    const err = createReceiptRequestError.value ?? undefined
+    notifyError(err, friendlyCreateError(err) || '登记完工入库失败，请稍后重试。')
+  }
 }
 
 async function retryRow(row: ReceiptRow) {
@@ -437,28 +430,9 @@ function isNonEmpty(value: string) {
           >
         </NvSheetHeader>
 
-        <!-- 成功态：给出「继续登记（重置表单留在原地）/ 完成（关闭）」出路（A1 §4.1）。 -->
-        <div v-if="lastCreatedRequestNo" class="grid content-start gap-4 p-4">
-          <div class="grid gap-2 rounded-lg border border-success/30 bg-success/5 p-4">
-            <p class="text-sm font-medium text-success">完工入库登记已提交</p>
-            <p class="text-sm text-muted-foreground">
-              工单 {{ lastCreatedRequestNo }} 的入库登记已进入列表，稍后可在列表查看入库状态。
-            </p>
-          </div>
-          <div class="flex justify-end gap-2">
-            <NvButton type="button" variant="outline" @click="continueCreating">
-              <PackageCheckIcon aria-hidden="true" />
-              继续登记
-            </NvButton>
-            <NvButton type="button" @click="finishCreating">完成</NvButton>
-          </div>
-        </div>
-
-        <form v-else class="grid content-start gap-4 p-4" @submit.prevent="submitReceiptRequest">
-          <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">
-            {{ createErrorMessage }}
-          </p>
-
+        <!-- 结果一律走 toast（成功/失败/超量均 notifySuccess·notifyError）：Sheet 内不留常驻结果条。
+             成功后重置表单留在原地支持高频连录，失败保持打开可修正重提。 -->
+        <form class="grid content-start gap-4 p-4" @submit.prevent="submitReceiptRequest">
           <NvFieldGroup class="grid gap-3">
             <NvField>
               <NvFieldLabel for="receipt-work-order">工单号</NvFieldLabel>
