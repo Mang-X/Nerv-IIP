@@ -34,6 +34,7 @@ import {
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
+  listBusinessConsoleMesReceivableProducedLotsQueryOptions,
   listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions,
   promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
@@ -72,6 +73,8 @@ import {
   type BusinessConsoleMesProductionPlanListEnvelope,
   type BusinessConsoleMesProductionPlanRow,
   type BusinessConsoleMesProductionReportListEnvelope,
+  type BusinessConsoleMesReceivableProducedLotListEnvelope,
+  type BusinessConsoleMesReceivableProducedLotRow,
   type BusinessConsoleMesProductionReportDetailEnvelope,
   type BusinessConsoleMesProductionReportDetailResponse,
   type BusinessConsoleMesProductionReportRow,
@@ -1309,22 +1312,21 @@ export interface MesWorkOrderProducedLot {
 }
 
 // 工单的真实产出批次来源：完工入库创建端点强制引用 MES 已生成的产出批次
-// （CreateFinishedGoodsReceiptRequestCommandHandler 在数量校验之前即拒绝空/不存在的 producedLotNo），
-// 页面据此让操作员从工单真实报工产出中选择，而非前端伪造。产出批次即报工时生成的 OutputLotGenealogy，
-// 与生产报工一一对应，故从工单的报工列表按 producedLotNo 去重取得（列表 keyword 命中工单号，前端再精确过滤）。
+// （CreateFinishedGoodsReceiptRequestCommandHandler 在数量校验之前即拒绝空/不存在的 producedLotNo，并校验其存在于
+// OutputLotGenealogies）。故直接消费权威端点 listBusinessConsoleMesReceivableProducedLots（读同一张 OutputLotGenealogies、
+// 与完工入库同域 receipts.read 权限）：①报工冲销会删除对应 genealogy → 已冲销批次天然不出现，不会选中后端已判定不存在的批次；
+// ②权限与本页/创建一致，避免入库操作员因缺 reporting.read 而 403。页面据此从工单真实产出中选择，不伪造批次号。
 export function useMesWorkOrderProducedLots(workOrderId: () => string) {
   const filters = defaultFilters()
 
-  const reportsQuery = useQuery(() => {
+  const producedLotsQuery = useQuery(() => {
     const workOrderIdValue = workOrderId().trim()
     return {
-      ...listBusinessConsoleMesProductionReportsQueryOptions({
+      ...listBusinessConsoleMesReceivableProducedLotsQueryOptions({
+        path: { workOrderId: workOrderIdValue },
         query: {
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
-          ...optionalQuery('keyword', workOrderIdValue),
-          skip: 0,
-          take: DEFAULT_TAKE,
         },
       }),
       enabled: hasBusinessContext(filters) && isNonEmpty(workOrderIdValue),
@@ -1332,41 +1334,27 @@ export function useMesWorkOrderProducedLots(workOrderId: () => string) {
   })
 
   const producedLots = computed<MesWorkOrderProducedLot[]>(() => {
-    const workOrderIdValue = workOrderId().trim()
-    if (!isNonEmpty(workOrderIdValue)) return []
+    if (!isNonEmpty(workOrderId().trim())) return []
     const rows = envelopeItems<
-      BusinessConsoleMesProductionReportRow,
-      BusinessConsoleMesProductionReportListEnvelope
-    >(reportsQuery.data.value)
-    const seen = new Set<string>()
-    const lots: MesWorkOrderProducedLot[] = []
-    for (const row of rows) {
-      const lot = row.producedLotNo?.trim()
-      // 仅取该工单、有产出批次、良品>0 的报工（排除仅报废/返修与冲销负向行），按批次号去重。
-      if (
-        !lot ||
-        row.workOrderId !== workOrderIdValue ||
-        (row.goodQuantity ?? 0) <= 0 ||
-        seen.has(lot)
-      ) {
-        continue
-      }
-      seen.add(lot)
-      lots.push({
-        producedLotNo: lot,
-        reportNo: row.reportNo,
-        goodQuantity: row.goodQuantity ?? 0,
+      BusinessConsoleMesReceivableProducedLotRow,
+      BusinessConsoleMesReceivableProducedLotListEnvelope
+    >(producedLotsQuery.data.value)
+    // 端点已按工单服务端过滤、产出批次在 (org,env) 内唯一，故无需前端去重/过滤。
+    return rows
+      .filter((row) => isNonEmpty(row.producedLotNo ?? ''))
+      .map((row) => ({
+        producedLotNo: (row.producedLotNo ?? '').trim(),
+        reportNo: row.reportNo ?? undefined,
+        goodQuantity: row.quantity ?? 0,
         serialNo: row.serialNo?.trim() || undefined,
-      })
-    }
-    return lots
+      }))
   })
 
   return {
     producedLots,
-    producedLotsError: reportsQuery.error,
-    producedLotsPending: reportsQuery.isLoading,
-    refreshProducedLots: () => refetchWithBusinessContext(filters, reportsQuery),
+    producedLotsError: producedLotsQuery.error,
+    producedLotsPending: producedLotsQuery.isLoading,
+    refreshProducedLots: () => refetchWithBusinessContext(filters, producedLotsQuery),
   }
 }
 

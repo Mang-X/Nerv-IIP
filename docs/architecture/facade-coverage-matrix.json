@@ -2466,6 +2466,19 @@
     },
     {
       "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/work-orders/{workOrderId}/produced-lots",
+      "operationId": "listBusinessMesReceivableProducedLots",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesReceivableProducedLots"
+      ]
+    },
+    {
+      "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/finished-goods-receipt-requests",
       "operationId": "createBusinessMesFinishedGoodsReceiptRequest",

@@ -31,6 +31,7 @@ const receiptState = vi.hoisted(() => ({
   retryInventoryPosting: vi.fn(async () => undefined),
   rows: [] as Array<Record<string, unknown>>,
   producedLots: [] as Array<{ producedLotNo: string; reportNo?: string; goodQuantity: number }>,
+  producedLotsError: undefined as unknown,
   retryingRequestNo: undefined as unknown as { value: string | null },
   keyCounter: 0,
 }))
@@ -42,7 +43,7 @@ vi.mock('@/composables/useBusinessMes', () => {
     // 工单产出批次来源：页面据此选定 producedLotNo（后端强制引用真实产出批次）。
     useMesWorkOrderProducedLots: () => ({
       producedLots: ref(receiptState.producedLots),
-      producedLotsError: ref(undefined),
+      producedLotsError: ref(receiptState.producedLotsError),
       producedLotsPending: ref(false),
       refreshProducedLots: vi.fn(async () => undefined),
     }),
@@ -142,6 +143,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     receiptState.refreshReceiptRequests = vi.fn(async () => undefined)
     // 默认单一产出批次：自动选中，让创建相关用例可提交（后端强制引用真实产出批次）。
     receiptState.producedLots = [{ producedLotNo: 'LOT-FG-1', reportNo: 'PRPT-1', goodQuantity: 8 }]
+    receiptState.producedLotsError = undefined
     receiptState.keyCounter = 0
     receiptState.retryInventoryPosting.mockClear()
     receiptState.retryingRequestNo = shallowRef<string | null>(null)
@@ -278,6 +280,22 @@ describe('MES receipts — failed inventory posting retry', () => {
     // 无产出批次 → canCreate 为假，提交被拦截，且给出「先报工产出」引导而非盲提交后 500。
     expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('该工单暂无可入库的产出批次')
+  })
+
+  it('surfaces a retry (not “暂无产出批次”) when produced-lot loading fails', async () => {
+    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    receiptState.producedLots = []
+    receiptState.producedLotsError = new Error('403 forbidden')
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await fillCostAndSubmit(wrapper)
+
+    // 加载失败区别于真实空态：给重试出口、不误报「暂无」，提交仍被拦截（未选批次）。
+    expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('产出批次加载失败')
+    expect(wrapper.text()).not.toContain('该工单暂无可入库的产出批次')
+    expect(wrapper.findAll('button').some((b) => b.text().includes('重试'))).toBe(true)
   })
 
   it('keeps success feedback when the post-create list refresh fails (no contradictory error toast)', async () => {

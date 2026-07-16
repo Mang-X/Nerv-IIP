@@ -202,6 +202,49 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
     }
 }
 
+// 工单可入库产出批次：直接读 OutputLotGenealogies（完工入库创建端点校验产出批次存在性的**同一**权威表）。
+// 报工冲销会删除对应 OutputLotGenealogy（ReverseProductionReportCommandHandler.RemoveRange），故已冲销的
+// 产出批次天然不在此结果中——Console 据此只列出后端真实接受的 producedLotNo，杜绝“产出批次不存在”的稳定失败。
+public sealed record ListReceivableProducedLotsQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId) : IQuery<ListReceivableProducedLotsResponse>;
+
+public sealed record ListReceivableProducedLotsResponse(
+    IReadOnlyCollection<ReceivableProducedLotFact> Items);
+
+public sealed record ReceivableProducedLotFact(
+    string ProducedLotNo,
+    string ReportNo,
+    string OperationTaskId,
+    decimal Quantity,
+    DateTimeOffset CreatedAtUtc,
+    string? SerialNo = null);
+
+public sealed class ListReceivableProducedLotsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListReceivableProducedLotsQuery, ListReceivableProducedLotsResponse>
+{
+    public async Task<ListReceivableProducedLotsResponse> Handle(ListReceivableProducedLotsQuery request, CancellationToken cancellationToken)
+    {
+        // ProducedLotNo 在 (org, env) 内唯一（OutputLotGenealogy 唯一索引），故无需去重；按批次号排序保持稳定顺序（provider 中立）。
+        var items = await dbContext.OutputLotGenealogies
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.WorkOrderId == request.WorkOrderId)
+            .OrderBy(x => x.ProducedLotNo)
+            .Select(x => new ReceivableProducedLotFact(
+                x.ProducedLotNo,
+                x.ReportNo,
+                x.OperationTaskId,
+                x.Quantity,
+                x.CreatedAtUtc,
+                x.SerialNo))
+            .ToArrayAsync(cancellationToken);
+        return new ListReceivableProducedLotsResponse(items);
+    }
+}
+
 public sealed record ListFinishedGoodsReceiptRequestsQuery(
     string OrganizationId,
     string EnvironmentId,

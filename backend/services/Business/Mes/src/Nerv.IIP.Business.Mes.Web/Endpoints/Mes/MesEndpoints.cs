@@ -1219,6 +1219,22 @@ public sealed class ListFinishedGoodsReceiptRequestsEndpoint(ISender sender)
     }
 }
 
+// 工单可入库产出批次：从 OutputLotGenealogies（创建端点校验产出批次的同一权威表）列出该工单当前有效的
+// producedLotNo，供 Console 完工入库选择真实批次。读权限与完工入库列表一致（ReceiptsRead），与创建/重试
+// 同域，避免入库操作员因缺 reporting.read 而在选批次时 403。
+public sealed class ListReceivableProducedLotsEndpoint(ISender sender)
+    : MesEndpoint<WorkOrderContextRequest, ListReceivableProducedLotsResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ListReceivableProducedLotsEndpoint>());
+
+    public override async Task HandleAsync(WorkOrderContextRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new ListReceivableProducedLotsQuery(req.OrganizationId, req.EnvironmentId, req.WorkOrderId), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class RetryFinishedGoodsReceiptInventoryPostingEndpoint(ISender sender)
     : MesEndpoint<RetryFinishedGoodsReceiptInventoryPostingRequest, CreateFinishedGoodsReceiptRequestResponse>
 {
@@ -1458,6 +1474,7 @@ public static class MesEndpointContracts
         new(typeof(ListRelatedQualityItemsEndpoint), "GET", "/api/business/v1/mes/related-quality-items", MesPermissionCodes.QualityRead, "listBusinessMesRelatedQualityItems"),
         new(typeof(CreateFinishedGoodsReceiptRequestEndpoint), "POST", "/api/business/v1/mes/finished-goods-receipt-requests", MesPermissionCodes.ReceiptsManage, "createBusinessMesFinishedGoodsReceiptRequest"),
         new(typeof(ListFinishedGoodsReceiptRequestsEndpoint), "GET", "/api/business/v1/mes/finished-goods-receipt-requests", MesPermissionCodes.ReceiptsRead, "listBusinessMesFinishedGoodsReceiptRequests"),
+        new(typeof(ListReceivableProducedLotsEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/produced-lots", MesPermissionCodes.ReceiptsRead, "listBusinessMesReceivableProducedLots"),
         new(typeof(RetryFinishedGoodsReceiptInventoryPostingEndpoint), "POST", "/api/business/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-posting/retry", MesPermissionCodes.ReceiptsManage, "retryBusinessMesFinishedGoodsReceiptInventoryPosting"),
         new(typeof(ListDowntimeEventsEndpoint), "GET", "/api/business/v1/mes/downtime-events", MesPermissionCodes.DowntimeRead, "listBusinessMesDowntimeEvents"),
         new(typeof(RecordDowntimeEventEndpoint), "POST", "/api/business/v1/mes/downtime-events", MesPermissionCodes.DowntimeManage, "recordBusinessMesDowntimeEvent"),

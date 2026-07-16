@@ -5,13 +5,10 @@ import type {
   BusinessConsoleQualityItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import {
-  useQualityInspectionPlans,
-  useQualityInspectionRecordDetail,
-} from '@/composables/useBusinessQuality'
+import { useQualityInspectionPlans } from '@/composables/useBusinessQuality'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError } from '@/utils/notify'
+import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
 import {
   NvButton,
   NvDataTable,
@@ -33,11 +30,6 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  NvSheet,
-  NvSheetContent,
-  NvSheetDescription,
-  NvSheetHeader,
-  NvSheetTitle,
   Spinner,
   NvStatusBadge,
   NvToolbar,
@@ -110,30 +102,13 @@ const targetInspectionPlanMissing = computed(
 )
 
 // 来源检验记录定位：hold 时间线「来源检验记录」互链带 ?inspectionRecordId= 进来，打开只读记录详情。
+// 详情查询/错误副作用/重试封装在 InspectionRecordDetailSheet，路由页只负责按 query 编排开合（Vue best-practices §2）。
 const recordDetailId = computed(() => firstQuery(route.query.inspectionRecordId))
 const recordDetailOpen = shallowRef(false)
-const {
-  record: inspectionRecordDetail,
-  recordPending: inspectionRecordPending,
-  recordError: inspectionRecordError,
-  refreshRecord: refreshInspectionRecord,
-} = useQualityInspectionRecordDetail(() => ({
-  organizationId: filters.organizationId,
-  environmentId: filters.environmentId,
-  inspectionRecordId: recordDetailId.value,
-}))
 watch(
   recordDetailId,
   (id) => {
     recordDetailOpen.value = !!id
-  },
-  { immediate: true },
-)
-// 记录详情加载失败（403/5xx/断网）走 toast，并保留可重试；仅真实成功空响应才显示「未找到」。
-watch(
-  inspectionRecordError,
-  (err) => {
-    if (err) notifyError(err, '检验记录加载失败，请稍后重试。')
   },
   { immediate: true },
 )
@@ -612,74 +587,11 @@ function isPresent(value: string | undefined | null): value is string {
     </NvDialog>
 
     <!-- 来源检验记录只读详情：hold 时间线「来源检验记录」互链带 ?inspectionRecordId= 进入即定位到该记录。 -->
-    <NvSheet v-model:open="recordDetailOpen">
-      <NvSheetContent class="w-full overflow-y-auto sm:max-w-xl">
-        <NvSheetHeader>
-          <NvSheetTitle>检验记录 {{ recordDetailId }}</NvSheetTitle>
-          <NvSheetDescription>来源检验记录只读详情，含判定结论与特性实测值。</NvSheetDescription>
-        </NvSheetHeader>
-        <div class="grid content-start gap-4 p-4">
-          <div v-if="inspectionRecordPending" class="flex items-center gap-2 text-muted-foreground">
-            <Spinner aria-hidden="true" />
-            <span>正在加载检验记录…</span>
-          </div>
-          <!-- 加载失败（403/5xx/断网）：错误已 toast，此处给可重试出口，不误报为「未找到」空态。 -->
-          <div v-else-if="inspectionRecordError" class="grid justify-items-start gap-2">
-            <p class="text-sm text-muted-foreground">检验记录加载失败，请稍后重试。</p>
-            <NvButton size="sm" variant="outline" type="button" @click="refreshInspectionRecord">
-              <RefreshCwIcon aria-hidden="true" />
-              重试
-            </NvButton>
-          </div>
-          <div v-else-if="inspectionRecordDetail" class="grid gap-4">
-            <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-              <dt class="text-muted-foreground">判定结论</dt>
-              <dd><NvStatusBadge :value="inspectionRecordDetail.result" /></dd>
-              <dt class="text-muted-foreground">成品</dt>
-              <dd>{{ inspectionRecordDetail.skuCode ?? '—' }}</dd>
-              <dt class="text-muted-foreground">来源单据</dt>
-              <dd>{{ inspectionRecordDetail.sourceDocumentId ?? '—' }}</dd>
-              <dt class="text-muted-foreground">批次 / 序列号</dt>
-              <dd>
-                {{ inspectionRecordDetail.batchNo ?? '—' }} /
-                {{ inspectionRecordDetail.serialNo ?? '—' }}
-              </dd>
-              <dt class="text-muted-foreground">检验数量</dt>
-              <dd class="tabular-nums">{{ inspectionRecordDetail.inspectedQuantity ?? 0 }}</dd>
-              <template v-if="inspectionRecordDetail.dispositionReason">
-                <dt class="text-muted-foreground">处置说明</dt>
-                <dd>{{ inspectionRecordDetail.dispositionReason }}</dd>
-              </template>
-            </dl>
-            <p
-              v-if="inspectionRecordDetail.nonconformanceReportId"
-              class="text-sm text-muted-foreground"
-            >
-              关联不合格品：{{ inspectionRecordDetail.nonconformanceReportId }}
-            </p>
-            <div v-if="(inspectionRecordDetail.resultLines?.length ?? 0) > 0" class="grid gap-2">
-              <span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                >特性实测值</span
-              >
-              <ul class="grid gap-1">
-                <li
-                  v-for="(line, i) in inspectionRecordDetail.resultLines"
-                  :key="`${line.characteristicCode}-${i}`"
-                  class="flex items-center justify-between gap-2 rounded-md border bg-background px-3 py-1.5 text-sm"
-                >
-                  <span class="truncate">{{ line.characteristicCode }}</span>
-                  <span class="shrink-0 tabular-nums text-muted-foreground">{{
-                    line.measuredValue ?? line.observedValue ?? '—'
-                  }}</span>
-                </li>
-              </ul>
-            </div>
-          </div>
-          <p v-else class="text-sm text-muted-foreground">
-            未找到该检验记录，可能已被清理或无访问权限。
-          </p>
-        </div>
-      </NvSheetContent>
-    </NvSheet>
+    <InspectionRecordDetailSheet
+      v-model:open="recordDetailOpen"
+      :record-id="recordDetailId"
+      :organization-id="filters.organizationId"
+      :environment-id="filters.environmentId"
+    />
   </BusinessLayout>
 </template>

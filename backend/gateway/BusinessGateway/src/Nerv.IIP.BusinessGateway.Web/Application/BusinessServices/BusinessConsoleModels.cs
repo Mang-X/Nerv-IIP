@@ -3577,6 +3577,25 @@ public sealed record BusinessConsoleMesMaterialReadinessRow(
     decimal ShortageQuantity,
     string Status);
 
+// 工单可入库产出批次（MAN-445/#799）：从 MES OutputLotGenealogies 权威表列出当前有效的产出批次，供 Console
+// 完工入库选择真实 producedLotNo。读权限 MesReceiptsRead 与完工入库列表一致，避免入库操作员因缺 reporting.read
+// 而在选批次时 403。
+public sealed record BusinessConsoleMesReceivableProducedLotsRequest(
+    [property: RouteParam] string WorkOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleMesReceivableProducedLotListResponse(
+    IReadOnlyCollection<BusinessConsoleMesReceivableProducedLotRow> Items);
+
+public sealed record BusinessConsoleMesReceivableProducedLotRow(
+    string ProducedLotNo,
+    string ReportNo,
+    string OperationTaskId,
+    decimal Quantity,
+    DateTimeOffset CreatedAtUtc,
+    string? SerialNo = null);
+
 public sealed record BusinessConsoleMesCreateMaterialIssueRequest(
     [property: RouteParam] string WorkOrderId,
     [property: QueryParam] string OrganizationId,

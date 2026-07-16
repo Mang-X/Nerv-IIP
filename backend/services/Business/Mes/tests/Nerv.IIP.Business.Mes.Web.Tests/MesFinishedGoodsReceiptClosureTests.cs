@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -139,6 +140,53 @@ public sealed class MesFinishedGoodsReceiptClosureTests
                 CancellationToken.None));
 
         Assert.Contains("完工入库申请必须引用 MES 已生成的产出批次", exception.Message);
+    }
+
+    // 权威产出批次来源：查 OutputLotGenealogies（完工入库创建端点校验批次存在性的同一张表），按工单服务端过滤。
+    [Fact]
+    public async Task List_receivable_produced_lots_returns_live_genealogies_scoped_to_the_work_order()
+    {
+        await using var dbContext = CreateDbContext(nameof(List_receivable_produced_lots_returns_live_genealogies_scoped_to_the_work_order));
+        var now = DateTimeOffset.Parse("2026-07-04T08:00:00Z");
+        dbContext.OutputLotGenealogies.Add(OutputLotGenealogy.Create("org-001", "env-dev", "WO-700", "OP-10", "PRPT-1", "LOT-A", null, 6m, now));
+        dbContext.OutputLotGenealogies.Add(OutputLotGenealogy.Create("org-001", "env-dev", "WO-700", "OP-20", "PRPT-2", "LOT-B", "SN-9", 4m, now.AddMinutes(5)));
+        dbContext.OutputLotGenealogies.Add(OutputLotGenealogy.Create("org-001", "env-dev", "WO-OTHER", "OP-10", "PRPT-3", "LOT-X", null, 3m, now));
+        await dbContext.SaveChangesAsync();
+
+        var result = await new ListReceivableProducedLotsQueryHandler(dbContext).Handle(
+            new ListReceivableProducedLotsQuery("org-001", "env-dev", "WO-700"), CancellationToken.None);
+
+        Assert.Equal(new[] { "LOT-A", "LOT-B" }, result.Items.Select(x => x.ProducedLotNo).ToArray());
+        var lotB = result.Items.Single(x => x.ProducedLotNo == "LOT-B");
+        Assert.Equal("PRPT-2", lotB.ReportNo);
+        Assert.Equal("OP-20", lotB.OperationTaskId);
+        Assert.Equal(4m, lotB.Quantity);
+        Assert.Equal("SN-9", lotB.SerialNo);
+        Assert.DoesNotContain(result.Items, x => x.ProducedLotNo == "LOT-X");
+    }
+
+    // 报工冲销会删除对应 OutputLotGenealogy（ReverseProductionReportCommandHandler.RemoveRange）；因读面直接查该表，
+    // 已冲销批次天然不再出现——杜绝旧方案里选中后端已判定不存在批次导致的“产出批次不存在”稳定失败。
+    [Fact]
+    public async Task List_receivable_produced_lots_excludes_a_reversed_lot_whose_genealogy_was_removed()
+    {
+        await using var dbContext = CreateDbContext(nameof(List_receivable_produced_lots_excludes_a_reversed_lot_whose_genealogy_was_removed));
+        var now = DateTimeOffset.Parse("2026-07-04T08:00:00Z");
+        var kept = OutputLotGenealogy.Create("org-001", "env-dev", "WO-701", "OP-10", "PRPT-1", "LOT-KEEP", null, 6m, now);
+        var reversed = OutputLotGenealogy.Create("org-001", "env-dev", "WO-701", "OP-20", "PRPT-2", "LOT-REVERSED", null, 4m, now);
+        dbContext.OutputLotGenealogies.AddRange(kept, reversed);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ListReceivableProducedLotsQueryHandler(dbContext);
+        var before = await handler.Handle(new ListReceivableProducedLotsQuery("org-001", "env-dev", "WO-701"), CancellationToken.None);
+        Assert.Equal(2, before.Items.Count);
+
+        // 等价于冲销该报工对读面的影响：移除被冲销批次的 genealogy。
+        dbContext.OutputLotGenealogies.Remove(reversed);
+        await dbContext.SaveChangesAsync();
+
+        var afterReversal = await handler.Handle(new ListReceivableProducedLotsQuery("org-001", "env-dev", "WO-701"), CancellationToken.None);
+        Assert.Equal(new[] { "LOT-KEEP" }, afterReversal.Items.Select(x => x.ProducedLotNo).ToArray());
     }
 
     private static ApplicationDbContext CreateDbContext(string databaseName)

@@ -3164,6 +3164,27 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesReceivableProducedLotListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceivableProducedLotListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceivableProducedLotListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceivableProducedLotRow>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceivableProducedLotRow = {
+    producedLotNo?: string;
+    reportNo?: string;
+    operationTaskId?: string;
+    quantity?: number;
+    createdAtUtc?: string;
+    serialNo?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceivableProducedLotsRequest = {
+    [key: string]: never;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest = {
     operationTaskId?: string | null;
     materialId?: string;
@@ -11411,6 +11432,38 @@ export type GetBusinessConsoleMesMaterialReadinessResponses = {
 };
 
 export type GetBusinessConsoleMesMaterialReadinessResponse = GetBusinessConsoleMesMaterialReadinessResponses[keyof GetBusinessConsoleMesMaterialReadinessResponses];
+
+export type ListBusinessConsoleMesReceivableProducedLotsData = {
+    body?: never;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/produced-lots';
+};
+
+export type ListBusinessConsoleMesReceivableProducedLotsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleMesReceivableProducedLotsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesReceivableProducedLotListResponse;
+};
+
+export type ListBusinessConsoleMesReceivableProducedLotsResponse = ListBusinessConsoleMesReceivableProducedLotsResponses[keyof ListBusinessConsoleMesReceivableProducedLotsResponses];
 
 export type CreateBusinessConsoleMesMaterialIssueRequestData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest;

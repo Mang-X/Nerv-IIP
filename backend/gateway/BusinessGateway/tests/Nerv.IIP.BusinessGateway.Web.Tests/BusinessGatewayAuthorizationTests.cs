@@ -1137,6 +1137,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/schedules/run", BusinessGatewayPermissions.MesSchedulesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/production-reports", BusinessGatewayPermissions.MesReportingWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/production-reports/PR-001", BusinessGatewayPermissions.MesReportingRead);
+        // 工单可入库产出批次读面与完工入库同域：受 receipts.read 门控（非 reporting.read），入库操作员无需报工权限即可选批次。
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/work-orders/WO-001/produced-lots", BusinessGatewayPermissions.MesReceiptsRead);
         return routes;
     }
 

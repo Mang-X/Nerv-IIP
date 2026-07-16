@@ -9646,6 +9646,16 @@ internal sealed class RecordingMesClient : IBusinessMesClient
         return Task.FromResult(new BusinessConsoleMesMaterialReadinessResponse(workOrderId, "Ready", [], []));
     }
 
+    public Task<BusinessConsoleMesReceivableProducedLotListResponse> ListReceivableProducedLotsAsync(
+        string internalBearerToken,
+        string workOrderId,
+        BusinessConsoleMesContextRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleMesReceivableProducedLotListResponse([]));
+    }
+
     public Task<BusinessConsoleAcceptedResponse> CreateMaterialIssueRequestAsync(
         string internalBearerToken,
         string workOrderId,
