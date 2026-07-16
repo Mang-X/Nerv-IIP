@@ -20,11 +20,13 @@ const props = withDefaults(
     show?: boolean
     title?: string
     extraKey?: string
+    /** 显示 ± 正负号键（测量值 / 温度 / 压力 / 上下限等可为负 → 录负数）。默认关。 */
+    signToggle?: boolean
     maxlength?: number
     confirmText?: string
     class?: HTMLAttributes['class']
   }>(),
-  { modelValue: '', show: false, extraKey: '.', confirmText: '完成' },
+  { modelValue: '', show: false, extraKey: '.', signToggle: false, confirmText: '完成' },
 )
 const emit = defineEmits<{
   'update:modelValue': [value: string]
@@ -44,6 +46,11 @@ function input(key: string) {
 function backspace() {
   emit('press', 'delete')
   emit('update:modelValue', props.modelValue.slice(0, -1))
+}
+function toggleSign() {
+  emit('press', '±')
+  const v = props.modelValue
+  emit('update:modelValue', v.startsWith('-') ? v.slice(1) : `-${v}`)
 }
 function confirm() {
   emit('confirm')
@@ -69,15 +76,10 @@ function confirm() {
           )
         "
       >
-        <div class="flex items-center justify-between px-4 py-2.5">
+        <!-- 头部仅标题：确认走底部大「完成」键（触点足够）或点背板关闭；不再放头部重复小按钮
+             （其真实高度 <44px 不满足触点基线，与底部完成重复）。 -->
+        <div class="px-4 py-2.5">
           <span class="text-sm text-muted-foreground">{{ title ?? '请输入' }}</span>
-          <button
-            type="button"
-            class="nv-m-nk-key rounded-md px-2 py-1 text-[15px] font-medium text-brand"
-            @click="confirm"
-          >
-            {{ confirmText }}
-          </button>
         </div>
         <div class="grid grid-cols-4 gap-1.5 px-1.5 pb-2">
           <!-- digits 1-9 span the first three columns -->
@@ -116,14 +118,33 @@ function confirm() {
           >
             {{ extraKey }}
           </button>
-          <!-- zero, widening to fill when there is no extra key -->
+          <!-- zero, widening to fill the remaining bottom-row columns.
+               signToggle 恒为 ± 预留一列（含 extraKey='' 组合），避免 ± 溢出到第 5 行破版。 -->
           <button
             type="button"
             class="nv-m-nk-key grid h-14 place-items-center rounded-xl bg-muted text-2xl font-medium text-foreground tabular-nums"
-            :class="extraKey ? 'col-span-2' : 'col-span-3'"
+            :class="
+              signToggle
+                ? extraKey
+                  ? 'col-span-1'
+                  : 'col-span-2'
+                : extraKey
+                  ? 'col-span-2'
+                  : 'col-span-3'
+            "
             @click="input('0')"
           >
             0
+          </button>
+          <!-- sign toggle (±) for negative values (温度 / 压力 / 上下限)，opt-in -->
+          <button
+            v-if="signToggle"
+            type="button"
+            class="nv-m-nk-key col-span-1 grid h-14 place-items-center rounded-xl bg-muted text-2xl font-medium text-foreground"
+            aria-label="正负号"
+            @click="toggleSign"
+          >
+            ±
           </button>
         </div>
       </div>

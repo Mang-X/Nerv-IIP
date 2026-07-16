@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import InspectionMeasurementRow, {
+  type MeasurementFormRow,
+} from '@/components/equipment/InspectionMeasurementRow.vue'
 import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
 import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
 import {
@@ -7,12 +10,19 @@ import {
   inspectionFlow,
   inspectionResultLabel,
   inspectionResultLabels,
+  measurementOutOfTolerance,
   measurementRowsValid,
   toMeasurementPayload,
   type InspectCtx,
-  type MeasurementDraftRow,
 } from '@nerv-iip/business-core'
-import { NvAppShellMobile, NvListRow, NvMobileResult, NvScanBar } from '@nerv-iip/ui-mobile'
+import {
+  NvAppShellMobile,
+  NvListRow,
+  NvMobileDialog,
+  NvMobileResult,
+  NvNumberKeyboard,
+  NvScanBar,
+} from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -42,10 +52,6 @@ interface InspectionMeasurementRow {
   lowerSpecLimit?: number | null
   upperSpecLimit?: number | null
   isWithinSpec?: boolean
-}
-
-interface MeasurementFormRow extends MeasurementDraftRow {
-  id: number
 }
 
 definePage({
@@ -110,9 +116,54 @@ const measurementsValid = computed(() => measurementRowsValid(measurementRows))
 
 const measurementPayload = computed(() => toMeasurementPayload(measurementRows))
 
+// 超差行数（提交确认汇总用；仅统计可解析且越限的行）。
+const outOfToleranceCount = computed(
+  () => measurementRows.filter((row) => measurementOutOfTolerance(row)).length,
+)
+
 // 流程驱动校验：planId + result 必填，测量值行可选但一旦填写必须完整有效。
 const valid = computed(
   () => inspectionFlow.progress(form).completed >= 2 && measurementsValid.value,
+)
+
+// 数字键盘单例：大键 + 小数点，Teleport 底部；触发字段只读（不弹系统键盘）。
+const keyboard = reactive<{
+  show: boolean
+  rowId: number | null
+  field: 'measuredValue' | 'lowerSpecLimit' | 'upperSpecLimit'
+}>({ show: false, rowId: null, field: 'measuredValue' })
+const keyboardTitles: Record<typeof keyboard.field, string> = {
+  measuredValue: '录入测量值',
+  lowerSpecLimit: '录入下限',
+  upperSpecLimit: '录入上限',
+}
+const keyboardTitle = computed(() => keyboardTitles[keyboard.field])
+const keyboardValue = computed<string>({
+  get: () => {
+    const row = measurementRows.find((r) => r.id === keyboard.rowId)
+    return row ? String(row[keyboard.field] ?? '') : ''
+  },
+  set: (value) => {
+    const row = measurementRows.find((r) => r.id === keyboard.rowId)
+    if (row) row[keyboard.field] = value
+  },
+})
+function openKeyboard(rowId: number, field: typeof keyboard.field) {
+  keyboard.rowId = rowId
+  keyboard.field = field
+  keyboard.show = true
+}
+
+// 文本字段（特性 / 单位）Props Down / Events Up：子组件回吐更新，此处持有修改。
+function updateRowText(rowId: number, field: 'characteristicCode' | 'uomCode', value: string) {
+  const row = measurementRows.find((r) => r.id === rowId)
+  if (row) row[field] = value
+}
+
+// 提交确认：有超差行时先弹「N 项超差，确认提交？」，无超差直接提交。
+const confirmOpen = ref(false)
+const confirmDescription = computed(
+  () => `${outOfToleranceCount.value} 项测量值超差，仍要提交点检？`,
 )
 
 // 点检端点无服务端幂等键 → 写结果状态机由共享 composable 统一：结果不确定（超时/网络中断）
@@ -127,8 +178,12 @@ const { phase, errorTitle, errorDescription, canRetry, run, retry, verify, reset
     },
   })
 
-// ScanBar 在浮层（成功/失败 Result）展示时停止抢焦。
-const scanActive = computed(() => phase.value === 'form')
+// ScanBar 焦点常驻 opt-out：
+// - 浮层（成功/失败 Result）展示时停止抢焦；
+// - **录测量文本 / 数字键盘打开时停止抢焦**——否则 ScanBar 的 blur→RAF 回焦会把焦点从
+//   特性/单位输入抢回，戴手套录入无法用正常 tap+输入完成（#812 核心验收）。编辑结束后恢复。
+const textEditing = ref(false)
+const scanActive = computed(() => phase.value === 'form' && !textEditing.value && !keyboard.show)
 
 function onScan(value: string) {
   // 扫设备码/计划号 → 客户端过滤已加载的保养计划列表。
@@ -165,8 +220,21 @@ function removeMeasurementRow(rowId: number) {
   }
 }
 
+// 提交入口：有超差先确认，无超差直接提交。
+function onSubmitClick() {
+  if (!valid.value || recordPending.value) return
+  // 收起数字键盘，避免其浮层叠在确认弹窗之下。
+  keyboard.show = false
+  if (outOfToleranceCount.value > 0) {
+    confirmOpen.value = true
+    return
+  }
+  void submit()
+}
+
 async function submit() {
   if (!valid.value || recordPending.value) return
+  keyboard.show = false
   await run(() =>
     recordInspection({
       planId: form.planId as string,
@@ -395,71 +463,16 @@ function inspectionSubtitle(item: {
             </button>
           </div>
 
-          <div
-            v-for="row in measurementRows"
-            :key="row.id"
-            class="space-y-2 rounded-lg border border-border bg-card p-3"
-          >
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <label class="space-y-1 text-xs text-muted-foreground">
-                <span>特性</span>
-                <input
-                  v-model="row.characteristicCode"
-                  data-testid="measurement-characteristic"
-                  class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base text-foreground"
-                  autocomplete="off"
-                />
-              </label>
-              <label class="space-y-1 text-xs text-muted-foreground">
-                <span>数值</span>
-                <input
-                  v-model="row.measuredValue"
-                  data-testid="measurement-value"
-                  class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base text-foreground"
-                  type="number"
-                  step="any"
-                />
-              </label>
-              <label class="space-y-1 text-xs text-muted-foreground">
-                <span>单位</span>
-                <input
-                  v-model="row.uomCode"
-                  data-testid="measurement-uom"
-                  class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base text-foreground"
-                  autocomplete="off"
-                />
-              </label>
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-              <label class="space-y-1 text-xs text-muted-foreground">
-                <span>下限</span>
-                <input
-                  v-model="row.lowerSpecLimit"
-                  data-testid="measurement-lower"
-                  class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base text-foreground"
-                  type="number"
-                  step="any"
-                />
-              </label>
-              <label class="space-y-1 text-xs text-muted-foreground">
-                <span>上限</span>
-                <input
-                  v-model="row.upperSpecLimit"
-                  data-testid="measurement-upper"
-                  class="min-h-touch w-full rounded-lg border border-border bg-background px-3 text-base text-foreground"
-                  type="number"
-                  step="any"
-                />
-              </label>
-            </div>
-            <button
-              type="button"
-              data-testid="remove-measurement"
-              class="min-h-touch w-full rounded-lg border border-border bg-background text-sm font-medium text-foreground"
-              @click="removeMeasurementRow(row.id)"
-            >
-              移除
-            </button>
+          <!-- 文本输入获焦时停用 ScanBar 回焦（focusin/focusout 冒泡），戴手套可正常录入。 -->
+          <div class="space-y-2" @focusin="textEditing = true" @focusout="textEditing = false">
+            <InspectionMeasurementRow
+              v-for="row in measurementRows"
+              :key="row.id"
+              :row="row"
+              @open-keyboard="(field) => openKeyboard(row.id, field)"
+              @update-text="(field, value) => updateRowText(row.id, field, value)"
+              @remove="removeMeasurementRow(row.id)"
+            />
           </div>
 
           <p
@@ -467,17 +480,17 @@ function inspectionSubtitle(item: {
             data-testid="measurement-error"
             class="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
           >
-            请完整填写测量值，且下限不能大于上限。
+            请完整填写测量值：特性 + 数值必填，上下限同填时下限不能大于上限。
           </p>
         </div>
 
-        <!-- 步骤 3：提交 -->
+        <!-- 步骤 3：提交（有超差先确认） -->
         <button
           data-testid="submit"
           type="button"
           :disabled="!valid || recordPending"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
-          @click="submit"
+          @click="onSubmitClick"
         >
           {{ recordPending ? '记录中…' : '提交点检' }}
         </button>
@@ -521,5 +534,24 @@ function inspectionSubtitle(item: {
         </div>
       </section>
     </div>
+
+    <!-- 数字键盘单例（测量值 / 上下限共用）；sign-toggle 支持负温度/压力/上下限 -->
+    <NvNumberKeyboard
+      v-model="keyboardValue"
+      v-model:show="keyboard.show"
+      :title="keyboardTitle"
+      extra-key="."
+      sign-toggle
+    />
+
+    <!-- 超差提交确认 -->
+    <NvMobileDialog
+      v-model:open="confirmOpen"
+      title="确认提交"
+      :description="confirmDescription"
+      confirm-text="仍要提交"
+      confirm-tone="danger"
+      @confirm="submit"
+    />
   </NvAppShellMobile>
 </template>
