@@ -31,7 +31,9 @@ const wmsState = vi.hoisted(() => ({
       createdAtUtc: '2026-06-11T09:00:00Z',
     },
   ],
-  completeInbound: vi.fn((_inboundOrderId: string, _idempotencyKey: string) => Promise.resolve()),
+  completeInbound: vi.fn((_inboundOrderId: string, _idempotencyKey: string, _lines?: unknown[]) =>
+    Promise.resolve(),
+  ),
   completePending: false,
   error: null as unknown,
   pending: false,
@@ -49,6 +51,7 @@ const wmsState = vi.hoisted(() => ({
           uomCode: 'EA',
           receivedQuantity: 20,
           lotNo: 'LOT-A',
+          expiryDate: '2027-12-31',
           qualityGateStatus: 'pending',
         },
       ],
@@ -161,6 +164,8 @@ describe('WMS 收货入库', () => {
     expect(line.textContent).toContain('SKU-A')
     expect(line.textContent).toContain('LOT-A')
     expect(line.textContent).toContain('待检')
+    // 后端投影已带效期 → 无需扫码即显示三色标（#935 收货行 expiryDate）。
+    expect(document.querySelector('[data-expiry-tag]')?.textContent).toContain('2027-12-31')
     wrapper.unmount()
   })
 
@@ -190,10 +195,14 @@ describe('WMS 收货入库', () => {
     expect(confirm).toBeTruthy()
     confirm.click()
     expect(wmsState.completeInbound).toHaveBeenCalledTimes(1)
-    const [id, key] = wmsState.completeInbound.mock.calls[0]
+    const [id, key, lines] = wmsState.completeInbound.mock.calls[0]
     expect(id).toBe('11111111-1111-1111-1111-111111111111')
     expect(typeof key).toBe('string')
     expect((key as string).length).toBeGreaterThan(0)
+    // 行批次（后端既有 lotNo/effDate）随 complete 落库（#935 闭环）。
+    expect(lines).toEqual([
+      { lineNo: '1', lotNo: 'LOT-A', productionDate: undefined, expiryDate: '2027-12-31' },
+    ])
     wrapper.unmount()
   })
 
@@ -300,6 +309,21 @@ describe('WMS 收货入库 · GS1 扫码效期', () => {
     await flushPromises()
     expect(document.querySelector('[data-expiry-tag]')?.textContent).toContain('2026-08-01')
     expect(document.querySelector('[data-near-expiry-notice]')).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('扫码采集的批号/效期随 completeInbound 落库（覆盖后端既有值）', async () => {
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    const gs1Input = document.querySelector<HTMLInputElement>('input[placeholder*="GS1"]')!
+    gs1Input.value = `17260801${GS}10LOT-A`
+    gs1Input.dispatchEvent(new Event('input'))
+    gs1Input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+    const lines = wmsState.completeInbound.mock.calls.at(-1)?.[2] as Array<Record<string, unknown>>
+    expect(lines[0]).toMatchObject({ lineNo: '1', lotNo: 'LOT-A', expiryDate: '2026-08-01' })
     wrapper.unmount()
   })
 

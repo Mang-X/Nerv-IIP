@@ -13,6 +13,7 @@ import {
   type BusinessConsoleCompleteWmsOutboundOrderRequest,
   type BusinessConsoleWmsCountExecutionItem,
   type BusinessConsoleWmsCountExecutionListEnvelope,
+  type BusinessConsoleWmsInboundLineCaptureInput,
   type BusinessConsoleWmsInboundOrderItem,
   type BusinessConsoleWmsInboundOrderListEnvelope,
   type BusinessConsoleWmsReceivingQualityGateItem,
@@ -44,6 +45,8 @@ export interface WmsTaskFilters extends WmsScopeFilters {
 // 重试复用同一键以防丢响应导致重复入库；新操作才换新键）。org/env 不在 body，由本封装从主体注入。
 export type CompleteOutboundInput = BusinessConsoleCompleteWmsOutboundOrderRequest
 export type CompleteCountInput = BusinessConsoleCompleteWmsCountExecutionRequest
+// 收货现场按行采集的批号/效期（#935 闭环）：随 completeInbound 落库。
+export type InboundLineCapture = BusinessConsoleWmsInboundLineCaptureInput
 
 function defaultFilters<T extends WmsScopeFilters>(initial: Partial<T> = {}): T {
   return reactive({ skip: 0, take: DEFAULT_TAKE, ...initial }) as T
@@ -115,10 +118,18 @@ export function useWmsInbound(initialFilters: Partial<WmsScopeFilters> = {}) {
     pending: ordersQuery.isLoading,
     error: ordersQuery.error,
     refresh: ordersQuery.refetch,
-    completeInbound: (inboundOrderId: string, idempotencyKey: string) => {
+    completeInbound: (
+      inboundOrderId: string,
+      idempotencyKey: string,
+      lines?: BusinessConsoleWmsInboundLineCaptureInput[],
+    ) => {
       // 幂等键由页面在用户发起操作时生成一次并跨重试复用（防丢响应重复入库）；
-      // org/env 取登录主体注入 query，调用方无法影响。
-      const body = { idempotencyKey } satisfies BusinessConsoleCompleteWmsInboundOrderRequest
+      // org/env 取登录主体注入 query，调用方无法影响。lines 为收货现场采集的
+      // 批号/效期（#935 闭环），随 complete 一并落库；无采集则不带 lines。
+      const body = {
+        idempotencyKey,
+        ...(lines && lines.length ? { lines } : {}),
+      } satisfies BusinessConsoleCompleteWmsInboundOrderRequest
       return completeMutation.mutateAsync({
         path: { inboundOrderId },
         query: scope.scopeQuery(),

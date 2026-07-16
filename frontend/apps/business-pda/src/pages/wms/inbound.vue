@@ -4,6 +4,7 @@ import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import {
   useWmsInbound,
   useWmsReceivingQualityGates,
+  type InboundLineCapture,
   type ReceivingQualityGateLine,
 } from '@/composables/useBusinessWms'
 import {
@@ -74,8 +75,20 @@ const gs1Notice = ref('')
 // 空态仅在「无待收货单据且无加载/错误」时出现，避免与错误/加载态打架。
 const showEmpty = computed(() => !pending.value && !error.value && orders.value.length === 0)
 
-// 收货扫码收集的效期，按收货行 id 暂存（本地作业提示，效期落库缺后端端点，见 #813 后续 issue）。
-const capturedExpiry = ref<Record<string, string>>({})
+// 收货现场按行采集的批号/效期（GS1 扫码或日期滚轮），随 completeInbound 落库（#935 闭环）。
+// 采集值覆盖后端已有值；未采集则展示/提交后端投影的既有值。
+interface LineCapture {
+  lotNo?: string
+  productionDate?: string
+  expiryDate?: string
+}
+const capturedByLine = ref<Record<string, LineCapture>>({})
+function captureLine(lineId: string, patch: LineCapture) {
+  capturedByLine.value = {
+    ...capturedByLine.value,
+    [lineId]: { ...capturedByLine.value[lineId], ...patch },
+  }
+}
 
 // ---- 质检门禁 / 效期 视图辅助 ----
 type TagVariant = 'default' | 'brand' | 'success' | 'warning' | 'danger'
@@ -99,8 +112,15 @@ const EXPIRY_VARIANT: Record<ExpiryTone, TagVariant> = {
   expired: 'danger',
 }
 
+// 采集值优先，否则回退后端投影的既有效期/批号（#935 收货行已带 expiryDate/productionDate）。
+function lineCapture(line: ReceivingQualityGateLine): LineCapture {
+  return (line.inboundOrderLineId && capturedByLine.value[line.inboundOrderLineId]) || {}
+}
 function lineExpiry(line: ReceivingQualityGateLine): string {
-  return line.inboundOrderLineId ? (capturedExpiry.value[line.inboundOrderLineId] ?? '') : ''
+  return lineCapture(line).expiryDate ?? line.expiryDate ?? ''
+}
+function lineBatch(line: ReceivingQualityGateLine): string {
+  return lineCapture(line).lotNo ?? line.lotNo ?? ''
 }
 function lineExpiryTone(line: ReceivingQualityGateLine): ExpiryTone | null {
   const d = lineExpiry(line)
@@ -146,7 +166,8 @@ function closeSheet() {
   sheetOpen.value = false
 }
 
-// 扫 GS1 批次码：解析批号+效期，按批号匹配收货行写入效期（单行时兜底落到该行）。
+// 扫 GS1 批次码：解析批号/效期/生产日期，按批号匹配收货行采集（单行时兜底落到该行）。
+// 采集值随 completeInbound 落库（#935 闭环）。
 function onGs1Scan(value: string) {
   gs1Notice.value = ''
   const parsed = parseGs1(value)
@@ -165,25 +186,29 @@ function onGs1Scan(value: string) {
       : '未匹配到收货行，请手动选择'
     return
   }
-  if (parsed.expiryDate) {
-    capturedExpiry.value = {
-      ...capturedExpiry.value,
-      [target.inboundOrderLineId]: parsed.expiryDate,
-    }
-  } else {
+  captureLine(target.inboundOrderLineId, {
+    ...(parsed.lotNo ? { lotNo: parsed.lotNo } : {}),
+    ...(parsed.productionDate ? { productionDate: parsed.productionDate } : {}),
+    ...(parsed.expiryDate ? { expiryDate: parsed.expiryDate } : {}),
+  })
+  if (!parsed.expiryDate) {
     gs1Notice.value = `批号 ${parsed.lotNo} 已匹配，但码内无效期，请手动录入`
   }
 }
 
-// 手输兜底：日期滚轮录入效期。
+// 手输兜底：日期滚轮录入效期（初值取采集值或后端既有效期）。
 const expiryPickerOpen = ref(false)
 const expiryPickerLineId = ref('')
 const expiryPickerValue = computed<string>({
-  get: () =>
-    expiryPickerLineId.value ? (capturedExpiry.value[expiryPickerLineId.value] ?? '') : '',
+  get: () => {
+    const id = expiryPickerLineId.value
+    if (!id) return ''
+    const line = selectedLines.value.find((l) => l.inboundOrderLineId === id)
+    return (line ? lineExpiry(line) : '') || ''
+  },
   set: (v) => {
     if (!expiryPickerLineId.value) return
-    capturedExpiry.value = { ...capturedExpiry.value, [expiryPickerLineId.value]: v }
+    captureLine(expiryPickerLineId.value, { expiryDate: v })
   },
 })
 function openExpiryPicker(line: ReceivingQualityGateLine) {
@@ -192,13 +217,29 @@ function openExpiryPicker(line: ReceivingQualityGateLine) {
   expiryPickerOpen.value = true
 }
 
+// 提交时把每行的有效批号/生产日期/效期（采集值优先，否则后端既有）打包落库。
+// 仅提交至少带一个批次字段的行；均无则不带 lines（等价旧行为）。
+function buildCaptureLines(): InboundLineCapture[] {
+  const out: InboundLineCapture[] = []
+  for (const line of selectedLines.value) {
+    if (!line.lineNo) continue
+    const cap = lineCapture(line)
+    const lotNo = cap.lotNo ?? line.lotNo ?? undefined
+    const productionDate = cap.productionDate ?? line.productionDate ?? undefined
+    const expiryDate = cap.expiryDate ?? line.expiryDate ?? undefined
+    if (!lotNo && !productionDate && !expiryDate) continue
+    out.push({ lineNo: line.lineNo, lotNo, productionDate, expiryDate })
+  }
+  return out
+}
+
 async function confirmComplete() {
   // 防重：幂等键已由组合式注入，但 UI 仍守一道——pending 中直接早退。
   if (completePending.value) return
   submitError.value = ''
   try {
     // 重试复用同一 operationKey（不重新生成），#188 客户端去重可识别为同一操作。
-    await completeInbound(selectedOrderId.value, operationKey.value)
+    await completeInbound(selectedOrderId.value, operationKey.value, buildCaptureLines())
     // 成功后立刻关抽屉并切到结果态，重复点击无法再触发。
     sheetOpen.value = false
     completed.value = true
@@ -216,6 +257,7 @@ function resetFlow() {
   operationKey.value = ''
   submitError.value = ''
   gs1Notice.value = ''
+  capturedByLine.value = {}
 }
 
 function backToList() {
@@ -301,7 +343,7 @@ function goPutaway() {
             v-for="line in selectedLines"
             :key="line.inboundOrderLineId"
             :title="`${line.skuCode ?? ''} ×${line.receivedQuantity ?? 0}`"
-            :note="`批号 ${line.lotNo || '—'}`"
+            :note="`批号 ${lineBatch(line) || '—'}`"
             data-line
           >
             <template #value>
