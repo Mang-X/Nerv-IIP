@@ -82,7 +82,33 @@ public sealed record ListInboundOrdersQuery(
 
 public sealed record ListInboundOrdersResponse(IReadOnlyCollection<InboundOrderListItem> Items, int Total);
 
-public sealed record InboundOrderListItem(InboundOrderId InboundOrderId, string InboundOrderNo, string Status, DateTime CreatedAtUtc);
+public sealed record InboundOrderListItem(
+    InboundOrderId InboundOrderId,
+    string InboundOrderNo,
+    string Status,
+    DateTime CreatedAtUtc,
+    // 单据级派生质检状态（聚合全部收货行含免检；无行为空串）与上架放行判据，
+    // 供 PDA/console 列表状态标与上架门禁一次查询即得，避免按分页门禁行跨页聚合错误。
+    string QualityGateStatus,
+    bool IsReleasedForPutaway);
+
+internal static class InboundOrderQualityAggregate
+{
+    // 优先级：不合格 > 待检 > 有条件放行 > 合格 > 免检；无行返回空串（未收货，无状态标）。
+    public static string Derive(bool hasAnyLine, bool hasRejected, bool hasPending, bool hasConditional, bool hasPassed)
+    {
+        if (!hasAnyLine) return string.Empty;
+        if (hasRejected) return InboundQualityGateStatuses.Rejected;
+        if (hasPending) return InboundQualityGateStatuses.Pending;
+        if (hasConditional) return InboundQualityGateStatuses.ConditionalReleased;
+        if (hasPassed) return InboundQualityGateStatuses.Passed;
+        return InboundQualityGateStatuses.NotRequired;
+    }
+
+    // 整单可上架：至少一行且无任何一行待检/不合格（其余为合格/有条件放行/免检）。
+    public static bool ReleasedForPutaway(bool hasAnyLine, bool hasRejected, bool hasPending)
+        => hasAnyLine && !hasRejected && !hasPending;
+}
 
 public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListInboundOrdersQuery, ListInboundOrdersResponse>
@@ -111,13 +137,33 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
         }
 
         var total = await query.CountAsync(cancellationToken);
-        var items = await query
+        var rows = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenByDescending(x => x.InboundOrderNo)
             .Skip(skip)
             .Take(take)
-            .Select(x => new InboundOrderListItem(x.Id, x.InboundOrderNo, x.Status.ToString(), x.CreatedAtUtc))
+            .Select(x => new
+            {
+                x.Id,
+                x.InboundOrderNo,
+                Status = x.Status.ToString(),
+                x.CreatedAtUtc,
+                HasAnyLine = x.Lines.Any(),
+                HasRejected = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Rejected),
+                HasPending = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Pending),
+                HasConditional = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.ConditionalReleased),
+                HasPassed = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Passed),
+            })
             .ToArrayAsync(cancellationToken);
+        var items = rows
+            .Select(x => new InboundOrderListItem(
+                x.Id,
+                x.InboundOrderNo,
+                x.Status,
+                x.CreatedAtUtc,
+                InboundOrderQualityAggregate.Derive(x.HasAnyLine, x.HasRejected, x.HasPending, x.HasConditional, x.HasPassed),
+                InboundOrderQualityAggregate.ReleasedForPutaway(x.HasAnyLine, x.HasRejected, x.HasPending)))
+            .ToArray();
         return new ListInboundOrdersResponse(items, total);
     }
 }
@@ -480,7 +526,8 @@ public sealed record ListReceivingQualityGatesQuery(
     int Skip = 0,
     int Take = 100,
     string? GateStatus = null,
-    string? Keyword = null) : IQuery<ListReceivingQualityGatesResponse>;
+    string? Keyword = null,
+    bool IncludeNotRequired = false) : IQuery<ListReceivingQualityGatesResponse>;
 
 public sealed record ListReceivingQualityGatesResponse(IReadOnlyCollection<ReceivingQualityGateFact> Items, int Total);
 
@@ -520,8 +567,14 @@ public sealed class ListReceivingQualityGatesQueryHandler(ApplicationDbContext d
             .AsNoTracking()
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
-            .SelectMany(order => order.Lines, (order, line) => new { order, line })
-            .Where(x => x.line.QualityGateStatus != InboundQualityGateStatuses.NotRequired);
+            .SelectMany(order => order.Lines, (order, line) => new { order, line });
+
+        // 默认仅质检工作清单（排除免检行）；IncludeNotRequired=true 时返回全部收货行，
+        // 供 PDA 收货明细展示/采集免检行的批号效期与「免检」状态标。
+        if (!request.IncludeNotRequired)
+        {
+            query = query.Where(x => x.line.QualityGateStatus != InboundQualityGateStatuses.NotRequired);
+        }
 
         if (!string.IsNullOrWhiteSpace(request.GateStatus))
         {

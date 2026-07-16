@@ -24,7 +24,7 @@ import {
   type BusinessConsoleWmsWarehouseTaskListEnvelope,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
 
@@ -227,57 +227,39 @@ export function useWmsPicking(initialFilters: Partial<WmsTaskFilters> = {}) {
 
 export type ReceivingQualityGateLine = BusinessConsoleWmsReceivingQualityGateItem
 
-// 收货质检门禁（#705）：扁平的行级投影（跨单）。PDA 用它给收货单挂质检状态标 +
-// 行级批号/门禁明细 + 上架门禁判据。org/env 由登录主体注入；filters.status 复用为
-// gateStatus 过滤。默认加载全量（take=DEFAULT_TAKE），页面按 inboundOrderId 客户端分组。
-export function useWmsReceivingQualityGates(initialFilters: Partial<WmsScopeFilters> = {}) {
+// 按「选中收货单」查完整收货行（#705 投影 + includeNotRequired=true 含免检行）。
+// 单据级质检状态标/上架门禁改由 ListInboundOrders 单据级派生字段驱动（避免按分页门禁
+// 行跨页聚合出错）；本 composable 只在打开某单明细时查该单的全部行，用于展示/采集
+// 批号效期与逐行门禁。keyword 服务端按单号收窄后，客户端再按精确单号过滤（keyword 亦
+// 命中 sku/检验记录号）。take 取上限，单张收货单行数远低于此。
+export function useWmsReceivingLines(inboundOrderNo: MaybeRefOrGetter<string>) {
   const scope = useWmsScope()
-  const filters = defaultFilters<WmsScopeFilters>(initialFilters)
+  const orderNo = computed(() => toValue(inboundOrderNo).trim())
 
-  const gatesQuery = useQuery(() => ({
+  const linesQuery = useQuery(() => ({
     ...listBusinessConsoleWmsReceivingQualityGatesQueryOptions({
       query: {
         ...scope.scopeQuery(),
-        skip: filters.skip,
-        take: filters.take,
-        ...optionalQuery('gateStatus', filters.status),
-        ...optionalQuery('keyword', filters.keyword),
+        skip: 0,
+        take: 500,
+        keyword: orderNo.value,
+        includeNotRequired: true,
       },
     }),
-    enabled: scope.hasScope.value,
+    enabled: scope.hasScope.value && orderNo.value.length > 0,
   }))
 
   const lines = computed<ReceivingQualityGateLine[]>(() =>
     listItems<ReceivingQualityGateLine>(
-      gatesQuery.data.value as BusinessConsoleWmsReceivingQualityGateListEnvelope | undefined,
-    ),
+      linesQuery.data.value as BusinessConsoleWmsReceivingQualityGateListEnvelope | undefined,
+    ).filter((l) => (l.inboundOrderNo ?? '') === orderNo.value),
   )
 
-  // 按收货单 id 分组，页面据此挂状态标与行级明细。
-  const linesByOrderId = computed<Map<string, ReceivingQualityGateLine[]>>(() => {
-    const map = new Map<string, ReceivingQualityGateLine[]>()
-    for (const line of lines.value) {
-      const id = line.inboundOrderId
-      if (!id) continue
-      const bucket = map.get(id)
-      if (bucket) bucket.push(line)
-      else map.set(id, [line])
-    }
-    return map
-  })
-
   return {
-    filters,
     lines,
-    linesByOrderId,
-    total: computed(() =>
-      listTotal(
-        gatesQuery.data.value as BusinessConsoleWmsReceivingQualityGateListEnvelope | undefined,
-      ),
-    ),
-    pending: gatesQuery.isLoading,
-    error: gatesQuery.error,
-    refresh: gatesQuery.refetch,
+    pending: linesQuery.isLoading,
+    error: linesQuery.error,
+    refresh: linesQuery.refetch,
   }
 }
 

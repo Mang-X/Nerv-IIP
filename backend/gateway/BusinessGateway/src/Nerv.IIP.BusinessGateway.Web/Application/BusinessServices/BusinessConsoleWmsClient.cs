@@ -336,7 +336,8 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
                 ("skip", request.Skip),
                 ("take", request.Take),
                 ("gateStatus", request.GateStatus),
-                ("keyword", request.Keyword)),
+                ("keyword", request.Keyword),
+                ("includeNotRequired", TrueFlag(request.IncludeNotRequired))),
             null,
             cancellationToken);
 

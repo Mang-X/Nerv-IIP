@@ -1661,6 +1661,15 @@
               "type": "string",
               "nullable": true
             }
+          },
+          {
+            "name": "includeNotRequired",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "nullable": false
+            }
           }
         ],
         "responses": {
@@ -23587,6 +23596,12 @@
           "createdAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "qualityGateStatus": {
+            "type": "string"
+          },
+          "isReleasedForPutaway": {
+            "type": "boolean"
           }
         }
       },
