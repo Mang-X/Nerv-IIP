@@ -313,8 +313,12 @@ function goPutaway() {
       :description="selectedOrderNo ? `收货单 ${selectedOrderNo}` : undefined"
     >
       <template #actions>
-        <NvMobileButton block variant="primary" @click="backToList">继续</NvMobileButton>
-        <NvMobileButton block variant="outline" @click="goHome">返回</NvMobileButton>
+        <NvMobileButton block variant="primary" class="min-h-touch" @click="backToList">
+          继续
+        </NvMobileButton>
+        <NvMobileButton block variant="outline" class="min-h-touch" @click="goHome">
+          返回
+        </NvMobileButton>
       </template>
     </NvMobileResult>
 
@@ -396,9 +400,8 @@ function goPutaway() {
         >
           <p class="text-sm text-destructive">未取到该单完整收货明细，暂不能完成入库</p>
           <NvMobileButton
-            size="sm"
             variant="outline"
-            class="mt-3"
+            class="mt-3 min-h-touch"
             data-testid="lines-incomplete-retry"
             @click="() => refreshLines()"
           >
@@ -437,7 +440,7 @@ function goPutaway() {
             <div class="mt-2 flex items-center gap-2">
               <NvMobileButton
                 v-if="selectedLines.length > 1"
-                size="sm"
+                class="min-h-touch"
                 :aria-pressed="activeLine?.inboundOrderLineId === line.inboundOrderLineId"
                 :aria-label="`选为当前作业行：${line.skuCode ?? ''}`"
                 :variant="
@@ -453,13 +456,13 @@ function goPutaway() {
               <NvMobileInput
                 :model-value="lineBatch(line)"
                 placeholder="批号"
-                class="h-9 flex-1"
+                class="flex-1"
                 data-batch-input
                 @update:model-value="(v) => onBatchInput(line, v)"
               />
               <NvMobileButton
-                size="sm"
                 variant="outline"
+                class="min-h-touch"
                 data-expiry-input
                 @click="openExpiryPicker(line)"
               >
@@ -507,6 +510,7 @@ function goPutaway() {
           <NvMobileButton
             block
             variant="primary"
+            class="min-h-touch"
             data-testid="confirm-complete"
             :disabled="submitDisabled"
             @click="confirmComplete"
@@ -517,12 +521,15 @@ function goPutaway() {
             v-if="selectedCanPutaway"
             block
             variant="outline"
+            class="min-h-touch"
             data-testid="go-putaway"
             @click="goPutaway"
           >
             去上架
           </NvMobileButton>
-          <NvMobileButton block variant="outline" @click="closeSheet">取消</NvMobileButton>
+          <NvMobileButton block variant="outline" class="min-h-touch" @click="closeSheet">
+            取消
+          </NvMobileButton>
         </div>
       </div>
     </NvBottomSheet>
