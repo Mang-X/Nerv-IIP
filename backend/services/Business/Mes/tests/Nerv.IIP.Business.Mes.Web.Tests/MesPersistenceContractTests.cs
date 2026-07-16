@@ -992,7 +992,7 @@ public sealed class MesPersistenceContractTests
             new GetQualityHoldTimelineQuery("org-001", "env-dev", QualityIntegrationEventSources.BusinessMes, "WO-QH-HISTORY"),
             CancellationToken.None);
         Assert.Equal(4, timeline.Items.Count);
-        Assert.Equal(transitions.Select(x => x.Id), timeline.Items.Select(x => x.TransitionId));
+        Assert.Equal(transitions.Select(x => x.Id.ToString()), timeline.Items.Select(x => x.TransitionId));
         Assert.Equal(transitions.Select(x => x.IdempotencyKey), timeline.Items.Select(x => x.IdempotencyKey));
     }
 

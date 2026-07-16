@@ -33964,8 +33964,7 @@
         "additionalProperties": false,
         "properties": {
           "transitionId": {
-            "type": "string",
-            "format": "guid"
+            "type": "string"
           },
           "sourceService": {
             "type": "string"

@@ -3510,7 +3510,9 @@ public sealed record BusinessConsoleMesQualityHoldTimelineRequest(
     [property: QueryParam] string SourceService);
 
 public sealed record BusinessConsoleMesQualityHoldTimelineItem(
-    Guid TransitionId,
+    // 时间线转移 id 以字符串透传:MES 端投影为 x.Id.ToString()(与本网关所有其他强类型 id 端点一致)。
+    // 此前 MES 直投强类型 QualityHoldTransitionId、网关按 Guid 反序列化,真实响应无法解析导致 502。
+    string TransitionId,
     string SourceService,
     string SourceDocumentId,
     string HoldCycleId,
