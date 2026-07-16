@@ -109,8 +109,8 @@ function Get-PdaJdkMajor([string] $jdkHome) {
 function Resolve-PdaJavaHome21 {
     if (-not [string]::IsNullOrWhiteSpace($env:JAVA_HOME)) {
         $explicitMajor = Get-PdaJdkMajor $env:JAVA_HOME
-        if ($explicitMajor -ge 21) { return $env:JAVA_HOME }
-        Write-Diagnostic -Level 'WARN' -Message "显式 JAVA_HOME 不满足 JDK 21+（$($env:JAVA_HOME)，主版本 $explicitMajor），尝试探测约定位置的 21+ JDK。"
+        if ($explicitMajor -ge 21 -and $explicitMajor -le 24) { return $env:JAVA_HOME }
+        Write-Diagnostic -Level 'WARN' -Message "显式 JAVA_HOME 不在兼容区间 JDK 21–24（$($env:JAVA_HOME)，主版本 $explicitMajor；Gradle 8.14 最高支持 Java 24），尝试探测约定位置的兼容 JDK。"
     }
     $best = $null
     $bestMajor = 0
@@ -118,7 +118,9 @@ function Resolve-PdaJavaHome21 {
         if (-not (Test-Path $root)) { continue }
         foreach ($dir in (Get-ChildItem -LiteralPath $root -Directory)) {
             $major = Get-PdaJdkMajor $dir.FullName
-            if ($major -ge 21 -and $major -gt $bestMajor) { $best = $dir.FullName; $bestMajor = $major }
+            # 兼容区间 21–24：下限是 Capacitor 8 的 sourceCompatibility=21，
+            # 上限是 Gradle 8.14 支持的最高 daemon JVM（Java 24），更高版本会构建失败。
+            if ($major -ge 21 -and $major -le 24 -and $major -gt $bestMajor) { $best = $dir.FullName; $bestMajor = $major }
         }
     }
     return $best
