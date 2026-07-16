@@ -1661,6 +1661,23 @@
               "type": "string",
               "nullable": true
             }
+          },
+          {
+            "name": "includeNotRequired",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "nullable": false
+            }
+          },
+          {
+            "name": "inboundOrderNo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
@@ -23587,6 +23604,12 @@
           "createdAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "qualityGateStatus": {
+            "type": "string"
+          },
+          "isReleasedForPutaway": {
+            "type": "boolean"
           }
         }
       },
