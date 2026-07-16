@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 using Nerv.IIP.Business.Maintenance.Web.Application.Scheduling;
+using Nerv.IIP.Business.Maintenance.Web.Application.Seed;
 using Nerv.IIP.Business.Maintenance.Web.Endpoints.Maintenance;
 using Nerv.IIP.Business.Maintenance.Web.Infrastructure;
 using Nerv.IIP.Caching;
@@ -95,6 +96,7 @@ try
     AddMaintenanceDistributedLock(builder.Services, builder.Configuration, builder.Environment, isTesting);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<MaintenanceCodingService>();
+    builder.Services.AddScoped<MaintenanceSeedService>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)
@@ -142,6 +144,18 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    // 点检保养计划 seed（默认随 autoMigrate 开启，或显式 Maintenance:Seed:Enabled）：
+    // 全新环境补齐可选保养计划，供 PDA 点检页选计划 → 录测量值/超差/拍照走通（幂等只补缺失）。
+    var seedEnabled = builder.Configuration.GetValue<bool>("Maintenance:Seed:Enabled") || autoMigrate;
+    if (seedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        var seed = scope.ServiceProvider.GetRequiredService<MaintenanceSeedService>();
+        await seed.SeedAsync(
+            builder.Configuration["Maintenance:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Maintenance:Seed:EnvironmentId"] ?? "env-dev");
     }
 
     app.UseNervIipRequestLocalization();
