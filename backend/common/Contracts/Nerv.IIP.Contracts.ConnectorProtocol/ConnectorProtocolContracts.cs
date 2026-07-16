@@ -86,12 +86,22 @@ public sealed record ConnectorCollectionHealthResponse(
 /// <summary>
 /// One connector-host instance's collection health, self-sufficient for a status wall card:
 /// identity (<see cref="ConnectorId"/>), display name, protocol (<see cref="SourceSystem"/>: opcua/modbus/mqtt),
-/// derived <see cref="Status"/> (current/stale/unknown) and the same heartbeat/throughput/drop facts as
-/// <see cref="ConnectorCollectionHealthResponse"/>.
+/// derived <see cref="Status"/> and the same heartbeat/throughput/drop facts as
+/// <see cref="ConnectorCollectionHealthResponse"/>. Only unambiguous facts drive the status; nothing else is
+/// asserted (a collection stall is NOT derived — see the note on the evaluator).
 /// <para>
-/// <see cref="StaleReason"/> disambiguates a <c>stale</c> status: <c>heartbeat</c> means the connector is
-/// unreachable / its heartbeat has aged out (真断线); <c>metrics</c> means the heartbeat is still fresh but
-/// collection metrics stopped advancing (仍在线但采集停滞). Null when not stale.
+/// <see cref="Status"/> is one of: <c>current</c> (heartbeating, running, has produced a collection fact);
+/// <c>stale</c> (see <see cref="StaleReason"/>); or <c>unknown</c> (heartbeating/running but no sampling
+/// evidence yet — no received counter and no sample: an unconfigured/never-collected connector, "待采集";
+/// not counted as online).
+/// </para>
+/// <para>
+/// <see cref="StaleReason"/> disambiguates a <c>stale</c> status: <c>offline</c> — the heartbeat stopped
+/// arriving (aged out); the connector-host is no longer reporting, a real disconnect (断线). Since heartbeats
+/// stopped, <see cref="LastHeartbeatAtUtc"/> is frozen, so a "disconnected for" duration derived from it grows
+/// monotonically. <c>fault</c> — still heartbeating but the connector self-reported a terminal down state
+/// (异常停止); the cause is not observable here (may be a lost connection, but equally a downstream/processing
+/// failure), so it is never conflated with a device disconnect. Null when not stale.
 /// <see cref="CounterEpoch"/> scopes the monotonic counters; a consumer computing a sampling rate from
 /// consecutive polls must reset its baseline when the epoch changes (a counter reset).
 /// </para>
