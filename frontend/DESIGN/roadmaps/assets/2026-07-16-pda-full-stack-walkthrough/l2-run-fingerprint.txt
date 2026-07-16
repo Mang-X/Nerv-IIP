@@ -1,0 +1,6 @@
+branch=pda-sim-m3-avd-apk
+head=beb353a
+worktree=C:/WorkFile/Focus/项目/数字工厂/Nerv-IIP/.claude/worktrees/pr-909-code-review-fab4e9
+date=2026-07-15T23:53:35.2385330+08:00
+serverReuse=false
+requestTimeoutMs=2000 (script-injected default)
