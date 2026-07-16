@@ -209,38 +209,65 @@ const currentDeviceRuntimePlans = computed(() =>
 )
 const { remainingByPlanId, remainingPending } =
   useMaintenancePlanRuntimeRemaining(currentDeviceRuntimePlans)
-// 已知剩余小时（status=ok）才返回数值；无样本/读取失败/未算返回 null（用于排序与卡片区分）。
-function planRemainingHours(planId?: string) {
-  const entry = planId ? remainingByPlanId.value[planId] : undefined
-  return entry?.status === 'ok' ? entry.hours : null
-}
-const currentDeviceRuntimePlan = computed(
+// 每个运行小时计划的剩余读取结果（含状态）。距下次保养以「已知(ok)计划的最小剩余」为准，但当有候选
+// 计划读取失败/暂无样本时，其真实剩余未知、可能比已知最小值更紧迫，故卡片明确标注「已知计划最小值」并
+// 提示结果不完整——不把已知最小值冒充成全体最紧迫值。
+const runtimeRemainingEntries = computed(() =>
+  currentDeviceRuntimePlans.value.map((plan) => {
+    const entry = remainingByPlanId.value[plan.planId ?? '']
+    return { plan, status: entry?.status, hours: entry?.status === 'ok' ? entry.hours : null }
+  }),
+)
+// 任一候选在读取中（或首轮未算出）时不显示任何具体值。
+const anyRuntimeRemainingLoading = computed(
   () =>
-    currentDeviceRuntimePlans.value.slice().sort((a, b) => {
-      const ar = planRemainingHours(a.planId)
-      const br = planRemainingHours(b.planId)
-      if (ar == null && br == null) return 0
-      if (ar == null) return 1
-      if (br == null) return -1
-      return ar - br
-    })[0],
+    remainingPending.value ||
+    runtimeRemainingEntries.value.some((e) => e.status === 'loading' || e.status === undefined),
 )
-// 「距下次保养还需 X 小时」= 最紧迫运行小时计划的剩余小时（各计划各自窗口，口径与 PM 触发一致）。
-const runtimeHoursUntilNextMaintenance = computed(() =>
-  planRemainingHours(currentDeviceRuntimePlan.value?.planId),
+// 已知(ok)候选按剩余升序，第一个即已知计划最小剩余（最紧迫的已知者）。
+const mostUrgentOkRuntimeCandidate = computed(
+  () =>
+    runtimeRemainingEntries.value
+      .filter((e) => e.status === 'ok')
+      .slice()
+      .sort((a, b) => (a.hours ?? 0) - (b.hours ?? 0))[0],
 )
-// 该设备最紧迫运行小时计划的读取状态（用于卡片区分「读取中」/「读取失败」/「暂无样本」）。
-const currentRuntimePlanStatus = computed(
-  () => remainingByPlanId.value[currentDeviceRuntimePlan.value?.planId ?? '']?.status,
+// 存在读取失败/暂无样本的候选：真实剩余未知，可能更紧迫（用于「结果不完整」提示）。
+const runtimeRemainingUnknownCount = computed(
+  () =>
+    runtimeRemainingEntries.value.filter((e) => e.status === 'error' || e.status === 'no-samples')
+      .length,
+)
+const runtimeRemainingHasErrorCandidate = computed(() =>
+  runtimeRemainingEntries.value.some((e) => e.status === 'error'),
+)
+// 代表计划（累计小时窗口锚点、计划编号展示）：优先已知最紧迫者，否则取第一个候选。
+const currentDeviceRuntimePlan = computed(
+  () => mostUrgentOkRuntimeCandidate.value?.plan ?? currentDeviceRuntimePlans.value[0],
 )
 const runtimeUntilNextCardValue = computed(() => {
-  if (runtimeHoursUntilNextMaintenance.value != null) {
-    return formatHours(runtimeHoursUntilNextMaintenance.value)
-  }
-  // In flight (including a refresh superseding a prior settled value) never shows a stale value/error.
-  if (currentRuntimePlanStatus.value === 'loading' || remainingPending.value) return '读取中…'
-  if (currentRuntimePlanStatus.value === 'error') return '读取失败'
+  if (anyRuntimeRemainingLoading.value) return '读取中…'
+  const mostUrgent = mostUrgentOkRuntimeCandidate.value
+  if (mostUrgent) return formatHours(mostUrgent.hours)
+  // 没有任何已知(ok)计划：全部读取失败/无样本。
+  if (runtimeRemainingHasErrorCandidate.value) return '读取失败'
   return '无样本'
+})
+// 卡片提示：有已知值但也有未知候选时，明确是「已知计划最小值」且可能不完整；全部已知时给阈值。
+const runtimeUntilNextCardHint = computed(() => {
+  const plan = currentDeviceRuntimePlan.value
+  if (!plan) return ''
+  const code = plan.planCode ?? '—'
+  if (anyRuntimeRemainingLoading.value) return `运行小时型计划 ${code} · 正在读取`
+  if (mostUrgentOkRuntimeCandidate.value) {
+    if (runtimeRemainingUnknownCount.value > 0) {
+      return `已知计划最小值（另 ${runtimeRemainingUnknownCount.value} 个计划读取失败/暂无样本，可能更紧迫）· 计划 ${code}`
+    }
+    return `运行小时型计划 ${code} · 阈值 ${plan.nextDueRuntimeHours ?? '—'} 小时`
+  }
+  if (runtimeRemainingHasErrorCandidate.value)
+    return `运行小时型计划 ${code} · 运行小时读面读取失败`
+  return `运行小时型计划 ${code} · 当前窗口无运行样本`
 })
 // 「累计运行小时」是信息卡：窗口锚定运行小时计划起算日（无则近 N 天），展示窗口内累计运行事实。
 const nowIso = ref(new Date().toISOString())
@@ -780,9 +807,7 @@ function formatError(error: unknown) {
             v-if="currentDeviceRuntimePlan"
             description="距下次保养还需"
             :value="runtimeUntilNextCardValue"
-            :hint="`运行小时型计划 ${currentDeviceRuntimePlan.planCode ?? '—'} · 阈值 ${
-              currentDeviceRuntimePlan.nextDueRuntimeHours ?? '—'
-            } 小时`"
+            :hint="runtimeUntilNextCardHint"
           />
           <NvSectionCard
             v-else

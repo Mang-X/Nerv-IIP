@@ -49,6 +49,11 @@ const deviceControlState = vi.hoisted(() => ({
   ],
 }))
 
+// Client-derived per-plan remaining runtime hours; configurable per test to drive mixed-status cases.
+const runtimeRemainingState = vi.hoisted(() => ({
+  map: {} as Record<string, { status: string; hours?: number }>,
+}))
+
 const reviewFixture = vi.hoisted(() => {
   const historyItems = [
     {
@@ -142,6 +147,18 @@ const reviewFixture = vi.hoisted(() => {
       nextDueOn: null,
       runtimeHourInterval: 1000,
       nextDueRuntimeHours: 1000,
+      lastGeneratedRuntimeHours: 0,
+    },
+    {
+      // A second runtime plan on the same device — drives the mixed-status aggregation cases.
+      planId: 'plan-3',
+      deviceAssetId: 'DEV-OIL-01',
+      planCode: 'PM-CNC-RUNTIME-2',
+      interval: null,
+      startsOn: '2026-06-01',
+      nextDueOn: null,
+      runtimeHourInterval: 2000,
+      nextDueRuntimeHours: 2000,
       lastGeneratedRuntimeHours: 0,
     },
   ] satisfies BusinessConsoleMaintenancePlanItem[]
@@ -309,11 +326,11 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
     runtimeHoursEnabled: computed(() => true),
     refreshRuntimeHours: vi.fn(),
   }),
-  // Client-derived per-plan remaining runtime hours: runtime plan 'plan-2' has 280h left.
+  // Client-derived per-plan remaining runtime hours; configurable per test (see runtimeRemainingState).
   useMaintenancePlanRuntimeRemaining: () => ({
-    remainingByPlanId: computed<Record<string, { status: string; hours?: number }>>(() => ({
-      'plan-2': { status: 'ok', hours: 280 },
-    })),
+    remainingByPlanId: computed<Record<string, { status: string; hours?: number }>>(
+      () => runtimeRemainingState.map,
+    ),
     remainingPending: shallowRef(false),
     refreshRemaining: vi.fn(),
   }),
@@ -398,6 +415,11 @@ describe('equipment pages', () => {
     }
     equipmentComposableState.deviceFilters.deviceAssetId = 'DEV-OIL-01'
     equipmentComposableState.refreshDevice.mockClear()
+    // Default: both runtime plans known; plan-2 (280h) is the most urgent, no incomplete flag.
+    runtimeRemainingState.map = {
+      'plan-2': { status: 'ok', hours: 280 },
+      'plan-3': { status: 'ok', hours: 900 },
+    }
     authState.permissionCodes = [
       'business.iiot.alarms.read',
       'business.iiot.alarms.write',
@@ -450,9 +472,37 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('累计运行小时')
     expect(wrapper.text()).toContain('720.0 小时')
     expect(wrapper.text()).toContain('距下次保养还需')
-    // 累计 720h、运行小时型计划阈值 1000h → 剩余 280h。
+    // plan-2 剩余 280h 是已知计划中最小；plan-3 亦已知(900h),无未知候选 → 正常阈值口径,不标不完整。
     expect(wrapper.text()).toContain('280.0 小时')
     expect(wrapper.text()).toContain('PM-CNC-RUNTIME')
+    expect(wrapper.text()).not.toContain('可能更紧迫')
+  })
+
+  it('flags an incomplete result when a candidate runtime plan read failed / has no samples', () => {
+    // plan-2 known (280h min), plan-3 read failed -> its true remaining is unknown and could be smaller.
+    runtimeRemainingState.map = {
+      'plan-2': { status: 'ok', hours: 280 },
+      'plan-3': { status: 'error' },
+    }
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    // Still surfaces the known minimum value, but never claims it is the overall most-urgent.
+    expect(wrapper.text()).toContain('280.0 小时')
+    expect(wrapper.text()).toContain('已知计划最小值')
+    expect(wrapper.text()).toContain('可能更紧迫')
+  })
+
+  it('shows read-failed for the hours-until-next card when every candidate runtime plan read failed', () => {
+    runtimeRemainingState.map = {
+      'plan-2': { status: 'error' },
+      'plan-3': { status: 'error' },
+    }
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    expect(wrapper.text()).toContain('距下次保养还需')
+    expect(wrapper.text()).toContain('读取失败')
+    // No known remaining -> must not fabricate an "X 小时" value.
+    expect(wrapper.text()).not.toContain('280.0 小时')
   })
 
   it('renders the device control action and command history when the user can control the device', () => {
