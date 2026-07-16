@@ -23,6 +23,8 @@ const state = vi.hoisted(() => ({
   generateDue: vi.fn(async (_payload: Record<string, unknown>) => ({
     data: { generatedCount: 0 },
   })),
+  refreshPlans: vi.fn(async () => {}),
+  refreshRemaining: vi.fn(async () => {}),
 }))
 
 vi.mock('vue-router', async (importOriginal) => {
@@ -66,7 +68,7 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     plansError: shallowRef(),
     plansPending: shallowRef(false),
     plansTotal: computed(() => state.plans.length),
-    refreshPlans: vi.fn(),
+    refreshPlans: state.refreshPlans,
     createPlan: state.createPlan,
     createPlanPending: shallowRef(false),
     createPlanError: shallowRef(),
@@ -82,7 +84,7 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
   useMaintenancePlanRuntimeRemaining: () => ({
     remainingByPlanId: computed(() => state.remainingByPlanId),
     remainingPending: computed(() => state.remainingPending),
-    refreshRemaining: vi.fn(),
+    refreshRemaining: state.refreshRemaining,
   }),
 }))
 
@@ -157,6 +159,8 @@ beforeEach(() => {
   state.recordInspection.mockClear()
   state.createPlan.mockClear()
   state.generateDue.mockClear()
+  state.refreshPlans.mockClear()
+  state.refreshRemaining.mockClear()
   state.query = { deviceAssetId: 'DEV-PRESS-01', sourceAlarmId: 'ALARM-9001' }
   state.inspections = []
   state.plans = []
@@ -520,6 +524,36 @@ describe('maintenance plans page', () => {
 
     expect(wrapper.text()).toContain('运行小时（读取中…）')
     expect(wrapper.text()).not.toContain('剩余')
+  })
+
+  it('re-reads both plans and per-plan remaining hours when the list refresh button is clicked', async () => {
+    state.plans = [
+      {
+        planId: 'p-run',
+        deviceAssetId: 'DEV-RUN',
+        planCode: 'PM-RUN',
+        interval: null,
+        startsOn: '2026-06-01',
+        nextDueOn: null,
+        runtimeHourInterval: 1000,
+        nextDueRuntimeHours: 1000,
+        lastGeneratedRuntimeHours: 0,
+      },
+    ]
+    state.remainingByPlanId = { 'p-run': { status: 'ok', hours: 500 } }
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    const refreshBtn = [...document.body.querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === '刷新',
+    )!
+    refreshBtn.click()
+    await flushPromises()
+
+    // Refresh must re-read the plan list AND the client-derived remaining hours — plans alone leaves a
+    // still-running device showing a stale "剩余 X 小时".
+    expect(state.refreshPlans).toHaveBeenCalledTimes(1)
+    expect(state.refreshRemaining).toHaveBeenCalledTimes(1)
   })
 
   it('keeps the calendar due for a combined plan when the runtime-hours read fails', async () => {

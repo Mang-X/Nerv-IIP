@@ -14182,6 +14182,10 @@ export type ListBusinessConsoleMaintenancePlansData = {
 
 export type ListBusinessConsoleMaintenancePlansErrors = {
     /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -14190,6 +14194,8 @@ export type ListBusinessConsoleMaintenancePlansErrors = {
      */
     403: unknown;
 };
+
+export type ListBusinessConsoleMaintenancePlansError = ListBusinessConsoleMaintenancePlansErrors[keyof ListBusinessConsoleMaintenancePlansErrors];
 
 export type ListBusinessConsoleMaintenancePlansResponses = {
     /**

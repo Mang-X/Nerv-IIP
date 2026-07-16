@@ -63,7 +63,14 @@ const {
 const { page, pageSize } = usePagedList(filters)
 // Remaining runtime hours are derived on the client (one runtime-hours read per visible runtime plan,
 // each over the plan's own [startsOn, now] window) — the list query itself never fans out to telemetry.
-const { remainingByPlanId, remainingPending } = useMaintenancePlanRuntimeRemaining(plans)
+const { remainingByPlanId, remainingPending, refreshRemaining } =
+  useMaintenancePlanRuntimeRemaining(plans)
+// 「刷新」需同时重取计划与逐计划剩余小时:计划字段未变时 refreshPlans 得到相同 watch key,
+// 运行小时读面不会自动重算,只有显式 refreshRemaining 才能反映设备继续运行后的新剩余。
+async function refreshPlansAndRemaining() {
+  await refreshPlans()
+  await refreshRemaining()
+}
 
 // 保养周期以 ISO-8601 间隔登记（后端按此推算到期），界面给常用周期。
 const intervalOptions = [
@@ -266,7 +273,7 @@ function formatError(error: unknown) {
           type="button"
           variant="outline"
           :disabled="plansPending"
-          @click="refreshPlans"
+          @click="refreshPlansAndRemaining"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新

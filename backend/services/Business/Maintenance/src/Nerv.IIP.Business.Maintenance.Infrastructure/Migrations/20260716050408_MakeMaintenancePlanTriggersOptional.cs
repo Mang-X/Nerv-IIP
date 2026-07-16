@@ -39,6 +39,16 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // Runtime-only plans created after Up have null interval/next_due_on. Re-adding the NOT NULL
+            // constraint would fail on those rows (SET NOT NULL rejects existing nulls) and an empty-string
+            // interval would make ConsumeDueDates throw and block generate-due. Backfill to safe, parseable
+            // values first (a 100-year calendar interval effectively never fires, so runtime-only plans stay
+            // usage-driven); this is a lossy rollback — the pure runtime-only semantics cannot be preserved.
+            migrationBuilder.Sql(
+                "UPDATE maintenance.maintenance_plans SET interval = 'P36500D' WHERE interval IS NULL;");
+            migrationBuilder.Sql(
+                "UPDATE maintenance.maintenance_plans SET next_due_on = starts_on WHERE next_due_on IS NULL;");
+
             migrationBuilder.AlterColumn<DateOnly>(
                 name: "next_due_on",
                 schema: "maintenance",
