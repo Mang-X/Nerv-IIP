@@ -344,6 +344,71 @@ public sealed class SchedulingInputChangeEventHandlerTests
     }
 
     [Fact]
+    public async Task MasterData_work_calendar_changed_event_ignores_plan_not_assigned_to_a_resource_using_the_calendar()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using (var seedScope = provider.CreateScope())
+        {
+            var seedDbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            seedDbContext.SchedulePlans.Add(CreatePlan(
+                "plan-unused-calendar",
+                SchedulePlanStatusContract.Generated,
+                "org-001",
+                "env-dev",
+                "problem-unused-calendar",
+                "ASSET-LATHE-01",
+                "WC-LATHE"));
+            var horizonStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+            var horizonEnd = horizonStart.AddHours(8);
+            var problem = new SchedulingProblemContract(
+                1,
+                "problem-unused-calendar",
+                "org-001",
+                "env-dev",
+                horizonStart,
+                horizonEnd,
+                [],
+                [
+                    new SchedulingResourceContract("ASSET-CNC-01", "WC-CNC", [], 1, "CAL-A", "ASSET-CNC-01"),
+                    new SchedulingResourceContract("ASSET-LATHE-01", "WC-LATHE", [], 1, "CAL-B", "ASSET-LATHE-01"),
+                ],
+                [
+                    new SchedulingCalendarContract("CAL-A", [new SchedulingTimeWindowContract(horizonStart, horizonEnd, "regular")]),
+                    new SchedulingCalendarContract("CAL-B", [new SchedulingTimeWindowContract(horizonStart, horizonEnd, "regular")]),
+                ],
+                [],
+                [],
+                [],
+                []);
+            seedDbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(
+                problem.ProblemId,
+                problem.ContractVersion,
+                problem.OrganizationId,
+                problem.EnvironmentId,
+                "fingerprint-unused-calendar",
+                JsonSerializer.Serialize(problem, SchedulingJson.Options),
+                horizonStart,
+                horizonEnd,
+                FixedNow));
+            await seedDbContext.SaveChangesAsync();
+        }
+
+        using var scope = provider.CreateScope();
+        var handler = new WorkCalendarChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            new RecordingLogger<WorkCalendarChangedIntegrationEventHandlerForInvalidateSchedulePlans>());
+
+        await handler.HandleAsync(CreateWorkCalendarChangedEvent(), CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+        Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+        Assert.Empty(scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>().Published);
+    }
+
+    [Fact]
     public async Task MasterData_resource_changed_event_invalidates_only_generated_plans_assigned_to_the_resource_once()
     {
         await using var provider = CreateInMemoryProvider();

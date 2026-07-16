@@ -15,6 +15,11 @@ using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 
+internal static class SchedulingMasterDataResourceTypes
+{
+    public const string WorkCenter = "WorkCenter";
+}
+
 [IntegrationEventConsumer("Nerv.IIP.Contracts.MasterData.WorkCalendarChangedIntegrationEvent", ConsumerName)]
 public sealed class WorkCalendarChangedIntegrationEventHandlerForInvalidateSchedulePlans(
     ApplicationDbContext dbContext,
@@ -109,7 +114,10 @@ public sealed class ResourceChangedIntegrationEventHandlerForInvalidateScheduleP
         }
 
         if (string.IsNullOrWhiteSpace(integrationEvent.Payload.Code) ||
-            !string.Equals(integrationEvent.Payload.ResourceType, "WorkCenter", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(
+                integrationEvent.Payload.ResourceType,
+                SchedulingMasterDataResourceTypes.WorkCenter,
+                StringComparison.OrdinalIgnoreCase))
         {
             logger.LogInformation(
                 "Scheduling input change {EventType} for {ResourceType} scope {ScopeValue} matched no schedule plan in {OrganizationId}/{EnvironmentId} because that hierarchy is not traceable from persisted assignments.",

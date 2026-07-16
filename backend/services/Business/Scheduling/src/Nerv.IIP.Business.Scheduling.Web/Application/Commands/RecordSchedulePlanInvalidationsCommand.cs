@@ -62,6 +62,15 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
             ? await FindCalendarResourceIdsByProblemAsync(request, cancellationToken)
             : [];
         var plans = await QueryPlans(request, calendarResourceIdsByProblem.Keys).ToArrayAsync(cancellationToken);
+        if (request.Scope == SchedulePlanInvalidationScope.GeneratedCalendar)
+        {
+            plans = plans
+                .Where(plan =>
+                    calendarResourceIdsByProblem.TryGetValue(plan.ProblemId, out var calendarResourceIds) &&
+                    plan.Assignments.Any(assignment => calendarResourceIds.Contains(assignment.ResourceId)))
+                .ToArray();
+        }
+
         if (plans.Length == 0)
         {
             return new RecordSchedulePlanInvalidationsResponse(0, 0);
@@ -162,10 +171,17 @@ public sealed class RecordSchedulePlanInvalidationsCommandHandler(
         CancellationToken cancellationToken)
     {
         var calendarId = Normalize(request.ScopeValue);
+        var generatedProblemIds = dbContext.SchedulePlans.AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.Status == SchedulePlanLifecycleStatus.Generated)
+            .Select(x => x.ProblemId);
         var snapshots = await dbContext.ScheduleProblems.AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId)
+                x.EnvironmentId == request.EnvironmentId &&
+                generatedProblemIds.Contains(x.ProblemId))
             .Select(x => new { x.ProblemId, x.ProblemJson })
             .ToArrayAsync(cancellationToken);
         var matched = new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal);
