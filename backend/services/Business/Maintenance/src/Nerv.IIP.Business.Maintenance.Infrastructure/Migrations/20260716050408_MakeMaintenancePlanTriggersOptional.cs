@@ -46,8 +46,11 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
             // usage-driven); this is a lossy rollback — the pure runtime-only semantics cannot be preserved.
             migrationBuilder.Sql(
                 "UPDATE maintenance.maintenance_plans SET interval = 'P36500D' WHERE interval IS NULL;");
+            // next_due_on must land far in the future (aligned with the ~100-year fallback interval), NOT at
+            // the past starts_on — otherwise the first post-downgrade generate-due would immediately open a
+            // spurious date:* work order for every runtime-only plan.
             migrationBuilder.Sql(
-                "UPDATE maintenance.maintenance_plans SET next_due_on = starts_on WHERE next_due_on IS NULL;");
+                "UPDATE maintenance.maintenance_plans SET next_due_on = GREATEST(starts_on, CURRENT_DATE) + 36500 WHERE next_due_on IS NULL;");
 
             migrationBuilder.AlterColumn<DateOnly>(
                 name: "next_due_on",

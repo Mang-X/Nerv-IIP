@@ -453,6 +453,12 @@ async function mapWithConcurrency<T, R>(
  * non-blocking. remaining = nextDueRuntimeHours − accumulated runtime. The result recomputes whenever a
  * plan's next runtime threshold advances (e.g. after generating due work orders), not only when the set
  * of plan ids changes, so a stale remaining is never shown after the threshold moves.
+ *
+ * This is an imperative fan-out (a variable N of per-plan, per-window reads under one bounded-concurrency
+ * pool + generation/AbortController lifecycle) that the declarative `useQuery` model cannot express, so it
+ * calls the generated read function directly — the same on-demand raw-sdk pattern already used by other
+ * composables (e.g. useBusinessMes material-issue/finished-goods reads, useCodeRules preview). Declarative
+ * list/detail reads elsewhere still go through Pinia Colada per frontend-structure.md.
  */
 export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPlan[]>) {
   const businessContext = useBusinessContextStore()
