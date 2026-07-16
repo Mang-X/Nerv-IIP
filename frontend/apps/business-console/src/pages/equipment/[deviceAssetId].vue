@@ -253,21 +253,28 @@ const runtimeUntilNextCardValue = computed(() => {
   if (runtimeRemainingHasErrorCandidate.value) return '读取失败'
   return '无样本'
 })
-// 卡片提示：有已知值但也有未知候选时，明确是「已知计划最小值」且可能不完整；全部已知时给阈值。
+// 主卡描述随口径同步：有已知值但也有未知候选时，主 label 本身就说明是「已知计划最少还需」，
+// 不把已知最小值当成全体最紧迫的确定断言。
+const runtimeUntilNextCardDescription = computed(() =>
+  mostUrgentOkRuntimeCandidate.value && runtimeRemainingUnknownCount.value > 0
+    ? '已知计划最少还需'
+    : '距下次保养还需',
+)
+// 卡片提示：只有在展示某个已知(ok)计划的值时才引用具体计划编号+阈值；无 ok 的失败/无样本态用
+// 不带计划编号的聚合提示，避免把「读取失败」错误归到实际是 no-samples 的首个候选计划。
 const runtimeUntilNextCardHint = computed(() => {
-  const plan = currentDeviceRuntimePlan.value
-  if (!plan) return ''
-  const code = plan.planCode ?? '—'
-  if (anyRuntimeRemainingLoading.value) return `运行小时型计划 ${code} · 正在读取`
-  if (mostUrgentOkRuntimeCandidate.value) {
+  if (currentDeviceRuntimePlans.value.length === 0) return ''
+  if (anyRuntimeRemainingLoading.value) return '正在读取各运行小时计划剩余小时'
+  const mostUrgent = mostUrgentOkRuntimeCandidate.value
+  if (mostUrgent) {
+    const code = mostUrgent.plan.planCode ?? '—'
     if (runtimeRemainingUnknownCount.value > 0) {
-      return `已知计划最小值（另 ${runtimeRemainingUnknownCount.value} 个计划读取失败/暂无样本，可能更紧迫）· 计划 ${code}`
+      return `已知计划中的最小值（另 ${runtimeRemainingUnknownCount.value} 个计划读取失败/暂无样本，可能更紧迫）· 计划 ${code}`
     }
-    return `运行小时型计划 ${code} · 阈值 ${plan.nextDueRuntimeHours ?? '—'} 小时`
+    return `运行小时型计划 ${code} · 阈值 ${mostUrgent.plan.nextDueRuntimeHours ?? '—'} 小时`
   }
-  if (runtimeRemainingHasErrorCandidate.value)
-    return `运行小时型计划 ${code} · 运行小时读面读取失败`
-  return `运行小时型计划 ${code} · 当前窗口无运行样本`
+  if (runtimeRemainingHasErrorCandidate.value) return '运行小时读面读取失败，请稍后重试'
+  return '当前窗口无运行样本'
 })
 // 「累计运行小时」是信息卡：窗口锚定运行小时计划起算日（无则近 N 天），展示窗口内累计运行事实。
 const nowIso = ref(new Date().toISOString())
@@ -805,7 +812,7 @@ function formatError(error: unknown) {
           />
           <NvSectionCard
             v-if="currentDeviceRuntimePlan"
-            description="距下次保养还需"
+            :description="runtimeUntilNextCardDescription"
             :value="runtimeUntilNextCardValue"
             :hint="runtimeUntilNextCardHint"
           />

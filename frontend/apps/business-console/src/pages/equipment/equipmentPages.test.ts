@@ -486,9 +486,11 @@ describe('equipment pages', () => {
     }
     const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
 
-    // Still surfaces the known minimum value, but never claims it is the overall most-urgent.
+    // Still surfaces the known minimum value, but the primary label itself says it is only the known
+    // minimum — never a deterministic "距下次保养还需" assertion — and the hint flags it may be incomplete.
     expect(wrapper.text()).toContain('280.0 小时')
-    expect(wrapper.text()).toContain('已知计划最小值')
+    expect(wrapper.text()).toContain('已知计划最少还需')
+    expect(wrapper.text()).not.toContain('距下次保养还需')
     expect(wrapper.text()).toContain('可能更紧迫')
   })
 
@@ -503,6 +505,21 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('读取失败')
     // No known remaining -> must not fabricate an "X 小时" value.
     expect(wrapper.text()).not.toContain('280.0 小时')
+  })
+
+  it('does not misattribute a read failure to a no-samples candidate when there is no known value', () => {
+    // First candidate (plan-2) has no samples; another (plan-3) read failed. Value is read-failed, but the
+    // hint must be an aggregate — never claim the no-samples plan itself "读取失败".
+    runtimeRemainingState.map = {
+      'plan-2': { status: 'no-samples' },
+      'plan-3': { status: 'error' },
+    }
+    const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
+
+    expect(wrapper.text()).toContain('读取失败')
+    // Aggregate hint, not attributed to a specific (wrong) plan.
+    expect(wrapper.text()).toContain('运行小时读面读取失败，请稍后重试')
+    expect(wrapper.text()).not.toContain('运行小时型计划 PM-CNC-RUNTIME · 运行小时读面读取失败')
   })
 
   it('renders the device control action and command history when the user can control the device', () => {
