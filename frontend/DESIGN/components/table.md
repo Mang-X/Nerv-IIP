@@ -1,73 +1,62 @@
-# Table
+# Table (NvDataTable)
 
-Displays tabular data for entity lists.
+Displays tabular data for entity lists. App code uses **`NvDataTable`** from
+`@nerv-iip/ui` — a complete data table (toolbar search, column filters,
+sorting, column settings, selection + bulk bar, built-in skeleton loading,
+empty message and pagination). The un-prefixed `Table*` parts are the shadcn
+原版 primitives — library-internal only; do not hand-compose them in app code.
 
-## Anatomy
+## Core API
 
-```
-Table
-  TableHeader
-    TableRow
-      TableHead (column label)
-  TableBody
-    TableRow (data row, v-for)
-      TableCell
-    TableEmpty (zero results)
-```
+- `columns: NvDataTableColumn[]` — `{ key, header, align?, sortable?, filter?: 'text' | 'enum', width?, cellClass?, accessor? … }`.
+- `rows` + `rowKey` (field name or function).
+- `loading` — renders `skeletonRows` skeleton rows automatically.
+- `emptyMessage` — built-in zero-state row (default `暂无数据`).
+- Cell content overrides via named slots: `#cell-<key>="{ row }"`.
+- Server-side data: `manual` + `v-model:page` + `:total-items` + `:page-size` (page is 1-based); turn off `client-sort` when the server sorts.
+- Extras: `selectable` (+ `#bulk-actions` slot), `tabs`/`tabKey` quick filters, `refreshable`, `stickyHeader`, `rowClass`.
 
 ## Usage
 
 ```vue
-<div class="overflow-hidden rounded-lg border bg-background">
-  <Table>
-    <TableHeader>
-      <TableRow>
-        <TableHead>Name</TableHead>
-        <TableHead>Email</TableHead>
-        <TableHead class="w-16 text-right">Actions</TableHead>
-      </TableRow>
-    </TableHeader>
-    <TableBody>
-      <!-- Loading state -->
-      <template v-if="pending">
-        <TableRow v-for="i in 5" :key="i">
-          <TableCell><Skeleton class="h-5 w-32" /></TableCell>
-          <TableCell><Skeleton class="h-5 w-48" /></TableCell>
-          <TableCell><Skeleton class="ml-auto h-8 w-8" /></TableCell>
-        </TableRow>
-      </template>
-
-      <!-- Empty state -->
-      <TableEmpty v-else-if="items.length === 0" :colspan="3">
-        No items match the current filters.
-      </TableEmpty>
-
-      <!-- Data rows -->
-      <TableRow v-for="item in items" v-else :key="item.id">
-        <TableCell class="font-medium">{{ item.name }}</TableCell>
-        <TableCell class="text-muted-foreground">{{ item.email }}</TableCell>
-        <TableCell class="text-right">
-          <!-- row actions via DropdownMenu -->
-        </TableCell>
-      </TableRow>
-    </TableBody>
-  </Table>
-</div>
+<NvDataTable
+  :columns="[
+    { key: 'name', header: 'Name' },
+    { key: 'email', header: 'Email' },
+    { key: 'status', header: 'Status' },
+    { key: 'actions', header: '', align: 'end', width: 'w-16' },
+  ]"
+  :rows="items"
+  row-key="id"
+  :loading="pending"
+  empty-message="No users match the current filters."
+  manual
+  v-model:page="page"
+  :total-items="totalCount"
+  :page-size="pageSize"
+>
+  <template #cell-status="{ row }">
+    <NvStatusBadge :value="row.status" />
+  </template>
+  <template #cell-actions="{ row }">
+    <!-- row actions via NvDropdownMenu -->
+  </template>
+</NvDataTable>
 ```
 
 ## Column Conventions
 
-| Column type | `TableHead` / `TableCell` classes |
-|---|---|
-| Primary identifier | `font-medium` |
-| UUID / technical ID | `font-mono text-xs text-muted-foreground` |
-| Status | contains `<Badge>` only |
-| Actions | `class="w-16 text-right"` on head; `class="text-right"` on cell |
-| Timestamps | `text-muted-foreground` |
+| Column type         | Convention                                             |
+| ------------------- | ------------------------------------------------------ |
+| Primary identifier  | `cellClass: 'font-medium'`                             |
+| UUID / technical ID | `cellClass: 'font-mono text-xs text-muted-foreground'` |
+| Status              | `#cell-<key>` slot containing `<NvStatusBadge>` only   |
+| Actions             | last column, `align: 'end'`, narrow `width`            |
+| Timestamps          | `cellClass: 'text-muted-foreground'`                   |
 
 ## Do NOT
 
-- Do not wrap Table in a `<Card>` — use `overflow-hidden rounded-lg border bg-background` div wrapper instead.
-- Do not add extra `py-*` padding to `TableCell`; the default density is intentional.
-- Do not put action buttons directly in cells — always use `DropdownMenu` for multiple actions.
-- Do not skip `TableEmpty` — it must always be present when data can be empty.
+- Do not hand-compose 原版 `Table`/`TableRow`/`TableEmpty` in app code — `NvDataTable` already covers loading, empty and pagination states.
+- Do not wrap `NvDataTable` in an `NvCard` — it brings its own bordered surface.
+- Do not roll your own skeleton rows or empty row — use `loading` and `emptyMessage`.
+- Do not put multiple action buttons directly in cells — use an `NvDropdownMenu` per row.

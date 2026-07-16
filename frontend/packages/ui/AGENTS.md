@@ -7,11 +7,13 @@
 ## 分层与改动边界
 
 - `components/ui/` = shadcn 原版，**byte-for-byte 零改动**（无 `Nv`、无
-  `--nv-`）。定制 = 复制重建到品牌层，绝不改原版。
+  `--nv-`）。定制 = 复制重建到品牌层，绝不改原版。附录 A 未列品牌版的原版件
+  （`Alert`/`Empty`/`Toaster` 等）经 barrel 直接供 app 使用是合法现状。
 - 品牌层：`pc/` `blocks/` `layout/`（PC）、`touch/`（工位触屏）、`screen/`
   （大屏）。一件组件跨两个表面必须建两件，绝不"一件两模式"。
-- `screen/` 层改动前先读 `src/components/screen/product.md`（该层的产品定位
-  与动效/颜色铁律）。
+- 每个表面层有自己的产品定位文件，**改该层组件前必读**：PC =
+  `src/components/pc/product.md`（气质三层：成熟 B端骨架/冷静工业基调/产品级
+  触感），大屏 = `src/components/screen/product.md`。
 
 ## 命名
 
