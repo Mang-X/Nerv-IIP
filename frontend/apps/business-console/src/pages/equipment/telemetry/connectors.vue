@@ -7,7 +7,7 @@ import {
 } from '@/composables/useBusinessTelemetry'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { NvBadge, NvButton, NvPageHeader, NvSectionCard, NvSectionCards } from '@nerv-iip/ui'
-import { ActivityIcon, ChevronDownIcon, HashIcon, RefreshCwIcon, TimerIcon } from 'lucide-vue-next'
+import { ActivityIcon, ChevronDownIcon, HashIcon, RefreshCwIcon, TimerIcon } from '@lucide/vue'
 import { computed, reactive } from 'vue'
 import { RouterLink } from 'vue-router'
 
