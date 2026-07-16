@@ -98,93 +98,40 @@ public sealed record MaintenancePlanListItem(
     DateOnly? NextDueOn,
     decimal? RuntimeHourInterval,
     decimal? NextDueRuntimeHours,
-    decimal LastGeneratedRuntimeHours,
-    // Remaining runtime hours until the next usage-triggered occurrence, computed from the plan's own
-    // StartsOn anchor. Null for calendar-only plans and when no real runtime samples exist for the window.
-    decimal? RemainingRuntimeHours);
+    decimal LastGeneratedRuntimeHours);
 
-public sealed class ListMaintenancePlansQueryHandler(
-    ApplicationDbContext dbContext,
-    IAssetRuntimeHoursProvider? runtimeHoursProvider = null,
-    TimeProvider? timeProvider = null)
+public sealed class ListMaintenancePlansQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaintenancePlansQuery, PagedMaintenanceListResponse<MaintenancePlanListItem>>
 {
-    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
-
     public async Task<PagedMaintenanceListResponse<MaintenancePlanListItem>> Handle(ListMaintenancePlansQuery request, CancellationToken cancellationToken)
     {
         var skip = ListMaintenanceWorkOrdersQueryHandler.NormalizeSkip(request.Skip);
         var take = ListMaintenanceWorkOrdersQueryHandler.NormalizeTake(request.Take);
         var deviceAssetId = string.IsNullOrWhiteSpace(request.DeviceAssetId) ? null : request.DeviceAssetId;
+        // The list stays a fast DB projection: remaining runtime hours (which needs a telemetry read per
+        // plan over the plan's own [StartsOn, now] window) is derived on the client from the runtime-hours
+        // read facade, so the list query never fans out to IndustrialTelemetry.
         var query = dbContext.MaintenancePlans
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
             .Where(x => deviceAssetId == null || x.DeviceAssetId == deviceAssetId);
         var total = await query.CountAsync(cancellationToken);
-        var plans = await query
+        var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
+            .Select(x => new MaintenancePlanListItem(
+                x.Id,
+                x.DeviceAssetId,
+                x.PlanCode,
+                x.Interval,
+                x.StartsOn,
+                x.NextDueOn,
+                x.RuntimeHourInterval,
+                x.NextDueRuntimeHours,
+                x.LastGeneratedRuntimeHours))
             .Skip(skip)
             .Take(take)
             .ToArrayAsync(cancellationToken);
-
-        var nowUtc = _timeProvider.GetUtcNow();
-        var items = new List<MaintenancePlanListItem>(plans.Length);
-        foreach (var plan in plans)
-        {
-            var remaining = await CalculateRemainingRuntimeHoursAsync(plan, nowUtc, cancellationToken);
-            items.Add(new MaintenancePlanListItem(
-                plan.Id,
-                plan.DeviceAssetId,
-                plan.PlanCode,
-                plan.Interval,
-                plan.StartsOn,
-                plan.NextDueOn,
-                plan.RuntimeHourInterval,
-                plan.NextDueRuntimeHours,
-                plan.LastGeneratedRuntimeHours,
-                remaining));
-        }
-
-        return new PagedMaintenanceListResponse<MaintenancePlanListItem>(items.ToArray(), skip, take, total);
-    }
-
-    // Remaining = next runtime threshold - accumulated runtime over [StartsOn, now], using the same
-    // basis the PM scheduler uses to trigger runtime work orders (MaintenanceCommands generate-due).
-    // Degrades to null when there is no runtime provider, no real samples, or the provider errors.
-    private async Task<decimal?> CalculateRemainingRuntimeHoursAsync(MaintenancePlan plan, DateTimeOffset nowUtc, CancellationToken cancellationToken)
-    {
-        if (runtimeHoursProvider is null || plan.RuntimeHourInterval is null || plan.NextDueRuntimeHours is null)
-        {
-            return null;
-        }
-
-        var windowStartUtc = new DateTimeOffset(plan.StartsOn.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        if (nowUtc <= windowStartUtc)
-        {
-            return plan.NextDueRuntimeHours;
-        }
-
-        try
-        {
-            var runtime = await runtimeHoursProvider.CalculateAsync(
-                plan.OrganizationId,
-                plan.EnvironmentId,
-                plan.DeviceAssetId,
-                windowStartUtc,
-                nowUtc,
-                cancellationToken);
-            if (!runtime.HasRuntimeSamples)
-            {
-                return null;
-            }
-
-            var remaining = plan.NextDueRuntimeHours.Value - runtime.RuntimeHours;
-            return remaining < 0m ? 0m : remaining;
-        }
-        catch (Exception) when (!cancellationToken.IsCancellationRequested)
-        {
-            return null;
-        }
+        return new PagedMaintenanceListResponse<MaintenancePlanListItem>(items, skip, take, total);
     }
 }
 

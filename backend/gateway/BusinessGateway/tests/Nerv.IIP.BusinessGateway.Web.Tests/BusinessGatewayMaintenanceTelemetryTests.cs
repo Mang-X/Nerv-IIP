@@ -311,12 +311,11 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal("DEV-PRESS-01", maintenance.LastPlanListRequest?.DeviceAssetId);
         using var plansDocument = JsonDocument.Parse(await plansResponse.Content.ReadAsStringAsync());
         var planItem = plansDocument.RootElement.GetProperty("data").GetProperty("items")[0];
-        // Runtime-only plan: no calendar interval / next-due, remaining runtime hours surfaced.
+        // Runtime-only plan: no calendar interval / next-due; runtime threshold fields surfaced.
         Assert.Equal(JsonValueKind.Null, planItem.GetProperty("interval").ValueKind);
         Assert.Equal(JsonValueKind.Null, planItem.GetProperty("nextDueOn").ValueKind);
         Assert.Equal(1000m, planItem.GetProperty("runtimeHourInterval").GetDecimal());
         Assert.Equal(1000m, planItem.GetProperty("nextDueRuntimeHours").GetDecimal());
-        Assert.Equal(700m, planItem.GetProperty("remainingRuntimeHours").GetDecimal());
         Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenancePlansRead);
         Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         Assert.DoesNotContain(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.IiotTelemetryRead);
@@ -881,8 +880,7 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
                 null,
                 1000m,
                 1000m,
-                0m,
-                700m),
+                0m),
         ], request.Skip, request.Take, 1));
     }
 

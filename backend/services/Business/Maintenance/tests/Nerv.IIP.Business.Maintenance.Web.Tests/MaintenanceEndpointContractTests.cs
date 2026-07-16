@@ -146,7 +146,7 @@ public sealed class MaintenanceEndpointContractTests
     }
 
     [Fact]
-    public async Task Maintenance_plan_list_projects_three_trigger_modes_and_remaining_runtime_hours()
+    public async Task Maintenance_plan_list_projects_three_distinguishable_trigger_modes()
     {
         await using var dbContext = CreateDbContext();
         // Calendar-only, runtime-only (no calendar interval), and combined.
@@ -155,9 +155,7 @@ public sealed class MaintenanceEndpointContractTests
         dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-BOTH", "PM-BOTH", "P90D", new DateOnly(2026, 6, 1), "maintenance", runtimeHourInterval: 2000m));
         await dbContext.SaveChangesAsync();
 
-        // Provider reports 300 accumulated runtime hours -> remaining = threshold - 300.
-        var provider = new FixedAssetRuntimeHoursProvider(new AssetRuntimeHoursResult(300m, AssetRuntimeSources.Oee, HasRuntimeSamples: true));
-        var plans = await new ListMaintenancePlansQueryHandler(dbContext, provider).Handle(
+        var plans = await new ListMaintenancePlansQueryHandler(dbContext).Handle(
             new ListMaintenancePlansQuery("org-001", "env-dev", 0, 100),
             CancellationToken.None);
 
@@ -166,20 +164,17 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Null(calendar.RuntimeHourInterval);
         Assert.Null(calendar.NextDueRuntimeHours);
         Assert.Equal(new DateOnly(2026, 6, 1), calendar.NextDueOn);
-        Assert.Null(calendar.RemainingRuntimeHours);
 
         var runtime = plans.Items.Single(x => x.PlanCode == "PM-RUN");
         Assert.Null(runtime.Interval); // runtime-only: no calendar trigger
         Assert.Null(runtime.NextDueOn); // never calendar-due
         Assert.Equal(1000m, runtime.RuntimeHourInterval);
         Assert.Equal(1000m, runtime.NextDueRuntimeHours);
-        Assert.Equal(700m, runtime.RemainingRuntimeHours); // 1000 - 300
 
         var both = plans.Items.Single(x => x.PlanCode == "PM-BOTH");
         Assert.Equal("P90D", both.Interval);
         Assert.Equal(new DateOnly(2026, 6, 1), both.NextDueOn);
         Assert.Equal(2000m, both.RuntimeHourInterval);
-        Assert.Equal(1700m, both.RemainingRuntimeHours); // 2000 - 300
     }
 
     [Fact]
@@ -196,21 +191,6 @@ public sealed class MaintenanceEndpointContractTests
 
         Assert.Equal(1, plans.Total);
         Assert.Equal("PM-B", Assert.Single(plans.Items).PlanCode);
-    }
-
-    [Fact]
-    public async Task Maintenance_plan_remaining_runtime_hours_is_null_without_real_samples()
-    {
-        await using var dbContext = CreateDbContext();
-        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-RUN", "PM-RUN", null, new DateOnly(2026, 6, 1), "maintenance", runtimeHourInterval: 1000m));
-        await dbContext.SaveChangesAsync();
-
-        var provider = new FixedAssetRuntimeHoursProvider(new AssetRuntimeHoursResult(0m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false));
-        var plans = await new ListMaintenancePlansQueryHandler(dbContext, provider).Handle(
-            new ListMaintenancePlansQuery("org-001", "env-dev", 0, 100),
-            CancellationToken.None);
-
-        Assert.Null(Assert.Single(plans.Items).RemainingRuntimeHours);
     }
 
     [Fact]

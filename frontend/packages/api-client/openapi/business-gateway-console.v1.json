@@ -39782,11 +39782,6 @@
           "lastGeneratedRuntimeHours": {
             "type": "number",
             "format": "decimal"
-          },
-          "remainingRuntimeHours": {
-            "type": "number",
-            "format": "decimal",
-            "nullable": true
           }
         }
       },

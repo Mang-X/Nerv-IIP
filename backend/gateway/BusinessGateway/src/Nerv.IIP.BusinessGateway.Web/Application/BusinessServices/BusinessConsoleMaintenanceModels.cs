@@ -142,8 +142,7 @@ public sealed record BusinessConsoleMaintenancePlanItem(
     DateOnly? NextDueOn,
     decimal? RuntimeHourInterval,
     decimal? NextDueRuntimeHours,
-    decimal LastGeneratedRuntimeHours,
-    decimal? RemainingRuntimeHours);
+    decimal LastGeneratedRuntimeHours);
 
 public sealed record BusinessConsoleMaintenanceInspectionListResponse(
     IReadOnlyCollection<BusinessConsoleMaintenanceInspectionItem> Items,

@@ -6,6 +6,7 @@ import {
   queryBusinessConsoleTelemetryDeviceHistoryQueryOptions,
   queryBusinessConsoleTelemetryOeeQueryOptions,
   queryBusinessConsoleTelemetryRuntimeAvailabilityQueryOptions,
+  queryBusinessConsoleTelemetryRuntimeHours,
   queryBusinessConsoleTelemetryRuntimeHoursQueryOptions,
   type BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest,
   type BusinessConsoleTelemetryRuntimeHoursEnvelope,
@@ -24,7 +25,7 @@ import {
   type EquipmentRuntimeAvailabilityWindow,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
-import { computed, reactive, type Ref } from 'vue'
+import { computed, reactive, ref, watch, type Ref } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 
@@ -394,4 +395,88 @@ export function useBusinessTelemetryRuntimeHours(
     runtimeHoursEnabled: enabled,
     refreshRuntimeHours: () => (enabled.value ? runtimeHoursQuery.refetch() : Promise.resolve()),
   }
+}
+
+/** Minimal shape needed to derive remaining runtime hours from a maintenance plan list row. */
+export interface RuntimeRemainingPlan {
+  planId?: string
+  deviceAssetId?: string
+  startsOn?: string
+  runtimeHourInterval?: number | null
+  nextDueRuntimeHours?: number | null
+}
+
+/**
+ * Derives per-plan remaining runtime hours on the client from the runtime-hours read facade — one call
+ * per runtime-hour plan over that plan's own [startsOn, now] window, so each plan uses its own accrual
+ * basis (windows are never shared). The maintenance plan list query stays a fast DB projection; this
+ * keeps the telemetry fan-out on the client where it is bounded by the visible page and non-blocking.
+ * remaining = nextDueRuntimeHours − accumulated runtime; null when there are no real runtime samples.
+ */
+export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPlan[]>) {
+  const businessContext = useBusinessContextStore()
+  const remainingByPlanId = ref<Record<string, number | null>>({})
+  const pending = ref(false)
+
+  async function recompute() {
+    if (!hasBusinessContext(businessContext)) {
+      remainingByPlanId.value = {}
+      return
+    }
+    const runtimePlans = plans.value.filter(
+      (p) =>
+        !!p.planId &&
+        !!p.deviceAssetId &&
+        !!p.startsOn &&
+        p.runtimeHourInterval != null &&
+        p.nextDueRuntimeHours != null,
+    )
+    if (runtimePlans.length === 0) {
+      remainingByPlanId.value = {}
+      return
+    }
+
+    pending.value = true
+    const nowUtc = new Date().toISOString()
+    const organizationId = businessContext.organizationId
+    const environmentId = businessContext.environmentId
+    try {
+      const entries = await Promise.all(
+        runtimePlans.map(async (p) => {
+          try {
+            const result = await queryBusinessConsoleTelemetryRuntimeHours({
+              query: {
+                organizationId,
+                environmentId,
+                deviceAssetId: p.deviceAssetId!,
+                windowStartUtc: `${p.startsOn}T00:00:00.000Z`,
+                windowEndUtc: nowUtc,
+              },
+            })
+            const data = result.data?.data
+            if (!data?.hasRuntimeSamples) return [p.planId!, null] as const
+            const remaining = p.nextDueRuntimeHours! - (data.totalRuntimeHours ?? 0)
+            return [p.planId!, remaining < 0 ? 0 : remaining] as const
+          } catch {
+            return [p.planId!, null] as const
+          }
+        }),
+      )
+      remainingByPlanId.value = Object.fromEntries(entries)
+    } finally {
+      pending.value = false
+    }
+  }
+
+  watch(
+    [
+      () => plans.value.map((p) => p.planId).join(','),
+      () => businessContext.organizationId,
+      () => businessContext.environmentId,
+    ],
+    () => void recompute(),
+    { immediate: true },
+  )
+
+  return { remainingByPlanId, remainingPending: pending, refreshRemaining: recompute }
 }

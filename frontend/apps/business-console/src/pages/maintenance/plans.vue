@@ -5,6 +5,7 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenancePlans } from '@/composables/useBusinessMaintenance'
+import { useMaintenancePlanRuntimeRemaining } from '@/composables/useBusinessTelemetry'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -60,6 +61,9 @@ const {
   filters,
 } = useMaintenancePlans()
 const { page, pageSize } = usePagedList(filters)
+// Remaining runtime hours are derived on the client (one runtime-hours read per visible runtime plan,
+// each over the plan's own [startsOn, now] window) — the list query itself never fans out to telemetry.
+const { remainingByPlanId } = useMaintenancePlanRuntimeRemaining(plans)
 
 // 保养周期以 ISO-8601 间隔登记（后端按此推算到期），界面给常用周期。
 const intervalOptions = [
@@ -133,11 +137,12 @@ function formatHours(value?: number | null) {
   if (value === null || value === undefined) return '—'
   return `${Number(value)} 小时`
 }
-// 下次到期：运行小时型显剩余小时（后端按各计划起算口径算出的 remainingRuntimeHours，无运行样本时为空）；
+// 下次到期：运行小时型显剩余小时（前端按各计划起算口径经 runtime-hours facade 算出，无运行样本时为空）；
 // 日历型显下次到期日。两者组合以运行小时剩余为主，缺剩余时回落到日历到期日。
 function nextDueLabel(row: PlanRow) {
   if (row.runtimeHourInterval != null) {
-    if (row.remainingRuntimeHours != null) return `剩余 ${formatHours(row.remainingRuntimeHours)}`
+    const remaining = row.planId ? remainingByPlanId.value[row.planId] : undefined
+    if (remaining != null) return `剩余 ${formatHours(remaining)}`
     if (row.interval && row.nextDueOn) return row.nextDueOn // combined plan: fall back to calendar due
     return '运行小时（暂无样本）'
   }

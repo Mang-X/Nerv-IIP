@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   inspections: [] as Array<Record<string, unknown>>,
   workOrders: [] as Array<Record<string, unknown>>,
   plans: [] as Array<Record<string, unknown>>,
+  remainingByPlanId: {} as Record<string, number | null>,
   createWorkOrder: vi.fn(async (_body: Record<string, unknown>) => ({})),
   completeWorkOrder: vi.fn(async (_id: string, _body: Record<string, unknown>) => ({})),
   recordInspection: vi.fn(async (_body: Record<string, unknown>) => ({})),
@@ -71,6 +72,16 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     generateDue: state.generateDue,
     generateDuePending: shallowRef(false),
     generateDueError: shallowRef(),
+  }),
+}))
+
+// Remaining runtime hours are derived client-side via the runtime-hours facade; mock the derivation so
+// the plans list shows deterministic remaining values without a live telemetry backend.
+vi.mock('@/composables/useBusinessTelemetry', () => ({
+  useMaintenancePlanRuntimeRemaining: () => ({
+    remainingByPlanId: computed(() => state.remainingByPlanId),
+    remainingPending: shallowRef(false),
+    refreshRemaining: vi.fn(),
   }),
 }))
 
@@ -148,6 +159,7 @@ beforeEach(() => {
   state.query = { deviceAssetId: 'DEV-PRESS-01', sourceAlarmId: 'ALARM-9001' }
   state.inspections = []
   state.plans = []
+  state.remainingByPlanId = {}
   // 默认一张在保工单：既覆盖保修列渲染（在保 / 供应商），也让列表非空。
   state.workOrders = [
     {
@@ -418,7 +430,6 @@ describe('maintenance plans page', () => {
         runtimeHourInterval: 1000,
         nextDueRuntimeHours: 1000,
         lastGeneratedRuntimeHours: 0,
-        remainingRuntimeHours: 300, // server-computed remaining
       },
       {
         planId: 'p-both',
@@ -430,9 +441,10 @@ describe('maintenance plans page', () => {
         runtimeHourInterval: 2000,
         nextDueRuntimeHours: 2000,
         lastGeneratedRuntimeHours: 0,
-        remainingRuntimeHours: 1700,
       },
     ]
+    // Client-derived remaining runtime hours (per plan's own window).
+    state.remainingByPlanId = { 'p-run': 300, 'p-both': 1700 }
     const wrapper = mount(PlansPage, mountOptions())
     await flushPromises()
 

@@ -14,6 +14,7 @@ import {
   useBusinessTelemetryHistory,
   useBusinessTelemetryOee,
   useBusinessTelemetryRuntimeHours,
+  useMaintenancePlanRuntimeRemaining,
 } from '@/composables/useBusinessTelemetry'
 import {
   deviceControlApprovalLabel,
@@ -200,26 +201,30 @@ const currentDevicePlanMatches = computed(() =>
   plans.value.filter((row) => row.deviceAssetId === currentDeviceId.value),
 )
 const currentDevicePlans = computed(() => currentDevicePlanMatches.value.slice(0, 5))
-// 运行小时型保养计划（有 runtimeHourInterval）。距下次保养以最紧迫者为准：后端已按各计划自己的
-// 起算口径算出剩余小时（remainingRuntimeHours），这里取剩余最小的一条；剩余未知（无运行样本）的
-// 计划排在有剩余之后，避免遮住真正快到期的计划。
+// 运行小时型保养计划（有 runtimeHourInterval）。每条计划的剩余小时由 runtime-hours facade 按各计划
+// 自己的起算窗口算出（不共用一个窗口），距下次保养取剩余最小（最紧迫）的一条；剩余未知（无运行样本）
+// 的计划排在有剩余之后，避免遮住真正快到期的计划。
 const currentDeviceRuntimePlans = computed(() =>
   currentDevicePlanMatches.value.filter((row) => row.runtimeHourInterval != null),
 )
+const { remainingByPlanId } = useMaintenancePlanRuntimeRemaining(currentDeviceRuntimePlans)
+function planRemaining(planId?: string) {
+  return planId ? (remainingByPlanId.value[planId] ?? null) : null
+}
 const currentDeviceRuntimePlan = computed(
   () =>
     currentDeviceRuntimePlans.value.slice().sort((a, b) => {
-      const ar = a.remainingRuntimeHours
-      const br = b.remainingRuntimeHours
+      const ar = planRemaining(a.planId)
+      const br = planRemaining(b.planId)
       if (ar == null && br == null) return 0
       if (ar == null) return 1
       if (br == null) return -1
       return ar - br
     })[0],
 )
-// 「距下次保养还需 X 小时」直接消费后端逐计划剩余小时（各计划各自窗口，口径与 PM 触发一致）。
-const runtimeHoursUntilNextMaintenance = computed(
-  () => currentDeviceRuntimePlan.value?.remainingRuntimeHours ?? null,
+// 「距下次保养还需 X 小时」= 最紧迫运行小时计划的剩余小时（各计划各自窗口，口径与 PM 触发一致）。
+const runtimeHoursUntilNextMaintenance = computed(() =>
+  planRemaining(currentDeviceRuntimePlan.value?.planId),
 )
 // 「累计运行小时」是信息卡：窗口锚定运行小时计划起算日（无则近 N 天），展示窗口内累计运行事实。
 const nowIso = ref(new Date().toISOString())

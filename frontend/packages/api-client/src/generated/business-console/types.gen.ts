@@ -4492,7 +4492,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     runtimeHourInterval?: number | null;
     nextDueRuntimeHours?: number | null;
     lastGeneratedRuntimeHours?: number;
-    remainingRuntimeHours?: number | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenancePlanListRequest = {

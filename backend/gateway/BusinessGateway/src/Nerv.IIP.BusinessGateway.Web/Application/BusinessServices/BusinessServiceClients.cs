@@ -5073,8 +5073,7 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 plan.NextDueOn,
                 plan.RuntimeHourInterval,
                 plan.NextDueRuntimeHours,
-                plan.LastGeneratedRuntimeHours,
-                plan.RemainingRuntimeHours)).ToArray(),
+                plan.LastGeneratedRuntimeHours)).ToArray(),
             plans.Skip,
             plans.Take,
             plans.Total);
@@ -5360,8 +5359,7 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         DateOnly? NextDueOn,
         decimal? RuntimeHourInterval,
         decimal? NextDueRuntimeHours,
-        decimal LastGeneratedRuntimeHours,
-        decimal? RemainingRuntimeHours);
+        decimal LastGeneratedRuntimeHours);
 
     private sealed record DownstreamMaintenanceInspectionListItem(
         JsonElement InspectionId,

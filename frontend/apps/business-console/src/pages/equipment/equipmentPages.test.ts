@@ -143,8 +143,6 @@ const reviewFixture = vi.hoisted(() => {
       runtimeHourInterval: 1000,
       nextDueRuntimeHours: 1000,
       lastGeneratedRuntimeHours: 0,
-      // Server-computed remaining runtime hours (from the plan's own StartsOn window).
-      remainingRuntimeHours: 280,
     },
   ] satisfies BusinessConsoleMaintenancePlanItem[]
 
@@ -310,6 +308,12 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
     runtimeHoursPending: shallowRef(false),
     runtimeHoursEnabled: computed(() => true),
     refreshRuntimeHours: vi.fn(),
+  }),
+  // Client-derived per-plan remaining runtime hours: runtime plan 'plan-2' has 280h left.
+  useMaintenancePlanRuntimeRemaining: () => ({
+    remainingByPlanId: computed<Record<string, number | null>>(() => ({ 'plan-2': 280 })),
+    remainingPending: shallowRef(false),
+    refreshRemaining: vi.fn(),
   }),
 }))
 
