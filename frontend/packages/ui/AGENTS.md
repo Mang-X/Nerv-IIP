@@ -39,3 +39,6 @@
 - 新增/改动组件同步 design-system 文档站对应页
   （`frontend/apps/design-system/docs/`），组件文档站是 props 的
   source of truth。
+- **欢迎 app 侧反哺**：业务页面里长出的数据展示/业务组件成熟后上提进
+  对应层。入层三件事：过该层设计哲学（screen 层 = `product.md`）、按
+  R1–R5 定名、补 barrel 导出 + contract test + 文档站页。

@@ -38,6 +38,14 @@ pnpm -C frontend --filter @nerv-iip/screen dev   # 端口 5128
   数据新鲜度用 `IsSourceFresh` 驱动"失联灰条"（`data/contracts/equipment.ts`），
   断线绝不能看起来像"运行正常"。
 
+## 设计取向
+
+- **设计与实用并重，审美自主**：远距可读性（字号、层级主次、列表溢出的
+  处理）靠设计判断与交付前对照 spec / product.md 自查，不设硬性数值红线。
+- **大胆新建业务组件满足数据展示** —— 不被现有组件清单限制；新件走
+  product.md 设计哲学，成熟后上提 `frontend/packages/ui` 的 `screen/` 层
+  反哺组件库（R1–R5 定名 + 文档站同步，见该包 AGENTS.md）。
+
 ## Hard Rules
 
 1. 真实感数据看效果：产线名、`WO-` 工单号、OEE/节拍/达成率 —— 不用占位
