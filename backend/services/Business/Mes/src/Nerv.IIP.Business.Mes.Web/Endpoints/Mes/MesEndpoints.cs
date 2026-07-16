@@ -775,7 +775,8 @@ public sealed class CancelWorkOrderEndpoint(ISender sender, TimeProvider timePro
             req.EnvironmentId,
             req.WorkOrderId,
             req.Reason,
-            req.ChangedAtUtc ?? timeProvider.GetUtcNow()), ct);
+            req.ChangedAtUtc ?? timeProvider.GetUtcNow(),
+            MesAuthenticatedActor.Resolve(HttpContext)), ct);
         await Send.OkAsync(response, ct);
     }
 }

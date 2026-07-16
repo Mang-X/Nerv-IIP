@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
@@ -277,7 +278,8 @@ public sealed record CancelWorkOrderCommand(
     string EnvironmentId,
     string WorkOrderId,
     string Reason,
-    DateTimeOffset CancelledAtUtc) : ICommand<MesAcceptedResponse>;
+    DateTimeOffset CancelledAtUtc,
+    string Actor = "system:mes") : ICommand<MesAcceptedResponse>, IOperationTaskConcurrencyRetryCommand;
 
 public sealed class CancelWorkOrderCommandValidator : AbstractValidator<CancelWorkOrderCommand>
 {
@@ -302,7 +304,8 @@ public sealed class CancelWorkOrderCommandHandler(ApplicationDbContext dbContext
             request.WorkOrderId,
             request.Reason,
             request.CancelledAtUtc,
-            cancellationToken);
+            cancellationToken,
+            request.Actor);
     }
 }
 
@@ -315,7 +318,8 @@ internal static class WorkOrderCancellationOrchestrator
         string workOrderId,
         string reason,
         DateTimeOffset cancelledAtUtc,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string actor = "system:mes")
     {
         var workOrder = await WorkOrderLifecycleCommandGuards.GetWorkOrderAsync(
             dbContext,
@@ -377,7 +381,7 @@ internal static class WorkOrderCancellationOrchestrator
 
         foreach (var operationTask in operationTasks)
         {
-            operationTask.Cancel(cancelledAtUtc);
+            operationTask.Cancel(cancelledAtUtc, actor);
         }
 
         return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, cancelledAtUtc);
@@ -900,7 +904,7 @@ public sealed record AssignDispatchTaskCommand(
     string? DeviceAssetId,
     string? ShiftId,
     DateTimeOffset AssignedAtUtc,
-    string Actor = "system:mes") : ICommand<MesAcceptedResponse>;
+    string Actor = "system:mes") : ICommand<MesAcceptedResponse>, IOperationTaskConcurrencyRetryCommand;
 
 public sealed class AssignDispatchTaskCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<AssignDispatchTaskCommand, MesAcceptedResponse>
@@ -958,7 +962,7 @@ public sealed record ChangeOperationTaskStateCommand(
     string EnvironmentId,
     string OperationTaskId,
     string Action,
-    DateTimeOffset ChangedAtUtc) : ICommand<MesOperationActionResponse>;
+    DateTimeOffset ChangedAtUtc) : ICommand<MesOperationActionResponse>, IOperationTaskConcurrencyRetryCommand;
 
 public sealed class ChangeOperationTaskStateCommandHandler(
     ApplicationDbContext dbContext,
