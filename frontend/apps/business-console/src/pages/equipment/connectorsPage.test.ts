@@ -13,7 +13,7 @@ const connectorMocks = vi.hoisted(() => ({
       connectorId: 'modbus-main',
       connectorName: 'Modbus Main',
       status: 'stale',
-      staleReason: 'heartbeat',
+      staleReason: 'offline',
       sourceSystem: 'modbus',
       receivedCount: 50,
       droppedCount: 9,
@@ -27,7 +27,7 @@ const connectorMocks = vi.hoisted(() => ({
       connectorId: 'mqtt-main',
       connectorName: 'MQTT Main',
       status: 'stale',
-      staleReason: 'metrics',
+      staleReason: 'fault',
       sourceSystem: 'mqtt',
       receivedCount: 70,
       droppedCount: 0,
@@ -112,21 +112,22 @@ describe('equipment telemetry connectors page', () => {
     expect(text).toContain('12.5 /秒')
   })
 
-  it('distinguishes a real disconnect (断线) from an online-but-stalled collector (采集停滞)', () => {
+  it('distinguishes a real disconnect (断线) from a self-reported abnormal stop (异常停止)', () => {
     const text = mount(ConnectorsPage, { global: { stubs } }).text()
 
     expect(text).toContain('断线')
-    expect(text).toContain('采集停滞')
+    expect(text).toContain('异常停止')
+    // heartbeat-loss shows a disconnect duration; a fault shows an abnormal-stop note without a duration
     expect(text).toContain('断线时长约')
-    expect(text).toContain('采样停更约')
+    expect(text).toContain('连接器上报异常停止')
   })
 
-  it('summarizes online / disconnected / stalled connectors separately', () => {
+  it('summarizes online / offline / fault connectors separately', () => {
     const text = mount(ConnectorsPage, { global: { stubs } }).text()
 
     expect(text).toMatch(/在线\s*1/)
     expect(text).toMatch(/断线\s*1/)
-    expect(text).toMatch(/采集停滞\s*1/)
+    expect(text).toMatch(/异常停止\s*1/)
   })
 
   it('does not expose organization/environment context or engineering/issue jargon', () => {

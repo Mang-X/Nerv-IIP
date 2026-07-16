@@ -350,25 +350,29 @@ export function useBusinessTelemetryOee(initialFilters: Partial<TelemetryWindowF
 }
 
 /**
- * 采集连接器状态墙轮询周期。连接器拔线后 Connector Host 会在下一个上报周期发出 Reachable=false 心跳，读面
- * 立即派生为 stale；本页每个周期重取以在该心跳到达后的「1 个轮询周期内」反映断线。用官方 auto-refetch
- * 表达，不手写 setInterval。
+ * 采集连接器状态墙轮询周期。读面在心跳超窗后派生 offline，本页每个周期重取以在「1 个轮询周期内」反映。
+ * 用官方 auto-refetch 表达，不手写 setInterval。
  */
 export const CONNECTOR_HEALTH_POLL_INTERVAL_MS = 10_000
 
 /**
- * stale 有两种成因，展示口径不同：`heartbeat`=心跳失联（真断线，显示断线时长并红色置顶）；
- * `metrics`=心跳仍新鲜但采集指标停更（仍在线，采集停滞，不显示断线时长）。
+ * stale 有两种成因，展示口径不同：`offline`=心跳超窗停报（真断线，显示断线时长并红色置顶，时长基于冻结的
+ * 最后心跳单调增长）；`fault`=仍在心跳但连接器自报终态停止（异常停止，成因未必是断连，不显示断线时长）。
  */
 export function connectorHealthStatusLabel(status?: string | null, staleReason?: string | null) {
   if (status === 'current') return '在线'
-  if (status === 'stale') return staleReason === 'metrics' ? '采集停滞' : '断线'
+  if (status === 'stale') return staleReason === 'fault' ? '异常停止' : '断线'
   return '未上报'
 }
 
-/** 心跳失联才是真断线；其余（metrics 停更 / current / unknown）不按断线处理。 */
-export function isConnectorHeartbeatLost(status?: string | null, staleReason?: string | null) {
-  return status === 'stale' && staleReason !== 'metrics'
+/** 只有 offline（心跳超窗）才是真断线，显示断线时长。 */
+export function isConnectorOffline(status?: string | null, staleReason?: string | null) {
+  return status === 'stale' && staleReason === 'offline'
+}
+
+/** fault=连接器自报异常停止（成因未必是断连），单列区分，不显示断线时长。 */
+export function isConnectorFault(status?: string | null, staleReason?: string | null) {
+  return status === 'stale' && staleReason === 'fault'
 }
 
 /** 采集连接器的协议类型来自采集健康的 sourceSystem（opcua/modbus/mqtt）。 */

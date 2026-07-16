@@ -4,10 +4,11 @@ import {
   connectorHealthStatusLabel,
   connectorSourceSystemLabel,
   formatSampleRate,
-  isConnectorHeartbeatLost,
+  isConnectorFault,
+  isConnectorOffline,
 } from '@/composables/useBusinessTelemetry'
 import { NvBadge } from '@nerv-iip/ui'
-import { ActivityIcon, ChevronDownIcon, GaugeIcon, TimerIcon } from '@lucide/vue'
+import { ActivityIcon, ChevronDownIcon, TriangleAlertIcon, TimerIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -19,22 +20,23 @@ const props = defineProps<{
 
 defineEmits<{ toggle: [] }>()
 
-const heartbeatLost = computed(() =>
-  isConnectorHeartbeatLost(props.connector.status, props.connector.staleReason),
+const offline = computed(() =>
+  isConnectorOffline(props.connector.status, props.connector.staleReason),
 )
+const fault = computed(() => isConnectorFault(props.connector.status, props.connector.staleReason))
 const detailId = computed(
   () =>
     `connector-detail-${props.connector.connectorId ?? props.connector.connectorName ?? 'connector'}`,
 )
 const statusVariant = computed(() => {
-  if (heartbeatLost.value) return 'danger'
-  if (props.connector.status === 'stale') return 'warning'
+  if (offline.value) return 'danger'
+  if (fault.value) return 'warning'
   if (props.connector.status === 'current') return 'success'
   return 'neutral'
 })
 const cardTone = computed(() => {
-  if (heartbeatLost.value) return 'border-destructive/60 ring-1 ring-destructive/30'
-  if (props.connector.status === 'stale') return 'border-amber-500/50 ring-1 ring-amber-500/20'
+  if (offline.value) return 'border-destructive/60 ring-1 ring-destructive/30'
+  if (fault.value) return 'border-warning/60 ring-1 ring-warning/30'
   return ''
 })
 
@@ -128,16 +130,12 @@ function formatDurationSince(value?: string | null) {
         {{ formatDateTime(connector.lastHeartbeatAtUtc) }}
       </span>
       <span>最后采样 {{ formatDateTime(connector.lastSampleAtUtc) }}</span>
-      <span v-if="heartbeatLost" class="inline-flex items-center gap-1 text-destructive">
+      <span v-if="offline" class="inline-flex items-center gap-1 text-destructive">
         <TimerIcon class="size-3" aria-hidden="true" />断线时长约
         {{ formatDurationSince(connector.lastHeartbeatAtUtc) }}
       </span>
-      <span
-        v-else-if="connector.status === 'stale'"
-        class="inline-flex items-center gap-1 text-amber-600 dark:text-amber-500"
-      >
-        <GaugeIcon class="size-3" aria-hidden="true" />心跳在线，采样停更约
-        {{ formatDurationSince(connector.lastSampleAtUtc) }}
+      <span v-else-if="fault" class="inline-flex items-center gap-1 text-warning-strong">
+        <TriangleAlertIcon class="size-3" aria-hidden="true" />连接器上报异常停止
       </span>
     </div>
 

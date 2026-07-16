@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
-  isConnectorHeartbeatLost,
+  isConnectorFault,
+  isConnectorOffline,
   useBusinessTelemetryConnectors,
 } from '@/composables/useBusinessTelemetry'
 import ConnectorHealthCard from '@/components/equipment/ConnectorHealthCard.vue'
@@ -41,11 +42,11 @@ watch(connectorsError, (error) => {
 })
 
 const onlineCount = computed(() => connectors.value.filter((c) => c.status === 'current').length)
-const disconnectedCount = computed(
-  () => connectors.value.filter((c) => isConnectorHeartbeatLost(c.status, c.staleReason)).length,
+const offlineCount = computed(
+  () => connectors.value.filter((c) => isConnectorOffline(c.status, c.staleReason)).length,
 )
-const stalledCount = computed(
-  () => connectors.value.filter((c) => c.status === 'stale' && c.staleReason === 'metrics').length,
+const faultCount = computed(
+  () => connectors.value.filter((c) => isConnectorFault(c.status, c.staleReason)).length,
 )
 
 const expanded = reactive(new Set<string>())
@@ -87,9 +88,9 @@ function toggle(key: string) {
 
     <NvSectionCards :columns="4">
       <NvSectionCard description="采集连接器" :value="connectorsTotal" hint="已上报采集健康" />
-      <NvSectionCard description="在线" :value="onlineCount" hint="心跳与采样均新鲜" />
-      <NvSectionCard description="断线" :value="disconnectedCount" hint="心跳失联或已停止" />
-      <NvSectionCard description="采集停滞" :value="stalledCount" hint="仍在线但采样停更" />
+      <NvSectionCard description="在线" :value="onlineCount" hint="心跳正常在采集" />
+      <NvSectionCard description="断线" :value="offlineCount" hint="心跳超时停报" />
+      <NvSectionCard description="异常停止" :value="faultCount" hint="连接器自报终态停止" />
     </NvSectionCards>
 
     <div
@@ -103,7 +104,7 @@ function toggle(key: string) {
       v-else-if="!connectors.length"
       class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
     >
-      暂无采集连接器。请确认 Connector Host 已注册并上报采集健康（心跳 + 采样吞吐）后再查看本页。
+      暂无采集连接器。请确认数据采集服务已启用、现场采集连接已配置并开始上报后再查看本页。
     </div>
 
     <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
