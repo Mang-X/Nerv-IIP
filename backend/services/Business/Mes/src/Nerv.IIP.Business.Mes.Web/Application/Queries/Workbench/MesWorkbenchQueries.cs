@@ -514,8 +514,10 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
                 x.HeldInspectionDocumentId,
                 x.InspectionRecordId))
             .ToArrayAsync(cancellationToken);
+        // 最近施加优先;HeldAtUtc 可空/相等时以 SourceDocumentId 兜底,保证顺序确定(review)。
         var activeHolds = activeHoldRows
             .OrderByDescending(x => x.HeldAtUtc)
+            .ThenBy(x => x.SourceDocumentId, StringComparer.Ordinal)
             .ToArray();
 
         return new MesWorkOrderDetailResponse(

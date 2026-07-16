@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesCreateReceiptRequest } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import type { StatusTone } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
-import { mesReceiptStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import {
+  isFailedReceiptStatus,
+  mesReceiptStatusOptions,
+  receiptStatusLabel,
+  receiptStatusTone,
+} from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
@@ -77,36 +81,9 @@ const statusFilter = computed({
 })
 const statusOptions = mesReceiptStatusOptions
 
-// 完工入库申请状态语义与真实域状态一致（Requested/PartiallyPosted/Posted/InventoryPostingFailed/Cancelled，
-// 运行时为原始 PascalCase），大小写不敏感查表。入库上下文用「已入库」而非通用「已完成」。
-const RECEIPT_STATUS_LABELS: Record<string, string> = {
-  requested: '待入库',
-  partiallyposted: '部分入库',
-  posted: '已入库',
-  inventorypostingfailed: '入库失败',
-  cancelled: '已取消',
-}
-const RECEIPT_STATUS_TONES: Record<string, StatusTone> = {
-  requested: 'neutral',
-  partiallyposted: 'info',
-  posted: 'success',
-  inventorypostingfailed: 'danger',
-  cancelled: 'neutral',
-}
-function normalizeStatus(status?: string | null) {
-  return (status ?? '').toLowerCase()
-}
-function receiptStatusLabel(status?: string | null) {
-  return RECEIPT_STATUS_LABELS[normalizeStatus(status)] ?? '未知状态'
-}
-function receiptStatusTone(status?: string | null): StatusTone {
-  return RECEIPT_STATUS_TONES[normalizeStatus(status)] ?? 'neutral'
-}
-function isFailedReceipt(status?: string | null) {
-  return normalizeStatus(status) === 'inventorypostingfailed'
-}
+// 完工入库状态标签/徽章色集中于 useMesReferenceLabels（与 mesReceiptStatusOptions 同域，避免漂移）。
 function canRetry(row: ReceiptRow) {
-  return isFailedReceipt(row.receiptStatus) && isNonEmpty(row.requestNo ?? '')
+  return isFailedReceiptStatus(row.receiptStatus) && isNonEmpty(row.requestNo ?? '')
 }
 
 const form = reactive({
@@ -394,7 +371,7 @@ function isNonEmpty(value: string) {
           />
           <!-- 失败原因：库存过账失败时给出后端失败信息，一线据此判断是补库存还是改数量后再重投。 -->
           <p
-            v-if="isFailedReceipt(row.receiptStatus) && row.inventoryPostingFailureMessage"
+            v-if="isFailedReceiptStatus(row.receiptStatus) && row.inventoryPostingFailureMessage"
             class="max-w-64 text-xs leading-snug text-destructive"
             :title="row.inventoryPostingFailureMessage"
           >
