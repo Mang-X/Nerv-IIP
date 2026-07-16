@@ -423,21 +423,27 @@ public sealed record MesWorkOrderDetailResponse(
     IReadOnlyCollection<string> BlockingReasons,
     IReadOnlyCollection<MesOperationTaskRow> OperationTasks,
     MesSourcePlanReferenceResponse? SourcePlanReference = null,
-    IReadOnlyCollection<MesWorkOrderQualityHoldSummary>? ActiveQualityHolds = null);
+    IReadOnlyCollection<MesWorkOrderQualityHoldSummary>? QualityHolds = null);
 
-// 工单当前活跃质量保留（quality hold）投影,供工单详情 hold 区块直接接时间线查询与人工强制释放。
+// 工单质量保留（quality hold）投影,含活跃与已释放周期,供工单详情 hold 区块接时间线查询与人工强制释放。
+// IsActive 是「锁定/自动消失」的依据(列表锁定图标仅看活跃);已释放周期仍返回,使释放时间/方式与时间线在详情可见。
 // SourceService + SourceDocumentId 是时间线/强制释放的定位键;Scope 区分工单级与工序级保留。
 public sealed record MesWorkOrderQualityHoldSummary(
     string SourceService,
     string SourceDocumentId,
     string Scope,
+    bool IsActive,
     string? OperationTaskId,
     string? HoldReason,
     DateTimeOffset? HeldAtUtc,
     string? HeldBy,
     string? HeldInspectionRecordId,
     string? HeldInspectionDocumentId,
-    string InspectionRecordId);
+    string InspectionRecordId,
+    DateTimeOffset? ReleasedAtUtc = null,
+    string? ReleasedBy = null,
+    string? ReleaseReason = null,
+    string? ReleaseSource = null);
 
 public sealed record MesOperationTaskRow(
     string OperationTaskId,
@@ -493,30 +499,37 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
         var tasks = await QueryOperationTasks(dbContext, request.OrganizationId, request.EnvironmentId, request.WorkOrderId, null, 0, 500)
             .ToArrayAsync(cancellationToken);
 
-        // 单工单活跃保留数量极小(通常 1~2 项),排序放在内存端,规避 SQLite 等 provider 不支持
-        // DateTimeOffset ORDER BY 的翻译差异(生产 Postgres 排序等价),口径:最近施加优先。
-        var activeHoldRows = await dbContext.QualityHoldContexts
+        // 返回该工单的全部质量保留周期(活跃 + 已释放)。锁定看 IsActive;已释放周期仍返回,
+        // 使释放后详情面板不卸载、释放时间/方式与完整时间线仍可见(满足「hold 自动消失且时间线完整」)。
+        // 每个 (sourceService, sourceDocumentId) 只有一条上下文,一个工单的保留数极小,排序放内存端
+        // 规避 provider 对 DateTimeOffset ORDER BY 的翻译差异。
+        var holdRows = await dbContext.QualityHoldContexts
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderId == request.WorkOrderId &&
-                x.Active)
+                x.WorkOrderId == request.WorkOrderId)
             .Select(x => new MesWorkOrderQualityHoldSummary(
                 x.SourceService,
                 x.SourceDocumentId,
                 x.OperationTaskId == null ? "work-order" : "operation-task",
+                x.Active,
                 x.OperationTaskId,
                 x.HoldReason ?? x.DispositionReason,
                 x.HeldAtUtc,
                 x.HeldBy,
                 x.HeldInspectionRecordId,
                 x.HeldInspectionDocumentId,
-                x.InspectionRecordId))
+                x.InspectionRecordId,
+                x.ReleasedAtUtc,
+                x.ReleasedBy,
+                x.ReleaseReason,
+                x.ReleaseSource))
             .ToArrayAsync(cancellationToken);
-        // 最近施加优先;HeldAtUtc 可空/相等时以 SourceDocumentId 兜底,保证顺序确定(review)。
-        var activeHolds = activeHoldRows
-            .OrderByDescending(x => x.HeldAtUtc)
+        // 活跃优先,再按最近施加;时间戳可空/相等时以 SourceDocumentId 兜底,保证顺序确定(review)。
+        var qualityHolds = holdRows
+            .OrderByDescending(x => x.IsActive)
+            .ThenByDescending(x => x.HeldAtUtc)
             .ThenBy(x => x.SourceDocumentId, StringComparer.Ordinal)
             .ToArray();
 
@@ -530,7 +543,7 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
             [],
             tasks,
             workOrder.SourcePlanReference,
-            activeHolds);
+            qualityHolds);
     }
 
     internal static IQueryable<MesOperationTaskRow> QueryOperationTasks(

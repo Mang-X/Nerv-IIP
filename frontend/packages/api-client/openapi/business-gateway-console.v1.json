@@ -33689,7 +33689,7 @@
               }
             ]
           },
-          "activeQualityHolds": {
+          "qualityHolds": {
             "type": "array",
             "nullable": true,
             "items": {
@@ -33845,6 +33845,9 @@
           "scope": {
             "type": "string"
           },
+          "isActive": {
+            "type": "boolean"
+          },
           "operationTaskId": {
             "type": "string",
             "nullable": true
@@ -33872,6 +33875,23 @@
           },
           "inspectionRecordId": {
             "type": "string"
+          },
+          "releasedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "releasedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "releaseReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "releaseSource": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

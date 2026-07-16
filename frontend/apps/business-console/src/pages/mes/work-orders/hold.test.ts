@@ -29,7 +29,7 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
 }))
 
 const detailState = vi.hoisted(() => ({
-  activeQualityHolds: [] as Array<Record<string, unknown>>,
+  qualityHolds: [] as Array<Record<string, unknown>>,
   workOrders: [] as Array<Record<string, unknown>>,
 }))
 
@@ -49,7 +49,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
       status: 'released',
       operationTasks: [],
       blockingReasons: [],
-      activeQualityHolds: detailState.activeQualityHolds,
+      qualityHolds: detailState.qualityHolds,
     }),
     detailError: ref(undefined),
     detailPending: ref(false),
@@ -96,14 +96,14 @@ function patchPermissions(codes: string[]) {
 }
 
 const holdPanelStub = {
-  props: ['sourceService', 'sourceDocumentId', 'scope', 'canManage'],
+  props: ['sourceService', 'sourceDocumentId', 'scope', 'isActive', 'canManage'],
   template:
-    '<div data-testid="hold-panel" :data-source="sourceDocumentId" :data-manage="String(canManage)" />',
+    '<div data-testid="hold-panel" :data-source="sourceDocumentId" :data-active="String(isActive)" :data-manage="String(canManage)" />',
 }
 
 describe('work-order detail — quality hold block', () => {
   beforeEach(() => {
-    detailState.activeQualityHolds = []
+    detailState.qualityHolds = []
   })
 
   function mountDetail(codes: string[]) {
@@ -129,10 +129,15 @@ describe('work-order detail — quality hold block', () => {
     })
   }
 
-  it('renders a hold panel per active quality hold', () => {
-    detailState.activeQualityHolds = [
-      { sourceService: 'business-mes', sourceDocumentId: 'WO-1', scope: 'work-order' },
-      { sourceService: 'business-mes', sourceDocumentId: 'WO-1-OP-20', scope: 'operation-task' },
+  it('renders a hold panel per quality hold', () => {
+    detailState.qualityHolds = [
+      { sourceService: 'business-mes', sourceDocumentId: 'WO-1', scope: 'work-order', isActive: true },
+      {
+        sourceService: 'business-mes',
+        sourceDocumentId: 'WO-1-OP-20',
+        scope: 'operation-task',
+        isActive: true,
+      },
     ]
     const wrapper = mountDetail(['business.mes.work-orders.read'])
     const panels = wrapper.findAll('[data-testid="hold-panel"]')
@@ -140,9 +145,20 @@ describe('work-order detail — quality hold block', () => {
     expect(panels.map((p) => p.attributes('data-source'))).toEqual(['WO-1', 'WO-1-OP-20'])
   })
 
+  it('keeps rendering a released hold so its release audit + timeline stay visible', () => {
+    detailState.qualityHolds = [
+      { sourceService: 'business-mes', sourceDocumentId: 'WO-1', scope: 'work-order', isActive: false },
+    ]
+    const wrapper = mountDetail(['business.mes.work-orders.read'])
+    const panel = wrapper.get('[data-testid="hold-panel"]')
+    expect(panel.attributes('data-active')).toBe('false')
+    // 已释放但仍渲染面板——满足「hold 自动消失（列表锁定）且时间线完整（详情可见）」。
+    expect(wrapper.text()).not.toContain('需处理后才能放行或开工')
+  })
+
   it('grants force-release only with quality write permission', () => {
-    detailState.activeQualityHolds = [
-      { sourceService: 'business-mes', sourceDocumentId: 'WO-1', scope: 'work-order' },
+    detailState.qualityHolds = [
+      { sourceService: 'business-mes', sourceDocumentId: 'WO-1', scope: 'work-order', isActive: true },
     ]
     const readOnly = mountDetail(['business.mes.work-orders.read'])
     expect(readOnly.get('[data-testid="hold-panel"]').attributes('data-manage')).toBe('false')

@@ -65,6 +65,7 @@ function mountPanel(props: Record<string, unknown>) {
       sourceService: 'business-mes',
       sourceDocumentId: 'WO-1',
       scope: 'work-order',
+      isActive: true,
       holdReason: '终检判定不合格',
       heldAtUtc: '2026-07-14T02:00:00Z',
       heldBy: 'qa-01',
@@ -107,13 +108,34 @@ describe('QualityHoldPanel', () => {
     expect(wrapper.text()).toContain('施加质量保留')
     expect(wrapper.text()).toContain('复检合格自动放行')
     expect(wrapper.text()).toContain('自动')
+    // 来源检验方案链接须传目标页实际消费的 inspectionPlanId（非 keyword），否则点击无法定位。
     const link = wrapper.get('[data-router-link]')
-    expect(link.attributes('data-to')).toContain('/quality/inspections')
-    expect(link.attributes('data-to')).toContain('INSP-000001')
+    const to = JSON.parse(link.attributes('data-to') as string)
+    expect(to.path).toBe('/quality/inspections')
+    expect(to.query.inspectionPlanId).toBe('INSP-000001')
+    expect(to.query.keyword).toBeUndefined()
   })
 
   it('hides the force-release control without manage permission', () => {
     const wrapper = mountPanel({ canManage: false })
+    expect(wrapper.findAll('button').some((b) => b.text().includes('强制释放'))).toBe(false)
+  })
+
+  it('shows released state + timeline and no force-release for an inactive hold', () => {
+    const wrapper = mountPanel({
+      isActive: false,
+      canManage: true,
+      releasedAtUtc: '2026-07-14T05:00:00Z',
+      releasedBy: 'user:user-admin',
+      releaseReason: '人工放行',
+      releaseSource: 'manual-force-release',
+    })
+    expect(wrapper.text()).toContain('已释放')
+    expect(wrapper.text()).toContain('人工强制释放')
+    // 释放后时间线仍完整可见（含释放事件），满足验收「hold 自动消失且时间线完整」。
+    expect(wrapper.text()).toContain('人工强制释放')
+    expect(wrapper.text()).toContain('复检合格自动放行')
+    // 非活跃保留不提供强制释放动作。
     expect(wrapper.findAll('button').some((b) => b.text().includes('强制释放'))).toBe(false)
   })
 

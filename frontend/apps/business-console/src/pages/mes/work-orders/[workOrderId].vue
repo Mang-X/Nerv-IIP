@@ -94,13 +94,17 @@ const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canManageQualityHold = computed(() => permissionCodes.value.includes(P.mesQualityWrite))
 
 const operationTasks = computed(() => detail.value?.operationTasks ?? [])
-// 当前工单的活跃质量保留（工单级 + 工序级），供 hold 区块渲染时间线与强制释放。
-// 生成层字段皆可选，此处收窄出定位键齐备（sourceService + sourceDocumentId）的保留再渲染。
-const activeQualityHolds = computed(() =>
-  (detail.value?.activeQualityHolds ?? []).filter(
+// 工单质量保留（活跃 + 已释放周期）。定位键齐备（sourceService + sourceDocumentId）的才渲染。
+// 已释放周期保留在列表里，使强制释放后面板不卸载、释放时间/方式与时间线仍可见（issue 验收「时间线完整」）。
+const qualityHolds = computed(() =>
+  (detail.value?.qualityHolds ?? []).filter(
     (hold): hold is typeof hold & { sourceService: string; sourceDocumentId: string } =>
       Boolean(hold.sourceService) && Boolean(hold.sourceDocumentId),
   ),
+)
+// 「有效质量保留」文案与锁定语义只看活跃周期（与列表锁定图标口径一致）。
+const activeQualityHoldCount = computed(
+  () => qualityHolds.value.filter((hold) => hold.isActive).length,
 )
 const materialRows = computed(() => materialReadiness.value?.items ?? [])
 const blockingReasons = computed(() => [
@@ -447,27 +451,40 @@ function formatError(error: unknown) {
       </div>
     </div>
 
-    <!-- 质量保留（hold）区块：施加/释放时间线、来源检验单互链、人工强制释放（#886 读面 + 既有 force-release）。 -->
-    <div v-if="activeQualityHolds.length" class="grid gap-2">
+    <!-- 质量保留（hold）区块：施加/释放时间线、来源检验单互链、人工强制释放（#886 读面 + 既有 force-release）。
+         活跃保留显示锁定 + 强制释放；已释放周期保留展示释放时间/方式 + 完整时间线（释放后不卸载）。 -->
+    <div v-if="qualityHolds.length" class="grid gap-2">
       <div class="flex items-center gap-2">
-        <LockIcon class="size-4 text-destructive" aria-hidden="true" />
+        <LockIcon
+          v-if="activeQualityHoldCount"
+          class="size-4 text-destructive"
+          aria-hidden="true"
+        />
         <span class="text-sm font-semibold text-foreground">质量保留</span>
-        <span class="text-xs text-muted-foreground"
-          >该工单存在 {{ activeQualityHolds.length }} 项有效质量保留，需处理后才能放行或开工</span
+        <span v-if="activeQualityHoldCount" class="text-xs text-muted-foreground"
+          >该工单存在 {{ activeQualityHoldCount }} 项有效质量保留，需处理后才能放行或开工</span
+        >
+        <span v-else class="text-xs text-muted-foreground"
+          >质量保留已全部解除，以下为最近保留周期与时间线</span
         >
       </div>
       <QualityHoldPanel
-        v-for="hold in activeQualityHolds"
+        v-for="hold in qualityHolds"
         :key="`${hold.sourceService}-${hold.sourceDocumentId}`"
         :organization-id="filters.organizationId"
         :environment-id="filters.environmentId"
         :source-service="hold.sourceService"
         :source-document-id="hold.sourceDocumentId"
         :scope="hold.scope"
+        :is-active="hold.isActive"
         :operation-task-id="hold.operationTaskId"
         :hold-reason="hold.holdReason"
         :held-at-utc="hold.heldAtUtc"
         :held-by="hold.heldBy"
+        :released-at-utc="hold.releasedAtUtc"
+        :released-by="hold.releasedBy"
+        :release-reason="hold.releaseReason"
+        :release-source="hold.releaseSource"
         :can-manage="canManageQualityHold"
         @released="refreshDetail"
       />

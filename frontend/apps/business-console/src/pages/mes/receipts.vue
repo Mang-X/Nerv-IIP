@@ -12,6 +12,8 @@ import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
@@ -81,9 +83,20 @@ const statusFilter = computed({
 })
 const statusOptions = mesReceiptStatusOptions
 
+// 重试端点要求 business.mes.receipts.manage（网关 MesReceiptsManage），页面路由只需 read。
+// 无 manage 权限的只读用户不应看到重试按钮，否则点击必得 403（前后端操作级权限同步）。
+const auth = useAuthStore()
+const canManageReceipts = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.mesReceiptsManage),
+)
+
 // 完工入库状态标签/徽章色集中于 useMesReferenceLabels（与 mesReceiptStatusOptions 同域，避免漂移）。
 function canRetry(row: ReceiptRow) {
-  return isFailedReceiptStatus(row.receiptStatus) && isNonEmpty(row.requestNo ?? '')
+  return (
+    canManageReceipts.value &&
+    isFailedReceiptStatus(row.receiptStatus) &&
+    isNonEmpty(row.requestNo ?? '')
+  )
 }
 
 const form = reactive({

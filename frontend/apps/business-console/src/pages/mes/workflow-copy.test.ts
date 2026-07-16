@@ -1,6 +1,9 @@
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { reactive, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { useAuthStore } from '@/stores/auth'
 
 import OperationTasksPage from './operation-tasks.vue'
 import PlansPage from './plans.vue'
@@ -353,8 +356,21 @@ const uiStubs = {
 }
 
 function mountMesPage(component: unknown) {
+  const pinia = createPinia()
+  const auth = useAuthStore(pinia)
+  auth.$patch({
+    principal: {
+      principalId: 'u1',
+      principalType: 'user',
+      organizationId: 'org',
+      environmentId: 'dev',
+      loginName: 'op',
+      permissionCodes: ['business.mes.receipts.manage'],
+    },
+  })
   return mount(component, {
     global: {
+      plugins: [pinia],
       stubs: {
         ...businessStubs,
         ...uiStubs,

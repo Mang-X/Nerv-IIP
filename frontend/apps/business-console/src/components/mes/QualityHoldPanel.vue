@@ -24,10 +24,15 @@ const props = defineProps<{
   sourceService: string
   sourceDocumentId: string
   scope?: string | null
+  isActive?: boolean
   operationTaskId?: string | null
   holdReason?: string | null
   heldAtUtc?: string | null
   heldBy?: string | null
+  releasedAtUtc?: string | null
+  releasedBy?: string | null
+  releaseReason?: string | null
+  releaseSource?: string | null
   canManage: boolean
 }>()
 
@@ -52,6 +57,11 @@ const releaseReason = ref('')
 
 const scopeLabel = computed(() =>
   props.scope === 'operation-task' ? '工序级保留' : '工单级保留',
+)
+
+// 释放方式（ReleaseSource）→ 一线可读：manual-force-release=人工强制释放，其余（检验联动）=复检自动放行。
+const releaseSourceLabel = computed(() =>
+  props.releaseSource === 'manual-force-release' ? '人工强制释放' : '复检自动放行',
 )
 
 // 事件类型（EventKind）与释放方式（Origin）→ 一线可读文案。自动 = 检验联动，人工 = 强制释放。
@@ -100,12 +110,18 @@ function timelineErrorMessage(error: unknown) {
 </script>
 
 <template>
-  <section class="grid gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+  <section
+    class="grid gap-3 rounded-lg border p-4"
+    :class="isActive ? 'border-destructive/30 bg-destructive/5' : 'border-border bg-muted/30'"
+  >
     <header class="flex flex-wrap items-start justify-between gap-2">
       <div class="grid gap-1.5">
         <div class="flex items-center gap-2">
-          <LockIcon class="size-4 text-destructive" aria-hidden="true" />
-          <NvStatusBadge tone="danger" label="质量保留中" />
+          <LockIcon v-if="isActive" class="size-4 text-destructive" aria-hidden="true" />
+          <NvStatusBadge
+            :tone="isActive ? 'danger' : 'success'"
+            :label="isActive ? '质量保留中' : '已释放'"
+          />
           <NvStatusBadge tone="neutral" :label="scopeLabel" />
         </div>
         <p class="text-sm text-foreground">
@@ -119,6 +135,11 @@ function timelineErrorMessage(error: unknown) {
             >：{{ holdReason }}</span
           >
         </p>
+        <!-- 已释放周期：释放时间/方式/理由在此常驻可见（满足「释放后时间线完整」的验收）。 -->
+        <p v-if="!isActive && releasedAtUtc" class="text-sm text-success">
+          由 {{ releasedBy ?? '—' }} 于 {{ formatDateTime(releasedAtUtc) }} {{ releaseSourceLabel
+          }}<span v-if="releaseReason">：{{ releaseReason }}</span>
+        </p>
       </div>
       <div class="flex items-center gap-1">
         <NvButton
@@ -131,9 +152,9 @@ function timelineErrorMessage(error: unknown) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <!-- 人工强制释放：需 business.mes.quality.write，破坏性动作原因必填（A1 §2）。 -->
+        <!-- 人工强制释放：仅活跃保留可发起，需 business.mes.quality.write，破坏性动作原因必填（A1 §2）。 -->
         <NvButton
-          v-if="canManage"
+          v-if="isActive && canManage"
           size="sm"
           type="button"
           variant="destructive"
@@ -176,19 +197,21 @@ function timelineErrorMessage(error: unknown) {
             }}</span>
           </div>
           <p v-if="item.reason" class="text-sm text-muted-foreground">{{ item.reason }}</p>
-          <!-- 施加来源检验单互链（A1 §5.3 跨页上下文 query）：跳检验任务与记录并按来源单号定位。 -->
+          <!-- 施加来源检验方案互链（A1 §5.3 跨页上下文 query）：sourceInspectionDocumentId 即检验方案 id，
+               目标页 /quality/inspections 按 inspectionPlanId 初始化并定位该方案（它不消费 keyword）。 -->
           <RouterLink
-            v-if="item.sourceInspectionRecordId || item.sourceInspectionDocumentId"
+            v-if="item.sourceInspectionDocumentId"
             :to="{
               path: '/quality/inspections',
-              query: {
-                keyword: item.sourceInspectionDocumentId ?? item.sourceInspectionRecordId,
-              },
+              query: { inspectionPlanId: item.sourceInspectionDocumentId },
             }"
             class="inline-flex w-fit items-center gap-1 text-xs text-brand underline-offset-4 hover:underline"
           >
             <LinkIcon class="size-3" aria-hidden="true" />
-            来源检验单 {{ item.sourceInspectionDocumentId ?? item.sourceInspectionRecordId }}
+            来源检验方案 {{ item.sourceInspectionDocumentId
+            }}<span v-if="item.sourceInspectionRecordId" class="text-muted-foreground">
+              · 记录 {{ item.sourceInspectionRecordId }}</span
+            >
           </RouterLink>
         </li>
       </ol>

@@ -3458,19 +3458,24 @@ public sealed record BusinessConsoleMesWorkOrderDetailResponse(
     IReadOnlyCollection<string> BlockingReasons,
     IReadOnlyCollection<BusinessConsoleMesOperationTaskRow> OperationTasks,
     BusinessConsoleMesSourcePlanReference? SourcePlanReference = null,
-    IReadOnlyCollection<BusinessConsoleMesWorkOrderQualityHoldSummary>? ActiveQualityHolds = null);
+    IReadOnlyCollection<BusinessConsoleMesWorkOrderQualityHoldSummary>? QualityHolds = null);
 
 public sealed record BusinessConsoleMesWorkOrderQualityHoldSummary(
     string SourceService,
     string SourceDocumentId,
     string Scope,
+    bool IsActive,
     string? OperationTaskId,
     string? HoldReason,
     DateTimeOffset? HeldAtUtc,
     string? HeldBy,
     string? HeldInspectionRecordId,
     string? HeldInspectionDocumentId,
-    string InspectionRecordId);
+    string InspectionRecordId,
+    DateTimeOffset? ReleasedAtUtc = null,
+    string? ReleasedBy = null,
+    string? ReleaseReason = null,
+    string? ReleaseSource = null);
 
 public sealed record BusinessConsoleMesSourcePlanReference(
     string SourceSystem,

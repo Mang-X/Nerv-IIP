@@ -2936,7 +2936,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     blockingReasons?: Array<string>;
     operationTasks?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskRow>;
     sourcePlanReference?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference | null;
-    activeQualityHolds?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderQualityHoldSummary> | null;
+    qualityHolds?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderQualityHoldSummary> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskRow = {
@@ -2973,6 +2973,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     sourceService?: string;
     sourceDocumentId?: string;
     scope?: string;
+    isActive?: boolean;
     operationTaskId?: string | null;
     holdReason?: string | null;
     heldAtUtc?: string | null;
@@ -2980,6 +2981,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     heldInspectionRecordId?: string | null;
     heldInspectionDocumentId?: string | null;
     inspectionRecordId?: string;
+    releasedAtUtc?: string | null;
+    releasedBy?: string | null;
+    releaseReason?: string | null;
+    releaseSource?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderDetailRequest = {

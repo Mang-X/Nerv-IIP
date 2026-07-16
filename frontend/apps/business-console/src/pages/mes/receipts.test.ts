@@ -1,7 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { ref, shallowRef } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useAuthStore } from '@/stores/auth'
 import ReceiptsPage from './receipts.vue'
 
 const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
@@ -94,8 +96,20 @@ const stubs = {
   Spinner: true,
 }
 
-function mountPage() {
-  return mount(ReceiptsPage, { global: { stubs } })
+function mountPage(permissionCodes: string[] = ['business.mes.receipts.manage']) {
+  const pinia = createPinia()
+  const auth = useAuthStore(pinia)
+  auth.$patch({
+    principal: {
+      principalId: 'u1',
+      principalType: 'user',
+      organizationId: 'org',
+      environmentId: 'dev',
+      loginName: 'op',
+      permissionCodes,
+    },
+  })
+  return mount(ReceiptsPage, { global: { plugins: [pinia], stubs } })
 }
 
 describe('MES receipts — failed inventory posting retry', () => {
@@ -156,6 +170,15 @@ describe('MES receipts — failed inventory posting retry', () => {
     await flushPromises()
     expect(receiptState.retryInventoryPosting).toHaveBeenCalledWith('FGR-000001')
     expect(notifySpies.success).toHaveBeenCalled()
+  })
+
+  it('hides the retry button for read-only users without receipts.manage', () => {
+    const wrapper = mountPage(['business.mes.receipts.read'])
+    const retry = wrapper
+      .findAll('[data-testid="row"]')[0]
+      .findAll('button')
+      .find((b) => b.text().includes('重试'))
+    expect(retry).toBeUndefined()
   })
 
   it('disables the retry button while that row is retrying', () => {
