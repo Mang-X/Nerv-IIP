@@ -51,6 +51,20 @@ const connectorMocks = vi.hoisted(() => ({
       metricsReportedAtUtc: '2026-07-13T01:09:40.000Z',
       lastSampleAtUtc: '2026-07-13T01:09:39.000Z',
     },
+    {
+      connectorId: 'modbus-empty',
+      connectorName: 'Modbus Empty',
+      status: 'unknown',
+      staleReason: null,
+      sourceSystem: 'modbus',
+      receivedCount: null,
+      droppedCount: null,
+      errorCount: null,
+      counterEpoch: '77777777-7777-7777-7777-777777777777',
+      lastHeartbeatAtUtc: '2026-07-13T01:09:45.000Z',
+      metricsReportedAtUtc: '2026-07-13T01:09:46.000Z',
+      lastSampleAtUtc: null,
+    },
   ],
 }))
 
@@ -125,9 +139,17 @@ describe('equipment telemetry connectors page', () => {
   it('summarizes online / offline / fault connectors separately', () => {
     const text = mount(ConnectorsPage, { global: { stubs } }).text()
 
+    // the never-sampled connector is 待采集, NOT counted as online
     expect(text).toMatch(/在线\s*1/)
     expect(text).toMatch(/断线\s*1/)
     expect(text).toMatch(/异常停止\s*1/)
+  })
+
+  it('shows a not-configured connector as 待采集, not as online/collecting', () => {
+    const text = mount(ConnectorsPage, { global: { stubs } }).text()
+
+    expect(text).toContain('待采集')
+    expect(text).toContain('Modbus Empty')
   })
 
   it('does not expose organization/environment context or engineering/issue jargon', () => {

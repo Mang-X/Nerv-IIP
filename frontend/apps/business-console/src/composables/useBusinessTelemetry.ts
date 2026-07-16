@@ -362,7 +362,8 @@ export const CONNECTOR_HEALTH_POLL_INTERVAL_MS = 10_000
 export function connectorHealthStatusLabel(status?: string | null, staleReason?: string | null) {
   if (status === 'current') return '在线'
   if (status === 'stale') return staleReason === 'fault' ? '异常停止' : '断线'
-  return '未上报'
+  // heartbeating/running but no sampling evidence yet (no mapping / nothing collected) — not "collecting"
+  return '待采集'
 }
 
 /** 只有 offline（心跳超窗）才是真断线，显示断线时长。 */

@@ -69,7 +69,16 @@ public static class ConnectorCollectionHealthEvaluator
 
         var reportedFault = string.Equals(reportedStatus, "stopped", StringComparison.OrdinalIgnoreCase)
             || string.Equals(healthStatus, "unhealthy", StringComparison.OrdinalIgnoreCase);
-        return reportedFault ? ("stale", StaleReasonFault) : ("current", null);
+        if (reportedFault)
+        {
+            return ("stale", StaleReasonFault);
+        }
+
+        // Heartbeating and running, but never produced any collection fact (no received counter and no sample):
+        // a connector with no configured mapping / nothing collected yet. Do not assert it is actively
+        // collecting — report unknown (not-configured) rather than counting it as online.
+        var noSamplingEvidence = health.ReceivedCount is null && health.LastSampleAtUtc is null;
+        return noSamplingEvidence ? ("unknown", null) : ("current", null);
     }
 
     public static ConnectorCollectionHealthResponse ToResponse(ApplicationInstance instance, DateTimeOffset now)

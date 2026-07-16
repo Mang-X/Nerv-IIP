@@ -298,6 +298,50 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
     }
 
     [Fact]
+    public async Task Collection_health_list_reports_unknown_when_running_but_no_sampling_evidence()
+    {
+        var clock = new MutableTimeProvider(DateTimeOffset.Parse("2026-07-13T01:10:00Z"));
+        var databaseName = $"health-unknown-{Guid.CreateVersion7():N}";
+        var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ApplicationDbContext>();
+            services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+            services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(clock);
+        }));
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        // Heartbeating and running, but reported a collection-health fact with no counters and no sample yet
+        // (e.g. no configured mapping / nothing collected). Must not count as actively collecting.
+        var notConfigured = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "modbus-empty", "Modbus Empty", new Dictionary<string, string>(), []);
+        notConfigured.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:45Z"), true, 3);
+        notConfigured.RecordStateSnapshot(DateTimeOffset.Parse("2026-07-13T01:09:45Z"), "running", "degraded", "no mappings", new Dictionary<string, string>());
+        notConfigured.RecordCollectionHealth(new ConnectorCollectionHealth("modbus-empty", "modbus", Guid.Parse("77777777-7777-7777-7777-777777777777"), DateTimeOffset.Parse("2026-07-13T01:09:46Z"), null, null, null, null));
+
+        // Actively collecting (received counter present, even if zero) -> current.
+        var collecting = new ApplicationInstance("org", "env", "host", "collector", "1", "node", "opcua-live", "OPC UA Live", new Dictionary<string, string>(), []);
+        collecting.RecordHeartbeat(DateTimeOffset.Parse("2026-07-13T01:09:45Z"), true, 3);
+        collecting.RecordCollectionHealth(new ConnectorCollectionHealth("opcua-live", "opcua", Guid.Parse("88888888-8888-8888-8888-888888888888"), DateTimeOffset.Parse("2026-07-13T01:09:46Z"), 0, 0, 0, DateTimeOffset.Parse("2026-07-13T01:09:44Z")));
+
+        db.ApplicationInstances.AddRange(notConfigured, collecting);
+        await db.SaveChangesAsync();
+
+        var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
+        using var response = await client.GetAsync("/internal/apphub/v1/connectors/collection-health?organizationId=org&environmentId=env");
+        var body = await ReadResponseDataAsync<ConnectorCollectionHealthListResponse>(response);
+
+        var empty = body.Items.Single(x => x.ConnectorId == "modbus-empty");
+        Assert.Equal("unknown", empty.Status);
+        Assert.Null(empty.StaleReason);
+
+        var live = body.Items.Single(x => x.ConnectorId == "opcua-live");
+        Assert.Equal("current", live.Status);
+    }
+
+    [Fact]
     public async Task Collection_health_list_requires_internal_service_authorization()
     {
         var client = factory.CreateClient();
