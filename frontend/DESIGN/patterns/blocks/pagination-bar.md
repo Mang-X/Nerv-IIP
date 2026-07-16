@@ -1,52 +1,37 @@
 # Block: Pagination Bar
 
-Shows record range and page navigation below a data table. Implemented as `IamPagination`.
+Shows record range and page navigation below a data table.
 
-## Component location
+## 现役实现（Current implementations）
 
-`frontend/apps/console/src/components/iam/IamPagination.vue`
+| 场景                             | 用法                                                                                                                          |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 实体列表（默认）                 | `NvDataTable` 内建分页：`manual` + `v-model:page` + `:total-items` + `:page-size`（服务端 1-based，见 `components/table.md`） |
+| 非表格的分页面（卡片墙、时间线） | 独立 `NvPagination`（`@nerv-iip/ui`，props/emits 见 `components/pagination.md`）                                              |
 
-## Usage
+## 规则（Rules）
 
-```vue
-<IamPagination
-  :page-index="pageIndex"
-  :page-size="20"
-  :total-count="totalCount"
-  @page-change="pageIndex = $event"
-/>
-```
+- 分页永远在列表**下方**，不放上方。
+- 服务端分页为默认；大结果集禁止客户端分页。
+- `pageSize` 不硬编码 —— 由 composable 或用户偏好控制。
+- 页码契约是 **1-based**（网关约定），换页后滚动回列表顶部。
 
-## Layout
+## 判定
 
-Responsive stack: count label on left, page controls on right (flex row on `sm:`, stacked on mobile).
+- 「分页的是表格吗？」是 → 用 `NvDataTable` 内建分页（不另挂独立分页组件）；不是
+  （卡片墙/时间线等非表格集合）→ 独立 `NvPagination`。
+- 「页码窗口谁持有？」服务端返回分页结果 → `manual` 模式（页面持 `page`/`pageSize`，
+  `total` 用服务端 total）；仅小数据集全量在前端 → 内建客户端分页可用。
+- 「发给网关的页码是 1-based 吗？」`pageIndex: 0` 会被网关校验 400（见反例）。
 
-Renders nothing (no DOM) when `totalCount <= pageSize` — always safe to include unconditionally.
+## 正例
 
-## Complete page + pagination example
+`apps/business-console/src/pages/mes/operation-tasks.vue:380`：`NvDataTable` `manual` +
+`:page` + `:total-items="operationTasksTotal"`（服务端总量）+ `@update:page`。
 
-```vue
-<div class="flex flex-col gap-4">
-  <!-- Toolbar -->
-  <IamListToolbar … />
+## 反例
 
-  <!-- Table -->
-  <div class="overflow-hidden rounded-lg border bg-background">
-    <Table>…</Table>
-  </div>
-
-  <!-- Pagination — always below table -->
-  <IamPagination
-    :page-index="pageIndex"
-    :page-size="pageSize"
-    :total-count="totalCount"
-    @page-change="pageIndex = $event"
-  />
-</div>
-```
-
-## Do NOT
-
-- Do not show pagination above the table.
-- Do not implement client-side pagination for large result sets.
-- Do not hardcode `pageSize` — let the composable or a user preference control it.
+❌ **发 0-based 页码给 1-based 网关契约** —— `useBusinessMasterData.ts` 曾发
+`pageIndex: 0`，网关校验器 `GreaterThan(0)` 直接 400，人员/班组选择器静默空
+（P0-1，已修：改 1-based + 前后端契约测试，PR #867）。出处：
+`frontend/DESIGN/roadmaps/2026-07-11-ux-walkthrough-findings.md` §3.1 P0-1。

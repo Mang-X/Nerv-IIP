@@ -27,10 +27,11 @@ Quick lookup: scenario → which pattern to apply.
 
 ## Blocks (functional page sections)
 
-| Scenario                              | Pattern        | File                       |
-| ------------------------------------- | -------------- | -------------------------- |
-| App chrome: sidebar + topbar          | App Shell      | `blocks/app-shell.md`      |
-| Page title + description heading      | Page Header    | `blocks/page-header.md`    |
-| Search + filter + primary action bar  | Toolbar        | `blocks/toolbar.md`        |
-| Entity list with loading/empty states | Data Table     | `blocks/data-table.md`     |
-| Record count + page navigation        | Pagination Bar | `blocks/pagination-bar.md` |
+| Scenario                                       | Pattern          | File                         |
+| ---------------------------------------------- | ---------------- | ---------------------------- |
+| FE-2 区块库总览（Nv\* 区块清单 + 取代关系）    | Block Library v2 | `blocks/block-library-v2.md` |
+| App chrome: top domains + side nav (AppShellT) | App Shell        | `blocks/app-shell.md`        |
+| Breadcrumb-as-title page header (NvPageHeader) | Page Header      | `blocks/page-header.md`      |
+| Search + filter + action bar (NvToolbar)       | Toolbar          | `blocks/toolbar.md`          |
+| Entity list table (NvDataTable)                | Data Table       | `blocks/data-table.md`       |
+| Record count + page navigation                 | Pagination Bar   | `blocks/pagination-bar.md`   |

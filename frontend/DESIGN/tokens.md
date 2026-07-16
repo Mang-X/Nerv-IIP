@@ -6,13 +6,13 @@
 ## Scene Namespaces (ADR 0020)
 
 Token 名称按场景命名空间隔离（[ADR 0020](../../docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md) §3，
-已落地 MAN-436 / #790，`--nv-scr-*` → `--nv-scr-*` 全表映射见 ADR 附录 B）：
+已落地 MAN-436 / #790，`--sb-*` → `--nv-scr-*` 全表映射见 ADR 附录 B）：
 
 | 命名空间               | 场景            | 说明                                                                                                                                   |
 | ---------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | 契约层（无前缀，冻结） | shadcn 原版依赖 | `--background` `--primary` `--border` `--chart-*` `--sidebar-*` `--radius` 等官方主题名——改名等于改原版，永不加前缀                    |
 | `--nv-*`               | PC / 共享语义   | 项目自有扩展：`--nv-brand` `--nv-success` `--nv-warning` `--nv-*-strong` `--nv-ease-*` `--nv-duration-*` `--nv-shadow-*`（ADR 附录 C） |
-| `--nv-scr-*`           | screen 大屏     | `--nv-scr-*` 30 项全表已迁移（ADR 附录 B）                                                                                                 |
+| `--nv-scr-*`           | screen 大屏     | 原 `--sb-*` 30 项全表已迁移（ADR 附录 B）                                                                                              |
 | `--nv-m-*`             | mobile          | 当前空集，规范先行（mobile token 现全部来自共享层）                                                                                    |
 | `--nv-t-*`             | touch 工位      | 当前空集，规范先行                                                                                                                     |
 
@@ -21,9 +21,10 @@ Token 名称按场景命名空间隔离（[ADR 0020](../../docs/adr/0020-nvui-na
 引用本场景前缀 + 契约层 token（contract test 拦截跨场景直引）。动效统一 motion-v 封装：
 JS 预设唯一来源 `packages/ui/src/lib/motion.ts`，数值与 CSS token 同表，引用名分场景。
 
-**一个迁移周期内**旧名（`--brand`/`--success`/`--nv-scr-*`/…）仍以 var 链别名保留（
-`--brand: var(--nv-brand)`、`--nv-scr-bg: var(--nv-scr-bg)`），直引旧名的在途代码不断裂；
-下一周期（收口批）删除别名。运行时动态强调色由主题选择器写 `--nv-brand`（见 useTheme），
+**一个迁移周期内**旧名（`--brand`/`--success`/`--sb-*`/…）仍以 var 链别名保留（
+`--brand: var(--nv-brand)`、`--sb-bg: var(--nv-scr-bg)`），直引旧名的在途代码不断裂；
+下一周期（收口批）删除别名（screen 侧 `--sb-*` 别名已随收口批删除，`--brand` 等共享
+别名仍在）。运行时动态强调色由主题选择器写 `--nv-brand`（见 useTheme），
 `--brand` 别名随之同步。
 
 ## Style Isolation — CSS Cascade Layers (ADR 0020 §4)
