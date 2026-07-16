@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bot, Boxes, Building2, Cpu, Factory, ShieldCheck, Users } from 'lucide-vue-next'
+import { Bot, Boxes, Building2, Cpu, Factory, ShieldCheck, Users } from '@lucide/vue'
 import type { Component } from 'vue'
 
 // 各模块 = 一个等距工厂方块（带图标 + 标签），方块之间按真实集成关系有向数据流动。

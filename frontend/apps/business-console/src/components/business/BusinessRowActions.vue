@@ -5,7 +5,7 @@ import {
   NvDropdownMenuContent,
   NvDropdownMenuTrigger,
 } from '@nerv-iip/ui'
-import { MoreHorizontalIcon } from 'lucide-vue-next'
+import { MoreHorizontalIcon } from '@lucide/vue'
 
 withDefaults(
   defineProps<{

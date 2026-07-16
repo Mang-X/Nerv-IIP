@@ -34,7 +34,7 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref } from 'vue'
 
 definePage({

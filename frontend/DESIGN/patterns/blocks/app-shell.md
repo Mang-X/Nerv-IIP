@@ -30,7 +30,7 @@ See `docs/architecture/frontend-navigation-map.md` for the Business Console menu
 
 ### Icons are required on every nav entry
 
-Both top `NavDomain`s **and every `SideNav` leaf item** must set `icon` (a lucide-vue-next
+Both top `NavDomain`s **and every `SideNav` leaf item** must set `icon` (a @lucide/vue
 component). The side-nav rail / collapsed states render the icon; an item with **no** icon
 degrades to a first-character glyph (生 / 工 / 派 …) — it looks broken and is unreadable. This
 is the single most-forgotten nav defect; treat a missing `icon` as a bug, not a style choice.
@@ -65,7 +65,7 @@ interface NavSubItem {
 interface NavItem {
   title: string
   to?: RouteLocationRaw   // leaf item (direct link)
-  icon?: Component         // lucide-vue-next icon component
+  icon?: Component         // @lucide/vue icon component
   isActive?: boolean       // default-open for collapsible groups
   items?: NavSubItem[]     // group with sub-items (makes it collapsible)
 }

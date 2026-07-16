@@ -6,7 +6,7 @@ import {
   FileTextIcon,
   FileTypeIcon,
   PresentationIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 
 import {
   formatFileSize,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { NotificationMessageResponse } from '@nerv-iip/api-client'
 import { Button, Skeleton, NvStatusBadge } from '@nerv-iip/ui'
-import { CheckIcon } from 'lucide-vue-next'
+import { CheckIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import {
   formatNotificationDate,

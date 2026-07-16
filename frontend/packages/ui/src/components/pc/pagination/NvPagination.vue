@@ -6,7 +6,7 @@ import {
   ChevronRightIcon,
   ChevronsLeftIcon,
   ChevronsRightIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { cn } from '../../../lib/utils'
 import { NvSelect, NvSelectContent, NvSelectItem, NvSelectTrigger, NvSelectValue } from '../select'
 

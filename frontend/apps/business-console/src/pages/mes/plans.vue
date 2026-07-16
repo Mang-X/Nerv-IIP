@@ -33,7 +33,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { watchDebounced } from '@vueuse/core'
-import { ArrowRightIcon, FactoryIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { ArrowRightIcon, FactoryIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 

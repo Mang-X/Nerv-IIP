@@ -15,7 +15,7 @@ import {
   Spinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
-import { ExternalLinkIcon } from 'lucide-vue-next'
+import { ExternalLinkIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 

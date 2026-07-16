@@ -23,7 +23,7 @@ import {
   NvRowActions,
   Spinner,
 } from '@nerv-iip/ui'
-import { CheckCircle2Icon, ClipboardPlusIcon } from 'lucide-vue-next'
+import { CheckCircle2Icon, ClipboardPlusIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 

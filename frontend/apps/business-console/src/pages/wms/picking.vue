@@ -25,7 +25,7 @@ import {
   NvToolbar,
   toast,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 

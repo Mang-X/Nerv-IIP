@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { ScanLine, X } from 'lucide-vue-next'
+import { ScanLine, X } from '@lucide/vue'
 import { injectScanKeystrokes } from './dev-scan-injection'
 
 /**

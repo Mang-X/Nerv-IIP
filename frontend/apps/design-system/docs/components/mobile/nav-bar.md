@@ -5,7 +5,7 @@ title: NvNavBar 顶部栏
 
 <script setup>
 import { NvNavBar, NvMobileButton } from '@nerv-iip/ui-mobile'
-import { EllipsisIcon } from 'lucide-vue-next'
+import { EllipsisIcon } from '@lucide/vue'
 </script>
 
 <MobileDoc>

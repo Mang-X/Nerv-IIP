@@ -10,7 +10,7 @@ import {
   NvTooltipContent,
   NvButton,
 } from '@nerv-iip/ui'
-import { ActivityIcon } from 'lucide-vue-next'
+import { ActivityIcon } from '@lucide/vue'
 </script>
 
 # NvTooltip 文字提示

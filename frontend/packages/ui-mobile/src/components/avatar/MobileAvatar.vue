@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed, ref, useSlots, watch } from 'vue'
-import { User } from 'lucide-vue-next'
+import { User } from '@lucide/vue'
 import { cn } from '../../lib/utils'
 
 /**

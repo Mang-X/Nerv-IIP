@@ -19,14 +19,14 @@ on top of the unchanged primitive + tokens.
 
 The Design System v2 base set was re-pulled from the official registry and normalized
 to repo conventions (relative `../../../lib/utils` / `../<comp>` imports;
-`@lucide/vue` → `lucide-vue-next`).
+`@lucide/vue` → `@lucide/vue`).
 
 - **Registry:** `https://shadcn-vue.com/r/styles/reka-nova/<component>.json`
 - **CLI equivalent:** `pnpm dlx shadcn-vue@2.7.3 add <component>` (style `reka-nova`,
   `components.json`; the direct-JSON pull is used because the CLI mutates `main.css`
   and runs a dependency install that is unreliable in CI/offline).
 - **Pinned versions:** `shadcn-vue@2.7.3`, `reka-ui@^2.9.7`, `tailwindcss@^4.3.0`,
-  `lucide-vue-next@1.0.0`. Table data-table helpers add `@tanstack/vue-table@^8.21.3`.
+  `@lucide/vue@1.0.0`. Table data-table helpers add `@tanstack/vue-table@^8.21.3`.
 - **Re-pulled (pure原版):** button, card, table, input, select, dropdown-menu, dialog,
   sheet, tabs, breadcrumb, sidebar, pagination, tooltip, popover, skeleton, empty.
 - **Intentionally NOT re-pulled:** `badge` carries a project customization (`success` /

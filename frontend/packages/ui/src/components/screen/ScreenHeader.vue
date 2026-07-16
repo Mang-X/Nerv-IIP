@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Calendar, Clock, Filter, Menu, Monitor } from 'lucide-vue-next'
+import { Calendar, Clock, Filter, Menu, Monitor } from '@lucide/vue'
 
 /**
  * Screen — big-board header bar. A left-aligned title and a right-aligned tool

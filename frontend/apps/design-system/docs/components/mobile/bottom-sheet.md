@@ -5,7 +5,7 @@ title: NvBottomSheet 底部抽屉
 
 <script setup>
 import { NvBottomSheet, NvMobileButton } from '@nerv-iip/ui-mobile'
-import { PrinterIcon, SplitIcon, WrenchIcon, XCircleIcon } from 'lucide-vue-next'
+import { PrinterIcon, SplitIcon, WrenchIcon, XCircleIcon } from '@lucide/vue'
 import { ref } from 'vue'
 
 const sheetOpen = ref(false)
@@ -50,7 +50,7 @@ const sheetOpen = ref(false)
 ```vue
 <script setup>
 import { NvBottomSheet, NvMobileButton } from '@nerv-iip/ui-mobile'
-import { PrinterIcon, SplitIcon, WrenchIcon, XCircleIcon } from 'lucide-vue-next'
+import { PrinterIcon, SplitIcon, WrenchIcon, XCircleIcon } from '@lucide/vue'
 import { ref } from 'vue'
 
 const sheetOpen = ref(false)

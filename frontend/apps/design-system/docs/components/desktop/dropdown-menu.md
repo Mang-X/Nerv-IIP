@@ -18,7 +18,7 @@ import {
   PencilIcon,
   CopyIcon,
   Trash2Icon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 </script>
 
 # NvDropdownMenu 动作菜单
@@ -70,7 +70,7 @@ import {
   NvDropdownMenuSeparator,
   NvButton,
 } from '@nerv-iip/ui'
-import { MoreHorizontalIcon, EyeIcon, PencilIcon, CopyIcon, Trash2Icon } from 'lucide-vue-next'
+import { MoreHorizontalIcon, EyeIcon, PencilIcon, CopyIcon, Trash2Icon } from '@lucide/vue'
 </script>
 
 <template>

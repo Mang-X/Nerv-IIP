@@ -6,7 +6,7 @@ title: NvAppShellMobile 应用外壳
 <script setup>
 import { ref } from 'vue'
 import { NvAppShellMobile, NvNavBar, NvTabBar, NvCellGroup, NvCell, NvMobileTag } from '@nerv-iip/ui-mobile'
-import { LayoutGrid, ClipboardList, Bell, User } from 'lucide-vue-next'
+import { LayoutGrid, ClipboardList, Bell, User } from '@lucide/vue'
 
 const tab = ref('home')
 const tabs = [

@@ -8,7 +8,7 @@ import { NvMobileGrid } from '@nerv-iip/ui-mobile'
 import {
   BellIcon, BoxesIcon, ChartColumnIcon, ClipboardListIcon,
   ScanLineIcon, TruckIcon, UsersIcon, WrenchIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { ref } from 'vue'
 
 const gridItems = [
@@ -50,7 +50,7 @@ function onGrid(item) {
 ```vue
 <script setup>
 import { NvMobileGrid } from '@nerv-iip/ui-mobile'
-import { ClipboardListIcon, ScanLineIcon, BoxesIcon, BellIcon } from 'lucide-vue-next'
+import { ClipboardListIcon, ScanLineIcon, BoxesIcon, BellIcon } from '@lucide/vue'
 
 const gridItems = [
   { key: 'wo', icon: ClipboardListIcon, text: '工单', badge: 12 },

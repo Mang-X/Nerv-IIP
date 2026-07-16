@@ -11,7 +11,7 @@ import {
   PlusIcon,
   RocketIcon,
   SearchIcon,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { ref } from 'vue'
 
 const cmdOpen = ref(false)
@@ -55,7 +55,7 @@ function onCommandSelect(item) {
 ```vue
 <script setup>
 import { NvCommand, NvButton, nvMessage } from '@nerv-iip/ui'
-import { GaugeIcon, LayersIcon, PlusIcon } from 'lucide-vue-next'
+import { GaugeIcon, LayersIcon, PlusIcon } from '@lucide/vue'
 import { ref } from 'vue'
 
 const cmdOpen = ref(false)

@@ -136,7 +136,7 @@ Grid layout is `flex`-based; use CSS Grid only for multi-column form layouts (`g
 
 ## Iconography
 
-Library: **lucide-vue-next** (already a peer dep).
+Library: **@lucide/vue** (already a peer dep).
 
 | Context | Size | Tailwind class |
 |---|---|---|
@@ -145,7 +145,7 @@ Library: **lucide-vue-next** (already a peer dep).
 | Empty state illustration | 48px | `size-12` |
 | Navigation item | 20px | `size-5` |
 
-- Import only the icons you use per-file: `import { SearchIcon } from 'lucide-vue-next'`.
+- Import only the icons you use per-file: `import { SearchIcon } from '@lucide/vue'`.
 - Always add `aria-hidden="true"` to decorative icons.
 - Always add `aria-label` to icon-only buttons.
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed, ref, watch } from 'vue'
-import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-vue-next'
+import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from '@lucide/vue'
 import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover'
 import { cn } from '../../../lib/utils'
 import NvButton from '../button/NvButton.vue'

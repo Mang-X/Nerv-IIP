@@ -2,7 +2,7 @@
 import type { DateValue } from 'reka-ui'
 import type { HTMLAttributes } from 'vue'
 import { DateFormatter, parseDate } from '@internationalized/date'
-import { CalendarIcon, XIcon } from 'lucide-vue-next'
+import { CalendarIcon, XIcon } from '@lucide/vue'
 import { computed, shallowRef } from 'vue'
 import { cn } from '../../../lib/utils'
 import { Button } from '../button'

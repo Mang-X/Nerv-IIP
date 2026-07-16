@@ -3,7 +3,7 @@ import OperationTimeline from '@/components/console/OperationTimeline.vue'
 import { useOperationTask } from '@/composables/useConsoleOperations'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { Button, NvPageHeader } from '@nerv-iip/ui'
-import { ArrowLeftIcon } from 'lucide-vue-next'
+import { ArrowLeftIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 

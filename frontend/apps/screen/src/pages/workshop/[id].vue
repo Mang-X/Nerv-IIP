@@ -16,7 +16,7 @@ import {
   PackageCheck,
   Recycle,
   UserRound,
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'

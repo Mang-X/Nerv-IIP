@@ -26,7 +26,7 @@ import {
   NvSectionCard,
   NvSectionCards,
 } from '@nerv-iip/ui'
-import { ActivityIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { ActivityIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 

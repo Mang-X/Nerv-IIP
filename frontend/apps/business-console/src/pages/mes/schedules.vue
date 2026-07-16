@@ -30,7 +30,7 @@ import {
   Spinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
-import { CalendarCogIcon, PlayIcon } from 'lucide-vue-next'
+import { CalendarCogIcon, PlayIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 
 definePage({
