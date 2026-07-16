@@ -147,6 +147,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     inboundOrderNo?: string;
     status?: string;
     createdAtUtc?: string;
+    qualityGateStatus?: string;
+    isReleasedForPutaway?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInventoryContext = {
@@ -6957,6 +6959,8 @@ export type ListBusinessConsoleWmsReceivingQualityGatesData = {
         take?: number;
         gateStatus?: string | null;
         keyword?: string | null;
+        includeNotRequired?: boolean;
+        inboundOrderNo?: string | null;
     };
     url: '/api/business-console/v1/wms/receiving-quality-gates';
 };
