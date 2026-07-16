@@ -99,7 +99,10 @@ function characteristicsSettledLocator(page: Page) {
 async function expectCharacteristicsRecovered(page: Page): Promise<void> {
   const retryButton = page.getByTestId('plan-characteristics-error').getByTestId('retry-list')
   if (await retryButton.isVisible().catch(() => false)) {
-    await retryButton.click().catch(() => {})
+    // 必须带短超时：isVisible 与 click 之间 refetchOnReconnect 自愈会移除按钮，
+    // 不带 timeout 的 click 会按 actionability 重试等按钮重现、吃满整个测试预算
+    // （live 实跑 trace 实证悬挂 106s 直至 120s 测试超时）；点击失败本就不算错。
+    await retryButton.click({ timeout: 2_000 }).catch(() => {})
   }
   await expect(characteristicsSettledLocator(page)).toBeVisible({ timeout: 30_000 })
   await expect(page.getByTestId('plan-characteristics-error')).toHaveCount(0)
