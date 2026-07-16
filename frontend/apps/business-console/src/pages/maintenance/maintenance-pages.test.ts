@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   workOrders: [] as Array<Record<string, unknown>>,
   plans: [] as Array<Record<string, unknown>>,
   remainingByPlanId: {} as Record<string, { status: string; hours?: number }>,
+  remainingPending: false,
   createWorkOrder: vi.fn(async (_body: Record<string, unknown>) => ({})),
   completeWorkOrder: vi.fn(async (_id: string, _body: Record<string, unknown>) => ({})),
   recordInspection: vi.fn(async (_body: Record<string, unknown>) => ({})),
@@ -80,7 +81,7 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
 vi.mock('@/composables/useBusinessTelemetry', () => ({
   useMaintenancePlanRuntimeRemaining: () => ({
     remainingByPlanId: computed(() => state.remainingByPlanId),
-    remainingPending: shallowRef(false),
+    remainingPending: computed(() => state.remainingPending),
     refreshRemaining: vi.fn(),
   }),
 }))
@@ -160,6 +161,7 @@ beforeEach(() => {
   state.inspections = []
   state.plans = []
   state.remainingByPlanId = {}
+  state.remainingPending = false
   // 默认一张在保工单：既覆盖保修列渲染（在保 / 供应商），也让列表非空。
   state.workOrders = [
     {
@@ -494,6 +496,30 @@ describe('maintenance plans page', () => {
     // A failed telemetry read is never mislabeled as "暂无样本".
     expect(wrapper.text()).toContain('运行小时（读取失败）')
     expect(wrapper.text()).toContain('运行小时（暂无样本）')
+  })
+
+  it('shows a loading state for a runtime plan whose remaining read is in flight (not a stale value)', async () => {
+    state.plans = [
+      {
+        planId: 'p-load',
+        deviceAssetId: 'DEV-LOAD',
+        planCode: 'PM-LOAD',
+        interval: null,
+        startsOn: '2026-06-01',
+        nextDueOn: null,
+        runtimeHourInterval: 1000,
+        nextDueRuntimeHours: 2000,
+        lastGeneratedRuntimeHours: 0,
+      },
+    ]
+    // Refresh in flight (e.g. after a threshold advance): the row must show loading, never a stale value.
+    state.remainingByPlanId = { 'p-load': { status: 'loading' } }
+    state.remainingPending = true
+    const wrapper = mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('运行小时（读取中…）')
+    expect(wrapper.text()).not.toContain('剩余')
   })
 
   it('creates a genuine runtime-only plan (no calendar interval)', async () => {

@@ -397,4 +397,42 @@ describe('business telemetry composables', () => {
     await flushPromises()
     expect(rtState.maxConcurrent).toBeLessThanOrEqual(6)
   })
+
+  it('shows loading (not the prior settled value) while a threshold-advance refresh is in flight', async () => {
+    const created = deferredRuntimeHours({ honorAbort: false })
+    const plans = ref<RuntimeRemainingPlan[]>([runtimePlan({ nextDueRuntimeHours: 1000 })])
+    const { remainingByPlanId } = useMaintenancePlanRuntimeRemaining(plans)
+    await nextTick()
+    await flushPromises()
+    created[0].resolveWith(400) // remaining = 1000 - 400 = 600, settled
+    await flushPromises()
+    expect(remainingByPlanId.value.p1).toEqual({ status: 'ok', hours: 600 })
+
+    // Advance the threshold: while the fresh read is in flight the stale 600 must NOT still be shown.
+    plans.value = [runtimePlan({ nextDueRuntimeHours: 2000 })]
+    await nextTick()
+    await flushPromises()
+    expect(remainingByPlanId.value.p1).toEqual({ status: 'loading' })
+    expect(created).toHaveLength(2)
+
+    created[1].resolveWith(500) // remaining = 2000 - 500 = 1500
+    await flushPromises()
+    expect(remainingByPlanId.value.p1).toEqual({ status: 'ok', hours: 1500 })
+  })
+
+  it('clears pending when an empty-context round supersedes an in-flight read (no stuck loading)', async () => {
+    deferredRuntimeHours({ honorAbort: true })
+    const plans = ref<RuntimeRemainingPlan[]>([runtimePlan({})])
+    const { remainingByPlanId, remainingPending } = useMaintenancePlanRuntimeRemaining(plans)
+    await nextTick()
+    await flushPromises()
+    expect(remainingPending.value).toBe(true) // round 1 in flight
+
+    // Clearing the business context supersedes the in-flight round; pending must not stay stuck on loading.
+    useBusinessContextStore().patchContext({ organizationId: '', environmentId: '' })
+    await nextTick()
+    await flushPromises()
+    expect(remainingPending.value).toBe(false)
+    expect(remainingByPlanId.value).toEqual({})
+  })
 })

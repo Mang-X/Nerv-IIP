@@ -410,14 +410,16 @@ export interface RuntimeRemainingPlan {
 }
 
 /**
- * Per-plan remaining-runtime-hours outcome. `error` (telemetry read failed) is kept distinct from
- * `no-samples` (facade responded, but the device has no real runtime samples yet) so the UI never
- * mislabels a transient failure as "no samples".
+ * Per-plan remaining-runtime-hours outcome. `loading` (a read is in flight for this plan, including a
+ * refresh that supersedes a prior settled value), `error` (telemetry read failed) and `no-samples`
+ * (facade responded, but the device has no real runtime samples yet) are all kept distinct so the UI
+ * never shows a stale value during a refresh nor mislabels a transient failure as "no samples".
  */
 export type RuntimeRemainingEntry =
   | { status: 'ok'; hours: number }
   | { status: 'no-samples' }
   | { status: 'error' }
+  | { status: 'loading' }
 
 // Bound the client-side telemetry fan-out: a full page of runtime plans issues at most this many
 // concurrent runtime-hours reads, so the derivation never turns into a 100-way burst against the Gateway.
@@ -470,7 +472,12 @@ export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPl
     const isCurrent = () => myGeneration === generation
 
     if (!hasBusinessContext(businessContext)) {
-      if (isCurrent()) remainingByPlanId.value = {}
+      // A new empty-context round supersedes any in-flight round: it must clear both the results and the
+      // pending flag itself (the superseded round can no longer clear pending), else the UI hangs on loading.
+      if (isCurrent()) {
+        remainingByPlanId.value = {}
+        pending.value = false
+      }
       return
     }
     const runtimePlans = plans.value.filter(
@@ -482,10 +489,20 @@ export function useMaintenancePlanRuntimeRemaining(plans: Ref<RuntimeRemainingPl
         p.nextDueRuntimeHours != null,
     )
     if (runtimePlans.length === 0) {
-      if (isCurrent()) remainingByPlanId.value = {}
+      if (isCurrent()) {
+        remainingByPlanId.value = {}
+        pending.value = false
+      }
       return
     }
 
+    // Mark every runtime plan loading up-front so a refresh (e.g. a threshold advance) never keeps showing
+    // the prior settled value/error while its fresh read is in flight.
+    if (isCurrent()) {
+      remainingByPlanId.value = Object.fromEntries(
+        runtimePlans.map((p) => [p.planId!, { status: 'loading' } as RuntimeRemainingEntry]),
+      )
+    }
     pending.value = true
     const nowUtc = new Date().toISOString()
     const organizationId = businessContext.organizationId

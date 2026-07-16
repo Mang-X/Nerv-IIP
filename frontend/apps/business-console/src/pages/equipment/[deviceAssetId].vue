@@ -229,17 +229,17 @@ const currentDeviceRuntimePlan = computed(
 const runtimeHoursUntilNextMaintenance = computed(() =>
   planRemainingHours(currentDeviceRuntimePlan.value?.planId),
 )
-// 该设备最紧迫运行小时计划的读取是否失败（用于卡片区分「读取失败」与「暂无样本」）。
-const runtimeRemainingHasError = computed(
-  () => remainingByPlanId.value[currentDeviceRuntimePlan.value?.planId ?? '']?.status === 'error',
+// 该设备最紧迫运行小时计划的读取状态（用于卡片区分「读取中」/「读取失败」/「暂无样本」）。
+const currentRuntimePlanStatus = computed(
+  () => remainingByPlanId.value[currentDeviceRuntimePlan.value?.planId ?? '']?.status,
 )
 const runtimeUntilNextCardValue = computed(() => {
   if (runtimeHoursUntilNextMaintenance.value != null) {
     return formatHours(runtimeHoursUntilNextMaintenance.value)
   }
-  if (runtimeRemainingHasError.value) return '读取失败'
-  // Distinguish an in-flight read from a settled no-samples result — never report pending as a data fact.
-  if (remainingPending.value) return '读取中…'
+  // In flight (including a refresh superseding a prior settled value) never shows a stale value/error.
+  if (currentRuntimePlanStatus.value === 'loading' || remainingPending.value) return '读取中…'
+  if (currentRuntimePlanStatus.value === 'error') return '读取失败'
   return '无样本'
 })
 // 「累计运行小时」是信息卡：窗口锚定运行小时计划起算日（无则近 N 天），展示窗口内累计运行事实。

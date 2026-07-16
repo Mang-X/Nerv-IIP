@@ -143,10 +143,11 @@ function formatHours(value?: number | null) {
 function nextDueLabel(row: PlanRow) {
   if (row.runtimeHourInterval != null) {
     const entry = row.planId ? remainingByPlanId.value[row.planId] : undefined
+    // In flight (including a refresh that superseded a prior settled value) never shows the stale value.
+    if (entry?.status === 'loading' || (!entry && remainingPending.value))
+      return '运行小时（读取中…）'
     if (entry?.status === 'ok') return `剩余 ${formatHours(entry.hours)}`
     if (entry?.status === 'error') return '运行小时（读取失败）'
-    // Not yet computed (undefined) while a read is in flight must not be reported as a data fact.
-    if (!entry && remainingPending.value) return '运行小时（读取中…）'
     // Genuine no-samples (or done-but-empty): combined plans fall back to the calendar due.
     if (row.interval && row.nextDueOn) return row.nextDueOn
     return '运行小时（暂无样本）'
